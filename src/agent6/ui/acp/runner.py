@@ -27,6 +27,7 @@ from agent6.app import _setup, finalize, frontend, resume
 from agent6.app import reporter as app_reporter
 from agent6.app import run as app_run
 from agent6.sessions import id, ipc
+from agent6.sessions import layout as sessions_layout
 from agent6.ui import keymap, spawn
 from agent6.ui.acp import frontend as acp_frontend
 from agent6.ui.acp import server as acp_server
@@ -450,9 +451,12 @@ class RunBridge:
                 )
                 session.session_id = ""
             if not session.session_id:
-                session.session_id = id.unused_session_id(
-                    agent6_paths.state_dir(session.cwd), kinds.session_bucket(acp_session.ACP_MODE)
-                )
+                # The id `session/new` reserved, unless a run took it meanwhile.
+                state_dir = agent6_paths.state_dir(session.cwd)
+                bucket = kinds.session_bucket(acp_session.ACP_MODE)
+                reserved = session.acp_id
+                taken = sessions_layout.session_layout(state_dir, reserved) is not None
+                session.session_id = id.unused_session_id(state_dir, bucket) if taken else reserved
         except Exception as exc:  # an unreadable config raises here, before any journal
             self._could_not_finish(session, exc)
             return "refusal"

@@ -201,6 +201,33 @@ def test_a_cancelled_execution_says_so(
         wire.close()
 
 
+def test_a_prompt_records_its_run_under_the_conversations_id(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`session/new` reserves the run id, so the id an editor keeps names the run it can resume."""
+    monkeypatch.chdir(tmp_path)
+    minted: list[str] = []
+
+    def _recording_run(*_a: object, **kw: object) -> int:
+        minted.append(str(kw["session_id"]))
+        return 0
+
+    monkeypatch.setattr(run, "run_task", _recording_run)
+    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    wire = _Wire()
+    try:
+        session_id = wire.new_session(_repo(tmp_path))
+        wire.prompt(session_id, "do the thing")
+        reply = wire.until("")
+        while "result" not in reply and "error" not in reply:
+            reply = wire.until("")
+        assert reply.get("result") == {"stopReason": "end_turn"}
+        assert minted == [session_id]
+        assert sessions_layout.SessionLayout(paths.state_dir(tmp_path), session_id)
+    finally:
+        wire.close()
+
+
 def test_the_runs_journal_streams_out_as_session_update(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -984,14 +1011,14 @@ def test_a_second_prompt_resumes_the_same_run(
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
 
     assert bridge.run(session, "first task") == "end_turn"
-    assert calls == [("run", "run-AAAA11", "first task")]
+    assert calls == [("run", "s", "first task")]  # the conversation id is the run id
 
     # The run left a snapshot: the next prompt continues it, same id.
     layout = session.layout(tmp_path / "state")
     layout.session_dir.mkdir(parents=True, exist_ok=True)
     (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
     assert bridge.run(session, "and now this") == "end_turn"
-    assert calls[1] == ("resume", "run-AAAA11", "and now this")
+    assert calls[1] == ("resume", "s", "and now this")
 
 
 def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
@@ -1796,19 +1823,19 @@ def test_a_second_prompt_after_a_recorded_execution_with_no_snapshot_starts_a_ne
 
     assert bridge.run(session, "first task") == "refusal"
     assert bridge.run(session, "try again") == "refusal"  # nothing recorded: the same id
-    assert calls == ["run-AAAA11", "run-AAAA11"]
+    assert calls == ["s", "s"]  # the conversation id is the run id
 
-    layout = sessions_layout.SessionLayout(tmp_path / "state", "run-AAAA11")
+    layout = sessions_layout.SessionLayout(tmp_path / "state", "s")
     layout.ensure()
     layout.manifest_path.write_text("{}", encoding="utf-8")  # recorded, no snapshot
     assert bridge.run(session, "once more") == "refusal"
-    assert calls[-1] == "run-BBBB22" and session.session_id == "run-BBBB22"
+    assert calls[-1] == "run-AAAA11" and session.session_id == "run-AAAA11"  # a fresh id
     told = [
         m["params"]["update"]["content"]["text"]
         for m in sent
         if m["params"]["update"].get("sessionUpdate") == "agent_message_chunk"
     ]
-    assert any("run-AAAA11 left no resume point" in t for t in told)
+    assert any("run s left no resume point" in t for t in told)
     # message_update adds the one marker.
     assert not any(t.startswith("[agent6] [agent6]") for t in told)
 

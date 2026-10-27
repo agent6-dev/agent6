@@ -84,6 +84,9 @@ class ACPServer:
         self._handlers = {
             "initialize": self._initialize,
             "session/new": self._session_new,
+            "session/list": self._session_list,
+            "session/resume": self._session_resume,
+            "session/close": self._session_close,
             "session/prompt": self._session_prompt,
             "session/cancel": self._session_cancel,
         }
@@ -292,6 +295,18 @@ class ACPServer:
         """Return the reply to `session/new`: the new session's id."""
         return self._sessions().new(params)
 
+    def _session_list(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        """Return the reply to `session/list`: the recorded runs, newest first."""
+        return self._sessions().list(params)
+
+    def _session_resume(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        """Return the reply to `session/resume`: empty once the run's conversation is open."""
+        return self._sessions().resume(params)
+
+    def _session_close(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        """Return the reply to `session/close`: empty; a prompt in flight answers `cancelled`."""
+        return self._sessions().close(params)
+
     def _session_prompt(self, params: dict[str, Any], req_id: object) -> object:
         """Serve `session/prompt`; the worker replies with the stop reason.
 
@@ -387,6 +402,8 @@ class ACPServer:
                 "loadSession": False,
                 # A resource block's uri is client-controlled; passing it through is path injection.
                 "promptCapabilities": {"embeddedContext": False},
+                # An editor lists recorded runs, reopens one after a restart and closes a thread.
+                "sessionCapabilities": {"list": {}, "resume": {}, "close": {}},
             },
             "agentInfo": {"name": "agent6", "version": __version__},
             "authMethods": [],
