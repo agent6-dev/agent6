@@ -485,6 +485,9 @@ agent6 config show telemetry            # every key with its origin
 - A request the collector answers with 429, 502, 503 or 504 is tried three times with backoff; any other refusal turns the endpoint off for that export, and the command exits 1 naming it.
 - `agent6_plan_observed_points_total` counts the plan-window movement a run observed, which is the account's whole window; it is not this run's billing.
 
+The collector acceptance tests check the golden journals' OTLP export with a real collector and the Prometheus textfile with `promtool`.
+Run `uv run pytest -m collector` with `otelcol-contrib` and `promtool` on PATH; each check skips when its binary is absent.
+
 ## ACP
 
 ACP's [`session/load`](acp.md#sessions) replays a recorded conversation before the next prompt resumes the same run.
