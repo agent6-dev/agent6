@@ -107,6 +107,16 @@ def _recorded(view: review.ReviewView, request: ActionRequest) -> ActionResult |
     )
 
 
+def _replied(session_dir: pathlib.Path, request_id: str) -> ActionResult | None:
+    payload = ipc.read_review_reply(session_dir, request_id)
+    if payload is None:
+        return None
+    reply = _Reply.model_validate_json(payload)
+    if reply.result is not None:
+        return reply.result
+    raise ReviewActionError(reply.error, reply.status)
+
+
 def _finding(view: review.ReviewView, finding_id: str) -> review.FindingView:
     found = next((f for f in view.findings if f.finding_id == finding_id), None)
     if found is None:
@@ -187,7 +197,7 @@ def _apply(
 ) -> ActionResult:
     session_dir = events.path.parent
     view = read_review(session_dir)
-    if recorded := _recorded(view, request):
+    if recorded := _recorded(view, request) or _replied(session_dir, request.action.request_id):
         return recorded
     finding = _validate(view, request, session_dir)
     action = request.action
@@ -239,21 +249,23 @@ def drain(events: event_log.EventSink, *, execution_id: str, resume_steer: str =
                 or _steer_text(view, finding) != resume_steer
             ):
                 continue
-            last = finding.actions[-1]
-            if (
-                last.type != "loop.review.fix.requested"
-                or last.action != "resume"
-                or last.source is None
-            ):
-                continue
-            request = ActionRequest(
-                finding_id=finding.finding_id,
-                source=last.source,
-                action=review_records.FindingAction(
-                    request_id=last.request_id, expected_version=view.version, action="fix"
-                ),
-            )
-            _emit(events, request, "fix.submitted", execution_id=execution_id)
+            for action in finding.actions:
+                if (
+                    action.type != "loop.review.fix.requested"
+                    or action.action != "resume"
+                    or action.source is None
+                ):
+                    continue
+                request = ActionRequest(
+                    finding_id=finding.finding_id,
+                    source=action.source,
+                    action=review_records.FindingAction(
+                        request_id=action.request_id, expected_version=view.version, action="fix"
+                    ),
+                )
+                result = _recorded(view, request)
+                if result is not None and result.status == "delivery_unknown":
+                    _emit(events, request, "fix.submitted", execution_id=execution_id)
     for request_id, payload in ipc.review_requests(session_dir):
         try:
             request = ActionRequest.model_validate_json(payload)
@@ -271,13 +283,8 @@ def _wait(session_dir: pathlib.Path, request: ActionRequest, wait_s: float) -> A
     deadline = time.monotonic() + wait_s
     while True:
         view = read_review(session_dir)
-        if recorded := _recorded(view, request):
+        if recorded := _recorded(view, request) or _replied(session_dir, request.action.request_id):
             return recorded
-        if payload := ipc.read_review_reply(session_dir, request.action.request_id):
-            reply = _Reply.model_validate_json(payload)
-            if reply.result is not None:
-                return reply.result
-            raise ReviewActionError(reply.error, reply.status)
         if time.monotonic() >= deadline or not process.worker_is_alive(session_dir):
             return ActionResult(
                 request_id=request.action.request_id,
@@ -324,7 +331,7 @@ def act(
     """
     request = ActionRequest(finding_id=finding_id, source=source, action=action)
     view = read_review(session_dir)
-    if recorded := _recorded(view, request):
+    if recorded := _recorded(view, request) or _replied(session_dir, action.request_id):
         return recorded
     _validate(view, request, session_dir)
     if process.worker_is_alive(session_dir):
@@ -332,7 +339,7 @@ def act(
         return _wait(session_dir, request, wait_s)
     with _offline_writer(session_dir) as events:
         view = read_review(session_dir)
-        if recorded := _recorded(view, request):
+        if recorded := _recorded(view, request) or _replied(session_dir, action.request_id):
             return recorded
         finding = _validate(view, request, session_dir)
         text = ""

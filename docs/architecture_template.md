@@ -244,7 +244,8 @@ The record types do not capture Git trees or persist panel events.
 Live requests cross `sessions.ipc` as typed envelopes; `app/_execution.py` drains them before polling the steer bridge.
 The worker checks the expected version and journals the action in append order.
 Offline actions use the existing session writer lock and recheck that no worker is alive.
-A repeated request ID returns its recorded result before checking the supplied version.
+A repeated request ID returns its journal result or retained worker reply before checking the supplied version.
+A worker refusal is final for that request ID; a new attempt needs a new ID.
 Fix records its request before submitting the server-built instruction, so a crash between those writes leaves delivery unknown rather than a claimed success.
 An explicit resume releases the writer lock before the injected launcher runs; the resumed worker records submission when it takes that instruction.
 
