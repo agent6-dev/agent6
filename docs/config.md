@@ -344,9 +344,9 @@ reviewers = [
 ]
 ```
 
-A `block` gates only when its `file:line` is in the diff and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness`; every other finding is advisory and cannot stall the run.
-Within one execution, findings already injected neither repeat nor count toward a later panel's gate.
-A resume starts with no prior findings.
+A finding grounds on the path, side and lines it cites against the diff; an ungrounded finding is dropped.
+A `block` holds only when its seat's verdict is `block` and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness` (the last only when verify passed); otherwise it reads as `warn`, which cannot stall the run.
+Findings injected in an earlier round or execution neither repeat nor count toward a later panel's gate while the blob they cite is unchanged.
 
 ## `[context]`
 

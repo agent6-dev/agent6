@@ -191,7 +191,7 @@ An `agent` state spins up a normal agent6 run: its own snapshot dir, transcript,
 `mode` chooses the tool surface.
 
 - `"agent"` (default): a read-only, structured-output loop: the read and navigation tools plus `finish_session`
-    - withheld: `apply_edit`, `apply_patch`, `run_command`, `run_verify_command`, `run_metric_command`, `read_session`, `list_findings`, `fetch`, `read_background` and `stop_background`
+    - withheld: `apply_edit`, `apply_patch`, `run_command`, `run_verify_command`, `run_metric_command`, `read_session`, `list_findings`, `fetch`, `read_background`, `stop_background`, `ask_user`, `add_task`, `update_task`, `list_tasks` and `use_skill`
 - `"run"`: real coding work (edit + verify + commit tools), as `agent6 run` has
 
 Where a run state's work lands:
@@ -199,7 +199,7 @@ Where a run state's work lands:
 - each run state executes in a fresh clone (the `--parallel` lane mechanism, `[workspace].base_dir` cache) checked out at the machine chain's tip
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
-- the hub's machine card shows supervision state only; each run state is a session of its own in the [review queue](usage.md#the-review-queue), and merge eligibility is that run's, never the machine's
+- the hub's machine card shows supervision state only; a run state is not a session in the [review queue](usage.md#the-review-queue), which lists runs, plans and asks, and the machine branch merges by hand
 - a state's clone is removed as it lands, so nothing is left for `sessions prune` to sweep
 - the chain ref (`refs/agent6/machine-<id>/head`) outlives the instance dir
     - a fresh instance over a leftover chain starts from HEAD once the chain's tip is in HEAD, dropping the ref

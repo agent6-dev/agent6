@@ -51,7 +51,7 @@
 
 - **Layering** is `ui -> app -> harness -> tools -> sandbox`; harness imports only below itself, and the engine (`app` and below) imports only below itself.
   `app/` holds the run/resume/fork/machine-agent lifecycles and the `--parallel` fan-out, taking the callables the front-end injects (`SessionFrontend`, `LaneRuntime`) and printing only through the injected `Reporter`.
-  `ui/` is the presentation layer and composition root: the four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`) plus `ui/spawn.py`, `ui/notify.py`, `ui/mcp_server.py` and the `ui/telemetry` exporter, over the shared headless read-model fold (`viewmodel`).
+  `ui/` is the presentation layer and composition root: the four front-ends (`ui/cli`, `ui/tui`, `ui/web`, `ui/acp`) plus the shared helpers `ui/spawn.py`, `ui/notify.py`, `ui/steer.py`, `ui/directives.py`, `ui/btw.py`, `ui/keymap.py` and `ui/mcp_server.py` and the `ui/telemetry` exporter, over the shared headless read-model fold (`viewmodel`).
   `ui/cli` is the entry point that wires a run.
 - **[tach](https://docs.gauge.sh/) (`tach.toml`) maps the design.** Like a call graph (`pyan3`, a dev dep), it makes a change's edges reviewable.
   A red `tach check` = stale map: record the edge and move on.

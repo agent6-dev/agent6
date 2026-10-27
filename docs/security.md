@@ -439,11 +439,11 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - All agent6 merge paths enforce open grounded block findings in `app.merge.execute_merge()`, independent of browser controls and `review.block_on`.
   The existing session writer lock excludes dispositions and concurrent session writers until the pinned source commit lands and its merge stamp is recorded.
   Git's conditional target-ref update still refuses a concurrently moved target.
+  That lock, not a separate journal lock, is what excludes a concurrent resume or an offline disposition.
   Resolve-with-reason is the only finding bypass; unreadable evidence refuses with its reason.
 - Review comparison and file routes use the web server's authentication and read Git objects by recorded tree ID.
   Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
   Finding text and resolution reasons enter the browser as text, not HTML.
-  This excludes a concurrent resume or offline disposition without a separate journal lock.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   No telemetry unless the operator runs `agent6 telemetry export` against a configured `[telemetry]` destination ([Telemetry export](usage.md#telemetry-export)); no auto-update, no remote control plane.
 
@@ -612,7 +612,7 @@ Everything the model can influence runs through `run_in_jail` ([Sandbox](#2-sand
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv depending only on operator input.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
-- `vcs/_git_command.py`, `vcs/git_ops.py`, `vcs/git_read.py` and `vcs/git_history.py`: agent6's own git operations ([Git](#7-git)).
+- `vcs/_git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)); every other `vcs` module runs git through `_git_command`.
 - `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `sandbox.isolation = "none"`.

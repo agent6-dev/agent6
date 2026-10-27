@@ -10,7 +10,7 @@ Every image is from a recorded run; click to enlarge.
 
 ## Hub
 
-`agent6 tui` lists every session for the repository in [review queue](usage.md#the-review-queue) order with six columns: updated, status (the mode folded in), review (the group, the reason, a fan-out's lanes by group), cost, id, and task; by activity the review column is not shown.
+`agent6 tui` lists every session for the repository in [review queue](usage.md#the-review-queue) order with six columns: updated, status (the mode folded in), review (the group, blank for `other`, then the reason and a fan-out's lanes by group), cost, id, and task; by activity the review column is not shown.
 Below 100 columns `updated` keeps only the time for today's runs and only the date for older ones, a status drops its reason and the review column hides; below 80, cost hides too, so the task keeps its room.
 
 - Enter opens a run
