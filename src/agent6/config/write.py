@@ -220,11 +220,13 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
             member.model_validate({"api_format": fmt, leaf: value})
             return None
         except pydantic.ValidationError as exc:
-            # Only an error at the leaf or inside its value counts; a missing sibling does not.
-            leaf_errs = [e["msg"] for e in exc.errors() if e["loc"] and e["loc"][0] == leaf]
-            if not leaf_errs:
-                return None
-            errors.append(leaf_errs[0])
+            issues = exc.errors()
+            leaf_errs = [e["msg"] for e in issues if e["loc"] and e["loc"][0] == leaf]
+            if leaf_errs:
+                errors.append(leaf_errs[0])
+            elif all(e["loc"] for e in issues):
+                return None  # only a missing sibling: this member takes the value
+            # A root complaint (a required base_url) says nothing about the leaf.
     if not errors:
         return None
     seen = list(dict.fromkeys(errors))
