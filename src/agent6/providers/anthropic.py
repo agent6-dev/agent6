@@ -244,7 +244,7 @@ def shape_anthropic_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
         """Return whether a block is reasoning this wire cannot replay."""
         if not isinstance(block, dict):
             return False
-        if "chatgpt_reasoning" in block:
+        if "chatgpt_reasoning" in block or "reasoning_replay" in block:
             return True
         return block.get("type") == "thinking" and not (
             isinstance(block.get("signature"), str) and block["signature"]

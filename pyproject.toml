@@ -304,6 +304,7 @@ banned-from = [
     "agent6.providers._openai_messages",
     "agent6.providers._openai_parse",
     "agent6.providers._openai_recovery",
+    "agent6.providers._responses",
     "agent6.providers._stream",
     "agent6.providers._transport",
     "agent6.providers.anthropic",

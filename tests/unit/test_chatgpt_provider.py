@@ -15,7 +15,14 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import secret_store
-from agent6.providers import ProviderError, chatgpt, chatgpt_oauth, types
+from agent6.providers import ProviderError, _responses, chatgpt, chatgpt_oauth, types
+
+# The route the fixture provider replays reasoning on.
+_ROUTE = _responses.replay_route("chatgpt", "https://chatgpt.com/backend-api/codex", "gpt-5-codex")
+
+
+def _replay(item: dict[str, Any]) -> dict[str, Any]:
+    return {"wire": "responses", "route": _ROUTE, "item": item}
 
 
 @pytest.fixture
@@ -253,7 +260,8 @@ def test_tool_call_and_reasoning_items_parse(signed_in: chatgpt_oauth.ChatGPTCre
     assert resp.tool_uses == ({"id": "call_9", "name": "run", "input": {"cmd": "ls"}},)
     thinking = resp.raw["content"][0]
     assert thinking["type"] == "thinking" and thinking["thinking"] == "thought"
-    assert thinking["chatgpt_reasoning"]["type"] == "reasoning"
+    assert thinking["reasoning_replay"]["item"]["type"] == "reasoning"
+    assert thinking["reasoning_replay"]["route"] == _ROUTE
 
 
 def test_lenient_empty_tool_arguments_are_not_replaced_by_a_raw_sentinel() -> None:
@@ -264,7 +272,9 @@ def test_lenient_empty_tool_arguments_are_not_replaced_by_a_raw_sentinel() -> No
         "arguments": "{} </invoke>",
     }
 
-    response = chatgpt.parse_output_items([item], usage={}, stop_reason="end_turn")
+    response = _responses.parse_output_items(
+        [item], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
+    )
 
     assert response.tool_uses[0]["input"] == {}
 
@@ -506,13 +516,17 @@ def test_malformed_usage_count_is_a_provider_error(
 @pytest.mark.parametrize("value", [-1, 1.5, True, {}, [], ""])
 def test_usage_counts_reject_non_integer_values(value: object) -> None:
     with pytest.raises(ProviderError, match=r"usage\.output_tokens"):
-        chatgpt.parse_output_items(
-            [], usage={"input_tokens": 1, "output_tokens": value}, stop_reason="end_turn"
+        _responses.parse_output_items(
+            [],
+            usage={"input_tokens": 1, "output_tokens": value},
+            stop_reason="end_turn",
+            label="ChatGPT",
+            route=_ROUTE,
         )
 
 
 def test_usage_counts_accept_integer_strings() -> None:
-    response = chatgpt.parse_output_items(
+    response = _responses.parse_output_items(
         [],
         usage={
             "input_tokens": "10",
@@ -520,12 +534,14 @@ def test_usage_counts_accept_integer_strings() -> None:
             "output_tokens": "2",
         },
         stop_reason="end_turn",
+        label="ChatGPT",
+        route=_ROUTE,
     )
     assert (response.input_tokens, response.cache_read_tokens, response.output_tokens) == (7, 3, 2)
 
 
 def test_responses_input_flattens_odd_content() -> None:
-    items = chatgpt.responses_input(
+    items = _responses.responses_input(
         [
             {"role": "system", "content": "mapped to user"},
             {
@@ -533,7 +549,8 @@ def test_responses_input_flattens_odd_content() -> None:
                 "content": [{"type": "tool_result", "tool_use_id": "c", "content": "plain"}],
             },
             {"role": "assistant", "content": ""},
-        ]
+        ],
+        route=_ROUTE,
     )
     assert items == [
         {
@@ -543,12 +560,12 @@ def test_responses_input_flattens_odd_content() -> None:
         },
         {"type": "function_call_output", "call_id": "c", "output": "plain"},
     ]
-    assert chatgpt.tools_to_responses([])[0:0] == []
+    assert _responses.tools_to_responses([])[0:0] == []
 
 
 def test_responses_input_keeps_multiple_notices_separated() -> None:
     """Several harness notices in one turn stay separate text blocks."""
-    items = chatgpt.responses_input(
+    items = _responses.responses_input(
         [
             {
                 "role": "user",
@@ -557,7 +574,8 @@ def test_responses_input_keeps_multiple_notices_separated() -> None:
                     {"type": "text", "text": "[no-progress] you have made no progress"},
                 ],
             }
-        ]
+        ],
+        route=_ROUTE,
     )
     assert items == [
         {
@@ -578,7 +596,7 @@ def test_responses_input_keeps_multiple_notices_separated() -> None:
 
 def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
     """A blank-name tool_use is dropped together with its paired tool_result."""
-    items = chatgpt.responses_input(
+    items = _responses.responses_input(
         [
             {
                 "role": "assistant",
@@ -588,7 +606,8 @@ def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
                 "role": "user",
                 "content": [{"type": "tool_result", "tool_use_id": "bad", "content": "x"}],
             },
-        ]
+        ],
+        route=_ROUTE,
     )
     assert items == []
 
@@ -775,19 +794,22 @@ def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
         "name": "read_file",
         "arguments": '{"path": "x"}',
     }
-    got = chatgpt.parse_output_items([reasoning, call], usage={}, stop_reason="end_turn")
+    got = _responses.parse_output_items(
+        [reasoning, call], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
+    )
     blocks = got.raw["content"]
     assert [b["type"] for b in blocks] == ["thinking", "tool_use"]
-    assert blocks[0]["thinking"] == "plan" and blocks[0]["chatgpt_reasoning"] == reasoning
+    assert blocks[0]["thinking"] == "plan" and blocks[0]["reasoning_replay"]["item"] == reasoning
 
-    items = chatgpt.responses_input(
+    items = _responses.responses_input(
         [
             {"role": "assistant", "content": blocks},
             {
                 "role": "user",
                 "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "hi"}],
             },
-        ]
+        ],
+        route=_ROUTE,
     )
     assert [i["type"] for i in items] == ["reasoning", "function_call", "function_call_output"]
     assert items[0] == reasoning
@@ -812,13 +834,15 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
         "summary": [{"type": "summary_text", "text": "then read"}],
     }
     call = {"type": "function_call", "call_id": "c1", "name": "read_file", "arguments": "{}"}
-    got = chatgpt.parse_output_items([r1, note, r2, call], usage={}, stop_reason="end_turn")
+    got = _responses.parse_output_items(
+        [r1, note, r2, call], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
+    )
     blocks = got.raw["content"]
     assert [b["type"] for b in blocks] == ["thinking", "text", "thinking", "tool_use"]
     assert got.text == "Looking at x." and blocks[0]["thinking"] == ""
     assert blocks[2]["thinking"] == "then read"
 
-    items = chatgpt.responses_input(
+    items = _responses.responses_input(
         [
             {
                 "role": "assistant",
@@ -828,7 +852,8 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
                 "role": "user",
                 "content": [{"type": "tool_result", "tool_use_id": "c1", "content": "body"}],
             },
-        ]
+        ],
+        route=_ROUTE,
     )
     assert [i.get("id") or i["type"] for i in items] == [
         "rs_1",
@@ -839,8 +864,12 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
     ]
 
     # A final answer keeps its reasoning ahead of the message too.
-    final = chatgpt.parse_output_items([r1, note], usage={}, stop_reason="end_turn")
-    items = chatgpt.responses_input([{"role": "assistant", "content": final.raw["content"]}])
+    final = _responses.parse_output_items(
+        [r1, note], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
+    )
+    items = _responses.responses_input(
+        [{"role": "assistant", "content": final.raw["content"]}], route=_ROUTE
+    )
     assert [i.get("id") or i["type"] for i in items] == ["rs_1", "message"]
 
 
@@ -851,33 +880,34 @@ def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
     """
     item = {"type": "reasoning", "id": "rs_1"}
     blocks = [
-        {"type": "thinking", "thinking": "", "chatgpt_reasoning": item},
+        {"type": "thinking", "thinking": "", "reasoning_replay": _replay(item)},
         {"type": "tool_use", "id": "c1", "name": "", "input": {}},
     ]
-    items = chatgpt.responses_input([{"role": "assistant", "content": blocks}])
+    items = _responses.responses_input([{"role": "assistant", "content": blocks}], route=_ROUTE)
     assert items == []
 
 
 def test_reasoning_without_a_following_output_item_is_not_replayed() -> None:
     item = {"type": "reasoning", "id": "rs_orphan", "encrypted_content": "OPAQUE"}
 
-    items = chatgpt.responses_input(
+    items = _responses.responses_input(
         [
             {
                 "role": "assistant",
                 "content": [
-                    {"type": "thinking", "thinking": "", "chatgpt_reasoning": item},
+                    {"type": "thinking", "thinking": "", "reasoning_replay": _replay(item)},
                     {"type": "text", "text": ""},
                 ],
             }
-        ]
+        ],
+        route=_ROUTE,
     )
 
     assert items == []
 
 
 def test_responses_input_drops_idless_tool_pairs() -> None:
-    items = chatgpt.responses_input(
+    items = _responses.responses_input(
         [
             {
                 "role": "assistant",
@@ -887,7 +917,8 @@ def test_responses_input_drops_idless_tool_pairs() -> None:
                 "role": "user",
                 "content": [{"type": "tool_result", "content": "orphaned"}],
             },
-        ]
+        ],
+        route=_ROUTE,
     )
     assert items == []
 
@@ -1198,7 +1229,7 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
 
 def test_two_message_items_in_a_response_stay_separated() -> None:
     """Two message items in a response stay separated in the settled text."""
-    resp = chatgpt.parse_output_items(
+    resp = _responses.parse_output_items(
         [
             {"type": "message", "content": [{"type": "output_text", "text": "First message."}]},
             {"type": "reasoning", "summary": [{"text": "thinking"}]},
@@ -1206,6 +1237,8 @@ def test_two_message_items_in_a_response_stay_separated() -> None:
         ],
         usage={"input_tokens": 1, "output_tokens": 1},
         stop_reason="end_turn",
+        label="ChatGPT",
+        route=_ROUTE,
     )
     assert resp.text == "First message.\n\nSecond message."
 
@@ -1306,3 +1339,30 @@ def test_a_stream_refusal_without_the_effort_param_is_not_adapted(
         _provider(signed_in, reasoning_effort="off").call(
             system="SYS", messages=[{"role": "user", "content": "t"}]
         )
+
+
+def test_a_reasoning_item_replays_only_to_its_own_route() -> None:
+    """An item made on another route, or a legacy item with no route, is dropped at replay."""
+    item = {"type": "reasoning", "id": "rs_1", "encrypted_content": "A"}
+    other = _responses.replay_route("responses", "https://other.example/v1", "gpt-5-codex")
+    conversation = [
+        {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "thinking",
+                    "thinking": "",
+                    "reasoning_replay": {"wire": "responses", "route": other, "item": item},
+                },
+                {"type": "thinking", "thinking": "", "chatgpt_reasoning": item},
+                {"type": "text", "text": "answer"},
+            ],
+        }
+    ]
+    assert [i["type"] for i in _responses.responses_input(conversation, route=_ROUTE)] == [
+        "message"
+    ]
+    assert [i["type"] for i in _responses.responses_input(conversation, route=other)] == [
+        "reasoning",
+        "message",
+    ]
