@@ -51,7 +51,8 @@ def _read_secrets_toml(path: pathlib.Path, user: paths.RealUser) -> dict[str, An
         SecretsError: The path is a link or not a regular file, has group or other bits,
             has another owner, cannot be read, or is not valid TOML.
     """
-    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    # O_NONBLOCK: a FIFO at the path opens at once and fails the regular-file check below.
+    flags = os.O_RDONLY | os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(path, flags)
     except FileNotFoundError:
