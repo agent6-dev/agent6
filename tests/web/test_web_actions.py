@@ -248,8 +248,63 @@ def test_approve_and_answer_refuse_a_dead_run(tmp_path: pathlib.Path) -> None:
     ok, msg = actions.approve(tmp_path, "dead-run-A1", "approval-1", "yes")
     assert ok is False and "not live" in msg
     ok2, msg2 = actions.answer_question(tmp_path, "dead-run-A1", "q-1", ["yes"])
-    assert ok2 is False and "not live" in msg2
+    assert ok2 is False and "no longer open" in msg2
     assert sorted(p.name for p in session_dir.iterdir()) == before, "nothing may be written"
+
+
+def test_a_pending_question_on_an_ended_run_takes_an_answer_for_the_resume(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An ended run's question stays answerable; the answer waits for the resume."""
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "ended-run-A1"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        '{"version":2,"session_id":"ended-run-A1","mode":"run","user_task":"t"}',
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"question.prompt","id":"question-1","questions":[{"question":"port?"}],'
+        '"wait":false}\n'
+        '{"type":"question.prompt","id":"question-2","questions":[{"question":"db?"}],'
+        '"wait":false}\n'
+        '{"type":"session.end","reason":"finish_session","all_passed":true}\n',
+        encoding="utf-8",
+    )
+    (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
+
+    ok, msg = actions.answer_question(tmp_path, "ended-run-A1", "question-2", ["pg"])
+    assert (ok, msg) == (True, "saved; the resume delivers it")
+    assert ipc.read_question_answers(session_dir, "question-2", timeout_s=1.0) == ("pg",)
+    assert not ipc.question_answers_written(session_dir, "question-1")
+    assert actions.answer_question(tmp_path, "ended-run-A1", "question-9", ["x"]) == (
+        False,
+        "that question is no longer open",
+    )
+
+
+def test_a_queued_question_on_a_live_run_names_the_next_turn(tmp_path: pathlib.Path) -> None:
+    """A live run reads a queued question's answer at its next turn, and the note says so."""
+    import os
+
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "queued-run-A1"
+    session_dir.mkdir(parents=True)
+    (session_dir / "manifest.json").write_text(
+        '{"version":2,"session_id":"queued-run-A1","mode":"run","user_task":"t"}',
+        encoding="utf-8",
+    )
+    (session_dir / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
+        '{"type":"question.prompt","id":"question-1","questions":[{"question":"port?"}],'
+        '"wait":false}\n',
+        encoding="utf-8",
+    )
+    (session_dir / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")  # live
+
+    assert actions.answer_question(tmp_path, "queued-run-A1", "question-1", ["9090"]) == (
+        True,
+        "answered; the run reads it at its next turn",
+    )
 
 
 def test_approve_and_answer_reach_a_run_waiting_at_its_own_terminal(tmp_path: pathlib.Path) -> None:

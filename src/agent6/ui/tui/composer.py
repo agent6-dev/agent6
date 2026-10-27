@@ -243,6 +243,7 @@ RUN_MENU = menubar.Menu(
     "Run",
     (
         menubar.MenuItem("Search past messages…", "history_search", priority=True),
+        menubar.MenuItem(keymap.ANSWER_QUESTION, "answer_question"),
         menubar.MenuItem("Compact context now", "compact"),
         menubar.MenuItem("Stop after this step", "stop_step"),
         menubar.MenuItem("Stop now", "stop_now"),

@@ -79,6 +79,7 @@ def approval_prompt_suffix(*, standing: bool) -> str:
 
 
 FINDINGS = "Findings"
+ANSWER_QUESTION = "Answer a question…"
 REVIEW_TEXT = {
     "back": "Back",
     "fix": "Fix",

@@ -58,11 +58,13 @@ def test_the_session_view_is_the_one_conversation_page() -> None:
 def test_the_session_view_paints_the_prompts_it_claims_to_answer() -> None:
     """`paintRun` paints the run's prompts, since opening the stream claims the run as a front-end.
 
-    A run blocked on an approval would otherwise wait on a page that showed nothing.
+    A run blocked on an approval would otherwise wait on a page that showed nothing. A dead run
+    keeps its questions, which stay answerable, and loses its approvals.
     """
     start = page.CLIENT_JS.index("function paintRun(")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("function renderDiff(", start)]
-    assert "paintPrompts(cards, isDead ? {} : s)" in body
+    dead = "isDead ? { pending_questions: s.pending_questions, finished: true } : s"
+    assert f"paintPrompts(cards, {dead})" in body
 
 
 def test_the_run_crumb_carries_the_state_word() -> None:

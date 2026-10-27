@@ -1706,6 +1706,7 @@ def test_machine_answer_defaults_to_newest_state_without_hint(
     new_state = inst / "states" / "0002-review"
     new_state.mkdir(parents=True)
     (new_state / "logs.jsonl").write_text(
+        '{"type":"session.start","mode":"run","user_task":"t"}\n'
         '{"type":"question.prompt","id":"question-1","questions":[{"question":"Continue?"}]}\n',
         encoding="utf-8",
     )

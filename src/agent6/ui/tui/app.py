@@ -811,6 +811,11 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """Return the context-window fill in percent at the last completed model call."""
         return context_fill(self.state)
 
+    def action_answer_question(self) -> None:
+        """Open the oldest queued question for an answer on this terminal."""
+        if not self._prompts.open_queued(self.session_dir, self.state):
+            self.notify("no queued question")
+
     def session_controllable(self) -> bool:
         """Return whether the run can receive operator input over the file bridge.
 

@@ -2006,3 +2006,60 @@ def test_the_compact_summary_counts_the_runs_tool_calls_not_the_window(
             assert "60 tool calls · last finish_session ✓" in summary
 
     asyncio.run(scenario())
+
+
+def test_a_queued_question_pops_no_modal_until_asked_for(tmp_path: pathlib.Path) -> None:
+    """A queued question is announced, opened on request, kept by Esc and answered by Submit."""
+    folded = state.fold_session(
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "question.prompt",
+                "id": "question-2",
+                "questions": [{"question": "Which DB?", "options": ["pg", "sqlite"]}],
+                "wait": False,
+            },
+        ]
+    )
+
+    class _Host(textual_app.App[None]):
+        def __init__(self) -> None:
+            super().__init__()
+            self.dispatcher = prompts.PromptDispatcher(self, answerable=lambda: False, lost="lost")
+            self.notices: list[str] = []
+
+        def notify(self, message: Any, **kwargs: Any) -> None:  # type: ignore[override]
+            self.notices.append(str(message))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.dispatcher.dispatch(tmp_path, folded)
+            app.dispatcher.dispatch(tmp_path, folded)
+            await pilot.pause()
+            assert not isinstance(app.screen, modals.QuestionModal)
+            assert [n for n in app.notices if "question-2 queued" in n] == [
+                "question-2 queued: Which DB?\nRun menu: Answer a question"
+            ]
+            assert app.dispatcher.open_queued(tmp_path, folded) is True
+            await pilot.pause()
+            assert isinstance(app.screen, modals.QuestionModal) and app.screen.queued
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, modals.QuestionModal)
+            assert not ipc.question_answers_written(tmp_path, "question-2")
+            assert app.dispatcher.open_queued(tmp_path, folded) is True
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, modals.QuestionModal)
+            modal.query_one("#opt-0-0", widgets.Button).press()
+            await pilot.pause()
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert any("question-2 answered" in n for n in app.notices)
+            # The answer file is on disk until the run reads it: the question is not offered again.
+            assert app.dispatcher.open_queued(tmp_path, folded) is False
+            assert ipc.read_question_answers(tmp_path, "question-2", timeout_s=1.0) == ("pg",)
+
+    asyncio.run(scenario())

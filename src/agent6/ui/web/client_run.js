@@ -313,6 +313,12 @@ function paintPrompts(cards, s) {
       // agent6's own start question (the fold says so): name the asker, since the
       // box otherwise reads as the model's.
       if (q.from_harness) box.appendChild(el('div', 'sub muted', 'agent6 asks'));
+      // A queued question, or one an earlier execution asked, pauses nothing: the run reads
+      // the answer at its next turn, or at its resume once it has ended.
+      if (q.blocking === false) {
+        const kind = q.wait === false ? 'queued' : 'asked by an earlier execution';
+        box.appendChild(el('div', 'sub muted', kind + (s.finished ? ' · the resume delivers the answer' : ' · the run reads the answer at its next turn')));
+      }
       const qs = q.questions || [];
       const inputs = [];
       qs.forEach((sub, qi) => {
@@ -425,7 +431,8 @@ function paintRun(cards, s) {
   // view's: the server refuses the POST, so live-looking Allow/Deny beside
   // a "stale" header could only manufacture a red toast.
   const isDead = notLive(s);
-  if (!cards._readOnly) paintPrompts(cards, isDead ? {} : s);
+  // A dead run's approvals are gone with its execution; its questions stay answerable.
+  if (!cards._readOnly) paintPrompts(cards, isDead ? { pending_questions: s.pending_questions, finished: true } : s);
   if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
   if (cards._rm_btn) {
     cards._rm_btn.disabled = !isDead;

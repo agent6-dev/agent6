@@ -389,7 +389,7 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
 
     Each question has an answer field its option buttons fill. Submit returns the
     answers aligned to the questions; Esc submits empties, so the agent gets its
-    defaults.
+    defaults, except for a queued question, which Esc leaves pending.
     """
 
     DEFAULT_CSS = """
@@ -433,12 +433,21 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
         questions: tuple[Question, ...],
         *,
         from_harness: bool = False,
+        queued: bool = False,
     ) -> None:
-        """Create the prompt for a question id and its questions."""
+        """Create the prompt for a question id and its questions.
+
+        Args:
+            question_id: The prompt's id.
+            questions: The questions.
+            from_harness: Whether agent6 itself asked.
+            queued: Whether the run went on without the answer; Esc then leaves it pending.
+        """
         super().__init__()
         self.question_id = question_id
         self.questions = questions
         self.from_harness = from_harness
+        self.queued = queued
         self._answered_elsewhere = False
 
     def close_answered_elsewhere(self, *, on_top: bool) -> None:
@@ -472,6 +481,8 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
             head.append(
                 "agent6 is asking" if self.from_harness else "The agent is asking", style="bold"
             )
+            if self.queued:
+                head.append(" (queued: the run went on; it reads the answer at its next turn)")
             head.append(". Answer, then Submit (ctrl+s):" if multi else ":")
             yield widgets.Static(head)
             with containers.VerticalScroll(id="question-list"):
@@ -494,7 +505,8 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
                         classes="q-ans",
                     )
             yield widgets.Button("Submit (ctrl+s)", id="question-submit", compact=True)
-            yield widgets.Static("Enter next field · Ctrl+S submit · Esc skip", id="question-hint")
+            skip = "Esc keep it pending" if self.queued else "Esc skip"
+            yield widgets.Static(f"Enter next field · Ctrl+S submit · {skip}", id="question-hint")
 
     def on_mount(self) -> None:
         """Focus the first answer field."""
@@ -528,5 +540,5 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
         self.dismiss(answers)
 
     def action_skip(self) -> None:
-        """Dismiss with an empty answer per question."""
-        self.dismiss(tuple("" for _ in self.questions))
+        """Dismiss with an empty answer per question; a queued question stays pending."""
+        self.dismiss(None if self.queued else tuple("" for _ in self.questions))

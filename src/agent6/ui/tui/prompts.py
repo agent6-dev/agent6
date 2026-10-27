@@ -2,10 +2,12 @@
 # Copyright 2026 Eric Lesiuta
 """Prompt dispatch for a TUI view over a session's fold.
 
-One modal per unanswered question (approvals dock as a row instead), its answer
-written to the session's file bridge, and the claim every surface takes a prompt
-through. A question another front-end answered closes its modal, which writes
-nothing. Shared by the run views and the machine watch view.
+One modal per unanswered question the run waits on (approvals dock as a row
+instead), its answer written to the session's file bridge, and the claim every
+surface takes a prompt through. A queued question is announced once and opened
+on request, so no modal stacks over a run that went on. A question another
+front-end answered closes its modal, which writes nothing. Shared by the run
+views and the machine watch view.
 """
 
 from __future__ import annotations
@@ -46,7 +48,9 @@ class PromptDispatcher:
         self._seen.clear()
 
     def dispatch(self, session_dir: pathlib.Path, state: SessionState) -> None:
-        """Push a modal for each unanswered, unclaimed question; close one answered elsewhere.
+        """Push a modal for each waiting, unclaimed question; announce a queued one once.
+
+        A question answered elsewhere closes its modal.
 
         Args:
             session_dir: The session the answers are written to.
@@ -59,10 +63,40 @@ class PromptDispatcher:
                 closed = self._open.pop(key, None)
                 if closed is not None:
                     closed.close_answered_elsewhere(on_top=self._app.screen is closed)
+            elif not qp.blocking:
+                if self.claim(session_dir, qp.id):
+                    first = qp.questions[0].question if qp.questions else ""
+                    self._app.notify(
+                        f"{qp.id} {qp.kind()}: {first}\nRun menu: Answer a question", timeout=8.0
+                    )
             elif self.claim(session_dir, qp.id):
                 modal = modals.QuestionModal(qp.id, qp.questions, from_harness=qp.from_harness)
                 self._open[key] = modal
                 self._app.push_screen(modal, self._on_question(session_dir, qp.id))
+
+    def open_queued(self, session_dir: pathlib.Path, state: SessionState) -> bool:
+        """Push the modal for the oldest queued question not already open.
+
+        Args:
+            session_dir: The session the answer is written to.
+            state: That session's fold.
+
+        Returns:
+            Whether a modal opened; False when no queued question is pending.
+        """
+        for qp in state.pending_questions:
+            key = f"{session_dir}|{qp.id}"
+            if qp.answered or qp.blocking or key in self._open:
+                continue
+            if ipc.question_answers_written(session_dir, qp.id):
+                continue  # answered here already; the run reads the file at its next turn
+            modal = modals.QuestionModal(
+                qp.id, qp.questions, from_harness=qp.from_harness, queued=True
+            )
+            self._open[key] = modal
+            self._app.push_screen(modal, self._on_question(session_dir, qp.id, queued=True))
+            return True
+        return False
 
     def claim(self, session_dir: pathlib.Path, prompt_id: str) -> bool:
         """Claim a prompt for one surface.
@@ -88,16 +122,21 @@ class PromptDispatcher:
         return f"{session_dir}|{prompt_id}" in self._seen
 
     def _on_question(
-        self, session_dir: pathlib.Path, prompt_id: str
+        self, session_dir: pathlib.Path, prompt_id: str, *, queued: bool = False
     ) -> Callable[[tuple[str, ...] | None], None]:
         def cb(answers: tuple[str, ...] | None) -> None:
             if self._open.pop(f"{session_dir}|{prompt_id}", None) is None:
                 self._app.notify(ipc.ANSWERED_ELSEWHERE, severity="warning", timeout=6.0)
                 return
-            if not self._answerable():
+            if queued and answers is None:
+                return  # Esc: the question stays pending
+            if not queued and not self._answerable():
                 self._app.notify(self._lost, severity="warning", timeout=6.0)
                 return
             if not ipc.write_question_answers(session_dir, prompt_id, answers or ()):
                 self._app.notify(ipc.ANSWERED_ELSEWHERE, severity="warning", timeout=6.0)
+                return
+            if queued:
+                self._app.notify(f"{prompt_id} answered; the run reads it at its next turn")
 
         return cb

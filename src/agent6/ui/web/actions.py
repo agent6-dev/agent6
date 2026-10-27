@@ -35,7 +35,7 @@ from agent6.viewmodel import (
     listing,
     machine_state,
     open_approval,
-    open_question,
+    pending_questions,
     session_is_live,
 )
 
@@ -152,27 +152,32 @@ def answer_question(
 ) -> tuple[bool, str]:
     """Answer a pending `ask_user` prompt, one answer per question by index.
 
+    A queued question's answer reaches the run at its next turn; an ended run's waits for
+    the resume that delivers it.
+
     Args:
         cwd: The repository.
         session_id: The run.
-        question_id: The prompt's id; refused unless that prompt is still open.
+        question_id: The prompt's id; refused unless that prompt is still pending.
         answers: A count mismatch is refused.
 
     Returns:
         Whether the answers landed, and the note or the refusal.
     """
-    session_dir = _live_session_dir(cwd, session_id)
-    if isinstance(session_dir, tuple):
-        return session_dir
-    prompt = open_question(session_dir)
-    if prompt is None or prompt.id != question_id:
+    session_dir = model.session_dir_for(cwd, session_id)
+    if session_dir is None:
+        return False, f"no session {session_id!r}"
+    prompt = next((q for q in pending_questions(session_dir) if q.id == question_id), None)
+    if prompt is None:
         return False, "that question is no longer open"
     if len(answers) != len(prompt.questions):
         # The asking side raises on a mismatch after consuming the file, losing the text.
         return False, f"that prompt has {len(prompt.questions)} question(s)"
     if not ipc.write_question_answers(session_dir, question_id, answers):
         return False, ipc.ANSWERED_ELSEWHERE
-    return True, "answered"
+    if not session_is_live(session_dir):
+        return True, "saved; the resume delivers it"
+    return True, "answered" if prompt.blocking else "answered; the run reads it at its next turn"
 
 
 def steer(
@@ -523,8 +528,8 @@ def machine_answer(
     target = _state_dir_for_verb(cwd, name, "answer", state)
     if not isinstance(target, pathlib.Path):
         return target
-    prompt = open_question(target)
-    if prompt is None or prompt.id != question_id:
+    prompt = next((q for q in pending_questions(target) if q.id == question_id), None)
+    if prompt is None:
         return False, "that question is no longer open"
     if len(answers) != len(prompt.questions):
         return False, f"that prompt has {len(prompt.questions)} question(s)"
