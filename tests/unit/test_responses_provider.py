@@ -302,3 +302,28 @@ def test_a_cut_stream_is_truncated_and_books_what_it_cost() -> None:
             messages=[{"role": "user", "content": "go"}],
             text_delta_callback=lambda _s: None,
         )
+
+
+def test_a_failed_stream_books_the_usage_it_reports() -> None:
+    lines: list[str] = []
+    lines += _evt({"type": "response.output_text.delta", "delta": "hel"})
+    lines += _evt(
+        {
+            "type": "response.failed",
+            "response": {"status": "failed", "error": {"code": "server_error"}, "usage": _USAGE},
+        }
+    )
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        return _FakeStreamResponse(lines=lines)
+
+    budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
+    with (
+        mock.patch("agent6.providers._stream.http_stream", side_effect=stream),
+        pytest.raises(ProviderError, match="server_error"),
+    ):
+        _provider(budget=budget).call(
+            system="s", messages=[{"role": "user", "content": "go"}], text_delta_callback=print
+        )
+    snap = budget.snapshot()
+    assert (snap.input_total, snap.cache_read_total, snap.output_total) == (35, 7, 9)

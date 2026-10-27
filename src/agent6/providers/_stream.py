@@ -73,8 +73,8 @@ def http_stream(
     ) as resp:
         if 300 <= resp.status_code < 400:
             raise types.ProviderError(
-                f"provider redirected (HTTP {resp.status_code}) to"
-                f" {_transport.redirect_host(resp)}; refusing to follow with credentials",
+                f"provider redirected (HTTP {resp.status_code}); refusing to follow with"
+                " credentials (the Location is not shown: it may echo them)",
                 status_code=resp.status_code,
             )
         yield resp

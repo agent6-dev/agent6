@@ -4,13 +4,15 @@
 
 from __future__ import annotations
 
+import os
+import pathlib
 from typing import Any
 
 import httpx2
 import pytest
 
 from agent6.config import OAuthExchangeConfig
-from agent6.providers import ProviderError, _oauth_protocol, _stream, _transport, oauth
+from agent6.providers import ProviderError, _oauth_protocol, _transport, oauth
 
 
 class _Resp:
@@ -50,15 +52,16 @@ def test_a_token_error_scrubs_the_whole_body_before_clipping() -> None:
     assert rt[:10] not in str(err) and "<REDACTED>" in str(err)
 
 
-def test_a_redirect_line_names_the_host_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A Location that reflects the request would carry the credential into the error."""
-    location = "https://evil.example/?echo=Bearer%20SECRETVALUE"
+def test_a_redirect_line_shows_no_location(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A Location can echo the credential anywhere: its query, its userinfo, its host."""
+    location = "https://user:SECRETVALUE@SECRETVALUE.evil.example/?echo=Bearer%20SECRETVALUE"
     err = _oauth_protocol.redirect_refusal(
         _Resp(302, {}, location=location),  # type: ignore[arg-type]
         operation="refresh",
         label="work",
     )
-    assert "evil.example" in str(err) and "SECRETVALUE" not in str(err)
+    assert "redirected (HTTP 302)" in str(err) and "SECRETVALUE" not in str(err)
+    assert "evil.example" not in str(err)
 
     def fake_post(url: str, **_kw: Any) -> _Resp:
         return _Resp(307, {}, location=location)
@@ -82,11 +85,9 @@ def test_a_redirect_line_names_the_host_only(monkeypatch: pytest.MonkeyPatch) ->
         require_metered=lambda _d: None,
         parse=lambda _d: None,  # type: ignore[arg-type, return-value]
     )
-    with pytest.raises(ProviderError, match=r"evil\.example") as refused:
+    with pytest.raises(ProviderError, match="redirected") as refused:
         call.run()
-    assert "SECRETVALUE" not in str(refused.value)
-    assert _transport.redirect_host(_Resp(302, {}, location="/relative")) == "?"  # type: ignore[arg-type]
-    assert _stream is not None  # the stream's refusal shares `redirect_host`
+    assert "SECRETVALUE" not in str(refused.value) and "evil.example" not in str(refused.value)
 
 
 def test_a_revocation_answered_with_a_redirect_is_not_a_success(
@@ -145,3 +146,26 @@ def test_an_exchange_transport_error_scrubs_the_issuer_token(
     with pytest.raises(ProviderError, match="could not reach") as refused:
         oauth.run_exchange(OAuthExchangeConfig(endpoint="https://credentials.example/token"), token)
     assert token not in str(refused.value) and "<REDACTED>" in str(refused.value)
+
+
+def test_a_fifo_at_the_secrets_path_is_refused_without_blocking(tmp_path: pathlib.Path) -> None:
+    """The open itself must not wait for a writer that never comes."""
+    import threading
+
+    from agent6 import paths, secret_store
+
+    fifo = tmp_path / "secrets.toml"
+    os.mkfifo(fifo)
+    outcome: list[str] = []
+
+    def read() -> None:
+        try:
+            secret_store._read_secrets_toml(fifo, paths.effective_user())
+        except secret_store.SecretsError as exc:
+            outcome.append(str(exc))
+
+    worker = threading.Thread(target=read, daemon=True)
+    worker.start()
+    worker.join(5.0)
+    assert not worker.is_alive(), "the open blocked on the FIFO"
+    assert outcome and "regular file" in outcome[0]

@@ -240,7 +240,7 @@ def test_a_conversation_persists_across_a_resume_and_starts_new_on_a_fork(
     assert forked.context("worker", "work", initiator="user").session_id != ctx.session_id
     lane = _conversations.Conversations(is_subagent=True)
     assert lane.context("worker", "work", initiator="user").is_subagent
-    assert not (tmp_path / "s2").exists() or True  # a path-less state writes nothing
+    assert lane.path is None  # a path-less state writes nothing
 
 
 class _Inner:

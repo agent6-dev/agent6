@@ -18,7 +18,7 @@ from agent6 import paths, secret_store
 from agent6.app import _setup
 from agent6.config import Config, OpenAIProviderEntry, load_config
 from agent6.models import cache
-from agent6.providers import _transport, oauth
+from agent6.providers import _transport, oauth, types
 from agent6.ui.cli import main
 
 _CONFIG = """
@@ -394,4 +394,32 @@ def test_logout_does_not_revoke_a_grant_made_under_other_settings(
     assert main(["connect", "work", "--logout"]) == 0
     err = capsys.readouterr().err
     assert "other provider settings" in err and "removed locally" in err
+    assert secret_store.load_oauth_grant("work") is None
+
+
+def test_logout_removes_the_grant_when_the_revocation_read_is_refused(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A revocation body over the cap is a warning, not a kept grant."""
+    gc = _write_config()
+    secret_store.save_oauth_grant(
+        "work",
+        secret_store.StoredGrant(
+            binding=oauth.binding_fingerprint(_entry(gc)),
+            access_token="AT1",
+            refresh_token="RT1",
+            issued_at=1.0,
+            expires_at=None,
+            exchange_access_token="",
+            exchange_issued_at=0.0,
+            exchange_expires_at=None,
+        ),
+    )
+
+    def oversized(*_a: object, **_k: object) -> None:
+        raise types.ProviderError("provider response exceeded 1048576 bytes; refusing to buffer it")
+
+    monkeypatch.setattr(_transport, "http_request", oversized)
+    assert main(["connect", "work", "--logout"]) == 0
+    assert "revocation failed" in capsys.readouterr().err
     assert secret_store.load_oauth_grant("work") is None

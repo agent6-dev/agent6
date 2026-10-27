@@ -296,8 +296,8 @@ def scrub(text: str, secrets: tuple[str, ...]) -> str:
 def redirect_refusal(resp: httpx2.Response, *, operation: str, label: str) -> types.ProviderError:
     """Return the error for a token endpoint that answered with a redirect, never followed."""
     return types.ProviderError(
-        f"{label} token {operation} redirected (HTTP {resp.status_code}) to"
-        f" {_transport.redirect_host(resp)}; refusing to follow with credentials",
+        f"{label} token {operation} redirected (HTTP {resp.status_code}); refusing to follow"
+        " with credentials (the Location is not shown: it may echo them)",
         status_code=resp.status_code,
     )
 
@@ -498,13 +498,10 @@ def revoke_tokens(
         resp = _post(
             revocation_endpoint, body, encoding=encoding, timeout_s=timeout_s, headers=headers
         )
-    except httpx2.HTTPError as exc:
+    except (httpx2.HTTPError, types.ProviderError) as exc:
         return f"could not reach {revocation_endpoint}: {scrub(str(exc), (token,))}"
     if 300 <= resp.status_code < 400:
-        return (
-            f"redirected (HTTP {resp.status_code}) to {_transport.redirect_host(resp)};"
-            " not followed, so nothing was revoked"
-        )
+        return f"redirected (HTTP {resp.status_code}); not followed, so nothing was revoked"
     if resp.status_code >= 400:
         return f"HTTP {resp.status_code}: {scrub(resp.text, (token,))[:200]}"
     return None

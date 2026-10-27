@@ -79,6 +79,8 @@ def test_a_loopback_destination_ignores_the_ambient_proxy(
     """A plaintext loopback endpoint's bearer never goes to `HTTP_PROXY`."""
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
     monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.delenv("NO_PROXY", raising=False)  # an ambient exemption would mask the rule
+    monkeypatch.delenv("no_proxy", raising=False)
     resp = _transport.http_post(
         f"{loopback_server}/v1/chat/completions",
         headers={"authorization": "Bearer t"},
