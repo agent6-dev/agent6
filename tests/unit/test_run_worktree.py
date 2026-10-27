@@ -14,7 +14,7 @@ import json
 import os
 import pathlib
 import shlex
-import subprocess as sp
+import subprocess
 import time
 from typing import Any
 
@@ -121,7 +121,9 @@ def _script(monkeypatch: pytest.MonkeyPatch, *turns: tuple[dict[str, Any], ...])
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
-    return sp.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True).stdout
+    return subprocess.run(
+        ["git", *args], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout
 
 
 def _repo(
@@ -291,7 +293,7 @@ def test_resume_stash_restore_command_targets_the_sessions_worktree(
     assert shlex.split(restore) == ["git", "-C", str(worktree), "stash", "apply", entry.sha]
     assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 1\n"
 
-    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    subprocess.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
     assert (worktree / "a.py").read_text(encoding="utf-8") == "x = 3  # worktree draft\n"
     assert (worktree / "more.txt").read_text(encoding="utf-8") == "two\n"
     assert _checkout_facts(repo)[:3] == before
@@ -1367,7 +1369,7 @@ def test_a_gate_script_staged_but_not_committed_refuses_before_the_worktree_exis
     """
     repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
     _untracked_venv(repo)
-    sp.run(["git", "add", "-f", ".venv/bin/python"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-f", ".venv/bin/python"], cwd=repo, check=True)
     _pin_gate(repo)
     prov = _script(monkeypatch)
 

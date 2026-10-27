@@ -10,7 +10,7 @@ method dispatch and the manifest record.
 from __future__ import annotations
 
 import dataclasses
-import datetime as _dt
+import datetime
 import pathlib
 import shlex
 from collections.abc import Callable
@@ -92,7 +92,7 @@ def record_merge_in_manifest(
                 tip=merged_tip,
                 into_tip=into_tip,
                 via=via,
-                ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="seconds"),
+                ts=datetime.datetime.now(tz=datetime.UTC).isoformat(timespec="seconds"),
             )
         }
     )

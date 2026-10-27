@@ -240,7 +240,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.install_screen(self._conv, "conversation")
         self.push_screen(self._conv)
         if self.state.undone_to:
-            # An /undo already folded at open: the message it took back is the operator's to edit.
+            # After an /undo folded at open, the operator can edit the message it took back.
             self.call_after_refresh(self._fill_composers, self.state.undone_text)
         # The exit condition is polled from a timer: exit() from a call_from_thread callback
         # does not take effect, from a timer callback it does.
@@ -308,7 +308,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.state = state.apply_event(self.state, event)
         self.last_event_at = time.monotonic()
         if event.get("type") == "session.undone" and self.state.undone_to:
-            # The fork is the continuation; the message taken back is the operator's to resend.
+            # The fork is the continuation. The operator can resend the message taken back.
             self._fill_composers(self.state.undone_text)
             self.notify(f"undone: continue as {self.state.undone_to}; your message is back to edit")
         if event.get("type") in events.SESSION_START_EVENTS:
@@ -484,7 +484,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         child, text = result
         self._continue_child = child
         self._fill_composers(text)
-        # The journaled undone event announces the fork; the rewind notice is this view's to show.
+        # This view shows the rewind notice. The journaled undone event announces the fork.
         self.notify("\n".join(line.removeprefix("[agent6] ") for line in said), timeout=12)
 
     def plan_md(self) -> str:

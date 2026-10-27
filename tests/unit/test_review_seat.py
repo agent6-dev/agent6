@@ -595,7 +595,7 @@ def test_run_panel_concurrent_seat_crash_propagates() -> None:
 def test_run_panel_concurrency_limit_is_honored() -> None:
     """min(concurrency, len(seats)) seats run at once; the rest queue."""
     import threading
-    import time as _time
+    import time
 
     lock = threading.Lock()
     active = 0
@@ -607,7 +607,7 @@ def test_run_panel_concurrency_limit_is_honored() -> None:
             with lock:
                 active += 1
                 peak = max(peak, active)
-            _time.sleep(0.05)
+            time.sleep(0.05)
             with lock:
                 active -= 1
             return _Resp(_BLOCK_JSON)

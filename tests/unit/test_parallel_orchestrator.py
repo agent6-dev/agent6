@@ -2448,7 +2448,7 @@ def test_await_lane_returns_when_should_stop_fires(
     Without it, the poll loop blocked until the lane ended on its own, so a coordinator stop (or
     Ctrl-C teardown) sat on a lane that might run for hours.
     """
-    import os as _os
+    import os
 
     lane_dir = tmp_path / "lane-run"
     lane_dir.mkdir()
@@ -2456,7 +2456,7 @@ def test_await_lane_returns_when_should_stop_fires(
 
     session_dir = lane_dir / "sub"
     # a live lane: never terminal
-    process.write_worker_pid(session_dir, _os.getpid())
+    process.write_worker_pid(session_dir, os.getpid())
     spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
     res = subrun.LaneResult(
         spec=spec, session_dir=session_dir, branch="agent6/x", ok=True, error=""
@@ -2478,13 +2478,13 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     The lane keeps running detached; with hard_stop set the bounded grace is skipped, so teardown is
     prompt.
     """
-    import os as _os
-    import threading as _threading
+    import os
+    import threading
 
     lane_dir = tmp_path / "lane-run" / "sub"
     _write_fake_run(lane_dir, "t", status="running", cost=0.0)
     # live forever from the test's view
-    process.write_worker_pid(lane_dir, _os.getpid())
+    process.write_worker_pid(lane_dir, os.getpid())
     spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
 
     def fake_spawner(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
@@ -2492,7 +2492,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
             spec=spec, session_dir=lane_dir, branch="agent6/x", ok=True, error=""
         )
 
-    hard_stop = _threading.Event()
+    hard_stop = threading.Event()
     hard_stop.set()
     res = app_lanes.run_lane_to_completion(
         spec,
@@ -3118,7 +3118,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     is left with after the `git branch -D` prune's own message tells them to run; deleting the clone
     on that proof sends the work with the next `git gc`.
     """
-    import subprocess as sp
+    import subprocess
 
     workdir = tmp_path / "cache"
     cfg = Config.model_validate({"workspace": {"base_dir": str(workdir)}})
@@ -3129,11 +3129,13 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     git_ops.create_branch(lane, "agent6/fan-x-l1")
     (lane / "x.txt").write_text("lane work\n", encoding="utf-8")
     git_ops.commit_all(lane, "lane work")
-    tip = sp.run(
+    tip = subprocess.run(
         ["git", "-C", str(lane), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()
     # The origin has the OBJECT (fetched) but no ref reaching it.
-    sp.run(["git", "-C", str(origin), "fetch", str(lane), tip], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(origin), "fetch", str(lane), tip], check=True, capture_output=True
+    )
 
     swept, kept = _workdirs.sweep_fanout_clones(origin, cfg)
 

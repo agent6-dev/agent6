@@ -46,8 +46,8 @@ def http_stream(
 ) -> Generator[httpx2.Response]:
     """Open a streaming request; the seam tests stub in place of `httpx2`.
 
-    The connect phase gets its own bound: the watchdog has no response to close
-    until the connect returns, so a blackholed connect is httpx2's to cut.
+    The connect phase gets its own bound. The watchdog has no response to close
+    until the connect returns, so httpx2 must cut a blackholed connect.
 
     Args:
         method: The HTTP method.

@@ -425,7 +425,7 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     model-git run, a fan-out and a session with no manifest, and with no id picks the newest run
     while a plan that just ended is newer.
     """
-    import time as _time
+    import time
 
     provider = _FakeProvider(response_text="## Outcome\nok")
     cfg = _reviewer_config()
@@ -459,7 +459,7 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
     assert main(["sessions", "review", "run-BARE01"]) == 0
     capsys.readouterr()
 
-    _time.sleep(0.05)
+    time.sleep(0.05)
     plan = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(repo), session_id="plan-NEWEST", subdir="plans"
     )

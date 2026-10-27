@@ -235,7 +235,7 @@ def test_every_write_in_one_mutation_carries_the_journaled_version(tmp_path: pat
 
     A journal that lost its tail is then detectable from the nodes alone.
     """
-    import json as _json
+    import json
 
     layout = _layout(tmp_path)
     c = curator.GraphCurator(layout)
@@ -247,7 +247,7 @@ def test_every_write_in_one_mutation_carries_the_journaled_version(tmp_path: pat
     assert nodes[root.id].graph_version == 2  # relinked by the child's mutation
     assert nodes[child.id].graph_version == 2
     entries = [
-        _json.loads(line)
+        json.loads(line)
         for line in layout.journal_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]

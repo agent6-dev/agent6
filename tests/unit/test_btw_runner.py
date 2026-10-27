@@ -98,7 +98,7 @@ def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: pathlib.Pat
     The journal is where every surface reads, and it outlives the process; the console view alone
     loses the answer under --tui, the web and a parent that exited first.
     """
-    import json as _json
+    import json
 
     asks = tmp_path / "sessions" / "asks"
     asks.mkdir(parents=True)
@@ -119,7 +119,7 @@ def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: pathlib.Pat
     answered: dict[str, object] = {}
     while not answered and time.monotonic() < deadline:
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines():
-            event = _json.loads(line)
+            event = json.loads(line)
             if event["type"] == "btw.answered":
                 answered = event
         time.sleep(0.2)

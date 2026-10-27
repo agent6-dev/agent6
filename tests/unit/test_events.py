@@ -134,13 +134,13 @@ def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: pat
     A mock, whose every attribute is another mock, recursed without end and hung the journal write.
     """
     import datetime
-    from unittest import mock as unittest_mock
+    import unittest.mock
 
     assert (
         event_log._json_default(datetime.datetime(2026, 1, 2, tzinfo=datetime.UTC))
         == "2026-01-02T00:00:00+00:00"
     )
-    mock = unittest_mock.MagicMock()
+    mock = unittest.mock.MagicMock()
     assert event_log._json_default(mock) == repr(mock)
 
 

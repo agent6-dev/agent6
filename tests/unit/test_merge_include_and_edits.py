@@ -8,7 +8,7 @@ Runs here are real `agent6 run` executions over a scripted model, in the base ch
 from __future__ import annotations
 
 import pathlib
-import subprocess as sp
+import subprocess
 from typing import Any
 
 import pytest
@@ -87,7 +87,7 @@ def _none_isolation(*_a: Any, **_k: Any) -> str:
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
-    return sp.run(
+    return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
 
@@ -209,6 +209,6 @@ def test_a_merge_over_an_edited_file_prints_the_commands_that_reconcile_it(
     commands = [line.strip() for line in lines if line.strip().startswith("git ")]
     assert len(commands) == 2 and before[:12] in commands[0]
     for command in commands:
-        sp.run(["sh", "-c", command], cwd=repo, check=True, capture_output=True)
+        subprocess.run(["sh", "-c", command], cwd=repo, check=True, capture_output=True)
     merged = _SEED.replace("x = 1", "x = 2").replace("y = 1", "y = 9  # mine")
     assert (repo / "a.py").read_text(encoding="utf-8") == merged

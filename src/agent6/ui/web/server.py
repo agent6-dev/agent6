@@ -12,6 +12,7 @@ a bearer header.
 
 from __future__ import annotations
 
+import http.server
 import ipaddress
 import json
 import os
@@ -20,7 +21,6 @@ import socket
 import sys
 import threading
 from collections.abc import Callable
-from http import server as http_server
 from typing import Any, Literal
 from urllib import parse
 
@@ -78,8 +78,8 @@ class ApproveBody(_Body):
 
     Attributes:
         id: The prompt's id.
-        answer: The operator's literal choice; what a session answer grants is the
-            asking side's to decide.
+        answer: The operator's literal choice.
+            The asking side decides what a session answer grants.
         state: For a machine, the state dir the prompt was rendered from; "" is the newest.
     """
 
@@ -201,7 +201,7 @@ def _validation_message(exc: pydantic.ValidationError) -> str:
     return "; ".join(clauses)
 
 
-class WebServer(http_server.ThreadingHTTPServer):
+class WebServer(http.server.ThreadingHTTPServer):
     """The threading server, carrying the repo its handlers read from.
 
     It counts the browsers watching each run so the process registers as an
@@ -315,7 +315,7 @@ def _create_web_server(
     return server_cls((bind_host, port), cwd, target, config_paths, secret=secret)
 
 
-class _Handler(http_server.BaseHTTPRequestHandler):
+class _Handler(http.server.BaseHTTPRequestHandler):
     """One request's handler."""
 
     _streaming = False  # the SSE headers went out; an error is a frame now

@@ -1135,7 +1135,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A SIGKILLed agent subprocess writes no result.json; its event log's spend is still booked."""
-    import subprocess as sp
+    import subprocess
 
     events_log = tmp_path / "logs.jsonl"
 
@@ -1145,7 +1145,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
 
         def wait(self, timeout: float | None = None) -> int:
             if timeout is not None:
-                raise sp.TimeoutExpired(cmd="agent", timeout=timeout)
+                raise subprocess.TimeoutExpired(cmd="agent", timeout=timeout)
             return 0
 
     def _popen(*_args: Any, **_kwargs: Any) -> _HungProc:

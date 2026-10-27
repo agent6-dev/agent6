@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-import datetime as dt
+import datetime
 import json
 import os
 import pathlib
@@ -25,7 +25,7 @@ from agent6.vcs import git_read
 
 
 def _ts(off_s: float) -> str:
-    return (dt.datetime.now(dt.UTC) - dt.timedelta(seconds=off_s)).isoformat()
+    return (datetime.datetime.now(datetime.UTC) - datetime.timedelta(seconds=off_s)).isoformat()
 
 
 def _make_run(

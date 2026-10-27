@@ -476,7 +476,7 @@ class AnthropicProvider:
             }
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
         if thinking_budget is not None:
-            # An extra_body max_tokens under the budget is the operator's to fix.
+            # The operator must fix an extra_body max_tokens under the budget.
             configured_max = body.get("max_tokens")
             if not isinstance(configured_max, int) or isinstance(configured_max, bool):
                 raise types.ProviderError(

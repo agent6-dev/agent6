@@ -93,7 +93,7 @@ PLAN_HEADINGS = frozenset(
 def with_original_task(plan_md: str, task: str) -> str:
     """Return the plan with its `## Original task` section holding the operator's text.
 
-    The section is the harness's to fill, up to the skeleton's next heading; the model is told
+    The harness fills the section, up to the skeleton's next heading. The model is told
     to leave it empty, and one that quotes its first message there instead, harness lines
     included, loses the quote (a `## ` line inside the quote is the operator's own). An
     unquoted copy holding a skeleton heading of the task's own ends the section there. A plan
@@ -194,7 +194,7 @@ def red_gate_returns(
     *,
     gate_present: bool,
 ) -> bool:
-    """Return whether a red gate is the model's to fix, so an end over it goes back.
+    """Return whether the model must fix a red gate, so an end over it goes back.
 
     One answer for finish_session and the ends the harness declares, so neither
     hands back a gate the model cannot run.
@@ -204,7 +204,7 @@ def red_gate_returns(
         verify_retries: `[harness].verify_retries`.
         verify: The run's verify verdict.
         used: The returns this kind of end already took.
-        gate_present: A gate exists and is the harness's to run.
+        gate_present: A gate exists and the harness must run it.
 
     Returns:
         True when the gate exists, was not red before the run touched anything
@@ -353,8 +353,8 @@ def verify_finish(
 
     The end returns `verify_retries` times, then stands: reported finished,
     never passed. The settled stop counts its own returns, since the model
-    asked for none of them. A gate that was red before the run touched anything
-    is not the model's to fix, so it is never returned.
+    asked for none of them. The model need not fix a gate that was red before the run
+    touched anything, so it is never returned.
 
     Args:
         turn: The turn that declared the end.

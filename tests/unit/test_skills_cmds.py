@@ -419,7 +419,7 @@ def test_force_reinstall_survives_a_copy_fault(
 
     Removing the old install before copying left nothing behind on a copy fault.
     """
-    import shutil as _shutil
+    import shutil
 
     from agent6.ui.cli import skills_cmds
 
@@ -438,7 +438,7 @@ def test_force_reinstall_survives_a_copy_fault(
     monkeypatch.setattr(skills_cmds.shutil, "copytree", boom)
     with pytest.raises(errors.OperatorError, match="could not install"):
         cli_skills_cmds._cmd_skills_install(str(src), force=True)
-    monkeypatch.setattr(skills_cmds.shutil, "copytree", _shutil.copytree)
+    monkeypatch.setattr(skills_cmds.shutil, "copytree", shutil.copytree)
     assert "old body" in installed.read_text(encoding="utf-8")  # the good install survived
     assert not list((env / "data" / "agent6" / "skills").glob(".staging-*"))
 

@@ -302,8 +302,8 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
     The operator's command, not the model's, so it is neither approved nor logged as a tool
     call; confined identically, so what you see is what the agent sees. Its stdio is the
     operator's (`exec_cmds.run_attached`), and no timeout cuts a slow probe
-    (`exec_cmds.exec_policy`). A server is the agent's to start and the operator's to reach
-    with `agent6 forward`.
+    (`exec_cmds.exec_policy`). The agent starts a server.
+    The operator reaches it with `agent6 forward`.
 
     Args:
         layout: The run.

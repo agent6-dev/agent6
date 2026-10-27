@@ -901,7 +901,7 @@ def _timing_problems(
     """Return the value problems of a wait timing template.
 
     A literal is range or format checked; a lone reference is type checked, and an
-    operator-owned constant is checked statically; a composite is the engine's to check.
+    operator-owned constant is checked statically. The engine checks a composite.
 
     Args:
         name: The state's name.

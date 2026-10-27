@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-import subprocess as sp
+import subprocess
 from typing import Any
 
 import pytest
@@ -138,12 +138,12 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     monkeypatch.setenv("PROBE_KEY", "sk-probe")
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
-    sp.run(["git", "add", "a.py"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "a.py"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
     monkeypatch.setattr(_session, "select_isolation", _none_isolation)
     monkeypatch.setattr(_session, "select_isolation", _none_isolation)

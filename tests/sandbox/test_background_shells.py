@@ -333,9 +333,9 @@ def test_a_command_cannot_forge_its_own_exit_code_or_name(
     # sibling, and readdir order is filesystem-dependent -- picking blind made
     # this red on runners whose order put logs/ first.
     shell_dir = tmp_path / "shells" / view.id
-    import json as _json
+    import json
 
-    result = _json.loads((shell_dir / "result.json").read_text(encoding="utf-8"))
+    result = json.loads((shell_dir / "result.json").read_text(encoding="utf-8"))
     assert result["returncode"] == 42
 
 

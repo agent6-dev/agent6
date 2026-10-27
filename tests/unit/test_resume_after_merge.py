@@ -9,7 +9,7 @@ checked out.
 from __future__ import annotations
 
 import pathlib
-import subprocess as sp
+import subprocess
 from typing import Any
 
 import pytest
@@ -87,7 +87,7 @@ def _none_isolation(*_a: Any, **_k: Any) -> str:
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
-    return sp.run(
+    return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
 

@@ -356,8 +356,8 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Grey Merge and Delete out on a live session, and hide Lanes without a fan-out.
 
         None greys a key where False would hide it, and a missing key reads as a
-        capability the hub lacks. The other refusals (no commits, already merged)
-        are the CLI's to make: the summary's `unmerged` mark is branch-derived and
+        capability the hub lacks. The CLI makes the other refusals (no commits, already merged).
+        The summary's `unmerged` mark is branch-derived and
         reads False for a session whose commits live only on its chain ref.
 
         Args:

@@ -214,14 +214,14 @@ def test_a_command_that_dirties_the_tree_invalidates_the_verify_pass(
     through run_command or an MCP tool, and finish "passed". Grounded on git, a read-only command
     keeps the pass.
     """
-    import subprocess as sp
+    import subprocess
 
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
-    sp.run(["git", "add", "a.txt"], cwd=tmp_path, check=True)
-    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "a.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
 
     wf = _wf(verify=True, root=tmp_path)
     dirty = wf._left_the_tree_dirty  # pyright: ignore[reportPrivateUsage]
@@ -271,13 +271,13 @@ def test_a_read_only_command_over_uncommitted_work_keeps_the_verify_pass(
 
 
 def _git_seed(tmp_path: pathlib.Path) -> str:
-    import subprocess as sp
+    import subprocess
 
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
     (tmp_path / "a.txt").write_text("x\n", encoding="utf-8")
-    sp.run(["git", "add", "a.txt"], cwd=tmp_path, check=True)
-    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
-    out = sp.run(
+    subprocess.run(["git", "add", "a.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
+    out = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=tmp_path, check=True, capture_output=True, text=True
     )
     return out.stdout.strip()
@@ -330,7 +330,7 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: pathlib.Pa
 
     No observation covers this tree, so it fails closed like the baseline probe.
     """
-    import subprocess as sp
+    import subprocess
 
     head = _git_seed(tmp_path)
     wf = _wf(verify=True, root=tmp_path)
@@ -343,7 +343,7 @@ def test_the_carried_verdict_is_dropped_when_the_tree_moved(tmp_path: pathlib.Pa
     assert state.verify.baseline_ok is True  # the base commit did not move
 
     # HEAD moved forward between executions.
-    sp.run(["git", "commit", "-qam", "operator work"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qam", "operator work"], cwd=tmp_path, check=True)
     assert _resumed_state(wf, _snap(head_sha=head, **green)).verify.last_ok is None
 
     # No head recorded at write time: nothing to compare against.

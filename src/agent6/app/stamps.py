@@ -8,7 +8,7 @@ The reader and the on-disk shape (`SessionManifest`) live in `sessions.manifest`
 from __future__ import annotations
 
 import contextlib
-import datetime as _dt
+import datetime
 import os
 import pathlib
 from collections.abc import Sequence
@@ -140,7 +140,7 @@ def write_session_manifest(
         session_id=session_id,
         # `fork` and `resume` act on session_mode(), never on this string.
         mode=mode,
-        start_ts=_dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
+        start_ts=datetime.datetime.now(tz=datetime.UTC).isoformat(timespec="microseconds"),
         # The display twin of the operator's words; the verbatim engine copy is in the snapshot.
         user_task=task_text.operator_task_text(user_task)[:4000],
         base_sha=base_sha,

@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
-import types as types_
+import types
 from typing import Any
 from unittest import mock
 
@@ -162,7 +162,7 @@ def test_a_queued_task_inherits_prompt_revision(tmp_path: pathlib.Path) -> None:
     curator, sink, root = _run_dir(tmp_path)
     ipc.queue_request(sink.path.parent, "task", SPEC)
     reviser = mock.MagicMock()
-    reviser.call.return_value = types_.SimpleNamespace(
+    reviser.call.return_value = types.SimpleNamespace(
         text="<revised_task>Add --json to `stats`, same fields as the table.</revised_task>"
     )
     wf = _workflow(curator, sink)

@@ -13,7 +13,7 @@ import dataclasses
 import datetime
 import pathlib
 import subprocess
-import types as types_
+import types
 from typing import Any, Literal
 from unittest import mock
 
@@ -46,11 +46,11 @@ from agent6.viewmodel import _session_status
 from tests.unit.turn_context import turn_context
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
-_GIT_STUB = types_.SimpleNamespace(
+_GIT_STUB = types.SimpleNamespace(
     control="agent6",
     commit_per_turn=True,
-    commit=types_.SimpleNamespace(
-        checkpoint=types_.SimpleNamespace(message="agent6"), name="", email="", trailer=""
+    commit=types.SimpleNamespace(
+        checkpoint=types.SimpleNamespace(message="agent6"), name="", email="", trailer=""
     ),
 )
 
@@ -136,7 +136,7 @@ def _wf(
         ),
         "config": mock.MagicMock(
             git=_GIT_STUB,
-            budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
@@ -253,7 +253,7 @@ def _cfg_with_verify() -> Any:
             verify_when="never",
             verify_at_start=True,
             verify_retries=2,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
         ),
     )
 
@@ -860,14 +860,14 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
 
     A benchmark re-run every turn, read-only ones included, is not free.
     """
-    import subprocess as sp
+    import subprocess
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
-    sp.run(["git", "add", "-A"], cwd=repo, check=True)
-    sp.run(
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
         cwd=repo,
         check=True,
@@ -887,11 +887,11 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
                 score=42.0,
             )
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -901,7 +901,7 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
             verify_at_start=True,
             verify_retries=2,
             verify_command=(),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -977,11 +977,11 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
 
     provider = ProviderStub()
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -991,7 +991,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -1059,11 +1059,11 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
                 )
             raise AssertionError(f"unexpected tool: {name}")
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1073,7 +1073,7 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -1178,11 +1178,11 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
             del kwargs
             raise ProviderError(raw_body, status_code=400)
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1192,7 +1192,7 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -1236,11 +1236,11 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
             self.calls += 1
             raise ProviderError("Claude Code is not signed in; run `claude auth login`", fatal=True)
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1250,7 +1250,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -1319,7 +1319,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     base = "b" * 40
     monkeypatch.setattr(
         "agent6.vcs.git_read.status",
-        lambda _root, **_kw: types_.SimpleNamespace(is_clean=True, head_sha=base),  # pyright: ignore[reportUnknownLambdaType]
+        lambda _root, **_kw: types.SimpleNamespace(is_clean=True, head_sha=base),  # pyright: ignore[reportUnknownLambdaType]
     )
     provider = mock.MagicMock()
     provider.call.side_effect = ProviderError("down")
@@ -1459,11 +1459,11 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
 
     steer = _OneShotSteer("add a median() function too")
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1474,7 +1474,7 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -1522,11 +1522,11 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
             captured.append(str(kwargs["messages"]))
             return _resp("done")
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1537,7 +1537,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -1600,11 +1600,11 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
 
     provider = ProviderStub()
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1614,7 +1614,7 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -1663,11 +1663,11 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
             raise AssertionError(f"unexpected tool: {name}")
 
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1677,7 +1677,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -1761,11 +1761,11 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1779,7 +1779,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
-        prompt=types_.SimpleNamespace(decompose=False),
+        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -1817,8 +1817,8 @@ def test_worker_max_tokens_starvation_backoff() -> None:
 
     A one-off quiet keeps the full recovery room; non-metric runs are unaffected.
     """
-    metric_cfg = types_.SimpleNamespace(
-        harness=types_.SimpleNamespace(
+    metric_cfg = types.SimpleNamespace(
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1828,7 +1828,7 @@ def test_worker_max_tokens_starvation_backoff() -> None:
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         )
@@ -1851,10 +1851,10 @@ def test_worker_max_tokens_starvation_backoff() -> None:
 
     # Non-metric run: always per_call, regardless of the quiet streak.
     plain = _wf(
-        config=types_.SimpleNamespace(
+        config=types.SimpleNamespace(
             git=_GIT_STUB,
-            budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            harness=types_.SimpleNamespace(
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            harness=types.SimpleNamespace(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
@@ -1919,11 +1919,11 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -1933,7 +1933,7 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2000,11 +2000,11 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
 
     provider = ProviderStub()
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2014,7 +2014,7 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2093,11 +2093,11 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
 
     provider = ProviderStub()
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2107,7 +2107,7 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2188,11 +2188,11 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
 
     provider = ProviderStub()
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2202,7 +2202,7 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2403,11 +2403,11 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
             )
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2417,7 +2417,7 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2473,11 +2473,11 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2487,7 +2487,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2605,11 +2605,11 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
             return tools_results.RawResult({"content": "..."})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2619,7 +2619,7 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2659,11 +2659,11 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
             )
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2673,7 +2673,7 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2732,11 +2732,11 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
 
     provider = ProviderStub()
     # goal set -> this is a metric run (still mode=="run")
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2746,7 +2746,7 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2823,11 +2823,11 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
 
     provider = ProviderStub()
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2837,7 +2837,7 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2901,11 +2901,11 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2915,7 +2915,7 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -2969,11 +2969,11 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -2983,7 +2983,7 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -3049,11 +3049,11 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
 
     provider = ProviderStub()
     dispatcher = DispatcherStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3063,7 +3063,7 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -3169,11 +3169,11 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3183,7 +3183,7 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
+            metric=types.SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -3289,11 +3289,11 @@ def test_format_metric_feedback_shows_next_target() -> None:
 
 
 def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3303,7 +3303,7 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -3319,11 +3319,11 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
 
 
 def test_worker_max_tokens_keeps_default_without_metric() -> None:
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3333,7 +3333,7 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -3349,11 +3349,11 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
 
 
 def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -3363,7 +3363,7 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -4320,11 +4320,11 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
 
     provider = ProviderStub()
     pending = {"stop": True}
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -4338,7 +4338,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
-        prompt=types_.SimpleNamespace(decompose=False),
+        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -4422,11 +4422,11 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             "a": {"parent_id": "root", "status": "pending", "title": "audit providers"},
         }
     )
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -4440,7 +4440,7 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
-        prompt=types_.SimpleNamespace(decompose=False),
+        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -4466,15 +4466,15 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             root_task_id="root",
             original_task="t",
         )
-    types = [
+    event_types = [
         json.loads(line)["type"]
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    assert "loop.compact.summarise.done" in types  # tier-2 restart happened
-    assert "loop.task.surfaced" in types
+    assert "loop.compact.summarise.done" in event_types  # tier-2 restart happened
+    assert "loop.task.surfaced" in event_types
     # The focus banner re-surfaces AFTER the restart wiped it.
-    restart_at = types.index("loop.compact.summarise.done")
-    assert "loop.task.surfaced" in types[restart_at + 1 :]
+    restart_at = event_types.index("loop.compact.summarise.done")
+    assert "loop.task.surfaced" in event_types[restart_at + 1 :]
 
 
 def test_summarise_and_restart_falls_back_to_worker_provider() -> None:
@@ -4833,11 +4833,11 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
 
 def test_load_run_snapshot_rejects_version_mismatch(tmp_path: pathlib.Path) -> None:
     """A snapshot with a wrong version must raise ValueError."""
-    import json as _json
+    import json
 
     snap_path = tmp_path / "loop_state.json"
     snap_path.write_text(
-        _json.dumps(
+        json.dumps(
             {
                 "version": 999,
                 "system": "s",
@@ -4996,17 +4996,17 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: pathlib.Pat
     A fake provider raises on the first call; a fresh one on resume drives the loop to a clean
     finish.
     """
-    import subprocess as _sp
+    import subprocess
 
     # Real git repo so load_repo_summary() succeeds.
     repo = tmp_path / "repo"
     repo.mkdir()
-    _sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    _sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
-    _sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "x.txt").write_text("hi\n")
-    _sp.run(["git", "add", "x.txt"], cwd=repo, check=True)
-    _sp.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "x.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
     snap_path = repo / "loop_state.json"
 
@@ -5177,11 +5177,11 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
 
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     summ = SummariserStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5195,7 +5195,7 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
-        prompt=types_.SimpleNamespace(decompose=False),
+        prompt=types.SimpleNamespace(decompose=False),
     )
     wf = _wf(
         root=tmp_path,
@@ -5225,11 +5225,11 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
     assert result.completed is True
     assert result.reason == "finish_session"
     assert summ.calls >= 1  # tier-2 fired mid-run
-    types = [
+    event_types = [
         json.loads(line)["type"]
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
-    assert "loop.compact.summarise.done" in types  # summarise-and-restart happened cleanly
+    assert "loop.compact.summarise.done" in event_types  # summarise-and-restart happened cleanly
 
 
 def test_pass_pending_root_tasks_passes_only_pending_roots() -> None:
@@ -5297,11 +5297,11 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
             )
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5312,7 +5312,7 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -5346,11 +5346,11 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
     ().
     """
     snap = tmp_path / "loop_state.json"
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5360,7 +5360,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
             verify_at_start=True,
             verify_retries=2,
             verify_command=("pytest", "-q"),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -5406,11 +5406,11 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: pathlib
     blocker.write_text("x", encoding="utf-8")
     snap = blocker / "loop_state.json"  # parent "blocker" is a file -> mkdir fails
     logs: list[str] = []
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5504,11 +5504,11 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
             raise AssertionError(f"unexpected tool: {name}")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5609,11 +5609,11 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5623,7 +5623,7 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -5685,11 +5685,11 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5699,7 +5699,7 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -5770,11 +5770,11 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5784,7 +5784,7 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -5831,11 +5831,11 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
             return _resp("Here is my analysis of the problem.")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5845,7 +5845,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -5899,11 +5899,11 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
             return tools_results.RawResult({"applied": True, "path": "f.py"})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5913,7 +5913,7 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -5979,11 +5979,11 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
 
     provider = ProviderStub()
     # metric configured -> this is an optimization run
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -5993,7 +5993,7 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -6045,11 +6045,11 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6059,7 +6059,7 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -6125,11 +6125,11 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
             raise errors.ToolError("read_file: the arguments were not valid JSON. Resend the call.")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6139,7 +6139,7 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -6217,11 +6217,11 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
             raise errors.ToolDeniedError("run_command not approved (sandbox.run_commands='ask')")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6231,7 +6231,7 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -6289,11 +6289,11 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
             raise errors.ToolError("read_file: bad path")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6303,7 +6303,7 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -6473,11 +6473,11 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
             raise errors.ToolError("python3: boom in the sandbox")
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6487,7 +6487,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -6539,11 +6539,11 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
             )
 
     provider = ProviderStub()
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6554,7 +6554,7 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
             verify_retries=2,
             verify_command=(),  # GATELESS
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -6608,11 +6608,11 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6623,7 +6623,7 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -6680,11 +6680,11 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6695,7 +6695,7 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -6752,11 +6752,11 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -6767,7 +6767,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -7000,11 +7000,11 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -7015,7 +7015,7 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -7063,11 +7063,11 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -7078,7 +7078,7 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
             verify_retries=2,
             verify_command=(),
             verify_infer=True,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )
@@ -7194,11 +7194,11 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
             )
 
     cleared = {"n": 0}
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -7208,7 +7208,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -7313,7 +7313,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
         curator=fake,
         config=mock.MagicMock(
             git=_GIT_STUB,
-            budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
@@ -7806,11 +7806,11 @@ def test_auto_commit_failure_surface_tells_the_truth(tmp_path: pathlib.Path) -> 
 
 def _loop_config() -> Any:
     """The `[harness]` surface a driven loop reads, with no gate run by the harness."""
-    return types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    return types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -8876,11 +8876,11 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
                 )
             raise AssertionError(f"unexpected tool: {name}")
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -8890,7 +8890,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
             verify_at_start=True,
             verify_retries=2,
             verify_command=("true",),
-            metric=types_.SimpleNamespace(goal="minimize"),
+            metric=types.SimpleNamespace(goal="minimize"),
             verify_timeout_s=60.0,
             verify_infer=True,
         ),
@@ -8964,11 +8964,11 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
                 returncode=0, stdout="ok", stderr="", duration_s=0.1, exec_failed=False
             )
 
-    config = types_.SimpleNamespace(
-        sandbox=types_.SimpleNamespace(hide_paths=()),
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
         git=_GIT_STUB,
-        budget=types_.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-        harness=types_.SimpleNamespace(
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
             standing_patience=-1,
             went_quiet_max_nudges=4,
             loop_guard_kill_threshold=10,
@@ -8979,7 +8979,7 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
             verify_retries=2,
             verify_command=("true",),
             verify_infer=False,
-            metric=types_.SimpleNamespace(goal=None),
+            metric=types.SimpleNamespace(goal=None),
             verify_timeout_s=60.0,
         ),
     )

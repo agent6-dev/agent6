@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
-import subprocess as sp
+import subprocess
 import time
 from collections.abc import Callable
 from unittest import mock
@@ -255,10 +255,10 @@ class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not
 
 
 def _git_repo(path: pathlib.Path) -> None:
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
     (path / "seed.txt").write_text("seed\n")
-    sp.run(["git", "add", "-A"], cwd=path, check=True)
-    sp.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
 
 
 def _role_cfg(extra: dict[str, object]) -> Config:

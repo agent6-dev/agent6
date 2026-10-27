@@ -12,7 +12,7 @@ import dataclasses
 import json
 import pathlib
 import shlex
-import subprocess as sp
+import subprocess
 from typing import Any
 
 import pytest
@@ -102,7 +102,7 @@ def _none_isolation(*_a: Any, **_k: Any) -> str:
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
-    return sp.run(
+    return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout
 
@@ -399,7 +399,7 @@ def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
     assert _git(repo, "show", "HEAD:a.py") == "x = 1\n"
     assert _git(repo, "stash", "list") == ""
 
-    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    subprocess.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
     assert (repo / "b.py").read_text(encoding="utf-8") == "y = 2  # operator draft\n"
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
@@ -437,7 +437,7 @@ def test_resume_stash_refusal_restore_touches_only_the_files_it_names(
     restore = next(
         line.strip() for line in err.splitlines() if line.strip().startswith("git restore")
     )
-    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    subprocess.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
     assert (repo / "data[1].py").read_text(encoding="utf-8") == "run\n"
     assert (repo / "data1.py").read_text(encoding="utf-8") == "operator draft\n"
 
@@ -475,7 +475,7 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
         "--",
         ":(top,literal)a.py",
     ]
-    sp.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
+    subprocess.run(shlex.split(restore), cwd=repo, check=True, capture_output=True)
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 5\n"
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
 

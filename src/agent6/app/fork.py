@@ -16,7 +16,7 @@ undone session's checkout, with the run's paths put back to the checkpoint's tre
 from __future__ import annotations
 
 import dataclasses
-import datetime as _dt
+import datetime
 import json
 import pathlib
 import shutil
@@ -549,7 +549,7 @@ def _materialize_fork(
             "parent": src.session_id,
             "turn": plan.forked_from_turn,
             "sha": plan.forked_from_sha,
-            "ts": _dt.datetime.now(tz=_dt.UTC).isoformat(timespec="microseconds"),
+            "ts": datetime.datetime.now(tz=datetime.UTC).isoformat(timespec="microseconds"),
         },
     )
     at = (

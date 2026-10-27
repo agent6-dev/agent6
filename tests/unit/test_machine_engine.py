@@ -1838,13 +1838,13 @@ def test_stop_interrupts_a_foreground_wait_and_keeps_it_armed(tmp_path: pathlib.
 
 def test_live_world_sleep_wakes_on_a_stop_request(tmp_path: pathlib.Path) -> None:
     """The stop marker interrupts a real sleep."""
-    import time as _time
+    import time
 
     journal = machine_journal.MachineJournal(tmp_path / "inst")
     journal.ensure_dirs()
     world = live_world.LiveWorld(cwd=tmp_path, journal=journal, poll_interval_s=0.01)
     machine_journal.write_stop_request(journal.root)
-    assert world.sleep_until(_time.time() + 3600).woke_by == "stop"
+    assert world.sleep_until(time.time() + 3600).woke_by == "stop"
 
 
 # Two waits in a row: the second must not inherit the first's wake instant.

@@ -8,7 +8,9 @@ everywhere; a module added without its entry would slip through.
 
 from __future__ import annotations
 
+import ast
 import pathlib
+import sys
 import tomllib
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -37,3 +39,21 @@ def test_the_list_is_sorted_and_keeps_the_typing_exceptions() -> None:
     banned = _banned_from()
     assert banned == sorted(set(banned))
     assert not {"typing", "collections.abc", "__future__"} & set(banned)
+
+
+def test_standard_library_imports_are_not_aliased() -> None:
+    """Standard-library imports keep their module names in source and tests."""
+    violations: list[str] = []
+    for root in ("src", "tests"):
+        for path in sorted((_ROOT / root).rglob("*.py")):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                    continue
+                for alias in node.names:
+                    module = node.module if isinstance(node, ast.ImportFrom) else alias.name
+                    if alias.asname and module and module.split(".")[0] in sys.stdlib_module_names:
+                        violations.append(
+                            f"{path.relative_to(_ROOT)}:{node.lineno}: "
+                            f"{module} imports {alias.name} as {alias.asname}"
+                        )
+    assert not violations, "\n".join(violations)

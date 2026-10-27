@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-import subprocess as _sp
+import subprocess
 import types
 from typing import Any
 from unittest import mock
@@ -84,12 +84,12 @@ def _starved_resp() -> ProviderResponse:
 
 def _init_repo(repo: pathlib.Path) -> None:
     repo.mkdir()
-    _sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    _sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
-    _sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "x.txt").write_text("hi\n")
-    _sp.run(["git", "add", "x.txt"], cwd=repo, check=True)
-    _sp.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "x.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
 
 def _knobs(wf: loop.Harness, **knobs: Any) -> loop.Harness:

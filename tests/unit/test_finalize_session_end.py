@@ -339,20 +339,20 @@ def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
     A resumed run keeps committing under the first execution's merged stamp; the comparison is the
     one `sessions prune` trusts.
     """
-    import subprocess as sp
+    import subprocess
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     (repo / "a.txt").write_text("x\n", encoding="utf-8")
-    sp.run(["git", "add", "a.txt"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True)
-    sp.run(["git", "switch", "-qc", "agent6/r-leg2"], cwd=repo, check=True)
-    merged_tip = sp.run(
+    subprocess.run(["git", "add", "a.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=repo, check=True)
+    subprocess.run(["git", "switch", "-qc", "agent6/r-leg2"], cwd=repo, check=True)
+    merged_tip = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
     ).stdout.strip()
     (repo / "a.txt").write_text("execution 2 work\n", encoding="utf-8")
-    sp.run(["git", "commit", "-qam", "execution 2"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qam", "execution 2"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
 
     layout = _layout(
@@ -436,16 +436,16 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A run branch that never received a commit is reported as such, not as holding changes."""
-    import subprocess as sp
+    import subprocess
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
-    sp.run(["git", "add", "-A"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
     # The agent's edit is left in the tree; no agent6/miss branch was ever cut.
     (repo / "work.txt").write_text("stranded agent work\n", encoding="utf-8")
     monkeypatch.chdir(repo)
@@ -481,16 +481,16 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
 
 
 def _seeded_repo(tmp_path: pathlib.Path) -> pathlib.Path:
-    import subprocess as sp
+    import subprocess
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
-    sp.run(["git", "add", "-A"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
     return repo
 
 
@@ -531,13 +531,13 @@ def test_end_banner_of_a_branchless_run_names_its_chain_ref(
 
     A branchless run whose commit never landed gets the same WARNING a branchful one does.
     """
-    import subprocess as sp
+    import subprocess
 
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
     (repo / "work.txt").write_text("agent work\n", encoding="utf-8")
     chain = git_read.chain_ref_for("nobranch")
-    sp.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
+    subprocess.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
     manifest: dict[str, object] = {
         "session_id": "nobranch",
         "run_branch": None,
@@ -548,7 +548,7 @@ def test_end_banner_of_a_branchless_run_names_its_chain_ref(
     assert "agent6 sessions merge nobranch" in out and "agent6 sessions diff nobranch" in out
     assert "WARNING" not in out
     # No chain either: the commit never landed, and the footer says so.
-    sp.run(["git", "update-ref", "-d", chain], cwd=repo, check=True)
+    subprocess.run(["git", "update-ref", "-d", chain], cwd=repo, check=True)
     out = _end_footer(tmp_path, repo, "nobranch2", {**manifest, "session_id": "nobranch2"}, capsys)
     assert "WARNING: the run finished with no commit" in out
     assert "uncommitted in the working tree" in out
@@ -558,13 +558,13 @@ def test_end_banner_of_a_merged_branchless_run_says_merged(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A merged branchless run prints the merged footer."""
-    import subprocess as sp
+    import subprocess
 
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
     chain = git_read.chain_ref_for("nbmerged")
-    sp.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
-    tip = sp.run(
+    subprocess.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
+    tip = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout
     manifest: dict[str, object] = {
@@ -600,10 +600,10 @@ def test_end_banner_warns_when_checkout_is_parked_on_the_run_branch(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The checkout is still on the run branch, so the footer names it and how to leave it."""
-    import subprocess as sp
+    import subprocess
 
     repo = _seeded_repo(tmp_path)
-    sp.run(["git", "switch", "-q", "-c", "agent6/r3"], cwd=repo, check=True)
+    subprocess.run(["git", "switch", "-q", "-c", "agent6/r3"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
     manifest: dict[str, object] = {
         "session_id": "r3",
@@ -623,12 +623,14 @@ def test_end_banner_of_a_run_cut_from_a_detached_head_names_the_into_form(
 
     The bare `agent6 sessions merge ID` it printed fails there: the target has to be named.
     """
-    import subprocess as sp
+    import subprocess
 
     repo = _seeded_repo(tmp_path)
-    sp.run(["git", "checkout", "-q", "--detach"], cwd=repo, check=True)
+    subprocess.run(["git", "checkout", "-q", "--detach"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
-    sp.run(["git", "update-ref", git_read.chain_ref_for("det"), "HEAD"], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "update-ref", git_read.chain_ref_for("det"), "HEAD"], cwd=repo, check=True
+    )
     manifest: dict[str, object] = {
         "session_id": "det",
         "run_branch": None,
@@ -701,7 +703,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
     stop over committed work says the tree is unverified and prints the plain resume line alone:
     the `--steer "verify"` errand is a finished run's, since a steer redirects an unfinished one.
     """
-    import subprocess as sp
+    import subprocess
 
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
@@ -728,7 +730,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
             encoding="utf-8",
         )
         if session_id == "r-401-committed":
-            sp.run(
+            subprocess.run(
                 ["git", "update-ref", git_read.chain_ref_for(session_id), "HEAD"],
                 cwd=repo,
                 check=True,
@@ -1342,16 +1344,16 @@ def test_a_plan_ends_without_the_no_commit_footer(
 
     A run over the same clean tree keeps the footer.
     """
-    import subprocess as sp
+    import subprocess
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
-    sp.run(["git", "add", "-A"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
     result = _snapshot.SessionResult(
         completed=True, reason="finish_planning", summary="planned", turns=1, tool_calls=1

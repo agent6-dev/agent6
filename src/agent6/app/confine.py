@@ -217,8 +217,8 @@ def warn_cleartext_credential_endpoints(
 def home_grant_warnings(cfg: Config) -> tuple[str, ...]:
     """Return one warning per path grant that is the operator's home directory or above it.
 
-    Such a grant reaches the credentials other tools keep under the home directory. The grant
-    is the operator's to make, so it runs, with the cost named.
+    Such a grant reaches the credentials other tools keep under the home directory.
+    The operator chooses the grant, so it runs with the cost named.
 
     Args:
         cfg: The config whose `sandbox.extra_read_paths` and `extra_write_paths` are checked.

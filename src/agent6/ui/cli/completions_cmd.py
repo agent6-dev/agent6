@@ -177,7 +177,7 @@ def _install_bash_zsh(shell: str, code: str) -> int:
             or existing.count(_MARK_END) != 1
             or existing.index(_MARK_END) < existing.index(_MARK_BEGIN)
         ):
-            # agent6 edits only its one marker block; a mangled one is the operator's to fix.
+            # agent6 edits only its one marker block. The operator must fix a mangled one.
             _common.error(
                 f"{rc} holds malformed agent6 completion markers"
                 f" ({_MARK_BEGIN} / {_MARK_END}); fix or remove them and rerun."

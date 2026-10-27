@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-import subprocess as sp
+import subprocess
 
 import pytest
 
@@ -24,7 +24,7 @@ from agent6.viewmodel import _session_log, _session_status
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
-    return sp.run(
+    return subprocess.run(
         ["git", "-C", str(repo), *args], capture_output=True, text=True, check=True
     ).stdout.strip()
 
@@ -423,7 +423,7 @@ def test_undo_of_a_live_plan_session_refuses(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A live plan or ask session refuses /undo too, though it takes no checkout writer lock."""
-    import subprocess as sp2
+    import subprocess
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -454,7 +454,7 @@ def test_undo_of_a_live_plan_session_refuses(
     )
     _checkpoint(layout, 1, head_sha=c1, ops=1)
     _checkpoint(layout, 2, head_sha=c1, ops=2)
-    proc = sp2.Popen(["sleep", "30"])
+    proc = subprocess.Popen(["sleep", "30"])
     try:
         process.write_worker_pid(layout.session_dir, proc.pid)
         said: list[str] = []

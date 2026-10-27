@@ -428,7 +428,7 @@ class RunBridge:
         Returns:
             ACP's stop reason.
         """
-        started_at = time.time()  # a cancel written from here on is this execution's to honor
+        started_at = time.time()  # this execution honors a cancel written from here on
         # The id is minted before the queue, so a cancel during the wait has a run to address.
         try:
             resuming = self._resumable(session)

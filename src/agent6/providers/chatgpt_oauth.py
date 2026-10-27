@@ -17,7 +17,7 @@ import dataclasses
 import hashlib
 import json
 import math
-import secrets as pysecrets
+import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -77,7 +77,7 @@ def pkce_challenge(verifier: str) -> str:
 
 def pkce_pair() -> tuple[str, str]:
     """Return a fresh RFC 7636 `(code_verifier, code_challenge)` pair."""
-    verifier = pysecrets.token_urlsafe(64)
+    verifier = secrets.token_urlsafe(64)
     return verifier, pkce_challenge(verifier)
 
 

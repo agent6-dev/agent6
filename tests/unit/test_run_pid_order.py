@@ -12,7 +12,7 @@ none, and the teardown clears it on every exit path.
 from __future__ import annotations
 
 import pathlib
-import subprocess as sp
+import subprocess
 import time
 from unittest import mock
 
@@ -29,12 +29,12 @@ from agent6.tools import operator_prompts
 
 def _repo(root: pathlib.Path) -> None:
     root.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=root, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
     (root / "a.py").write_text("x = 1\n", encoding="utf-8")
-    sp.run(["git", "add", "a.py"], cwd=root, check=True)
-    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=root, check=True)
+    subprocess.run(["git", "add", "a.py"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=root, check=True)
 
 
 def test_run_writes_its_worker_pid_before_it_asks_the_operator(
@@ -77,7 +77,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
     # A passing preflight writes the pid, then runs the execution -- in every mode:
     # an ask blocks on questions too, and `agent6 ps` and `steer` gate on the
     # same file. Only run mode took the checkout lock the write sat behind.
-    sp.run(["git", "checkout", "-q", "--", "a.py"], cwd=repo, check=True)
+    subprocess.run(["git", "checkout", "-q", "--", "a.py"], cwd=repo, check=True)
     for mode in ("run", "plan", "ask"):
         order.clear()
         with pytest.raises(RuntimeError, match="stop here"):
@@ -212,7 +212,7 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
         )
 
     assert (repo / "a.py").read_text(encoding="utf-8") == "x = 2\n"
-    stashes = sp.run(
+    stashes = subprocess.run(
         ["git", "stash", "list"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout
     assert stashes == ""

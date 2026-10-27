@@ -8,16 +8,16 @@ session; a stateless server never grows the header.
 
 from __future__ import annotations
 
+import http.server
 import json
 import threading
-from http import server as http_server
 
 import pytest
 
 from agent6.tools import mcp_http
 
 
-class _Server(http_server.ThreadingHTTPServer):
+class _Server(http.server.ThreadingHTTPServer):
     daemon_threads = True
     issue_session: str = ""  # "" = stateless: never send the header
     expire_after: int = -1  # request # that answers 404 (spec: session expired)
@@ -25,7 +25,7 @@ class _Server(http_server.ThreadingHTTPServer):
     count: int = 0
 
 
-class _Handler(http_server.BaseHTTPRequestHandler):
+class _Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         srv = self.server
         assert isinstance(srv, _Server)

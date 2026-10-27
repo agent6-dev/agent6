@@ -340,13 +340,13 @@ def test_jail_partial_symlink_escaping_cwd_gets_no_rw(
     grants RW), so /dev (read+exec only) is the governing rule unless the symlink wrongly
     widens it.
     """
-    import shutil as _shutil
-    import uuid as _uuid
+    import shutil
+    import uuid
 
     shm = pathlib.Path("/dev/shm")
     if not shm.is_dir() or not os.access(shm, os.W_OK):
         pytest.skip("/dev/shm not usable for the out-of-cwd target")
-    outside = shm / f"agent6-jail-escape-{_uuid.uuid4().hex}"
+    outside = shm / f"agent6-jail-escape-{uuid.uuid4().hex}"
     outside.mkdir()
     try:
         (tmp_path / ".git").mkdir()  # a protect path so the carve-out loop runs
@@ -366,7 +366,7 @@ def test_jail_partial_symlink_escaping_cwd_gets_no_rw(
         escaped = (outside / "sentinel").exists()
         assert not escaped, f"escaped write succeeded; stderr={res.stderr!r}"
     finally:
-        _shutil.rmtree(outside, ignore_errors=True)
+        shutil.rmtree(outside, ignore_errors=True)
 
 
 def test_jail_partial_symlinked_rw_path_cannot_shadow_a_protect_path(

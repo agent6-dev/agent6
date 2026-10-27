@@ -10,7 +10,7 @@ SWE-rebench autopsy, 7 of 8 broke-P2P executions greened a red gate by editing t
 from __future__ import annotations
 
 import pathlib
-import subprocess as sp
+import subprocess
 from typing import Any
 from unittest import mock
 
@@ -44,14 +44,14 @@ def test_the_notice_states_the_world_and_caps_its_list() -> None:
 
 
 def _repo(root: pathlib.Path) -> pathlib.Path:
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=root, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=root, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
     for rel in ("src/mod.py", "tests/test_mod.py"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("x = 1\n", encoding="utf-8")
-    sp.run(["git", "add", "-A"], cwd=root, check=True)
-    sp.run(["git", "commit", "-q", "-m", "seed"], cwd=root, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=root, check=True)
     return root
 
 

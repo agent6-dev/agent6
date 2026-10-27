@@ -4,13 +4,13 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import dataclasses
 import functools
 import os
 import pathlib
 import threading
 from collections.abc import Callable, Sequence
-from concurrent import futures as concurrent_futures
 from typing import Protocol
 
 from agent6 import directive, errors, kinds, memory, paths
@@ -465,12 +465,12 @@ def build_lane_spawner(
         pairs = list(zip(specs, lanes, strict=True))
         if len(pairs) > 1:
             # Not a with-block: its exit would join every lane await on an interrupt.
-            pool = concurrent_futures.ThreadPoolExecutor(max_workers=len(pairs))
+            pool = concurrent.futures.ThreadPoolExecutor(max_workers=len(pairs))
             try:
                 futures = [pool.submit(one, p) for p in pairs]
                 # A lane thread that raises (a bug, not a lane failure) aborts the group now.
-                done, _ = concurrent_futures.wait(
-                    futures, return_when=concurrent_futures.FIRST_EXCEPTION
+                done, _ = concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.FIRST_EXCEPTION
                 )
                 for f in done:
                     exc = f.exception()

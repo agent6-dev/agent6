@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import datetime
 import pathlib
-import subprocess as _sp
+import subprocess
 import types
 from typing import Any
 from unittest import mock
@@ -41,7 +41,7 @@ def _silent(_msg: str) -> None:
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
-    return _sp.run(
+    return subprocess.run(
         ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
     ).stdout.strip()
 

@@ -623,7 +623,7 @@ def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: pathlib.Path) -> N
 
     The writer flushes long lines in several syscalls; the torn tail is picked up once complete.
     """
-    import json as _json
+    import json
 
     from agent6.machine import load_machine
 
@@ -633,11 +633,11 @@ def test_watch_screen_tolerates_torn_utf8_state_log(tmp_path: pathlib.Path) -> N
     state = instance / "states" / "0000-route"
     state.mkdir(parents=True)
     (instance / "journal.jsonl").write_text("", encoding="utf-8")
-    full = _json.dumps({"type": "tool.call", "name": "café", "args": {}}, ensure_ascii=False)
+    full = json.dumps({"type": "tool.call", "name": "café", "args": {}}, ensure_ascii=False)
     raw = full.encode("utf-8")
     cut = raw.rindex(b"\xc3\xa9") + 1  # keep only the first byte of the é sequence
     (state / "logs.jsonl").write_bytes(
-        _json.dumps({"type": "tool.call", "name": "grep", "args": {}}).encode() + b"\n" + raw[:cut]
+        json.dumps({"type": "tool.call", "name": "grep", "args": {}}).encode() + b"\n" + raw[:cut]
     )
 
     class _WatchHost(textual_app.App[None]):

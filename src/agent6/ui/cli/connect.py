@@ -7,11 +7,11 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import getpass
-import html as html_module
+import html
 import http.server
 import os
 import pathlib
-import secrets as pysecrets
+import secrets
 import sys
 import threading
 import time
@@ -323,7 +323,7 @@ class _CallbackServer:
                     status = 200
                 except ValueError as exc:
                     # Escaped: a reflected error_description would run script on this origin.
-                    body = f"<html><body>{html_module.escape(str(exc))}</body></html>".encode()
+                    body = f"<html><body>{html.escape(str(exc))}</body></html>".encode()
                     status = 400
                 self.send_response(status)
                 self.send_header("content-type", "text/html; charset=utf-8")
@@ -466,7 +466,7 @@ def _chatgpt_sign_in(name: str) -> int:
     """
     issuer, client_id = chatgpt_oauth.CHATGPT_ISSUER, chatgpt_oauth.CHATGPT_CLIENT_ID
     verifier, challenge = chatgpt_oauth.pkce_pair()
-    state = pysecrets.token_urlsafe(24)
+    state = secrets.token_urlsafe(24)
     url = chatgpt_oauth.authorize_url(issuer, client_id, challenge=challenge, state=state)
     print("Open this URL to sign in with your ChatGPT account:\n\n  " + url + "\n")
 

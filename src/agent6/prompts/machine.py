@@ -354,7 +354,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-import unittest.mock as mock
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

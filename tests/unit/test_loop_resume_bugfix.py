@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
-import subprocess as sp
+import subprocess
 import types
 from typing import Any
 from unittest import mock
@@ -58,7 +58,7 @@ def _wf(
     """Return a loop over the root with a chain wired as run.py wires it; no root, no chain."""
     if root is not None and fallback_parent is None:
         fallback_parent = (
-            sp.run(
+            subprocess.run(
                 ["git", "-C", str(root), "rev-parse", "HEAD"],
                 capture_output=True,
                 text=True,
@@ -98,12 +98,12 @@ def _wf(
 
 def _git_repo(path: pathlib.Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=path, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=path, check=True)
     (path / "seed.txt").write_text("seed\n")
-    sp.run(["git", "add", "seed.txt"], cwd=path, check=True)
-    sp.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
+    subprocess.run(["git", "add", "seed.txt"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
 
 
 # --- #12: completion-relevant scalars round-trip + restore -----------------
@@ -857,17 +857,17 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
     wf = _wf(root=repo, config=config, mode="run", events=_Sink())
     # Worker edited a file via run_command; never re-verified, never committed.
     (repo / "edit.txt").write_text("a real edit\n")
-    head_before = sp.run(
+    head_before = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
 
     wf.checkpoints.final(turn=5)
 
-    head_after = sp.run(
+    head_after = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     assert head_after == head_before, "the operator's HEAD never moves"
-    chain = sp.run(
+    chain = subprocess.run(
         ["git", "rev-parse", "refs/agent6/test"],
         cwd=repo,
         capture_output=True,
@@ -875,7 +875,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
         check=True,
     ).stdout.strip()
     assert chain != head_before, "the chain must capture the edit on exit"
-    shown = sp.run(
+    shown = subprocess.run(
         ["git", "show", "refs/agent6/test:edit.txt"],
         cwd=repo,
         capture_output=True,
@@ -883,7 +883,7 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
         check=True,
     ).stdout
     assert shown == "a real edit\n"
-    subject = sp.run(
+    subject = subprocess.run(
         ["git", "log", "-1", "--pretty=%s", "refs/agent6/test"],
         cwd=repo,
         capture_output=True,
@@ -919,14 +919,14 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
             verify_infer=True,
         ),
     )
-    head = sp.run(
+    head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
 
     wf_clean = _wf(root=repo, config=config, mode="run")
     wf_clean.checkpoints.final(turn=1)
     assert (
-        sp.run(
+        subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
         ).stdout.strip()
         == head
@@ -937,7 +937,7 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
     wf_plan = _wf(root=repo, config=config, mode="plan")
     wf_plan.checkpoints.final(turn=1)
     assert (
-        sp.run(
+        subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
         ).stdout.strip()
         == head
@@ -1412,7 +1412,7 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
     """
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     wf = _wf(root=repo, config=Config.model_validate({"harness": {"verify_command": ["true"]}}))
     wf.chain = dataclasses.replace(wf.chain, base_sha="a" * 40)
     fields = {

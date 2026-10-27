@@ -846,7 +846,7 @@ def test_config_path_runs(iso: pathlib.Path, capsys: pytest.CaptureFixture[str])
 
 def _grant_jwt() -> str:
     import base64
-    import json as _json
+    import json
 
     claims = {
         "https://api.openai.com/auth": {
@@ -854,7 +854,7 @@ def _grant_jwt() -> str:
             "chatgpt_plan_type": "plus",
         }
     }
-    payload = base64.urlsafe_b64encode(_json.dumps(claims).encode()).rstrip(b"=").decode()
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).rstrip(b"=").decode()
     return f"h.{payload}.s"
 
 
@@ -884,7 +884,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     the training-data notice; no subprocess, no browser.
     """
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
     exchanges: list[dict[str, str]] = []
 
     def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _TokenResp:
@@ -961,7 +961,7 @@ def test_connect_chatgpt_state_mismatch_refuses(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
         "builtins.input",
         lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=EVIL",
@@ -1002,10 +1002,10 @@ def test_connect_logout_revokes_and_removes_tokens(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--logout revokes a ChatGPT grant at the issuer and removes the secrets entry."""
-    import time as _time
+    import time
 
     secret_store.save_oauth_tokens(
-        "chatgpt", secret_store.OAuthTokens("AT", "RT", _time.time() + 3600, "acct")
+        "chatgpt", secret_store.OAuthTokens("AT", "RT", time.time() + 3600, "acct")
     )
     revoked: list[dict[str, object]] = []
 
@@ -1120,7 +1120,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
         return None
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", disabled)
-    monkeypatch.setattr("agent6.ui.cli.connect.pysecrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
 
     def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _TokenResp:
         return _TokenResp()

@@ -125,21 +125,21 @@ def test_a_resume_names_what_the_tree_holds_that_no_commit_does(tmp_path: pathli
     run's own work; the crashed execution's own uncommitted tail lands there too, so the prompt
     names them.
     """
-    import subprocess as sp
+    import subprocess
 
     from agent6.vcs import git_ops, git_read
 
     repo = tmp_path / "repo"
     repo.mkdir()
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
-    sp.run(["git", "add", "-A"], cwd=repo, check=True)
-    sp.run(
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
         cwd=repo,
         check=True,
     )
-    base = sp.run(
+    base = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     ref = git_read.chain_ref_for("resume-run-A1")

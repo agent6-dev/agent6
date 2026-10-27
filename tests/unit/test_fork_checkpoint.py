@@ -13,7 +13,7 @@ import contextlib
 import datetime
 import json
 import pathlib
-import subprocess as sp
+import subprocess
 import time
 import types
 from collections.abc import Generator
@@ -44,13 +44,13 @@ def _silent(_: str) -> None:
 
 def _git_repo(path: pathlib.Path) -> str:
     path.mkdir(parents=True, exist_ok=True)
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=path, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=path, check=True)
     (path / "seed.txt").write_text("seed\n")
-    sp.run(["git", "add", "seed.txt"], cwd=path, check=True)
-    sp.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
-    return sp.run(
+    subprocess.run(["git", "add", "seed.txt"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
+    return subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=path, capture_output=True, text=True, check=True
     ).stdout.strip()
 
@@ -392,7 +392,7 @@ def test_a_plan_fork_creates_no_git_refs(
     )
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["run_branch"] is None
-    refs = sp.run(
+    refs = subprocess.run(
         [
             "git",
             "for-each-ref",
@@ -581,7 +581,7 @@ def test_fork_fails_loud_on_a_bad_source_manifest(
         assert not sessions_layout.SessionLayout(
             state_dir=state, session_id="child-BBBB22"
         ).session_dir.exists()
-        branches = sp.run(
+        branches = subprocess.run(
             ["git", "branch", "--list", "agent6/child-BBBB22"],
             cwd=repo,
             capture_output=True,
@@ -602,12 +602,12 @@ def test_fork_cleans_up_run_dir_when_branch_cut_fails(
     _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1,))
     # A second commit, and pre-create the fork branch pointing at it (≠ head).
     (repo / "b.txt").write_text("y\n")
-    sp.run(["git", "add", "-A"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-qm", "c2"], cwd=repo, check=True)
-    other = sp.run(
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "c2"], cwd=repo, check=True)
+    other = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
-    sp.run(["git", "branch", "agent6/child-BBBB22", other], cwd=repo, check=True)
+    subprocess.run(["git", "branch", "agent6/child-BBBB22", other], cwd=repo, check=True)
 
     rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 1
@@ -661,7 +661,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     assert manifest["run_branch"] == "agent6/brave-yak-BBBB22"
 
     # Branch cut at the checkpoint sha, WITHOUT moving HEAD off main.
-    branch_sha = sp.run(
+    branch_sha = subprocess.run(
         ["git", "rev-parse", "agent6/brave-yak-BBBB22"],
         cwd=repo,
         capture_output=True,
@@ -669,7 +669,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
         check=True,
     ).stdout.strip()
     assert branch_sha == head
-    current = sp.run(
+    current = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=repo,
         capture_output=True,
@@ -840,7 +840,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
 
 
 def _current_branch(repo: pathlib.Path) -> str:
-    return sp.run(
+    return subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=repo,
         capture_output=True,
@@ -914,7 +914,7 @@ def test_fork_refuses_an_unanswerable_continuation_before_creating_it(
     assert "needs someone to answer" in capsys.readouterr().err
     assert not child.session_dir.exists()
     assert not (state / "lineage.jsonl").exists()
-    refs = sp.run(
+    refs = subprocess.run(
         ["git", "for-each-ref", "refs/heads/agent6/", "refs/agent6/"],
         cwd=repo,
         capture_output=True,
@@ -963,7 +963,7 @@ def test_resume_config_refusal_leaves_checkout_untouched(
     assert rc == 2
     assert "No providers configured" in capsys.readouterr().err
     assert _current_branch(repo) == "main"
-    missing = sp.run(
+    missing = subprocess.run(
         ["git", "rev-parse", "--verify", "--quiet", "refs/heads/agent6/cfgfail-AAAA11"],
         cwd=repo,
         capture_output=True,
@@ -1007,10 +1007,12 @@ def test_resume_diverged_branch_refuses_without_checkout(
     # The head guard reads the chain ref tip: a rewritten chain refuses, the checkout untouched.
     repo = tmp_path / "repo"
     base = _git_repo(repo)
-    sp.run(["git", "update-ref", git_read.chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True)
+    subprocess.run(
+        ["git", "update-ref", git_read.chain_ref_for("divg-AAAA11"), base], cwd=repo, check=True
+    )
     (repo / "seed.txt").write_text("moved on\n")
-    sp.run(["git", "commit", "-aqm", "advance main"], cwd=repo, check=True)
-    new_head = sp.run(
+    subprocess.run(["git", "commit", "-aqm", "advance main"], cwd=repo, check=True)
+    new_head = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     monkeypatch.chdir(repo)
@@ -1251,9 +1253,9 @@ def test_fork_manifest_stamps_the_resolved_isolation(
 
 
 def _commit_all(repo: pathlib.Path, message: str) -> str:
-    sp.run(["git", "add", "-A"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
-    return sp.run(
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo, check=True)
+    return subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
 
@@ -1297,9 +1299,9 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     assert (worktree / "seed.txt").read_text(encoding="utf-8") == "seed\n"
     assert not (worktree / "notes.md").exists()
     rev = ["git", "rev-parse", "HEAD"]
-    assert sp.run(rev, cwd=worktree, capture_output=True, text=True, check=True).stdout.strip() == (
-        turn1
-    )
+    assert subprocess.run(
+        rev, cwd=worktree, capture_output=True, text=True, check=True
+    ).stdout.strip() == (turn1)
 
     (worktree / "fork.txt").write_text("fork\n", encoding="utf-8")
     sha = git_ops.chain_commit(
@@ -1309,7 +1311,10 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     assert git_read.tree_diff_paths(repo, turn1, sha) == ["fork.txt"]
 
     # The source checkout: HEAD, its uncommitted edit, and the operator's file.
-    assert sp.run(rev, cwd=repo, capture_output=True, text=True, check=True).stdout.strip() == head
+    assert (
+        subprocess.run(rev, cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
+        == head
+    )
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "dirty\n"
     assert (repo / "notes.md").read_text(encoding="utf-8") == "mine\n"
     assert not (repo / "fork.txt").exists()
@@ -1432,7 +1437,7 @@ def test_resume_of_a_pruned_fork_points_at_the_merge_that_landed_it(
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": manifest["forked_from_sha"]}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    sp.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
+    subprocess.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
     shutil.rmtree(manifest["worktree"])
     capsys.readouterr()
 
@@ -1465,17 +1470,17 @@ def test_resume_of_a_pruned_fork_names_the_chain_ref_past_its_stamp(
     manifest = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
     manifest["merged"] = {"into": "main", "sha": head, "tip": turn1}
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    later = sp.run(
+    later = subprocess.run(
         ["git", "commit-tree", f"{turn1}^{{tree}}", "-p", turn1, "-m", "a later execution"],
         cwd=repo,
         capture_output=True,
         text=True,
         check=True,
     ).stdout.strip()
-    sp.run(
+    subprocess.run(
         ["git", "update-ref", git_read.chain_ref_for("child-BBBB22"), later], cwd=repo, check=True
     )
-    sp.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
+    subprocess.run(["git", "branch", "-D", "agent6/child-BBBB22"], cwd=repo, check=True)
     shutil.rmtree(manifest["worktree"])
     capsys.readouterr()
 
@@ -1658,9 +1663,9 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1,))
     # The branch a removed run left behind, pointing at a different commit.
     (repo / "other.txt").write_text("other\n")
-    sp.run(["git", "add", "other.txt"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-q", "-m", "other"], cwd=repo, check=True)
-    sp.run(["git", "branch", "agent6/brave-yak-BBBB22", "HEAD"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "other.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "other"], cwd=repo, check=True)
+    subprocess.run(["git", "branch", "agent6/brave-yak-BBBB22", "HEAD"], cwd=repo, check=True)
 
     assert fork._cmd_fork((), "sunny-otter", new_session_id="brave-yak-BBBB22", no_run=True) == 1
 
@@ -1671,7 +1676,7 @@ def test_a_refused_fork_leaves_no_chain_ref_behind(
     ).session_dir.exists()
 
     # The same refusal over an id whose chain ref holds commits: the earlier run's anchor survives.
-    anchor = sp.run(
+    anchor = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     git_ops.set_ref(repo, git_read.chain_ref_for("brave-yak-BBBB22"), anchor)

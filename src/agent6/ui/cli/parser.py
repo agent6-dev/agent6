@@ -79,8 +79,9 @@ _GLOBAL_FLAG_OPTS = frozenset({"--allow-root"})
 def config_files(args: argparse.Namespace) -> tuple[pathlib.Path, ...]:
     """Return every `--config FILE` in command-line order.
 
-    The top-level flag appends to `config`, a verb's to `config_after` (absent when no verb
-    saw one); the merge happens once, at dispatch, and the app layer below sees one tuple.
+    The top-level flag appends to `config`.
+    A verb's flag appends to `config_after` (absent when no verb saw one).
+    The merge happens once, at dispatch, and the app layer below sees one tuple.
 
     Args:
         args: The parsed command line.

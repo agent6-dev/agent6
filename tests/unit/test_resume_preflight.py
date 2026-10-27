@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-import subprocess as sp
+import subprocess
 import time
 
 import pytest
@@ -31,12 +31,12 @@ from agent6.vcs import git_read
 
 
 def _git_repo(path: pathlib.Path) -> None:
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=path, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=path, check=True)
     (path / "seed.txt").write_text("seed\n")
-    sp.run(["git", "add", "seed.txt"], cwd=path, check=True)
-    sp.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
+    subprocess.run(["git", "add", "seed.txt"], cwd=path, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=path, check=True)
 
 
 def test_parked_resume_does_not_replay_a_config_selected_profile_as_a_flag(
@@ -496,7 +496,7 @@ def test_a_resume_over_an_in_flight_record_that_does_not_parse_leaves_it_to_the_
     _git_repo(repo)
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    base = sp.run(
+    base = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "note-GARBAGE"
@@ -748,11 +748,11 @@ def test_the_resume_note_leaves_the_untracked_at_start_files_out(
     _git_repo(repo)
     if changed != "seed.txt":
         (repo / changed).write_text("seed\n", encoding="utf-8")
-        sp.run(["git", "add", "--", changed], cwd=repo, check=True)
-        sp.run(["git", "commit", "-q", "-m", "named"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "--", changed], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "named"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    base = sp.run(
+    base = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "note-UNTRACKED"
@@ -825,7 +825,7 @@ def test_the_resume_note_names_the_files_it_hands_to_the_operator(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    base = sp.run(
+    base = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "note-ARRIVED"
@@ -1115,7 +1115,7 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
-    base = sp.run(
+    base = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     sid = "steer-STAMP01"

@@ -74,11 +74,11 @@ def test_tty_prompt_discards_type_ahead() -> None:
     # into the next run_command [y/N/a] approval and silently denied it (and a
     # buffered "y" would have silently approved).
     def child() -> int:
-        import time as _t
+        import time
 
         from agent6.ui.cli import _steer
 
-        _t.sleep(0.5)  # let the parent stuff type-ahead into the pty first
+        time.sleep(0.5)  # let the parent stuff type-ahead into the pty first
         ans = _steer.tty_prompt("APPROVE> ", fall_back_to_stdin=False)
         return 0 if ans == "y" else 13
 

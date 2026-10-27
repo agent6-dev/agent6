@@ -592,7 +592,7 @@ def test_run_merge_cli_builds_argv_and_parses_result(
 def test_merge_action_confirms_then_shells_out(tmp_path: pathlib.Path, monkeypatch: object) -> None:
     """`m` opens a confirm modal; confirming runs `agent6 sessions merge` for the selected run."""
     import asyncio
-    import subprocess as sp
+    import subprocess
 
     from textual import widgets
 
@@ -603,20 +603,20 @@ def test_merge_action_confirms_then_shells_out(tmp_path: pathlib.Path, monkeypat
     rd = _write_run(a6, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "x"}])
     # Merge is offered only for a run whose branch holds commits its base does not.
     repo = tmp_path
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
-    sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "seed.txt").write_text("seed\n")
-    sp.run(["git", "add", "seed.txt"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-q", "-m", "base"], cwd=repo, check=True)
-    base = sp.run(
+    subprocess.run(["git", "add", "seed.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=repo, check=True)
+    base = subprocess.run(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     (repo / "work.txt").write_text("work\n")
-    sp.run(["git", "add", "work.txt"], cwd=repo, check=True)
-    sp.run(["git", "commit", "-q", "-m", "work"], cwd=repo, check=True)
-    sp.run(["git", "branch", "agent6/r1"], cwd=repo, check=True)
-    sp.run(["git", "reset", "-q", "--hard", base], cwd=repo, check=True)
+    subprocess.run(["git", "add", "work.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "work"], cwd=repo, check=True)
+    subprocess.run(["git", "branch", "agent6/r1"], cwd=repo, check=True)
+    subprocess.run(["git", "reset", "-q", "--hard", base], cwd=repo, check=True)
     (rd / "manifest.json").write_text(
         json.dumps(
             {

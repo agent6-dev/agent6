@@ -424,15 +424,15 @@ def test_session_payload_names_the_ref_holding_the_commits(
 
     Gated on `run_branch`, a `branch_per_run = false` run read "no branch to merge".
     """
-    import subprocess as sp
+    import subprocess
 
     from agent6.vcs import git_read
 
     _srv, port = server
-    sp.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=tmp_path, check=True)
     (tmp_path / "seed.txt").write_text("seed\n", encoding="utf-8")
-    sp.run(["git", "add", "-A"], cwd=tmp_path, check=True)
-    sp.run(
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(
         ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "seed"],
         cwd=tmp_path,
         check=True,
@@ -454,7 +454,7 @@ def test_session_payload_names_the_ref_holding_the_commits(
     status, body, _ = _get(port, "/api/session/run-chain")
     assert status == 200 and "commits_ref" not in json.loads(body)  # nothing committed yet
     chain = git_read.chain_ref_for("run-chain")
-    sp.run(["git", "update-ref", chain, "HEAD"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "update-ref", chain, "HEAD"], cwd=tmp_path, check=True)
     status, body, _ = _get(port, "/api/session/run-chain")
     assert status == 200 and json.loads(body)["commits_ref"] == chain
 
@@ -1262,10 +1262,10 @@ def test_sse_run_pidless_stale_frame_is_terminal(
         resp = conn.getresponse()
         assert resp.status == 200
         # Bounded read: the buggy stream keeps heartbeating, so a plain read() would hang on pings.
-        import time as _time
+        import time
 
-        deadline = _time.monotonic() + 4.0
-        while _time.monotonic() < deadline:
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline:
             try:
                 chunk = resp.read1(65536)
             except TimeoutError:
@@ -1307,10 +1307,10 @@ def test_sse_run_created_frame_is_terminal(
         conn.request("GET", "/api/session/created-run/events")
         resp = conn.getresponse()
         assert resp.status == 200
-        import time as _time
+        import time
 
-        deadline = _time.monotonic() + 4.0
-        while _time.monotonic() < deadline:
+        deadline = time.monotonic() + 4.0
+        while time.monotonic() < deadline:
             try:
                 chunk = resp.read1(65536)
             except TimeoutError:
@@ -1353,10 +1353,10 @@ def test_sse_run_parked_keeps_streaming(
         conn.request("GET", "/api/session/parked-run/events")
         resp = conn.getresponse()
         assert resp.status == 200
-        import time as _time
+        import time
 
-        deadline = _time.monotonic() + 1.5  # several heartbeats
-        while _time.monotonic() < deadline:
+        deadline = time.monotonic() + 1.5  # several heartbeats
+        while time.monotonic() < deadline:
             try:
                 chunk = resp.read1(65536)
             except TimeoutError:
@@ -1810,10 +1810,10 @@ def test_steer_btw_opens_a_side_ask(
 
 def _git_chain(repo: pathlib.Path) -> tuple[str, str, str]:
     """A repo with a base commit and two run commits; returns (base, c1, c2)."""
-    import subprocess as sp
+    import subprocess
 
     def git(*args: str) -> str:
-        return sp.run(
+        return subprocess.run(
             ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
             cwd=repo,
             check=True,

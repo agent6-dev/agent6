@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import itertools
 import pathlib
-import subprocess as _sp
+import subprocess
 import types
 from typing import Any
 from unittest import mock
@@ -55,12 +55,12 @@ def _resp_text(text: str = "done") -> ProviderResponse:
 
 def _init_repo(repo: pathlib.Path) -> None:
     repo.mkdir()
-    _sp.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    _sp.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
-    _sp.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
     (repo / "x.txt").write_text("hi\n")
-    _sp.run(["git", "add", "x.txt"], cwd=repo, check=True)
-    _sp.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "x.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "init"], cwd=repo, check=True)
 
 
 def _build_wf(
@@ -70,7 +70,7 @@ def _build_wf(
         chain=_chain.RunChain(
             repo,
             ref="refs/agent6/guard",
-            fallback_parent=_sp.run(
+            fallback_parent=subprocess.run(
                 ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
             ).stdout.strip(),
         ),
@@ -351,7 +351,7 @@ def _gated_wf(
         chain=_chain.RunChain(
             repo,
             ref="refs/agent6/guard",
-            fallback_parent=_sp.run(
+            fallback_parent=subprocess.run(
                 ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
             ).stdout.strip(),
         ),
@@ -392,7 +392,7 @@ def _dirtying_dispatcher(repo: pathlib.Path) -> mock.MagicMock:
 
 def _git_log(repo: pathlib.Path) -> str:
     """The run's commit line: the chain ref (checkpoints never touch HEAD)."""
-    return _sp.run(
+    return subprocess.run(
         ["git", "log", "--oneline", "refs/agent6/guard"],
         cwd=repo,
         capture_output=True,
