@@ -369,6 +369,7 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 Every listing places each session in a review queue, derived from its journal on each read and never stored.
 The groups, in order:
 
+- **needs answer**: questions the model asked during an execution that nobody has answered, on a running run or an ended one; the row counts the question sets and dates from the oldest; `agent6 answer <id>` answers them, and a set whose answer is saved on disk waits for the resume instead
 - **blocked**: open `block` findings; the row names their count and dates from the oldest one's first panel
 - **unverified**: an ended run whose final tree the gate did not certify whole (no verify, a red or timed-out gate, a pass over selected paths only, a pass with no verification evidence, edits after the last green)
 - **awaiting merge**: a clean run waiting for a merge: no open findings, a complete and current panel with no abstained seat, a whole-tree pass whose evidence certifies the end tree, unmerged work with its chain and branch at the recorded checkpoint, no live worker, not stranded or undone

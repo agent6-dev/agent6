@@ -15,7 +15,7 @@ from collections.abc import Container, Iterable, Mapping, Sequence
 from typing import Literal
 
 from agent6 import paths
-from agent6.sessions import layout, process
+from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
 from agent6.viewmodel import _session_log, _session_status, format, review_queue
@@ -654,6 +654,7 @@ def summarize_session_dir(
             alive=process.worker_is_alive(session_dir),
             fanout=manifest is not None and manifest.fanout is not None,
             tip_matches=tip_matches,
+            saved_answers=len(ipc.saved_question_answers(session_dir)),
         ),
     )
     return SessionSummary(

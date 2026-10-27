@@ -316,3 +316,4 @@ def test_the_folds_agree_that_a_queued_question_blocks_nothing(tmp_path: pathlib
             "question" if blocked else "",
         )
         assert (viewer.operator_blocked, viewer.blocked_kind) == (blocked, scan.blocked_kind)
+        assert scan.pending_questions == viewer.pending_questions == (2 if blocked else 1)

@@ -114,10 +114,12 @@ def _facts(
     alive: bool = False,
     fanout: bool = False,
     tip_matches: bool | None = True,
+    saved_answers: int = 0,
 ) -> review_queue.QueueFacts:
     return review_queue.QueueFacts(
         status=status,
         mode=mode,
+        saved_answers=saved_answers,
         unmerged=unmerged,
         merged=merged,
         alive=alive,
@@ -481,4 +483,55 @@ def test_a_nested_lanes_pending_work_dates_its_coordinator() -> None:
     ]
     (fan,) = listing.nested_rows(summaries, sort="review")
     assert listing.row_group(fan) == "blocked" and listing.pending_since(fan) == 5.0
-    assert listing.review_sort_key(fan) == (0, 0, 5.0, "fan")
+    blocked = review_queue.GROUPS.index("blocked")
+    assert listing.review_sort_key(fan) == (blocked, 0, 5.0, "fan")
+
+
+def test_a_pending_question_leads_the_queue(tmp_path: pathlib.Path) -> None:
+    """A session with a question nobody answered sits first, dated from the oldest open one."""
+    import datetime
+
+    from agent6.ui import keymap
+
+    def row(kind: str, second: int, **fields: Any) -> dict[str, Any]:
+        return {"type": kind, "ts": f"2026-07-14T10:00:0{second}+00:00", **fields}
+
+    rows = [
+        row("session.start", 0, mode="run", user_task="t"),
+        row("question.prompt", 1, id="question-1", questions=[{"question": "a?"}], wait=False),
+        row("question.prompt", 2, id="question-2", questions=[{"question": "b?"}], wait=False),
+        row("question.answer", 3, id="question-1", answers=["x"], source="late"),
+        row("session.end", 4, reason="finish_session", all_passed=True),
+    ]
+    entry = review_queue.classify(_scan(rows, tmp_path), _facts())
+    assert review_queue.GROUPS[0] == "needs_answer"
+    assert (entry.group, entry.reason) == ("needs_answer", "1 question pending")
+    asked = datetime.datetime(2026, 7, 14, 10, 0, 2, tzinfo=datetime.UTC).timestamp()
+    assert entry.oldest_open_at == asked
+    assert set(keymap.QUEUE_TEXT) == set(review_queue.GROUPS)
+
+
+def test_a_saved_answer_leaves_the_needs_answer_group(tmp_path: pathlib.Path) -> None:
+    """A question whose answer is saved for the resume needs nothing from the operator."""
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {
+            "type": "question.prompt",
+            "id": "question-1",
+            "questions": [{"question": "a?"}],
+            "wait": False,
+        },
+        {
+            "type": "question.prompt",
+            "id": "question-2",
+            "questions": [{"question": "b?"}],
+            "wait": False,
+        },
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    scan = _scan(rows, tmp_path)
+    one = review_queue.classify(scan, _facts(saved_answers=1))
+    assert (one.group, one.reason) == ("needs_answer", "1 question pending · 1 answer saved")
+    both = review_queue.classify(scan, _facts(saved_answers=2))
+    assert both.group != "needs_answer"
+    assert both.reason.endswith("2 answers saved; the resume delivers them")

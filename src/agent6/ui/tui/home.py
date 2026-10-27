@@ -98,9 +98,12 @@ def _review_cell(row: viewmodel_listing.ListingRow) -> text.Text:
     parts = [keymap.QUEUE_TEXT[group] if group != "other" else "", entry.reason]
     if lanes:
         parts.append(f"lanes: {lanes}")
-    style = {"blocked": "bold red", "unverified": "yellow", "awaiting_merge": "green"}.get(
-        group, ""
-    )
+    style = {
+        "needs_answer": "bold yellow",
+        "blocked": "bold red",
+        "unverified": "yellow",
+        "awaiting_merge": "green",
+    }.get(group, "")
     return text.Text(" · ".join(p for p in parts if p), style=style)
 
 

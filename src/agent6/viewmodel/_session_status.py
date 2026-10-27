@@ -243,6 +243,7 @@ class StatusFacts:
         blocked_since_ep: That prompt's asked-at epoch.
         unattended_questions: Questions this execution's harness answered empty because nobody
             was attached.
+        pending_questions: Questions nobody has answered, across every execution.
         stranded: This execution finished with its edits uncommitted and no commit landed.
     """
 
@@ -257,6 +258,7 @@ class StatusFacts:
     blocked_kind: str = ""
     blocked_since_ep: float | None = None
     unattended_questions: int = 0
+    pending_questions: int = 0
     stranded: bool = False
 
 
@@ -289,7 +291,7 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
         if n := facts.unattended_questions:
             note = f"{n} question{'s' if n != 1 else ''} unanswered"
             reason = f"{reason} · {note}" if reason else note
-        return word, reason
+        return word, _with_pending(reason, facts.pending_questions, session_dir, " for the resume")
     live = process.worker_is_alive(session_dir)
     if facts.operator_blocked and live:
         # Before session.start too: a run asks about uncommitted changes before it starts.
@@ -302,9 +304,9 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
     elif not facts.started:
         word, reason = unstarted_status(session_dir)
     elif not live:
-        return "stale", ""
+        return "stale", _with_pending("", facts.pending_questions, session_dir, " for the resume")
     else:
-        word, reason = "running", ""
+        word, reason = "running", _with_pending("", facts.pending_questions, session_dir, "")
     if (
         word in LIVE_STATUS_WORDS
         and ipc.stop_request_pending(session_dir)
@@ -313,6 +315,29 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
         note = "stopping after this step"
         reason = f"{reason} · {note}" if reason else note
     return word, reason
+
+
+def _with_pending(reason: str, pending: int, session_dir: pathlib.Path, saved_suffix: str) -> str:
+    """Return the reason with the questions nobody answered and the answers saved on disk.
+
+    Args:
+        reason: The reason so far.
+        pending: The questions the journal holds unanswered.
+        session_dir: The session directory, whose answer files count as saved.
+        saved_suffix: What follows "saved": where the run reads them.
+
+    Returns:
+        The reason, with "N questions pending" and "N answers saved…" appended when any.
+    """
+    saved = min(len(ipc.saved_question_answers(session_dir)), pending)
+    notes: list[str] = []
+    if pending - saved:
+        notes.append(f"{pending - saved} question{'s' if pending - saved != 1 else ''} pending")
+    if saved:
+        notes.append(f"{saved} answer{'s' if saved != 1 else ''} saved{saved_suffix}")
+    for note in notes:
+        reason = f"{reason} · {note}" if reason else note
+    return reason
 
 
 def unstarted_status(session_dir: pathlib.Path) -> tuple[str, str]:

@@ -842,6 +842,10 @@ def test_pending_prompt_reads_last_prompt_answer_event(tmp_path: pathlib.Path) -
     plain = tmp_path / "plain"
     _lane_logs(plain, start, {"type": "tool.call", "name": "read_file"})
     assert lane_watch.pending_prompt(plain) == ""
+    # A queued question pauses nothing: the lane is not waiting on it.
+    queued = tmp_path / "queued"
+    _lane_logs(queued, start, {"type": "question.prompt", "id": "question-2", "wait": False})
+    assert lane_watch.pending_prompt(queued) == ""
 
 
 def test_await_lanes_status_line_flags_a_waiting_lane(

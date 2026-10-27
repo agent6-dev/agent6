@@ -72,6 +72,8 @@ class LogScan:
         pins: The operator's pinned instructions in force.
         unattended_questions: This execution's questions answered empty because nobody was
             attached.
+        pending_questions: The questions nobody has answered, across every execution.
+        oldest_pending_question_ep: When the oldest of them was asked, as epoch seconds.
         left_out: The (path, reason) of each edit the commits left out, across every
             execution; the reason is `ignored` or `untracked` (`loop.edit.left_out`).
         review: The shared fold of panel evidence and finding history.
@@ -125,6 +127,8 @@ class LogScan:
     verify_timeout_s: float = 0.0
     pins: tuple[str, ...] = ()
     unattended_questions: int = 0
+    pending_questions: int = 0
+    oldest_pending_question_ep: float | None = None
     left_out: tuple[tuple[str, str], ...] = ()
     review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
 
@@ -193,6 +197,7 @@ class LogScan:
             blocked_kind=self.blocked_kind,
             blocked_since_ep=self.blocked_since_ep,
             unattended_questions=self.unattended_questions,
+            pending_questions=self.pending_questions,
             stranded=self.stranded,
         )
 
@@ -295,6 +300,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     last_type: str | None = None
     # Only an answer or an execution boundary clears a prompt: a steer request leaves it waiting.
     pending_prompts: dict[str, tuple[str, float | None]] = {}
+    # Every question nobody has answered yet, by id, across executions.
+    open_questions: dict[str, float | None] = {}
     unattended_questions = 0
     last_verify_rc: int | None = None
     verify_timeout_s = 0.0
@@ -354,6 +361,16 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     pending_prompts.pop(str(ev.get("id")), None)
                     if etype == "question.answer" and ev.get("unseen") is True:
                         unattended_questions += 1
+                # A question outside an execution (the start gate) dies with its prompt.
+                in_execution = saw_start and not finished
+                if (
+                    etype == "question.prompt"
+                    and in_execution
+                    and (qid := ev.get("id")) is not None
+                ):
+                    open_questions[str(qid)] = ep
+                elif etype == "question.answer":
+                    open_questions.pop(str(ev.get("id")), None)
                 if etype == "session.start":
                     task = task.start(str(ev.get("user_task", "")))
                     saw_start = True
@@ -520,6 +537,10 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         plan_usage=plan_usage,
         plan_usage_at=plan_usage_at,
         unattended_questions=unattended_questions,
+        pending_questions=len(open_questions),
+        oldest_pending_question_ep=min(
+            (ep for ep in open_questions.values() if ep is not None), default=None
+        ),
         turn=turn,
         start_ep=start_ep if start_ep is not None else first_ep,
         last_ep=last_ep,

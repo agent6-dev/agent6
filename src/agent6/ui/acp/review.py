@@ -118,6 +118,7 @@ def _queue_lines(row: listing.ListingRow, *, depth: int) -> list[str]:
     s = row.summary
     entry = s.review_queue
     commands = {
+        "needs_answer": f"agent6 answer {s.session_id}",
         "blocked": f"agent6 sessions findings {s.session_id}",
         "unverified": f"agent6 sessions receipt {s.session_id}",
         "awaiting_merge": f"agent6 sessions merge {s.session_id}",

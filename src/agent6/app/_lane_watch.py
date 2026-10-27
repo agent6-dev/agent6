@@ -225,6 +225,8 @@ def pending_prompt(session_dir: pathlib.Path) -> str:
         etype = ev.get("type") if isinstance(ev, dict) else None
         if etype in _ANSWER_EVENTS:
             return ""
+        if etype == "question.prompt" and ev.get("wait") is False:
+            continue  # a queued question pauses nothing
         if etype in _PROMPT_KIND:
             return _PROMPT_KIND[etype]
     return ""

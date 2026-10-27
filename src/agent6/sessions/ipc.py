@@ -700,6 +700,18 @@ def write_question_answers(
     )
 
 
+def saved_question_answers(session_dir: pathlib.Path) -> tuple[str, ...]:
+    """Return the ids of the questions whose answers wait on disk for the run to read.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The ids, sorted; a file stays until the run consumes it at a turn or at its resume.
+    """
+    return tuple(sorted(p.stem for p in (session_dir / QUESTION_DIR_NAME).glob("*.answer")))
+
+
 def peek_question_answers(session_dir: pathlib.Path, question_id: str) -> tuple[str, ...] | None:
     """Return the answers on disk for a question, consuming nothing; None when absent.
 

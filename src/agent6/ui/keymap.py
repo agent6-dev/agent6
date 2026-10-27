@@ -112,6 +112,7 @@ REVIEW_TEXT = {
 }
 # The review queue's groups as the hub names them.
 QUEUE_TEXT = {
+    "needs_answer": "needs answer",
     "blocked": "blocked",
     "unverified": "unverified",
     "awaiting_merge": "awaiting merge",

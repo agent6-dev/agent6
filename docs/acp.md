@@ -52,7 +52,7 @@ The advertised commands act on the conversation's recorded run:
 
 - `/findings [--all]` lists open findings, or also resolved findings with `--all`.
 - `/review-queue` lists the repository's sessions in [review queue](usage.md#the-review-queue) order under group headings, and needs no run in the thread.
-  A blocked, unverified or awaiting-merge row names the CLI command that acts on it.
+  A needs-answer, blocked, unverified or awaiting-merge row names the CLI command that acts on it.
 - `/fix ID --resume` confirms **Resume to fix** as a follow-up prompt when the session is idle.
   It uses the stored report, leaves the finding open, and refuses a missing resume point rather than starting a new run.
 - `/resolve ID --as DISPOSITION --reason "TEXT" [--duplicate-of ID]` records the operator's conclusion.

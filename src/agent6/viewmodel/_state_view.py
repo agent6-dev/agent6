@@ -54,6 +54,9 @@ def status_facts(state: _state_types.SessionState) -> _session_status.StatusFact
         blocked_kind=oldest[0] if oldest else "",
         blocked_since_ep=oldest[1] if oldest else None,
         unattended_questions=state.unattended_questions,
+        pending_questions=sum(
+            1 for q in state.pending_questions if not q.answered and not q.from_harness
+        ),
         stranded=state.stranded,
     )
 

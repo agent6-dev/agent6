@@ -7,10 +7,10 @@ from typing import Literal
 
 from agent6.viewmodel import _session_log, review
 
-Group = Literal["blocked", "unverified", "awaiting_merge", "other"]
-# The queue's order: open blocks, then ended runs the gate did not certify, then clean runs
-# waiting for a merge, then the rest with its reason.
-GROUPS: tuple[Group, ...] = ("blocked", "unverified", "awaiting_merge", "other")
+Group = Literal["needs_answer", "blocked", "unverified", "awaiting_merge", "other"]
+# The queue's order: questions nobody answered, then open blocks, then ended runs the gate did
+# not certify, then clean runs waiting for a merge, then the rest with its reason.
+GROUPS: tuple[Group, ...] = ("needs_answer", "blocked", "unverified", "awaiting_merge", "other")
 _OTHER_REASONS = {
     "unreadable": "review evidence unreadable",
     "legacy": "legacy review counts",
@@ -35,6 +35,7 @@ class QueueFacts:
         merged: Whether a merge stamp records a landing.
         alive: Whether a worker process holds the session.
         fanout: Whether the session is a fan-out coordinator, a container for its lanes.
+        saved_answers: The answers written to its questions that wait on disk for the run.
         tip_matches: Whether every ref holding the run's work, its chain and its branch,
             sits at the run's last recorded checkpoint, so the journal's end describes the
             source as it is now; None without a tips snapshot, a checkpoint or a ref.
@@ -47,6 +48,7 @@ class QueueFacts:
     alive: bool = False
     fanout: bool = False
     tip_matches: bool | None = None
+    saved_answers: int = 0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -69,8 +71,9 @@ class ReviewQueueEntry:
         verification_state: The gate word for the final tree (passed, failed, timed_out,
             unverified, not_applicable), "passed scoped" for a pass over selected paths only,
             "passed, no evidence" for an end whose pass left no verification record.
-        oldest_open_at: When the pending work began, as epoch seconds: the oldest open block's
-            first observation, else the run's end; None when nothing is pending.
+        oldest_open_at: When the pending work began, as epoch seconds: the oldest unanswered
+            question's ask, the oldest open block's first observation, else the run's end;
+            None when nothing is pending.
         source_tip: The run's last diff checkpoint commit.
         merge_allowed: Whether the open-block merge guard lets this session merge.
     """
@@ -153,6 +156,29 @@ def classify(scan: _session_log.LogScan, facts: QueueFacts) -> ReviewQueueEntry:
     Returns:
         The entry, with the reason the operator reads beside it.
     """
+    saved = min(facts.saved_answers, scan.pending_questions)
+    entry = _classify(scan, facts, open_questions=scan.pending_questions - saved)
+    if not saved:
+        return entry
+    note = f"{saved} answer{'s' if saved != 1 else ''} saved"
+    if entry.group != "needs_answer":
+        note += f"; the resume delivers {'them' if saved != 1 else 'it'}"
+    return dataclasses.replace(entry, reason=f"{entry.reason} · {note}" if entry.reason else note)
+
+
+def _classify(
+    scan: _session_log.LogScan, facts: QueueFacts, *, open_questions: int
+) -> ReviewQueueEntry:
+    """Place the session by its findings, gate and merge state, after the open questions.
+
+    Args:
+        scan: The session's journal fold.
+        facts: The listing row's facts.
+        open_questions: The questions no answer has reached, on disk or in the journal.
+
+    Returns:
+        The entry.
+    """
     view = scan.review
     if scan.end_tree and view.panels and view.panels[-1].target is not None:
         target = view.panels[-1].target
@@ -171,6 +197,17 @@ def classify(scan: _session_log.LogScan, facts: QueueFacts) -> ReviewQueueEntry:
         source_tip=scan.source_tip,
         merge_allowed=not guard.open_block_ids and not guard.read_failure,
     )
+    if open_questions:
+        plural = "s" if open_questions != 1 else ""
+        reason = f"{open_questions} question{plural} pending"
+        if counts.block:
+            reason += f" · {counts.block} open block finding{'s' if counts.block != 1 else ''}"
+        return dataclasses.replace(
+            entry,
+            group="needs_answer",
+            reason=reason,
+            oldest_open_at=scan.oldest_pending_question_ep,
+        )
     if counts.block:
         opened = [
             opened_at

@@ -485,8 +485,8 @@ function taskTitle(parent, taskLine) {
 }
 
 // The review queue's groups: the server's `queue_group`, its heading and its pill level.
-const QUEUE_LABEL = { blocked: 'Blocked', unverified: 'Unverified', awaiting_merge: 'Awaiting merge', other: 'Other' };
-const QUEUE_LEVEL = { blocked: 'error', unverified: 'warn', awaiting_merge: 'ok' };
+const QUEUE_LABEL = { needs_answer: 'Needs answer', blocked: 'Blocked', unverified: 'Unverified', awaiting_merge: 'Awaiting merge', other: 'Other' };
+const QUEUE_LEVEL = { needs_answer: 'warn', blocked: 'error', unverified: 'warn', awaiting_merge: 'ok' };
 
 function paintSession(r, it, g) {
   it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);

@@ -345,11 +345,12 @@ def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
         assert _session_status.status_for_session_dir(d, facts) == (word, "")
 
 
-def test_resume_clears_orphaned_pending_prompts() -> None:
-    """An execution boundary invalidates unanswered prompts.
+def test_resume_clears_orphaned_approvals_and_carries_questions() -> None:
+    """An execution boundary invalidates unanswered approvals; a question stays, pausing nothing.
 
-    The resumed execution re-asks with restarted ids, so a held-over pending entry would
-    mislabel the run "waiting" and duplicate when the same-id prompt arrives.
+    The resumed execution re-asks approvals with restarted ids, so a held-over entry would
+    mislabel the run "waiting" and duplicate when the same-id prompt arrives. A question's id
+    runs on, and its answer still reaches the model, so it stays pending.
     """
     events = [
         _START,
@@ -360,7 +361,9 @@ def test_resume_clears_orphaned_pending_prompts() -> None:
     ]
     state = viewmodel_state.fold_session(events)
     assert len(state.pending_approvals) == 1  # the new execution's, not the orphan + a dup
-    assert state.pending_questions == ()
+    (question,) = state.pending_questions
+    assert not question.answered and question.blocking is False
+    assert status_facts(state).operator_blocked and status_facts(state).blocked_kind == "approval"
 
 
 def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: pathlib.Path) -> None:
@@ -399,4 +402,65 @@ def test_waiting_names_the_prompt_kind_and_age_in_both_producers(tmp_path: pathl
     ) == (
         "waiting",
         "needs answer",
+    )
+
+
+def test_pending_questions_are_counted_in_both_producers(tmp_path: pathlib.Path) -> None:
+    """A queued question reads as pending on a running run and on an ended one, never as waiting."""
+    import os
+
+    queued: dict[str, object] = {
+        "type": "question.prompt",
+        "id": "question-1",
+        "questions": [{"question": "a?"}],
+        "wait": False,
+    }
+    running: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        queued,
+    ]
+    d = _mk(tmp_path, "running-pending", running, parked="", pid=os.getpid())
+    scan = _session_log.scan_session_log(d / "logs.jsonl")
+    expect = ("running", "1 question pending")
+    assert _session_status.status_for_session_dir(d, scan.status_facts()) == expect
+    fold = viewmodel_state.fold_session(running)
+    assert _session_status.status_for_session_dir(d, status_facts(fold)) == expect
+    ended: list[dict[str, object]] = [
+        *running,
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    d = _mk(tmp_path, "ended-pending", ended, parked="", pid=os.getpid())
+    scan = _session_log.scan_session_log(d / "logs.jsonl")
+    for facts in (scan.status_facts(), status_facts(viewmodel_state.fold_session(ended))):
+        word, reason = _session_status.status_for_session_dir(d, facts)
+        assert word != "waiting" and reason.endswith("1 question pending")
+    stale = _mk(tmp_path, "stale-pending", running, parked="", pid=999_999_999)
+    facts = _session_log.scan_session_log(stale / "logs.jsonl").status_facts()
+    assert _session_status.status_for_session_dir(stale, facts) == ("stale", "1 question pending")
+
+
+def test_a_saved_answer_reads_as_saved_not_pending(tmp_path: pathlib.Path) -> None:
+    """An answer written to an ended run's question waits for the resume; the label says which."""
+    import os
+
+    ended: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {
+            "type": "question.prompt",
+            "id": "question-1",
+            "questions": [{"question": "a?"}],
+            "wait": False,
+        },
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    d = _mk(tmp_path, "saved-answer", ended, parked="", pid=os.getpid())
+    assert ipc.write_question_answers(d, "question-1", ["x"])
+    scan = _session_log.scan_session_log(d / "logs.jsonl")
+    for facts in (scan.status_facts(), status_facts(viewmodel_state.fold_session(ended))):
+        word, reason = _session_status.status_for_session_dir(d, facts)
+        assert word != "waiting" and reason.endswith("1 answer saved for the resume")
+        assert "pending" not in reason
+    queue = listing.summarize_session_dir(d).review_queue
+    assert queue.group != "needs_answer" and queue.reason.endswith(
+        "1 answer saved; the resume delivers it"
     )
