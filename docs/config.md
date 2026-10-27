@@ -110,13 +110,13 @@ The transport owns `authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `c
 ### Configured OAuth
 
 `[providers.<name>.oauth]` names an issuer and the public-client registration the operator made there; `agent6 connect <name>` signs in with authorization code and PKCE (`authorization_endpoint`, a loopback redirect or a pasted callback) or the device grant (`device_authorization_endpoint`), and stores the grant in `secrets.toml`.
-Every endpoint is https, or plain http on `127.0.0.1` for a local service; nothing is discovered, no client secret exists, and no redirect is followed.
-A stored grant is bound to the issuer settings and the provider's `base_url`: change any of them and the next run refuses until `agent6 connect <name>` runs again.
+Every endpoint is https, or plain http on `127.0.0.1` or `[::1]` for a local service; nothing is discovered, no client secret exists, and no redirect is followed.
+A stored grant is bound to the entry's transport settings (`api_format`, `deployment`, `base_url`, `auth_style`, `extra_query`, `extra_headers`) and its issuer settings: change any of them and the next run refuses until `agent6 connect <name>` runs again.
 `[providers.<name>.oauth.exchange]` adds one second exchange when the model endpoint takes a token other than the issuer's: one `GET` or `POST` with the issuer's bearer, whose named top-level fields are the token and its expiry.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `issuer` | *(required)* | the issuer identifier, an https URL; names the sign-in and binds the stored grant; never fetched (no discovery) |
+| `issuer` | *(required)* | the issuer identifier (https, or http on a loopback literal for a local service); names the sign-in and binds the stored grant; never fetched (no discovery) |
 | `client_id` | *(required)* | the public-client registration the operator made at the issuer |
 | `scopes` | `[]` | the scopes requested, joined with spaces; none are implied |
 | `authorization_endpoint` | none | enables authorization code with PKCE: the URL the browser opens |

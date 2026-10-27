@@ -229,7 +229,7 @@ class _ProviderBase(pydantic.BaseModel):
             "a configured OAuth issuer and public-client registration: `agent6 connect <name>`"
             " signs in there and stores the grant in `secrets.toml`; requires"
             ' `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored'
-            " grant is bound to these settings and to `base_url`"
+            " grant is bound to these settings and the entry's transport settings"
         ),
     )
     # The connect phase is bounded by providers._transport.CONNECT_TIMEOUT_S instead.
@@ -480,7 +480,7 @@ class ChatGPTProviderEntry(_ProviderBase):
         if self.oauth is not None:
             raise ValueError(
                 "api_format 'chatgpt' signs in at its fixed issuer; a custom oauth table"
-                " belongs on an openai-format entry"
+                " belongs on an openai, anthropic or responses entry"
             )
         if self.api_key_env or self.token_command:
             named = "api_key_env" if self.api_key_env else "token_command"

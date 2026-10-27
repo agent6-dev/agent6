@@ -164,8 +164,8 @@ class OAuthConfig(pydantic.BaseModel):
 
     issuer: str = pydantic.Field(
         description=(
-            "the issuer identifier, an https URL; names the sign-in and binds the stored grant;"
-            " never fetched (no discovery)"
+            "the issuer identifier (https, or http on a loopback literal for a local service);"
+            " names the sign-in and binds the stored grant; never fetched (no discovery)"
         ),
     )
     client_id: str = pydantic.Field(
