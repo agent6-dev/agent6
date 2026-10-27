@@ -219,14 +219,7 @@ def test_dedup_across_seats_and_against_prior_findings() -> None:
     f = _block("security", _location("foo.py", 11))
     res = _agg([_seat("m1", f, seat="a"), _seat("m2", f, seat="b")], block_on="none")
     assert len(res.merged_findings) == 1  # same (path, category) merged
-    prior = (
-        review_records.Finding(
-            category="security",
-            severity="block",
-            location=_location("foo.py", 11),
-            title="already shown",
-        ),
-    )
+    prior = (f,)
     res2 = harness__panel.aggregate_verdicts(
         [_seat("m1", f)],
         _ctx(prior_findings=prior),
@@ -242,14 +235,7 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
     # not gate: otherwise blocked=True ships with merged_findings=() and the
     # worker is rejected while being told "No blocking findings.".
     f = _block("security", _location("foo.py", 11))
-    prior = (
-        review_records.Finding(
-            category="security",
-            severity="block",
-            location=_location("foo.py", 11),
-            title="already shown",
-        ),
-    )
+    prior = (f,)
     for block_on in ("any", "model_quorum", "all"):
         res = harness__panel.aggregate_verdicts(
             [_seat("m1", f)],
@@ -271,6 +257,23 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
     )
     assert res2.blocked is True and res2.n_block == 1
     assert [x.category for x in res2.merged_findings] == ["data-loss"]
+
+
+def test_two_defects_at_the_same_location_remain_distinct() -> None:
+    """Keep different finding content at the same line, category and severity."""
+    first = _block("security", _location("foo.py", 11))
+    second = first.model_copy(update={"title": "a different defect"})
+    result = _agg([_seat("m1", first, second)])
+    assert result.merged_findings == (first, second)
+
+
+def test_normalized_exact_repeat_is_not_reinjected() -> None:
+    """Ignore surrounding whitespace without combining different finding text."""
+    first = _block("security", _location("foo.py", 11))
+    repeat = first.model_copy(update={"title": " x \n"})
+    result = _agg([_seat("m1", repeat)], ctx=_ctx(prior_findings=(first,)))
+    assert result.merged_findings == ()
+    assert not result.blocked
 
 
 def test_render_findings_formats_and_empty() -> None:
@@ -407,10 +410,6 @@ def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
         _location("a/foo.py", 2), ranges
     ) and harness__panel.is_grounded(_location("a/foo.py"), ranges)
     assert not harness__panel.is_grounded(_location("foo.py", 2), ranges)  # a different file
-    assert (
-        harness__panel._dedup_key(_block("security", _location("a/foo.py", 2)), ranges)[0]
-        == "a/foo.py"
-    )
     res = _agg(
         [_seat("m1", _block("security", _location("a/foo.py", 2)))],
         ctx=harness__panel.ReviewContext(diff=diff),
@@ -810,30 +809,20 @@ def test_two_findings_in_different_hunks_of_one_file_both_survive() -> None:
     assert [str(f.location) for f in res.merged_findings] == ["foo.py:11", "foo.py:43"]
 
 
-def test_a_re_citation_in_one_hunk_dedups_and_a_prior_one_does_not_gate() -> None:
-    """A re-citation in one hunk dedups, and a prior finding there gates nothing.
-
-    Two seats citing one defect two lines apart collapse to one finding; a prior finding in that
-    hunk absorbs the re-citation and, already injected, counts toward no gate. A path-only citation
-    is its own finding.
-    """
+def test_distinct_locations_in_one_hunk_remain_distinct() -> None:
+    """Keep uncertain matches separate, including nearby lines in the same hunk."""
     a = _block("security", _location("foo.py", 11))
     b = _block("security", _location("foo.py", 13))
     res = _agg([_seat("m1", a), _seat("m2", b, seat="t")])
-    assert len(res.merged_findings) == 1
+    assert len(res.merged_findings) == 2
     res = _agg([_seat("m1", b)], ctx=_ctx(prior_findings=(a,)))
-    assert res.merged_findings == () and not res.blocked
+    assert res.merged_findings == (b,) and res.blocked
     res = _agg([_seat("m1", a, _block("security", _location("foo.py")))])
     assert len(res.merged_findings) == 2
 
 
-def test_the_two_sides_of_one_hunk_key_alike_and_a_deletion_does_not_swallow_a_later_hunk() -> None:
-    """The two sides of one hunk key alike, and a deletion does not swallow a later hunk.
-
-    Listed as separate ranges, a pre-image citation (`foo.py:40`) and a post-image one (`foo.py:42`)
-    of one hunk key apart, so an injected prior finding re-gates the run, and a large deletion's
-    old-side span can overlap a later hunk's new-side citation. The specified side decides.
-    """
+def test_side_and_location_distinguish_findings_in_overlapping_hunks() -> None:
+    """Keep findings on different sides separate even when their line ranges overlap."""
     diff = (
         "--- a/foo.py\n+++ b/foo.py\n"
         "@@ -40,3 +42,3 @@ def f():\n     a = 1\n-    b = 2\n+    b = 3\n     return a\n"
@@ -847,7 +836,7 @@ def test_the_two_sides_of_one_hunk_key_alike_and_a_deletion_does_not_swallow_a_l
         _block("security", _location("foo.py", 42)),
     )
     res = _agg([_seat("m1", post)], ctx=dataclasses.replace(ctx, prior_findings=(pre,)))
-    assert res.merged_findings == () and not res.blocked
+    assert res.merged_findings == (post,) and res.blocked
     seat = _seat(
         "m1",
         _block("security", _location("bar.py", 23)),

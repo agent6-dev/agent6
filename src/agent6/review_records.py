@@ -118,6 +118,38 @@ class FindingObservation:
     seat_indexes: tuple[int, ...]
 
 
+class ReviewPanel(pydantic.BaseModel):
+    """Validate a completed panel's durable evidence, including its worker feedback."""
+
+    model_config = pydantic.ConfigDict(frozen=True)
+
+    panel_id: Identifier
+    execution_id: Identifier
+    turn: int
+    trigger: str
+    target: ReviewTarget
+    findings: tuple[FindingObservation, ...]
+    injected_finding_ids: tuple[str, ...]
+    block_on: Literal["none", "any", "all", "model_quorum"]
+    raw_blocked: bool
+    blocked: bool
+    disarmed: bool
+    n_block: int = pydantic.Field(ge=0)
+    n_abstain: int = pydantic.Field(ge=0)
+    completion: Literal["complete", "inconclusive"]
+
+
+def finding_key(finding: Finding) -> str:
+    """Return exact finding content and location with surrounding whitespace stripped."""
+    return finding.model_copy(
+        update={
+            "category": finding.category.strip(),
+            "title": finding.title.strip(),
+            "detail": finding.detail.strip(),
+        }
+    ).model_dump_json()
+
+
 class FindingResolution(pydantic.BaseModel):
     """Record the operator's conclusion without inferring verification success.
 

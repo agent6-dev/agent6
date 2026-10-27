@@ -8,6 +8,7 @@ import contextlib
 import os
 import pathlib
 import subprocess
+import uuid
 from typing import Any
 
 from agent6 import event_log, paths, portable
@@ -236,6 +237,7 @@ def emit_session_start(
         **fields: The event's fields.
     """
     write_worker_pid(session_dir, os.getpid())
+    fields.setdefault("execution_id", uuid.uuid4().hex)
     events.emit(event_type, **fields)
 
 

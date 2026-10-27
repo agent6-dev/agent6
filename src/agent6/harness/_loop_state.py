@@ -12,6 +12,7 @@ The loop's phase methods live in `loop.py`; these are the shapes they take.
 from __future__ import annotations
 
 import dataclasses
+import uuid
 
 from agent6 import review_records
 from agent6.harness import (
@@ -68,7 +69,8 @@ class LoopState:
         reach: The reachability guard.
         focus: The DAG focus guard.
         gates: The finish gates' state.
-        review_findings: Findings injected by panels in this execution; a resume starts empty.
+        execution_id: The identity of this execution.
+        review_panels: Durable panel records, including prior executions.
         budget_nudges: The budget nudge state.
     """
 
@@ -99,7 +101,8 @@ class LoopState:
     reach: _guards.ReachabilityGuard = dataclasses.field(default_factory=_guards.ReachabilityGuard)
     focus: _guards.FocusGuard = dataclasses.field(default_factory=_guards.FocusGuard)
     gates: _finish_gates.FinishGates = dataclasses.field(default_factory=_finish_gates.FinishGates)
-    review_findings: tuple[review_records.Finding, ...] = ()
+    execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
+    review_panels: tuple[review_records.ReviewPanel, ...] = ()
     budget_nudges: _guards.BudgetNudges = dataclasses.field(default_factory=_guards.BudgetNudges)
 
 

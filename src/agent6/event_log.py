@@ -18,6 +18,7 @@ import json
 import os
 import pathlib
 import threading
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -75,6 +76,8 @@ class EventSink:
             "type": event_type,
         }
         payload.update(fields)
+        if not ephemeral:
+            payload["event_id"] = uuid.uuid4().hex
         try:
             line = json.dumps(payload, default=_json_default, ensure_ascii=False)
         except (TypeError, ValueError) as exc:

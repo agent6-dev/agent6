@@ -38,6 +38,16 @@ def test_emit_creates_parent_dir(tmp_path: pathlib.Path) -> None:
     assert target.is_file()
 
 
+def test_durable_events_have_unique_ids(tmp_path: pathlib.Path) -> None:
+    """Give identical durable payloads distinct identities without timestamp ordering."""
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    sink.emit("loop.review.panel", panel_id="p")
+    sink.emit("loop.review.panel", panel_id="p")
+    rows = _read_lines(sink.path)
+    assert all(row.get("event_id") for row in rows)
+    assert rows[0]["event_id"] != rows[1]["event_id"]
+
+
 def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
     """The sink never drops a field: an unknown object, circular refs included, lands as a repr."""
     sink = event_log.EventSink(tmp_path / "logs.jsonl")

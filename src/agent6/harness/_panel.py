@@ -33,7 +33,7 @@ class ReviewContext:
     Attributes:
         task: The run's task.
         agents_md: The repo's AGENTS.md.
-        diff: The working-tree delta since the last accepted finish.
+        diff: The immutable delta from the run base to the chain commit.
         verify_ok: The gate's result; None when none ran (none configured, or `agent6 review`).
         verify_output: The gate's output.
         focus: The seat's focus text.
@@ -242,34 +242,6 @@ def is_grounded(location: review_records.ReviewLocation, hunks: _Hunks) -> bool:
     )
 
 
-DedupKey = tuple[str, str, Hunk | tuple[int, int] | None]
-
-
-def _dedup_key(f: review_records.Finding, hunks: _Hunks) -> DedupKey:
-    """Return a finding's identity across seats and turns: file, category and hunk.
-
-    The hunk on the cited side decides; the two sides of one hunk key alike.
-    A citation outside every hunk keys on its own span, a path-only one on the file.
-
-    Args:
-        f: The finding.
-        hunks: The diff's hunks by repo path.
-
-    Returns:
-        The key.
-    """
-    location = f.location
-    path = location.path
-    if location.start_line is None or location.end_line is None:
-        return (path, f.category, None)
-    span = (location.start_line, location.end_line)
-    for h in hunks.get((path, location.side), ()):
-        target = h.old if location.side == "base" else h.new
-        if target is not None and _overlaps(span, target):
-            return (path, f.category, h)
-    return (path, f.category, span)
-
-
 _SEV_ORDER = {"block": 0, "warn": 1, "nit": 2}
 
 
@@ -321,9 +293,7 @@ def _ground_seat(
     return dataclasses.replace(v, findings=tuple(out))
 
 
-def _has_new_block(
-    v: review_records.ReviewVerdict, prior_keys: set[DedupKey], hunks: _Hunks
-) -> bool:
+def _has_new_block(v: review_records.ReviewVerdict, prior_keys: set[str]) -> bool:
     """Return whether the seat carries a surviving block that is not a prior finding.
 
     A block whose key dedups away is dropped from `merged_findings`, so letting it gate would
@@ -332,13 +302,13 @@ def _has_new_block(
     Args:
         v: The seat's grounded verdict.
         prior_keys: The keys of the already-injected findings.
-        hunks: The diff's hunks by repo path.
 
     Returns:
         Whether a new block survives.
     """
     return v.verdict == "block" and any(
-        f.severity == "block" and _dedup_key(f, hunks) not in prior_keys for f in v.findings
+        f.severity == "block" and review_records.finding_key(f) not in prior_keys
+        for f in v.findings
     )
 
 
@@ -384,8 +354,8 @@ def aggregate_verdicts(
     """Fold per-seat verdicts into one panel result with executable grounding.
 
     Every finding whose citation is not in the diff is dropped, and a block outside a gating
-    category becomes a warn. Findings dedup across seats and against `prior_findings` by (path,
-    category, hunk); an already-injected block neither re-surfaces nor counts toward the gate.
+    category becomes a warn. Exact normalized content and location identify a repeat.
+    An already-injected block neither re-surfaces nor counts toward the gate.
     `none` never blocks; `any` blocks on any surviving block. `model_quorum` needs
     `min_blocking_models` distinct provider/model routes to block. `all` needs every seat
     to block; an abstention is not a block.
@@ -401,7 +371,7 @@ def aggregate_verdicts(
         The panel result.
     """
     hunks = diff_hunks(ctx.diff)
-    prior_keys = {_dedup_key(f, hunks) for f in ctx.prior_findings}
+    prior_keys = {review_records.finding_key(f) for f in ctx.prior_findings}
 
     grounded_seats: list[review_records.ReviewVerdict] = []
     blocking_models: set[str] = set()  # distinct models with >=1 surviving non-prior block
@@ -413,15 +383,15 @@ def aggregate_verdicts(
             continue
         gv = _ground_seat(v, ctx, hunks)
         grounded_seats.append(gv)
-        if _has_new_block(gv, prior_keys, hunks):
+        if _has_new_block(gv, prior_keys):
             blocking_models.add(v.model_route)
             n_seats_blocking += 1
 
     # Merge and dedup the grounded findings, dropping those already injected.
-    merged: dict[DedupKey, review_records.Finding] = {}
+    merged: dict[str, review_records.Finding] = {}
     for v in grounded_seats:
         for f in v.findings:
-            key = _dedup_key(f, hunks)
+            key = review_records.finding_key(f)
             if key in prior_keys:
                 continue
             cur = merged.get(key)

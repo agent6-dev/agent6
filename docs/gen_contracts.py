@@ -68,6 +68,13 @@ class Contract:
 
 CONTRACTS: tuple[Contract, ...] = (
     Contract(
+        title="Review read model",
+        module="agent6.viewmodel.review",
+        primary=("FindingView", "ReviewView", "MergeReviewGuard"),
+        writers=("viewmodel/state.py", "viewmodel/_session_log.py"),
+        pins=("tests/unit/test_viewmodel_review.py",),
+    ),
+    Contract(
         title="Review records",
         module="agent6.review_records",
         primary=(
@@ -77,13 +84,15 @@ CONTRACTS: tuple[Contract, ...] = (
             "SeatReply",
             "ReviewVerdict",
             "FindingObservation",
+            "ReviewPanel",
             "FindingResolution",
             "FindingAction",
         ),
-        writers=("harness/_panel.py", "harness/_review_seat.py"),
+        writers=("harness/_panel.py", "harness/_review_seat.py", "harness/_reviewer.py"),
         pins=(
             "tests/unit/test_review_panel.py",
             "tests/unit/test_review_records.py",
+            "tests/unit/test_review_loop.py",
             "tests/unit/test_review_seat.py",
         ),
     ),

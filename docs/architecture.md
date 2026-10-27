@@ -124,6 +124,15 @@ A run keeps one message history with one provider and one model.
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
 - under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
 
+An in-loop panel records the run base and chain commit's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
+It does not capture a separate snapshot or move the operator's index, HEAD or run chain.
+`harness/_review_history.py` restores those records on resume.
+Only exact normalized finding content, location and the cited blob identify a repeat.
+The journal keeps repeated observations even when the worker feedback omits them.
+Findings cut from the feedback notice remain eligible for a later notice.
+Every execution start carries an `execution_id`, every panel has a unique `panel_id`, and every durable event has an `event_id`.
+Journal append order, not timestamps, orders events.
+
 `harness/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
 What the turn leans on sits beside it, one module each: `_chain` (the run's commit chain), `_operator` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means), `_advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads), `_guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges), `_metric` (a metric run's plateau, ceiling and early-finish rules) and `_metric_sampler` (the readings a run takes), `_quiet_turns` (the nudges an empty or prose-only turn draws), `_finish_gates` (what a finish call declares, what it must satisfy and what an end is called), `_standing` (the standing goal's re-entry), `_operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`), `_parallel_dispatch` (the `/parallel` fan-out), `_checkpoint` (the per-turn commit and the final one), `_compactor` (the compaction driver over `_compaction`'s tier-1 rules, `_compaction_result`'s markers and caps, and `_compaction_window`'s sizing and restart rules), `_memory_touch` (what a tool call did to the memory store), and the settings each sibling owns (`_review`, `_compaction_window`, `_provider_call`, `_prompt_revision`).
 The loop runs the advisors and the gates in a declared order and applies each answer; a heuristic is one function and one test file.
@@ -274,6 +283,16 @@ It prints a markdown review, and makes no edits, no commits, and no `run_command
 Either output is also saved as `<stamp>-review.md` under `<state-dir>/reviews/`, beside the provider transcripts, so a later session reads a module's review there.
 
 [Review records](data-contracts.md#review-records) owns the shared findings, seat replies, verdicts, immutable target identifiers, observations and operator request models in `review_records.py`.
+
+`viewmodel/review.py` folds panel evidence and finding history for both live `SessionState` updates and `scan_session_log`.
+An observation opens a new finding but does not reopen a resolved one.
+Only resolution and reopening events change that state.
+A Fix request leaves the finding open and reads as delivery unknown until a submission or failure event arrives.
+The fold retains action reasons in append order and never treats a fixed disposition as proof that verification passed.
+Freshness compares both tree IDs and path coverage with an explicit requested comparison.
+Without that comparison, freshness is unknown.
+Legacy counts carry an unknown-evidence notice; an unreadable journal or structured record retains its error in `MergeReviewGuard`.
+The guard is a read model, not merge enforcement.
 A finding's location names a repository-relative path, a base or head side, and an optional positive, inclusive line range.
 The record types do not capture Git trees or persist panel events.
 
@@ -527,7 +546,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.request.refused` | a `/task`, `/standing` or `/retire` the run could not apply: `kind`, `text`, `error` |
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.edit.left_out`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-turn usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
-| `loop.review.*` | the panel: `start` (trigger, seats), `seat` (seat, model, verdict, findings), `panel` (blocked, block_on, disarmed), `skipped`, and the finish gate's rejections |
+| `loop.review.*` | `start` (panel and execution IDs, trigger, target, resolved seats), `seat` (indexed full grounded verdict, summary, error), `panel` (target, finding observations, injected IDs, blocking decision, completion), `skipped` (identity, reason), and the finish gate's rejections |
 | `session.end` | `reason`, `turns`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it); a `setup_command_failed` end also carries `summary` (the failure diagnostic and output tail, including the no-route-out line when it applies); one shape from every exit path |
 | `session.stranded` | written after `session.end` when a finished run left its edits uncommitted and no commit landed (exit `5`); the status every surface prints then reads `not committed` |
 

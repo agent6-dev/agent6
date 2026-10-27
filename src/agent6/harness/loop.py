@@ -16,6 +16,7 @@ import functools
 import itertools
 import json
 import pathlib
+import uuid
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -53,6 +54,7 @@ from agent6.harness import (
     _prompt_revision,
     _provider_call,
     _quiet_turns,
+    _review_history,
     _reviewer,
     _snapshot,
     _standing,
@@ -158,6 +160,7 @@ class Harness:
     # A snapshot write fault warns once, not every turn; it disables resume, never the run.
     snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
     turns_reached: int = dataclasses.field(default=0, init=False)
+    execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex, init=False)
 
     # ---- run / resume entry --------------------------------------------------
 
@@ -396,6 +399,8 @@ class Harness:
         """
         state = _loop_state.LoopState(
             original_task=original_task,
+            execution_id=self.execution_id,
+            review_panels=_review_history.load_panels(self.events.path) if self.events else (),
             operator_task=operator_task,
             tool_calls=tool_calls,
             root_task_id=root_task_id,
@@ -2072,8 +2077,15 @@ class Harness:
 
     def _emit_start(self, event_type: str, **fields: Any) -> None:
         """Emit a start-family event through the emitter that stamps the worker pid."""
+        self.execution_id = uuid.uuid4().hex
         if self.events is not None:
-            process.emit_session_start(self.events, self.events.path.parent, event_type, **fields)
+            process.emit_session_start(
+                self.events,
+                self.events.path.parent,
+                event_type,
+                execution_id=self.execution_id,
+                **fields,
+            )
 
     def _emit_budget(self, turn: int) -> None:
         """Emit the per-turn usage heartbeat that tells a long model call from a stall.

@@ -133,6 +133,7 @@ depends_on = [
 
 [[modules]]
 # _reviewer and _toolset use _review_seat; _review_seat uses _panel and _llm_json.
+# _reviewer and loop use _review_history to restore durable panel evidence.
 # _compactor and _compaction use _compaction_result and _compaction_window.
 # _compaction_window uses _conversation and _compaction_result; the result cap
 # reads _panel and _verify_gate notice sizes within this harness boundary.
@@ -357,6 +358,7 @@ depends_on = [
 # machine_state views and _machine_logs to advance the shared watch cursor.
 # transcript uses _transcript_text for previews and marker bodies; the helper
 # reads budget, format and events without importing the stateful fold.
+# state and _session_log share review's finding and disposition fold.
 path = "agent6.viewmodel"
 depends_on = [
   "agent6.budget",
@@ -372,6 +374,7 @@ depends_on = [
   "agent6.models.registry",
   "agent6.paths",
   "agent6.providers",
+  "agent6.review_records",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",

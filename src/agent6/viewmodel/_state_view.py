@@ -21,7 +21,7 @@ from agent6.models import registry
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
 from agent6.tools import background
-from agent6.viewmodel import _session_status, _state_types, events, format, listing, policy
+from agent6.viewmodel import _session_status, _state_types, events, format, listing, policy, review
 from agent6.viewmodel import state as session_fold
 
 
@@ -109,6 +109,7 @@ def session_state_as_dict(
         step labels, and `log_tail` as plain strings.
     """
     d = dataclasses.asdict(state)
+    d["review"] = review.as_dict(state.review)
     d["context_pct"] = context_fill(state)
     d["needs_new_work"] = listing.needs_new_work(
         finished=state.finished, end_reason=state.end_reason, all_passed=state.all_passed

@@ -16,7 +16,7 @@ from typing import Any
 from agent6 import terminal
 from agent6.graph import models
 from agent6.sessions import layout
-from agent6.viewmodel import _session_status, _state_types, events, format, log_line
+from agent6.viewmodel import _session_status, _state_types, events, format, log_line, review
 
 
 def initial_state() -> _state_types.SessionState:
@@ -71,6 +71,9 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         The new state, or `state` itself when nothing changed.
     """
     etype = event.get("type", "")
+    review_view = review.apply_event(state.review, event)
+    if review_view is not state.review:
+        state = dataclasses.replace(state, review=review_view)
     if not state.session_id and event.get("session_id"):
         state = dataclasses.replace(state, session_id=str(event["session_id"]))
     # The event's own ts, so replayed history measures idle time from when the run last spoke.

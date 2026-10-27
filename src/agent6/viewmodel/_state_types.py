@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from agent6.viewmodel import _session_status, format
+from agent6.viewmodel import _session_status, format, review
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
 
@@ -294,6 +294,7 @@ class SessionState:
         last_role: The last model call.
         tool_calls: The bounded tool-call history, most recent last.
         last_verify: The last verify gate run.
+        review: Durable panel evidence and finding history across executions.
         budget: The spend.
         pending_approvals: Every approval asked this execution, answered or not.
         pending_questions: Every question prompt asked this execution, answered or not.
@@ -337,6 +338,7 @@ class SessionState:
     last_role: RoleCall | None = None
     tool_calls: tuple[ToolCallView, ...] = ()
     last_verify: VerifyView | None = None
+    review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
     budget: BudgetView = dataclasses.field(default_factory=BudgetView)
     pending_approvals: tuple[ApprovalPrompt, ...] = ()
     pending_questions: tuple[QuestionPrompt, ...] = ()

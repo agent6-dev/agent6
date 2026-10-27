@@ -289,6 +289,13 @@ agent6 ask "how does the task-graph curator work?"
   `review.block_on` sets when grounded findings block; `model_quorum` counts each distinct provider/model route once.
 - `sessions review` reports how the run ended, what went wrong, what you corrected, the questions nobody answered, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
 - every review is saved under `<state-dir>/reviews/`; the path prints on stderr
+
+In-loop panels record their findings and reviewed tree IDs in the session journal.
+An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
+The worker receives each finding once unless the feedback notice cut it.
+A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
+`agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
+Review freshness is unknown until a reader supplies the requested base tree, head tree and path coverage.
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
 ## Run options

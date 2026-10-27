@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6 import errors
+from agent6 import errors, review_records
 from agent6.config import GitCommitConfig
 from agent6.vcs import git_ops, git_read
 
@@ -240,3 +240,18 @@ class RunChain:
         if not self.base_sha:
             return ""
         return git_read.diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
+
+    def review_target(self) -> review_records.ReviewTarget | None:
+        """Return the base and chain tip a panel reviews, without capturing the workspace."""
+        tip = self.tip()
+        if not self.base_sha or not tip:
+            return None
+        return review_records.ReviewTarget(
+            base_commit=self.base_sha,
+            base_tree=git_read.tree_sha(self.root, self.base_sha),
+            head_commit=tip,
+            head_tree=git_read.tree_sha(self.root, tip),
+            snapshot_commit=tip,
+            paths=(),
+            source="revisions",
+        )

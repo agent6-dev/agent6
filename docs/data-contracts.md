@@ -5,8 +5,34 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 
 # Data contracts
 
-Each of the 10 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
+Each of the 11 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
 Every card is generated from the module and class docstrings, so edit those rather than this page.
+
+## Review read model
+
+[`agent6.viewmodel.review`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review.py) &middot; frozen dataclass
+
+Fold review evidence and operator history for every session reader.
+
+**FindingView** &mdash; Keep a finding's observations and operator history independently of panel verdicts.
+
+**ReviewView** &mdash; Fold durable review evidence in journal append order.
+
+**MergeReviewGuard** &mdash; Report open grounded blocks and unreadable evidence without enforcing a merge.
+
+| field | type | default |
+| --- | --- | --- |
+| `finding_id` | `str` | required |
+| `observations` | `tuple[review_records.FindingObservation, ...]` | required |
+| `status` | `Literal['open', 'resolved']` | `'open'` |
+| `resolution` | `review_records.FindingResolution | None` | `None` |
+| `actions` | `tuple[ActionRecord, ...]` | `()` |
+| `anchor_state` | `Literal['unknown', 'current', 'outdated']` | `'unknown'` |
+| `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | `'none'` |
+
+- **Written by:** viewmodel/{_session_log, state}
+- **Read by:** viewmodel/{_state_types, _state_view}
+- **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (1 test files exercise it)
 
 ## Review records
 
@@ -26,6 +52,8 @@ Define immutable review evidence and validate review boundary payloads.
 
 **FindingObservation** &mdash; Associate a finding with its panel and the seats that reported it.
 
+**ReviewPanel** &mdash; Validate a completed panel's durable evidence, including its worker feedback.
+
 **FindingResolution** &mdash; Record the operator's conclusion without inferring verification success.
 
 **FindingAction** &mdash; Validate an operator request against a known review-state version.
@@ -40,9 +68,9 @@ Define immutable review evidence and validate review boundary payloads.
 | `paths` | `tuple[str, ...]` | required |
 | `source` | `Literal['revisions', 'worktree']` | required |
 
-- **Written by:** harness/{_panel, _review_seat}
-- **Read by:** harness/{_loop_state, _reviewer}
-- **Guarded by:** [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py) (5 test files exercise it)
+- **Written by:** harness/{_panel, _review_seat, _reviewer}
+- **Read by:** harness/{_chain, _loop_state, _review_history}, viewmodel/review
+- **Guarded by:** [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py) (6 test files exercise it)
 
 ## Conversation
 
@@ -182,4 +210,4 @@ Render session status, context usage, and the wire snapshot.
 
 - **Written by:** viewmodel/{_state_view, machine_state}
 - **Read by:** ui/acp/updates, ui/cli/_steer_menu, ui/tui/app, ui/web/{_sse, model}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (7 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (8 test files exercise it)

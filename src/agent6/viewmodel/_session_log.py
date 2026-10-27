@@ -11,7 +11,7 @@ import pathlib
 from collections.abc import Mapping
 
 from agent6 import budget, kinds, terminal
-from agent6.viewmodel import _session_status, events, format
+from agent6.viewmodel import _session_status, events, format, review
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -74,6 +74,7 @@ class LogScan:
             attached.
         left_out: The (path, reason) of each edit the commits left out, across every
             execution; the reason is `ignored` or `untracked` (`loop.edit.left_out`).
+        review: The shared fold of panel evidence and finding history.
     """
 
     saw_start: bool = False
@@ -119,6 +120,7 @@ class LogScan:
     pins: tuple[str, ...] = ()
     unattended_questions: int = 0
     left_out: tuple[tuple[str, str], ...] = ()
+    review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
 
     def verify_verdict(self) -> bool | None:
         """Return the gate verdict for judging candidates.
@@ -285,15 +287,24 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     verify_timeout_s = 0.0
     pins: list[str] = []
     left_out: dict[str, str] = {}
+    review_view = review.ReviewView()
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
-            for line in fh:
+            for line_number, line in enumerate(fh, 1):
                 try:
                     ev = json.loads(line)
-                except ValueError:
+                except ValueError as exc:
+                    review_view = dataclasses.replace(
+                        review_view,
+                        read_failure=review_view.read_failure
+                        or f"journal line {line_number}: {exc}",
+                        completion="unknown",
+                        freshness="unknown",
+                    )
                     continue
                 if not isinstance(ev, dict):
                     continue
+                review_view = review.apply_event(review_view, ev)
                 etype = ev.get("type")
                 ep = events.event_epoch(ev.get("ts"))
                 if ep is not None:
@@ -415,10 +426,13 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     if (reading := read_plan_usage(ev)) is not None:
                         plan_usage = reading
                         plan_usage_at = events.event_epoch(ev.get("ts")) or 0.0
-    except OSError:
+    except FileNotFoundError:
         pass
+    except OSError as exc:
+        review_view = dataclasses.replace(review_view, read_failure=str(exc))
     return LogScan(
         saw_start=saw_start,
+        review=review_view,
         mode=mode,
         task_label=task,
         finished=finished,

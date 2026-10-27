@@ -6,13 +6,17 @@ from __future__ import annotations
 
 import dataclasses
 import threading
+import uuid
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Literal
 
-from agent6 import budget, review_records
+import pydantic
+
+from agent6 import budget, errors, review_records
 from agent6.config import ReviewScope
-from agent6.harness import _chain, _context, _panel, _review_seat
+from agent6.harness import _chain, _context, _panel, _review_history, _review_seat
 from agent6.providers import Provider, ToolDefinition
+from agent6.vcs import git_read
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
@@ -345,17 +349,32 @@ class Reviewer:
             `capped` when it blocks past the cap; None when the panel was skipped (no diff, a
             scarce budget, a spent budget).
         """
-        diff = self.chain.diff_since_base()
-        if not diff.strip():
-            self.emit("loop.review.skipped", turn=turn, trigger=trigger, reason="no_diff")
+        panel_id = uuid.uuid4().hex
+        identity = dict(
+            panel_id=panel_id, execution_id=state.execution_id, turn=turn, trigger=trigger
+        )
+        try:
+            target = self.chain.review_target()
+            diff = (
+                git_read.diff_range(self.chain.root, target.base_tree, target.head_tree)
+                if target
+                else ""
+            )
+        except (errors.GitError, OSError) as exc:
+            self.emit("loop.review.skipped", **identity, reason="target_unreadable", error=str(exc))
             return None
-        # A skipped panel approves: the gate blocks only on an explicit unsatisfied critique.
+        if target is None or not diff.strip():
+            self.emit(
+                "loop.review.skipped",
+                **identity,
+                reason="no_target" if target is None else "no_diff",
+            )
+            return None
         remaining = self.budget_remaining()
         if remaining is not None and remaining < self.settings.min_remaining_budget_fraction:
             self.emit(
                 "loop.review.skipped",
-                turn=turn,
-                trigger=trigger,
+                **identity,
                 reason="min_remaining_budget_fraction",
                 remaining=round(remaining, 3),
             )
@@ -364,19 +383,33 @@ class Reviewer:
         block_on: _panel.ReviewBlockOn = (
             self.settings.block_on if trigger == "before_finish" else "none"
         )
+        known, prior = _review_history.matching_findings(
+            self.chain.root, target, state.review_panels
+        )
         ctx = _panel.ReviewContext(
             task=state.original_task,
             agents_md=_context.agents_md_text(self.chain.root, self.hide),
             diff=diff,
             verify_ok=state.verify.last_ok,
             verify_output=state.verify.last_tail,
-            prior_findings=state.review_findings,
+            prior_findings=prior,
         )
         self.emit(
             "loop.review.start",
-            turn=turn,
-            trigger=trigger,
-            seats=len(self.settings.reviewers),
+            **identity,
+            target=pydantic.TypeAdapter(review_records.ReviewTarget).dump_python(
+                target, mode="json"
+            ),
+            seats=[
+                dict(
+                    seat_index=i,
+                    focus=s.focus,
+                    model_route=s.model,
+                    scope=s.scope,
+                    temperature=s.temperature,
+                )
+                for i, s in enumerate(self.settings.reviewers)
+            ],
         )
         tools: list[ToolDefinition] | None = None
         dispatch: _review_seat.ReviewDispatch | None = None
@@ -388,47 +421,61 @@ class Reviewer:
                 ctx,
                 block_on=block_on,
                 min_blocking_models=self.settings.min_blocking_models,
-                panel_id=f"{trigger}-{turn}",
+                panel_id=panel_id,
                 repo_max_turns=self.settings.repo_max_turns,
                 concurrency=self.settings.concurrency,
                 tools=tools,
                 dispatch=dispatch,
             )
         except budget.BudgetExceededError:
-            self.emit("loop.review.skipped", turn=turn, reason="budget")
+            self.emit("loop.review.skipped", **identity, reason="budget")
             return None
-        for v in result.per_seat:
+        for verdict in result.per_seat:
             self.emit(
                 "loop.review.seat",
-                turn=turn,
-                seat=v.focus,
-                model=v.model_route,
-                verdict=v.verdict,
-                findings=len(v.findings),
+                **identity,
+                **pydantic.TypeAdapter(review_records.ReviewVerdict).dump_python(
+                    verdict, mode="json"
+                ),
             )
         disarmed = state.gates.review_rejections >= self.settings.max_review_rejections
         effective_blocked = result.blocked and not disarmed
-        self.emit(
-            "loop.review.panel",
+        inconclusive = _panel.panel_is_inconclusive(result)
+        shown = (
+            ()
+            if inconclusive
+            else _panel.findings_within(
+                result.merged_findings, _panel.REVIEW_NOTICE_BYTES - _NOTICE_ROOM
+            )
+        )
+        observations = _review_history.observations(panel_id, result.per_seat, known)
+        shown_keys = {review_records.finding_key(f) for f in shown}
+        record = review_records.ReviewPanel(
+            panel_id=panel_id,
+            execution_id=state.execution_id,
             turn=turn,
             trigger=trigger,
+            target=target,
+            findings=observations,
+            injected_finding_ids=tuple(
+                o.finding_id
+                for o in observations
+                if review_records.finding_key(o.finding) in shown_keys
+            ),
             block_on=block_on,
             blocked=effective_blocked,
             raw_blocked=result.blocked,
             disarmed=disarmed,
             n_block=result.n_block,
             n_abstain=result.n_abstain,
+            completion="inconclusive" if inconclusive else "complete",
         )
-        # An all-abstain panel reviewed nothing and says so; it still lets the end through.
-        if _panel.panel_is_inconclusive(result):
+        self.emit("loop.review.panel", **record.model_dump(mode="json"))
+        state.review_panels += (record,)
+        if inconclusive:
             text = _panel.inconclusive_note(result)
         else:
-            # Only a finding the worker is shown counts as injected; a cut one comes back.
-            shown = _panel.findings_within(
-                result.merged_findings, _panel.REVIEW_NOTICE_BYTES - _NOTICE_ROOM
-            )
-            state.review_findings += shown
-            text = _panel.render_findings(shown) or "No blocking findings."
+            text = _panel.render_findings(shown) or "No new findings."
             if cut := len(result.merged_findings) - len(shown):
                 text += f"\n[{cut} more finding{'s' if cut > 1 else ''} not shown]"
         return CritiqueResult(

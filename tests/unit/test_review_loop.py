@@ -15,9 +15,10 @@ from unittest import mock
 
 import pytest
 
-from agent6 import review_records
+from agent6 import event_log, review_records
 from agent6.harness import _chain, _conversation, _panel, _reviewer, loop
 from agent6.tools import results
+from agent6.vcs import git_read
 from tests.unit.test_review_gate import (
     _exec,  # pyright: ignore[reportPrivateUsage]
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -62,6 +63,17 @@ _NONGATING = (  # grounded but a non-block-eligible category -> downgraded, neve
     '"severity":"block","location":{"path":"foo.py","side":"head","start_line":11,"end_line":11},'
     '"title":"rename it","detail":"x"}]}'
 )
+
+
+@pytest.fixture(autouse=True)
+def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give loop scheduling tests an immutable target; snapshot tests exercise real Git."""
+    target = review_records.ReviewTarget(
+        "base", "base-tree", "tip", "head-tree", "tip", (), "revisions"
+    )
+    monkeypatch.setattr(_chain.RunChain, "review_target", mock.Mock(return_value=target))
+    monkeypatch.setattr(git_read, "diff_range", mock.Mock(return_value=_DIFF))
+    monkeypatch.setattr(git_read, "tree_entry", mock.Mock(return_value="100644 blob cited-blob"))
 
 
 def _seat(provider: Any, focus: str = "security", model: str = "m1") -> _reviewer.ReviewSeat:
@@ -152,6 +164,7 @@ def test_panels_count_and_inject_each_finding_once(
         _resp(_PASS),
     ]
     snapshot = tmp_path / "loop_state.json"
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
@@ -160,6 +173,7 @@ def test_panels_count_and_inject_each_finding_once(
         ),
         base_sha="b",
         resume_state_path=snapshot,
+        events=events,
     )
     messages = _begin()
     result = _drive(wf, messages)
@@ -175,18 +189,33 @@ def test_panels_count_and_inject_each_finding_once(
     assert "".join(feedback).count("hardcoded key") == 1
     assert "".join(feedback).count("overwrites data") == rejections - 1
 
-    # A resume keeps the rejection count but lets a prior execution's finding count again.
+    panels = [
+        json.loads(line)
+        for line in events.path.read_text().splitlines()
+        if json.loads(line)["type"] == "loop.review.panel"
+    ]
+    observations = panels[0].get("findings")
+    assert isinstance(observations, list) and observations
+    assert observations[0]["finding"]["title"] == "hardcoded key"
+    assert panels[1]["findings"][0]["finding_id"] == observations[0]["finding_id"]
+
+    # A resume reads already-shown findings from the journal, not from process memory.
     worker.call.side_effect = [
         _resp_with_tool_use(f"resumed{i}", _finish_tool_use(f"r{i}", "done")) for i in range(3)
     ]
     seat_provider.call.reset_mock()
     seat_provider.call.side_effect = [_resp(_BLOCK), _resp(_BLOCK), _resp(_PASS)]
-    with mock.patch.object(_chain.RunChain, "diff_since_base", return_value=_DIFF):
-        resumed = wf.resume()
-    assert json.loads(snapshot.read_text())["review_rejections_total"] == rejections + 1
-    assert resumed.reason == "finish_session" and resumed.turns == rejections + 3
+    resumed = wf.resume()
+    assert json.loads(snapshot.read_text())["review_rejections_total"] == rejections
+    assert resumed.reason == "finish_session" and resumed.turns == rejections + 2
     prompt = seat_provider.call.call_args_list[0].kwargs["messages"][0]["content"]
-    assert "ALREADY RAISED" not in prompt
+    assert "ALREADY RAISED" in prompt
+    rows = [json.loads(line) for line in events.path.read_text().splitlines()]
+    starts = [row for row in rows if row["type"] == "loop.review.start"]
+    assert len({row["panel_id"] for row in starts}) == len(starts)
+    resume_start = next(row for row in rows if row["type"] == "loop.resume.start")
+    assert starts[-1]["execution_id"] == resume_start["execution_id"]
+    assert starts[-1]["execution_id"] != starts[0]["execution_id"]
 
 
 def test_second_panel_prompt_names_prior_finding() -> None:
@@ -384,7 +413,6 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
     with (
-        mock.patch.object(_chain.RunChain, "diff_since_base", return_value=_DIFF),
         mock.patch.object(review_mod, "run_panel", return_value=res),
     ):
         out = wf.reviewer.critique(state, trigger="periodic", turn=1)
