@@ -25,7 +25,7 @@ _DEV_SHM = pathlib.Path("/dev/shm")  # noqa: S108 - a policy path, never opened
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Row:
-    """A policy path with effective access, purpose tags and provenance."""
+    """A report path with effective access, purpose tags and provenance."""
 
     mode: str
     path: pathlib.Path
@@ -97,9 +97,9 @@ def _home_row(
     return Row("rw", persistent, f"HOME, persists across runs: {why}", warning=True)
 
 
-def _tool_rows() -> list[Row]:
+def _tool_rows(mounts: tuple[tool_paths.ToolMount, ...] | None = None) -> list[Row]:
     rows: list[Row] = []
-    for mount in tool_paths.operator_tool_mounts():
+    for mount in tool_paths.operator_tool_mounts() if mounts is None else mounts:
         notes = ["on the jail's PATH"] if mount.on_path else []
         if mount.links:
             first, *others = mount.links
@@ -109,6 +109,57 @@ def _tool_rows() -> list[Row]:
             notes.append(f"install root not widened: {mount.root_refusal}")
         rows.append(Row("ro", mount.path, "; ".join(notes), "tool"))
     return rows
+
+
+def _group_install_roots(
+    rows: list[Row],
+    mounts: tuple[tool_paths.ToolMount, ...],
+    access: Callable[[pathlib.Path], str],
+) -> list[Row]:
+    roots: dict[pathlib.Path, tool_paths.ToolMount] = {}
+    for mount in mounts:
+        if mount.on_path or not mount.links or mount.root_refusal:
+            continue
+        try:
+            if any(link.resolve().parent == mount.path / "bin" for link in mount.links):
+                roots[mount.path] = mount
+        except OSError:
+            # A link that disappears during the report leaves its grant in a separate row.
+            continue
+    merged = _merge(rows, access)
+    groups: dict[tuple[pathlib.Path, str, str], list[Row]] = {}
+    for row in merged:
+        if row.tag == "tool" and row.path in roots:
+            groups.setdefault((row.path.parent, row.mode, row.tag), []).append(row)
+    folded: dict[pathlib.Path, Row | None] = {}
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        first = group[0]
+        links = [roots[row.path].links for row in group]
+        shown = [entries[0] for entries in links]
+        names = [str(shown[0])] + [
+            link.name if link.parent == shown[0].parent else str(link) for link in shown[1:]
+        ]
+        more = sum(len(entries) for entries in links) - len(shown)
+        note = f"{len(group)} install roots; {', '.join(names[:-1])} and {names[-1]} link into them"
+        if more:
+            note += f", {more} more"
+        members = {row.path for row in group}
+        notes = [note] + [
+            f"{row.path.name}: {row.note}"
+            for row in rows
+            if row.path in members and row.tag != "tool" and row.note
+        ]
+        folded.update(dict.fromkeys(members))
+        folded[first.path] = Row(
+            first.mode,
+            first.path.parent / ("{" + ",".join(row.path.name for row in group) + "}"),
+            "; ".join(dict.fromkeys(notes)),
+            first.tag,
+            any(row.warning for row in group),
+        )
+    return [row for entry in merged if (row := folded.get(entry.path, entry)) is not None]
 
 
 def file_tool_rows(ws: _path_safety.Workspace, grants: tools_policy.Grants) -> list[Row]:
@@ -258,10 +309,11 @@ def command_rows(
     git_grant: pathlib.Path | None,
     abi: int,
 ) -> list[Row]:
-    """Return one row per command-policy path, using mount order or additive Landlock grants."""
+    """Return command-policy rows, folding sibling linked install roots with equal access."""
     net = tools_policy.resolve_network(cfg, selected)
     configured = _grant_rows(grants)
-    rows = [*_system_rows(selected, net, abi), *_tool_rows()]
+    mounts = tool_paths.operator_tool_mounts()
+    rows = [*_system_rows(selected, net, abi), *_tool_rows(mounts)]
     rows += [r for r in configured if r.mode != "rw"]
     if net == "host":
         rows += [Row("ro", p, tag="net") for p in tools_policy.host_network_reads()]
@@ -326,4 +378,4 @@ def command_rows(
             else "denied, except the rows under it below",
         ),
     )
-    return _merge(rows, access)
+    return _group_install_roots(rows, mounts, access)
