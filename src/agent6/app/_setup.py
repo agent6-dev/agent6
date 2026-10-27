@@ -27,6 +27,7 @@ from agent6.config import (
     MCPServerEntry,
     OpenAIProviderEntry,
     ProviderEntry,
+    ResponsesProviderEntry,
     _layer_data,
     layer,
     plan_metered,
@@ -355,7 +356,9 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
 
 def _sign_in_refusal(
     name: str,
-    entry: ChatGPTProviderEntry | AnthropicProviderEntry | OpenAIProviderEntry,
+    entry: (
+        ChatGPTProviderEntry | AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry
+    ),
     secrets: dict[str, str],
 ) -> str | None:
     """Return why a provider's stored sign-in cannot run, or None.

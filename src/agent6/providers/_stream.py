@@ -274,7 +274,7 @@ class SseCall:
 
     Attributes:
         api_label: The name that leads API error messages ("OpenAI", "Anthropic").
-        api_format: The wire format ("openai", "anthropic", "chatgpt").
+        api_format: The wire format ("openai", "anthropic", "chatgpt", "responses").
         url: The URL dialled.
         headers: The request headers.
         body: The request body.

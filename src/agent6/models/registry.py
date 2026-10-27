@@ -180,7 +180,7 @@ def role_effort(cfg: Config, role: kinds.RoleName) -> str | None:
     match entry.api_format:
         case "anthropic":
             return rm.effort or "off"
-        case "chatgpt" | "claude_code":
+        case "chatgpt" | "responses" | "claude_code":
             return rm.effort
         case _:
             return openai.sent_reasoning_effort(

@@ -71,7 +71,7 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` (the ChatGPT-subscription Codex backend, Responses API), or `claude_code` (the installed, signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key). |
+| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` (the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key). |
 | `deployment` | `"direct"` | `direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format only): the URL shape and where the model name and API version go. |
 | `base_url` | per (format, deployment) | provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `deployment = "vertex"` or `"azure"`; ChatGPT sign-in also connected to its fixed OAuth authority |
 | `auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). |
@@ -185,6 +185,26 @@ api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
 
+### Responses API endpoint (`api_format = "responses"`)
+
+The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
+A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it; usage meters tokens like any keyed endpoint, priced from the catalog when the model is known.
+
+```toml
+[providers.work]
+api_format = "responses"
+base_url = "https://models.example/v1"
+
+[models.worker]
+provider = "work"
+model = "reasoning-model"
+```
+
+- The system prompt goes as `instructions`, tools as flat function tools, tool results as `function_call_output`, the output cap as `max_output_tokens`; `store = false` always, and encrypted reasoning items are replayed to this endpoint and model only.
+- The role's `effort` goes as `reasoning.effort` (`off` sends `none`; unset sends nothing); a `temperature` the endpoint refuses is dropped for the rest of the run.
+- `extra_body` never sets `store`, `previous_response_id`, `conversation`, `background`, `max_output_tokens`, `parallel_tool_calls`, `text`, `response_format` or the structural fields.
+- Streaming runs when a surface watches the call; a JSON response serves the rest.
+
 ### ChatGPT subscription (`api_format = "chatgpt"`)
 
 Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Responses backend.
@@ -280,7 +300,7 @@ Cross-vendor mixes are fine.
 | `provider` | *(required)* | A `[providers.<name>]` entry, by name. |
 | `model` | *(required)* | Model id as that provider names it (`agent6 model` lists them). |
 | `temperature` | `0.0` | sampling temperature pinned on every call, `temperature = 0.0` to `2.0`; stable tool use at `temperature = 0.0`; TOML omission: `temperature = 0.0`; provider default only through `temperature=None` in the Python API |
-| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, as printed by `agent6 config show`; no effort sent with `api_format = "chatgpt"` or `"claude_code"`, leaving the model's own default |
+| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, as printed by `agent6 config show`; no effort sent with `api_format = "chatgpt"`, `"responses"` or `"claude_code"`, leaving the model's own default |
 
 ## `[sandbox]`
 

@@ -1036,7 +1036,9 @@ def test_a_provider_block_without_api_format_names_the_key(tmp_path: pathlib.Pat
     cfg.write_text('[providers.anthropic]\napi_key_env = "K"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
         load_config(cfg)
-    assert 'set api_format = "anthropic", "openai", "chatgpt", or "claude_code"' in str(exc.value)
+    assert 'set api_format = "anthropic", "openai", "chatgpt", "responses" or "claude_code"' in str(
+        exc.value
+    )
 
 
 def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:

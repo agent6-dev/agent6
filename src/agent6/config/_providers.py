@@ -12,7 +12,7 @@ import pydantic
 
 from agent6.config import _base, _headers, _oauth, _sandbox
 
-ApiFormat = Literal["anthropic", "openai", "chatgpt", "claude_code"]
+ApiFormat = Literal["anthropic", "openai", "chatgpt", "responses", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
@@ -86,6 +86,8 @@ def _default_base_url(api_format: str, deployment: str) -> str | None:
         return None
     if api_format == "anthropic":
         return _ANTHROPIC_DEFAULT_BASE_URL
+    if api_format == "responses":
+        return None  # no vendor default: the endpoint is whatever the operator stood up
     return _CHATGPT_DEFAULT_BASE_URL if api_format == "chatgpt" else _OPENAI_DEFAULT_BASE_URL
 
 
@@ -109,8 +111,9 @@ def _default_auth_style(api_format: str, deployment: str) -> str:
 _API_FORMAT_DESCRIPTION = (
     "The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, "
     "OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` "
-    "(the ChatGPT-subscription Codex backend, Responses API), or `claude_code` (the installed, "
-    "signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key)."
+    "(the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on "
+    "a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in "
+    "Claude Code binary on a Claude subscription; no HTTP endpoint, no key)."
 )
 
 
@@ -259,12 +262,13 @@ class _ProviderBase(pydantic.BaseModel):
         dep = data.get("deployment", "direct")
         if fmt == "anthropic" and dep == "azure":
             raise ValueError("deployment 'azure' requires api_format 'openai'")
-        if fmt == "chatgpt" and dep != "direct":
-            raise ValueError("api_format 'chatgpt' supports deployment 'direct' only")
+        if fmt in ("chatgpt", "responses") and dep != "direct":
+            raise ValueError(f"api_format {fmt!r} supports deployment 'direct' only")
         if not data.get("base_url"):
             default = _default_base_url(fmt, dep) if isinstance(fmt, str) else None
             if default is None:
-                raise ValueError(f"base_url is required for deployment {dep!r}")
+                what = f"api_format {fmt!r}" if fmt == "responses" else f"deployment {dep!r}"
+                raise ValueError(f"base_url is required for {what}")
             data["base_url"] = default
         if not data.get("auth_style") and isinstance(fmt, str):
             data["auth_style"] = _default_auth_style(fmt, dep)
@@ -495,6 +499,19 @@ class ChatGPTProviderEntry(_ProviderBase):
         return self
 
 
+class ResponsesProviderEntry(_ProviderBase):
+    """The Responses API on a configured endpoint.
+
+    `/responses` is appended to `base_url`, which has no vendor default; `direct` is the only
+    deployment. A key, a `token_command` or a configured `oauth` issuer authenticates it, and
+    its usage meters tokens like any keyed endpoint.
+    """
+
+    api_format: Literal["responses"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
+    )
+
+
 class ClaudeCodeProviderEntry(pydantic.BaseModel):
     """The operator's installed Claude Code binary.
 
@@ -516,7 +533,11 @@ class ClaudeCodeProviderEntry(pydantic.BaseModel):
 
 
 ProviderEntry = Annotated[
-    AnthropicProviderEntry | OpenAIProviderEntry | ChatGPTProviderEntry | ClaudeCodeProviderEntry,
+    AnthropicProviderEntry
+    | OpenAIProviderEntry
+    | ChatGPTProviderEntry
+    | ResponsesProviderEntry
+    | ClaudeCodeProviderEntry,
     pydantic.Discriminator("api_format"),
 ]
 

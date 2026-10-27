@@ -224,7 +224,7 @@ class ProviderCall:
 
     Attributes:
         api_label: The name that leads API error messages ("OpenAI", "Anthropic").
-        api_format: The wire format ("openai", "anthropic", "chatgpt").
+        api_format: The wire format ("openai", "anthropic", "chatgpt", "responses").
         url: The URL dialled.
         body: The request body; an adaptation mutates it in place.
         timeout_s: The read budget in seconds.

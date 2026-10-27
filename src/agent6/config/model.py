@@ -561,7 +561,8 @@ class Config(pydantic.BaseModel):
 
 # pydantic's own message for a missing discriminator names neither the key nor its values.
 _MISSING_API_FORMAT = (
-    'set api_format = "anthropic", "openai", "chatgpt", or "claude_code" (see docs/config.md)'
+    'set api_format = "anthropic", "openai", "chatgpt", "responses" or "claude_code"'
+    " (see docs/config.md)"
 )
 
 

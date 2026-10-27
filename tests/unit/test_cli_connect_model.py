@@ -184,7 +184,7 @@ def test_enter_at_the_api_format_prompt_keeps_an_existing_blocks_format(
     assert (rc, api_format, prompts[0]) == (
         0,
         "openai",
-        "API format for 'az' (anthropic/openai/chatgpt/claude_code) [openai]: ",
+        "API format for 'az' (anthropic/openai/chatgpt/responses/claude_code) [openai]: ",
     )
 
 
@@ -305,7 +305,7 @@ def test_a_preset_name_keeps_an_existing_blocks_other_format(
     monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant")
     assert main(["connect", "claude"]) == 0
     assert prompts == [
-        "API format for 'claude' (anthropic/openai/chatgpt/claude_code) [anthropic]: "
+        "API format for 'claude' (anthropic/openai/chatgpt/responses/claude_code) [anthropic]: "
     ]
     assert tomllib.loads(gc.read_text())["providers"]["claude"] == {"api_format": "anthropic"}
     assert "already holds these values" in capsys.readouterr().out

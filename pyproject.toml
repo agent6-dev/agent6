@@ -313,6 +313,7 @@ banned-from = [
     "agent6.providers.claude_code",
     "agent6.providers.oauth",
     "agent6.providers.openai",
+    "agent6.providers.responses",
     "agent6.providers.token_command",
     "agent6.providers.types",
     "agent6.providers.wire",

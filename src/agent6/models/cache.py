@@ -27,6 +27,7 @@ from agent6.config import (
     ClaudeCodeProviderEntry,
     OpenAIProviderEntry,
     ProviderEntry,
+    ResponsesProviderEntry,
 )
 from agent6.models import pricing as models_pricing
 from agent6.providers import _headers, _transport, oauth, types, wire
@@ -192,7 +193,8 @@ def _parse_context(payload: object) -> dict[str, int]:
 
 
 def _models_endpoint(
-    entry: AnthropicProviderEntry | OpenAIProviderEntry, api_key: str | None
+    entry: AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry,
+    api_key: str | None,
 ) -> tuple[str, dict[str, str]]:
     """Return the (url, headers) of the entry's `/models` listing, auth included.
 

@@ -20,6 +20,7 @@ from agent6.providers.chatgpt import ChatGPTProvider  # noqa: ICN003  # re-expor
 from agent6.providers.chatgpt_oauth import ChatGPTCredential  # noqa: ICN003  # re-export
 from agent6.providers.claude_code import ClaudeCodeProvider  # noqa: ICN003  # re-export
 from agent6.providers.openai import OpenAIProvider  # noqa: ICN003  # re-export
+from agent6.providers.responses import ResponsesProvider  # noqa: ICN003  # re-export
 from agent6.providers.token_command import CommandToken  # noqa: ICN003  # re-export
 from agent6.providers.types import (  # noqa: ICN003  # re-export
     ProviderAborted,
@@ -126,6 +127,7 @@ __all__ = [
     "ProviderError",
     "ProviderInterrupted",
     "ProviderResponse",
+    "ResponsesProvider",
     "RoleTranscriptSink",
     "ToolDefinition",
     "TranscriptRecorder",

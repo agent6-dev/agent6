@@ -18,7 +18,7 @@ from urllib import parse
 
 from agent6.providers import types
 
-ApiFormat = Literal["anthropic", "openai", "chatgpt"]
+ApiFormat = Literal["anthropic", "openai", "chatgpt", "responses"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
@@ -106,7 +106,7 @@ def request_url(
         url, model_in_body = f"{base}/openai/deployments/{seg}/chat/completions", False
     elif api_format == "anthropic":
         url, model_in_body = f"{base}/messages", True
-    elif api_format == "chatgpt":
+    elif api_format in ("chatgpt", "responses"):
         url, model_in_body = f"{base}/responses", True
     else:
         url, model_in_body = f"{base}/chat/completions", True

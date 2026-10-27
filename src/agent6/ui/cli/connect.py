@@ -19,6 +19,7 @@ from agent6.config import (
     OAuthConfig,
     OpenAIProviderEntry,
     ProviderEntry,
+    ResponsesProviderEntry,
     _layer_data,
     io,
     layer,
@@ -144,7 +145,7 @@ def _current(name: str, target: pathlib.Path, to_repo: bool) -> _Current:
     entry = eff.config.providers.get(name)
     effective = _Leaves(
         entry.api_format if entry is not None else "",
-        entry.base_url if isinstance(entry, OpenAIProviderEntry) else "",
+        entry.base_url if isinstance(entry, (OpenAIProviderEntry, ResponsesProviderEntry)) else "",
     )
     target_layer = "repo" if to_repo else "global"
     shadowed = {
@@ -391,7 +392,7 @@ def _chatgpt_sign_in(name: str) -> int:
 
 def _configured_issuer(entry: ProviderEntry | None) -> OAuthConfig | None:
     """Return the entry's `oauth` table; None for an entry without one."""
-    if isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry)):
+    if isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry, ResponsesProviderEntry)):
         return entry.oauth
     return None
 
@@ -546,7 +547,9 @@ def _device_grant(
         return None
 
 
-def _verify_sign_in(name: str, entry: AnthropicProviderEntry | OpenAIProviderEntry) -> None:
+def _verify_sign_in(
+    name: str, entry: AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry
+) -> None:
     """Use the stored grant once: the configured exchange, then a read-only model listing.
 
     Prints the outcome and never raises: the grant is already saved.
@@ -570,7 +573,7 @@ def _verify_sign_in(name: str, entry: AnthropicProviderEntry | OpenAIProviderEnt
 
 def _configured_sign_in(
     name: str,
-    entry: AnthropicProviderEntry | OpenAIProviderEntry,
+    entry: AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry,
     issuer: OAuthConfig,
     flow: str,
     verify: bool,
@@ -654,17 +657,18 @@ def _prompt_api_format(name: str, preset_format: str, current_format: str) -> st
         try:
             api_format = (
                 input(
-                    f"API format for {name!r} (anthropic/openai/chatgpt/claude_code) [{default}]: "
+                    f"API format for {name!r} (anthropic/openai/chatgpt/responses/claude_code)"
+                    f" [{default}]: "
                 ).strip()
                 or default
             )
         except EOFError:
             _common.error("no input.")
             return None
-    if api_format not in ("anthropic", "openai", "chatgpt", "claude_code"):
+    if api_format not in ("anthropic", "openai", "chatgpt", "responses", "claude_code"):
         _common.error(
             f"unknown api_format {api_format!r}"
-            " (expected anthropic, openai, chatgpt, or claude_code)."
+            " (expected anthropic, openai, chatgpt, responses or claude_code)."
         )
         return None
     return api_format
@@ -683,7 +687,9 @@ def _revoke(name: str, entry: ProviderEntry | None) -> None:
         if grant is None or issuer.revocation_endpoint is None:
             return
         where = issuer.revocation_endpoint
-        assert isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry))
+        assert isinstance(
+            entry, (AnthropicProviderEntry, OpenAIProviderEntry, ResponsesProviderEntry)
+        )
         err = _oauth_protocol.revoke_tokens(
             where,
             issuer.client_id,
@@ -772,10 +778,11 @@ def _write_shown_values(
     fields: dict[str, io.ConfigLeafValue] = {
         "api_format": api_format if api_format != current.target.api_format else None
     }
-    if api_format == "openai":
+    if api_format in ("openai", "responses"):
         # A loaded block always carries a URL; the target's own leaves may not.
-        held = current.effective.base_url if current.effective.api_format == "openai" else ""
-        offered = held or preset_url or OpenAIProviderEntry(api_format="openai").base_url
+        held = current.effective.base_url if current.effective.api_format == api_format else ""
+        vendor = OpenAIProviderEntry(api_format="openai").base_url if api_format == "openai" else ""
+        offered = held or preset_url or vendor  # a Responses endpoint has no vendor default
         try:
             url = _prompt_base_url(offered)
         except ValueError as exc:
@@ -813,7 +820,9 @@ def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int
         return _chatgpt_sign_in(name)
     issuer = _configured_issuer(entry)
     if issuer is not None:
-        assert isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry))
+        assert isinstance(
+            entry, (AnthropicProviderEntry, OpenAIProviderEntry, ResponsesProviderEntry)
+        )
         return _configured_sign_in(name, entry, issuer, flow, verify)
     try:
         api_key = _prompt_api_key(name)

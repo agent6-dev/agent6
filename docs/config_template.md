@@ -145,6 +145,26 @@ api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
 
+### Responses API endpoint (`api_format = "responses"`)
+
+The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
+A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it; usage meters tokens like any keyed endpoint, priced from the catalog when the model is known.
+
+```toml
+[providers.work]
+api_format = "responses"
+base_url = "https://models.example/v1"
+
+[models.worker]
+provider = "work"
+model = "reasoning-model"
+```
+
+- The system prompt goes as `instructions`, tools as flat function tools, tool results as `function_call_output`, the output cap as `max_output_tokens`; `store = false` always, and encrypted reasoning items are replayed to this endpoint and model only.
+- The role's `effort` goes as `reasoning.effort` (`off` sends `none`; unset sends nothing); a `temperature` the endpoint refuses is dropped for the rest of the run.
+- `extra_body` never sets `store`, `previous_response_id`, `conversation`, `background`, `max_output_tokens`, `parallel_tool_calls`, `text`, `response_format` or the structural fields.
+- Streaming runs when a surface watches the call; a JSON response serves the rest.
+
 ### ChatGPT subscription (`api_format = "chatgpt"`)
 
 Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Responses backend.

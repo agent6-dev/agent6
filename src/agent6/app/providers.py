@@ -18,6 +18,7 @@ from agent6.config import (
     ClaudeCodeProviderEntry,
     Config,
     EffortLevel,
+    ResponsesProviderEntry,
     ReviewerConfig,
     RoleModel,
     RoleName,
@@ -34,6 +35,7 @@ from agent6.providers import (
     Provider,
     ProviderError,
     ProviderResponse,
+    ResponsesProvider,
     ToolDefinition,
     TranscriptRecorder,
     TranscriptSink,
@@ -261,6 +263,21 @@ def _provider_from_entry(
             extra_headers=extra_headers,
             extra_body=extra_body,
             extra_query=extra_query,
+            credential=credential,
+        )
+    if isinstance(entry, ResponsesProviderEntry):
+        return ResponsesProvider(
+            api_key=key or "",
+            model=model,
+            base_url=entry.base_url,
+            auth_style=entry.auth_style,
+            extra_headers=extra_headers,
+            extra_body=extra_body,
+            extra_query=extra_query,
+            timeout_s=entry.http_timeout_s,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            reasoning_effort=effort,
             credential=credential,
         )
     return OpenAIProvider(
