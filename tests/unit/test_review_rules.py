@@ -398,6 +398,10 @@ def test_the_review_target_is_the_worktree_while_edits_sit_uncommitted(repo: pat
     base = _git(repo, "rev-parse", "HEAD")
     chain = _chain.RunChain(repo, ref="refs/agent6/test/head", fallback_parent=base, base_sha=base)
     (repo / "foo.py").write_text("x = 2\n")
+    early = chain.review_target()  # a failed first turn: edits, no checkpoint yet
+    assert early is not None
+    assert (early.head_commit, early.source, early.snapshot_commit) == (None, "worktree", "")
+    assert early.head_tree == chain.tree_sha() != early.base_tree
     tip = chain.commit("edit")
     committed = chain.review_target()
     assert committed is not None
@@ -405,10 +409,48 @@ def test_the_review_target_is_the_worktree_while_edits_sit_uncommitted(repo: pat
     (repo / "foo.py").write_text("x = 3\n")
     dirty = chain.review_target()
     assert dirty is not None
-    assert (dirty.head_commit, dirty.source, dirty.snapshot_commit) == (None, "worktree", tip)
+    assert (dirty.head_commit, dirty.source, dirty.snapshot_commit) == (None, "worktree", "")
     assert dirty.head_tree == chain.tree_sha() != committed.head_tree
     assert "+x = 3" in git_read.diff_range(repo, dirty.base_tree, dirty.head_tree)
     chain.commit("again")
     settled = chain.review_target()
     assert settled is not None and settled.source == "revisions"
     assert settled.head_tree == dirty.head_tree
+
+
+def test_earlier_findings_whose_tree_is_gone_match_nothing(repo: pathlib.Path) -> None:
+    """A worktree target's tree hangs off no ref: once pruned, its record matches no finding."""
+    from agent6 import review_records
+    from agent6.harness import _review_history
+
+    (repo / "foo.py").write_text("x = 1\n")
+    tree = _commit(repo)
+    base = _git(repo, "rev-parse", "HEAD")
+    finding = review_records.Finding(
+        category="correctness",
+        severity="block",
+        title="Defect",
+        detail="d",
+        location=review_records.ReviewLocation(
+            path="foo.py", side="head", start_line=1, end_line=1
+        ),
+    )
+    gone = review_records.ReviewTarget(base, tree, None, "0" * 40, "", (), "worktree")
+    panel = review_records.ReviewPanel(
+        panel_id="p",
+        execution_id="e",
+        turn=1,
+        trigger="on_verify_fail",
+        target=gone,
+        findings=(review_records.FindingObservation("f1", "panel", finding, (0,)),),
+        injected_finding_ids=("f1",),
+        block_on="none",
+        raw_blocked=False,
+        blocked=False,
+        disarmed=False,
+        n_block=1,
+        n_abstain=0,
+        completion="complete",
+    )
+    live = review_records.ReviewTarget(base, tree, base, tree, base, (), "revisions")
+    assert _review_history.matching_findings(repo, live, (panel,)) == ({}, ())

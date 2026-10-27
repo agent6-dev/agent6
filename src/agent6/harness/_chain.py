@@ -253,7 +253,9 @@ class RunChain:
         """Return the base and head a panel reviews.
 
         The head is the chain tip, or the worktree's tree while edits sit uncommitted (a
-        turn the gate failed is not checkpointed), so the panel reads what the model wrote.
+        turn the gate failed is not checkpointed), so the panel reads what the model wrote;
+        that tree hangs off no ref, so the target names no snapshot commit and a later
+        reader treats it as gone once pruned.
 
         Returns:
             The target; None without a chain tip.
@@ -273,7 +275,7 @@ class RunChain:
             ),
             head_commit=None if uncommitted else tip,
             head_tree=worktree if uncommitted else committed,
-            snapshot_commit=tip,
+            snapshot_commit="" if uncommitted else tip,
             paths=(),
             source="worktree" if uncommitted else "revisions",
         )

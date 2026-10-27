@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import subprocess
@@ -621,6 +622,8 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
         _git(tmp_path, "config", "include.path", "../secret.env")
     opened = mock.Mock(wraps=git_files._open_regular)
     monkeypatch.setattr(git_files, "_open_regular", opened)
+    # The config files above are the operator's: untracked when the run started.
+    chain = dataclasses.replace(chain, untracked_at_start=git_read.untracked_paths(tmp_path))
     index = (tmp_path / ".git" / "index").read_bytes()
     refs = _git(tmp_path, "show-ref")
     sink = event_log.EventSink(tmp_path / "journal" / "logs.jsonl")

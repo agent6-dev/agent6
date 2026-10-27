@@ -6,7 +6,7 @@ import uuid
 
 import pydantic
 
-from agent6 import event_log, review_records
+from agent6 import errors, event_log, review_records
 from agent6.vcs import git_read, review
 
 
@@ -51,7 +51,10 @@ def _blob(
     root: pathlib.Path, target: review_records.ReviewTarget, finding: review_records.Finding
 ) -> str:
     tree = target.base_tree if finding.location.side == "base" else target.head_tree
-    entry = git_read.tree_entry(root, tree, finding.location.path).split()
+    try:
+        entry = git_read.tree_entry(root, tree, finding.location.path).split()
+    except errors.GitError:
+        return ""  # a worktree target's tree is gone once pruned: its findings match nothing
     return entry[2] if len(entry) == 3 and entry[1] == "blob" else ""
 
 
