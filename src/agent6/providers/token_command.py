@@ -5,17 +5,20 @@
 `[providers.<name>].token_command` names a command that prints a bearer to stdout
 (a cloud OAuth access token, an OIDC or STS gateway); `CommandToken` caches it for
 `token_command_ttl_s` seconds and re-runs on demand. The command runs outside any
-sandbox with the operator's environment, the trust level of an MCP server command,
+sandbox with the operator's environment minus registered provider keys and
+`AGENT6_WEB_SECRET`. It has the trust level of an MCP server command,
 so only config sets it, never a run.
 """
 
 from __future__ import annotations
 
+import os
 import subprocess
 import threading
 import time
 from collections.abc import Sequence
 
+from agent6 import child_env
 from agent6.providers import types
 
 _DEFAULT_RUN_TIMEOUT_S = 30.0
@@ -89,6 +92,7 @@ class CommandToken:
         try:
             proc = subprocess.run(
                 self._argv,
+                env=child_env.without_provider_keys(dict(os.environ)),
                 capture_output=True,
                 text=True,
                 timeout=self._run_timeout_s,

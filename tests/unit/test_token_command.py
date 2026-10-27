@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
+import sys
 
 import pytest
 
+from agent6 import child_env
 from agent6.providers import ProviderError, token_command
 
 
@@ -24,6 +27,28 @@ def _counter_argv(tmp_path: pathlib.Path) -> list[str]:
 def test_token_runs_command_and_strips_output() -> None:
     cred = token_command.CommandToken(["printf", "  sk-minted\n"])
     assert cred.token() == "sk-minted"
+
+
+def test_token_command_filters_secrets_but_keeps_operator_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Exclude registered provider keys and the web secret without losing cloud CLI settings."""
+    monkeypatch.setattr(child_env, "_provider_key_env", set())
+    child_env.set_provider_key_env(["CUSTOM_PROVIDER_KEY"])
+    monkeypatch.setenv("CUSTOM_PROVIDER_KEY", "provider-secret")
+    monkeypatch.setenv("AGENT6_WEB_SECRET", "web-secret")
+    monkeypatch.setenv("CLOUDSDK_CONFIG", "/operator/cloud-config")
+    cred = token_command.CommandToken(
+        [sys.executable, "-c", "import json, os; print(json.dumps(dict(os.environ)))"]
+    )
+
+    env = json.loads(cred.token())
+
+    assert env["CLOUDSDK_CONFIG"] == "/operator/cloud-config"
+    assert {name: env.get(name) for name in ("CUSTOM_PROVIDER_KEY", "AGENT6_WEB_SECRET")} == {
+        "CUSTOM_PROVIDER_KEY": None,
+        "AGENT6_WEB_SECRET": None,
+    }
 
 
 def test_token_is_cached_within_ttl(tmp_path: pathlib.Path) -> None:

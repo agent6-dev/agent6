@@ -513,7 +513,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - They are absent from transcripts, redacted in `config show`, and masked from the jail.
   The config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
 - `config show` and `config get` mask mapping values unless the config model marks the field display-safe (`skills.state`); other mappings expose only their keys, including in JSON output.
-- No child agent6 spawns carries one: a jailed command's environment is built from its policy, and the unconfined paths (`sandbox.isolation = "none"`, git subprocesses, MCP servers) drop every configured `api_key_env` name.
+- No child agent6 spawns carries one: a jailed command's environment is built from its policy, and the unconfined paths (`sandbox.isolation = "none"`, git subprocesses, MCP servers, token commands) drop every configured `api_key_env` name.
     - an `[mcp.servers.*].pass_env` naming a provider's `api_key_env` refuses at config load, so the name cannot be handed over deliberately either
 - `agent6 connect` prompts locally (`getpass`) and writes config and secrets
     - one read-only `GET` of the provider's `/models` endpoint (OpenRouter's auth-gated `/key`) confirms auth (status only; `--no-verify` skips it)
