@@ -32,8 +32,8 @@ Fold review evidence and operator history for every session reader.
 | `opened_at` | `float | None` | `None` |
 
 - **Written by:** viewmodel/{_session_log, state}
-- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, receipt, review_queue, transcript}
-- **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (2 test files exercise it)
+- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, receipt, review_queue, telemetry, transcript}
+- **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (3 test files exercise it)
 
 ## Review records
 
@@ -135,7 +135,7 @@ Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommi
 
 - **Written by:** viewmodel/events
 - **Read by:** harness/run_review, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, _session_log, _state_view, _transcript_text, log_line, review, state, transcript}
-- **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (6 test files exercise it)
+- **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (7 test files exercise it)
 
 ## MachineSpec
 
@@ -158,7 +158,7 @@ The parse boundary of a `.asm.toml` machine file.
 
 - **Written by:** machine/_semantics
 - **Read by:** app/machine/{_bundle, _preflight, _states, create, run}, machine/{__init__, _contracts, _execution, dryrun, engine, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{_sse, actions, server}, viewmodel/machine_state
-- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (12 test files exercise it)
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (13 test files exercise it)
 
 ## JournalEvent
 
