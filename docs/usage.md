@@ -12,6 +12,8 @@ agent6 model                         # the role assignments
 
 The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across every repository.
 `connect` prompts locally and executes nothing a remote returns.
+`agent6 connect --status [NAME]` lists the configured providers' local credential state, with the account and access-token expiry for bound sign-ins.
+It contacts no provider and exits 0 even for a refusal; a provider's acceptance is verified on first use.
 
 A provider whose sign-in is not built in takes a hand-written [`[providers.<name>].oauth`](config.md#configured-oauth) table; `agent6 connect <name>` then signs in at that issuer and stores the grant, bound to the entry's settings.
 `--flow browser|device|paste` picks the way in (default `auto`), including for `agent6 connect chatgpt`.

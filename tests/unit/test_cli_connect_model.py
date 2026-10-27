@@ -861,6 +861,141 @@ def _grant_jwt() -> str:
     return f"h.{payload}.s"
 
 
+@pytest.mark.parametrize("filtered", [False, True])
+def test_connect_status_lists_local_credentials_without_secrets(
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    filtered: bool,
+) -> None:
+    """Status keeps config order, filters names and never probes or exposes credentials."""
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[providers.keyed]\napi_format = "anthropic"\napi_key_env = "CST_API_KEY"\n'
+        '[providers.chatgpt]\napi_format = "chatgpt"\n'
+        '[providers.legacy]\napi_format = "chatgpt"\n'
+        '[providers.issuer]\napi_format = "openai"\n'
+        '[providers.issuer.oauth]\nissuer = "https://login.example"\n'
+        'client_id = "agent6"\nauthorization_endpoint = "https://login.example/auth"\n'
+        'token_endpoint = "https://login.example/token"\n'
+        '[providers.claude]\napi_format = "claude_code"\n'
+        '[providers.stored]\napi_format = "anthropic"\n'
+        '[providers.command]\napi_format = "anthropic"\ntoken_command = ["mint-token"]\n'
+        '[providers.local]\napi_format = "openai"\nauth_style = "none"\n'
+        '[providers.unset]\napi_format = "anthropic"\napi_key_env = "CST_UNSET_KEY"\n'
+    )
+    monkeypatch.setenv("CST_API_KEY", "sk-env-secret")
+    monkeypatch.delenv("CST_UNSET_KEY", raising=False)
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    grant = oauth.stored_grant_for(
+        _oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 42 * 60),
+        ChatGPTProviderEntry(api_format="chatgpt"),
+        now=1000.0,
+    )
+    secret_store.save_oauth_grant("chatgpt", grant)
+    secret_store.save_secret("legacy", "", extra={"oauth_access_token": "legacy-secret"})
+    secret_store.save_secret("stored", "sk-stored-secret")
+    before = (config.read_bytes(), paths.secrets_path().read_bytes())
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("status must not prompt, dial a provider or run a credential command")
+
+    monkeypatch.setattr(_transport, "http_request", forbidden)
+    monkeypatch.setattr(cache, "list_models", forbidden)
+    monkeypatch.setattr("subprocess.run", forbidden)
+    monkeypatch.setattr("builtins.input", forbidden)
+    monkeypatch.setattr("getpass.getpass", forbidden)
+    assert main(["connect", "--status", *(["chatgpt"] if filtered else [])]) == 0
+    captured = capsys.readouterr()
+    lines = captured.out.splitlines()
+    assert lines[-1] == "local check; a provider's acceptance is verified on first use"
+    rows = [line.split() for line in lines[1:-1] if line.strip()]
+    expected = [
+        ["keyed", "anthropic", "CST_API_KEY", "ok"],
+        ["chatgpt", "chatgpt", "ChatGPT", "sign-in", "ok", "acct-7", "expires", "in", "42", "min"],
+        ["legacy", "chatgpt", "ChatGPT", "sign-in", "legacy"],
+        ["issuer", "openai", "login.example", "missing"],
+        ["claude", "claude_code", "none", "ok"],
+        ["stored", "anthropic", "secrets.toml", "ok"],
+        ["command", "anthropic", "token", "command", "ok"],
+        ["local", "openai", "none", "ok"],
+        ["unset", "anthropic", "CST_UNSET_KEY", "key", "unset"],
+    ]
+    assert rows == ([expected[1]] if filtered else expected)
+    for secret in (
+        "sk-env-secret",
+        "sk-stored-secret",
+        _grant_jwt(),
+        "refresh-secret",
+        "legacy-secret",
+    ):
+        assert secret not in captured.out + captured.err
+    assert (config.read_bytes(), paths.secrets_path().read_bytes()) == before
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("rebound", "rebound"),
+        ("contradiction", "account mismatch"),
+        ("expired", "ok acct-7 expired"),
+        ("unrefreshable", "expired acct-7"),
+    ],
+)
+def test_connect_status_names_bound_grant_causes(
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+    expected: str,
+) -> None:
+    """Status shares binding and account checks; an expired refreshable grant remains usable."""
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('[providers.work]\napi_format = "chatgpt"\n')
+    monkeypatch.setattr(time, "time", lambda: 5000.0)
+    grant = oauth.stored_grant_for(
+        _oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 3600),
+        ChatGPTProviderEntry(api_format="chatgpt"),
+        now=1000.0,
+    )
+    secret_store.save_oauth_grant(
+        "work",
+        dataclasses.replace(
+            grant,
+            binding="other" if state == "rebound" else grant.binding,
+            account_id="other-account" if state == "contradiction" else grant.account_id,
+            refresh_token="" if state == "unrefreshable" else grant.refresh_token,
+        ),
+    )
+    assert main(["connect", "--status", "work"]) == 0
+    output = capsys.readouterr()
+    assert expected in " ".join(output.out.split())
+    assert _grant_jwt() not in output.out + output.err
+    assert "refresh-secret" not in output.out + output.err
+
+
+@pytest.mark.parametrize("option", ["--logout", "--flow", "--verify", "--no-verify", "--repo"])
+def test_connect_status_refuses_sign_in_options(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str], option: str
+) -> None:
+    """Status refuses every write or sign-in option, including an explicit default flow."""
+    assert main(["connect", "--status", option, *(["auto"] if option == "--flow" else [])]) == 2
+    error = capsys.readouterr().err
+    assert "--status" in error and option in error and "cannot combine" in error
+
+
+def test_connect_status_reads_explicit_config(
+    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The read-only status mode honors the same explicit config layers as model listings."""
+    config = tmp_path / "extra.toml"
+    config.write_text('[providers.extra]\napi_format = "openai"\nauth_style = "none"\n')
+    assert main(["--config", str(config), "connect", "--status"]) == 0
+    assert "extra openai none ok" in " ".join(capsys.readouterr().out.split())
+
+
 @pytest.mark.parametrize("state", ["legacy", "rebound"])
 def test_logout_unbound_chatgpt_is_local_only(
     iso: pathlib.Path,

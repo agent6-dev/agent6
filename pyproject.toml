@@ -378,6 +378,7 @@ banned-from = [
     "agent6.ui.cli._common",
     "agent6.ui.cli._compare",
     "agent6.ui.cli._config_args",
+    "agent6.ui.cli._connect_status",
     "agent6.ui.cli._console_view",
     "agent6.ui.cli._interact",
     "agent6.ui.cli._live",

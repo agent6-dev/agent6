@@ -187,7 +187,10 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "provider",
         nargs="?",
         default="",
-        help=("Provider to set up, such as anthropic or openrouter. Default: ask for a provider."),
+        help=(
+            "Provider to set up, such as anthropic or openrouter. Default: ask for a provider,"
+            " or list all configured providers with --status."
+        ),
     )
     connect_provider.completer = completers._complete_providers  # type: ignore[attr-defined]
     connect_p.add_argument(
@@ -199,18 +202,26 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         ),
     )
     connect_p.add_argument(
-        "--no-verify",
-        dest="verify",
-        action="store_false",
+        "--status",
+        action="store_true",
         help=(
-            "Do not test a newly saved key or sign-in against the provider. Use this for a local"
-            " or offline provider that does not offer a model list."
+            "List local credential state without contacting providers. Omit the name to list"
+            " all configured providers. Cannot combine with sign-in options or --logout."
+        ),
+    )
+    connect_p.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Test a newly saved key or sign-in against the provider (default: on). Use"
+            " --no-verify for a local or offline provider that does not offer a model list."
         ),
     )
     connect_p.add_argument(
         "--flow",
         choices=("auto", "browser", "device", "paste"),
-        default="auto",
+        default=None,
         help=(
             "How a provider with a [providers.<name>.oauth] table signs in. browser: open the"
             " sign-in page and take the redirect on a local listener. device: show a code to enter"

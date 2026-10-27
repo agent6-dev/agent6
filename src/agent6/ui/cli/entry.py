@@ -884,6 +884,8 @@ def _dispatch_connect(args: argparse.Namespace) -> int:
         verify=args.verify,
         logout=args.logout,
         flow=args.flow,
+        status=args.status,
+        config_paths=args.config,
     )
 
 

@@ -27,7 +27,7 @@ from agent6.config import (
 )
 from agent6.models import cache
 from agent6.providers import _headers, _oauth_protocol, chatgpt_oauth, claude_code, oauth, types
-from agent6.ui.cli import _common, _oauth
+from agent6.ui.cli import _common, _connect_status, _oauth
 
 
 def _prompt_api_key(name: str) -> str:
@@ -609,9 +609,11 @@ def _cmd_connect(
     *,
     provider: str,
     to_repo: bool,
-    verify: bool = True,
+    verify: bool | None = None,
     logout: bool = False,
-    flow: str = "auto",
+    flow: str | None = None,
+    status: bool = False,
+    config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Interactively add a provider and its key or sign-in.
 
@@ -623,13 +625,29 @@ def _cmd_connect(
     Args:
         provider: The provider name or preset.
         to_repo: Write the block to the repo config instead of the global one.
-        verify: Use the key or grant once after storing it.
+        verify: Use the key or grant once after storing it; None defaults to on.
         logout: Remove the credentials instead.
-        flow: How a configured issuer signs in: auto, browser, device or paste.
+        flow: How a configured issuer signs in; None defaults to auto.
+        status: List local credential state instead.
+        config_paths: Explicit config overlays for the status listing.
 
     Returns:
         The exit code; 2 on a refused name, format or config edit.
     """
+    if status:
+        conflicts = [
+            flag
+            for flag, set_ in (
+                ("--logout", logout),
+                ("--verify" if verify else "--no-verify", verify is not None),
+                ("--flow", flow is not None),
+                ("--repo", to_repo),
+            )
+            if set_
+        ]
+        if conflicts:
+            _common.error(f"--status cannot combine with {', '.join(conflicts)}.")
+        return 2 if conflicts else _connect_status.show(provider, config_paths)
     name = _resolve_provider_name(provider)
     if name is None:
         return 2
@@ -655,7 +673,7 @@ def _cmd_connect(
     preset_url = (preset or {}).get("base_url", "")
     rc = _write_shown_values(name, api_format, current, preset_url, target, to_repo)
     if rc == 0:
-        rc = _credential_step(name, api_format, flow, verify)
+        rc = _credential_step(name, api_format, flow or "auto", verify is not False)
     if rc == 0:
         print(
             "\nNext: `agent6 model worker "

@@ -15,7 +15,7 @@ import json
 import threading
 import time
 from collections.abc import Callable, Mapping
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from urllib import parse
 
 from agent6 import paths, portable, secret_store
@@ -149,6 +149,23 @@ def _reconnect(provider: str, why: str) -> types.ProviderError:
     )
 
 
+class BoundGrantError(types.ProviderError):
+    """A stored sign-in fails a local check.
+
+    Attributes:
+        cause: The short cause for credential listings.
+    """
+
+    def __init__(
+        self,
+        provider: str,
+        cause: Literal["missing", "legacy", "rebound", "account mismatch"],
+        why: str,
+    ) -> None:
+        super().__init__(str(_reconnect(provider, why)), status_code=401)
+        self.cause = cause
+
+
 def load_bound_grant(
     provider_name: str, entry: _OAuthEntry, *, secrets: dict[str, Any] | None = None
 ) -> secret_store.StoredGrant:
@@ -163,8 +180,8 @@ def load_bound_grant(
         The grant, with its account claim filled in when metadata omitted it.
 
     Raises:
-        ProviderError: The grant is absent, legacy, rebound or contradicts its account claim.
-    """  # noqa: DOC501  # `_reconnect` builds the ProviderError named above
+        BoundGrantError: The grant is absent, legacy, rebound or contradicts its account claim.
+    """
     profile = profile_for(entry)
     label = f"{profile.label} " if profile.label else ""
     data = secrets if secrets is not None else secret_store.load_secrets()
@@ -178,11 +195,16 @@ def load_bound_grant(
             and raw.get("oauth_access_token")
             and not raw.get("oauth_version")
         ):
-            raise _reconnect(provider_name, "This ChatGPT sign-in predates credential binding")
-        raise _reconnect(provider_name, f"No {label}sign-in stored for provider {provider_name!r}")
+            raise BoundGrantError(
+                provider_name, "legacy", "This ChatGPT sign-in predates credential binding"
+            )
+        raise BoundGrantError(
+            provider_name, "missing", f"No {label}sign-in stored for provider {provider_name!r}"
+        )
     if grant.binding != binding_fingerprint(entry):
-        raise _reconnect(
+        raise BoundGrantError(
             provider_name,
+            "rebound",
             f"The stored {label}sign-in for {provider_name!r} was made under other provider"
             " settings (its issuer, endpoints or base_url changed since)",
         )
@@ -192,8 +214,9 @@ def load_bound_grant(
         else None
     )
     if claimed and grant.account_id and claimed != grant.account_id:
-        raise _reconnect(
+        raise BoundGrantError(
             provider_name,
+            "account mismatch",
             f"The stored {label}sign-in for {provider_name!r} carries an account id"
             " that does not match its own token",
         )
