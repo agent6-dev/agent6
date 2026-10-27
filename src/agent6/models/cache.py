@@ -361,7 +361,12 @@ def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
 
 
 def _fetch(
-    provider_name: str, entry: ProviderEntry, api_key: str | None, timeout_s: float
+    provider_name: str,
+    entry: ProviderEntry,
+    api_key: str | None,
+    timeout_s: float,
+    *,
+    refresh: bool = True,
 ) -> Listing:
     """Fetch the entry's listing; raises on any failure.
 
@@ -370,6 +375,7 @@ def _fetch(
         entry: The provider entry.
         api_key: The key, or None for a keyless attempt.
         timeout_s: The request timeout.
+        refresh: False reads a configured issuer's bound bearer without renewing it.
 
     Returns:
         The ids, the pricing and the context windows.
@@ -383,7 +389,7 @@ def _fetch(
         ids, context = _chatgpt_listing(resp.json())
         return Listing(ids, {}, context, {})  # A subscription prices nothing.
     if entry.oauth is not None:
-        api_key = oauth.OAuthCredential(provider_name, entry).token()  # bound, refreshed
+        api_key = oauth.OAuthCredential(provider_name, entry).token(refresh=refresh)
     url, headers = _models_endpoint(entry, api_key)
     resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()

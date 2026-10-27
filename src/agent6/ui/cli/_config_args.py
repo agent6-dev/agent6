@@ -205,8 +205,9 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "--status",
         action="store_true",
         help=(
-            "List local credential state without contacting providers. Omit the name to list"
-            " all configured providers. Cannot combine with sign-in options or --logout."
+            "List local credential state and a free live check, without refreshing or spending."
+            " Omit the name to list all configured providers."
+            " Cannot combine with sign-in options or --logout."
         ),
     )
     connect_p.add_argument(

@@ -7,6 +7,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import stat
+import subprocess
 import time
 import tomllib
 from collections.abc import Callable
@@ -868,7 +869,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
     capsys: pytest.CaptureFixture[str],
     filtered: bool,
 ) -> None:
-    """Status keeps config order, filters names and never probes or exposes credentials."""
+    """Status checks in config order, filters names and never exposes or writes credentials."""
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
@@ -898,18 +899,41 @@ def test_connect_status_lists_local_credentials_without_secrets(
     secret_store.save_secret("stored", "sk-stored-secret")
     before = (config.read_bytes(), paths.secrets_path().read_bytes())
 
-    def forbidden(*_args: object, **_kwargs: object) -> None:
-        pytest.fail("status must not prompt, dial a provider or run a credential command")
+    checked: list[str] = []
 
-    monkeypatch.setattr(_transport, "http_request", forbidden)
+    def request(method: str, url: str, **kwargs: object) -> httpx2.Response:
+        checked.append(url)
+        assert method == "GET" and kwargs["timeout"] == 7.0
+        return httpx2.Response(
+            200, json={"data": [], "models": []}, request=httpx2.Request(method, url)
+        )
+
+    def run(
+        argv: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str] | subprocess.CompletedProcess[bytes]:
+        checked.append(argv[0])
+        assert kwargs["timeout"] == 7.0
+        if argv == ["mint-token"]:
+            return subprocess.CompletedProcess(argv, 0, stdout="command-secret\n", stderr="")
+        assert argv == ["claude", "auth", "status", "--json"]
+        return subprocess.CompletedProcess(argv, 0, stdout=b'{"loggedIn": true}', stderr=b"")
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("status must not prompt or read the model cache")
+
+    monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
+    monkeypatch.setattr(_transport, "http_request", request)
     monkeypatch.setattr(cache, "list_models", forbidden)
-    monkeypatch.setattr("subprocess.run", forbidden)
+    monkeypatch.setattr("subprocess.run", run)
     monkeypatch.setattr("builtins.input", forbidden)
     monkeypatch.setattr("getpass.getpass", forbidden)
     assert main(["connect", "--status", *(["chatgpt"] if filtered else [])]) == 0
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
-    assert lines[-1] == "local check; a provider's acceptance is verified on first use"
+    assert lines[-1] == (
+        "live check: one free request per provider (a model listing or key probe);"
+        " nothing refreshed or spent"
+    )
     rows = [line.split() for line in lines[1:-1] if line.strip()]
     expected = [
         ["keyed", "anthropic", "CST_API_KEY", "ok"],
@@ -922,13 +946,40 @@ def test_connect_status_lists_local_credentials_without_secrets(
         ["local", "openai", "none", "ok"],
         ["unset", "anthropic", "CST_UNSET_KEY", "key", "unset"],
     ]
+    for row, live in zip(
+        expected,
+        (
+            "verified",
+            "verified",
+            "skipped: legacy",
+            "skipped: missing",
+            "verified",
+            "verified",
+            "verified",
+            "verified",
+            "skipped: key unset",
+        ),
+        strict=True,
+    ):
+        row.extend(live.split())
     assert rows == ([expected[1]] if filtered else expected)
+    endpoints = [
+        "https://api.anthropic.com/v1/models",
+        "https://chatgpt.com/backend-api/codex/models?client_version=1.0.0",
+        "claude",
+        "https://api.anthropic.com/v1/models",
+        "mint-token",
+        "https://api.anthropic.com/v1/models",
+        "https://api.openai.com/v1/models",
+    ]
+    assert checked == ([endpoints[1]] if filtered else endpoints)
     for secret in (
         "sk-env-secret",
         "sk-stored-secret",
         _grant_jwt(),
         "refresh-secret",
         "legacy-secret",
+        "command-secret",
     ):
         assert secret not in captured.out + captured.err
     assert (config.read_bytes(), paths.secrets_path().read_bytes()) == before
@@ -969,9 +1020,20 @@ def test_connect_status_names_bound_grant_causes(
             refresh_token="" if state == "unrefreshable" else grant.refresh_token,
         ),
     )
+    requests: list[str] = []
+
+    def request(method: str, url: str, **kwargs: object) -> httpx2.Response:
+        requests.append(url)
+        assert state == "expired" and method == "GET"
+        return httpx2.Response(401, request=httpx2.Request(method, url))
+
+    monkeypatch.setattr(_transport, "http_request", request)
     assert main(["connect", "--status", "work"]) == 0
     output = capsys.readouterr()
     assert expected in " ".join(output.out.split())
+    live = f"skipped: {expected}" if state != "expired" else "refused: HTTP 401"
+    assert output.out.splitlines()[1].endswith(live)
+    assert len(requests) == (1 if state == "expired" else 0)
     assert _grant_jwt() not in output.out + output.err
     assert "refresh-secret" not in output.out + output.err
 
@@ -987,13 +1049,22 @@ def test_connect_status_refuses_sign_in_options(
 
 
 def test_connect_status_reads_explicit_config(
-    iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
+    iso: pathlib.Path,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The read-only status mode honors the same explicit config layers as model listings."""
     config = tmp_path / "extra.toml"
     config.write_text('[providers.extra]\napi_format = "openai"\nauth_style = "none"\n')
+
+    def request(method: str, url: str, **kwargs: object) -> httpx2.Response:
+        assert kwargs["headers"] == {}
+        return httpx2.Response(200, json={"data": []}, request=httpx2.Request(method, url))
+
+    monkeypatch.setattr(_transport, "http_request", request)
     assert main(["--config", str(config), "connect", "--status"]) == 0
-    assert "extra openai none ok" in " ".join(capsys.readouterr().out.split())
+    assert "extra openai none ok verified" in " ".join(capsys.readouterr().out.split())
 
 
 @pytest.mark.parametrize("state", ["legacy", "rebound"])

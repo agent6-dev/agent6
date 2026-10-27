@@ -628,7 +628,7 @@ def _cmd_connect(
         verify: Use the key or grant once after storing it; None defaults to on.
         logout: Remove the credentials instead.
         flow: How a configured issuer signs in; None defaults to auto.
-        status: List local credential state instead.
+        status: List local credential state and free live checks instead.
         config_paths: Explicit config overlays for the status listing.
 
     Returns:
