@@ -273,7 +273,7 @@ class ProviderCall:
             )
 
     def run(self) -> types.ProviderResponse:
-        """Make the call, retrying once per credential refresh and per body adaptation.
+        """Make the call, retrying once for a credential recovery and once per body adaptation.
 
         Returns:
             The parsed response.
@@ -284,6 +284,8 @@ class ProviderCall:
         """
         cred = self.credential
         max_attempts = (2 if cred is not None else 1) + self.adapt_attempts
+        # One credential recovery per call: an adaptation slot never buys a second rotation.
+        recovered = False
         for attempt in range(max_attempts):
             token = cred.token() if cred is not None else self.api_key
             headers = self.build_headers(token)
@@ -298,10 +300,12 @@ class ProviderCall:
                         continue
                     if (
                         cred is not None
+                        and not recovered
                         and attempt + 1 < max_attempts
                         and exc.status_code in (401, 403)
                         and cred.invalidate(exc.status_code)
                     ):
+                        recovered = True
                         continue
                     raise
 
@@ -319,11 +323,17 @@ class ProviderCall:
                     f"{types.scrub_secret_values(str(exc), headers)}"
                 ) from exc
             recorded = False
-            if cred is not None and attempt + 1 < max_attempts and resp.status_code in (401, 403):
+            if (
+                cred is not None
+                and not recovered
+                and attempt + 1 < max_attempts
+                and resp.status_code in (401, 403)
+            ):
                 # The transcript contract is one file per round-trip, the refused one included.
                 self.record(headers, resp.status_code, resp.text[:8192])
                 recorded = True
                 if cred.invalidate(resp.status_code):
+                    recovered = True
                     continue
             if 300 <= resp.status_code < 400:
                 # Redirects are never followed: the bearer would go wherever `location` says.
