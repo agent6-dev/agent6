@@ -14,6 +14,10 @@ from agent6.vcs import git_policy
 
 # Local ops finish in well under a second; this fires only on a stuck filesystem or a held lock.
 GIT_TIMEOUT_S = 120.0
+# Environment switches that change how git reads every pathspec.
+_PATHSPEC_ENV = frozenset(
+    {"GIT_GLOB_PATHSPECS", "GIT_ICASE_PATHSPECS", "GIT_LITERAL_PATHSPECS", "GIT_NOGLOB_PATHSPECS"}
+)
 
 # How long a timed-out git gets to unlink its lockfiles on SIGTERM before SIGKILL.
 GIT_TERM_GRACE_S = 5.0
@@ -43,9 +47,11 @@ def spawn(
         GitError: The command timed out.
     """
     # GIT_TERMINAL_PROMPT=0 fails a credential prompt fast; LC_ALL=C keeps the stash
-    # rescue's parse of git's prose valid.
+    # rescue's parse of git's prose valid. The operator's pathspec switches would turn the
+    # review's `:(exclude)` magic into literal names, so only a caller's `env_extra` sets them.
+    inherited = {k: v for k, v in os.environ.items() if k not in _PATHSPEC_ENV}
     env = child_env.without_provider_keys(
-        {**os.environ, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
+        {**inherited, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(env_extra or {})}
     )
     hardening = git_policy.git_hardening_flags(repo or cwd)
     # git 2.53 dies rc=128 on the empty `diff.external` override, so every verb that renders

@@ -32,6 +32,16 @@ def _git(root: pathlib.Path, *args: str) -> str:
     return out.stdout
 
 
+def test_pathspec_environment_does_not_empty_the_review(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`GIT_LITERAL_PATHSPECS` in the operator's shell made every listing empty: no diff, exit 0."""
+    (repo / "tracked.py").write_text("x = 2\n", encoding="utf-8")
+    monkeypatch.setenv("GIT_LITERAL_PATHSPECS", "1")
+    compared = review.comparison(repo, base="", head="HEAD", paths=(), hide=(str(repo / "h"),))
+    assert "+x = 2" in compared.diff
+
+
 @pytest.fixture
 def repo(tmp_path: pathlib.Path) -> pathlib.Path:
     _git(tmp_path, "init", "-q")
