@@ -385,9 +385,9 @@ class ToolDispatcher:
                 raise tools_errors.ToolError(str(exc)) from exc
         if name not in self._handlers:
             raise tools_errors.ToolError(f"Unknown tool: {name}")
+        if name == schema.RunVerifyInput.TOOL_NAME and self.tool_is_withheld(name):
+            return self.run_verify()  # records the denied attempt as evidence, then refuses
         if (refusal := self._tool_refusal(name)) is not None:
-            if name == schema.RunVerifyInput.TOOL_NAME:
-                return self.run_verify()
             raise tools_errors.ToolError(refusal)
         if name not in schema.mode_tools(self._mode).permitted:
             # The backstop: a hallucinated name must not mutate the repo from a read-only mode.
@@ -643,9 +643,7 @@ class ToolDispatcher:
                 duration_s=time.monotonic() - started,
                 reason=str(exc)[:2000] + (" (truncated)" if len(str(exc)) > 2000 else ""),
                 stdout_truncated=False if outcome == "denied" else None,
-                stderr_truncated=True
-                if len(str(exc)) > 2000
-                else (False if outcome == "denied" else None),
+                stderr_truncated=False if outcome == "denied" else None,
             )
             self.last_verification = record
             self._emit("verify.end", **dataclasses.asdict(record))
@@ -971,8 +969,7 @@ class ToolDispatcher:
             exit_code=res.returncode,
             duration_s=res.duration_s,
             stdout_tail=res.stdout[-2000:],
-            stderr_tail="" if res.exec_failed else res.stderr[-2000:],
-            reason=res.stderr if res.exec_failed else "",
+            stderr_tail=res.stderr[-2000:],
             score=score,
         )
         return results.MetricResult.from_exec(res, score)

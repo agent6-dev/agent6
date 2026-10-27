@@ -102,6 +102,23 @@ def test_exception_keeps_an_attempt(
     assert end["stdout_truncated"] is None and end["stderr_truncated"] is None
 
 
+def test_refusal_truncation_marks_the_reason_not_the_streams(tmp_path: pathlib.Path) -> None:
+    """A refusal text past 2000 characters marked stderr truncated; no stream was captured."""
+    journal = tmp_path / "logs.jsonl"
+    dispatcher = _dispatcher(tmp_path, journal)
+    with (
+        mock.patch.object(
+            dispatcher, "_approve_command", side_effect=errors.ToolDeniedError("x" * 2001)
+        ),
+        pytest.raises(errors.ToolDeniedError),
+    ):
+        dispatcher.run_verify()
+    end = _events(journal)[-1]
+    assert end["outcome"] == "denied"
+    assert end["reason"] == "x" * 2000 + " (truncated)"
+    assert end["stdout_truncated"] is False and end["stderr_truncated"] is False
+
+
 def test_a_verifying_command_cannot_certify_its_own_edit(tmp_path: pathlib.Path) -> None:
     """Exit zero after writing the tree leaves the final tree unverified."""
     repo = tmp_path / "repo"
