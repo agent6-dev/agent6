@@ -326,3 +326,37 @@ def test_the_run_preflight_wants_a_bound_grant(
     monkeypatch.setattr(cache, "list_models", fake_list)
     assert _setup.check_provider_keys(cfg) is None
     assert listed == [("work", None)]
+
+
+def test_model_set_names_the_missing_or_rebound_sign_in(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gc = _write_config()
+
+    def listed(*_a: object, **_k: object) -> list[str]:
+        return ["m1"]
+
+    monkeypatch.setattr(cache, "list_models", listed)
+    assert main(["model", "worker", "work/m1"]) == 0
+    err = capsys.readouterr().err
+    assert "has no sign-in stored" in err and "agent6 connect work" in err
+
+    grant = secret_store.StoredGrant(
+        binding="stale",
+        access_token="AT1",
+        refresh_token="",
+        issued_at=1.0,
+        expires_at=None,
+        exchange_access_token="",
+        exchange_issued_at=0.0,
+        exchange_expires_at=None,
+    )
+    secret_store.save_oauth_grant("work", grant)
+    assert main(["model", "worker", "work/m1"]) == 0
+    assert "other provider settings" in capsys.readouterr().err
+
+    secret_store.save_oauth_grant(
+        "work", dataclasses.replace(grant, binding=oauth.binding_fingerprint(_entry(gc)))
+    )
+    assert main(["model", "worker", "work/m1"]) == 0
+    assert "WARNING" not in capsys.readouterr().err

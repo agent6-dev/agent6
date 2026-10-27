@@ -21,7 +21,7 @@ from agent6.config import (
     write,
 )
 from agent6.models import choices
-from agent6.providers import claude_code
+from agent6.providers import claude_code, oauth
 from agent6.ui.cli import _common
 
 
@@ -156,6 +156,19 @@ def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: st
     if isinstance(entry, ClaudeCodeProviderEntry):
         if (err := claude_code.login_status(entry.binary)) is not None:
             _common.warn(f"provider {provider!r}: {err}")
+        return
+    if entry.oauth is not None:
+        grant = secret_store.load_oauth_grant(provider)
+        if grant is None:
+            _common.warn(
+                f"provider {provider!r} has no sign-in stored;"
+                f" run `agent6 connect {provider}` before using it."
+            )
+        elif grant.binding != oauth.binding_fingerprint(entry):
+            _common.warn(
+                f"provider {provider!r}: the stored sign-in was made under other provider"
+                f" settings; run `agent6 connect {provider}` before using it."
+            )
         return
     if entry.auth_style == "none" or entry.token_command:
         return
