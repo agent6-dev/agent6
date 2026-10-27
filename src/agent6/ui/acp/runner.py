@@ -432,6 +432,13 @@ class RunBridge:
         # The id is minted before the queue, so a cancel during the wait has a run to address.
         try:
             resuming = self._resumable(session)
+            if session.require_resume and not resuming:
+                self.server.notify_raw(
+                    updates.message_update(
+                        session.acp_id, "this run has no resume point; Fix cannot start a new run"
+                    )
+                )
+                return "refusal"
             if not resuming and self._recorded(session):
                 # A recorded run with no resume point is refused both ways; a new run says so.
                 self.server.notify_raw(

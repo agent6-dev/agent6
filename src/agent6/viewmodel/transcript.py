@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from typing import Any, Literal
 
 from agent6 import budget, kinds, terminal
-from agent6.viewmodel import _session_status, _transcript_text, format
+from agent6.viewmodel import _session_status, _transcript_text, format, review
 from agent6.viewmodel import events as viewmodel_events
 
 # Text characters, not graphics, so every terminal font renders them.
@@ -181,6 +181,10 @@ class TranscriptFold:
             self._stranded = False
             self._ended = False
             self._finish = ""
+        if notices := review.notice_texts(event):
+            self._deferred.extend(self._flush_message())
+            self._deferred.extend(TranscriptItem("marker", body=t) for t in notices)
+            return True
         if etype == "budget.update":
             self._usd = float(event.get("usd_total", 0) or 0)
             self._usd_partial = bool(event.get("usd_partial")) or self._usd_partial

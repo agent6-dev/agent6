@@ -26,6 +26,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
         " Reinstall agent6, or `pip install textual`."
     ) from e
 
+from agent6.ui import keymap
 from agent6.ui.tui import (
     _dashboard_header,
     _diff_pane,
@@ -35,6 +36,7 @@ from agent6.ui.tui import (
     logview,
     menubar,
     modals,
+    review,
     screen_chrome,
     settings,
     theme,
@@ -137,6 +139,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                 menubar.MenuItem("Maximize pane", "fullscreen"),
                 *menubar.SCROLL_ITEMS,
                 menubar.MenuItem("Full log…", "view_logs"),
+                menubar.MenuItem(keymap.FINDINGS, "view_findings", priority=True),
                 menubar.MenuItem("Copy selection", "copy", priority=True),
                 menubar.MenuItem("Conversation…", "toggle_dashboard", priority=True),
                 menubar.MenuItem("Theme…", "choose_theme"),
@@ -386,6 +389,12 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             self.minimize()
         elif self.focused is not None and self.focused.allow_maximize:
             self.maximize(self.focused)
+
+    def action_view_findings(self) -> None:
+        """Open the run's stored review findings."""
+        self.app.push_screen(
+            review.FindingsScreen(self._tui.session_dir, pathlib.Path.cwd(), self._tui.config_paths)
+        )
 
     def action_view_logs(self) -> None:
         """Open the whole log; the inline pane is a sliding window."""

@@ -29,7 +29,7 @@ except ImportError as e:  # pragma: no cover
 from agent6.config import ConfigError, layer
 from agent6.models import choices
 from agent6.sessions import layout
-from agent6.ui import spawn
+from agent6.ui import keymap, spawn
 from agent6.ui.tui import (
     config_page,
     logview,
@@ -37,6 +37,7 @@ from agent6.ui.tui import (
     menubar,
     modals,
     new_work,
+    review,
     screen_chrome,
     theme,
 )
@@ -119,6 +120,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             "View",
             (
                 menubar.MenuItem("View logs", "view_logs"),
+                menubar.MenuItem(keymap.FINDINGS, "view_findings"),
                 menubar.MenuItem("Fold/expand lanes", "toggle_lanes"),
                 menubar.MenuItem("Theme…", "choose_theme"),
                 menubar.MenuItem("Copy method…", "choose_copy_method"),
@@ -320,6 +322,13 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         table = self.query_one("#sessions", widgets.DataTable)
         if self._runs and 0 <= table.cursor_row < len(self._runs):
             self.app.exit(self._runs[table.cursor_row])
+
+    def action_view_findings(self) -> None:
+        """Open the selected session's stored findings."""
+        if session_dir := self._selected_dir():
+            self.app.push_screen(
+                review.FindingsScreen(session_dir, self.repo_cwd, self.config_paths)
+            )
 
     def action_view_logs(self) -> None:
         """Push the selected session's log view."""

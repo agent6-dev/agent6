@@ -335,6 +335,8 @@ def act(
         return recorded
     _validate(view, request, session_dir)
     if process.worker_is_alive(session_dir):
+        if source == "acp" and action.action == "fix":
+            raise ReviewActionError("ACP Fix requires an idle session")
         ipc.queue_review_action(session_dir, action.request_id, request.model_dump_json())
         return _wait(session_dir, request, wait_s)
     with _offline_writer(session_dir) as events:

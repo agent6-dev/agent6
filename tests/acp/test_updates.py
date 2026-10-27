@@ -454,7 +454,7 @@ def test_the_pin_directive_is_advertised_when_the_run_starts() -> None:
         for u in _updates_of(_info(), [start])
         if u["sessionUpdate"] == "available_commands_update"
     ]
-    (pin,) = commands["availableCommands"]
+    (pin,) = [c for c in commands["availableCommands"] if c["name"] == "pin"]
     assert pin["name"] == "pin"
     assert pin["description"] == directive.STEER_COMMANDS["/pin"]
     assert pin["input"] == {"type": "text", "hint": "<text>"}

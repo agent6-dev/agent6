@@ -50,14 +50,37 @@ _TOOL_KINDS = {
 }
 
 
-# The directive a later prompt carries into the run as steering text. The composer's other
-# directives (`directive.LIVE_RUN_COMMANDS`) are a front-end's own act, and ACP has no such view.
+# Review commands are front-end actions; only /pin reaches the worker as a directive.
+REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "findings",
+        "description": "List this run's open review findings",
+        "input": {"hint": "[--all]"},
+    },
+    {
+        "name": "fix",
+        "description": "Resume an idle session to reproduce a stored finding; leaves it open",
+        "input": {"hint": "<finding-id> --resume"},
+    },
+    {
+        "name": "resolve",
+        "description": "Resolve a finding with the operator's disposition and reason",
+        "input": {"hint": "<finding-id> --as <disposition> --reason <text> [--duplicate-of <id>]"},
+    },
+    {
+        "name": "reopen",
+        "description": "Reopen a finding with a reason",
+        "input": {"hint": "<finding-id> --reason <text>"},
+    },
+)
+
 _COMMANDS: tuple[dict[str, Any], ...] = (
     {
         "name": "pin",
         "description": directive.STEER_COMMANDS["/pin"],
         "input": {"type": "text", "hint": "<text>"},
     },
+    *REVIEW_COMMANDS,
 )
 
 

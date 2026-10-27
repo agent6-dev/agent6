@@ -19,7 +19,7 @@ from typing import Any, BinaryIO
 
 from agent6 import __version__
 from agent6.app import frontend
-from agent6.ui.acp import rpc, updates
+from agent6.ui.acp import review, rpc, updates
 from agent6.ui.acp import session as acp_session
 
 # The client sends the newest version it supports and disconnects if this one will not do.
@@ -312,6 +312,14 @@ class ACPServer:
         sessions = self._sessions()
         session = sessions.get(params)
         text = acp_session.prompt_text(params)
+        if review.handle_command(
+            sessions,
+            session,
+            text,
+            notify=self.notify_raw,
+            finish=lambda reason: self.reply(req_id, result={"stopReason": reason}),
+        ):
+            return DEFERRED
         sessions.start_execution(
             session,
             text,

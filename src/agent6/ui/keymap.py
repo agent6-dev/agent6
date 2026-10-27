@@ -78,6 +78,47 @@ def approval_prompt_suffix(*, standing: bool) -> str:
     return f"[{letters}]  ({scoped}, this session): "
 
 
+FINDINGS = "Findings"
+REVIEW_TEXT = {
+    "back": "Back",
+    "fix": "Fix",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "refresh": "Refresh",
+    "help": "Help",
+    "keys": "Keys & actions",
+    "palette": "Command palette",
+    "reason": "Reason (required, at most 2,000 characters)",
+    "duplicate": "Duplicate finding ID (for duplicate only)",
+    "submit": "Submit",
+    "cancel": "Cancel",
+    "resume": "Resume to fix",
+    "confirm": "Resume this run to reproduce finding {finding_id}? The finding stays open.",
+    "empty": "No recorded findings.",
+    "summary": "Open: {block} block, {warn} warn, {nit} nit. Review: {completion}.",
+    "detail": (
+        "{finding_id} · {status} · {severity}\n{location}\n{title}\n{detail}\nFix: {fix_state}"
+    ),
+    "history": "{action}: {reason}",
+    "result": "{message} (request {request_id})",
+    "preview": "Reviewed diff: {location}",
+    "missing": "No recorded review target.",
+    "no_hunk": "No cited hunk is available in this preview.",
+    "truncated": "\n… (truncated)",
+    "panel": "Panel {panel_id}: block_on={block_on}, rejected={blocked}, disarmed={disarmed}",
+}
+REVIEW_COLUMNS = ("ID", "Status", "Severity", "Location", "Title")
+REVIEW_HINTS = ("↑↓ selects a finding; Tab focuses its detail or read-only diff.",)
+REVIEW_DISPOSITIONS = (
+    ("Fixed", "fixed"),
+    ("False positive", "false_positive"),
+    ("Intentional", "intentional"),
+    ("Won't fix", "wont_fix"),
+    ("Duplicate", "duplicate"),
+    ("Pre-existing line", "pre_existing"),
+)
+
+
 # Every key a TUI screen binds to a menu action, by screen; an action absent here is reachable
 # from the menu and the palette only. Commas join one action's aliases; the first carries the
 # footer entry. A destructive letter is confirmed before it acts.
@@ -92,6 +133,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "open_config": "c",
         "open_machines": "M",
         "view_logs": "l",
+        "view_findings": "v",
         "toggle_lanes": "space",
         "help": "question_mark",
         "command_palette": "ctrl+p",
@@ -115,6 +157,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "to_hub": "escape",
         "quit_hub": "ctrl+q",
         "history_search": "ctrl+r",
+        "view_findings": "ctrl+f",
         "focus_next_pane": "tab",
         "focus_prev_pane": "shift+tab",
         "page_up": "pageup",
@@ -126,6 +169,16 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },
+    "findings": {
+        "close": "escape,q",
+        "fix": "f",
+        "resolve": "s",
+        "reopen": "o",
+        "refresh": "r",
+        "help": "question_mark",
+        "command_palette": "ctrl+p",
+    },
+    "finding disposition": {"submit": "ctrl+s", "close": "escape"},
     "new work": {
         "close": "escape",
         "quit_hub": "ctrl+q",

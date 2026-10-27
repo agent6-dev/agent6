@@ -36,10 +36,27 @@ Worker text and thinking arrive as they stream; side-role output stays out of th
 Three more updates ride the journal.
 
 - `session_info_update`: the task's headline as the session title, the line `agent6 sessions list` shows
-- `available_commands_update`: `/pin <text>`, the one directive a later prompt carries into the run as steering text.
-  The composer's other directives (`/compact`, `/btw`, `/task`, ...) are a front-end's own act; typed into an editor they reach the model as words.
+- `available_commands_update`: `/pin <text>` and the [review commands](#review-findings).
+  `/pin` reaches the run as steering text; review commands are handled by the front end, not the model.
+  The composer's other directives (`/compact`, `/btw`, `/task`, ...) reach the model as words.
 - `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
 Everything agent6 says carries `[agent6]`, the model's final summary arrives bare, and the cost receipt goes to stderr.
+
+## Review findings
+
+Findings and dispositions appear as `[agent6]` transcript notices, not native review threads.
+The advertised commands act on the conversation's recorded run:
+
+- `/findings [--all]` lists open findings, or also resolved findings with `--all`.
+- `/fix ID --resume` confirms **Resume to fix** as a follow-up prompt when the session is idle.
+  It uses the stored report, leaves the finding open, and refuses a missing resume point rather than starting a new run.
+- `/resolve ID --as DISPOSITION --reason "TEXT" [--duplicate-of ID]` records the operator's conclusion.
+  Dispositions are `fixed`, `false_positive`, `intentional`, `wont_fix`, `duplicate`, and `pre_existing`.
+- `/reopen ID --reason "TEXT"` reopens a finding.
+
+Reasons must be nonblank and at most 2,000 characters.
+Live disposition actions use the worker's IPC queue; their notices arrive when recorded.
+Fix does not support mid-run steering through ACP.
 
 ## Approvals
 

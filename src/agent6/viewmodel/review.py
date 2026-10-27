@@ -359,6 +359,57 @@ def apply_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
     return result.for_comparison(result.comparison) if result.comparison is not None else result
 
 
+def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
+    """Render review evidence and dispositions as shared transcript notices.
+
+    Returns:
+        Plain text notices, or none for events without an operator-facing result.
+    """
+    kind = event.get("type")
+    try:
+        if kind == "loop.review.panel":
+            if "target" not in event:
+                return ("Review has legacy count-only evidence; findings are unavailable.",)
+            panel = review_records.ReviewPanel.model_validate(event)
+            lines = [
+                f"Review {panel.panel_id}: {panel.completion}; "
+                f"block_on={panel.block_on}, rejected={panel.blocked}, disarmed={panel.disarmed}"
+            ]
+            lines.extend(
+                f"Finding {o.finding_id} · {o.finding.severity} · {o.finding.location}\n"
+                f"{o.finding.title}\n{o.finding.detail}"
+                for o in panel.findings
+            )
+            return tuple(lines)
+        if kind == "loop.review.skipped":
+            skipped = _Skipped.model_validate(event)
+            return (f"Review {skipped.panel_id} skipped: {skipped.reason}",)
+        if kind not in _ACTION_EVENTS:
+            return ()
+        action = ActionRecord.model_validate(event)
+        label = f"Finding {action.finding_id}"
+        if kind == "loop.review.finding.resolved" and action.resolution is not None:
+            resolution = action.resolution
+            duplicate = (
+                f" (duplicate of {resolution.duplicate_of})" if resolution.duplicate_of else ""
+            )
+            body = f"{label} resolved as {resolution.disposition}{duplicate}: {resolution.reason}"
+        elif kind == "loop.review.finding.reopened":
+            body = f"{label} reopened: {action.reason}"
+        else:
+            detail = {
+                "loop.review.fix.requested": (
+                    "Fix requested; delivery unknown until submission is recorded"
+                ),
+                "loop.review.fix.submitted": "steer submitted; finding stays open",
+                "loop.review.fix.failed": f"Fix delivery failed: {action.error}",
+            }.get(kind, "incomplete disposition record")
+            body = f"{label}: {detail}"
+        return (body,)
+    except pydantic.ValidationError as exc:
+        return (f"Cannot read review notice: {exc}",)
+
+
 def as_dict(view: ReviewView) -> dict[str, Any]:
     """Return JSON-ready evidence, including nested boundary models and merge facts."""
     result = pydantic.TypeAdapter(ReviewView).dump_python(view, mode="json")

@@ -31,7 +31,7 @@ Fold review evidence and operator history for every session reader.
 | `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | `'none'` |
 
 - **Written by:** viewmodel/{_session_log, state}
-- **Read by:** app/review_actions, ui/cli/sessions_findings, ui/web/review_routes, viewmodel/{_state_types, _state_view}
+- **Read by:** app/review_actions, ui/acp/review, ui/cli/sessions_findings, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, transcript}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (1 test files exercise it)
 
 ## Review records
@@ -69,8 +69,8 @@ Define immutable review evidence and validate review boundary payloads.
 | `source` | `Literal['revisions', 'worktree']` | required |
 
 - **Written by:** app/review_actions, harness/{_panel, _review_seat, _reviewer}, ui/cli/sessions_findings, ui/web/review_routes
-- **Read by:** harness/{_chain, _loop_state, _review_history}, viewmodel/review
-- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (11 test files exercise it)
+- **Read by:** harness/{_chain, _loop_state, _review_history}, ui/acp/review, ui/tui/{_diff_pane, review}, viewmodel/review
+- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (12 test files exercise it)
 
 ## Conversation
 

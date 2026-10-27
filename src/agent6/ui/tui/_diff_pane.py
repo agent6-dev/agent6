@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+import re
 
 from rich import text
 from textual import app, message, widgets
 
+from agent6 import errors, review_records
 from agent6.sessions import manifest
+from agent6.ui import keymap
 from agent6.ui.tui import forms
-from agent6.vcs import git_read
+from agent6.vcs import git_history, git_read
 from agent6.viewmodel import SessionState, format
 
 
@@ -151,6 +154,65 @@ class DiffPane(forms.ScrollPane):
             else (f"diff{filt}" if sel else "")
         )
         self.query_one("#diff-body", widgets.Static).update(self._story(s, sel))
+
+    def show_review(
+        self,
+        cwd: pathlib.Path,
+        target: review_records.ReviewTarget | None,
+        location: review_records.ReviewLocation,
+    ) -> None:
+        """Preview the cited hunk from the recorded trees without reading the checkout."""
+        self.query_one("#diff-nav").display = False
+        key = (target, location)
+        if self._rendered == key:
+            return
+        self._rendered = key
+        body = text.Text(keymap.REVIEW_TEXT["preview"].format(location=location) + "\n")
+        if target is None:
+            body.append(keymap.REVIEW_TEXT["missing"])
+        else:
+            try:
+                files = git_history.changed_files(cwd, target.base_tree, target.head_tree)
+                entry = next(
+                    (
+                        f
+                        for f in files
+                        if (f.old_path or f.path if location.side == "base" else f.path)
+                        == location.path
+                    ),
+                    None,
+                )
+                patch, truncated = git_history.file_patch(
+                    cwd,
+                    target.base_tree,
+                    target.head_tree,
+                    entry.path if entry else location.path,
+                    entry.old_path if entry else "",
+                    max_bytes=200_000,
+                )
+                if location.start_line is not None:
+                    chunks = re.split(r"(?=^@@ )", patch, flags=re.MULTILINE)
+                    cited: list[str] = []
+                    for chunk in chunks[1:]:
+                        match = re.match(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", chunk)
+                        if match is None:
+                            continue
+                        offset = 1 if location.side == "base" else 3
+                        start = int(match[offset])
+                        end = start + int(match[offset + 1] or "1") - 1
+                        if (
+                            start <= (location.end_line or location.start_line)
+                            and end >= location.start_line
+                        ):
+                            cited.append(chunk)
+                    patch = chunks[0] + "".join(cited) if cited else ""
+                append_colored_diff(body, patch or keymap.REVIEW_TEXT["no_hunk"])
+                if truncated:
+                    body.append(keymap.REVIEW_TEXT["truncated"])
+            except errors.GitError as exc:
+                body.append(str(exc))
+        self.query_one("#diff-body", widgets.Static).update(body)
+        self.scroll_home(animate=False)
 
     def _story(self, s: SessionState, sel: str | None) -> text.Text:
         verify = s.last_verify

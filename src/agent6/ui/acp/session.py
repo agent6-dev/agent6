@@ -44,6 +44,7 @@ class Session:
         execution_live: Cleared before the prompt answers, since the thread is still alive
             while `finish` runs and an editor may prompt again the instant it reads
             the reply.
+        require_resume: Refuse a missing resume point instead of starting new work.
     """
 
     acp_id: str
@@ -53,6 +54,7 @@ class Session:
     thread: threading.Thread | None = None
     cancelled: bool = False
     execution_live: bool = False
+    require_resume: bool = False
 
     def is_running(self) -> bool:
         """Return whether an execution is in flight."""
@@ -143,7 +145,12 @@ class Sessions:
         return session
 
     def start_execution(
-        self, session: Session, text: str, *, finish: Callable[[StopReason], None]
+        self,
+        session: Session,
+        text: str,
+        *,
+        finish: Callable[[StopReason], None],
+        require_resume: bool = False,
     ) -> None:
         """Run the prompt on a worker, and answer when it ends.
 
@@ -152,6 +159,7 @@ class Sessions:
             text: The prompt, as `prompt_text` joined it.
             finish: Answers the prompt; called once with the stop reason, `cancelled` after
                 a cancel whatever the run returned.
+            require_resume: Refuse instead of starting new work if the resume point is missing.
 
         Raises:
             RpcError: The session has an execution in flight.
@@ -160,6 +168,7 @@ class Sessions:
         if session.is_running():
             raise rpc.RpcError(rpc.INVALID_PARAMS, "that session already has a prompt in flight")
         session.cancelled = False
+        session.require_resume = require_resume
 
         def _work() -> None:
             try:
@@ -168,6 +177,7 @@ class Sessions:
                 reason = "refusal"
             answer = "cancelled" if session.cancelled else reason
             session.execution_live = False
+            session.require_resume = False
             finish(answer)
 
         session.execution_live = True

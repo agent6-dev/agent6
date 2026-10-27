@@ -59,6 +59,16 @@ Before the first model call, the header names the role and model from the manife
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
+## Findings
+
+Open Findings from the hub's View menu (`v`) or the run dashboard's View menu (`Ctrl+F`).
+Use ↑↓ to select a finding and read its recorded diff and action history.
+The screen shows open severity counts and the panel's rejection decision separately.
+`f` submits Fix through the steer bridge; a stopped run requires a **Resume to fix** confirmation.
+`s` resolves with a disposition and reason; `o` reopens with a reason.
+Fix leaves the finding open, and a failed or unknown delivery stays visible.
+`r` refreshes the journal; the screen also polls while open.
+
 ## Event log
 
 The View menu's Full log opens the structural events of the run's log, formatted as the dashboard's log pane formats them, scrollable over the whole run.
