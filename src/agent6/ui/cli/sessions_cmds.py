@@ -209,6 +209,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         probe_args.extend(["--", *paths])
     probe = subprocess.run(
         ["git", *git_policy.git_hardening_flags(cwd), *probe_args],
+        env=git_policy.git_environment(),
         cwd=cwd,
         check=False,
         capture_output=True,
@@ -220,7 +221,10 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         return 0
     pager = () if paginate else ("--no-pager",)
     proc = subprocess.run(
-        ["git", *pager, *git_policy.git_hardening_flags(cwd), *args], cwd=cwd, check=False
+        ["git", *pager, *git_policy.git_hardening_flags(cwd), *args],
+        cwd=cwd,
+        check=False,
+        env=git_policy.git_environment(),
     )
     return proc.returncode
 
@@ -244,6 +248,7 @@ def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
     try:
         current = subprocess.run(
             ["git", *git_policy.git_hardening_flags(cwd), "rev-parse", "--abbrev-ref", "HEAD"],
+            env=git_policy.git_environment(),
             cwd=cwd,
             check=False,
             capture_output=True,
@@ -253,6 +258,7 @@ def _dirty_worktree_note(cwd: pathlib.Path, run_branch: object) -> str:
             return ""
         status = subprocess.run(
             ["git", *git_policy.git_hardening_flags(cwd), "status", "--porcelain"],
+            env=git_policy.git_environment(),
             cwd=cwd,
             check=False,
             capture_output=True,

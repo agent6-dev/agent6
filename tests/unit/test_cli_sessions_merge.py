@@ -418,6 +418,7 @@ def test_runs_merge_without_identity_refuses_with_clean_tree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # No git identity anywhere: isolate from ~/.gitconfig and drop the fixture's local identity.
+    monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
     monkeypatch.chdir(tmp_path)

@@ -277,6 +277,40 @@ def test_review_reports_dirty_submodules_without_snapshotting_contents(
     )
 
 
+@pytest.mark.parametrize(
+    "state", ["selected", "hidden", "unselected", "excluded", "ignored", "revisions"]
+)
+def test_review_names_untracked_repositories_without_snapshotting_contents(
+    repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+) -> None:
+    """An untracked repository must be named as omitted, not silently treated as reviewed."""
+    nested = repo / "vendor/nested"
+    nested.mkdir(parents=True)
+    _git(nested, "init", "-q")
+    (nested / "file.txt").write_text("unreviewed bytes\n")
+    if state == "ignored":
+        (repo / ".gitignore").write_text("vendor/nested/\n")
+    paths = {
+        "unselected": (":(top)tracked.py",),
+        "excluded": (":(top,exclude)vendor/nested",),
+    }.get(state, ())
+    hide = (str(nested),) if state == "hidden" else ()
+    base = "HEAD" if state == "revisions" else ""
+    monkeypatch.chdir(repo / "vendor")
+
+    compared = review.comparison(pathlib.Path.cwd(), base=base, head="HEAD", paths=paths, hide=hide)
+    review_cmds._reviewed_diff(base, "HEAD", paths, hide)
+
+    assert not _git(repo, "ls-tree", "-r", compared.target.head_tree, "vendor/nested")
+    note = "`vendor/nested/` is an untracked repository and was not reviewed"
+    expected = state == "selected"
+    assert (note in capsys.readouterr().err) is expected
+    assert compared.untracked_repositories == (("vendor/nested/",) if expected else ())
+
+
 def test_review_diff_with_base_is_plain_diff(repo: pathlib.Path) -> None:
     git = shutil.which("git")
     assert git is not None

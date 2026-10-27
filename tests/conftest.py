@@ -87,15 +87,14 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 def _hermetic_git(  # pyright: ignore[reportUnusedFunction]
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    """Pin a suite-owned git identity and blank the system and global git config.
+    """Pin a suite-owned Git identity in a temporary home.
 
-    Tests commit in throwaway repos and clones (a clone does not inherit the origin's
-    repo-local user.name and email), and a developer's ~/.gitconfig would supply an identity
-    a bare runner lacks. A test that needs a missing identity overrides GIT_CONFIG_GLOBAL
-    itself (see test_verify_git_identity_missing_raises).
+    agent6 strips shell GIT_CONFIG_* overrides, so its Git reads the fixture's ~/.gitconfig.
     """
-    cfg = tmp_path_factory.mktemp("git-identity") / "gitconfig"
+    home = tmp_path_factory.mktemp("git-home")
+    cfg = home / ".gitconfig"
     cfg.write_text("[user]\n\tname = t\n\temail = t@t\n", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
 

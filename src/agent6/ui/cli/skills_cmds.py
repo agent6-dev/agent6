@@ -30,6 +30,7 @@ from agent6.config import ConfigError, io, layer
 from agent6.skills import Skill, resolve_states  # noqa: ICN003  # re-export
 from agent6.tools import http_body
 from agent6.ui.cli import _common, _steer_menu
+from agent6.vcs import git_policy
 
 _ORIGIN_FILE = ".origin.toml"
 _FETCH_TIMEOUT_S = 30.0
@@ -304,12 +305,14 @@ def _git_clone(url: str, dest: pathlib.Path) -> str:
     try:
         subprocess.run(
             ["git", "clone", "--depth", "1", "--quiet", "--", url, str(dest)],
+            env=git_policy.git_environment(),
             check=True,
             capture_output=True,
             text=True,
         )
         head = subprocess.run(
             ["git", "-C", str(dest), "rev-parse", "HEAD"],
+            env=git_policy.git_environment(),
             check=True,
             capture_output=True,
             text=True,

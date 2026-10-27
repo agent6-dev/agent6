@@ -100,6 +100,7 @@ def _git_diff_text(cwd: pathlib.Path, range_spec: str) -> tuple[int, str, str]:
         cwd=cwd,
         capture_output=True,
         check=False,
+        env=git_policy.git_environment(),
     )
     return (
         proc.returncode,

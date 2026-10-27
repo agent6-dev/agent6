@@ -205,6 +205,53 @@ def test_review_journal_keeps_selection_separate_from_hidden_paths(
         assert tuple(target["hidden_paths"]) == ("private/changed", "private/deleted")
 
 
+@pytest.mark.parametrize("panel", [False, True], ids=["freeform", "panel"])
+@pytest.mark.parametrize("name", ["nested", "nested\x1b\n"])
+def test_untracked_repository_notes_reach_the_prompt_and_saved_receipt(
+    repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    panel: bool,
+    name: str,
+) -> None:
+    """A review must not save a clean verdict that hides an omitted repository."""
+    nested = repo / name
+    nested.mkdir()
+    test_review_diff_collect._git(nested, "init", "-q")
+    (nested / "file.txt").write_text("unreviewed bytes\n")
+
+    class CapturingProvider(_PassingSeatProvider):
+        last_user = ""
+
+        def call(self, **kwargs: Any) -> Any:
+            self.last_user = str(kwargs["messages"][0]["content"])
+            return super().call(**kwargs)
+
+    provider = CapturingProvider()
+    seat = _reviewer.ReviewSeat(
+        focus="correctness",
+        provider=provider,  # type: ignore[arg-type]
+        model="reviewer",
+    )
+    monkeypatch.setattr(providers, "build_review_seats", mock.Mock(return_value=[seat]))
+    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=provider))
+
+    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
+        (), base="", head="HEAD", paths=(), reviewers=int(panel)
+    )
+
+    assert rc == 0
+    escaped = "nested/" if name == "nested" else r'"nested\u001b\n/"'
+    note = f"`{escaped}` is an untracked repository and was not reviewed"
+    out = capsys.readouterr()
+    assert note in provider.last_user
+    assert note in out.err and note in out.out
+    saved = _saved_reviews(repo)
+    assert len(saved) == 1
+    assert note in saved[0].read_text()
+    assert "\x1b" not in out.err + out.out + saved[0].read_text()
+
+
 @pytest.mark.parametrize("nested", [False, True], ids=["root", "subdirectory"])
 @pytest.mark.parametrize("committed", [False, True], ids=["worktree", "revisions"])
 @pytest.mark.parametrize("hidden", [False, True], ids=["ordinary", "hidden-ignore-revs"])

@@ -526,11 +526,8 @@ def test_verify_git_identity_override_wins(tmp_path: pathlib.Path) -> None:
 def test_verify_git_identity_missing_raises(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The global git config points at an empty file, so no identity leaks in.
-    empty_cfg = tmp_path / "empty.gitconfig"
-    empty_cfg.write_text("", encoding="utf-8")
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty_cfg))
-    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(empty_cfg))
+    # The temporary home has no Git config, so no global identity leaks in.
+    monkeypatch.setenv("HOME", str(tmp_path))
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)
@@ -851,9 +848,8 @@ def test_timeout_keeps_a_preexisting_index_lock(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize("preexisting", [True, False], ids=["before-start", "during-command"])
-@pytest.mark.parametrize("inherited", [False, True], ids=["env-extra", "inherited"])
 def test_timeout_on_a_temporary_index_preserves_the_real_index_lock(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, preexisting: bool, inherited: bool
+    tmp_path: pathlib.Path, preexisting: bool
 ) -> None:
     """A killed temporary-index command cannot own a real-index lock created by another git."""
     _init_repo(tmp_path)
@@ -863,9 +859,6 @@ def test_timeout_on_a_temporary_index_preserves_the_real_index_lock(
     fake = _HungGit(lock=None if preexisting else lock, ignores_term=True)
     index = str(tmp_path / "review-index")
     env_extra = {"GIT_INDEX_FILE": index}
-    if inherited:
-        monkeypatch.setenv("GIT_INDEX_FILE", index)
-        env_extra = None
     with (
         mock.patch.object(_git_command.subprocess, "Popen", _hang_the_op_only(fake)),
         pytest.raises(errors.GitError, match="timed out"),

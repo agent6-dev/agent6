@@ -483,11 +483,12 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
       It leaves the shared index and checkout untouched.
       It writes Git objects only for selected, non-hidden changes.
       Ignored untracked files stay out.
+      The prompt and saved review name omitted dirty submodule contents and untracked repositories.
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
   A branch's commit survives in its reflog; a chain ref's line carries the sha to undelete it.
-- `_git_command.py` runs git with the configured `api_key_env` names removed from its environment: a credential helper or content driver never inherits one
-    - PATH, SSH, proxy, and credential-helper vars stay
-    - the read-only collectors inherit the environment untouched (no remote contact; the hardening flags leave no repo-controlled code to receive it)
+- Host-side git calls use `git_policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.
+    - Of the shell's `GIT_*` variables, only `GIT_ASKPASS`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_EDITOR`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT` and `GIT_TRACE*` pass through; agent6 can still supply explicit settings such as `GIT_INDEX_FILE`.
+    - Other PATH, SSH, proxy and credential-helper variables stay.
 
 **Receipt evidence**
 

@@ -4,11 +4,12 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
 import shutil
 import subprocess
 
-from agent6 import errors
+from agent6 import child_env, errors
 
 
 def git() -> str:
@@ -106,6 +107,7 @@ def repo_driver_overrides(cwd: pathlib.Path) -> tuple[str, ...]:
             text=True,
             timeout=10,
             check=False,
+            env=git_environment(),
         )
     except (OSError, subprocess.SubprocessError):
         return ()
@@ -154,3 +156,27 @@ def git_hardening_flags(cwd: pathlib.Path) -> tuple[str, ...]:
     # /dev/null is not a directory, so git finds no hooks there.
     hooks = () if _hook_policy["honor_repo_hooks"] else ("-c", "core.hooksPath=/dev/null")
     return (*_GIT_HARDENING, *hooks, *repo_driver_overrides(cwd))
+
+
+def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Build Git's environment without shell overrides of its repository or command policy.
+
+    Args:
+        extra: Explicit agent6 settings, including temporary index paths.
+
+    Returns:
+        The inherited environment with Git overrides and provider keys removed.
+    """
+    # Inherit only GIT_{ASKPASS,AUTHOR_*,COMMITTER_*,EDITOR,SSH,SSH_COMMAND,SSH_VARIANT,TRACE*}.
+    allowed = {"GIT_ASKPASS", "GIT_EDITOR", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"}
+    inherited = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("GIT_")
+        or name in allowed
+        or name.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_TRACE"))
+    }
+    # Disable terminal credential prompts; stable Git prose keeps the stash rescue parseable.
+    return child_env.without_provider_keys(
+        {**inherited, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(extra or {})}
+    )

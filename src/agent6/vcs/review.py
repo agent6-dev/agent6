@@ -407,6 +407,7 @@ class Comparison:
     target: review_records.ReviewTarget
     diff: str
     dirty_submodules: tuple[str, ...] = ()
+    untracked_repositories: tuple[str, ...] = ()
 
 
 def _comparison_commits(root: pathlib.Path, base: str, head: str) -> tuple[str | None, str | None]:
@@ -478,6 +479,7 @@ def comparison(
         specs = (":/", *paths)
     exclusions: list[str] = []
     dirty_submodules: tuple[str, ...] = ()
+    untracked_repositories: tuple[str, ...] = ()
     for denied in sorted(set(workspace.denied)):
         if not _path_safety.path_within(denied, repo) or denied == repo:
             continue
@@ -513,6 +515,8 @@ def comparison(
         selected = tuple(sorted(set(names).difference(hidden)))
         if not head_commit and selected:
             dirty_submodules = _review_submodules.dirty_paths(repo, selected, workspace)
+            # Without --directory, ls-files collapses only untracked repositories to directories.
+            untracked_repositories = tuple(name for name in selected if name.endswith("/"))
             # agent6's own filter picks the staged names: `ls-files` given a file pathspec and an
             # exclude element lists nothing (git 2.53), so the exclusions stay off its argv.
             changed = {
@@ -599,7 +603,7 @@ def comparison(
         workspace.is_denied(repo / name) for name in _diff_names(root, target, specs, exclusions)
     ):
         raise errors.GitError("Git pathspecs cannot enforce the review's hidden paths")
-    return Comparison(target, diff, dirty_submodules)
+    return Comparison(target, diff, dirty_submodules, untracked_repositories)
 
 
 def _diff_names(

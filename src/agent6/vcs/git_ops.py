@@ -887,6 +887,7 @@ def _bring_worktree_file_forward(
                 stderr=subprocess.DEVNULL,
                 check=True,
                 timeout=_git_command.GIT_TIMEOUT_S,
+                env=git_policy.git_environment(),
             )
         if new_mode == "100755":
             file.chmod(file.stat().st_mode | 0o111)

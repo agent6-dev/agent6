@@ -129,6 +129,7 @@ def _is_checked_out(git: str, root: pathlib.Path, rev: str) -> bool:
         capture_output=True,
         errors="replace",
         check=False,
+        env=git_policy.git_environment(),
     )
     return status.returncode == 0 and not status.stdout.strip()
 
@@ -151,6 +152,7 @@ def _run_review_panel(
     transcript_sink: TranscriptSink,
     reviews_dir: pathlib.Path,
     budget: agent6_budget.BudgetTracker,
+    notes: str = "",
 ) -> int:
     """Run the grounded adversarial review panel over the diff and print its verdict.
 
@@ -174,6 +176,7 @@ def _run_review_panel(
         transcript_sink: Where the seats' transcripts go.
         reviews_dir: The `<state-dir>/reviews/` directory.
         budget: The invocation's budget.
+        notes: Omitted content named in the context and receipt.
 
     Returns:
         The verdict on `agent6 run`'s scale: 0 PASS (clean or non-blocking findings),
@@ -197,7 +200,7 @@ def _run_review_panel(
     if err is not None:
         _common.error(f"{err}")
         return 2
-    ctx = _panel.ReviewContext(task=f"code review: {label}", rules=rules, diff=diff)
+    ctx = _panel.ReviewContext(task=f"code review: {label}\n{notes}", rules=rules, diff=diff)
     # repo-scope seats need a read-only tool surface over the repo.
     tools = None
     dispatch = None
@@ -283,6 +286,8 @@ def _run_review_panel(
         verdict, rc = "PASS", 0
     body = _panel.render_findings(result.merged_findings)
     stdout = f"VERDICT: {verdict}\n" + (f"{body}\n" if body else "")
+    if notes:
+        stdout += f"\n{notes}\n"
     print(stdout, end="", flush=True)
     print(
         f"[agent6] review saved: {save_review(reviews_dir, label=label, body=stdout)}",
@@ -310,7 +315,7 @@ def _run_review_panel(
 
 def _reviewed_diff(
     base: str, head: str, paths: tuple[str, ...], hide: tuple[str, ...] = ()
-) -> tuple[str, pathlib.Path, str, str, review_records.ReviewTarget] | int:
+) -> tuple[str, pathlib.Path, str, str, review_records.ReviewTarget, str] | int:
     """Resolve the git binary, working directory, reviewed diff and label.
 
     Args:
@@ -320,7 +325,7 @@ def _reviewed_diff(
         hide: `[sandbox].hide_paths`, excluded from the review.
 
     Returns:
-        `(git, root, diff, label, target)`, else the exit code: 2 when git is missing or failed,
+        `(git, root, diff, label, target, notes)`, else 2 when git is missing or failed,
         0 when there is nothing to review (said on stderr, naming the range).
     """
     root = pathlib.Path.cwd()
@@ -339,15 +344,22 @@ def _reviewed_diff(
         return 2
     if compared.target.hidden_paths:
         print("note: review excludes hidden paths (sandbox.hide_paths).", file=sys.stderr)
+    notes: list[str] = []
     if compared.dirty_submodules:
         names = ", ".join(terminal.printable_name(name) for name in compared.dirty_submodules)
-        print(f"note: submodule working-tree contents are not reviewed: {names}", file=sys.stderr)
+        notes.append(f"note: submodule working-tree contents are not reviewed: {names}")
+    notes.extend(
+        f"note: `{terminal.printable_name(name)}` is an untracked repository and was not reviewed."
+        for name in compared.untracked_repositories
+    )
+    for note in notes:
+        print(note, file=sys.stderr)
     if not compared.diff.strip():
         print(f"(no diff to review: {label})", file=sys.stderr)
         return 0
     if base:
         label += f" (from {compared.target.base_commit})"
-    return git, root, compared.diff, label, compared.target
+    return git, root, compared.diff, label, compared.target, "\n".join(notes)
 
 
 def _start_review(
@@ -461,7 +473,7 @@ def _cmd_review(  # noqa: PLR0911
     reviewed = _reviewed_diff(base, head, paths, cfg.sandbox.hide_paths)
     if isinstance(reviewed, int):
         return reviewed
-    git, root, diff, label, target = reviewed
+    git, root, diff, label, target, notes = reviewed
 
     if reviewers < 1:
         cfg.require_runnable("reviewer")
@@ -486,6 +498,7 @@ def _cmd_review(  # noqa: PLR0911
         capture_output=True,
         errors="replace",
         check=False,
+        env=git_policy.git_environment(),
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 
@@ -524,6 +537,7 @@ def _cmd_review(  # noqa: PLR0911
             transcript_sink=transcript_sink,
             reviews_dir=layout_root,
             budget=budget,
+            notes=notes,
         )
 
     return _freeform_review(
@@ -538,6 +552,7 @@ def _cmd_review(  # noqa: PLR0911
         journal=journal,
         panel_id=panel_id,
         layout_root=layout_root,
+        notes=notes,
     )
 
 
@@ -554,6 +569,7 @@ def _freeform_review(
     journal: event_log.EventSink,
     panel_id: str,
     layout_root: pathlib.Path,
+    notes: str = "",
 ) -> int:
     """Run and save the freeform review with its rule-source journal.
 
@@ -569,6 +585,7 @@ def _freeform_review(
         journal: The saved review journal.
         panel_id: The review identity.
         layout_root: The reviews directory.
+        notes: Omitted content named in the context and receipt.
 
     Returns:
         Zero on success, 2 on refusal, or 3 when the budget is spent.
@@ -591,6 +608,7 @@ def _freeform_review(
             diff=diff,
             rules=rules,
             recent_log=recent_log,
+            extra_context=notes,
         )
     except code_review.CodeReviewError as exc:
         journal.emit(
@@ -606,6 +624,8 @@ def _freeform_review(
         return 3
 
     journal.emit("loop.review.freeform", panel_id=panel_id, execution_id=panel_id)
+    if notes:
+        text += f"\n\n{notes}"
     print(text, flush=True)
     print(
         f"[agent6] review saved: {save_review(layout_root, label=label, body=text)}",
