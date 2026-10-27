@@ -9,6 +9,7 @@ the translation rationale.
 from __future__ import annotations
 
 import json
+import pathlib
 from typing import Any
 
 from agent6.providers import types
@@ -33,6 +34,46 @@ def tool_result_text(tr_content: Any) -> str:
     return str(tr_content)
 
 
+def tool_result_media(
+    block: dict[str, Any], path: str, *, responses: bool = False
+) -> list[dict[str, Any]]:
+    """Encode a canonical tool attachment as labelled user-message parts.
+
+    Args:
+        block: The canonical tool result.
+        path: The source path from its paired tool call.
+        responses: Use the Responses dialect instead of Chat Completions.
+
+    Returns:
+        Text labels and inline image or file parts, empty for a text-only result.
+    """
+    content = block.get("content")
+    if not isinstance(content, list):
+        return []
+    parts: list[dict[str, Any]] = []
+    for item in content:
+        if not isinstance(item, dict) or item.get("type") not in ("image", "document"):
+            continue
+        source = item.get("source")
+        if not isinstance(source, dict) or source.get("type") != "base64":
+            continue
+        label = f"{item['type']} from tool call {block.get('tool_use_id', '')}: {path}"
+        parts.append({"type": "input_text" if responses else "text", "text": label})
+        url = f"data:{source['media_type']};base64,{source['data']}"
+        if item["type"] == "image":
+            parts.append(
+                {"type": "input_image", "image_url": url}
+                if responses
+                else {"type": "image_url", "image_url": {"url": url}}
+            )
+        else:
+            file = {"filename": pathlib.PurePosixPath(path).name, "file_data": url}
+            parts.append(
+                {"type": "input_file", **file} if responses else {"type": "file", "file": file}
+            )
+    return parts
+
+
 def anthropic_to_openai_messages(  # noqa: PLR0912
     system: str, anthropic_msgs: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -52,6 +93,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
     out: list[dict[str, Any]] = [{"role": "system", "content": system}]
     # A blank-name tool_use is dropped, and its paired tool_result with it, or strict backends 400.
     dropped_tool_use_ids: set[str] = set()
+    paths: dict[str, str] = {}
     for msg in anthropic_msgs:
         role = str(msg.get("role", "user"))
         content = msg.get("content", "")
@@ -64,6 +106,7 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
         text_chunks: list[str] = []
         tool_calls: list[dict[str, Any]] = []
         tool_results: list[dict[str, Any]] = []
+        attachments: list[dict[str, Any]] = []
         for block in content:
             if not isinstance(block, dict):
                 continue
@@ -74,6 +117,8 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
                 if not str(block.get("name") or "").strip():
                     dropped_tool_use_ids.add(str(block.get("id", "")))
                     continue
+                if isinstance(call_input := block.get("input"), dict):
+                    paths[str(block.get("id", ""))] = str(call_input.get("path", ""))
                 tool_calls.append(
                     {
                         "id": str(block.get("id", "")),
@@ -88,13 +133,15 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             elif btype == "tool_result":
                 if str(block.get("tool_use_id", "")) in dropped_tool_use_ids:
                     continue
+                attachments.extend(
+                    tool_result_media(block, paths.get(str(block.get("tool_use_id", "")), ""))
+                )
                 # A string result is what every backend accepts (Ollama, Kimi included).
-                tr_text = tool_result_text(block.get("content", ""))
                 tool_results.append(
                     {
                         "role": "tool",
                         "tool_call_id": str(block.get("tool_use_id", "")),
-                        "content": tr_text,
+                        "content": tool_result_text(block.get("content", "")),
                     }
                 )
         if role == "assistant":
@@ -111,8 +158,9 @@ def anthropic_to_openai_messages(  # noqa: PLR0912
             out.append(assistant_msg)
         else:
             # A role=tool message must directly follow the tool_calls it answers; text comes after.
-            for tr in tool_results:
-                out.append(tr)
+            out.extend(tool_results)
+            if attachments:
+                out.append({"role": "user", "content": attachments})
             if text_chunks:
                 out.append({"role": role, "content": "\n\n".join(text_chunks)})
     return out

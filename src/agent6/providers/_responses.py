@@ -83,13 +83,14 @@ def responses_input(messages: list[dict[str, Any]], *, route: str) -> list[dict[
     items: list[dict[str, Any]] = []
     # A blank-name or id-less tool_use is dropped, and its paired tool_result with it.
     dropped_ids: set[str] = set()
+    paths: dict[str, str] = {}
     for msg in messages:
         role = str(msg.get("role", "user"))
         if role not in ("user", "assistant"):
             role = "user"
         content = msg.get("content", "")
         if isinstance(content, list):
-            items.extend(_content_items(role, content, dropped_ids, route))
+            items.extend(_content_items(role, content, dropped_ids, route, paths))
         elif content:
             items.append(_message_item(role, str(content)))
     return items
@@ -105,11 +106,12 @@ def replay_item(block: dict[str, Any], route: str) -> dict[str, Any] | None:
 
 
 def _content_items(
-    role: str, blocks: list[Any], dropped_ids: set[str], route: str
+    role: str, blocks: list[Any], dropped_ids: set[str], route: str, paths: dict[str, str]
 ) -> list[dict[str, Any]]:
     """Return one message's content blocks as input items, text runs batched."""
     items: list[dict[str, Any]] = []
     text_run: list[str] = []
+    attachments: list[dict[str, Any]] = []
     # An orphaned reasoning item violates the wire's pairing rules and 400s the request.
     pending_reasoning: list[dict[str, Any]] = []
 
@@ -141,6 +143,8 @@ def _content_items(
                 dropped_ids.add(call_id)
                 pending_reasoning.clear()
                 continue
+            if isinstance(call_input := block.get("input"), dict):
+                paths[call_id] = str(call_input.get("path", ""))
             flush()
             items.extend(pending_reasoning)
             pending_reasoning.clear()
@@ -155,6 +159,11 @@ def _content_items(
         elif btype == "tool_result":
             if str(block.get("tool_use_id", "")) in dropped_ids:
                 continue
+            attachments.extend(
+                _openai_messages.tool_result_media(
+                    block, paths.get(str(block.get("tool_use_id", "")), ""), responses=True
+                )
+            )
             flush()
             items.append(
                 {
@@ -164,6 +173,8 @@ def _content_items(
                 }
             )
     flush()
+    if attachments:
+        items.append({"type": "message", "role": "user", "content": attachments})
     return items
 
 

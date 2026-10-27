@@ -18,7 +18,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import portable
+from agent6 import media, portable
 from agent6.providers import (
     AnthropicProvider,
     ProviderError,
@@ -221,7 +221,7 @@ def test_transcript_record_publishes_via_atomic_write(
 @pytest.mark.parametrize("shape", ["native", "mcp", "chat", "responses"])
 def test_transcripts_omit_images_and_error_echoes(tmp_path: pathlib.Path, shape: str) -> None:
     """Native, MCP and data URL images leave only metadata, including echoed payloads."""
-    data = b"private image pixels"
+    data = b"private image pixels" * 4
     encoded = base64.b64encode(data).decode()
     url = "data:image/png;base64," + encoded
     blocks = {
@@ -267,7 +267,7 @@ def test_image_error_echo_is_scrubbed_before_excerpting(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, streaming: str, copies: int
 ) -> None:
     """A long base64 echo cannot escape through the transport's short error excerpts."""
-    encoded = base64.b64encode(b"private pixels" * copies).decode()
+    encoded = base64.b64encode(b"private pixels" * 8 * copies).decode()
     provider = AnthropicProvider(api_key="key", model="m", transcript_sink=TranscriptSink(tmp_path))
 
     def post(url: str, **kwargs: Any) -> _FakeResponse:
@@ -421,3 +421,132 @@ def test_unrelated_errors_are_not_media_rejections(
             ],
         )
     assert not isinstance(caught.value, types.MediaInputError)
+
+
+@pytest.mark.parametrize("encoded", ["sk-", base64.b64encode(b"x" * 66).decode()])
+@pytest.mark.parametrize("target", ["sink", "off", "status", "frame"])
+def test_credentials_are_scrubbed_before_payload_echoes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, encoded: str, target: str
+) -> None:
+    """A media payload matching a credential prefix cannot expose its secret suffix."""
+    secret = encoded + "SECRET123"
+    block = {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": encoded},
+    }
+    sink = TranscriptSink(tmp_path)
+    text = "upstream echoed " + secret
+    if target == "sink":
+        path = sink.record(
+            request_headers={"x-api-key": secret},
+            request_body={"content": [block]},
+            response_status=400,
+            response_body=text,
+        )
+        safe = path.read_text()
+    else:
+
+        def post(*args: Any, **kwargs: Any) -> _FakeResponse:
+            return _FakeResponse(status_code=400, text=text)
+
+        def stream(*args: Any, **kwargs: Any) -> contextlib.AbstractContextManager[httpx2.Response]:
+            if target == "frame":
+                body = {"type": "error", "error": {"message": text}}
+                return contextlib.nullcontext(
+                    httpx2.Response(200, text="event: error\ndata: " + json.dumps(body) + "\n\n")
+                )
+            return contextlib.nullcontext(httpx2.Response(400, text=text))
+
+        monkeypatch.setattr("agent6.providers._transport.http_post", post)
+        monkeypatch.setattr("agent6.providers._stream.http_stream", stream)
+        provider = AnthropicProvider(api_key=secret, model="m", transcript_sink=sink)
+        with pytest.raises(ProviderError) as caught:
+            provider.call(
+                system="s",
+                messages=[{"role": "user", "content": [block]}],
+                text_delta_callback=None if target == "off" else lambda _: None,
+            )
+        safe = str(caught.value)
+    assert "SECRET123" not in safe
+    assert "<REDACTED>" in safe
+    assert not _scan_for_secret(tmp_path, "SECRET123")
+
+
+def test_payload_omission_preserves_json_tokens() -> None:
+    """Short base64 equal to a JSON token cannot corrupt the metadata document."""
+    clean = media.omit_payloads(
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "true"}}
+    )
+    assert json.loads(json.dumps(clean))["source"]["payload_omitted"] is True
+    assert "data" not in clean["source"]
+
+
+@pytest.mark.parametrize("block_type", [None, "other"])
+def test_typeless_file_data_is_plain_data(block_type: str | None) -> None:
+    """Only known media block types turn a data URL into media metadata."""
+    value: dict[str, Any] = {"file_data": "data:application/pdf;base64,eA=="}
+    if block_type:
+        value["type"] = block_type
+    assert media.omit_payloads(value) == value
+
+
+def test_payload_echo_replacement_changes_values_not_keys() -> None:
+    """Echo omission walks string values without rewriting JSON object keys."""
+    encoded = base64.b64encode(b"x" * 66).decode()
+    value = {
+        encoded: ["echo " + encoded],
+        "image": {"type": "image", "mimeType": "image/png", "data": encoded},
+    }
+    assert media.omit_payloads(value)[encoded] == ["echo [media payload omitted]"]
+
+
+@pytest.mark.parametrize("responses", [False, True])
+@pytest.mark.parametrize("mime, kind", [("image/png", "image"), ("application/pdf", "document")])
+def test_synthetic_media_labels_retain_source_path(
+    tmp_path: pathlib.Path, responses: bool, mime: str, kind: str
+) -> None:
+    """OpenAI adapter labels supply the source path for metadata-only transcripts."""
+    from agent6.providers import _openai_messages, _responses
+
+    encoded = base64.b64encode(b"private data" * 10).decode()
+    path = "nested/page:one"
+    canonical = [
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "c1", "name": "read_file", "input": {"path": path}}
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "c1",
+                    "content": [
+                        {"type": "text", "text": f"{kind}: {path}, 1 KiB"},
+                        {
+                            "type": kind,
+                            "source": {"type": "base64", "media_type": mime, "data": encoded},
+                        },
+                    ],
+                }
+            ],
+        },
+    ]
+    request = (
+        {"input": _responses.responses_input(canonical, route="r")}
+        if responses
+        else {"messages": _openai_messages.anthropic_to_openai_messages("s", canonical)}
+    )
+    saved = TranscriptSink(tmp_path).record(
+        request_headers={},
+        request_body=request,
+        response_status=200,
+        response_body={},
+    )
+    text = saved.read_text()
+    assert encoded not in text
+    body = json.loads(text)["request"]["body"]
+    last = body["input" if responses else "messages"][-1]["content"][-1]
+    assert last["source"]["source_path"] == path

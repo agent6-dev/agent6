@@ -650,7 +650,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
   Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.
   Unjailed: it needs the operator's login under `$HOME` and its own egress, at the agent process's trust tier.
-  Tool results stay under Claude Code's 50,000-byte persistence threshold, so no tool output is written under `~/.claude`.
+  Tool-result text and notices stay under Claude Code's 50,000-byte persistence threshold.
+  Attachments use MCP image or resource items; agent6's metadata-only retention does not control storage by the child or upstream provider.
   The loop caps them at 34,000 bytes for this provider, keeping 16,000 for the turn's notices; a wider payload is refused.
   `claude auth status --json` runs the same way for the sign-in preflight.
 - `sessions/process.py`: `ps -p <pid> -o lstart=` and `ps -p <pid> -o stat=` on hosts without `/proc` (macOS), for process start-time identity and zombie checks, over a pid agent6 recorded.
@@ -720,12 +721,21 @@ It catches prompt regressions; the structural defenses above confine a model tha
 
 ## Media retention
 
-`read_file` refuses binary media; image and PDF delivery is disabled.
+`read_file` sends supported static images and PDFs from the workspace or an explicit read grant to the calling provider.
+The read uses `Workspace.resolve_read` and `open_contained`, retaining hidden-path, regular-file and symlink-race checks.
+It reads media under the 10 MiB document cap plus one byte, checks image containers without decoding pixels, and recognizes PDFs by their header.
+Image limits are 2 MiB each, 4 MiB total and four per turn and request; PDFs allow 10 MiB each and one per turn and request.
+It refuses media line ranges, unsupported formats and detected animation rather than resizing or truncating them.
 The in-memory `MediaAttachment` carries bytes separately from tool-result text.
 Transcripts, snapshots and checkpoints omit recognized payloads and retain metadata (path, media type, SHA-256 and byte size).
 A resume or fork needs a fresh `read_file`; it never reopens a saved path automatically.
 Streaming error excerpts that reach 8 KiB on a media request are omitted because clipping can split an echoed payload.
 
-Metadata-only retention does not redact pixels or document contents sent upstream.
+**Pixels and PDF contents are sent upstream unscrubbed.**
 A screenshot or PDF can contain credentials even when configuration directories are hidden.
-The adapter-enabling change requires a security review of binary egress, containment, retention and Claude Code's unjailed process.
+Metadata-only retention and credential scrubbing of headers and text do not redact those contents.
+
+The Claude Code binary runs outside the jail and receives the original attachment bytes through its stream-json pipes.
+The adapter sends images as MCP image items and PDFs as embedded resource items, not base64 text tool results.
+Its 50,000-byte text guard and 8 MiB line cap remain in force; the line cap includes base64, envelopes and notices on both continuation and replay.
+The installed binary's forwarding and storage behavior require a live check; agent6's retention policy covers its own records, not the child or upstream provider.

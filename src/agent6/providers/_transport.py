@@ -462,8 +462,10 @@ class ProviderCall:
         Returns:
             The safe error text.
         """
-        clean = media.omit_payloads({"request": self.body, "error": text})
-        return types.scrub_secret_values(str(clean["error"]), headers)
+        clean = media.omit_payloads(
+            {"request": self.body, "error": types.scrub_secret_values(text, headers)}
+        )
+        return str(clean["error"])
 
     def _decode_success(
         self,

@@ -9,10 +9,12 @@ Anthropic-shaped messages; `claude_code` owns the process.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 from collections.abc import Mapping, Sequence
 from typing import Any
+from urllib import parse
 
 from agent6 import budget
 from agent6 import child_env as agent6_child_env
@@ -196,10 +198,14 @@ def result_text(content: Any) -> str:
     return json.dumps(content, ensure_ascii=False)
 
 
-def tool_results(message: Mapping[str, Any]) -> dict[str, str]:
+def tool_results(message: Mapping[str, Any]) -> dict[str, list[dict[str, Any]]]:
     """Return `tool_use_id -> content` for a message's tool_result blocks, in wire order."""
     return {
-        str(b.get("tool_use_id", "")): result_text(b.get("content"))
+        str(b.get("tool_use_id", "")): (
+            list(b["content"])
+            if any(item.get("type") in ("image", "document") for item in message_blocks(b))
+            else [{"type": "text", "text": result_text(b.get("content"))}]
+        )
         for b in message_blocks(message)
         if b.get("type") == "tool_result"
     }
@@ -211,8 +217,8 @@ Skeleton = tuple[str, tuple[tuple[str, str], ...]]
 def message_skeleton(message: Mapping[str, Any]) -> Skeleton:
     """Return what identifies a message the process has consumed.
 
-    A tool_result's content and thinking are left out: elision and thinking strips
-    rewrite those in place without changing what the process was sent.
+    Text-only result content and thinking are left out; media-bearing results keep
+    a content digest so removing or replacing an attachment forces a replay.
 
     Args:
         message: A message in Anthropic shape.
@@ -221,14 +227,20 @@ def message_skeleton(message: Mapping[str, Any]) -> Skeleton:
         The role and, per block, the tool_use id, the tool_result id or the text.
     """
     keys = {"text": "text", "tool_use": "id", "tool_result": "tool_use_id"}
-    return (
-        str(message.get("role", "")),
-        tuple(
-            (str(kind), str(block.get(keys[kind], "")))
-            for block in message_blocks(message)
-            if (kind := block.get("type")) in keys
-        ),
-    )
+    parts: list[tuple[str, str]] = []
+    for block in message_blocks(message):
+        kind = block.get("type")
+        if kind not in keys:
+            continue
+        parts.append((str(kind), str(block.get(keys[kind], ""))))
+        if kind == "tool_result" and any(
+            item.get("type") in ("image", "document") for item in message_blocks(block)
+        ):
+            digest = hashlib.sha256(
+                json.dumps(block["content"], sort_keys=True).encode()
+            ).hexdigest()
+            parts.append(("media", digest))
+    return str(message.get("role", "")), tuple(parts)
 
 
 def history_skeleton(messages: Sequence[Mapping[str, Any]]) -> tuple[Skeleton, ...]:
@@ -236,25 +248,26 @@ def history_skeleton(messages: Sequence[Mapping[str, Any]]) -> tuple[Skeleton, .
     return tuple(message_skeleton(m) for m in messages)
 
 
-def render_history(messages: Sequence[Mapping[str, Any]]) -> str:
+def render_history(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Render the history as one user message for a replay.
 
     The first user text verbatim, then, for a longer history, a harness paragraph
     and every later turn as labelled text: tool calls with their inputs, results
-    as the history holds them, thinking dropped.
+    as the history holds them, thinking dropped and retained media kept inline.
 
     Args:
         messages: The conversation in Anthropic shape.
 
     Returns:
-        The rendered text; "" for an empty history.
+        Text and native media blocks; an empty list for an empty history.
     """
     if not messages:
-        return ""
+        return []
     first = "\n\n".join(message_texts(messages[0]))
     if len(messages) == 1:
-        return first
+        return [{"type": "text", "text": first}]
     parts = [first, _HARNESS_REPLAY]
+    content: list[dict[str, Any]] = []
     names: dict[str, str] = {}
     for message in messages[1:]:
         role = str(message.get("role", "user"))
@@ -270,20 +283,58 @@ def render_history(messages: Sequence[Mapping[str, Any]]) -> str:
                 )
             elif kind == "tool_result":
                 name = names.get(str(block.get("tool_use_id", "")), "tool")
-                parts.append(f"### tool_result {name}\n{result_text(block.get('content'))}")
-    return "\n\n".join(parts)
+                attachments = [
+                    item
+                    for item in message_blocks(block)
+                    if item.get("type") in ("image", "document")
+                ]
+                label = f" {block.get('tool_use_id', '')}" if attachments else ""
+                parts.append(f"### tool_result {name}{label}\n{result_text(block.get('content'))}")
+                if attachments:
+                    content.append({"type": "text", "text": "\n\n".join(parts)})
+                    parts.clear()
+                    content.extend(attachments)
+    if parts:
+        content.append({"type": "text", "text": "\n\n".join(parts)})
+    return content
 
 
-def user_line(text: str) -> dict[str, Any]:
-    """Return the stdin line that sends one user text."""
+def user_line(content: str | list[dict[str, Any]]) -> dict[str, Any]:
+    """Return the stdin line that sends user text or retained replay blocks."""
     return {
         "type": "user",
-        "message": {"role": "user", "content": [{"type": "text", "text": text}]},
+        "message": {
+            "role": "user",
+            "content": [{"type": "text", "text": content}] if isinstance(content, str) else content,
+        },
     }
 
 
 def mcp_answer(request_id: str, rpc_id: Any, result: dict[str, Any]) -> dict[str, Any]:
-    """Return the stdin line that answers one MCP request from the child."""
+    """Return an MCP answer with canonical attachments encoded as image or resource items."""
+    if isinstance(result.get("content"), list):
+        content: list[dict[str, Any]] = []
+        for block in result["content"]:
+            source = block.get("source")
+            if block.get("type") in ("image", "document") and isinstance(source, dict):
+                if block["type"] == "image":
+                    content.append(
+                        {"type": "image", "data": source["data"], "mimeType": source["media_type"]}
+                    )
+                else:
+                    content.append(
+                        {
+                            "type": "resource",
+                            "resource": {
+                                "uri": "agent6://tool-result/" + parse.quote(request_id, safe=""),
+                                "blob": source["data"],
+                                "mimeType": source["media_type"],
+                            },
+                        }
+                    )
+            else:
+                content.append(block)
+        result = {**result, "content": content}
     return {
         "type": "control_response",
         "response": {

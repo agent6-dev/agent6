@@ -157,7 +157,9 @@ def sse_events(
 _MEDIA_ERROR_OMITTED = "error body omitted: the 8 KiB excerpt may end inside a media payload"
 
 
-def _error_body_prefix(resp: httpx2.Response, request: dict[str, Any]) -> str:
+def _error_body_prefix(
+    resp: httpx2.Response, request: dict[str, Any], headers: dict[str, str]
+) -> str:
     """Return a bounded error excerpt, with media echoes omitted before clipping."""
     body = bytearray()
     for chunk in resp.iter_bytes():
@@ -167,9 +169,8 @@ def _error_body_prefix(resp: httpx2.Response, request: dict[str, Any]) -> str:
             break
     if len(body) == _ERROR_BODY_PREFIX_BYTES and media.input_modalities(request):
         return _MEDIA_ERROR_OMITTED
-    clean = media.omit_payloads(
-        {"request": request, "error": body.decode("utf-8", errors="replace")}
-    )
+    text = types.scrub_secret_values(body.decode("utf-8", errors="replace"), headers)
+    clean = media.omit_payloads({"request": request, "error": text})
     return str(clean["error"])
 
 
@@ -409,7 +410,7 @@ class SseCall:
                 if self.response_headers is not None:
                     self.response_headers(resp.headers)
                 if not 200 <= resp.status_code < 300:
-                    error_body = _error_body_prefix(resp, self.body)
+                    error_body = _error_body_prefix(resp, self.body, self.headers)
                     self.record(status=resp.status_code, response=error_body)
                     raise types.ProviderError(
                         f"{self.api_label} API error {resp.status_code}: "

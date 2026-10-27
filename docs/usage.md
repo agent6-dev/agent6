@@ -86,6 +86,23 @@ Under `partial` or `none` `sandbox.isolation`, `auto` already uses the persisten
 Persistence also lets a poisoned cache or tool configuration reach later runs in this repository; see the [sandbox boundaries](security.md#threat-model).
 `auto` under `full` `sandbox.isolation` stays temporary even when a persistent cache exists: reusing earlier runs' files requires an explicit opt-in.
 
+## Tools
+
+`read_file` returns UTF-8 text, a static PNG/JPEG/GIF/WebP image, or a PDF attachment.
+It identifies media by content, not the filename.
+Media reads require the default line range (`start_line = 1`, `limit = null`).
+
+- Images: 2 MiB each, at most four and 4 MiB total per turn and outbound request.
+- PDFs: 10 MiB each, at most one per turn and outbound request, counted separately from images.
+- Claude Code also refuses any encoded request line over 8 MiB, including the envelope and notices.
+- Malformed or animated images are refused, not resized or truncated; crop or convert them with an otherwise-permitted jailed command.
+- A provider with unknown media support gets one attempt; a recognized media rejection replaces the attachment with refusal text and retries once without rerunning tools.
+
+The views show a path and size, not a thumbnail.
+Saved sessions retain metadata, not pixels or PDF payloads; resume and fork need a fresh `read_file` to see them again.
+**Attachments can disclose credentials in screenshots or documents.**
+See [Media retention](security.md#media-retention) for containment and the upstream boundary.
+
 ## Follow and steer a run
 
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.

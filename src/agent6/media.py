@@ -16,6 +16,16 @@ MEDIA_CONTEXT_CHARS = 6_400
 
 
 def _source(block: dict[str, Any]) -> tuple[str, str] | None:
+    if block.get("type") not in (
+        "image",
+        "document",
+        "resource",
+        "image_url",
+        "input_image",
+        "input_file",
+        "file",
+    ):
+        return None
     source = block.get("source")
     if block.get("type") in ("image", "document"):
         if isinstance(source, dict) and source.get("type") == "base64":
@@ -46,6 +56,8 @@ def _source_path(text: str) -> str:
         return str(obj["attachment"].get("source_path", ""))
     if text.startswith(("image: ", "document: ")) and text.endswith(" KiB"):
         return text.split(": ", 1)[1].rsplit(", ", 1)[0]
+    if text.startswith(("image from tool call ", "document from tool call ")):
+        return text.partition(": ")[2]
     return ""
 
 
@@ -72,8 +84,6 @@ def omit_payloads(value: Any) -> Any:
             return obj
         if source := _source(obj):
             media_type, encoded = source
-            if encoded:
-                payloads.add(encoded)
             metadata: dict[str, Any] = {
                 "source_path": path,
                 "media_type": media_type,
@@ -85,6 +95,8 @@ def omit_payloads(value: Any) -> Any:
                 metadata["error"] = "invalid media payload"
             else:
                 metadata.update(byte_size=len(data), sha256=hashlib.sha256(data).hexdigest())
+                if len(data) >= 64:
+                    payloads.add(encoded)
             return {"type": obj["type"], "source": metadata}
         out = {key: walk(item, path) for key, item in obj.items()}
         if (
@@ -107,10 +119,20 @@ def omit_payloads(value: Any) -> Any:
     if not payloads:
         return clean
     # A provider may quote a request's base64 outside a structured media block.
-    text = json.dumps(clean, ensure_ascii=False)
-    for encoded in sorted(payloads, key=len, reverse=True):
-        text = text.replace(encoded, "[media payload omitted]")
-    return json.loads(text)
+    ordered = sorted(payloads, key=len, reverse=True)
+
+    def scrub_echoes(obj: Any) -> Any:
+        if isinstance(obj, str):
+            for encoded in ordered:
+                obj = obj.replace(encoded, "[media payload omitted]")
+            return obj
+        if isinstance(obj, list):
+            return [scrub_echoes(item) for item in obj]
+        if isinstance(obj, dict):
+            return {key: scrub_echoes(item) for key, item in obj.items()}
+        return obj
+
+    return scrub_echoes(clean)
 
 
 IMAGE_MAX_BYTES = 2 * 1024 * 1024

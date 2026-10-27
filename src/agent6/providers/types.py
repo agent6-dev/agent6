@@ -315,9 +315,8 @@ class TranscriptSink:
             },
         }
         # atomic_write's unpredictable O_EXCL temp name is not symlink-followable.
-        text = scrub_secret_values(
-            json.dumps(media.omit_payloads(payload), indent=2, sort_keys=True), request_headers
-        )
+        clean = json.loads(scrub_secret_values(json.dumps(payload), request_headers))
+        text = json.dumps(media.omit_payloads(clean), indent=2, sort_keys=True)
         portable.atomic_write(path, text)
         return path
 

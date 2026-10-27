@@ -78,7 +78,7 @@ A run keeps one message history with one provider and one model.
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
 - `_context.review_rules` loads base-tree rule blobs through `vcs._review_rules`; `loop.review.start` records the paths, blob IDs, byte counts and completeness, shared by the panel and standalone code review
-- under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
+- under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
 An in-loop panel records the run base and chain commit's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
 It does not capture a separate snapshot or move the operator's index, HEAD or run chain.
@@ -630,7 +630,11 @@ See [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
 `kinds.MediaAttachment` holds static image or PDF bytes in memory; `ToolResult.attachment` and `ToolResultItem.attachment` carry it beside unchanged text.
 `ReadMediaResult.to_wire()` contains metadata, not payload bytes.
 `Conversation.to_wire()` encodes retained attachments as text-plus-media arrays under their tool-result IDs.
-`read_file` remains text-only while provider adapters are incomplete.
+`read_file` reads at most the document cap plus one byte through the contained reader before inspecting media.
+Anthropic keeps native image and document blocks under the tool result.
+Chat Completions and Responses (including ChatGPT) keep tool replies as strings and place labelled media in a following user message after all parallel replies.
+That message encodes tool output and does not change the initiator.
+Claude Code receives MCP image or resource items, replays retained attachments as native blocks on respawn, and restarts when a media result changes.
 
 - Fixed image limits are 2 MiB each, 4 MiB total and four images per turn and request.
 - PDF limits are 10 MiB each and one document per turn and request, counted separately from images.

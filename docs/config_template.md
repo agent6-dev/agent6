@@ -218,10 +218,14 @@ agent6 model worker claude/claude-sonnet-4-5
 - Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude/claude-haiku-4-5`).
   Each side call is one short-lived `claude` process.
 - One `claude` process serves a worker execution.
-  It restarts, replaying the conversation as one text message, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
-  Tier-1 compaction shrinks the model's context at that next restart, not before.
+  It restarts, replaying the conversation as one user message with retained attachments, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
+  Tier-1 text compaction shrinks the model's context at that next restart, not before.
+  Removing or changing a retained media result forces a restart.
 - Claude Code appends the account email to every system prompt it sends; agent6 replaces it with `<operator-email>` in the model's returned text.
-- Tool results are capped at 34,000 bytes of UTF-8 for this provider (60,000 elsewhere): Claude Code writes a result over 50,000 bytes under `~/.claude/projects` and hands the model a 2 KB preview of it, and the turn's notices (a verify tail, a review critique, the nudges) ride in the same payload, with 16,000 bytes kept for them.
+- Text-only tool results are capped at 34,000 bytes of UTF-8 for this provider (60,000 elsewhere): Claude Code writes a result over 50,000 bytes under `~/.claude/projects` and hands the model a 2 KB preview of it, and the turn's notices (a verify tail, a review critique, the nudges) ride in the same payload, with 16,000 bytes kept for them.
+- Image and PDF attachments use MCP image or resource items, outside the text cap.
+  The provider checks text plus notices against the 50,000-byte guard and each complete encoded stdin line against 8 MiB.
+  See [Media retention](security.md#media-retention) for the child process and upstream boundary.
 - Use a full model id (`claude-sonnet-4-5`, not `sonnet`) so the context window is known for compaction sizing.
 - The bundled context-window table tries exact and date/tag-normalized ids first, then falls back from `claude-<family>-<major>-<minor>` to `claude-<family>-<major>` when that key exists; the compaction log names the family key when used.
 - `agent6 connect claude --logout` is refused: agent6 stores no Claude Code credentials; `claude auth logout` signs out.

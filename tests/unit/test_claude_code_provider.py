@@ -10,6 +10,8 @@ failure mapped to ProviderError.
 
 from __future__ import annotations
 
+import base64
+import copy
 import io
 import json
 import os
@@ -431,7 +433,9 @@ def test_non_continuation_restarts_with_the_rendered_history(tmp_path: pathlib.P
     pid_before = _spawns(cap)[0]["pid"]
     provider.call(system="s", messages=resumed, tools=TOOLS)
     assert len(_spawns(cap)) == 2 and not _alive(pid_before)
-    assert _user_texts(cap)[-1] == _claude_code_wire.render_history(resumed)
+    assert _user_texts(cap)[-1] == _claude_code_wire.result_text(
+        _claude_code_wire.render_history(resumed)
+    )
     assert "hidden" not in _user_texts(cap)[-1]
     provider.call(
         system="s",
@@ -905,7 +909,9 @@ def test_login_status_reads_logged_in_only(
 
 
 def test_render_history_is_verbatim_for_one_message_and_labelled_after() -> None:
-    assert _claude_code_wire.render_history(USER0) == "TASK:\nwrite hello"
+    assert _claude_code_wire.render_history(USER0) == [
+        {"type": "text", "text": "TASK:\nwrite hello"}
+    ]
     history = [
         *USER0,
         {
@@ -924,7 +930,7 @@ def test_render_history_is_verbatim_for_one_message_and_labelled_after() -> None
             ],
         },
     ]
-    text = _claude_code_wire.render_history(history)
+    text = _claude_code_wire.result_text(_claude_code_wire.render_history(history))
     assert text.startswith("TASK:\nwrite hello\n\n[harness] This session continues")
     assert "### assistant\nok" in text
     assert '[tool_use read_file] {"path": "a"}' in text
@@ -1111,7 +1117,9 @@ def test_a_rewritten_prefix_restarts_even_at_the_same_length(tmp_path: pathlib.P
     ]
     provider.call(system="s", messages=compacted, tools=TOOLS)
     assert len(_spawns(cap)) == 2
-    assert _user_texts(cap)[-1] == _claude_code_wire.render_history(compacted)
+    assert _user_texts(cap)[-1] == _claude_code_wire.result_text(
+        _claude_code_wire.render_history(compacted)
+    )
     provider.close()
 
 
@@ -1502,3 +1510,187 @@ def test_stdin_line_cap_counts_json_envelope_before_writing() -> None:
     with pytest.raises(ProviderError, match="8 MiB"):
         _claude_code_session.write(session, {"payload": "x" * (8 * 1024 * 1024)})
     session.proc.stdin.write.assert_not_called()
+
+
+def _media_result(mime: str, size: int = 60_000) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "text",
+            "text": "document: page.pdf, 59 KiB"
+            if mime == "application/pdf"
+            else "image: page.png, 59 KiB",
+        },
+        {
+            "type": "document" if mime == "application/pdf" else "image",
+            "source": {
+                "type": "base64",
+                "media_type": mime,
+                "data": base64.b64encode(b"x" * size).decode(),
+            },
+        },
+    ]
+
+
+def _media_history(content: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        *USER0,
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "tool_use", "id": "m1", "name": "read_file", "input": {"path": "page"}}
+            ],
+        },
+        {
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "m1", "content": content}],
+        },
+    ]
+
+
+@pytest.mark.parametrize("mime", ["image/png", "application/pdf"])
+def test_media_mcp_answer_bypasses_text_guard_and_omits_persistence(
+    tmp_path: pathlib.Path, mime: str
+) -> None:
+    """A 60 KB attachment reaches the pipe intact but not the transcript files."""
+    history = _media_history(_media_result(mime))
+    binary, cap = _install(
+        tmp_path,
+        {
+            "turns": [
+                [
+                    _round(tool_uses=history[1]["content"]),
+                    _round(text="after"),
+                ]
+            ]
+        },
+    )
+    provider = _provider(binary, transcript_sink=TranscriptSink(tmp_path / "transcripts"))
+    try:
+        first = provider.call(system="s", messages=USER0, tools=TOOLS)
+        history[1]["content"] = first.raw["content"]
+        history[2]["content"].append({"type": "text", "text": "NOTICE"})
+        assert provider.call(system="s", messages=history, tools=TOOLS).text == "after"
+        source = history[2]["content"][0]["content"][1]["source"]
+        answer = _tool_answers(cap)[0]
+        if mime == "image/png":
+            expected = {"type": "image", "data": source["data"], "mimeType": mime}
+        else:
+            response = next(
+                line["response"]
+                for line in _stdin(cap)
+                if line.get("response", {})
+                .get("response", {})
+                .get("mcp_response", {})
+                .get("result", {})
+                .get("content")
+            )
+            expected = {
+                "type": "resource",
+                "resource": {
+                    "uri": "agent6://tool-result/" + response["request_id"],
+                    "blob": source["data"],
+                    "mimeType": mime,
+                },
+            }
+        assert answer == [
+            history[2]["content"][0]["content"][0],
+            expected,
+            {"type": "text", "text": "NOTICE"},
+        ]
+        assert len(_spawns(cap)) == 1
+        text = "\n".join(path.read_text() for path in (tmp_path / "transcripts").glob("*.json"))
+        assert source["data"] not in text
+        assert "payload_omitted" in text
+    finally:
+        provider.close()
+
+
+@pytest.mark.parametrize("mime", ["image/png", "application/pdf"])
+def test_respawn_replays_media_and_content_changes_invalidate_continuation(
+    tmp_path: pathlib.Path, mime: str
+) -> None:
+    """Retained media replays as native blocks; media edits and removal restart the child."""
+    binary, cap = _install(tmp_path, {"turns": [[_round(text="ok")], [_round(text="again")]]})
+    provider = _provider(binary)
+    history = _media_history(_media_result(mime))
+    try:
+        provider.call(system="s", messages=history, tools=TOOLS)
+        provider.call(system="different", messages=history, tools=TOOLS)
+        content = [
+            line["message"]["content"] for line in _stdin(cap) if line.get("type") == "user"
+        ][-1]
+        assert content[-1] == history[2]["content"][0]["content"][1]
+        assert "page" in content[0]["text"] and "m1" in content[0]["text"]
+        changed = copy.deepcopy(history)
+        changed[2]["content"][0]["content"][0]["text"] = "corrected label"
+        changed += [
+            {"role": "assistant", "content": [{"type": "text", "text": "ok"}]},
+            {"role": "user", "content": "continue"},
+        ]
+        provider.call(system="different", messages=changed, tools=TOOLS)
+        assert len(_spawns(cap)) == 3
+        changed[2]["content"][0]["content"] = "corrected label"
+        changed += [
+            {"role": "assistant", "content": [{"type": "text", "text": "ok"}]},
+            {"role": "user", "content": "continue"},
+        ]
+        provider.call(system="different", messages=changed, tools=TOOLS)
+        assert len(_spawns(cap)) == 4
+        content = [
+            line["message"]["content"] for line in _stdin(cap) if line.get("type") == "user"
+        ][-1]
+        assert all(part["type"] == "text" for part in content)
+    finally:
+        provider.close()
+
+
+@pytest.mark.parametrize("continuing", [False, True])
+def test_media_line_cap_refuses_before_writing_to_fake(
+    tmp_path: pathlib.Path, continuing: bool
+) -> None:
+    """An 8 MiB payload plus its envelope is refused on both replay and MCP delivery."""
+    history = _media_history(_media_result("application/pdf", 6 * 1024 * 1024))
+    binary, cap = _install(
+        tmp_path, {"turns": [[_round(tool_uses=history[1]["content"]), _round(text="after")]]}
+    )
+    provider = _provider(binary)
+    try:
+        if continuing:
+            provider.call(system="s", messages=USER0, tools=TOOLS)
+        with pytest.raises(ProviderError, match="8 MiB line cap"):
+            provider.call(system="s", messages=history, tools=TOOLS)
+        assert not _tool_answers(cap)
+        assert len(_user_texts(cap)) == int(continuing)
+    finally:
+        provider.close()
+
+
+@pytest.mark.parametrize("change", ["remove", "label", "payload"])
+def test_media_skeleton_detects_result_content_changes(change: str) -> None:
+    """Media removal or replacement invalidates the child's consumed history."""
+    original = _media_history(_media_result("image/png"))
+    changed = copy.deepcopy(original)
+    if change == "remove":
+        changed[2]["content"][0]["content"] = "image omitted"
+    elif change == "label":
+        changed[2]["content"][0]["content"][0]["text"] = "changed"
+    else:
+        changed[2]["content"][0]["content"][1]["source"]["data"] = "eA=="
+    assert _claude_code_wire.history_skeleton(changed) != _claude_code_wire.history_skeleton(
+        original
+    )
+
+
+def test_text_block_results_keep_the_single_mcp_text_shape(tmp_path: pathlib.Path) -> None:
+    """A text-only content array keeps the same joined MCP text as a string result."""
+    history = _media_history([{"type": "text", "text": "one"}, {"type": "text", "text": "two"}])
+    binary, cap = _install(
+        tmp_path, {"turns": [[_round(tool_uses=history[1]["content"]), _round(text="after")]]}
+    )
+    provider = _provider(binary)
+    try:
+        provider.call(system="s", messages=USER0, tools=TOOLS)
+        provider.call(system="s", messages=history, tools=TOOLS)
+        assert _tool_answers(cap) == [[{"type": "text", "text": "one\ntwo"}]]
+    finally:
+        provider.close()

@@ -2934,11 +2934,24 @@ def test_a_bare_dispatchers_tree_omits_hidden_paths(tmp_path: pathlib.Path) -> N
         ),
     ],
 )
-def test_media_inspection_uses_content_not_extension(data: bytes, expected: str) -> None:
-    """The bounded inspector recognizes static media regardless of its filename."""
+@pytest.mark.parametrize("via_tool", [False, True])
+def test_media_inspection_uses_content_not_extension(
+    tmp_path: pathlib.Path, data: bytes, expected: str, via_tool: bool
+) -> None:
+    """Inspection and read_file deliver each static format regardless of its filename."""
     from agent6.tools import _media_files
 
-    assert _media_files.inspect_media(data, "wrong.txt").media_type == expected
+    if via_tool:
+        (tmp_path / "wrong.txt").write_bytes(data)
+        d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+        result = d.dispatch("read_file", {"path": "wrong.txt"})
+        assert result.attachment is not None
+        attachment = result.attachment
+        assert attachment.data == data and attachment.source_path == "wrong.txt"
+        assert result.to_wire()["attachment"] == attachment.metadata()
+    else:
+        attachment = _media_files.inspect_media(data, "wrong.txt")
+    assert attachment.media_type == expected
 
 
 @pytest.mark.parametrize(
@@ -2962,10 +2975,11 @@ def test_media_inspection_refuses_malformed_or_animated_files(data: bytes) -> No
         _media_files.inspect_media(data, "page.png")
 
 
-def test_media_inspection_refuses_pagination_and_producer_remains_disabled(
-    tmp_path: pathlib.Path,
+@pytest.mark.parametrize("page", [{"start_line": 2}, {"limit": 1}])
+def test_media_inspection_and_read_file_refuse_pagination(
+    tmp_path: pathlib.Path, page: dict[str, int]
 ) -> None:
-    """A PDF header cannot pass through the text reader, even when every byte is ASCII."""
+    """Media reads refuse non-default line ranges rather than returning a partial payload."""
     from agent6.tools import _media_files
 
     data = b"%PDF-1.7\n%%EOF"
@@ -2973,5 +2987,40 @@ def test_media_inspection_refuses_pagination_and_producer_remains_disabled(
         _media_files.inspect_media(data, "p.pdf", start_line=2)
     (tmp_path / "p.pdf").write_bytes(data)
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with pytest.raises(errors.ToolError, match="disabled"):
-        d.dispatch("read_file", {"path": "p.pdf"})
+    with pytest.raises(errors.ToolError, match="line range"):
+        d.dispatch("read_file", {"path": "p.pdf", **page})
+
+
+@pytest.mark.parametrize(
+    "data", [b"\x89PNG\r\n\x1a\n", b"GIF89a", b"\xff\xd8\xff", b"RIFFxxxxWEBP"]
+)
+def test_read_file_refuses_malformed_media(tmp_path: pathlib.Path, data: bytes) -> None:
+    """Malformed media reaches container validation instead of the text decoder."""
+    (tmp_path / "bad.txt").write_bytes(data)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(errors.ToolError, match="malformed or animated media"):
+        d.dispatch("read_file", {"path": "bad.txt"})
+
+
+@pytest.mark.parametrize("prefix, cap", [(b"%PDF-1.7\n", 10), (b"\x89PNG\r\n\x1a\n", 2)])
+def test_read_file_bounds_media_before_validation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, prefix: bytes, cap: int
+) -> None:
+    """Media reads stop at the document cap plus one byte and refuse oversized input."""
+    from agent6 import media
+    from agent6.tools import _path_safety
+
+    real = _path_safety.read_bytes_contained
+    seen: list[int | None] = []
+
+    def read(sp: _path_safety.SafePath, *, limit_bytes: int | None = None) -> bytes:
+        seen.append(limit_bytes)
+        assert limit_bytes is not None and limit_bytes <= media.DOCUMENT_MAX_BYTES + 1
+        return real(sp, limit_bytes=limit_bytes)
+
+    monkeypatch.setattr(_path_safety, "read_bytes_contained", read)
+    (tmp_path / "large").write_bytes(prefix + b"x" * (cap * 1024 * 1024))
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(errors.ToolError, match=f"exceeds {cap} MiB"):
+        d.dispatch("read_file", {"path": "large"})
+    assert media.DOCUMENT_MAX_BYTES + 1 in seen

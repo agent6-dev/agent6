@@ -125,7 +125,7 @@ class Tail:
         texts: The text blocks that follow them (notices, nudges, steer text).
     """
 
-    results: dict[str, str]
+    results: dict[str, list[dict[str, Any]]]
     texts: tuple[str, ...]
 
 
@@ -157,7 +157,7 @@ def continuation(s: Session, messages: Sequence[Mapping[str, Any]]) -> Tail | No
         return None
     if not tail or any(m.get("role") != "user" for m in tail):
         return None
-    results: dict[str, str] = {}
+    results: dict[str, list[dict[str, Any]]] = {}
     texts: list[str] = []
     if s.pending:
         results = _claude_code_wire.tool_results(tail[0])

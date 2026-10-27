@@ -12,11 +12,12 @@ from __future__ import annotations
 import pathlib
 from typing import Any
 
-from agent6 import terminal
+from agent6 import media, terminal
 from agent6.config import Config
 from agent6.tools import (
     _agent6_docs,
     _edit_diag,
+    _media_files,
     _path_safety,
     errors,
     patch_apply,
@@ -59,33 +60,40 @@ def agent6_docs(raw: dict[str, Any]) -> results.ToolResult:
     )
 
 
-def read_file(ws: _path_safety.Workspace, raw: dict[str, Any]) -> results.ReadFileResult:
-    """Read a text file, whole or one page of lines, capped at `MAX_READ_CHARS`.
+def read_file(
+    ws: _path_safety.Workspace, raw: dict[str, Any]
+) -> results.ReadFileResult | results.ReadMediaResult:
+    """Read bounded text or deliver one inspected static image or PDF.
 
     Args:
         ws: The workspace the path resolves in.
         raw: The tool call's arguments.
 
     Returns:
-        The content or the requested slice, with the line counts of the capped prefix.
+        Text with line counts, or media with a separate in-memory attachment.
 
     Raises:
-        ToolError: The path is not a file, not UTF-8, or binary.
+        ToolError: The path is not a file, or its content or range is unsupported.
     """
     args = schema.ReadFileInput.model_validate(raw)
     sp = ws.resolve_read(args.path)
     if not sp.abs_path.is_file():
         raise errors.ToolError(f"Not a file: {args.path}")
+    data = _path_safety.read_bytes_contained(sp, limit_bytes=media.DOCUMENT_MAX_BYTES + 1)
+    if data.startswith((b"%PDF-", b"\x89PNG\r\n\x1a\n", b"\xff\xd8", b"GIF87a", b"GIF89a")) or (
+        data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    ):
+        return results.ReadMediaResult(
+            _media_files.inspect_media(
+                data, args.path, start_line=args.start_line, limit=args.limit
+            )
+        )
+    del data
     try:
         # One char past the cap detects the overflow; pagination works on the capped prefix.
         full = _path_safety.read_contained(sp, limit_chars=MAX_READ_CHARS + 1)
     except UnicodeDecodeError as exc:
         raise errors.ToolError(f"File is not UTF-8 text: {args.path}") from exc
-    if full.startswith(("%PDF-", "GIF87a", "GIF89a")):
-        raise errors.ToolError(
-            f"Media delivery is disabled: {args.path}. "
-            "Convert or extract text with a jailed command."
-        )
     read_truncated = len(full) > MAX_READ_CHARS
     if read_truncated:
         full = full[:MAX_READ_CHARS]

@@ -89,10 +89,14 @@ def continue_session(
             del s.refused[tool_use_id]
             continue
         call = await_call(s, tool_use_id, watch, model=model)
-        content = [{"type": "text", "text": tail.results[tool_use_id]}]
+        content = list(tail.results[tool_use_id])
         if tool_use_id == answered[-1]:
             content.extend({"type": "text", "text": text} for text in tail.texts)
-        size = sum(len(str(item["text"]).encode()) for item in content)
+        size = sum(
+            len(str(item.get("text", "")).encode())
+            for item in content
+            if item.get("type") == "text"
+        )
         if size > _claude_code_wire.CLAUDE_CODE_PERSIST_BYTES:
             raise types.ProviderError(
                 f"a {size}-byte tool result, with its turn's notices, is over Claude"

@@ -188,7 +188,7 @@ The loop-owned conversation: typed messages over the provider wire.
 
 - **Written by:** harness/loop
 - **Read by:** harness/{_compaction, _compaction_window, _compactor, _loop_resume, _loop_state, _loop_steer, _operator, _parallel_dispatch, _provider_call, _review_seat, _snapshot, _standing, _verify_gate}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (28 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (29 test files exercise it)
 
 ## SessionManifest
 
