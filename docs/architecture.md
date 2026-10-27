@@ -685,7 +685,7 @@ See [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
 ## Media attachments
 
 `kinds.MediaAttachment` holds static image or PDF bytes in memory; `ToolResult.attachment` and `ToolResultItem.attachment` carry it beside unchanged text.
-`ReadMediaResult.to_wire()` contains metadata, not payload bytes.
+`ReadMediaResult.to_wire()` is one sentence naming the file and saying the attachment follows; the journal keeps the metadata, and no surface shows payload bytes.
 `Conversation.to_wire()` encodes retained attachments as text-plus-media arrays under their tool-result IDs.
 `read_file` reads at most the document cap plus one byte through the contained reader before inspecting media.
 Anthropic keeps native image and document blocks under the tool result.

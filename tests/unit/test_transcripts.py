@@ -488,6 +488,28 @@ def test_a_short_attachment_echo_is_omitted_too() -> None:
     assert out["error"] == "upstream echoed [media payload omitted] back"
 
 
+def test_omission_labels_the_payload_from_the_model_facing_sentence() -> None:
+    """The source path comes from the tool result's sentence, not from metadata the model sees."""
+    block = {
+        "type": "tool_result",
+        "tool_use_id": "t1",
+        "content": [
+            {
+                "type": "text",
+                "text": '{"content": "image: shot.png, 1 KiB; the image is attached below"}',
+            },
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": "aGVsbG8="},
+            },
+        ],
+    }
+    out = media.omit_payloads({"messages": [{"role": "user", "content": [block]}]})
+    flattened = out["messages"][0]["content"][0]["content"]
+    assert isinstance(flattened, str)
+    assert '"source_path": "shot.png"' in flattened and "aGVsbG8=" not in json.dumps(out)
+
+
 def test_payload_omission_preserves_json_tokens() -> None:
     """Short base64 equal to a JSON token cannot corrupt the metadata document."""
     clean = media.omit_payloads(

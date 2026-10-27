@@ -2948,7 +2948,9 @@ def test_media_inspection_uses_content_not_extension(
         assert result.attachment is not None
         attachment = result.attachment
         assert attachment.data == data and attachment.source_path == "wrong.txt"
-        assert result.to_wire()["attachment"] == attachment.metadata()
+        assert result.to_wire() == {
+            "content": f"{attachment.summary()}; the {attachment.modality} is attached below"
+        }
     else:
         attachment = _media_files.inspect_media(data, "wrong.txt")
     assert attachment.media_type == expected

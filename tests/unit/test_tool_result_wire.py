@@ -558,22 +558,20 @@ def test_the_tool_error_log_line_names_the_tool_once() -> None:
 
 
 def test_image_result_keeps_bytes_out_of_json_and_repr() -> None:
-    """Image results expose metadata without serializing their payload."""
+    """The model reads one sentence; the metadata and the bytes stay out of its JSON."""
     image = kinds.MediaAttachment(b"private pixels", "image/png", "page.png")
     result = results.ReadMediaResult(image)
     assert result.attachment is image
     assert image.byte_size == 14
     assert image.sha256 == hashlib.sha256(b"private pixels").hexdigest()
     assert "private pixels" not in repr(image)
-    assert result.to_wire() == {
-        "content": "image: page.png, 1 KiB",
-        "attachment": {
-            "source_path": "page.png",
-            "media_type": "image/png",
-            "byte_size": 14,
-            "sha256": image.sha256,
-            "payload_omitted": True,
-        },
+    assert result.to_wire() == {"content": "image: page.png, 1 KiB; the image is attached below"}
+    assert image.metadata() == {
+        "source_path": "page.png",
+        "media_type": "image/png",
+        "byte_size": 14,
+        "sha256": image.sha256,
+        "payload_omitted": True,
     }
     assert "private pixels" not in json.dumps(result.to_wire())
     assert results.RawResult({"content": "text"}).attachment is None
@@ -592,7 +590,10 @@ def test_pdf_uses_the_shared_attachment_shape() -> None:
     result = results.ReadMediaResult(document)
     assert result.attachment is document
     assert result.summary() == "document: page.pdf, 1 KiB"
-    assert result.to_wire()["attachment"]["media_type"] == "application/pdf"
+    assert result.to_wire() == {
+        "content": "document: page.pdf, 1 KiB; the document is attached below"
+    }
+    assert document.metadata()["media_type"] == "application/pdf"
     assert "private" not in json.dumps(result.to_wire())
 
 

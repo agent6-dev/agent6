@@ -54,8 +54,11 @@ def _source_path(text: str) -> str:
         obj = None
     if isinstance(obj, dict) and isinstance(obj.get("attachment"), dict):
         return str(obj["attachment"].get("source_path", ""))
-    if text.startswith(("image: ", "document: ")) and text.endswith(" KiB"):
-        return text.split(": ", 1)[1].rsplit(", ", 1)[0]
+    if isinstance(obj, dict) and isinstance(obj.get("content"), str):
+        text = obj["content"]
+    label = text.split("; ", 1)[0]
+    if label.startswith(("image: ", "document: ")) and label.endswith(" KiB"):
+        return label.split(": ", 1)[1].rsplit(", ", 1)[0]
     if text.startswith(("image from tool call ", "document from tool call ")):
         return text.partition(": ")[2]
     return ""

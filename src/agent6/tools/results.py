@@ -122,7 +122,7 @@ class ReadFileResult(ToolResult):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReadMediaResult(ToolResult):
-    """A media result whose JSON contains metadata only."""
+    """A media result whose JSON is one sentence; the bytes ride beside it as the attachment."""
 
     media: kinds.MediaAttachment
 
@@ -132,8 +132,9 @@ class ReadMediaResult(ToolResult):
         return self.media
 
     def to_wire(self) -> dict[str, Any]:
-        """Return explanatory text and media metadata, never payload bytes."""
-        return {"content": self.summary(), "attachment": self.media.metadata()}
+        """Return the one sentence the model reads; the journal keeps the metadata."""
+        # A size, hash or omission marker here makes a model answer from the text, not the image.
+        return {"content": f"{self.summary()}; the {self.media.modality} is attached below"}
 
     def summary(self) -> str:
         """Return the shared media label."""
