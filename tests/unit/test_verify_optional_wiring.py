@@ -731,7 +731,7 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: pathlib.Path
     (tmp_path / "AGENTS.md").write_text(
         "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
     )
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     wf = loop.Harness(
         chain=_chain.RunChain(tmp_path),
         config=Config.model_validate({"harness": {"verify_infer": False}}),
@@ -759,7 +759,7 @@ def test_the_decline_line_prints_when_its_reason_changes(
         chain=_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=lines.append,
     )
     state = _loop_state.LoopState(original_task="t", tool_calls=0)

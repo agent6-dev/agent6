@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import cast
+from typing import Literal, cast
 
 import pydantic
 
@@ -161,6 +161,8 @@ class MergeStamp(pydantic.BaseModel):
     tip: str = ""
     into_tip: str = ""
     via: str = ""
+    method: Literal["ff_only", "merge", "squash"] | None = None
+    target_before: str | None = None
 
     @property
     def commit(self) -> str:
@@ -251,7 +253,7 @@ class CompareStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 6
+MANIFEST_VERSION = 7
 MANIFEST_NAME = "manifest.json"
 
 

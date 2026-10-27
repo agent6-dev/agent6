@@ -16,7 +16,7 @@ import re
 from rich import text
 from textual import app, message, widgets
 
-from agent6 import errors, review_records
+from agent6 import errors, evidence, review_records
 from agent6.sessions import manifest
 from agent6.ui import keymap
 from agent6.ui.tui import forms
@@ -234,12 +234,15 @@ class DiffPane(forms.ScrollPane):
                 dt.append("(no commits during the selected task yet)", style="dim")
             return dt
         # A running or failed verify outranks the diff, so a failure never hides behind a stale one.
-        if verify is not None and verify.exit_code is None:
+        if verify is not None and verify.outcome is None and verify.exit_code is None:
             dt.append("verify running: ", style="bold")
             dt.append(format.clip_cell(" ".join(verify.cmd), 200) + "\n")
             dt.append("…", style="dim")
         elif verify is not None and verify.exit_code != 0:
-            dt.append(f"verify exit={verify.exit_code} ", style="bold red")
+            label = evidence.result_label(verify.exit_code, verify.outcome or "unavailable")
+            dt.append(f"verify {label} ", style="bold red")
+            if verify.reason:
+                dt.append(f"Reason: {verify.reason}\n")
             dt.append(
                 f"({verify.duration_s:.1f}s)  {format.clip_cell(' '.join(verify.cmd), 160)}\n"
             )

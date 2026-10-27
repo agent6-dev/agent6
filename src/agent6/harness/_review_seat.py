@@ -169,11 +169,15 @@ def verdict_from_obj(
             verdict="abstain",
             error="invalid reviewer verdict",
         )
+    risk = obj.get("risk")
+    risk = risk if isinstance(risk, str) else ""
     try:
         reply = review_records.SeatReply(
             verdict="block" if raw_verdict.lower() == "block" else "pass",
             findings=coerce_findings(obj.get("findings")),
             summary=str(obj.get("summary", "")).strip()[:300],
+            risk=risk[:1000],
+            risk_truncated=len(risk) > 1000,
         )
     except pydantic.ValidationError as exc:
         return review_records.ReviewVerdict(
@@ -190,6 +194,8 @@ def verdict_from_obj(
         verdict=reply.verdict,
         findings=reply.findings,
         summary=reply.summary,
+        risk=reply.risk,
+        risk_truncated=reply.risk_truncated,
     )
 
 

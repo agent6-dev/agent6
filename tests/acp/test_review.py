@@ -279,3 +279,15 @@ def test_shared_transcript_emits_findings_and_each_disposition(
     assert "Defect f1" in prose and "Defect f2" in prose and "parser.py:3-4" in prose
     assert prose.count("resolved") == 1 and disposition in prose
     assert prose.count("reopened") == 1 and "Still in scope" in prose
+
+
+def test_receipt_command_never_reaches_the_worker(tmp_path: pathlib.Path) -> None:
+    """Receipt inspection is advertised and stays outside the model conversation."""
+    ran: list[str] = []
+    connection, current, out = _connection(
+        tmp_path, lambda _s, text: ran.append(text) or "end_turn"
+    )
+    _prompt(connection, current, "/receipt")
+    assert not ran
+    assert "Testing" in _notices(out) and "How to revert" in _notices(out)
+    assert any(c["name"] == "receipt" for c in updates.REVIEW_COMMANDS)

@@ -921,6 +921,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json(session_snapshot(session_dir, repo=self.cwd, step=step))
             except UnknownStepError as e:
                 self._send_json({"error": str(e)}, status=422)
+        elif sub == "receipt":
+            self._send_json(review_routes.receipt_payload(self.cwd, session_dir))
         elif sub == "findings":
             query = parse.parse_qs(parse.urlsplit(self.path).query)
             status, payload = review_routes.findings(
@@ -939,10 +941,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 (q.get("sha") or [""])[0],
                 cumulative=(q.get("cumulative") or ["0"])[0] in ("1", "true"),
             )
-            if payload is None:
-                self._send_json({"error": why}, status=422)
-            else:
-                self._send_json(payload)
+            self._send_json(
+                payload if payload is not None else {"error": why},
+                status=200 if payload is not None else 422,
+            )
         elif sub == "resume_defaults":
             preset = (parse.parse_qs(parse.urlsplit(self.path).query).get("preset") or [""])[0]
             self._send_json(

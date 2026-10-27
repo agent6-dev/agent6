@@ -13,8 +13,8 @@ import pathlib
 from collections.abc import Callable
 from typing import Any
 
-from agent6 import directive
-from agent6.viewmodel import _session_status, _state_view, transcript
+from agent6 import directive, evidence
+from agent6.viewmodel import _session_status, _state_view, receipt, transcript
 
 # The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {
@@ -52,6 +52,10 @@ _TOOL_KINDS = {
 
 # Review commands are front-end actions; only /pin reaches the worker as a directive.
 REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
+    {
+        "name": "receipt",
+        "description": "Inspect recorded testing, review, risk and reversal evidence",
+    },
     {
         "name": "findings",
         "description": "List this run's open review findings",
@@ -101,6 +105,9 @@ class RunInfo:
     acp_session_id: str
     window: Callable[[str, str], int | None] = _state_view.cached_context_window
     banked_usd: float = 0.0
+    _verification: evidence.VerificationEvidence | None = dataclasses.field(
+        default=None, init=False
+    )
     _size: int | None = dataclasses.field(default=None, init=False)
     _used: int = dataclasses.field(default=0, init=False)
     _cost: dict[str, Any] | None = dataclasses.field(default=None, init=False)
@@ -120,6 +127,24 @@ class RunInfo:
         match str(event.get("type", "")):
             case "session.start":
                 return self._start(str(event.get("user_task", "")))
+            case "verify.end":
+                try:
+                    self._verification = evidence.from_event(event)
+                except ValueError:
+                    self._verification = None
+            case "session.end":
+                record = self._verification
+                if record is not None:
+                    final = record.verify_id == event.get("final_verify_id") and record.certifies(
+                        event.get("tree")
+                    )
+                    word = "Final tree passed" if final else "Final tree not certified"
+                    return [
+                        message_update(
+                            self.acp_session_id,
+                            word + "\n" + receipt.verification_summary(record),
+                        )
+                    ]
             case "role.call":
                 self._size = self.window(
                     str(event.get("provider", "")), str(event.get("model", ""))
@@ -217,7 +242,7 @@ def updates_for(
         elif summary:
             # A stop's sentence (a spend ceiling, an operator stop) is agent6's, not the model's.
             result.append(message_update(acp_session_id, summary))
-        result.append(message_update(acp_session_id, status_line(item)))
+        result.append(message_update(acp_session_id, status_line(item) + "\nEvidence: /receipt"))
         return result
     if item.kind == "commit":
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)

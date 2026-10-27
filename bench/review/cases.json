@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "traversal",
+      "split": "development",
+      "change": "def read_doc(name):\n    return open(\"files/\" + name).read()",
+      "supplied_checks": "read_doc(\"hello.txt\") succeeds",
+      "oracle": "Path traversal through ../ escapes files."
+    },
+    {
+      "id": "clean-math",
+      "split": "development",
+      "change": "def add(a, b):\n    return a + b",
+      "supplied_checks": "add(2, 3) == 5",
+      "oracle": "No planted defect."
+    },
+    {
+      "id": "secret",
+      "split": "evaluation",
+      "change": "API_KEY = \"example-production-secret\"",
+      "supplied_checks": "module imports successfully",
+      "oracle": "A credential is committed in source."
+    },
+    {
+      "id": "cross-file",
+      "split": "evaluation",
+      "change": "def parse(text, strict):\n    return text.strip()",
+      "supplied_checks": "parse(\"x\", True) == \"x\"; unchanged caller main.py calls parse(\"x\")",
+      "oracle": "The unchanged caller lacks the required argument."
+    },
+    {
+      "id": "clean-token",
+      "split": "evaluation",
+      "change": "def check(a, b):\n    return hmac.compare_digest(a, b)",
+      "supplied_checks": "equal and unequal token cases pass",
+      "oracle": "No planted defect; timing is not established by these checks."
+    },
+    {
+      "id": "clean-string",
+      "split": "evaluation",
+      "change": "def trim(text):\n    return text.strip()",
+      "supplied_checks": "trim(\" x \") == \"x\"",
+      "oracle": "No planted defect."
+    }
+  ]
+}

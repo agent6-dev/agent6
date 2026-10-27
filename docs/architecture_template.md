@@ -234,6 +234,7 @@ Either output is also saved as `<stamp>-review.md` under `<state-dir>/reviews/`,
 [Review records](data-contracts.md#review-records) owns the shared findings, seat replies, verdicts, immutable target identifiers, observations and operator request models in `review_records.py`.
 
 `viewmodel/review.py` folds panel evidence and finding history for both live `SessionState` updates and `scan_session_log`.
+`SeatReply` and `ReviewVerdict` retain each seat's bounded risk text verbatim; the receipt labels it with the model route and uses no second model summary.
 An observation opens a new finding but does not reopen a resolved one.
 Only resolution and reopening events change that state.
 A Fix request leaves the finding open and reads as delivery unknown until a submission or failure event arrives.
@@ -475,6 +476,18 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
   Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.
 - A check-in with no immediate stop still returns a running command and its background id.
 
+`evidence.VerificationEvidence` records each configured verification attempt, including harness-started attempts, with its ID, execution, command, scope, before and after trees, outcome and capture limits.
+`VerifyVerdict` and `SessionSnapshot` carry the final verification ID and tested tree across resume.
+A pass covers the final tree only when both observations and the end tree match; commit identity alone does not invalidate unchanged content.
+`viewmodel/receipt.py` derives `ReceiptView` from the journal and manifest, with no second receipt file or duplicate event.
+The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call or verification run.
+`VerifyRun` in `harness/run_review.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
+
+The manifest's optional `MergeStamp.method` and `target_before` own reversal bounds.
+`RevertPlan` uses those facts and `vcs/commit_graph.py` to check parents and enumerate landed commits without depending on source refs.
+Missing evidence yields guidance rather than guessed git commands; the receipt's reversal action opens existing new-work controls.
+See [Session receipts](usage.md#session-receipts) for output caps and reversal limits.
+
 The journal is durable by contract.
 An append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`), and in-process listeners see an event only after its write landed.
 
@@ -487,7 +500,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.resume.start` | the execution a `resume` opens: `session_id`, `mode`, `turn`, `messages` |
 | `loop.resume.interrupted` | the resumed execution found a turn its predecessor died in: `turn`, and `tools`, the calls that never returned and are not re-run |
 | `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail`; a `run_command` ended by an immediate operator stop carries `stopped_by_operator: true` |
-| `verify.start` / `.end` | `cmd`, `exit_code`, `duration_s`, `*_tail` |
+| `verify.start` / `.end` | `verify_id`, `execution_id`, command, scope, selected paths, timeout and `tree_before`; end adds `tree_after`, outcome, exit code, duration, 2,000-character stdout and stderr tails and nullable truncation flags |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `decisions.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
 | `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`resumed`: an adopted gate carried into a new execution; `agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
 | `role.call` | `role`, `model`, `provider` |
@@ -514,8 +527,8 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.edit.left_out`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
 | `loop.budget` | per-turn usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.finding.*` / `loop.review.fix.*` | `resolved` / `reopened` retain the reason and disposition; `requested` retains the target and delivery action; `submitted` names the destination execution; `failed` retains the delivery error. Each carries the finding ID, request ID, source and resulting review version |
-| `loop.review.*` | `start` (panel and execution IDs, trigger, target, resolved seats), `seat` (indexed full grounded verdict, summary, error), `panel` (target, finding observations, injected IDs, blocking decision, completion), `skipped` (identity, reason), and the finish gate's rejections |
-| `session.end` | `reason`, `turns`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it); a `setup_command_failed` end also carries `summary` (the failure diagnostic and output tail, including the no-route-out line when it applies); one shape from every exit path |
+| `loop.review.*` | `start` (panel and execution IDs, trigger, target, resolved seats), `seat` (indexed full grounded verdict, summary, verbatim risk, error), `panel` (target, finding observations, injected IDs, blocking decision, completion), `skipped` (identity, reason), and the finish gate's rejections |
+| `session.end` | `reason`, `turns`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `final_verify_id` (the final observation, including unsuccessful attempts), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it); a `setup_command_failed` end also carries `summary` (the failure diagnostic and output tail, including the no-route-out line when it applies); one shape from every exit path |
 | `session.stranded` | written after `session.end` when a finished run left its edits uncommitted and no commit landed (exit `5`); the status every surface prints then reads `not committed` |
 
 A `run_command` approval publishes as `approval.prompt`.

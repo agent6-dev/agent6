@@ -573,3 +573,49 @@ def test_the_verb_refuses_a_session_that_never_started(
     assert main(["sessions", "review", "run-AAAA11"]) == 2
 
     assert "never started" in capsys.readouterr().err
+
+
+def test_digest_names_verification_identity_and_capture_limit(repo: pathlib.Path) -> None:
+    """The review prompt receives recorded ids and capture facts rather than a naked pass."""
+    layout = _write_session(
+        repo,
+        events=[
+            {
+                "type": "verify.end",
+                "verify_id": "observed-gate",
+                "cmd": ["pytest"],
+                "tree_before": "tree-one",
+                "tree_after": "tree-one",
+                "exit_code": 0,
+                "stdout_tail": "ok",
+                "stdout_truncated": True,
+            }
+        ],
+    )
+    rendered = run_review.run_digest(layout).render()
+    assert "observed-gate" in rendered and "tree-one" in rendered
+    assert "truncated" in rendered and "capture completeness unknown" in rendered
+
+
+def test_verify_details_stay_with_their_own_run(tmp_path: pathlib.Path) -> None:
+    """Each run's command and identity stay under its own bullet, with shell quoting."""
+    saved = _write_session(
+        tmp_path,
+        events=[
+            {
+                "type": "verify.end",
+                "verify_id": "first",
+                "exit_code": 1,
+                "cmd": ["python", "a b.py"],
+            },
+            {"type": "verify.end", "verify_id": "second", "exit_code": 0, "cmd": ["true"]},
+        ],
+    )
+    text = run_review.run_digest(saved).render()
+    assert (
+        text.index("- exit 1")
+        < text.index("first:")
+        < text.index("- exit 0")
+        < text.index("second:")
+    )
+    assert "python 'a b.py'" in text

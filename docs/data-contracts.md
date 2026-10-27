@@ -31,7 +31,7 @@ Fold review evidence and operator history for every session reader.
 | `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | `'none'` |
 
 - **Written by:** viewmodel/{_session_log, state}
-- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, transcript}
+- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, receipt, transcript}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (2 test files exercise it)
 
 ## Review records
@@ -95,8 +95,8 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
 - **Written by:** app/stamps
-- **Read by:** app/{_execution, _merge_message, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{_session_status, _state_view, format, listing, policy, wire}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (25 test files exercise it)
+- **Read by:** app/{_execution, _merge_message, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{_session_status, _state_view, format, listing, policy, receipt, wire}
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (27 test files exercise it)
 
 ## SessionSnapshot
 
@@ -108,7 +108,7 @@ Hold a session's end and the snapshot a resume re-enters.
 
 - **Written by:** harness/loop
 - **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_resume, _loop_state, _loop_steer, _metric, _verify_gate}, ui/acp/frontend, ui/cli/_ask
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (28 test files exercise it)
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (29 test files exercise it)
 
 ## ToolResult family
 
@@ -122,7 +122,7 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResul
 
 - **Written by:** tools/{_command_tools, _control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
 - **Read by:** harness/{_guards, _memory_touch, _metric_sampler, _review_seat, _toolset, _verify_gate, loop}, tools/_result_format
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (29 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (30 test files exercise it)
 
 ## Event union
 

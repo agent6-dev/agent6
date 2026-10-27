@@ -127,10 +127,22 @@ def clip_tail(text: str, limit: int = 20_000) -> str:
 
 def exec_result(res: kinds.CommandResult, *, timeout_s: float = 0.0) -> results.ExecResult:
     """Return the model's view of a finished command: the tails of both streams."""
+    incomplete = "[agent6-jail] output capture ended early:" in res.stderr
+
+    def truncated(text: str) -> bool | None:
+        if (
+            len(terminal.scrub_terminal_escapes(text)) > 20_000
+            or "[agent6-jail] output over the retained cap;" in text
+        ):
+            return True
+        return None if incomplete else False
+
     return results.ExecResult(
         returncode=res.returncode,
         stdout=clip_tail(res.stdout),
         stderr=clip_tail(res.stderr),
+        stdout_truncated=truncated(res.stdout),
+        stderr_truncated=truncated(res.stderr),
         duration_s=res.duration_s,
         exec_failed=res.exec_failed,
         timeout_s=timeout_s,

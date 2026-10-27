@@ -10,7 +10,7 @@ import json
 import pathlib
 from collections.abc import Mapping
 
-from agent6 import budget, kinds, terminal
+from agent6 import budget, evidence, kinds, terminal
 from agent6.viewmodel import _session_status, events, format, review
 
 
@@ -75,6 +75,11 @@ class LogScan:
         left_out: The (path, reason) of each edit the commits left out, across every
             execution; the reason is `ignored` or `untracked` (`loop.edit.left_out`).
         review: The shared fold of panel evidence and finding history.
+        execution_id: The current execution's recorded id, if present.
+        source_tip: The most recent diff checkpoint's commit.
+        verifications: Every recorded verification, including baseline observations.
+        final_verify_id: The end event's verification id, absent if evidence is damaged.
+        evidence_notes: Missing or unreadable verification evidence.
     """
 
     saw_start: bool = False
@@ -121,6 +126,12 @@ class LogScan:
     unattended_questions: int = 0
     left_out: tuple[tuple[str, str], ...] = ()
     review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
+
+    execution_id: str | None = None
+    source_tip: str | None = None
+    verifications: tuple[evidence.VerificationEvidence, ...] = ()
+    final_verify_id: str | None = None
+    evidence_notes: tuple[str, ...] = ()
 
     def verify_verdict(self) -> bool | None:
         """Return the gate verdict for judging candidates.
@@ -288,12 +299,19 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     pins: list[str] = []
     left_out: dict[str, str] = {}
     review_view = review.ReviewView()
+    execution_id: str | None = None
+    source_tip: str | None = None
+    final_verify_id: str | None = None
+    verifications: list[evidence.VerificationEvidence] = []
+    pending_verifications: set[str] = set()
+    evidence_notes: list[str] = []
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line_number, line in enumerate(fh, 1):
                 try:
                     ev = json.loads(line)
                 except ValueError as exc:
+                    evidence_notes.append(f"journal line {line_number}: {exc}")
                     review_view = dataclasses.replace(
                         review_view,
                         read_failure=review_view.read_failure
@@ -303,9 +321,15 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     )
                     continue
                 if not isinstance(ev, dict):
+                    evidence_notes.append(f"journal line {line_number}: expected an event object")
                     continue
                 review_view = review.apply_event(review_view, ev)
                 etype = ev.get("type")
+                if etype in ("session.start", "loop.resume.start"):
+                    execution_id = ev.get("execution_id")
+                    final_verify_id = None
+                elif etype == "diff.updated":
+                    source_tip = ev.get("sha") or source_tip
                 ep = events.event_epoch(ev.get("ts"))
                 if ep is not None:
                     last_ep = ep
@@ -352,7 +376,8 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     if end_reason == "setup_command_failed" and ev.get("summary"):
                         setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
                     verified = str(ev.get("verified") or "")
-                    end_tree = str(ev.get("tree", ""))
+                    end_tree = str(ev.get("tree") or "")
+                    final_verify_id = ev.get("final_verify_id")
                 elif etype == "loop.resume.start":
                     task = task.resume(str(ev.get("user_task", "")), str(ev.get("steer", "")))
                     if saw_start:
@@ -382,20 +407,37 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 elif etype == "workspace.setup":
                     setup_output = format.setup_output(ev)
                 elif etype == "verify.start":
+                    if ev.get("verify_id"):
+                        pending_verifications.add(str(ev["verify_id"]))
                     # The verdict before it described an older tree; the run page drops it too.
                     last_verify_rc = None
                     verify_timeout_s = 0.0
                 elif etype == "verify.end":
+                    try:
+                        record = evidence.from_event(ev)
+                    except (ValueError, TypeError) as exc:
+                        evidence_notes.append(f"journal line {line_number}: {exc}")
+                    else:
+                        verifications.append(record)
+                        if record.verify_id:
+                            pending_verifications.discard(record.verify_id)
                     rc = ev.get("exit_code")
-                    if isinstance(rc, int) and not isinstance(rc, bool):
-                        last_verify_rc = rc
-                        verify_timeout_s = events.verify_limit_hit(rc, ev.get("timeout_s"))
+                    last_verify_rc = (
+                        rc if isinstance(rc, int) and not isinstance(rc, bool) else None
+                    )
+                    verify_timeout_s = events.verify_limit_hit(rc, ev.get("timeout_s"))
                 elif etype == "role.result":
                     # A side call's failure never ends the run, so it is not the reason.
                     if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):
                         provider_error = str(ev.get("error", ""))
-                elif etype == "loop.baseline" and baseline_ok is None:
-                    baseline_ok = bool(ev.get("ok"))
+                elif etype == "loop.baseline":
+                    if baseline_ok is None:
+                        baseline_ok = bool(ev.get("ok"))
+                    for i, record in enumerate(verifications):
+                        matches = bool(record.verify_id) and record.verify_id == ev.get("verify_id")
+                        legacy = not ev.get("verify_id") and i == len(verifications) - 1
+                        if matches or legacy:
+                            verifications[i] = dataclasses.replace(record, baseline=True)
                 elif etype == "loop.verify_swapped":
                     gate_swapped = True
                 elif etype == "loop.edit.left_out":
@@ -427,12 +469,19 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         plan_usage = reading
                         plan_usage_at = events.event_epoch(ev.get("ts")) or 0.0
     except FileNotFoundError:
-        pass
+        evidence_notes.append("Journal missing.")
     except OSError as exc:
+        evidence_notes.append(f"Journal unreadable: {exc}")
         review_view = dataclasses.replace(review_view, read_failure=str(exc))
     return LogScan(
         saw_start=saw_start,
         review=review_view,
+        execution_id=execution_id,
+        source_tip=source_tip,
+        verifications=tuple(verifications),
+        final_verify_id=None if evidence_notes else final_verify_id,
+        evidence_notes=tuple(evidence_notes)
+        + tuple(f"Verification {v} has no recorded result." for v in sorted(pending_verifications)),
         mode=mode,
         task_label=task,
         finished=finished,

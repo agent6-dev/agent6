@@ -481,6 +481,16 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - PATH, SSH, proxy, and credential-helper vars stay
     - the read-only collectors inherit the environment untouched (no remote contact; the hardening flags leave no repo-controlled code to receive it)
 
+**Receipt evidence**
+
+- Receipts read the existing journal and manifest, with no provider call or test execution.
+  Reversal guidance uses recorded object IDs and checks commit relationships through read-only git operations.
+  A missing stamp or object cannot authorize a guessed reversal.
+  See [Session receipts](usage.md#session-receipts) for evidence limits.
+- The web receipt route uses the server's existing authentication.
+- The web and TUI **Ask a run to revert** action only fills a new-work composer; it never executes displayed git commands.
+  Submitting that task uses the run's existing sandbox and approval controls.
+
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
 - `protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only; `auto` (the default) binds under `full` and keeps the edit tools' refusal at every level

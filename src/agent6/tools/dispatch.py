@@ -17,12 +17,13 @@ import pathlib
 import shlex
 import threading
 import time
+import uuid
 from collections.abc import Callable
 from typing import Any, Literal
 
 import pydantic
 
-from agent6 import event_log, kinds, memory, paths, skills
+from agent6 import errors, event_log, evidence, kinds, memory, paths, skills
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
 from agent6.sandbox import jail, jail_session, tool_paths
@@ -48,6 +49,7 @@ from agent6.tools import (
 )
 from agent6.tools import errors as tools_errors
 from agent6.tools import policy as tools_policy
+from agent6.vcs import git_read
 
 # An MCP approval prompt carries the full arguments up to this bound, then a session-dir file.
 _PAYLOAD_IDS = itertools.count(1)
@@ -122,6 +124,9 @@ class ToolDispatcher:
         shared_writes: tuple[pathlib.Path, ...] = (),
     ) -> None:
         self._root = root.resolve()
+        self.verify_tree: Callable[[], str] = self._verification_tree
+        self.execution_id: str | None = None
+        self.last_verification: evidence.VerificationEvidence | None = None
         self._config = config
         # Memory files are read and edited with the ordinary tools, in-process only.
         mem = memory.memory_dir(state_dir) if state_dir is not None else None
@@ -381,6 +386,8 @@ class ToolDispatcher:
         if name not in self._handlers:
             raise tools_errors.ToolError(f"Unknown tool: {name}")
         if (refusal := self._tool_refusal(name)) is not None:
+            if name == schema.RunVerifyInput.TOOL_NAME:
+                return self.run_verify()
             raise tools_errors.ToolError(refusal)
         if name not in schema.mode_tools(self._mode).permitted:
             # The backstop: a hallucinated name must not mutate the repo from a read-only mode.
@@ -578,29 +585,93 @@ class ToolDispatcher:
             gate judged it.
 
         Raises:
+            KeyboardInterrupt: The command was interrupted.
+            ToolError: No command is configured or the jail is unavailable.
             ToolDeniedError: The operator did not approve.
             OperatorCommandUnexecutableError: The command cannot run in the jail.
         """
         argv = self._config.harness.verify_command + extra_argv
-        self._approve_command("run_verify_command", argv)
         timeout_s = self._config.harness.verify_timeout_s
-        self._emit("verify.start", cmd=list(argv), timeout_s=timeout_s)
-        res = _command_tools.run_argv_in_jail(
-            argv,
-            label="verify_command",
+        record = evidence.VerificationEvidence(
+            verify_id=uuid.uuid4().hex,
+            execution_id=self.execution_id,
+            cmd=argv,
+            tree_before=self.verify_tree() or None,
+            tree_after=None,
+            scoped=bool(extra_argv),
+            selected_paths=extra_argv,
+            outcome="unavailable",
+            exit_code=None,
+            duration_s=0.0,
             timeout_s=timeout_s,
-            access=self._jail_access,
+            stdout_tail="",
+            stderr_tail="",
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
-        res = dataclasses.replace(res, command=argv)
         self._emit(
-            "verify.end",
+            "verify.start",
+            verify_id=record.verify_id,
+            execution_id=record.execution_id,
+            tree_before=record.tree_before,
             cmd=list(argv),
+            scoped=record.scoped,
+            selected_paths=list(extra_argv),
+            timeout_s=timeout_s,
+        )
+        started = time.monotonic()
+        try:
+            if self.command_policy() == "deny":
+                raise tools_errors.ToolDeniedError("not available (run_commands = 'deny')")
+            if not self._config.harness.verify_command:
+                raise tools_errors.ToolError("no verify command configured")
+            self._approve_command("run_verify_command", argv)
+            res = _command_tools.run_argv_in_jail(
+                argv,
+                label="verify_command",
+                timeout_s=timeout_s,
+                access=self._jail_access,
+            )
+        except (tools_errors.ToolError, KeyboardInterrupt) as exc:
+            outcome = "interrupted" if isinstance(exc, KeyboardInterrupt) else "unavailable"
+            if isinstance(exc, tools_errors.ToolDeniedError):
+                outcome = "denied"
+            record = dataclasses.replace(
+                record,
+                outcome=outcome,
+                tree_after=self.verify_tree() or None,
+                duration_s=time.monotonic() - started,
+                reason=str(exc)[:2000] + (" (truncated)" if len(str(exc)) > 2000 else ""),
+                stdout_truncated=False if outcome == "denied" else None,
+                stderr_truncated=True
+                if len(str(exc)) > 2000
+                else (False if outcome == "denied" else None),
+            )
+            self.last_verification = record
+            self._emit("verify.end", **dataclasses.asdict(record))
+            raise
+        outcome = "passed" if res.returncode == 0 else "failed"
+        if res.exec_failed:
+            outcome = "unavailable"
+        elif res.stopped_by_operator or res.returncode is None or res.returncode < 0:
+            outcome = "interrupted"
+        elif res.returncode == 124:
+            outcome = "timed_out"
+        record = dataclasses.replace(
+            record,
+            outcome=outcome,
+            tree_after=self.verify_tree() or None,
             exit_code=res.returncode,
             duration_s=res.duration_s,
-            timeout_s=timeout_s,
             stdout_tail=res.stdout[-2000:],
-            stderr_tail=res.stderr[-2000:],
+            stderr_tail="" if res.exec_failed else res.stderr[-2000:],
+            reason=res.stderr if res.exec_failed else "",
+            stdout_truncated=True if len(res.stdout) > 2000 else res.stdout_truncated,
+            stderr_truncated=True if len(res.stderr) > 2000 else res.stderr_truncated,
         )
+        self.last_verification = record
+        res = dataclasses.replace(res, command=argv, verification=record)
+        self._emit("verify.end", **dataclasses.asdict(record))
         if res.exec_failed:
             raise tools_errors.OperatorCommandUnexecutableError(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
@@ -613,6 +684,15 @@ class ToolDispatcher:
                 "directory via sandbox.extra_read_paths."
             )
         return res
+
+    def _verification_tree(self) -> str:
+        """Return a bare dispatcher's content identity; a harness supplies its chain reader."""
+        try:
+            return git_read.worktree_tree(
+                self._root, git_read.status(self._root).head_sha or None, ()
+            )
+        except (errors.GitError, OSError):
+            return ""
 
     def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
         """Run an isolated workspace's setup command under the policy a run command gets.
@@ -891,7 +971,8 @@ class ToolDispatcher:
             exit_code=res.returncode,
             duration_s=res.duration_s,
             stdout_tail=res.stdout[-2000:],
-            stderr_tail=res.stderr[-2000:],
+            stderr_tail="" if res.exec_failed else res.stderr[-2000:],
+            reason=res.stderr if res.exec_failed else "",
             score=score,
         )
         return results.MetricResult.from_exec(res, score)

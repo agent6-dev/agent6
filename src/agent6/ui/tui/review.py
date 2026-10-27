@@ -15,8 +15,8 @@ from agent6 import review_records
 from agent6.app import review_actions
 from agent6.sessions import process
 from agent6.ui import keymap, spawn
-from agent6.ui.tui import _diff_pane, forms, menubar, modals, screen_chrome
-from agent6.viewmodel import review
+from agent6.ui.tui import _diff_pane, forms, menubar, modals, new_work, screen_chrome
+from agent6.viewmodel import receipt, review
 
 
 class DispositionModal(screen.ModalScreen[review_records.FindingAction]):
@@ -119,7 +119,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             (
                 *(
                     menubar.MenuItem(keymap.REVIEW_TEXT[a], a)
-                    for a in ("fix", "resolve", "reopen", "refresh")
+                    for a in ("fix", "resolve", "reopen", "receipt", "refresh")
                 ),
                 menubar.MenuItem(keymap.REVIEW_TEXT["back"], "close"),
             ),
@@ -133,7 +133,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         ),
     )
     FOOTER: ClassVar = (
-        *((a, keymap.REVIEW_TEXT[a]) for a in ("fix", "resolve", "reopen", "refresh")),
+        *((a, keymap.REVIEW_TEXT[a]) for a in ("fix", "resolve", "reopen", "receipt", "refresh")),
         ("close", keymap.REVIEW_TEXT["back"]),
     )
     BINDINGS: ClassVar = menubar.menu_bindings("findings", MENUS, footer=FOOTER)
@@ -172,6 +172,10 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self.action_refresh()
         self.query_one("#findings", widgets.DataTable).focus()
         self.set_interval(2.0, self._poll)
+
+    def action_receipt(self) -> None:
+        """Open the evidence receipt without starting work."""
+        self.app.push_screen(ReceiptScreen(self._session_dir, self._cwd, self._config_paths))
 
     def _poll(self) -> None:
         if self.app.screen is self and not self._busy:
@@ -368,3 +372,71 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         """Return to the dashboard or hub."""
         if not self.close_open_list():
             self.app.pop_screen()
+
+
+class ReceiptScreen(screen.Screen[None]):
+    """Inspect recorded evidence with expandable stdout and stderr."""
+
+    BINDINGS: ClassVar = [
+        (key, action, keymap.REVIEW_TEXT["back" if action == "close" else action])
+        for action, key in keymap.SCREEN_KEYS["receipt"].items()
+    ]
+    DEFAULT_CSS = """
+    #receipt-summary { height: auto; }
+    #receipt-actions { height: auto; }
+    """
+
+    def __init__(
+        self,
+        session_dir: pathlib.Path,
+        cwd: pathlib.Path,
+        config_paths: tuple[pathlib.Path, ...] = (),
+    ) -> None:
+        super().__init__()
+        self._cwd = cwd
+        self._config_paths = config_paths
+        self._receipt = receipt.read_receipt(session_dir, cwd)
+
+    def compose(self) -> app.ComposeResult:
+        """Yield the evidence, expandable streams and new-work action."""
+        with containers.VerticalScroll():
+            yield widgets.Static(
+                receipt.render(self._receipt, include_output=False),
+                id="receipt-summary",
+                markup=False,
+            )
+            for record in self._receipt.verifications:
+                for name, body in (("stdout", record.stdout_tail), ("stderr", record.stderr_tail)):
+                    with widgets.Collapsible(
+                        title=f"{record.verify_id or 'unrecorded id'} {name}", collapsed=True
+                    ):
+                        yield widgets.Static(body, markup=False)
+            with containers.Horizontal(id="receipt-actions"):
+                yield widgets.Button(keymap.REVIEW_TEXT["revert"], id="receipt-revert")
+                yield widgets.Button(keymap.REVIEW_TEXT["back"], id="receipt-back")
+        yield widgets.Footer()
+
+    def on_button_pressed(self, event: widgets.Button.Pressed) -> None:
+        """Open the existing task composer; no receipt command executes."""
+        event.stop()
+        if event.button.id == "receipt-revert":
+            self.action_revert()
+        elif event.button.id == "receipt-back":
+            self.action_close()
+
+    def action_revert(self) -> None:
+        """Prefill new work with the recorded reversal facts."""
+        self.app.push_screen(
+            new_work.NewWorkScreen(
+                self._cwd,
+                self._config_paths,
+                task=receipt.revert_request(self._receipt),
+                on_started=lambda directory: self.app.notify(
+                    f"Started {directory.name}; open it from the session hub."
+                ),
+            )
+        )
+
+    def action_close(self) -> None:
+        """Return to findings."""
+        self.app.pop_screen()

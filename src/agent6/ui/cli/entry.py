@@ -666,6 +666,10 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
             config_paths=args.config,
             rejudge=args.rejudge,
         )
+    if args.sessions_command == "receipt":
+        from agent6.ui.cli import sessions_receipt
+
+        return sessions_receipt.cmd_receipt(args.session_id, as_json=args.json)
     if args.sessions_command == "review":
         from agent6.ui.cli import sessions_review
 

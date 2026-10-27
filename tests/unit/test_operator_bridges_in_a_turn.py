@@ -70,7 +70,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
     events = event_log.EventSink(session_dir / "logs.jsonl")
 
     provider = mock.MagicMock()
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     def _turn(*_args: Any, **_kwargs: Any) -> providers_types.ProviderResponse:

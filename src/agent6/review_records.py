@@ -113,6 +113,8 @@ class SeatReply(pydantic.BaseModel):
     verdict: Literal["pass", "block"]
     summary: str
     findings: tuple[Finding, ...]
+    risk: str = pydantic.Field(default="", max_length=1000)
+    risk_truncated: bool = False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -126,6 +128,8 @@ class ReviewVerdict:
     findings: tuple[Finding, ...] = ()
     summary: str = ""
     error: str | None = None
+    risk: str = ""
+    risk_truncated: bool = False
 
 
 class LineOrigin(pydantic.BaseModel):

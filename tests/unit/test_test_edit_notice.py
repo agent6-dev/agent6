@@ -63,7 +63,7 @@ def _wf(root: pathlib.Path) -> tuple[loop.Harness, Emitted]:
         chain=_chain.RunChain(root),
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=lambda _m: None,
         mode="run",
     )

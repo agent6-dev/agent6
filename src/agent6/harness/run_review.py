@@ -12,10 +12,11 @@ from __future__ import annotations
 import collections
 import dataclasses
 import json
+import shlex
 from collections.abc import Sized
 from typing import Any, Literal
 
-from agent6 import memory
+from agent6 import evidence, memory
 from agent6.prompts import review
 from agent6.providers import Provider, ProviderError, ProviderResponse
 from agent6.sessions import layout as sessions_layout
@@ -67,9 +68,18 @@ class VerifyRun:
         tail: The clipped stderr, else stdout.
     """
 
-    exit_code: int
+    exit_code: int | None
     duration_s: float
     tail: str
+    verify_id: str | None = None
+    tree_before: str | None = None
+    tree_after: str | None = None
+    stdout_truncated: bool | None = None
+    stderr_truncated: bool | None = None
+    cmd: tuple[str, ...] = ()
+    scoped: bool = False
+    outcome: str = ""
+    reason: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -153,12 +163,20 @@ class RunDigest:
             lines.append(f"model was told: {operator_prompts.UNANSWERED_NOTE}")
         if self.verify_runs:
             lines.append(f"\nverify runs ({_shown(self.verify_runs, self.verify_total)}):")
-            lines.extend(
-                f"- exit {v.exit_code} ({v.duration_s:.1f}s): {v.tail}"
-                if v.tail
-                else f"- exit {v.exit_code} ({v.duration_s:.1f}s)"
-                for v in self.verify_runs
-            )
+            for v in self.verify_runs:
+                result = evidence.result_label(v.exit_code, v.outcome).replace("exit=", "exit ")
+                tail = f": {v.tail}" if v.tail else ""
+                lines.append(f"- {result} ({v.duration_s:.1f}s){tail}")
+                lines.append(
+                    f"  {v.verify_id or 'unrecorded id'}: {v.outcome}; "
+                    f"{'Reason: ' + v.reason + '; ' if v.reason else ''}"
+                    f"command {shlex.join(v.cmd)}; "
+                    f"{'scoped' if v.scoped else 'full gate'}; "
+                    f"tree {v.tree_before or 'unknown'} -> {v.tree_after or 'unknown'}; "
+                    f"journal cap 2000 characters per stream; "
+                    f"stdout {evidence.capture_label(v.stdout_truncated)}; "
+                    f"stderr {evidence.capture_label(v.stderr_truncated)}"
+                )
         if self.errors_by_tool:
             lines.append(f"\ntool errors ({self.tool_errors} of {self.tool_calls} calls):")
             lines.extend(f"- {name}: {n}" for name, n in self.errors_by_tool)
@@ -252,13 +270,22 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         elif etype == "loop.decision.recorded":
             decisions.append((str(event.get("question", "")), str(event.get("answer", ""))))
         elif etype == "verify.end":
-            execution_rc = _int(event.get("exit_code"))
+            execution_rc = _int(event["exit_code"]) if event.get("exit_code") is not None else None
             tail = str(event.get("stderr_tail") or event.get("stdout_tail") or "")
             verify_runs.append(
                 VerifyRun(
                     exit_code=execution_rc,
                     duration_s=float(event.get("duration_s") or 0.0),
                     tail=_clip_tail(tail.strip(), _VERIFY_TAIL_CHARS),
+                    verify_id=event.get("verify_id"),
+                    tree_before=event.get("tree_before"),
+                    tree_after=event.get("tree_after"),
+                    stdout_truncated=event.get("stdout_truncated"),
+                    stderr_truncated=event.get("stderr_truncated"),
+                    cmd=tuple(event.get("cmd", ())),
+                    scoped=bool(event.get("scoped", False)),
+                    outcome=evidence.outcome(event),
+                    reason=str(event.get("reason", "")),
                 )
             )
         elif etype == "loop.resume.start":

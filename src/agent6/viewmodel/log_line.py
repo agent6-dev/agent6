@@ -7,7 +7,7 @@ from __future__ import annotations
 import shlex
 from typing import Any
 
-from agent6 import terminal
+from agent6 import evidence, terminal
 from agent6.viewmodel import events, format, review
 
 
@@ -194,7 +194,10 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "verify.end":
             dur = event.get("duration_s")
             dur_s = f"{dur:.1f}s" if isinstance(dur, (int, float)) else f"{dur}s"
-            salient = f"exit={event.get('exit_code')} dur={dur_s}"
+            label = evidence.result_label(event.get("exit_code"), evidence.outcome(event))
+            salient = f"{label} dur={dur_s}"
+            if reason := event.get("reason"):
+                salient += f": {reason}"
         case "approval.prompt":
             salient = _cut(str(event.get("prompt", "")), 80)
         case "approval.answer":

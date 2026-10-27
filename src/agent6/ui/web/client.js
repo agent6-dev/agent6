@@ -373,6 +373,7 @@ function newWorkDock(presets, presetDefault) {
   const root = el('div', 'composer dock dock-fixed');
   const row = el('div', 'row');
   const task = el('textarea', 'field'); task.placeholder = 'task / question…';
+  task.value = window.receiptTask || ''; delete window.receiptTask;
   const mode = el('select', 'field');
   for (const m of ['run', 'plan', 'ask']) { const o = el('option', null, m); o.value = m; mode.appendChild(o); }
   const preset = el('select', 'field');

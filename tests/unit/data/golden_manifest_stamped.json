@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "agent6_version": "0.1.0",
   "session_id": "r-lane02",
   "mode": "run",
@@ -51,7 +51,9 @@
     "ts": "2026-07-16T01:00:00.000000+00:00",
     "tip": "4444444444444444444444444444444444444444",
     "into_tip": "",
-    "via": ""
+    "via": "",
+    "method": null,
+    "target_before": null
   },
   "includes": null,
   "parallel": {

@@ -1684,7 +1684,7 @@ class Harness:
         verified = self.gate.verification(state.verify)
         # The tree a run leaves: at its next start, what differs from it changed outside the run.
         tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
-        left = {"tree": tree} if tree else {}
+        left = {"final_verify_id": state.verify.final_verify_id, **({"tree": tree} if tree else {})}
         if end.event and end.verdict == "failed":
             self.emit(
                 "session.end",
@@ -1718,6 +1718,7 @@ class Harness:
             tool_calls=state.tool_calls,
             finish_payload=end.finish_payload,
             stale_gate=state.gates.stale_gate,
+            final_verify_id=state.verify.final_verify_id,
         )
 
     def _pass_pending_root_tasks(self) -> None:
@@ -2078,6 +2079,8 @@ class Harness:
     def _emit_start(self, event_type: str, **fields: Any) -> None:
         """Emit a start-family event through the emitter that stamps the worker pid."""
         self.execution_id = uuid.uuid4().hex
+        self.dispatcher.verify_tree = self.chain.tree_sha
+        self.dispatcher.execution_id = self.execution_id
         if self.events is not None:
             process.emit_session_start(
                 self.events,

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import pathlib
+from collections.abc import Callable
 from typing import ClassVar
 
 import textual
@@ -114,6 +115,8 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         *,
         presets: list[str] | None = None,
         routes: list[str] | None = None,
+        task: str = "",
+        on_started: Callable[[pathlib.Path], None] | None = None,
     ) -> None:
         """Bind the screen to the repo, its config and the preset and route choices."""
         super().__init__()
@@ -122,6 +125,8 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self._presets = presets if presets is not None else []
         self._routes = routes if routes is not None else []
         self._starting = False
+        self._initial_task = task
+        self._on_started = on_started
 
     def compose(self) -> textual_app.ComposeResult:
         """Lay out the screen.
@@ -167,6 +172,7 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self.app.sub_title = "new session"
         bar = self.query_one("#draft-input", composer.SteerInput)
         bar.set_mode(mode="start")
+        bar.load_text(self._initial_task)
         bar.focus()
 
     def _model_options(self, route: str) -> list[tuple[str, str]]:
@@ -232,7 +238,11 @@ class NewWorkScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     def _started(self, session_dir: pathlib.Path | None, err: str, task: str) -> None:
         self._starting = False
         if session_dir is not None:
-            self.app.exit(session_dir)
+            if self._on_started is None:
+                self.app.exit(session_dir)
+            else:
+                self._on_started(session_dir)
+                self.dismiss(None)
             return
         if not self.is_attached:  # left mid-spawn: no composer to hand the text back to
             self.app.notify(err or "could not start", severity="error", timeout=8.0)

@@ -38,6 +38,7 @@ class _StubDispatcher:
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
 
     dag_available = True
+    last_verification = None
 
     def available_tool_names(self) -> tuple[str, ...]:
         return ()

@@ -120,6 +120,14 @@ Start a machine on the Machines page and watch the current state stream, answeri
   <source src="/screenshots/out/web-machine.webm" type="video/webm">
 </video>
 
+## Receipts
+
+The Findings card's **Receipt** button opens Testing, Review, Risk and How to revert from the [recorded session evidence](usage.md#session-receipts).
+Expand stdout or stderr to read a verification attempt's retained output.
+**Ask a run to revert** fills the Sessions page's new-work composer with a proposed task; it does not submit the task or run a git command.
+`GET /api/session/<id>/receipt` returns the same derived receipt as JSON under the server's existing authentication.
+Reading it makes no provider call and reruns no tests.
+
 ## Links
 
 - `#/git/commit/<sha>` opens a commit and scrolls to its graph row when loaded; a commit outside that page still opens by sha

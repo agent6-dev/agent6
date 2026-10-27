@@ -65,6 +65,8 @@ def record_merge_in_manifest(
     merged_tip: str = "",
     into_tip: str = "",
     via: str = "",
+    method: Literal["ff_only", "merge", "squash"] | None = None,
+    target_before: str | None = None,
 ) -> str:
     """Stamp the merge into the run manifest, so `prune` can tell a merged branch.
 
@@ -78,6 +80,8 @@ def record_merge_in_manifest(
             still pointing there.
         into_tip: The target's tip a merge that added nothing saw.
         via: The run whose merge landed this one, "" for its own.
+        method: The landing method, None when unrecorded.
+        target_before: The target tip before landing, None when unrecorded.
 
     Returns:
         "" when the stamp landed, else why it did not.
@@ -94,6 +98,8 @@ def record_merge_in_manifest(
                 tip=merged_tip,
                 into_tip=into_tip,
                 via=via,
+                method=method,
+                target_before=target_before,
                 ts=datetime.datetime.now(tz=datetime.UTC).isoformat(timespec="seconds"),
             )
         }
@@ -342,6 +348,8 @@ def execute_merge(
                     merged_sha=sessions_manifest.NO_MERGE_COMMIT if noop else result.merged_sha,
                     merged_tip=tip,
                     into_tip=target_tip_before if noop else "",
+                    method=method if method in ("ff_only", "merge", "squash") else None,
+                    target_before=target_tip_before,
                 )
             if not noop:
                 _land_included_run(cwd, layout, manifest, target, result.merged_sha)

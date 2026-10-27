@@ -127,6 +127,7 @@ def test_the_recorded_runs_title_commands_and_usage_are_valid_updates() -> None:
     info = updates.RunInfo(acp_session_id="s", window=lambda _p, _m: 128_000)
     out = [body for event in _events() for body in info.feed(event)]
     assert {b["params"]["update"]["sessionUpdate"] for b in out} == {
+        "agent_message_chunk",
         "session_info_update",
         "available_commands_update",
         "usage_update",

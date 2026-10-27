@@ -47,6 +47,7 @@ provider = "anthropic"
 model = "x"
 [sandbox]
 isolation = "auto"
+network = "host"
 run_commands = "allow"
 protect_git = "on"
 [git]
@@ -307,7 +308,7 @@ def test_command_results_and_log_tails_are_scrubbed(tmp_path: pathlib.Path, name
     """Every execution handler gives the model and the journal escape-free output."""
     from agent6 import event_log
 
-    toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
+    toml = _VALID_TOML + (
         '\n[harness.metric]\ncommand = ["true"]\npattern = "score: ([0-9.]+)"\ngoal = "maximize"\n'
     )
     config_path = tmp_path / "agent6.toml"
@@ -331,7 +332,7 @@ def test_command_results_and_log_tails_are_scrubbed(tmp_path: pathlib.Path, name
 
 def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(tmp_path: pathlib.Path) -> None:
     """An operator's regex can still match escape bytes in an early score line."""
-    toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
+    toml = _VALID_TOML + (
         '\n[harness.metric]\ncommand = ["true"]\n'
         'pattern = "\\\\x1b\\\\[31mSCORE: ([0-9.]+)"\ngoal = "maximize"\n'
     )
@@ -395,9 +396,14 @@ def test_wire_run_verify(tmp_path: pathlib.Path) -> None:
         out = d.dispatch("run_verify_command", {})
     # The gate names itself: the worker never chose this command, so without
     # it a real failure and a stale gate look identical from the result.
-    assert _dumps(out) == (
+    wire = _wire(out)
+    record = wire.pop("verification")
+    assert record["verify_id"] and record["outcome"] == "passed"
+    assert record["tree_before"] is None and record["tree_after"] is None
+    assert _dumps(wire) == (
         '{"returncode": 0, "stdout": "ok", "stderr": "", "duration_s": 0.5,'
-        ' "exec_failed": false, "command": "true"}'
+        ' "exec_failed": false, "stdout_truncated": false, "stderr_truncated": false,'
+        ' "command": "true"}'
     )
 
 
@@ -418,9 +424,14 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
         return_value=_cmd_result(returncode=124, duration_s=240.1),
     ):
         out = d.dispatch("run_verify_command", {})
-    assert _dumps(out) == (
+    wire = _wire(out)
+    record = wire.pop("verification")
+    assert record["verify_id"] and record["outcome"] == "timed_out"
+    assert record["timeout_s"] == 240.0
+    assert _dumps(wire) == (
         '{"returncode": 124, "stdout": "", "stderr": "", "duration_s": 240.1,'
-        ' "exec_failed": false, "command": "true", "timed_out": true, "timeout_s": 240.0}'
+        ' "exec_failed": false, "stdout_truncated": false, "stderr_truncated": false,'
+        ' "command": "true", "timed_out": true, "timeout_s": 240.0}'
     )
 
 
@@ -432,7 +443,8 @@ def test_wire_run_command(tmp_path: pathlib.Path) -> None:
     ):
         out = d.dispatch("run_command", {"argv": ["echo", "hi"]})
     assert _dumps(out) == (
-        '{"returncode": 3, "stdout": "o", "stderr": "e", "duration_s": 0.5, "exec_failed": false}'
+        '{"returncode": 3, "stdout": "o", "stderr": "e", "duration_s": 0.5, "exec_failed": false,'
+        ' "stdout_truncated": false, "stderr_truncated": false}'
     )
 
 
@@ -492,7 +504,7 @@ def test_metric_score_survives_the_display_clip(tmp_path: pathlib.Path) -> None:
     Parsed from the display-clipped stdout, a real score before the tail window was lost, or a
     permissive pattern matched the clip marker's own dropped-byte count.
     """
-    toml = _VALID_TOML.replace('isolation = "auto"', 'isolation = "auto"\nnetwork = "host"') + (
+    toml = _VALID_TOML + (
         '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
     )
     p = tmp_path / "agent6.toml"

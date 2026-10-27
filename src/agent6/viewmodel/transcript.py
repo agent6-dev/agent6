@@ -16,7 +16,7 @@ import dataclasses
 from collections.abc import Iterable
 from typing import Any, Literal
 
-from agent6 import budget, kinds, terminal
+from agent6 import budget, evidence, kinds, terminal
 from agent6.viewmodel import _session_status, _transcript_text, format, review
 from agent6.viewmodel import events as viewmodel_events
 
@@ -285,7 +285,10 @@ class TranscriptFold:
         if etype == "verify.end":
             code = event.get("exit_code")
             dur = float(event.get("duration_s", 0) or 0)
-            badge = "✓ pass" if code == 0 else f"✗ exit {code}"
+            label = evidence.result_label(
+                code, evidence.outcome(event), str(event.get("reason") or "")
+            ).replace("exit=", "exit ")
+            badge = "✓ pass" if code == 0 else f"✗ {label}"
             timed_out = viewmodel_events.verify_limit_hit(code, event.get("timeout_s")) > 0
             self._verify = (code == 0, f"{badge} · {dur:.1f}s", timed_out)
             self._gate = (code == 0, timed_out)

@@ -97,7 +97,9 @@ class VerifyView:
 
     Attributes:
         cmd: The gate's argv.
-        exit_code: The exit code; None while in flight.
+        exit_code: The exit code, None when no exit was observed.
+        outcome: The finished attempt's outcome; None while in flight.
+        reason: Why the command did not run, separate from its output.
         duration_s: How long it ran.
         stdout_tail: The capped stdout tail.
         stderr_tail: The capped stderr tail.
@@ -110,6 +112,8 @@ class VerifyView:
     stdout_tail: str = ""
     stderr_tail: str = ""
     timeout_s: float = 0.0
+    outcome: str | None = None
+    reason: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

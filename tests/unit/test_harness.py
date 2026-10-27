@@ -65,6 +65,7 @@ class _StubDispatcher:
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
 
     dag_available = True
+    last_verification = None
 
     def available_tool_names(self) -> tuple[str, ...]:
         return ()
@@ -151,7 +152,7 @@ def _wf(
             ),
         ),
         "provider": mock.MagicMock(),
-        "dispatcher": mock.MagicMock(),
+        "dispatcher": mock.MagicMock(last_verification=None),
         "logger": _silent,
         "call": _provider_call.CallSettings(retry_delay_s=0.01),  # keep tests fast
     }
@@ -1203,7 +1204,7 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=logs.append,
         max_turns=3,
     )
@@ -1261,7 +1262,7 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
         root=tmp_path,
         config=config,
         provider=provider,
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         max_turns=3,
         call=_provider_call.CallSettings(retry_count=3, retry_delay_s=0.01),
     )
@@ -1291,7 +1292,7 @@ def test_exhausted_provider_retries_keep_the_attempt_count_and_reason(
     wf = _wf(
         root=tmp_path,
         provider=provider,
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=logs.append,
         call=_provider_call.CallSettings(retry_count=2, retry_delay_s=0),
     )
@@ -1324,7 +1325,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
     )
     provider = mock.MagicMock()
     provider.call.side_effect = ProviderError("down")
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = tools_results.ExecResult(
         returncode=1, stdout="FAILED test_x", stderr="", duration_s=5.0, exec_failed=False
@@ -1365,7 +1366,7 @@ def test_a_call_the_providers_front_end_refused_is_an_error_result_not_a_dispatc
         refused={"t1": "InputValidationError: bad input"},
     )
     provider.call.side_effect = [refused, _resp("done")]
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     logs: list[str] = []
     wf = _wf(
         root=tmp_path,
@@ -1547,7 +1548,7 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         max_turns=5,
     )
     snapshot = _resume_snapshot(
@@ -4890,7 +4891,7 @@ def test_resume_migrates_the_legacy_rulings_file_as_a_run_start_does(
     )
     provider = mock.MagicMock()
     provider.call.return_value = _resp("all done")
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.set_run_root_node_id = mock.MagicMock()
     wf = _wf(
         provider=provider, dispatcher=dispatcher, resume_state_path=snap_path, state_dir=state_dir
@@ -4919,7 +4920,7 @@ def test_a_commands_disabled_resume_keeps_the_withheld_gate_correction_pending(
     )
     provider = mock.MagicMock()
     provider.call.return_value = _resp("all done")
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.set_run_root_node_id = mock.MagicMock()
     dispatcher.command_policy.return_value = "deny"
     wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
@@ -4949,7 +4950,7 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) ->
     provider = mock.MagicMock()
     provider.call.return_value = _resp("all done")  # no tool_uses -> silent_finish
 
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.set_run_root_node_id = mock.MagicMock()
 
     wf = _wf(
@@ -4984,7 +4985,7 @@ def test_resume_restores_root_task_id_on_dispatcher(tmp_path: pathlib.Path) -> N
     )
     provider = mock.MagicMock()
     provider.call.return_value = _resp("done")
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
     wf.resume()
     dispatcher.set_run_root_node_id.assert_called_once_with("task-xyz")
@@ -5016,7 +5017,7 @@ def test_crash_mid_run_then_resume_continues_from_snapshot(tmp_path: pathlib.Pat
     # First "process": crash on the first LLM call.
     crashing_provider = mock.MagicMock()
     crashing_provider.call.side_effect = ProviderError("simulated network drop / SIGKILL window")
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.set_run_root_node_id = mock.MagicMock()
     wf1 = _wf(
         root=repo,
@@ -5858,7 +5859,7 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
         config=config,
         mode="run",
         provider=provider,
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         max_turns=10,
     )
     messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nfix"}]}]
@@ -6344,7 +6345,7 @@ def test_note_verify_result_flags_a_dead_verify(tmp_path: pathlib.Path) -> None:
         root=tmp_path,
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
     )
     st = _state()
     turn = _turn(number=1)
@@ -6390,7 +6391,7 @@ def test_note_verify_result_does_not_flag_real_failure(tmp_path: pathlib.Path) -
         root=tmp_path,
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
     )
     st = _state()
     turn = _turn(number=1)
@@ -6430,7 +6431,7 @@ def test_a_test_module_import_error_is_not_a_dead_verify(
         root=tmp_path,
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
     )
     st = _state()
     turn = _turn(number=1)
@@ -7132,7 +7133,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
     """A finish tool the dispatcher refused is not captured as a finish signal."""
     from agent6.tools import errors
 
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.dispatch.side_effect = errors.ToolError(
         "finish_planning is not available in run mode"
     )
@@ -7158,7 +7159,7 @@ def test_refused_finish_tool_is_not_captured_as_a_finish() -> None:
 
 def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
     """A dispatched finish_session does not advance ok_tool_calls, so standing_patience engages."""
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.dispatch.return_value = tools_results.FinishSessionResult(
         summary_text="done", result=None
     )
@@ -7232,7 +7233,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
         root=tmp_path,
         config=config,
         provider=ProviderStub(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         max_turns=5,
         bridge=_operator.OperatorBridge(
             stop_requested=lambda: True,
@@ -8204,7 +8205,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
     def emit(kind: str, **kw: Any) -> None:
         events.append({"type": kind, **kw})
 
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     wf = _wf(
         root=tmp_path,
         config=Config(),  # gateless: the argv below is the adopted one, not a configured gate
@@ -8244,7 +8245,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
         root=tmp_path,
         config=Config().with_verify_command(argv),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
     )
     st2 = _state()
     turn2 = _turn(number=2)
@@ -8278,7 +8279,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
         root=tmp_path,
         state_dir=state_dir,
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         events=events,
         bridge=_operator.OperatorBridge(
             steer_requested=lambda: True,
@@ -8331,7 +8332,7 @@ def test_a_skill_command_steer_expands_in_the_loop(tmp_path: pathlib.Path) -> No
         name="caveman", description="Use when grunting.", dir=tmp_path, text="GRUNT"
     )
     prompts = iter(["/caveman lite", "/nosuch thing"])
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.resolved_skills.return_value = skills.ResolvedSkills(
         enabled=(skill,), always=(), warnings=("one skill dir is unreadable",)
     )
@@ -8437,7 +8438,7 @@ def test_the_workers_own_metric_call_is_not_re_run_by_the_harness(tmp_path: path
     repo = tmp_path / "repo"
     base = _metric_repo(repo)
     dispatched: list[str] = []
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
 
     def dispatch(name: str, _args: dict[str, Any]) -> tools_results.MetricResult:
         dispatched.append(name)
@@ -8471,7 +8472,7 @@ def test_three_real_improvements_do_not_read_as_a_plateau(tmp_path: pathlib.Path
     repo = tmp_path / "repo"
     base = _metric_repo(repo)
     score = {"v": 41.0}
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
 
     def dispatch(_name: str, _args: dict[str, Any]) -> tools_results.MetricResult:
         return _metric_result(score["v"])
@@ -8538,7 +8539,7 @@ def test_the_settled_stop_still_fires_without_per_turn_commits(
                 {"harness": {"verify_command": ["true"] if gated else []}}
             ),
             provider=mock.MagicMock(),
-            dispatcher=mock.MagicMock(),
+            dispatcher=mock.MagicMock(last_verification=None),
             logger=_silent,
             mode="run",
         )
@@ -8567,7 +8568,7 @@ def _ruling_wf(tmp_path: pathlib.Path) -> loop.Harness:
         chain=_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=_silent,
         mode="run",
         state_dir=tmp_path / "state",
@@ -8754,7 +8755,7 @@ def test_the_root_passes_with_an_open_child(
         chain=_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=_silent,
         mode="run",
         curator=curator,
@@ -8793,7 +8794,7 @@ def test_the_focus_surface_fits_a_standing_task(tmp_path: pathlib.Path) -> None:
         chain=_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=_silent,
         mode="run",
         curator=curator,

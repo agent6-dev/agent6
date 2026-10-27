@@ -121,6 +121,7 @@ class SessionResult:
     finish_payload: dict[str, Any] | None = None
     stale_gate: str = ""
     verified: Verification = "not_applicable"
+    final_verify_id: str | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -161,7 +162,7 @@ class ResumeError(Exception):
 
 
 # Bump on any change to the persisted shape: an older in-flight run then refuses to resume or fork.
-SNAPSHOT_VERSION = 5
+SNAPSHOT_VERSION = 6
 
 
 class SessionSnapshot(pydantic.BaseModel):
@@ -230,6 +231,8 @@ class SessionSnapshot(pydantic.BaseModel):
     gateless_ever_edited: bool = False
     metric_best_score: float | None = None
     metric_at_ceiling: bool = False
+    final_verify_id: str | None = None
+    verify_tree: str | None = None
     last_verify_ok: bool | None = None
     edited_since_verify: bool = False
     baseline_ok: bool | None = None

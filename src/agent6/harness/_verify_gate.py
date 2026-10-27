@@ -251,6 +251,16 @@ class VerifyGate:
         """
         rc = result.returncode
         verdict = state.verify
+        if not verdict.observe(result.verification):
+            record = result.verification
+            if record and record.tree_before and record.tree_after and not record.stable_tree:
+                turn.tool_results.append(
+                    _conversation.Notice(
+                        "[harness] The verification command changed the tree. "
+                        "Its result does not certify the resulting tree; run verification again."
+                    )
+                )
+            return
         if rc == 0:
             turn.verify_just_passed = True
             if verdict.last_ok is False:
@@ -298,7 +308,9 @@ class VerifyGate:
         judged_base = self.judged_the_base_commit(verdict, result)
         if judged_base and verdict.baseline_ok is None:
             verdict.baseline_ok = rc == 0
-            self.emit("loop.baseline", ok=rc == 0, turn=turn.number)
+            self.emit(
+                "loop.baseline", ok=rc == 0, turn=turn.number, verify_id=verdict.final_verify_id
+            )
             if rc != 0:
                 turn.tool_results.append(_conversation.Notice(_nudges.BASELINE_RED_NOTICE))
         tail = f"{result.stdout}\n{result.stderr}"
@@ -434,9 +446,11 @@ class VerifyGate:
             return [_conversation.Notice(gate_withheld_notice("[harness verify] start", exc))]
         except tool_errors.ToolError:
             return []
+        observed = verdict.observe(result.verification)
         ok = result.returncode == 0
         no_verdict = (
-            result.exec_failed
+            not observed
+            or result.exec_failed
             or result.returncode == EXIT_TIMEOUT
             or _nudges.verify_did_not_run(result.stdout, result.stderr, result.duration_s)
         )
@@ -446,7 +460,7 @@ class VerifyGate:
         judged = self.judged_the_base_commit(verdict, result)
         if judged:
             verdict.note_baseline(ok=ok)
-            self.emit("loop.baseline", ok=ok, turn=0)
+            self.emit("loop.baseline", ok=ok, turn=0, verify_id=verdict.final_verify_id)
             self.log(f"LOOP: gate {word} before the run")
             verdict.last_tail = f"{result.stdout}\n{result.stderr}".strip()[-2000:]
             if not ok:
@@ -595,6 +609,16 @@ class VerifyGate:
             return tuple(sorted(terminal.printable_name(p) for p in paths))
         return ()
 
+    def sync_evidence(self, verdict: _verify_verdict.VerifyVerdict) -> None:
+        """Carry attempts that raised before returning a tool result.
+
+        Args:
+            verdict: The execution's current observation.
+        """
+        record = self.dispatcher.last_verification
+        if record is not None and record.verify_id != verdict.final_verify_id:
+            verdict.observe(record)
+
     def tree_green(self, verdict: _verify_verdict.VerifyVerdict) -> bool | None:
         """Return whether the tree is verified green, None when no command is in force.
 
@@ -604,8 +628,11 @@ class VerifyGate:
         Returns:
             True when the last verify was green and nothing was edited since.
         """
+        self.sync_evidence(verdict)
         if not self.command(verdict):
             return None
+        if verdict.verify_tree and verdict.verify_tree != self.chain.tree_sha():
+            verdict.note_edit()
         return verdict.green_and_untouched
 
     def verification(self, verdict: _verify_verdict.VerifyVerdict) -> _snapshot.Verification:
@@ -620,6 +647,7 @@ class VerifyGate:
         Returns:
             The verification word.
         """
+        self.sync_evidence(verdict)
         if self.mode != "run":
             return "not_applicable"
         green = self.tree_green(verdict)

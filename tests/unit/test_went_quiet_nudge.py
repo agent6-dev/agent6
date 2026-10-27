@@ -100,7 +100,7 @@ def _knobs(wf: loop.Harness, **knobs: Any) -> loop.Harness:
 
 
 def _build_wf(repo: pathlib.Path, provider: mock.MagicMock, **kwargs: Any) -> loop.Harness:
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
     return loop.Harness(
         chain=_chain.RunChain(repo),

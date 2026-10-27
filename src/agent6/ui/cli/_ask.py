@@ -12,7 +12,7 @@ import sys
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, paths
+from agent6 import errors, evidence, paths
 from agent6.harness import _snapshot, loop
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
@@ -65,7 +65,9 @@ def fmt_run_event(e: dict[str, Any]) -> str:
     if t == "tool.call":
         return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
     if t == "verify.end":
-        return f"verify.end exit={e.get('exit_code')}"
+        label = evidence.result_label(e.get("exit_code"), evidence.outcome(e))
+        reason = f": {e['reason']}" if e.get("reason") else ""
+        return f"verify.end {label}{reason}"
     if t == "session.end":
         return f"session.end reason={e.get('reason')}"
     if t == "loop.metric.sample":

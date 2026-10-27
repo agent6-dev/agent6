@@ -361,6 +361,36 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
   A crash between the request and submission records reads as `delivery unknown`; retrying the request ID does not resend it.
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
+## Session receipts
+
+`agent6 sessions receipt <id> [--json]` reads testing, review, risk and reversal evidence from the journal and manifest.
+It makes no provider call and reruns no checks.
+The short end summary names this inspection command.
+
+- **Testing:** each configured verification attempt has an ID, command, scope, selected paths, before and after tree IDs, outcome, exit code, duration and timeout.
+  A pass certifies only its unchanged tested tree; a scoped pass covers only the selected tests.
+  An edit after a pass or a command that changes the tree leaves the final tree uncertified.
+  A different commit with the same tree content does not invalidate the observation.
+- **Output:** each journal stream keeps its last 2,000 characters, with truncation marked.
+  Historical or incomplete captures read “capture completeness unknown”.
+- **Missing checks:** denial, inability to execute and interruption are not passes.
+  Baseline failures stay marked separately; a run without a gate says “No verification recorded”.
+  Other commands are not verification evidence.
+- **Review and risk:** the receipt shows recorded panel state and each seat's own risk words with its model route.
+  Risk keeps its first 1,000 characters, with truncation marked.
+  Missing or non-string risk reads “not recorded”; the receipt assigns no risk tier.
+- **How to revert:** recorded merge bounds determine the explanation.
+  A squash names its landed commit; a merge verifies its target parent; a fast-forward lists landed commits in reverse order.
+  Fast-forwards containing merges need an explicit plan.
+  Missing stamps or objects do not produce guessed commands.
+  “No merge recorded” does not claim that no merge occurred if recording failed.
+
+Git commands in a receipt are explanations only.
+**Ask a run to revert** in the web or TUI opens the existing new-work composer with a proposed task; inspect it before submitting.
+You can also copy the recorded landing facts into a steer request to prepare the reversal.
+Neither action executes the displayed commands directly.
+The reversal needs its own checks; the original receipt does not certify a merge against a moved target or the later reversal.
+
 ## Run options
 
 - `--preset <name>`: a strategy preset (`no_review`, `review`, `deep_review`, or your own; `none` selects no preset), fixed for the execution; `resume --preset` switches ([presets](config.md#presets))

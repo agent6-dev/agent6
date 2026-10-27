@@ -224,7 +224,7 @@ def test_after_auto_commit_default_continues() -> None:
             ),
         ),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=lambda _m: None,
     )
     # Field exists and defaults to the no-op shape.
@@ -258,7 +258,7 @@ def test_after_auto_commit_field_is_overridable() -> None:
             ),
         ),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=lambda _m: None,
         bridge=_operator.OperatorBridge(after_auto_commit=hook),
     )

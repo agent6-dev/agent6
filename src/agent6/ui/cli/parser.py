@@ -51,6 +51,7 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
                 "list",
                 "merge",
                 "prune",
+                "receipt",
                 "reopen",
                 "resolve",
                 "review",

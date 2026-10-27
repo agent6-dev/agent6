@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import dataclasses
 
+from agent6 import evidence
+
 
 @dataclasses.dataclass(slots=True)
 class VerifyVerdict:
@@ -33,6 +35,8 @@ class VerifyVerdict:
         declined: The last reason inference adopted nothing, logged when it changes.
     """
 
+    final_verify_id: str | None = None
+    verify_tree: str | None = None
     last_ok: bool | None = None
     withheld: bool = False
     scoped: bool = False
@@ -48,6 +52,25 @@ class VerifyVerdict:
     adopted: tuple[str, ...] = ()
     unadoptable: set[tuple[str, ...]] = dataclasses.field(default_factory=set)
     declined: str = ""
+
+    def observe(self, record: evidence.VerificationEvidence | None) -> bool:
+        """Bind the verdict to a stable tree observation.
+
+        Args:
+            record: The dispatcher's evidence, absent in historical callers.
+
+        Returns:
+            Whether the command produced a verdict for an unchanged tree.
+        """
+        if record is None:
+            return True
+        self.final_verify_id = record.verify_id
+        self.verify_tree = record.tree_after if record.stable_tree else None
+        if not record.stable_tree or record.outcome not in ("passed", "failed"):
+            self.last_ok = None
+            self.edited_since = True
+            return False
+        return True
 
     def note_pass(self) -> None:
         """Record a green verify: the tree as it stands is verified and the streaks reset."""

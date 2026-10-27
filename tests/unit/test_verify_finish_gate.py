@@ -38,7 +38,7 @@ def _wf(
         chain=_chain.RunChain(root),
         config=Config.model_validate(data),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=lambda _m: None,
         mode=mode,
     )
@@ -382,7 +382,7 @@ def _harness_wf(
     data: dict[str, Any] = {
         "harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
     }
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=_chain.RunChain(pathlib.Path("/tmp")),
@@ -606,7 +606,7 @@ def _scoped_wf(
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("")
     data: dict[str, Any] = {"harness": {"verify_command": command, "verify_when": when}}
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
         chain=_chain.RunChain(root),
@@ -822,7 +822,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     """
     from agent6.tools import results
 
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
@@ -863,7 +863,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
 
     A withheld or denied gate is not the model's to fix, and bouncing the end told it to.
     """
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=_chain.RunChain(pathlib.Path("/tmp")),

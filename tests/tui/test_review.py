@@ -303,3 +303,81 @@ def test_merge_refusal_keeps_the_finding_ids_visible(
             assert refusal in notices
 
     asyncio.run(scenario())
+
+
+def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
+    """The receipt uses collapsible literal output and never starts work on inspection."""
+    from textual import app as textual_app
+
+    from agent6.ui.tui import review
+
+    saved = review_helpers.reviewed_session(tmp_path)
+    event_log.EventSink(saved.logs_path).emit(
+        "verify.end",
+        cmd=["pytest"],
+        exit_code=1,
+        stdout_tail="failed <literal>",
+        stderr_tail="error",
+    )
+
+    async def scenario() -> None:
+        app = textual_app.App[None]()
+        async with app.run_test(size=(120, 45)) as pilot:
+            app.push_screen(review.ReceiptScreen(saved.session_dir, tmp_path))
+            await pilot.pause()
+            assert "capture completeness unknown" in _shown(
+                app.screen.query_one("#receipt-summary", widgets.Static)
+            )
+            outputs = list(app.screen.query(widgets.Collapsible))
+            assert len(outputs) == 2 and outputs[0].collapsed
+            outputs[0].collapsed = False
+            await pilot.pause()
+            assert "failed <literal>" in _shown(list(outputs[0].query(widgets.Static))[-1])
+            assert (
+                str(app.screen.query_one("#receipt-revert", widgets.Button).label)
+                == "Ask a run to revert"
+            )
+            app.screen.query_one("#receipt-revert", widgets.Button).press()
+            await pilot.pause()
+            assert type(app.screen).__name__ == "NewWorkScreen"
+            assert saved.session_id in app.screen.query_one("#draft-input", widgets.TextArea).text
+
+    asyncio.run(scenario())
+
+
+def test_denied_gate_story_is_not_running(tmp_path: pathlib.Path) -> None:
+    """The diff pane settles an attempt whose command was denied."""
+    from agent6.ui.tui import _diff_pane
+    from agent6.viewmodel import state
+    from tests.unit import test_verification_evidence
+
+    folded = state.fold_session(test_verification_evidence.denied_rows(tmp_path))
+    pane = _diff_pane.DiffPane(tmp_path, id="diff")
+    text = pane._story(folded, None).plain
+    assert "denied" in text and "running" not in text and "None" not in text
+    assert "run_commands" in text
+
+
+def test_receipt_is_a_keymap_menu_and_footer_action(tmp_path: pathlib.Path) -> None:
+    """Findings exposes the receipt through its normal menu, footer and keyboard."""
+    from agent6.ui import keymap
+    from agent6.ui.tui import review
+
+    saved = review_helpers.reviewed_session(tmp_path)
+    assert "receipt" in keymap.SCREEN_KEYS["findings"]
+    assert ("receipt", keymap.REVIEW_TEXT["receipt"]) in review.FindingsScreen.FOOTER
+    assert any(
+        item.action == "receipt" for menu in review.FindingsScreen.MENUS for item in menu.items
+    )
+    assert "receipt" in keymap.SCREEN_KEYS
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(saved.state_dir, tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("v")
+            await pilot.press(keymap.SCREEN_KEYS["findings"]["receipt"])
+            assert isinstance(app.screen, review.ReceiptScreen)
+            await pilot.press(keymap.SCREEN_KEYS["receipt"]["close"].split(",")[0])
+            assert isinstance(app.screen, review.FindingsScreen)
+
+    asyncio.run(scenario())

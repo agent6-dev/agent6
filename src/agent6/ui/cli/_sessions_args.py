@@ -27,6 +27,15 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     )
 
     sessions_findings.add_parsers(sessions_sub)
+    receipt = _common._sub(
+        sessions_sub,
+        "receipt",
+        help="Inspect recorded testing, review and reversal evidence without running tests.",
+    )
+    _common._add_session_id(receipt, completers._complete_session_ids)
+    receipt.add_argument(
+        "--json", action="store_true", help="Print the structured evidence receipt."
+    )
 
     sessions_list = _common._sub(
         sessions_sub,

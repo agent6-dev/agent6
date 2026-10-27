@@ -239,7 +239,7 @@ def test_a_done_summary_is_bare_and_precedes_the_labelled_status() -> None:
     assert _kinds(updates) == ["agent_message_chunk", "agent_message_chunk"]
     assert [u["params"]["update"]["content"]["text"] for u in updates] == [
         "The model's summary.\n\n",
-        "[agent6] Session finished - 1s\n",
+        "[agent6] Session finished - 1s\nEvidence: /receipt\n",
     ]
 
 
@@ -249,7 +249,10 @@ def test_a_done_without_a_summary_emits_only_the_status() -> None:
         item = transcript.TranscriptItem("done", body=body)
         updates = acp_updates.updates_for(item, acp_session_id="s")
         assert _kinds(updates) == ["agent_message_chunk"]
-        assert updates[0]["params"]["update"]["content"]["text"] == "[agent6] Session ended\n"
+        assert (
+            updates[0]["params"]["update"]["content"]["text"]
+            == "[agent6] Session ended\nEvidence: /receipt\n"
+        )
 
 
 def test_a_red_gate_does_not_look_like_a_green_one() -> None:
@@ -537,7 +540,10 @@ def test_a_stops_sentence_is_agent6s_line_and_a_finish_summary_the_models() -> N
         u["params"]["update"]["content"]["text"]
         for u in acp_updates.updates_for(stopped, acp_session_id="s")
     ]
-    assert texts == ["[agent6] budget exhausted\n", "[agent6] Session stopped\n"]
+    assert texts == [
+        "[agent6] budget exhausted\n",
+        "[agent6] Session stopped\nEvidence: /receipt\n",
+    ]
     finished = transcript.TranscriptItem(
         "done", body="Fixed it.", name="finished", arg="finish_session"
     )
@@ -545,4 +551,23 @@ def test_a_stops_sentence_is_agent6s_line_and_a_finish_summary_the_models() -> N
         u["params"]["update"]["content"]["text"]
         for u in acp_updates.updates_for(finished, acp_session_id="s")
     ]
-    assert texts == ["Fixed it.\n\n", "[agent6] Session finished\n"]
+    assert texts == ["Fixed it.\n\n", "[agent6] Session finished\nEvidence: /receipt\n"]
+
+
+def test_end_has_one_receipt_pointer() -> None:
+    """Evidence and done updates share one receipt pointer at the end of a run."""
+    rows = [
+        {
+            "type": "verify.end",
+            "verify_id": "v",
+            "exit_code": 0,
+            "cmd": ["true"],
+            "tree_before": "t",
+            "tree_after": "t",
+        },
+        {"type": "session.end", "final_verify_id": "v", "tree": "t", "reason": "finish_session"},
+    ]
+    info = _info()
+    messages = updates_for_events(rows, acp_session_id="s")
+    messages += [message for row in rows for message in info.feed(row)]
+    assert json.dumps(messages).count("/receipt") == 1

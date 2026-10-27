@@ -128,10 +128,9 @@ def carry_verify_verdict(
 ) -> None:
     """Carry the prior execution's verify observation when it still describes this tree.
 
-    The chain tip must be the snapshot's and the worktree clean; an operator commit or edit
-    in between fails closed, so the execution starts unobserved rather than wrongly green
-    or red. `baseline_ok` is about the base commit, so a resume that moved the base (its
-    earlier work landed) carries none.
+    Content identity carries a verdict across commits with the same tree. A snapshot without
+    a tree observation requires its original clean commit. `baseline_ok` describes the base
+    commit, so a resume that moved the base carries none.
 
     Args:
         harness: The execution's harness.
@@ -143,6 +142,13 @@ def carry_verify_verdict(
     state.standing.tools_mark = snap.standing_tools_mark
     state.standing.fruitless = snap.standing_fruitless
     state.ok_tool_calls = snap.ok_tool_calls
+    state.verify.final_verify_id = snap.final_verify_id
+    if snap.verify_tree:
+        if snap.verify_tree == harness.chain.tree_sha():
+            state.verify.verify_tree = snap.verify_tree
+            state.verify.last_ok = snap.last_verify_ok
+            state.verify.edited_since = snap.edited_since_verify
+        return
     if snap.last_verify_ok is None or not snap.head_sha:
         return
     try:
@@ -181,6 +187,7 @@ def save_resume_snapshot(
     """
     if harness.resume_state_path is None:
         return
+    harness.gate.sync_evidence(state.verify)
     goal = harness.metrics.goal
     best = _metric.best_metric_sample(state.metric.history, goal=goal) if goal is not None else None
     snapshot = _snapshot.SessionSnapshot(
@@ -202,6 +209,8 @@ def save_resume_snapshot(
         metric_best_score=best.score if best is not None else None,
         metric_at_ceiling=state.metric.at_ceiling(),
         last_verify_ok=state.verify.last_ok,
+        final_verify_id=state.verify.final_verify_id,
+        verify_tree=state.verify.verify_tree,
         edited_since_verify=state.verify.edited_since,
         baseline_ok=state.verify.baseline_ok,
         verify_scoped=state.verify.scoped,

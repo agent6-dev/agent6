@@ -79,6 +79,7 @@ test-gap / style / over-eng / other (these can only be warn/nit).
 Output STRICT JSON and nothing else (no prose, no markdown fence):
 {{"verdict": "pass" | "block",
   "summary": "<one line>",
+  "risk": "<what could fail and what supplied checks do not establish; at most 1000 characters>",
   "findings": [
     {{"category": "<one of the categories listed above>",
       "severity": "block|warn|nit",

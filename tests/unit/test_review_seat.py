@@ -750,3 +750,26 @@ def test_focus_values_cycle_on_the_resolved_reviewer_route(monkeypatch: Any) -> 
         ("runtime cost", "anthropic/reviewer-default"),
         ("security", "anthropic/reviewer-default"),
     ]
+
+
+def test_risk_is_the_seats_verbatim_text() -> None:
+    """Risk survives the parsed verdict without summary rewriting."""
+    text = "  A race may remain.\nThe supplied checks do not exercise concurrent writers.  "
+    verdict = _review_seat.verdict_from_obj(
+        {"verdict": "pass", "findings": [], "summary": "done", "risk": text},
+        0,
+        "general",
+        "provider/model",
+    )
+    assert getattr(verdict, "risk", None) == text
+
+
+@pytest.mark.parametrize("risk", ["  " + "x" * 1000, None, ["a"]])
+def test_risk_cannot_discard_a_valid_block(risk: object) -> None:
+    """Missing or excessive risk never removes a seat's valid verdict and findings."""
+    reply = json.loads(_BLOCK_JSON)
+    reply["risk"] = risk
+    verdict = _review_seat.verdict_from_obj(reply, 0, "security", "provider/model")
+    assert verdict.verdict == "block" and len(verdict.findings) == 1
+    assert verdict.risk == (risk[:1000] if isinstance(risk, str) else "")
+    assert getattr(verdict, "risk_truncated", False) is isinstance(risk, str)

@@ -44,7 +44,7 @@ def _workflow(curator: graph_curator.GraphCurator, sink: event_log.EventSink) ->
         ),
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=lambda _msg: None,
         curator=curator,
         events=sink,

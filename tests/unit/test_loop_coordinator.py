@@ -693,7 +693,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
     spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
 
     # The first turn's tool "edits" the tree (an uncommitted run_command write).
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
 
     def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted work\n", encoding="utf-8")
@@ -750,7 +750,7 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
     _init_repo(repo)
     spawner = _FakeGroupSpawner(repo, "run-nd", tmp_path / "wt")
 
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
 
     def dispatch(_name: str, _input: dict[str, Any]) -> tools_results.RawResult:
         (repo / "wip.txt").write_text("uncommitted\n", encoding="utf-8")

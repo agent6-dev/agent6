@@ -61,6 +61,12 @@ Reasons must be nonblank and at most 2,000 characters.
 Live disposition actions use the worker's IPC queue; their notices arrive when recorded.
 Fix does not support mid-run steering through ACP.
 
+## Receipts
+
+The end message includes a short evidence summary and points to `/receipt`.
+The advertised `/receipt` command reads [testing, review, risk and reversal evidence](usage.md#session-receipts) without calling the worker or rerunning checks.
+Ask for a reversal in a subsequent prompt or a new isolated run; displayed git commands are explanations, not executable actions.
+
 ## Code-review rule sources
 
 Code-review starts appear as session messages with the panel ID, base tree, rule completeness, source paths, blob IDs and byte counts.

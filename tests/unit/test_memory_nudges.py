@@ -33,7 +33,7 @@ def _wf(**kw: Any) -> loop.Harness:
     return loop.Harness(
         chain=_chain.RunChain(pathlib.Path("/tmp")),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None),
         logger=lambda _m: None,
         **kw,
     )

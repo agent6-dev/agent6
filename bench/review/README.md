@@ -72,3 +72,19 @@ in the diff. A diff-tier seat passed (it cannot see the caller). An explore-tier
 seat (read-only `read_file` + `find_references`) found `main.py` and blocked with
 `verify-uncovered-correctness`, cited at the diff line. The explore tier adds
 value over the diff tier for cross-file impact; the diff tier is the default.
+
+## Risk-field prompt A/B registration
+
+The panel prompt asks each seat what could fail and what the supplied checks do not establish.
+The reply adds a `risk` string of at most 1,000 characters.
+The parser keeps the first 1,000 characters unchanged and marks truncation.
+Missing or non-string risk reads “not recorded” without discarding the verdict or findings.
+This is a prompt change, not evidence of better review behavior.
+
+- **Arms:** A omits the risk instruction and JSON field; B includes them.
+- **Cases:** `cases.json` freezes two development cases and four evaluation cases before tuning.
+- **Protocol:** run both arms on each case, with three independent repetitions and three seats per panel, using identical model routes, temperatures, token caps and supplied checks.
+- **Measures:** grounded true blocks, false blocks on clean cases, abstentions, missing risk, risk-length violations, tokens, cost and elapsed time.
+- **Reporting:** publish each split and its case count, per-case outcomes, repetition ranges and paired arm differences.
+- **Status:** registered, not measured in the network-isolated implementation environment.
+No behavior improvement is claimed.

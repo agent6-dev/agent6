@@ -20,6 +20,8 @@ import datetime
 import json
 from typing import Any
 
+from agent6 import evidence
+
 # A fresh run emits session.start; a resumed execution emits only loop.resume.start.
 SESSION_START_EVENTS = frozenset({"session.start", "loop.resume.start"})
 # The calls that end a session rather than work on it; literals, so no tools import.
@@ -224,11 +226,13 @@ class VerifyEnd:
     """
 
     cmd: tuple[str, ...]
-    exit_code: int
+    exit_code: int | None
     duration_s: float
     stdout_tail: str
     stderr_tail: str
     timeout_s: float = 0.0
+    outcome: str = ""
+    reason: str = ""
 
 
 # A jailed command killed at its wall-clock limit exits 124, per the sandbox's contract.
@@ -600,11 +604,13 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
         case "verify.end":
             return VerifyEnd(
                 cmd=tuple(str(x) for x in raw.get("cmd", []) or []),
-                exit_code=int(raw.get("exit_code", -1)),
+                exit_code=int(raw["exit_code"]) if raw.get("exit_code") is not None else None,
                 duration_s=float(raw.get("duration_s", 0.0)),
                 stdout_tail=str(raw.get("stdout_tail", "")),
                 stderr_tail=str(raw.get("stderr_tail", "")),
                 timeout_s=float(raw.get("timeout_s", 0.0) or 0.0),
+                outcome=evidence.outcome(raw),
+                reason=str(raw.get("reason", "")),
             )
         case "budget.update":
             return BudgetUpdate(

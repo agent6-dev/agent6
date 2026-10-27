@@ -90,6 +90,7 @@ depends_on = [
   "agent6.directive",
   "agent6.errors",
   "agent6.event_log",
+  "agent6.evidence",
   "agent6.graph.order",
   "agent6.graph.storage",
   "agent6.harness",
@@ -134,6 +135,7 @@ depends_on = [
   "agent6.vcs.review",
   "agent6.verify_infer",
   "agent6.viewmodel",
+  "agent6.viewmodel.receipt",
 ]
 
 [[modules]]
@@ -148,6 +150,7 @@ depends_on = [
   "agent6.config",
   "agent6.directive",
   "agent6.errors",
+  "agent6.evidence",
   "agent6.graph.curator",
   "agent6.graph.models",
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
@@ -209,7 +212,7 @@ depends_on = ["agent6.paths"]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.vcs.git_read: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.layer", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.tools", "agent6.ui.directives", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.vcs.git_history", "agent6.vcs.git_read", "agent6.viewmodel"]
+depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.layer", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.tools", "agent6.ui.directives", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.vcs.git_history", "agent6.vcs.git_read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
 
 [[modules]]
 # What a composer line does when it is not a steer, for every entry point that
@@ -287,6 +290,7 @@ depends_on = [
   "agent6.directive",  # the `/pin` line an editor is offered as a slash command
   "agent6.errors",  # a fault after the journal opened is a bug unless it is an operator error
   "agent6.event_log",
+  "agent6.evidence",
   "agent6.harness",
   "agent6.kinds",
   "agent6.paths",
@@ -310,6 +314,7 @@ depends_on = [
   # journal again with ACP's own rules is how a fourth surface starts
   # disagreeing with the other three about what happened.
   "agent6.viewmodel",
+  "agent6.viewmodel.receipt",
 ]
 
 [[modules]]
@@ -356,6 +361,7 @@ depends_on = [
   "agent6.vcs.git_history",
   "agent6.vcs.git_read",
   "agent6.viewmodel",
+  "agent6.viewmodel.receipt",
 ]
 
 [[modules]]
@@ -375,6 +381,7 @@ depends_on = [
   "agent6.config._presets",
   "agent6.config.io",
   "agent6.config.layer",
+  "agent6.evidence",
   "agent6.graph.models",
   "agent6.kinds",
   "agent6.machine",
@@ -423,7 +430,7 @@ path = "agent6.tools"
 # The in-process handlers use graph intents, workspace grants and session records.
 # Dispatch and jailed command execution have separate entries below.
 # agent6 (root): the MCP handshake sends the canonical __version__.
-depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
+depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.evidence", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
 
 [[modules]]
 path = "agent6.terminal"
@@ -788,7 +795,7 @@ depends_on = ["agent6.event_log", "agent6.paths", "agent6.portable"]
 [[modules]]
 # Routing and lifecycle own the command helpers' inputs; execution stays jailed.
 path = "agent6.tools.dispatch"
-depends_on = ["agent6.config", "agent6.event_log", "agent6.graph.curator", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.skills", "agent6.tools", "agent6.tools._command_tools", "agent6.tools.schema"]
+depends_on = ["agent6.config", "agent6.errors", "agent6.event_log", "agent6.evidence", "agent6.graph.curator", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.skills", "agent6.tools", "agent6.tools._command_tools", "agent6.tools.schema", "agent6.vcs.git_read"]
 
 [[modules]]
 path = "agent6.tools._command_tools"
@@ -809,3 +816,15 @@ depends_on = ["agent6.config._base", "agent6.config.io", "agent6.config.model", 
 [[modules]]
 path = "agent6.config._presets"
 depends_on = ["agent6.config._base", "agent6.config._layer_data", "agent6.config.model"]
+
+[[modules]]
+path = "agent6.evidence"
+depends_on = []
+
+[[modules]]
+path = "agent6.vcs.commit_graph"
+depends_on = ["agent6.errors", "agent6.vcs._git_command"]
+
+[[modules]]
+path = "agent6.viewmodel.receipt"
+depends_on = ["agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git_read", "agent6.viewmodel"]

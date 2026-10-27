@@ -86,7 +86,7 @@ def _seat(provider: Any, focus: str = "security", model: str = "m1") -> _reviewe
 
 
 def _disp() -> mock.MagicMock:
-    d = mock.MagicMock()
+    d = mock.MagicMock(last_verification=None)
     d.dispatch.return_value = results.RawResult(
         {"ok": True}
     )  # JSON-serializable (finish_session is dispatched)
@@ -582,3 +582,58 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
     prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
     assert f"foo.py:11 {category[shown[0][0]]}" in prompt
     assert all(f"foo.py:11 {category[t[0]]}" not in prompt for t in shown[1:])
+
+
+@pytest.mark.parametrize("repeat", [1, 20])
+def test_panel_risk_round_trips_into_the_receipt(tmp_path: pathlib.Path, repeat: int) -> None:
+    """The real panel emitter preserves the seat's whitespace and route in the receipt."""
+    from agent6 import paths
+    from agent6.app import stamps
+    from agent6.sessions import layout, manifest
+    from agent6.viewmodel import receipt
+
+    git = test_review_diff_collect._git
+    root = tmp_path / "repo"
+    root.mkdir()
+    git(root, "init", "-q")
+    (root / "foo.py").write_text("x = 1\n" * 10)
+    git(root, "add", "foo.py")
+    git(root, "commit", "-qm", "base")
+    base = git(root, "rev-parse", "HEAD").strip()
+    (root / "foo.py").write_text("x = 1\n" * 10 + 'API_KEY = "sk-secret"\n')
+    saved = layout.SessionLayout(paths.state_dir(root), "risk-roundtrip")
+    saved.ensure()
+    stamps.write_manifest(
+        saved.session_dir / "manifest.json", manifest.SessionManifest(session_id=saved.session_id)
+    )
+    risk = "  Concurrent  writes may fail.\nThe supplied checks do not cover them.  " * repeat
+    expected = risk[:1000]
+    seat_provider = mock.MagicMock()
+    seat_provider.call.return_value = _resp(json.dumps({**json.loads(_BLOCK), "risk": risk}))
+    worker = mock.MagicMock()
+    worker.call.return_value = _resp_with_tool_use("finish", _finish_tool_use("finish", "done"))
+    harness = _wf(
+        root,
+        ref="refs/agent6/risk-roundtrip/head",
+        base_sha=base,
+        fallback_parent=base,
+        provider=worker,
+        dispatcher=_disp(),
+        events=event_log.EventSink(saved.logs_path),
+        review=_reviewer.ReviewSettings(
+            reviewers=[_seat(seat_provider, model="provider/model")],
+            block_on="none",
+            trigger="before_finish",
+        ),
+    )
+    harness.chain.commit("add key")
+    _drive(harness, _begin())
+    recorded = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
+    seat = next(row for row in recorded if row["type"] == "loop.review.seat")
+    assert seat["risk"] == expected and seat["model_route"] == "provider/model"
+    assert seat["risk_truncated"] == (len(risk) > 1000)
+    view = receipt.read_receipt(saved.session_dir, root)
+    assert view.review.panels[-1].seats[0].risk == expected
+    assert view.review.panels[-1].seats[0].model_route == "provider/model"
+    assert expected in receipt.render(view)
+    assert ("Risk truncated at 1000 characters." in receipt.render(view)) == (len(risk) > 1000)

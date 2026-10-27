@@ -275,7 +275,7 @@ def _finish_call(
 
 
 def _red_gated_run(tmp_path: pathlib.Path) -> tuple[loop.Harness, _loop_state.LoopState]:
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
         chain=_chain.RunChain(tmp_path),

@@ -268,6 +268,8 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             stdout_tail=out,
             stderr_tail=err,
             timeout_s=limit,
+            outcome=outcome,
+            reason=reason,
         ):
             return dataclasses.replace(
                 state,
@@ -278,6 +280,8 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                     stdout_tail=out,
                     stderr_tail=err,
                     timeout_s=limit,
+                    outcome=outcome,
+                    reason=reason,
                 ),
             )
 

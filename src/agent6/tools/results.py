@@ -16,6 +16,8 @@ import dataclasses
 import shlex
 from typing import Any
 
+from agent6 import evidence
+
 
 class ToolResult(abc.ABC):
     """One tool handler's typed result."""
@@ -362,6 +364,9 @@ class ExecResult(ToolResult):
     background_id: str = ""
     timeout_s: float = 0.0
     stopped_by_operator: bool = False
+    stdout_truncated: bool | None = None
+    stderr_truncated: bool | None = None
+    verification: evidence.VerificationEvidence | None = None
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
@@ -372,6 +377,12 @@ class ExecResult(ToolResult):
             "duration_s": self.duration_s,
             "exec_failed": self.exec_failed,
         }
+        if self.stdout_truncated is not None:
+            wire["stdout_truncated"] = self.stdout_truncated
+        if self.stderr_truncated is not None:
+            wire["stderr_truncated"] = self.stderr_truncated
+        if self.verification is not None:
+            wire["verification"] = dataclasses.asdict(self.verification)
         if self.command:
             wire["command"] = shlex.join(self.command)
         if self.returncode == 124 and self.timeout_s > 0:

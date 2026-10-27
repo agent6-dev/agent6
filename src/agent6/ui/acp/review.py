@@ -13,7 +13,7 @@ from agent6 import review_records
 from agent6.app import review_actions
 from agent6.sessions import process
 from agent6.ui.acp import rpc, session, updates
-from agent6.viewmodel import review, tail, transcript
+from agent6.viewmodel import receipt, review, tail, transcript
 
 
 class _CommandParser(argparse.ArgumentParser):
@@ -23,6 +23,8 @@ class _CommandParser(argparse.ArgumentParser):
 
 def _parse(command: str, text: str) -> argparse.Namespace:
     parser = _CommandParser(prog=command, add_help=False, allow_abbrev=False)
+    if command == "/receipt":
+        return parser.parse_args(shlex.split(text)[1:])
     if command == "/findings":
         parser.add_argument("--all", action="store_true")
     else:
@@ -102,15 +104,18 @@ def handle_command(
         if not current.session_id:
             raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
         saved = current.layout(sessions.state_dir_for(current.cwd))
-        view = review_actions.read_review(saved.session_dir)
-        if command == "/findings":
-            notify(
-                updates.message_update(
-                    current.acp_id, _findings_text(view, include_resolved=args.all)
+        if command in {"/receipt", "/findings"}:
+            body = (
+                receipt.render(receipt.read_receipt(saved.session_dir, current.cwd))
+                if command == "/receipt"
+                else _findings_text(
+                    review_actions.read_review(saved.session_dir), include_resolved=args.all
                 )
             )
+            notify(updates.message_update(current.acp_id, body))
             finish("end_turn")
             return True
+        view = review_actions.read_review(saved.session_dir)
         if command == "/fix":
             if current.is_running() or process.worker_is_alive(saved.session_dir):
                 raise rpc.RpcError(

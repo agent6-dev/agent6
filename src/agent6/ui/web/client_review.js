@@ -157,6 +157,14 @@ function paintFindings(cards, state) {
   if (cards._findings_key === key) return;
   cards._findings_key = key;
   const host = cards.findings; host.innerHTML = '';
+  if (!cards._readOnly) {
+    const inspect = el('button', 'mini', 'Receipt'); host.appendChild(inspect);
+    const receipt = el('div', 'receipt'); host.appendChild(receipt);
+    inspect.onclick = async () => {
+      try { drawReceipt(receipt, await getJSON(cards._base + '/receipt')); }
+      catch (e) { toast(e.message, true); }
+    };
+  }
   const counts = review.open_counts || {};
   host.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
   host.appendChild(el('div', 'muted', 'Review: ' + (review.completion || 'unknown') + ' · freshness: ' + (review.freshness || 'unknown')));
@@ -232,4 +240,53 @@ function focusFinding(host, finding_id) {
   for (const card of host.querySelectorAll('.finding')) if (card.dataset.finding === finding_id) {
     card.classList.add('finding-selected'); card.scrollIntoView({block: 'center'});
   }
+}
+
+
+function drawReceipt(host, receipt) {
+  host.innerHTML = '';
+  host.appendChild(el('h3', null, 'Testing'));
+  host.appendChild(el('div', null, 'Final tree: ' + (receipt.end_tree || 'unknown')));
+  const final = receipt.verifications.find(v => v.verify_id && v.verify_id === receipt.final_verify_id);
+  const pass = final && final.outcome === 'passed' && final.tree_before
+    && final.tree_before === final.tree_after && final.tree_after === receipt.end_tree;
+  host.appendChild(el('div', null, pass ? 'Final tree passed' + (final.scoped ? ' (scoped only)' : '') : 'Final tree not certified'));
+  const capture = flag => flag == null ? 'capture completeness unknown' : flag ? 'truncated' : 'complete capture';
+  for (const v of receipt.verifications) {
+    host.appendChild(el('pre', null, (v.verify_id || 'unrecorded id') + ': '
+      + (v.baseline ? 'baseline; ' : '') + v.outcome + ', ' + (v.exit_code == null ? v.outcome : 'exit ' + v.exit_code)
+      + ', ' + (v.scoped ? 'scoped' : 'full gate') + '\nCommand argv: ' + JSON.stringify(v.cmd)
+      + '\nTested tree: ' + (v.tree_before || 'unknown') + '; after: ' + (v.tree_after || 'unknown')
+      + '\nSelected paths: ' + v.selected_paths.join(', ') + '\nDuration: ' + v.duration_s + 's; timeout: ' + v.timeout_s + 's'));
+    if (v.reason) host.appendChild(el('div', null, 'Reason: ' + v.reason));
+    for (const stream of ['stdout', 'stderr']) {
+      const output = el('details'); host.appendChild(output);
+      output.appendChild(el('summary', null, stream + ': 2000-character cap; ' + capture(v[stream + '_truncated'])));
+      output.appendChild(el('pre', null, v[stream + '_tail']));
+    }
+  }
+  for (const note of receipt.evidence_notes) host.appendChild(el('div', 'muted', note));
+  host.appendChild(el('h3', null, 'Review'));
+  host.appendChild(el('div', null, receipt.review.completion + '; freshness: ' + receipt.review.freshness));
+  for (const panel of receipt.review.panels) host.appendChild(el('div', null,
+    'Panel ' + panel.panel_id + ': ' + panel.completion + '; reviewed head ' + (panel.target?.head_tree || 'unknown')));
+  host.appendChild(el('h3', null, 'Risk'));
+  let seats = 0;
+  for (const panel of receipt.review.panels) for (const seat of panel.seats) {
+    seats++;
+    host.appendChild(el('div', null, panel.panel_id + ' / ' + seat.model_route));
+    host.appendChild(el('pre', null, seat.risk || 'not recorded'));
+    if (seat.risk_truncated) host.appendChild(el('div', 'muted', 'Risk truncated at 1000 characters.'));
+  }
+  if (!seats) host.appendChild(el('div', 'muted', 'not recorded'));
+  host.appendChild(el('h3', null, 'How to revert'));
+  host.appendChild(el('div', null, receipt.revert.explanation));
+  host.appendChild(el('div', 'muted', 'Git commands are an explanation only, not an action.'));
+  for (const sha of receipt.revert.commits) host.appendChild(el('pre', null,
+    'git revert' + (receipt.revert.mainline ? ' -m ' + receipt.revert.mainline : '') + ' ' + sha));
+  const ask = el('button', 'mini', 'Ask a run to revert'); host.appendChild(ask);
+  ask.onclick = () => {
+    window.receiptTask = receipt.revert_request;
+    location.hash = '#/';
+  };
 }

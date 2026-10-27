@@ -46,7 +46,7 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
         ),
     )
     # Gate presence reads the command policy first: a gate someone may run.
-    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(last_verification=None, command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
     return wf
 
 
@@ -101,7 +101,7 @@ def _start_wf(
     wf = _wf()
     wf.mode = "run"
     wf.config.harness.verify_when = when  # pyright: ignore[reportAttributeAccessIssue]
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = policy
     dispatcher.run_verify.return_value = _verify(rc)
     wf.dispatcher = dispatcher
@@ -126,7 +126,7 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
     texts = [n.text for n in wf.gate.start_baseline(state)]
     assert state.verify.baseline_ok is (rc == 0)
     assert state.verify.last_ok is (rc == 0)
-    assert ("loop.baseline", {"ok": rc == 0, "turn": 0}) in events
+    assert ("loop.baseline", {"ok": rc == 0, "turn": 0, "verify_id": None}) in events
     # The operator reads the verdict in the run log; the model reads a red one in its first request.
     assert lines[-1] == f"LOOP: gate {'green' if rc == 0 else 'red (exit 1)'} before the run"
     if rc == 0:
@@ -162,7 +162,7 @@ def test_a_red_start_gate_past_the_base_reaches_the_model_and_records_no_baselin
     wf = _wf(clean=False)
     wf.mode = "run"
     wf.config.harness.verify_when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
-    dispatcher = mock.MagicMock()
+    dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = _verify(1)
     wf.dispatcher = dispatcher
@@ -314,7 +314,7 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             verify_infer=True,
         ),
     )
-    wf.dispatcher = types.SimpleNamespace(command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(last_verification=None, command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False

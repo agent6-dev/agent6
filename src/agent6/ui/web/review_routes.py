@@ -17,7 +17,7 @@ from agent6.sessions import layout
 from agent6.ui import spawn
 from agent6.ui.web import git_model, highlight
 from agent6.vcs import git_files, git_history, git_read
-from agent6.viewmodel import listing, review, scan_session_log
+from agent6.viewmodel import listing, receipt, review, scan_session_log
 
 
 def findings(session_dir: pathlib.Path, status: str) -> tuple[int, dict[str, Any]]:
@@ -233,3 +233,16 @@ def act(
     except (pydantic.ValidationError, ValueError) as exc:
         return 422, {"error": str(exc)}
     return 202 if result.status == "queued" else 200, result.model_dump(mode="json")
+
+
+def receipt_payload(cwd: pathlib.Path, session_dir: pathlib.Path) -> dict[str, Any]:
+    """Return the derived evidence receipt without running a provider or gate.
+
+    Args:
+        cwd: The repository root.
+        session_dir: The saved session.
+
+    Returns:
+        The JSON-safe receipt.
+    """
+    return receipt.as_dict(receipt.read_receipt(session_dir, cwd))

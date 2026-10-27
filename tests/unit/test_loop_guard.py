@@ -128,7 +128,7 @@ def test_loop_guard_fires_on_three_identical_calls(tmp_path: pathlib.Path) -> No
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t3"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -160,7 +160,7 @@ def test_polling_a_growing_result_is_not_a_spiral(tmp_path: pathlib.Path) -> Non
         *(_resp_with_tool("read_background", {"id": "bg-1"}, tu_id=f"t{i}") for i in range(1, 10)),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     tail = iter(f"line {i}\n" * i for i in range(1, 20))
 
     def _growing_tail(*_args: object, **_kwargs: object) -> results.RawResult:
@@ -210,7 +210,7 @@ def test_loop_guard_does_not_fire_when_args_change(tmp_path: pathlib.Path) -> No
         _resp_with_tool("read_file", {"path": "d.txt"}, tu_id="t4"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -232,7 +232,7 @@ def test_loop_guard_does_not_re_fire_back_to_back(tmp_path: pathlib.Path) -> Non
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(5)
     ] + [_resp_text("ok")]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -255,7 +255,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(12)
     ] + [_resp_text("never reached")]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = loop.Harness(
@@ -300,7 +300,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
     provider.call.side_effect = [
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id=f"t{i}") for i in range(6)
     ] + [_resp_text("done")]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = loop.Harness(
@@ -380,7 +380,7 @@ def _gated_wf(
 
 def _dirtying_dispatcher(repo: pathlib.Path) -> mock.MagicMock:
     """A dispatcher whose tool leaves an uncommitted edit, as run_command does."""
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
 
     def dispatch(*_args: Any, **_kwargs: Any) -> results.RawResult:
         (repo / "edit.txt").write_text("run_command wrote this\n")
@@ -520,7 +520,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: path
         _resp_with_tool("run_verify_command", {}, tu_id="tu2"),
         _resp_text("never reached"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
 
     def dispatch(name: str, *_a: Any, **_k: Any) -> results.RawResult:
         if name == "run_verify_command":
@@ -575,7 +575,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: pathlib.Path) -
         _resp_text("ok"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
     wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
@@ -626,7 +626,7 @@ def test_stagnation_ignores_time_blocked_on_the_operator(tmp_path: pathlib.Path)
         _resp_text("ok"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
 
     def dispatch(*_args: object, **_kwargs: object) -> results.RawResult:
         dispatcher.operator_wait_s = 3600.0  # the approval the model's own call waited on
@@ -653,7 +653,9 @@ def test_stagnation_counts_from_the_window_not_from_the_start_gates_approval(
         _resp_text("ok"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=3600.0)  # waited on before the first turn
+    dispatcher = mock.MagicMock(
+        last_verification=None, operator_wait_s=3600.0
+    )  # waited on before the first turn
     dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
     wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
@@ -684,7 +686,7 @@ def test_stagnation_ignores_the_start_gates_time(
             returncode=gates[-1], stdout="", stderr="", duration_s=1.0, exec_failed=False
         )
 
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.side_effect = run_verify
@@ -706,7 +708,7 @@ def test_stagnation_notice_suppressed_by_an_edit(tmp_path: pathlib.Path) -> None
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t2"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
     wf.config = _knobs(wf.config, stagnation_notice_after_s=1e-9)
@@ -725,7 +727,7 @@ def test_stagnation_notice_zero_disables(tmp_path: pathlib.Path) -> None:
         _resp_text("ok"),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
     wf = _build_wf(repo, provider, dispatcher)
     wf.config = _knobs(wf.config, stagnation_notice_after_s=0.0)
@@ -743,7 +745,7 @@ def test_unlimited_turns_is_minus_one(tmp_path: pathlib.Path) -> None:
         *(_resp_with_tool("read_file", {"path": f"x{i}.txt"}, tu_id=f"t{i}") for i in range(12)),
         _resp_text("ok"),
     ]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
@@ -760,7 +762,7 @@ def test_resume_execution_rearms_the_turn_allowance(tmp_path: pathlib.Path) -> N
     _init_repo(repo)
     provider = mock.MagicMock()
     provider.call.side_effect = [_resp_text("done")]
-    dispatcher = mock.MagicMock(operator_wait_s=0.0)
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = _build_wf(repo, provider, dispatcher)
