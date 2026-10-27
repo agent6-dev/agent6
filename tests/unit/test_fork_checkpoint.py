@@ -22,14 +22,16 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds, paths
+from agent6 import event_log, kinds, paths
 from agent6.app import _execution, _session, _setup
 from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
+from agent6.config import Config, RoleModel
 from agent6.graph import storage
-from agent6.harness import _chain, _loop_resume, _loop_state, _snapshot, loop
+from agent6.harness import _chain, _loop_resume, _loop_state, _snapshot, _toolset, loop
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
+from agent6.tools import operator_prompts
 from agent6.ui.cli import (
     fork,  # pyright: ignore[reportPrivateUsage]
     main,
@@ -1320,6 +1322,37 @@ def test_a_fork_gets_its_own_worktree_and_commits_only_its_own_edits(
     assert (repo / "seed.txt").read_text(encoding="utf-8") == "dirty\n"
     assert (repo / "notes.md").read_text(encoding="utf-8") == "mine\n"
     assert not (repo / "fork.txt").exists()
+
+
+def test_a_forks_findings_description_names_the_child_session(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork's finding commands name the child, not its parent or a placeholder."""
+    repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
+    state = paths.state_dir(repo)
+    assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
+    child = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
+    manifest = json.loads(child.manifest_path.read_text(encoding="utf-8"))
+    tools = _session.build_session_tools(
+        Config(),
+        cwd=pathlib.Path(manifest["worktree"]),
+        state_dir=state,
+        layout=child,
+        isolation="none",
+        mode="run",
+        events=event_log.EventSink(child.logs_path),
+        prompts=operator_prompts.OperatorPrompts(session_dir=child.session_dir),
+        loop_log=_silent,
+        mcp_manager=None,
+        rm_role=RoleModel(provider="openrouter", model="m"),
+    )
+    definitions = {tool.name: tool for tool in _toolset.tool_definitions(tools.dispatcher)}
+    description = definitions["list_findings"].description
+    assert "`agent6 steer child-BBBB22 --finding <id>`" in description
+    assert "`agent6 sessions resolve child-BBBB22 <id>`" in description
+    assert "`agent6 sessions reopen child-BBBB22 <id>`" in description
+    assert "src-AAAA11" not in description
+    assert "<session_id>" not in description
 
 
 def test_a_fork_from_a_turn_before_the_base_moved_starts_at_the_turn(

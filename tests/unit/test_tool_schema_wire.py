@@ -190,6 +190,7 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
 
     class _Dispatcher:
         dag_available = True
+        session_id = ""
 
         def available_tool_names(self) -> tuple[str, ...]:
             return ("read_file",)

@@ -71,10 +71,13 @@ def tool_definitions(
             and not dispatcher.skills_available()
         ):
             continue  # no skills: the tool could only error
+        description = cls.TOOL_DESCRIPTION
+        if cls is tools_schema.ListFindingsInput and dispatcher.session_id:
+            description = description.replace("<session_id>", dispatcher.session_id)
         out.append(
             ToolDefinition(
                 name=cls.TOOL_NAME,
-                description=cls.TOOL_DESCRIPTION,
+                description=description,
                 input_schema=tools_schema.wire_schema(cls),
             )
         )

@@ -229,6 +229,11 @@ class ToolDispatcher:
         # Resolved once on first use, a disk scan of the configured skill dirs.
         self._skills_cache: skills.ResolvedSkills | None = None
 
+    @property
+    def session_id(self) -> str:
+        """Return the run's session id, or an empty string for a bare dispatcher."""
+        return self._session_dir.name if self._session_dir is not None else ""
+
     def set_run_root_node_id(self, node_id: str | None) -> None:
         """Set the parent `add_task` falls back to, once the harness has seeded the root task."""
         self._run_root_node_id = node_id
@@ -916,7 +921,7 @@ class ToolDispatcher:
             )
         listed = dataclasses.replace(
             self._findings(),
-            session_id=self._session_dir.name if self._session_dir is not None else "",
+            session_id=self.session_id,
         )
         if args.all:
             return listed

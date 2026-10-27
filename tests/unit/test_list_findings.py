@@ -107,7 +107,7 @@ def test_a_pre_existing_line_is_tagged_without_lowering_severity(tmp_path: pathl
 
 
 def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathlib.Path) -> None:
-    """A run's dispatcher reads its own journal: the session tools builder wires the reader."""
+    """A run's findings and command descriptions name its session, without changing bare tools."""
     saved = review_helpers.reviewed_session(tmp_path)
     tools = _session.build_session_tools(
         Config(),
@@ -127,3 +127,19 @@ def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathl
     assert [f.id for f in listed.findings] == ["f1", "f2"]
     assert listed.session_id == saved.session_id  # the id the steer command the model names takes
     assert listed.to_wire()["session_id"] == saved.session_id
+    definitions = {tool.name: tool for tool in _toolset.tool_definitions(tools.dispatcher)}
+    description = definitions["list_findings"].description
+    assert "`agent6 steer review-run --finding <id>`" in description
+    assert "`agent6 sessions resolve review-run <id>`" in description
+    assert "`agent6 sessions reopen review-run <id>`" in description
+    assert "<session_id>" not in description
+
+    bare = dispatch.ToolDispatcher(root=tmp_path, config=Config())
+    bare_definitions = {tool.name: tool for tool in _toolset.tool_definitions(bare)}
+    assert (
+        "`agent6 steer <session_id> --finding <id>`"
+        in bare_definitions["list_findings"].description
+    )
+    for name, tool in definitions.items():
+        if name in bare_definitions and name != "list_findings":
+            assert tool.description == bare_definitions[name].description
