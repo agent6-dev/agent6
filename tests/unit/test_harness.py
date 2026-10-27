@@ -5397,10 +5397,10 @@ def test_provider_error_hint_for_auth_and_quota() -> None:
     assert "agent6 connect" in _provider_call.provider_error_hint(401)
     assert "agent6 connect" in _provider_call.provider_error_hint(403)
     # The failing provider's own config key, when the wrapper stamped it.
-    assert "[providers.openrouter].api_key_env" in _provider_call.provider_error_hint(
+    assert "[providers.openrouter]'s credential" in _provider_call.provider_error_hint(
         401, "openrouter"
     )
-    assert "[providers.<name>].api_key_env" in _provider_call.provider_error_hint(401)
+    assert "[providers.<name>]'s credential" in _provider_call.provider_error_hint(401)
     assert "credits" in _provider_call.provider_error_hint(402).lower()
     # Transient / unknown statuses get no hint (don't mislead).
     assert _provider_call.provider_error_hint(429) == ""
