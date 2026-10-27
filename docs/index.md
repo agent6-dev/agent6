@@ -41,8 +41,10 @@ title: agent6
 [configuration]: config.md
 [installation]: installation.md
 [mcp]: config.md#mcp-and-mcpserversname-optional
+[oauth]: config.md#configured-oauth
 [parallel-runs]: architecture.md#parallel-runs
 [security]: security.md
 [skills]: config.md#skills
 [state-machines]: state-machines.md
+[telemetry]: usage.md#telemetry-export
 [usage]: usage.md

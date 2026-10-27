@@ -1,6 +1,6 @@
 # Web UI
 
-`agent6 web` serves a browser front-end for driving agent6 from a desktop or a phone: start and watch runs, steer them, answer their prompts, and run state machines.
+`agent6 web` serves a browser front-end for driving agent6 from a desktop or a phone: start and watch runs, steer them, answer their prompts, run state machines, and browse the repository's commits and files.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/web-desktop.webm" type="video/webm">
@@ -65,7 +65,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - `more…` holds **Prune merged runs** (`sessions prune`, or with `--delete-squashed` after a confirm) and **Clear saved asks**
 - **Machines page**: instances, `machine create` drafts, and cards that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
-    - a resizable drawer holds the run's context: overview, plan.md, task graph, budget, tool calls, background shells, latest commit diff, event log
+    - a resizable drawer holds the run's context: overview, plan.md, run review, findings, task graph, budget, tool calls, background shells, latest commit diff, event log
     - the Latest commit widget selects any per-step commit (cumulative toggle) and the other widgets follow it; a model-controlled run has no chain and says so
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
     - buttons: stop now or after the step, compact, fork (a new run at the latest checkpoint, started from its composer), merge, delete history, run a finished plan (`run --from`), and review (`sessions review`, minutes; refused while the run is live)
@@ -136,7 +136,7 @@ Reading it makes no provider call and reruns no tests.
 - `#/git/worktree` opens the working tree's uncommitted changes
 - `#/files/<rev>/<path>` opens a file, with `WORKTREE` for the working tree
 - revisions and path components are URL-encoded; selecting a commit, a comparison, the working tree or a file updates the hash for copying, Back restores the selection, and a bare `#/git` shows the graph alone
-- an unknown revision or path shows an error in the tab
+- an unknown revision or path shows an error on the page
 
 ## Highlighting
 
@@ -176,6 +176,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
+- `GET /metrics` answers Prometheus text when `web.metrics_route = "on"` and `telemetry.metrics = "prometheus"`, with the web secret as the bearer, not the sign-in token ([telemetry export](usage.md#telemetry-export))
 - reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,resume_defaults}`, `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` , `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
 - git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name or resolved sha>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
     - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **↻** starts from live refs
@@ -229,15 +230,15 @@ Working-tree comparisons have no immutable match.
 `GET /api/reviews/<panel_id>` returns the recorded target and changed files.
 Its `/diff?path=<path>` and `/file?side=<base-or-head>&path=<path>` routes read those trees, not the checkout.
 The diff route accepts either path of a rename.
-Both content routes mark truncation and accept `whole=1` with the Git tab's existing size limits.
+Both content routes mark truncation and accept `whole=1` with the Git page's size limits.
 An unknown panel or file returns 404; invalid paths and sides return 422; unreadable panel evidence returns 409.
 
-The Git tab places findings on their recorded base or head line in inline, split, old and new modes.
+The Git page places findings on their recorded base or head line in inline, split, old and new modes.
 A rename's base finding uses its old path.
 File-level findings appear beside the patch; locations outside a truncated patch link to the full reviewed file.
 A different comparison shows a link to the reviewed comparison instead of an inline anchor.
 Compare links retain `panel`, `finding`, `path` and `side` query parameters across reloads.
-**Reviewed file** opens the Files tab at the recorded tree, including deleted files on the base side.
+**Reviewed file** opens the Files page at the recorded tree, including deleted files on the base side.
 
 The **Pre-existing line** badge opens the mapped lines in the recorded base file.
 The adjacent **Blame** links open their attribution commits.

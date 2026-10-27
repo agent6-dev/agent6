@@ -15,6 +15,15 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 `agent6 connect --status [NAME]` lists the configured providers' local credential state and a free live check, with the account and access-token expiry for bound sign-ins.
 It refreshes and spends nothing and exits 0 even for a refusal.
 
+```text
+name        api_format   authentication   state                                     live
+openrouter  openai       secrets.toml     ok                                        verified
+chatgpt     chatgpt      ChatGPT sign-in  ok <account-id> expires in 9 d 19 h       verified
+claude      claude_code  none             ok                                        verified
+```
+
+The live column starts with `verified`, `refused`, `unreachable` or `skipped`.
+
 A provider whose sign-in is not built in takes a hand-written [`[providers.<name>].oauth`](config.md#configured-oauth) table; `agent6 connect <name>` then signs in at that issuer and stores the grant, bound to the entry's settings.
 `--flow browser|device|paste` picks the way in (default `auto`), including for `agent6 connect chatgpt`.
 ChatGPT grants are also bound to the provider settings; an older unbound sign-in needs `agent6 connect <name>` again.
