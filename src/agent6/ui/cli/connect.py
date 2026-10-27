@@ -350,7 +350,7 @@ def _chatgpt_sign_in(name: str) -> int:
     elif sys.stdin.isatty():
         grant = _grant_via_device_code(issuer, client_id, name)
     if grant is None and code is None:
-        code = _oauth.paste_callback(state)
+        code = _oauth.paste_callback(state, redirect_uri=chatgpt_oauth.REDIRECT_URI)
         if code is None:
             return 2
 

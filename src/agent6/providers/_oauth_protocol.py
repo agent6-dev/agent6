@@ -59,33 +59,61 @@ def pkce_pair() -> tuple[str, str]:
     return verifier, pkce_challenge(verifier)
 
 
-def parse_callback(pasted: str, *, state: str) -> str:
+def parse_callback(pasted: str, *, state: str, redirect_uri: str = "") -> str:
     """Read the authorization code off the callback URL the browser landed on.
 
     Args:
         pasted: The full callback URL, or just its query string.
         state: The state the sign-in started with.
+        redirect_uri: The redirect the sign-in registered; a full URL must match its
+            scheme, host, port and path. "" accepts any origin (a query-only paste).
 
     Returns:
         The code.
 
     Raises:
-        ValueError: A state mismatch, a refusal carried in the `error` parameter,
-            or no code; the message names which.
+        ValueError: Another origin or path, more or fewer than one state, a state mismatch,
+            a refusal carried in the `error` parameter, more or fewer than one code, or a
+            code beside an error; the message names which.
     """
     text = pasted.strip()
-    query = parse.urlsplit(text).query if "?" in text else text
-    params = dict(parse.parse_qsl(query, keep_blank_values=True))
+    if "?" in text or "://" in text:
+        parts = parse.urlsplit(text)
+        if redirect_uri:
+            want = parse.urlsplit(redirect_uri)
+            same = (
+                parts.scheme == want.scheme
+                and (parts.hostname or "").lower() == (want.hostname or "").lower()
+                and parts.port == want.port
+                and parts.path == want.path
+            )
+            if not same:
+                raise ValueError(
+                    "this URL is not the sign-in's redirect; paste the URL the browser landed on"
+                )
+        query = parts.query
+    else:
+        query = text
+    pairs = parse.parse_qsl(query, keep_blank_values=True)
+    states = [v for k, v in pairs if k == "state"]
+    codes = [v for k, v in pairs if k == "code"]
+    errors = [v for k, v in pairs if k == "error"]
     # The state is checked first, so a callback this sign-in did not start gets nothing reflected.
-    if params.get("state", "") != state:
+    if len(states) > 1:
+        raise ValueError("the callback must carry exactly one state")
+    if not states or states[0] != state:
         raise ValueError("state mismatch: this callback is not from the sign-in agent6 started")
-    if params.get("error"):
-        detail = params.get("error_description") or params["error"]
+    if codes and errors:
+        raise ValueError("the callback carries both a code and an error; it must carry one of them")
+    if errors:
+        descriptions = [v for k, v in pairs if k == "error_description"]
+        detail = (descriptions[0] if descriptions else "") or errors[0]
         raise ValueError(f"sign-in was refused: {detail}")
-    code = params.get("code", "")
-    if not code:
+    if len(codes) > 1:
+        raise ValueError("the callback must carry exactly one code")
+    if not codes:
         raise ValueError("no `code` parameter found; paste the full URL the browser landed on")
-    return code
+    return codes[0]
 
 
 def post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Response:

@@ -893,7 +893,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
-        "builtins.input",
+        "agent6.ui.cli._oauth.getpass.getpass",
         lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=STATE1",
     )
     opened: list[str] = []
@@ -963,7 +963,7 @@ def test_connect_chatgpt_state_mismatch_refuses(
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
-        "builtins.input",
+        "agent6.ui.cli._oauth.getpass.getpass",
         lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=EVIL",
     )
     rc = main(["connect", "chatgpt"])
@@ -1127,7 +1127,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
-        "builtins.input",
+        "agent6.ui.cli._oauth.getpass.getpass",
         lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=STATE1",
     )
     rc = main(["connect", "chatgpt"])
