@@ -208,7 +208,6 @@ def test_the_editor_is_the_live_view_and_nothing_is_drawn() -> None:
     """
     front, _asked = _frontend()
     assert front.stream_modes(False) == (True, True)
-    assert front.attach_console_view(None) is None  # pyright: ignore[reportArgumentType]
     assert front.should_spawn_tui(True, True, "run") is False
 
 
@@ -352,3 +351,22 @@ def test_a_multi_question_ask_shares_one_deadline(
     )
     assert held == [True, True]
     assert (answer.answers, answer.source) == (("", ""), "acp")
+
+
+def test_the_editor_is_the_attached_front_end_while_the_run_executes(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The run reads the editor as present from the console attach to the close, not before."""
+    import os
+
+    from agent6.sessions import process
+
+    front, _asked = _frontend()
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    assert not process.frontend_is_live(session_dir)
+    front.attach_console_view(event_log.EventSink(session_dir / "logs.jsonl"))
+    assert process.frontend_is_live(session_dir)
+    assert (session_dir / "frontends" / str(os.getpid())).exists()
+    front.close_console_view()
+    assert not process.frontend_is_live(session_dir)

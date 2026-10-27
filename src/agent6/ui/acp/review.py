@@ -11,9 +11,9 @@ from typing import Any, NoReturn
 
 from agent6 import review_records
 from agent6.app import review_actions
-from agent6.sessions import process
+from agent6.sessions import ipc, process
 from agent6.ui.acp import rpc, session, updates
-from agent6.viewmodel import listing, receipt, review, tail, transcript
+from agent6.viewmodel import listing, pending_questions, receipt, review, tail, transcript
 
 
 class _CommandParser(argparse.ArgumentParser):
@@ -24,6 +24,10 @@ class _CommandParser(argparse.ArgumentParser):
 def _parse(command: str, text: str) -> argparse.Namespace:
     parser = _CommandParser(prog=command, add_help=False, allow_abbrev=False)
     if command in ("/receipt", "/review-queue"):
+        return parser.parse_args(shlex.split(text)[1:])
+    if command == "/answer":
+        parser.add_argument("question_id")
+        parser.add_argument("answers", nargs="+")
         return parser.parse_args(shlex.split(text)[1:])
     if command == "/findings":
         parser.add_argument("--all", action="store_true")
@@ -87,6 +91,47 @@ def _read_only_reply(
     if command == "/receipt":
         return receipt.render(receipt.read_receipt(saved.session_dir, current.cwd))
     return _findings_text(review_actions.read_review(saved.session_dir), include_resolved=args.all)
+
+
+def _answer_reply(
+    sessions: session.Sessions, current: session.Session, args: argparse.Namespace
+) -> str:
+    """Write the answers to one pending question set and say when the run reads them.
+
+    Args:
+        sessions: The session manager.
+        current: The current conversation.
+        args: The parsed `/answer` arguments.
+
+    Returns:
+        The reply.
+
+    Raises:
+        RpcError: No recorded run, no such pending question, a count mismatch, or an answer
+            another surface gave first.
+    """
+    if not current.session_id:
+        raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
+    saved = current.layout(sessions.state_dir_for(current.cwd))
+    prompts = pending_questions(saved.session_dir)
+    prompt = next((p for p in prompts if p.id == args.question_id), None)
+    if prompt is None:
+        pending = ", ".join(p.id for p in prompts) or "none"
+        raise rpc.RpcError(
+            rpc.INVALID_PARAMS, f"no pending question {args.question_id!r}; pending: {pending}"
+        )
+    answers: list[str] = list(args.answers)
+    if len(answers) != len(prompt.questions):
+        raise rpc.RpcError(
+            rpc.INVALID_PARAMS,
+            f"{prompt.id} has {len(prompt.questions)} question(s); {len(answers)} answer(s) given",
+        )
+    if not ipc.write_question_answers(saved.session_dir, prompt.id, answers):
+        raise rpc.RpcError(rpc.INVALID_PARAMS, ipc.ANSWERED_ELSEWHERE)
+    given = f"answered {prompt.id}: {', '.join(answers)}"
+    if current.is_running() or process.worker_is_alive(saved.session_dir):
+        return given if prompt.blocking else f"{given}; the run reads it at its next turn"
+    return f"{given}; saved: the next prompt resumes the run and delivers it"
 
 
 def review_queue_text(cwd: pathlib.Path) -> str:
@@ -166,13 +211,16 @@ def handle_command(
         RpcError: The command is invalid or its action was refused.
     """
     command = text.split(maxsplit=1)[0]
-    if command.removeprefix("/") not in {
-        c["name"] for c in updates.REVIEW_COMMANDS
-    } or not command.startswith("/"):
+    names = {c["name"] for c in updates.REVIEW_COMMANDS} | {updates.ANSWER_COMMAND["name"]}
+    if command.removeprefix("/") not in names or not command.startswith("/"):
         return False
     try:
         args = _parse(command, text)
-        body = _read_only_reply(command, sessions, current, args)
+        body = (
+            _answer_reply(sessions, current, args)
+            if command == "/answer"
+            else _read_only_reply(command, sessions, current, args)
+        )
         if body is not None:
             notify(updates.message_update(current.acp_id, body))
             finish("end_turn")

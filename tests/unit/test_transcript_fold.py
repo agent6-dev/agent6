@@ -1048,3 +1048,41 @@ def test_the_end_item_carries_its_reason() -> None:
     end = {"type": "session.end", "reason": "budget_exhausted", "summary": "budget exhausted"}
     items = fold.feed({**end, "turns": 3, "all_passed": False})
     assert items[-1].kind == "done" and items[-1].arg == "budget_exhausted"
+
+
+def test_a_queued_question_and_its_late_answer_read_as_markers() -> None:
+    """A queued question gates no call: the transcript names it, and names its answer later."""
+    from agent6.viewmodel import transcript
+
+    call = {
+        "type": "tool.call",
+        "name": "ask_user",
+        "args": {"questions": ["which?"]},
+        "call_id": 1,
+    }
+    queued = {
+        "type": "question.prompt",
+        "id": "question-1",
+        "questions": [{"question": "Which DB?", "options": ["pg", "sqlite"]}],
+        "call_id": 1,
+        "wait": False,
+    }
+    result = {
+        "type": "tool.result",
+        "name": "ask_user",
+        "call_id": 1,
+        "ok": True,
+        "summary": "queued",
+    }
+    late = {"type": "question.answer", "id": "question-1", "answers": ["pg"], "source": "late"}
+    fold = transcript.TranscriptFold()
+    fold.feed(call)
+    (marker,) = fold.feed(queued)
+    assert (marker.kind, marker.body) == (
+        "marker",
+        "question-1 queued: Which DB? (options: pg, sqlite)",
+    )
+    (settled,) = fold.feed(result)
+    assert (settled.detail, settled.ok) == ("queued", True)  # the call never read as awaiting
+    (answered,) = fold.feed(late)
+    assert (answered.kind, answered.body) == ("marker", "question-1 answered: pg")

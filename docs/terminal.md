@@ -43,6 +43,7 @@ The dashboard and the machine watch dock the same row.
 - the keys are the CLI prompt's, on every surface: `y` allow, `a` allow all this session, `n` deny, `d` deny all this session
 - the composer keeps the focus, so a message typed as a prompt arrives is a message; Tab moves the focus off it and the letters answer wherever it lands, Enter answering the focused button
 - on a terminal narrower than a modal's button row the later buttons are off screen; the question modal's fields and Ctrl+S still answer
+- a question the model queued pops no modal: a notification names it, Run › Answer a question… opens it, and Esc there keeps it pending
 
 ![A run transcript](screenshots/out/05-transcript.png)
 

@@ -13,7 +13,7 @@ live tailers feed the same fold one event at a time.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
 from agent6 import budget, evidence, kinds, terminal
@@ -113,6 +113,17 @@ def _pending_key(event: dict[str, Any], name: str) -> int | str:
     """Return the pairing key of a tool event: the stamped call id, else the name."""
     cid = event.get("call_id")
     return cid if isinstance(cid, int) else name
+
+
+def queued_question_line(event: Mapping[str, Any]) -> str:
+    """Return the line naming a question the model queued: its id, each question, its options."""
+    asked = "; ".join(
+        str(q.get("question", ""))
+        + (f" (options: {', '.join(str(o) for o in q['options'])})" if q.get("options") else "")
+        for q in (event.get("questions") or [])
+        if isinstance(q, dict)
+    )
+    return f"{event.get('id', '')} queued: {asked}"
 
 
 class TranscriptFold:
@@ -277,11 +288,8 @@ class TranscriptFold:
             out = self._flush_message()
             out.extend(self._start_tool(event))
             return out
-        if etype in ("approval.prompt", "question.prompt"):
-            why = "awaiting approval" if etype == "approval.prompt" else "awaiting answer"
-            return self._mark_gated_call(event, why)
-        if etype in ("approval.answer", "question.answer"):
-            return self._release_gated_call(event)
+        if (prompted := self._prompt_items(etype, event)) is not None:
+            return prompted
         if etype == "verify.end":
             code = event.get("exit_code")
             dur = float(event.get("duration_s", 0) or 0)
@@ -410,6 +418,31 @@ class TranscriptFold:
         self._verify = None
         out.append(pending)
         return out
+
+    def _prompt_items(self, etype: str, event: dict[str, Any]) -> list[TranscriptItem] | None:
+        """Return the items for a prompt or answer event; None for any other event.
+
+        A waiting prompt marks the call it gates and its answer releases it; a queued question
+        gates nothing, so it and its late answer read as markers naming them.
+
+        Args:
+            etype: The event type.
+            event: The event.
+
+        Returns:
+            The items, or None when the event is not a prompt or an answer.
+        """
+        if etype == "question.prompt" and event.get("wait") is False:
+            return [TranscriptItem("marker", body=queued_question_line(event))]
+        if etype == "question.answer" and event.get("source") == "late":
+            given = ", ".join(str(a) for a in (event.get("answers") or []))
+            return [TranscriptItem("marker", body=f"{event.get('id', '')} answered: {given}")]
+        if etype in ("approval.prompt", "question.prompt"):
+            why = "awaiting approval" if etype == "approval.prompt" else "awaiting answer"
+            return self._mark_gated_call(event, why)
+        if etype in ("approval.answer", "question.answer"):
+            return self._release_gated_call(event)
+        return None
 
     def _mark_gated_call(self, event: dict[str, Any], why: str) -> list[TranscriptItem]:
         """Re-emit the call a prompt gates, marked with why it waits.

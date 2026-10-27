@@ -210,16 +210,9 @@ class ConsoleView:
     def _queued_question(self, event: dict[str, Any]) -> str:
         """Return the line for a question the model queued: its text and the ways to answer it."""
         qid = str(event.get("id", ""))
-        raw = event.get("questions") or []
-        asked = "; ".join(
-            str(q.get("question", ""))
-            + (f" (options: {', '.join(str(o) for o in q['options'])})" if q.get("options") else "")
-            for q in raw
-            if isinstance(q, dict)
-        )
         run = self._session_id or "<run>"
         return (
-            self._c("dim", f"[agent6] {qid} queued: {asked}")
+            self._c("dim", f"[agent6] {transcript.queued_question_line(event)}")
             + "\n"
             + self._c(
                 "dim",

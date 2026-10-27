@@ -52,6 +52,8 @@ The advertised commands act on the conversation's recorded run:
 
 - `/findings [--all]` lists open findings, or also resolved findings with `--all`.
 - `/review-queue` lists the repository's sessions in [review queue](usage.md#the-review-queue) order under group headings, and needs no run in the thread.
+- `/answer <question-id> <text>...` answers a pending question, with options or without; a queued question's answer reaches the run at its next turn, and an ended run's is delivered by the next prompt, which resumes it.
+  A question the model queued shows in the thread as a line naming it and its options.
   A needs-answer, blocked, unverified or awaiting-merge row names the CLI command that acts on it.
 - `/fix ID --resume` confirms **Resume to fix** as a follow-up prompt when the session is idle.
   It uses the stored report, leaves the finding open, and refuses a missing resume point rather than starting a new run.
@@ -119,8 +121,7 @@ A session is one conversation in one directory.
 - Mid-run steering: ACP has no message for a prompt while the previous prompt is running.
   A session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
-- Free-text `ask_user` answers: the editor gets option buttons only.
-  A question without options returns an empty answer (see the [frontend cases](#approvals)).
+- Free-text answers to a waiting `ask_user` question: the editor gets option buttons only, so a waiting question without options is unanswered and not queued (see the [frontend cases](#approvals)); `/answer` takes any text.
 - Embedded resources in a prompt: text and `resource_link` blocks are read (a link rides in as its uri; the workspace boundary still decides what it reaches)
     - images and embedded resources are dropped; `promptCapabilities.embeddedContext` says so
 

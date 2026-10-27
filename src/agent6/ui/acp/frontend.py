@@ -10,6 +10,7 @@ A client that declared it cannot be asked gets the cautious default instead.
 from __future__ import annotations
 
 import contextlib
+import os
 import pathlib
 import time
 from collections.abc import Callable, Sequence
@@ -19,7 +20,7 @@ from agent6 import budget, event_log, kinds
 from agent6.app import frontend
 from agent6.config import Config
 from agent6.harness import _snapshot, loop
-from agent6.sessions import ipc, layout
+from agent6.sessions import ipc, layout, process
 from agent6.tools import operator_prompts
 from agent6.ui import keymap, steer
 
@@ -216,13 +217,26 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
     ) -> _snapshot.SessionResult:
         raise RuntimeError("the editor prompts an ACP session; the ask REPL is not used")
 
+    claimed: list[pathlib.Path] = []
+
+    def _attach(events: event_log.EventSink) -> None:
+        # The editor answers the run's prompts: while the run executes it is the attached front-end.
+        session_dir = events.path.parent
+        process.register_frontend(session_dir, os.getpid())
+        claimed.append(session_dir)
+
+    def _close() -> None:
+        for session_dir in claimed:
+            process.unregister_frontend(session_dir, os.getpid())
+        claimed.clear()
+
     return frontend.SessionFrontend(
         capabilities=capabilities,
         should_spawn_tui=lambda _tui, _interactive, _mode: False,
         # The deltas stream as events; the editor is the live view.
         stream_modes=lambda _tui_enabled: (True, True),
-        attach_console_view=lambda _events: None,
-        close_console_view=lambda: None,
+        attach_console_view=_attach,
+        close_console_view=_close,
         loop_logger=lambda _mode: lambda _line: None,
         tui_session=lambda _session_dir, _enabled: contextlib.nullcontext(),
         build_approver=_build_approver,

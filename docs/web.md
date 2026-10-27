@@ -58,6 +58,7 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 
 Every page docks its text entry at the bottom, like a chat: Enter sends, Shift+Enter inserts a newline.
 Buttons do what the CLI command of the same name does, and prompts are answered inline on every page that shows a run.
+A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 
 - **Sessions page**: every session (mode, status, last activity, cost), a fan-out's lanes folded under its row, in [review queue](usage.md#the-review-queue) order under group headings with each row's reason; **Activity** orders by last activity instead, a choice the browser remembers
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it)

@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import event_log, paths, review_records
 from agent6.app import review_actions
-from agent6.sessions import process
+from agent6.sessions import ipc, process
 from agent6.ui.acp import runner, server, session, updates
 from agent6.viewmodel import transcript
 from tests import review_helpers
@@ -327,3 +327,47 @@ def test_receipt_command_never_reaches_the_worker(tmp_path: pathlib.Path) -> Non
     assert not ran
     assert "Testing" in _notices(out) and "How to revert" in _notices(out)
     assert any(c["name"] == "receipt" for c in updates.REVIEW_COMMANDS)
+
+
+def test_answer_writes_the_pending_questions_file_and_never_reaches_the_model(
+    tmp_path: pathlib.Path,
+) -> None:
+    """`/answer` is a front-end action: it writes the answer file the run reads at its next turn."""
+    ran: list[str] = []
+
+    def run(_current: session.Session, text: str) -> str:
+        ran.append(text)
+        return "end_turn"
+
+    connection, current, out = _connection(tmp_path, run)
+    saved = current.layout(paths.state_dir(tmp_path))
+    with saved.logs_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "session.start", "mode": "run", "user_task": "task"}) + "\n")
+        fh.write(
+            json.dumps(
+                {
+                    "type": "question.prompt",
+                    "id": "question-7",
+                    "questions": [{"question": "Which DB?", "options": ["pg", "sqlite"]}],
+                    "wait": False,
+                }
+            )
+            + "\n"
+        )
+    commands = next(
+        update["params"]["update"]["availableCommands"]
+        for update in updates.RunInfo("editor").feed(dict(type="session.start", user_task="task"))
+        if update["params"]["update"]["sessionUpdate"] == "available_commands_update"
+    )
+    assert "answer" in {c["name"] for c in commands}
+    _prompt(connection, current, "/answer question-7 pg")
+    assert not ran
+    assert "answered question-7: pg" in _notices(out)
+    assert "next prompt resumes the run" in _notices(out)
+    assert ipc.read_question_answers(saved.session_dir, "question-7", timeout_s=1.0) == ("pg",)
+    out.seek(0)
+    out.truncate()
+    _prompt(connection, current, "/answer question-9 x")
+    errors = [m for m in _messages(out) if "error" in m]
+    assert errors and "no pending question 'question-9'" in errors[0]["error"]["message"]
+    assert not ran

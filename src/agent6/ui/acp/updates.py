@@ -83,12 +83,19 @@ REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
     },
 )
 
+ANSWER_COMMAND: dict[str, Any] = {
+    "name": "answer",
+    "description": "Answer a pending question; the run reads it at its next turn, or at its resume",
+    "input": {"hint": "<question-id> <text>..."},
+}
+
 _COMMANDS: tuple[dict[str, Any], ...] = (
     {
         "name": "pin",
         "description": directive.STEER_COMMANDS["/pin"],
         "input": {"type": "text", "hint": "<text>"},
     },
+    ANSWER_COMMAND,
     *REVIEW_COMMANDS,
 )
 
