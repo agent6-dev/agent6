@@ -217,7 +217,7 @@ class ConsoleView:
             + self._c(
                 "dim",
                 f"  answer it: Ctrl-C then /answer {qid}, or"
-                f" `agent6 answer {run} --question {qid} TEXT`",
+                f" `agent6 answer --question {qid} {run} TEXT`",
             )
             + "\n"
         )

@@ -315,11 +315,15 @@ def test_an_answer_to_a_queued_question_names_the_next_turn(
 
 
 def test_the_printed_answer_form_parses() -> None:
-    """`agent6 answer RUN --question ID TEXT...`, the form the listing prints, parses as printed."""
+    """`agent6 answer --question ID RUN TEXT...`, the form the listing prints, parses as printed.
+
+    The option comes first: argparse before Python 3.12.4 drops the texts after an option
+    that follows the run id.
+    """
     from agent6.ui.cli import parser as cli_parser
 
     ns = cli_parser.build_parser().parse_args(
-        ["answer", "curious-fox", "--question", "question-2", "yes", "pg"]
+        ["answer", "--question", "question-2", "curious-fox", "yes", "pg"]
     )
     assert (ns.target, ns.question, ns.answers) == ("curious-fox", "question-2", ["yes", "pg"])
     bare = cli_parser.build_parser().parse_args(["answer", "curious-fox"])

@@ -477,7 +477,7 @@ def test_a_queued_question_prints_its_text_and_how_to_answer() -> None:
     )
     out = buf.getvalue()
     assert "question-2 queued" in out and "Which DB? (options: pg, sqlite)" in out
-    assert "agent6 answer brave-oak-AAAAAA --question question-2 TEXT" in out and "/answer" in out
+    assert "agent6 answer --question question-2 brave-oak-AAAAAA TEXT" in out and "/answer" in out
     buf.truncate(0)
     view.feed({"type": "question.prompt", "id": "question-3", "questions": [{"question": "a?"}]})
     assert "queued" not in buf.getvalue()

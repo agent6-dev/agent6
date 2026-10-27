@@ -115,7 +115,7 @@ Lanes remain reachable by their own ids.
 ```sh
 agent6 attach                 # follow live; --raw tails events, --tui full screen, --json one snapshot
 agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupts the call in flight
-agent6 answer ID "yes"        # answer a pending question, live or ended run (bare: list them; --question ID picks one)
+agent6 answer ID "yes"        # answer a pending question, live or ended run (bare: list them; --question QID before the id picks one)
 agent6 stop ID                # stop during the current step (the worker killed if it does not answer); --all
 agent6 stop ID --after-step   # finish the current step, then stop
 agent6 sessions show          # status, turn, elapsed, cost, the gate's word, where the changes are; --json
@@ -199,7 +199,7 @@ Every front-end answers a prompt by writing one file in the session directory, a
 - a run with no terminal prints one line on stderr when it parks (`[agent6] waiting on approval-2 (run_command); answer it with: agent6 attach <id>`) and one when the prompt is answered:
   - `[agent6] approval-2 approved (frontend)` when an already-attached front-end answers
   - `[agent6] approval-2 approved (await-frontend)` when the run waits for a front-end reply
-- `agent6 answer <id>` lists the pending questions; `agent6 answer <id> [--question QID] TEXT...` answers one set, one TEXT per question; a queued question's answer reaches the run at its next turn, an ended run's at its resume
+- `agent6 answer <id>` lists the pending questions; `agent6 answer [--question QID] <id> TEXT...` answers one set, one TEXT per question; a queued question's answer reaches the run at its next turn, an ended run's at its resume
   - `finish_session` polls for queued answers before ending and defers to another model turn if one arrived.
   - An answer arriving after that poll waits for resume.
 - a question is pending from its prompt until its answer; a waiting one pauses the run while the execution that asked it lives, a queued one or one an earlier execution asked pauses nothing; every surface words it the same way (waiting, queued, asked by an earlier execution, answer saved)
