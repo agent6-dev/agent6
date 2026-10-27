@@ -203,13 +203,44 @@ def build_approver(
     return approve
 
 
+def _await_front_end(
+    session_dir: pathlib.Path, request: operator_prompts.QuestionRequest
+) -> operator_prompts.QuestionAnswer:
+    """Wait for a front-end's answers to a question, for as long as the run is not stopped.
+
+    Args:
+        session_dir: The run's dir.
+        request: The question prompt.
+
+    Returns:
+        The answers, or an unanswered outcome when a stop ended the wait.
+    """
+    reply = ipc.await_frontend_reply(
+        session_dir,
+        lambda: ipc.read_question_answers(
+            session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0
+        ),
+    )
+    if isinstance(reply, tuple):
+        _note(f"{request.id} answered (frontend)")
+        return operator_prompts.QuestionAnswer(reply, "frontend")
+    _note(f"{request.id} unanswered: the wait was stopped")
+    return operator_prompts.QuestionAnswer(
+        tuple("" for _ in request.questions),
+        "await-frontend",
+        status="unanswered",
+        note="the wait for a front-end was stopped: no answer",
+    )
+
+
 def build_questioner(
     session_dir: pathlib.Path,
     console_cell: Sequence[_console_view.ConsoleView | None] | None = None,
 ) -> operator_prompts.Questioner:
     """Build the `ask_user` questioner, bridged to a live front-end when one is attached.
 
-    Like `build_approver`; a headless run gets empty answers rather than hanging.
+    Like `build_approver`: a run with no front-end and no terminal waits for a front-end,
+    unless the away mode says not to.
 
     Args:
         session_dir: The run's dir.
@@ -243,22 +274,25 @@ def build_questioner(
                 if parked:
                     _note(f"{request.id} answered (frontend)")
                 return operator_prompts.QuestionAnswer(answers, "frontend")
-        if ipc.away_mode(session_dir) == "wait":
-            # Block until a front-end answers.
-            park()
-            reply = ipc.await_frontend_reply(
-                session_dir,
-                lambda: ipc.read_question_answers(
-                    session_dir, request.id, timeout_s=20.0, dead_grace_s=8.0
-                ),
+        empty = tuple("" for _ in questions)
+        away = ipc.away_mode(session_dir)
+        if away == "deny":
+            # The operator set the run not to wait for them; the log names what went unanswered.
+            asked = "\n".join(
+                f"  {q.question}" + (f" (options: {', '.join(q.options)})" if q.options else "")
+                for q in questions
             )
-            if isinstance(reply, tuple):
-                _note(f"{request.id} answered (frontend)")
-                return operator_prompts.QuestionAnswer(reply, "frontend")
-            _note(f"{request.id} went unanswered (away-wait)")
+            _note(f"{request.id} unanswered (away-deny):\n{asked}")
             return operator_prompts.QuestionAnswer(
-                tuple("" for _ in questions), "away-wait", unseen=True
+                empty,
+                "away-deny",
+                status="unanswered",
+                note="no front-end attached; away mode deny: not queued, no answer",
             )
+        if away == "wait" or not portable.has_controlling_tty():
+            # Nothing can answer here: wait for a front-end, as the model asked.
+            park()
+            return _await_front_end(session_dir, request)
         with _pause(console_cell[0] if console_cell else None):
             stdin_answers = default_stdin_questioner(
                 questions, until=lambda: ipc.question_answers_written(session_dir, request.id)
@@ -268,17 +302,12 @@ def build_questioner(
             if filed is not None:
                 _steer.tty_message("[agent6] answered elsewhere.\n")
                 return operator_prompts.QuestionAnswer(filed, "frontend")
-            # Nobody saw the question: answer empty so the run never hangs, and say what it was.
-            asked = "".join(
-                f"  {q.question}" + (f" (options: {', '.join(q.options)})\n" if q.options else "\n")
-                for q in questions
-            )
-            _steer.tty_message(
-                "[agent6] no front-end attached and no terminal to answer the"
-                f" question; returning empty answers:\n{asked}"
-            )
+            _steer.tty_message("[agent6] the terminal gave no answer.\n")
             return operator_prompts.QuestionAnswer(
-                tuple("" for _ in questions), "headless-default", unseen=True
+                empty,
+                "stdin",
+                status="unanswered",
+                note="the terminal gave no answer: not queued",
             )
         return operator_prompts.QuestionAnswer(stdin_answers, "stdin")
 

@@ -226,7 +226,21 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
     # run control
     ("finish_session", results_mod.FinishSessionResult(summary_text="done", result=None), "ok"),
     ("finish_planning", results_mod.FinishPlanningResult(summary_text="s", plan_bytes=7), "ok"),
-    ("ask_user", results_mod.AnswersResult(answers=("yes", "", " ", "no")), "2/4 answered"),
+    (
+        "ask_user",
+        results_mod.AnswersResult(id="question-1", answers=("yes", "", " ", "no")),
+        "2/4 answered",
+    ),
+    (
+        "ask_user_queued",
+        results_mod.AnswersResult(id="question-2", status="pending", answers=None),
+        "queued, no answer yet",
+    ),
+    (
+        "ask_user_unanswered",
+        results_mod.AnswersResult(id="question-3", status="unanswered", answers=("",)),
+        "unanswered",
+    ),
     ("findings_none", results_mod.FindingsResult(findings=()), "0 open"),
     (
         "findings_mixed",

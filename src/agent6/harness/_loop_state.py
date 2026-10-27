@@ -90,6 +90,10 @@ class LoopState:
     operator_task: str = ""
     parallel_groups_dispatched: int = 0
     pins: list[str] = dataclasses.field(default_factory=list)
+    # The queued questions whose answers the model has read; a resume never repeats one.
+    delivered_questions: list[str] = dataclasses.field(default_factory=list)
+    # The operator's presence as last told to the model; "" before the first boundary.
+    operator_presence: str = ""
     spiral: _spiral.SpiralGuard = dataclasses.field(default_factory=_spiral.SpiralGuard)
     no_progress: _guards.Ladder = dataclasses.field(default_factory=_guards.no_progress_ladder)
     settled: _guards.SettledGuard = dataclasses.field(default_factory=_guards.SettledGuard)
@@ -126,6 +130,7 @@ def restore_completion_state(state: LoopState, snap: _snapshot.SessionSnapshot) 
     state.memory.flip_nudged = snap.memory_flip_nudged
     state.parallel_groups_dispatched = snap.parallel_groups_dispatched
     state.pins = list(snap.pins)
+    state.delivered_questions = list(snap.delivered_questions)
     if snap.metric_at_ceiling or snap.metric_best_score is not None:
         # One synthetic sample carries the prior best; the plateau stop re-arms after a
         # few measurements, the ceiling stop is immediate.

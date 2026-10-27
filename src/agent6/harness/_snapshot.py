@@ -210,6 +210,7 @@ class SessionSnapshot(pydantic.BaseModel):
         parallel_groups_dispatched: The /parallel groups dispatched, run-lifetime because lane
             ids embed the group number.
         pins: The operator's /pin texts, re-injected after every context restart.
+        delivered_questions: The queued questions whose answers the model has read.
         head_sha: The chain tip at this turn, "" when git was unreadable; a fork cuts here and a
             resume checks it for divergence.
         graph_version: The task graph version a fork rebuilds by replay, 0 when unreadable.
@@ -245,6 +246,7 @@ class SessionSnapshot(pydantic.BaseModel):
     standing_fruitless: int = 0
     parallel_groups_dispatched: int = 0
     pins: tuple[str, ...] = ()
+    delivered_questions: tuple[str, ...] = ()
     head_sha: str = ""
     graph_version: int = 0
     operator_task: str = ""

@@ -136,12 +136,14 @@ def test_stdin_questioner_returns_none_without_a_terminal() -> None:
     assert proc.returncode == 0, proc.stderr.decode()[-500:]
 
 
-def test_an_unseen_question_is_named_where_the_run_reports(tmp_path: pathlib.Path) -> None:
-    """With nobody to ask, the notice carries the question and its options, not only the fact."""
+def test_an_unanswered_question_is_named_where_the_run_reports(tmp_path: pathlib.Path) -> None:
+    """Under away deny the notice carries the question and its options, not only the fact."""
     code = (
         "import pathlib, sys\n"
+        "from agent6.sessions import ipc\n"
         "from agent6.tools import operator_prompts, schema\n"
         "from agent6.ui.cli import _interact\n"
+        "ipc.set_away_mode(pathlib.Path(sys.argv[1]), 'deny')\n"
         "q = (schema.UserQuestion(question='tabs or spaces?', options=('tabs', 'spaces')),)\n"
         "request = operator_prompts.QuestionRequest(id='q1', questions=q, call_id=None)\n"
         "_interact.build_questioner(pathlib.Path(sys.argv[1]))(request)\n"
@@ -155,35 +157,8 @@ def test_an_unseen_question_is_named_where_the_run_reports(tmp_path: pathlib.Pat
         text=True,
     )
     assert proc.returncode == 0, proc.stderr[-500:]
-    assert "returning empty answers" in proc.stderr
+    assert "q1 unanswered (away-deny)" in proc.stderr
     assert "tabs or spaces? (options: tabs, spaces)" in proc.stderr
-
-
-def test_questioner_marks_headless_defaults(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """With no front-end and no terminal, ask_user answers empty with source=headless-default."""
-    from agent6.ui.cli import _interact as interact_mod
-
-    def _no_tty(_q: tuple[schema.UserQuestion, ...], **_kw: object) -> tuple[str, ...] | None:
-        return None
-
-    monkeypatch.setattr(interact_mod, "default_stdin_questioner", _no_tty)
-    emitted: list[tuple[str, dict[str, Any]]] = []
-
-    class _Events:
-        def emit(self, event_type: str, **fields: Any) -> None:
-            emitted.append((event_type, fields))
-
-    ask = operator_prompts.OperatorPrompts(
-        questioner=_interact.build_questioner(tmp_path),
-        journal=_Events().emit,
-        session_dir=tmp_path,
-    ).ask
-    answers = ask((schema.UserQuestion(question="pick?", options=("a", "b")),)).answers
-    assert answers == ("",)
-    answer_events = [f for t, f in emitted if t == "question.answer"]
-    assert answer_events and answer_events[0]["source"] == "headless-default"
 
 
 class _Events:

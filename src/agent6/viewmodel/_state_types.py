@@ -275,6 +275,10 @@ class QuestionPrompt:
             question): it was asked before the session started or after it finished,
             when no model runs.
         asked_ep: When it was asked, for the waiting status's age.
+        wait: Whether the call waited for the answers, as asked.
+        blocking: Whether the run is paused on it now: a waiting question in the execution that
+            asked it; a queued question, or one an earlier execution asked, blocks nothing.
+        source: Who answered; `late` for a queued question's answers taken at a boundary.
     """
 
     id: str
@@ -283,6 +287,17 @@ class QuestionPrompt:
     answers: tuple[str, ...] = ()
     from_harness: bool = False
     asked_ep: float | None = None
+    wait: bool = True
+    blocking: bool = True
+    source: str = ""
+
+    def kind(self) -> str:
+        """Return the word for the prompt's state, the same on every surface."""
+        if self.answered:
+            return "answered"
+        if not self.wait:
+            return "queued"
+        return "waiting" if self.blocking else "asked by an earlier execution"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

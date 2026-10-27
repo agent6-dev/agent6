@@ -213,7 +213,7 @@ def test_wire_ask_user(tmp_path: pathlib.Path) -> None:
         ),
     )
     out = d.dispatch("ask_user", {"questions": [{"question": "q?", "options": ["a", "b"]}]})
-    assert _dumps(out) == '{"answers": ["ans"]}'
+    assert _dumps(out) == '{"id": "question-1", "status": "answered", "answers": ["ans"]}'
 
 
 # --- DAG family (dynamic ULID ids -> pin order + shape) ----------------------

@@ -270,6 +270,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `standing_fruitless` | `int` | `0` |
 | `parallel_groups_dispatched` | `int` | `0` |
 | `pins` | `tuple[str, ...]` | `()` |
+| `delivered_questions` | `tuple[str, ...]` | `()` |
 | `head_sha` | `str` | `''` |
 | `graph_version` | `int` | `0` |
 | `operator_task` | `str` | `''` |

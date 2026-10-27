@@ -441,7 +441,9 @@ def session_is_live(session_dir: pathlib.Path) -> bool:
     )
 
 
-def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) -> bool:
+def needs_new_work(
+    *, finished: bool, end_reason: str, all_passed: bool | None, saved_answers: int = 0
+) -> bool:
     """Return whether a bare resume of a run in this state would have nothing to do.
 
     The one predicate behind the resume refusal, the web composer's hint and the
@@ -452,19 +454,28 @@ def needs_new_work(*, finished: bool, end_reason: str, all_passed: bool | None) 
         finished: A session.end was seen.
         end_reason: The session.end reason word.
         all_passed: The verify tri-state.
+        saved_answers: Answers saved on disk for the run's questions; the resume delivers them.
 
     Returns:
         True only for a `finish_session` end over a tree the gate certified green or
-        that no gate judged; every other end is what resume is for.
+        that no gate judged, with no answer waiting; every other end is what resume is for.
     """
-    return finished and end_reason == "finish_session" and all_passed is not False
+    return (
+        finished
+        and end_reason == "finish_session"
+        and all_passed is not False
+        and not saved_answers
+    )
 
 
 def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
-    """Return `needs_new_work` over the run's log, for a verb that holds only the dir."""
+    """Return `needs_new_work` over the run's log and dir, for a verb that holds only the dir."""
     scan = _session_log.scan_session_log(session_dir / layout.LOGS_NAME)
     return needs_new_work(
-        finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
+        finished=scan.finished,
+        end_reason=scan.end_reason,
+        all_passed=scan.all_passed,
+        saved_answers=len(ipc.saved_question_answers(session_dir)),
     )
 
 

@@ -138,7 +138,10 @@
         "yes"
       ],
       "from_harness": false,
-      "asked_ep": 1784023210.0
+      "asked_ep": 1784023210.0,
+      "wait": true,
+      "blocking": false,
+      "source": "stdin"
     }
   ],
   "log_tail": [

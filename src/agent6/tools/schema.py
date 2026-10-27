@@ -549,17 +549,24 @@ class AskUserInput(_ToolInput):
 
     TOOL_NAME: ClassVar[str] = "ask_user"
     TOOL_DESCRIPTION: ClassVar[str] = (
-        "Ask the operator and wait; a question written as plain text reaches"
-        " nobody. `questions` is an array of"
-        " {question, options?}; give 2-4 options for a choice (the CLI, TUI and"
-        " web also take typed text; an editor over ACP answers only with an"
-        " option, and skips a question that offers none); batch related"
-        " questions into one call. Returns"
-        " {answers: [...]} aligned to questions; an unattended run returns"
-        " empty answers with a `note`."
+        "Ask the operator; a question written as plain text reaches nobody."
+        " `questions` is an array of {question, options?}; options are the"
+        " labels of a choice (the CLI, TUI and web also take typed text; an"
+        " editor over ACP answers only with an option). `wait` true: the call"
+        " returns when the operator answers; with no front-end or terminal"
+        " attached the run waits for a front-end, or returns unanswered at once"
+        " under away mode deny."
+        " `wait` false: the questions are queued and the call returns at once;"
+        " the answers arrive as a message at a later turn, or on resume."
+        " Returns {id, status: answered | pending | unanswered, answers, note?},"
+        " answers aligned to the questions."
     )
 
     questions: tuple[UserQuestion, ...] = pydantic.Field(min_length=1, max_length=8)
+    wait: bool = pydantic.Field(
+        default=True,
+        description="True: the call waits for the answers. False: the questions are queued.",
+    )
 
     @pydantic.model_validator(mode="before")
     @classmethod

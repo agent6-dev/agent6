@@ -28,6 +28,7 @@ from agent6.harness import _snapshot
 from agent6.harness import loop as harness_loop
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
+from agent6.sessions import process
 from agent6.ui import steer
 from agent6.ui.acp import frontend as acp_frontend
 from agent6.vcs import git_read
@@ -326,8 +327,11 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
     monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(harness_loop, "Harness", _Workflow)
 
-    def _chown(_path: pathlib.Path) -> None:
-        closed.append("chown")
+    def _chown(path: pathlib.Path, _user: object = None) -> None:
+        # The editor's front-end claim creates `frontends/` at attach; the teardown's chown is
+        # the one of the state dir.
+        if path.name != process.FRONTENDS_DIR:
+            closed.append("chown")
 
     monkeypatch.setattr(paths, "chown_to_real_user", _chown)
     frontend = dataclasses.replace(
@@ -524,8 +528,9 @@ def _wired_frontend(
     monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
 
-    def _chown(_path: pathlib.Path, _user: object = None) -> None:
-        order.append("chown")
+    def _chown(path: pathlib.Path, _user: object = None) -> None:
+        if path.name != process.FRONTENDS_DIR:
+            order.append("chown")
 
     def _merge(*_args: object, **_kwargs: object) -> None:
         order.append("auto_merge")

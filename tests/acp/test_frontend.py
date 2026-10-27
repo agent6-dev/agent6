@@ -147,8 +147,8 @@ def test_a_free_form_question_says_that_no_editor_could_answer_it(tmp_path: path
     answer = _prompts(front, tmp_path).ask((schema.UserQuestion(question="Which port?"),))
     assert asked == []
     assert answer.answers == ("",)
-    assert operator_prompts.unanswered_note(answer)
-    # `unseen` is per request: a blank beside an answered button would read as deliberate.
+    assert answer.status == "unanswered" and "option" in answer.note
+    # The status is per request: a blank beside an answered button would read as deliberate.
     mixed = (
         schema.UserQuestion(question="Proxy?", options=("yes", "no")),
         schema.UserQuestion(question="Port?"),
@@ -156,7 +156,7 @@ def test_a_free_form_question_says_that_no_editor_could_answer_it(tmp_path: path
     answer = _prompts(front, tmp_path).ask(mixed)
     assert asked == []
     assert answer.answers == ("", "")
-    assert operator_prompts.unanswered_note(answer)
+    assert answer.status == "unanswered" and "option" in answer.note
 
 
 def test_the_unsandboxed_prompt_fires_only_when_it_is_true() -> None:

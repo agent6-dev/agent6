@@ -37,21 +37,35 @@ STREAM_DELTA_EVENTS = frozenset({"role.thinking_delta", "role.text_delta"})
 LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
-def _answered_only[PromptT: (_state_types.ApprovalPrompt, _state_types.QuestionPrompt)](
-    prompts: tuple[PromptT, ...],
-) -> tuple[PromptT, ...]:
-    """Drop the unanswered prompts at an execution boundary.
+def _answered_only(
+    prompts: tuple[_state_types.ApprovalPrompt, ...],
+) -> tuple[_state_types.ApprovalPrompt, ...]:
+    """Drop the unanswered approvals at an execution boundary.
 
     They belong to the execution that died holding them; the new one re-asks with
     restarted ids.
 
     Args:
-        prompts: The prompts folded so far.
+        prompts: The approvals folded so far.
 
     Returns:
         The answered ones.
     """
     return tuple(p for p in prompts if p.answered)
+
+
+def _carried(
+    prompts: tuple[_state_types.QuestionPrompt, ...],
+) -> tuple[_state_types.QuestionPrompt, ...]:
+    """Carry every question past an execution boundary.
+
+    Args:
+        prompts: The questions folded so far.
+
+    Returns:
+        The same questions, none pausing the new execution.
+    """
+    return tuple(dataclasses.replace(q, blocking=False) for q in prompts)
 
 
 def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event type
@@ -102,7 +116,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 finish_summary="",
                 last_verify=None,
                 pending_approvals=_answered_only(state.pending_approvals),
-                pending_questions=_answered_only(state.pending_questions),
+                pending_questions=_carried(state.pending_questions),
                 unattended_questions=0,
                 tool_count=0,
             )
@@ -122,7 +136,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 finish_summary="",
                 last_verify=None,
                 pending_approvals=_answered_only(state.pending_approvals),
-                pending_questions=_answered_only(state.pending_questions),
+                pending_questions=_carried(state.pending_questions),
                 unattended_questions=0,
                 tool_count=0,
                 budget=dataclasses.replace(
@@ -336,7 +350,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
             return dataclasses.replace(state, pending_approvals=new)
 
-        case events.QuestionPrompt(id=qid, questions=qs, asked_ep=asked_ep):
+        case events.QuestionPrompt(id=qid, questions=qs, asked_ep=asked_ep, wait=wait):
             questions = tuple(
                 _state_types.Question(question=q.question, options=q.options) for q in qs
             )
@@ -345,12 +359,16 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 questions=questions,
                 from_harness=not state.started or state.finished,
                 asked_ep=asked_ep,
+                wait=wait,
+                blocking=wait,
             )
             return dataclasses.replace(state, pending_questions=(*state.pending_questions, qp))
 
-        case events.QuestionAnswer(id=wanted, answers=answers, unseen=unseen):
+        case events.QuestionAnswer(id=wanted, answers=answers, unseen=unseen, source=source):
             new_q = tuple(
-                dataclasses.replace(q, answered=True, answers=answers) if q.id == wanted else q
+                dataclasses.replace(q, answered=True, answers=answers, source=source)
+                if q.id == wanted
+                else q
                 for q in state.pending_questions
             )
             # Counted per event: prompt ids restart on every execution.

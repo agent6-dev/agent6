@@ -917,12 +917,17 @@ class ToolDispatcher:
         args = schema.AskUserInput.model_validate(raw)
         started = time.monotonic()
         try:
-            answer = self._prompts.ask(args.questions, call_id=self._gating_call_id())
+            answer = self._prompts.ask(
+                args.questions, call_id=self._gating_call_id(), wait=args.wait
+            )
         finally:
-            self.operator_wait_s += time.monotonic() - started
+            if args.wait:
+                self.operator_wait_s += time.monotonic() - started
         return results.AnswersResult(
-            answers=answer.answers,
-            note=operator_prompts.unanswered_note(answer),
+            id=answer.id,
+            answers=None if answer.status == "pending" else answer.answers,
+            status=answer.status,
+            note=answer.note,
             asked=tuple(q.question for q in args.questions),
         )
 

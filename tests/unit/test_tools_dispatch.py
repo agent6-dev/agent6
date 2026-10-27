@@ -190,8 +190,32 @@ def test_ask_user_routes_to_questioner(tmp_path: pathlib.Path) -> None:
     out = d.dispatch(
         "ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]}
     ).to_wire()
-    assert out == {"answers": ["b"]}
+    assert out == {"id": "question-1", "status": "answered", "answers": ["b"]}
     assert seen["questions"] == (schema.UserQuestion(question="which?", options=("a", "b")),)
+
+
+def test_a_queued_ask_user_returns_pending_on_the_wire(tmp_path: pathlib.Path) -> None:
+    """`wait: false` reaches no questioner; the result names the state and a null answer list."""
+    cfg = _config(tmp_path)
+
+    def questioner(
+        _request: operator_prompts.QuestionRequest, /
+    ) -> operator_prompts.QuestionAnswer:
+        pytest.fail("a queued question reaches no questioner")
+
+    d = dispatch.ToolDispatcher(
+        root=tmp_path,
+        config=cfg,
+        prompts=operator_prompts.OperatorPrompts(questioner=questioner, session_dir=tmp_path),
+    )
+    out = d.dispatch(
+        "ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}], "wait": False}
+    ).to_wire()
+    assert out["id"] == "question-1" and out["status"] == "pending" and out["answers"] is None
+    assert out["note"].endswith(
+        "; queued: the answers arrive as a message at a later turn, or on resume"
+    )
+    assert d.operator_wait_s == 0.0
 
 
 def test_default_questioner_headless_returns_empty(tmp_path: pathlib.Path) -> None:
@@ -2120,7 +2144,7 @@ def test_ask_user_accepts_flat_single_question(tmp_path: pathlib.Path) -> None:
     out = d.dispatch(
         "ask_user", {"question": "Which theme?", "options": ["dark", "light"]}
     ).to_wire()
-    assert out == {"answers": ["dark"]}
+    assert out == {"id": "question-1", "status": "answered", "answers": ["dark"]}
 
 
 @pytest.mark.parametrize(("isolation", "protected"), [("full", True), ("partial", False)])

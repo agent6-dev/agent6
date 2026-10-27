@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from agent6.harness import _conversation, _loop_state, _snapshot
+from agent6.tools import operator_prompts
 
 if TYPE_CHECKING:
     from agent6.harness import loop
@@ -90,7 +92,107 @@ def operator_boundary(
             ),
             turn=turn,
         )
+    operator_state(harness, conversation, state)
     return steer_outcome(harness, harness.steering.handle(conversation, turn, state), turn, state)
+
+
+def operator_state(
+    harness: loop.Harness, conversation: _conversation.Conversation, state: _loop_state.LoopState
+) -> bool:
+    """Tell the model what the operator's side holds since the last boundary.
+
+    The presence (the front-end claim and the away mode) when it first reads or changes, and
+    the answers to queued questions, each recorded as a ruling and delivered once.
+
+    Args:
+        harness: The execution's harness.
+        conversation: The conversation the notices enter.
+        state: The execution's state.
+
+    Returns:
+        Whether an answer was delivered.
+    """
+    prompts = harness.prompts
+    presence = prompts.presence()
+    if presence and presence != state.operator_presence:
+        state.operator_presence = presence
+        conversation.notice(f"OPERATOR PRESENCE: {presence}.")
+        harness.emit("loop.operator.presence", presence=presence)
+    late = prompts.collect_answers()
+    if not late:
+        return False
+    for item in late:
+        for question, answer in zip(item.questions, item.answers, strict=False):
+            harness.steering.record_decision(state, question.question, answer)
+        state.delivered_questions.append(item.id)
+    conversation.notice(answers_notice(late))
+    harness.emit("loop.question.delivered", ids=[item.id for item in late])
+    return True
+
+
+def answers_notice(late: Sequence[operator_prompts.LateAnswer]) -> str:
+    """Return the notice carrying queued questions' answers: each id, its questions, the answers."""
+    lines = ["OPERATOR ANSWERS (to questions asked earlier):"]
+    for item in late:
+        lines.append(item.id)
+        for question, answer in zip(item.questions, item.answers, strict=False):
+            lines.append(f"  Q: {question.question}")
+            lines.append(f"  A: {answer}")
+    return "\n".join(lines)
+
+
+def pending_notice(pending: Sequence[operator_prompts.QuestionRequest]) -> str:
+    """Return the notice listing the questions still open, one line per question."""
+    lines = ["QUESTIONS PENDING (asked earlier, no answer yet):"]
+    for request in pending:
+        lines.extend(f"{request.id}: {question.question}" for question in request.questions)
+    return "\n".join(lines)
+
+
+def resume_opening(
+    harness: loop.Harness, conversation: _conversation.Conversation, state: _loop_state.LoopState
+) -> None:
+    """Open a resumed execution with the operator's side: presence, missed answers, open questions.
+
+    Args:
+        harness: The execution's harness.
+        conversation: The conversation the notices enter.
+        state: The execution's state.
+    """
+    operator_state(harness, conversation, state)
+    pending = harness.prompts.pending()
+    if pending:
+        conversation.notice(pending_notice(pending))
+
+
+def execution_opening(
+    harness: loop.Harness,
+    conversation: _conversation.Conversation,
+    turn: int,
+    state: _loop_state.LoopState,
+    *,
+    resuming: bool,
+) -> _snapshot.SessionResult | None:
+    """Open an execution's first turn with the operator's side, before the first model call.
+
+    A fresh run hears the operator's presence; a resume hears it with the missed answers and
+    the open questions, then takes the steer that started it.
+
+    Args:
+        harness: The execution's harness.
+        conversation: The conversation the notices enter.
+        turn: The first turn of the execution.
+        state: The execution's state.
+        resuming: Whether the execution resumes a snapshot.
+
+    Returns:
+        The end the seeded steer asked for, or None when the execution goes on.
+    """
+    if not resuming:
+        operator_state(harness, conversation, state)
+        return None
+    resume_opening(harness, conversation, state)
+    return seeded_steer(harness, conversation, turn, state)
 
 
 def quiet_continuation(
@@ -175,6 +277,10 @@ def park_for_steer(
             return None
         if harness.operator_tasks.take(state.root_task_id):
             # A queued task, goal or retirement is work; the next focus banner names it.
+            harness.emit("loop.parked.resumed", turn=turn)
+            return None
+        if operator_state(harness, conversation, state):
+            # A queued question's answer is work too; the model reads it on its next turn.
             harness.emit("loop.parked.resumed", turn=turn)
             return None
         time.sleep(0.5)

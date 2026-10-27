@@ -17,6 +17,7 @@ import shlex
 from typing import Any
 
 from agent6 import evidence
+from agent6.tools import operator_prompts
 
 
 class ToolResult(abc.ABC):
@@ -510,27 +511,39 @@ class FinishPlanningResult(ToolResult):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class AnswersResult(ToolResult):
-    """ask_user's answers.
+    """ask_user's outcome.
 
     Attributes:
-        answers: Aligned to the questions by index.
-        note: Why the answers are empty when nobody saw the questions.
+        id: The prompt's id, the key a late answer arrives under.
+        answers: Aligned to the questions by index; None while pending.
+        status: `answered`, `pending` (queued, the answers arrive later) or `unanswered`.
+        note: The state the call met, when it was not answered.
         asked: The questions' texts, index-aligned; off the wire, the loop's decision record.
     """
 
-    answers: tuple[str, ...]
+    id: str
+    answers: tuple[str, ...] | None
+    status: operator_prompts.QuestionStatus = "answered"
     note: str = ""
     asked: tuple[str, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
-        wire: dict[str, Any] = {"answers": list(self.answers)}
+        wire: dict[str, Any] = {
+            "id": self.id,
+            "status": self.status,
+            "answers": None if self.answers is None else list(self.answers),
+        }
         if self.note:
             wire["note"] = self.note
         return wire
 
     def summary(self) -> str:
         """Return the one-line summary."""
+        if self.answers is None:
+            return "queued, no answer yet"
+        if self.status == "unanswered":
+            return "unanswered"
         answered = sum(1 for a in self.answers if str(a).strip())
         return f"{answered}/{len(self.answers)} answered"
 

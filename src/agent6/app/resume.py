@@ -16,6 +16,7 @@ import pathlib
 from agent6 import budget, directive, errors, event_log, kinds, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import (
+    _carried_questions,
     _execution,
     _resume_chain,
     _resume_tree,
@@ -295,7 +296,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     # A finished run has nothing to continue without --steer; every other ending resumes.
     scan = _session_log.scan_session_log(layout.logs_path)
     new_work = listing.needs_new_work(
-        finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
+        finished=scan.finished,
+        end_reason=scan.end_reason,
+        all_passed=scan.all_passed,
+        saved_answers=len(ipc.saved_question_answers(layout.session_dir)),
     )
     if scan.finished and scan.end_reason == "undone":
         # The fork is the continuation; resuming here would redo the taken-back edit.
@@ -306,8 +310,13 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.refuse(listing.needs_new_work_refusal(session_id))
         lock.release_single_writer(worker_lock_fd)
         return 2
-    # The prompt ids reset on resume, so stale answers go; markers since this start stay.
-    ipc.clear_pending_answers(layout.session_dir, started_at=started_at)
+    carried = _carried_questions.carried_questions(layout.logs_path)
+    # Approval ids reset on resume, so their stale answers go; a pending question's stays.
+    ipc.clear_pending_answers(
+        layout.session_dir,
+        started_at=started_at,
+        keep_questions=[request.id for request in carried.pending],
+    )
     # Seeded after the clear, which drops steer files.
     if steer.strip() and not ipc.submit_steer(layout.session_dir, steer.strip()):
         reporter.error("could not write the initial steer request")
@@ -514,6 +523,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             questioner=frontend.build_questioner(layout.session_dir),
             journal=events.emit,
             session_dir=layout.session_dir,
+            first_question=carried.next_number,
+            pending=carried.pending,
+            undelivered=tuple(
+                late for late in carried.late_answers if late.id not in snapshot.delivered_questions
+            ),
         )
 
         _session.warn_install_inside_workspace(cwd, reporter=reporter)

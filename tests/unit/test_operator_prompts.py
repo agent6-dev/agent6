@@ -97,7 +97,7 @@ def test_a_question_is_journaled_with_the_call_it_gates(tmp_path: pathlib.Path) 
 
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, questioner=_pick))
     out = d.dispatch("ask_user", {"questions": [{"question": "which?", "options": ["a", "b"]}]})
-    assert out.to_wire() == {"answers": ["b"]}
+    assert out.to_wire() == {"id": "question-1", "status": "answered", "answers": ["b"]}
     (call,) = _of(session_dir, "tool.call")
     (prompt,) = _of(session_dir, "question.prompt")
     (answer,) = _of(session_dir, "question.answer")
@@ -252,41 +252,147 @@ def test_every_prompt_event_has_exactly_one_emitter() -> None:
     }
 
 
-def test_an_unseen_question_says_so_in_its_result(tmp_path: pathlib.Path) -> None:
-    """A headless run answered `ask_user` with bare empty strings, and the model asked again.
+def test_a_queued_question_returns_pending_and_journals_no_answer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`wait=false` journals the prompt, calls no questioner and returns the pending status."""
+    from agent6 import portable
 
-    The reason (nobody attached) reached the console only. The result carries it; a blank a person
-    left does not.
-    """
     session_dir = tmp_path / "s"
-    session_dir.mkdir()
+    events = _sink(session_dir)
+
+    def _never(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
+        pytest.fail("a queued question reaches no questioner")
+
+    prompts = _prompts(session_dir, events, questioner=_never)
+    questions = (schema.UserQuestion(question="which?", options=("a", "b")),)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    answer = prompts.ask(questions, call_id=3, wait=False)
+    assert answer.status == "pending" and answer.answers == () and answer.id == "question-1"
+    assert answer.note == (
+        "no front-end or terminal attached; away mode unset; queued: the answers arrive as a"
+        " message at a later turn, or on resume"
+    )
+    (prompt,) = _of(session_dir, "question.prompt")
+    assert prompt["wait"] is False and prompt["call_id"] == 3
+    assert _of(session_dir, "question.answer") == []
+    assert [p.id for p in prompts.pending()] == ["question-1"]
+
+
+def test_late_answers_are_consumed_once_and_journaled_as_late(tmp_path: pathlib.Path) -> None:
+    """An answer file for a queued question is taken once, journaled as `late`, and gone."""
+    session_dir = tmp_path / "s"
+    events = _sink(session_dir)
+    prompts = _prompts(session_dir, events)
+    first = (schema.UserQuestion(question="first?", options=("a", "b")),)
+    second = (schema.UserQuestion(question="second?"), schema.UserQuestion(question="third?"))
+    prompts.ask(first, wait=False)
+    prompts.ask(second, wait=False)
+    assert prompts.collect_answers() == ()
+    assert ipc.write_question_answers(session_dir, "question-2", ["x", "y"])
+    (late,) = prompts.collect_answers()
+    assert late.id == "question-2" and late.answers == ("x", "y") and late.questions == second
+    (row,) = _of(session_dir, "question.answer")
+    assert row["id"] == "question-2" and row["source"] == "late" and row["unseen"] is False
+    assert row["answers"] == ["x", "y"]
+    assert prompts.collect_answers() == ()
+    assert [p.id for p in prompts.pending()] == ["question-1"]
+    assert not ipc.question_answers_written(session_dir, "question-2")
+
+
+def test_question_ids_continue_from_the_number_given(tmp_path: pathlib.Path) -> None:
+    """A later execution numbers its questions after the journal's, so an id names one prompt."""
+    session_dir = tmp_path / "s"
+    events = _sink(session_dir)
+    seeded = operator_prompts.QuestionRequest(
+        id="question-2", questions=(schema.UserQuestion(question="old?"),), call_id=1, wait=False
+    )
+    prompts = _prompts(session_dir, events, first_question=4, pending=(seeded,))
+    prompts.ask((schema.UserQuestion(question="new?"),), wait=False)
+    assert [p.id for p in prompts.pending()] == ["question-2", "question-4"]
+    assert ipc.write_question_answers(session_dir, "question-2", ["kept"])
+    (late,) = prompts.collect_answers()
+    assert late.id == "question-2" and late.questions == seeded.questions
+
+
+def test_an_unanswered_question_carries_the_state_in_its_result(tmp_path: pathlib.Path) -> None:
+    """A questioner that could reach nobody says so; a blank a person left is an answer."""
+    session_dir = tmp_path / "s"
     events = _sink(session_dir)
 
     def _nobody(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         return operator_prompts.QuestionAnswer(
-            tuple("" for _ in request.questions), "headless-default", unseen=True
+            tuple("" for _ in request.questions),
+            "away-deny",
+            status="unanswered",
+            note="no front-end attached; away mode deny: not queued, no answer",
         )
 
     def _blank(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         return operator_prompts.QuestionAnswer(tuple("" for _ in request.questions), "stdin")
 
     questions = (schema.UserQuestion(question="which?", options=("a", "b")),)
-    unseen = _prompts(session_dir, events, questioner=_nobody).ask(questions)
-    assert operator_prompts.unanswered_note(unseen) == operator_prompts.UNANSWERED_NOTE
-    assert (
-        operator_prompts.unanswered_note(
-            _prompts(session_dir, events, questioner=_blank).ask(questions)
-        )
-        == ""
+    unanswered = _prompts(session_dir, events, questioner=_nobody).ask(questions)
+    assert unanswered.status == "unanswered" and "away mode deny" in unanswered.note
+    blank = _prompts(session_dir, events, questioner=_blank).ask(questions)
+    assert blank.status == "answered" and blank.note == "" and blank.answers == ("",)
+    rows = _of(session_dir, "question.answer")
+    assert [r["unseen"] for r in rows] == [True, False]
+    assert not hasattr(operator_prompts, "UNANSWERED_NOTE")
+
+
+def test_undelivered_answers_come_first_and_are_not_journaled_again(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An answer journaled by an earlier execution and never read is delivered once, unjournaled."""
+    session_dir = tmp_path / "s"
+    events = _sink(session_dir)
+    seeded = operator_prompts.LateAnswer(
+        "question-2", (schema.UserQuestion(question="old?"),), ("kept",)
     )
-    # The journal says which it was, so a listing can count the questions
-    # nobody saw without knowing every answerer's name.
-    answers = [
-        json.loads(line)
-        for line in (session_dir / "logs.jsonl").read_text(encoding="utf-8").splitlines()
-        if '"question.answer"' in line
-    ]
-    assert [a["unseen"] for a in answers] == [True, False]
-    d = _dispatcher(session_dir, events, _prompts(session_dir, events, questioner=_nobody))
-    wire = d.dispatch("ask_user", {"questions": [{"question": "which?"}]}).to_wire()
-    assert wire == {"answers": [""], "note": operator_prompts.UNANSWERED_NOTE}
+    prompts = _prompts(session_dir, events, undelivered=(seeded,))
+    assert prompts.collect_answers() == (seeded,)
+    assert prompts.collect_answers() == ()
+    assert not (session_dir / "logs.jsonl").exists()
+
+
+def test_presence_names_the_claim_the_terminal_and_the_away_mode(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The presence the model reads: the front-end claim, else the terminal, else the away mode."""
+    import os
+
+    from agent6 import portable
+    from agent6.sessions import process
+
+    session_dir = tmp_path / "s"
+    prompts = _prompts(session_dir, _sink(session_dir))
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    assert prompts.presence() == "no front-end or terminal attached; away mode unset"
+    ipc.set_away_mode(session_dir, "wait")
+    assert prompts.presence() == "no front-end or terminal attached; away mode wait"
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
+    assert prompts.presence() == "a terminal is attached"
+    process.register_frontend(session_dir, os.getpid())
+    assert prompts.presence() == "a front-end is attached"
+    assert operator_prompts.OperatorPrompts().presence() == ""
+
+
+def test_a_late_answer_is_journaled_before_its_file_goes(tmp_path: pathlib.Path) -> None:
+    """A journal that fails leaves the answer file in place, so nothing is lost."""
+    session_dir = tmp_path / "s"
+    session_dir.mkdir()
+    calls: list[str] = []
+
+    def failing(event_type: str, /, **fields: Any) -> None:
+        calls.append(event_type)
+        if event_type == "question.answer":
+            raise OSError("disk full")
+
+    prompts = operator_prompts.OperatorPrompts(journal=failing, session_dir=session_dir)
+    prompts.ask((schema.UserQuestion(question="a?"),), wait=False)
+    assert ipc.write_question_answers(session_dir, "question-1", ["x"])
+    with pytest.raises(OSError):
+        prompts.collect_answers()
+    assert ipc.question_answers_written(session_dir, "question-1")
+    assert [p.id for p in prompts.pending()] == ["question-1"]

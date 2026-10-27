@@ -158,6 +158,7 @@ max-complexity = 20
 # is the module style, and the rule would refuse it.
 banned-from = [
     "agent6._data.words",
+    "agent6.app._carried_questions",
     "agent6.app._execution",
     "agent6.app._lane_watch",
     "agent6.app._merge_message",

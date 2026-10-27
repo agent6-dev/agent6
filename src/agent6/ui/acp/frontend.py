@@ -138,9 +138,13 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         def ask_questions(
             request: operator_prompts.QuestionRequest, /
         ) -> operator_prompts.QuestionAnswer:
+            empty = tuple("" for _ in request.questions)
             if not capabilities.can_ask:
                 return operator_prompts.QuestionAnswer(
-                    tuple("" for _ in request.questions), "headless", unseen=True
+                    empty,
+                    "headless",
+                    status="unanswered",
+                    note="the editor cannot take questions: not queued, no answer",
                 )
             if not all(question.options for question in request.questions):
                 filed = ipc.read_question_answers(session_dir, request.id, timeout_s=0.0)
@@ -148,7 +152,11 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
                     return operator_prompts.QuestionAnswer(filed, "frontend")
                 # ACP v1 renders option buttons only, so a free-form question reached nobody.
                 return operator_prompts.QuestionAnswer(
-                    tuple("" for _ in request.questions), "headless", unseen=True
+                    empty,
+                    "headless",
+                    status="unanswered",
+                    note="the editor answers only with an option, and a question offers none:"
+                    " not queued, no answer",
                 )
             # One deadline for the request, or N questions wait N times the bound.
             deadline = time.monotonic() + PERMISSION_TIMEOUT_S

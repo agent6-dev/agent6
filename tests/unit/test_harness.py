@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import json
 import pathlib
 import subprocess
 import types
@@ -19,6 +20,7 @@ from unittest import mock
 
 import pytest
 
+from agent6 import event_log
 from agent6.config import Config
 from agent6.harness import (
     _advice,
@@ -40,8 +42,10 @@ from agent6.harness import (
     loop,
 )
 from agent6.providers import ProviderError, ProviderResponse
-from agent6.tools import mcp_client
+from agent6.sessions import ipc, process
+from agent6.tools import mcp_client, operator_prompts
 from agent6.tools import results as tools_results
+from agent6.tools import schema as tools_schema
 from agent6.viewmodel import _session_status
 from tests.unit.turn_context import turn_context
 
@@ -8294,7 +8298,7 @@ def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> Non
         turn,
         "ask_user",
         tools_results.AnswersResult(
-            answers=("8931", "no"), asked=("Which port?", "Keep the modal?")
+            id="question-1", answers=("8931", "no"), asked=("Which port?", "Keep the modal?")
         ),
         {"questions": [{"question": "Which port?"}, {"question": "Keep the modal?"}]},
     )
@@ -8599,7 +8603,7 @@ def test_a_flat_ask_user_call_records_its_ruling(tmp_path: pathlib.Path) -> None
         state,
         turn,
         "ask_user",
-        tools_results.AnswersResult(answers=("yes",), asked=(question,)),
+        tools_results.AnswersResult(id="question-1", answers=("yes",), asked=(question,)),
         flat,
     )
 
@@ -9126,3 +9130,122 @@ def test_the_original_task_section_ends_at_the_skeletons_next_heading(
         "## Tasks\n1. real step\n"
     )
     assert section in text and "> ## Background" not in text
+
+
+# --- queued questions: delivery at the operator boundary, on resume and in a park ---------
+
+
+def _gate(tmp_path: pathlib.Path) -> tuple[operator_prompts.OperatorPrompts, pathlib.Path]:
+    log = tmp_path / "logs.jsonl"
+    sink = event_log.EventSink(log)
+    return operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=tmp_path), log
+
+
+def _texts(conversation: _conversation.Conversation) -> list[str]:
+    return [m["content"][0]["text"] for m in conversation.to_wire()]
+
+
+def test_a_late_answer_enters_at_the_operator_boundary(tmp_path: pathlib.Path) -> None:
+    """A queued question's answer reaches the model as a notice after the next completed turn."""
+    prompts, log = _gate(tmp_path)
+    wf = _wf(prompts=prompts)
+    state = _state()
+    conversation = _conversation.Conversation.from_wire([])
+    question = (tools_schema.UserQuestion(question="Which DB?", options=("pg", "sqlite")),)
+    assert prompts.ask(question, wait=False).status == "pending"
+    assert _loop_steer.operator_boundary(wf, conversation, 1, state) is None
+    assert _texts(conversation) == [f"OPERATOR PRESENCE: {prompts.presence()}."]
+    assert ipc.write_question_answers(tmp_path, "question-1", ["pg"])
+    assert _loop_steer.operator_boundary(wf, conversation, 2, state) is None
+    answers = _texts(conversation)[-1]
+    assert answers.startswith("OPERATOR ANSWERS") and "question-1" in answers
+    assert "Which DB?" in answers and "pg" in answers
+    assert state.delivered_questions == ["question-1"]
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert [r["source"] for r in rows if r["type"] == "question.answer"] == ["late"]
+    assert _loop_steer.operator_boundary(wf, conversation, 3, state) is None
+    assert len(_texts(conversation)) == 2
+
+
+def test_the_presence_notice_fires_once_and_on_change(tmp_path: pathlib.Path) -> None:
+    """The model is told the operator's presence at the first boundary and when it changes."""
+    import os
+
+    prompts, _log = _gate(tmp_path)
+    wf = _wf(prompts=prompts)
+    state = _state()
+    conversation = _conversation.Conversation.from_wire([])
+    _loop_steer.operator_boundary(wf, conversation, 1, state)
+    _loop_steer.operator_boundary(wf, conversation, 2, state)
+    assert _texts(conversation) == [f"OPERATOR PRESENCE: {prompts.presence()}."]
+    assert "attached" in prompts.presence()
+    process.register_frontend(tmp_path, os.getpid())
+    _loop_steer.operator_boundary(wf, conversation, 3, state)
+    assert _texts(conversation)[-1] == "OPERATOR PRESENCE: a front-end is attached."
+
+
+def test_a_resume_opens_with_the_answers_and_the_pending_questions(tmp_path: pathlib.Path) -> None:
+    """A resumed execution reads the answers it missed and the questions still open, first."""
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    old = (tools_schema.UserQuestion(question="Which DB?"),)
+    prompts = operator_prompts.OperatorPrompts(
+        journal=sink.emit,
+        session_dir=tmp_path,
+        first_question=6,
+        pending=(
+            operator_prompts.QuestionRequest(
+                "question-5",
+                (tools_schema.UserQuestion(question="Keep the cache?"),),
+                None,
+                wait=False,
+            ),
+        ),
+        undelivered=(operator_prompts.LateAnswer("question-3", old, ("pg",)),),
+    )
+    wf = _wf(prompts=prompts)
+    state = _state()
+    conversation = _conversation.Conversation.from_wire([])
+    _loop_steer.resume_opening(wf, conversation, state)
+    presence, answers, pending = _texts(conversation)
+    assert presence == f"OPERATOR PRESENCE: {prompts.presence()}."
+    assert answers.startswith("OPERATOR ANSWERS") and "question-3" in answers and "pg" in answers
+    assert pending.startswith("QUESTIONS PENDING") and "question-5: Keep the cache?" in pending
+    assert state.delivered_questions == ["question-3"]
+
+
+def test_a_parked_run_wakes_on_a_late_answer(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A park ends when a queued question's answer lands, with the answer delivered."""
+    prompts, _log = _gate(tmp_path)
+    ev = _EventCapture()
+    wf = _wf(prompts=prompts, events=ev)
+    state = _state()
+    conversation = _conversation.Conversation.from_wire([])
+    prompts.ask((tools_schema.UserQuestion(question="q?"),), wait=False)
+
+    polls: list[float] = []
+
+    def land_the_answer(seconds: float) -> None:
+        polls.append(seconds)
+        if len(polls) > 3:
+            pytest.fail("the park never woke on the landed answer")
+        ipc.write_question_answers(tmp_path, "question-1", ["x"])
+
+    monkeypatch.setattr(_loop_steer.time, "sleep", land_the_answer)
+    assert _loop_steer.park_for_steer(wf, conversation, state, turn=4, reason="quiet") is None
+    assert [e["type"] for e in ev.events][-1] == "loop.parked.resumed"
+    assert _texts(conversation)[-1].startswith("OPERATOR ANSWERS")
+
+
+def test_the_snapshot_carries_the_delivered_question_ids(tmp_path: pathlib.Path) -> None:
+    """Delivered ids survive a resume, so an answer is neither repeated nor lost."""
+    snap = _resume_snapshot(delivered_questions=("question-3",))
+    state = _state()
+    _loop_state.restore_completion_state(state, snap)
+    assert state.delivered_questions == ["question-3"]
+    wf = _wf(resume_state_path=tmp_path / "loop_state.json")
+    state.delivered_questions.append("question-4")
+    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=2)
+    saved = _snapshot.load_session_snapshot(tmp_path / "loop_state.json")
+    assert saved.delivered_questions == ("question-3", "question-4")

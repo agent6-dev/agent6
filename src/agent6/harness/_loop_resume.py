@@ -206,6 +206,7 @@ def save_resume_snapshot(
         gateless_ever_edited=state.settled.gateless_ever_edited,
         parallel_groups_dispatched=state.parallel_groups_dispatched,
         pins=tuple(state.pins),
+        delivered_questions=tuple(state.delivered_questions),
         metric_best_score=best.score if best is not None else None,
         metric_at_ceiling=state.metric.at_ceiling(),
         last_verify_ok=state.verify.last_ok,

@@ -344,8 +344,10 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 if isinstance(ev_turn := ev.get("turn", ev.get("iteration")), int):
                     turn = ev_turn
                 if etype in _session_status.OPERATOR_PROMPT_EVENTS:
-                    # Keyed by str(id) like the answer side, so an int id still clears.
-                    if (pid := ev.get("id")) is not None:
+                    # Keyed by str(id) like the answer side, so an int id still clears. A queued
+                    # question (`wait` false) pauses nothing.
+                    blocks = etype == "approval.prompt" or ev.get("wait") is not False
+                    if blocks and (pid := ev.get("id")) is not None:
                         kind = "approval" if etype == "approval.prompt" else "question"
                         pending_prompts[str(pid)] = (kind, ep)
                 elif etype in _session_status.OPERATOR_ANSWER_EVENTS:

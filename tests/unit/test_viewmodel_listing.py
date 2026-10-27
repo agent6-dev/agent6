@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from agent6.sessions import ipc
 from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import (
     _session_log,
@@ -466,6 +467,25 @@ def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: pathlib.Path) -> Non
         {"type": "session.end", "all_passed": None, "reason": "finish_session"},
     ]
     assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-none", gateless)) is True
+
+
+def test_a_saved_answer_is_new_work_for_a_finished_run(tmp_path: pathlib.Path) -> None:
+    """A finished run whose question got its answer on disk takes a plain resume: it delivers it."""
+    green: list[dict[str, object]] = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "a?"}]},
+        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+    ]
+    rd = _write_run(tmp_path, "runs", "r-answered", green)
+    assert listing.finished_needs_new_work(rd) is True
+    assert ipc.write_question_answers(rd, "question-1", ["yes"])
+    assert listing.finished_needs_new_work(rd) is False
+    assert (
+        listing.needs_new_work(
+            finished=True, end_reason="finish_session", all_passed=True, saved_answers=1
+        )
+        is False
+    )
 
 
 def test_needs_new_work_is_one_predicate_for_every_surface() -> None:

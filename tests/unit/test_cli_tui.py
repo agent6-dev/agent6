@@ -434,7 +434,7 @@ def test_a_stop_request_ends_an_away_wait(
     ask = _prompts(tmp_path, events).ask
     started = time.monotonic()
     answer = ask((schema.UserQuestion(question="stash?", options=("stash", "cancel")),))
-    assert answer.answers == ("",) and answer.unseen
+    assert answer.answers == ("",) and answer.status == "unanswered"
     assert time.monotonic() - started < 10
 
 
@@ -805,3 +805,42 @@ def test_tui_session_restores_the_console_when_a_second_ctrl_c_lands(
         pass
 
     assert (sys.stdout, sys.stderr) == before
+
+
+def _question() -> tuple[schema.UserQuestion, ...]:
+    return (schema.UserQuestion(question="which?", options=("a", "b")),)
+
+
+def test_the_questioner_waits_for_a_later_front_end_when_nothing_is_set(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No terminal, no front-end, no away mode: a waiting question waits for a front-end."""
+    log = tmp_path / "logs.jsonl"
+    events = event_log.EventSink(log)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    monkeypatch.setattr(interactmod, "default_stdin_questioner", _stdin_forbidden)
+
+    def attach_and_answer() -> None:
+        process.register_frontend(tmp_path, os.getpid())
+        ipc.write_question_answers(tmp_path, "question-1", ["b"])
+
+    _when_called(monkeypatch, ipc, "await_frontend_reply", attach_and_answer)
+    answer = _prompts(tmp_path, events).ask(_question())
+    assert answer.status == "answered" and answer.answers == ("b",)
+    assert _events_of(log, "question.answer")[0]["source"] == "frontend"
+
+
+def test_the_questioner_returns_unanswered_at_once_under_away_deny(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Away mode deny: the operator set the run not to wait, and the result says so."""
+    log = tmp_path / "logs.jsonl"
+    events = event_log.EventSink(log)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    monkeypatch.setattr(interactmod, "default_stdin_questioner", _stdin_forbidden)
+    ipc.set_away_mode(tmp_path, "deny")
+    answer = _prompts(tmp_path, events).ask(_question())
+    assert answer.status == "unanswered" and answer.answers == ("",)
+    assert answer.note == "no front-end attached; away mode deny: not queued, no answer"
+    row = _events_of(log, "question.answer")[0]
+    assert row["source"] == "away-deny" and row["unseen"] is True

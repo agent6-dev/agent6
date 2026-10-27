@@ -141,7 +141,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
 
 
 def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
-    """Unseen questions survive prompt-id reuse on resume and carry the model's fallback note."""
+    """The questions nobody could answer are listed by text, across executions."""
     from agent6 import event_log
     from agent6.tools import operator_prompts, schema
 
@@ -150,10 +150,11 @@ def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
     sink.emit("session.start", mode="run")
     prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
     answer = prompts.ask((schema.UserQuestion(question="keep the public API?"),))
-    assert answer.unseen
+    assert answer.status == "unanswered"
     sink.emit("loop.resume.start")
     prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
-    assert prompts.ask((schema.UserQuestion(question="allow the migration?"),)).unseen
+    later = prompts.ask((schema.UserQuestion(question="allow the migration?"),))
+    assert later.status == "unanswered"
 
     def seen(request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         return operator_prompts.QuestionAnswer(("",), "frontend")
@@ -164,7 +165,6 @@ def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
     assert "questions nobody answered (2):" in text
     assert "keep the public API?" in text and "allow the migration?" in text
     assert "a question the operator saw" not in text
-    assert operator_prompts.UNANSWERED_NOTE in text
 
 
 @pytest.mark.parametrize("field", ["stdout_tail", "stderr_tail"])

@@ -397,6 +397,8 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `worker.pid` | the live worker's pid and start time; every surface reads liveness here |
 | `approvals/`, `questions/` | one `<id>.answer` file per prompt, whichever front-end answers; `approvals/` also holds the session-wide allow and deny marker per scope |
 | `frontends/` | one file per front-end registered to answer this run, named for its pid |
+| `review-actions/` | one request and one reply file per finding action (Fix, Resolve, Reopen) a surface put to the run |
+| `queue/` | the operator's queued tasks, standing goal and retirements (`/task`, `/standing`, `/retire`), read at the step boundary |
 | `shells/` | the roster of background commands the run started |
 | `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its step boundary |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
@@ -454,7 +456,7 @@ Two shared layers sit under them.
 - session view records: `viewmodel/_state_types.py`; status, context usage and wire rendering: `viewmodel/_state_view.py`; event handling stays in `viewmodel/state.py`
 - machine execution and spend reads: `viewmodel/_machine_logs.py`; watcher cursors: `viewmodel/_machine_watch.py`; journal folding, probes and verb refusals: `viewmodel/machine_state.py`
 - transcript event ordering: `viewmodel/transcript.py`; tool previews and marker text: `viewmodel/_transcript_text.py`
-- the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, steer, stop-request and compact-request file contract the harness polls
+- the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, finding-action, task-queue, steer, stop-request and compact-request file contract the harness polls
 - process identities, worker and network pid records, and front-end claims: `sessions/process.py`, shared by the bridge and its callers
 
 A run started from a hub, or detached mid-run with `/detach`, keeps going with no terminal on it (`ui/spawn.py`); `agent6 attach <id>` opens it again, tailing the same journal every other surface folds.
@@ -517,14 +519,14 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `mcp.server_unavailable` | a configured MCP server that did not start; the run continues without it |
 | `budget.update` | input/output token totals, the cached read and creation totals, and the fallback cap, plus `usd_total`, `usd_partial`, `usd_cap`, `tokens_unmetered`, and the plan meter (`plan_used_percent`, `plan_consumed`, `plan_cap`, `plan_resets_at`) |
 | `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |
-| `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-wait`, `headless-default`, `headless`, `acp`), `unseen` (nobody could see the questions; the listings count these for the current execution): the `ask_user` tool and the start question |
+| `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question), `wait` (false for a queued question, answered later) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `headless-default`, `headless`, `acp`, `late`: a queued question's answers taken at a turn boundary, in a park or at a resume's opening), `unseen` (nobody could answer and nothing is queued; the listings count these for the current execution): the `ask_user` tool and the start question |
 | `diff.updated` | what a chain commit changed: `sha` and its `patch`, capped at 8000 bytes; every fold counts commits and shows the latest diff from this event alone |
 | `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children, created_by, standing), `cursor` |
 | `loop.task.queued` | a task the operator added to a live run (`/task`): `id`, `title` |
 | `loop.standing.set` | the standing goal the operator set mid-run (`/standing`): `id`, `title` |
 | `loop.task.retired` | a task the operator dropped from the graph (`/retire`): `id`, `title` |
 | `loop.request.refused` | a `/task`, `/standing` or `/retire` the run could not apply: `kind`, `text`, `error` |
-| `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.edit.left_out`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.steer.*` |
+| `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.edit.left_out`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.operator.presence` (the operator's presence as told to the model), `loop.question.delivered` (queued questions' answers delivered, `ids`), `loop.steer.*` |
 | `loop.budget` | per-turn usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
 | `loop.review.finding.*` / `loop.review.fix.*` | `resolved` / `reopened` retain the reason and disposition; `requested` retains the target and delivery action; `submitted` names the destination execution; `failed` retains the delivery error. Each carries the finding ID, request ID, source and resulting review version |
 | `loop.review.*` | `start` (panel and execution IDs, trigger, target, resolved seats), `seat` (indexed full grounded verdict, summary, verbatim risk, error), `panel` (target, finding observations, injected IDs, blocking decision, completion), `skipped` (identity, reason), and the finish gate's rejections |
@@ -555,7 +557,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); the panel is `harness/_panel.py`, `harness/_review_seat.py` and `harness/_reviewer.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
-| Git policy | [git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_ops.py) |
+| Git policy | [git_policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_policy.py) |
 | Subordinate-run primitive | [harness/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |

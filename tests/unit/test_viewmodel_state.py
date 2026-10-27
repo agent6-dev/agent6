@@ -1204,3 +1204,83 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_commit_turns() -> No
         {"type": "loop.auto_commit", "iteration": 3, "sha": "a" * 40, "subject": "fix parser"},
     )
     assert [st.turn for st in s.steps] == [3]
+
+
+def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> None:
+    """A queued question stays pending past a resume; only a waiting question blocks the run."""
+    from agent6.viewmodel import _state_view
+
+    queued = {
+        "type": "question.prompt",
+        "id": "question-1",
+        "questions": [{"question": "a?", "options": []}],
+        "call_id": 1,
+        "wait": False,
+    }
+    waiting = {**queued, "id": "question-2", "call_id": 2, "wait": True}
+    rows = [
+        {"type": "session.start", "user_task": "t"},
+        queued,
+        {"type": "loop.resume.start", "user_task": "t", "steer": ""},
+    ]
+    state = viewmodel_state.fold_session(rows)
+    (first,) = state.pending_questions
+    assert first.id == "question-1" and not first.answered and first.wait is False
+    assert _state_view.status_facts(state).operator_blocked is False
+    facts = _state_view.status_facts(viewmodel_state.fold_session([*rows, waiting]))
+    assert facts.operator_blocked and facts.blocked_kind == "question"
+    late = {
+        "type": "question.answer",
+        "id": "question-1",
+        "answers": ["x"],
+        "source": "late",
+        "unseen": False,
+    }
+    state = viewmodel_state.fold_session([*rows, waiting, late])
+    assert [(q.id, q.answered, q.source) for q in state.pending_questions] == [
+        ("question-1", True, "late"),
+        ("question-2", False, ""),
+    ]
+    assert _state_view.status_facts(state).operator_blocked
+
+
+def test_a_questions_kind_is_one_word_on_every_surface() -> None:
+    """Waiting while its execution lives, asked by an earlier execution after, queued, answered."""
+    rows = [
+        {"type": "session.start", "user_task": "t"},
+        {"type": "question.prompt", "id": "question-1", "questions": [{"question": "a?"}]},
+        {
+            "type": "question.prompt",
+            "id": "question-2",
+            "questions": [{"question": "b?"}],
+            "wait": False,
+        },
+    ]
+    before = viewmodel_state.fold_session(rows)
+    assert [q.kind() for q in before.pending_questions] == ["waiting", "queued"]
+    after = viewmodel_state.fold_session([*rows, {"type": "loop.resume.start", "user_task": "t"}])
+    assert [q.kind() for q in after.pending_questions] == [
+        "asked by an earlier execution",
+        "queued",
+    ]
+    answered = viewmodel_state.fold_session(
+        [*rows, {"type": "question.answer", "id": "question-2", "answers": ["x"], "source": "late"}]
+    )
+    assert answered.pending_questions[1].kind() == "answered"
+
+
+def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pathlib.Path) -> None:
+    """agent6's own start gate, abandoned, counts as no pending question: nothing delivers it."""
+    from agent6.app import _carried_questions
+    from agent6.viewmodel import _session_log, _state_view
+
+    gate = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
+    log = tmp_path / "logs.jsonl"
+    log.write_text(json.dumps(gate) + "\n", encoding="utf-8")
+    state = viewmodel_state.fold_session([gate])
+    assert state.pending_questions[0].from_harness
+    assert _state_view.status_facts(state).pending_questions == 0
+    assert _session_log.scan_session_log(log).pending_questions == 0
+    assert viewmodel_state.pending_questions(tmp_path) == ()
+    carried = _carried_questions.carried_questions(log)
+    assert (carried.pending, carried.next_number) == ((), 1)

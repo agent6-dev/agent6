@@ -825,7 +825,10 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         """Return whether the agent finished over a green tree, when a bare resume has no work."""
         s = self.state
         return listing.needs_new_work(
-            finished=s.finished, end_reason=s.end_reason, all_passed=s.all_passed
+            finished=s.finished,
+            end_reason=s.end_reason,
+            all_passed=s.all_passed,
+            saved_answers=len(ipc.saved_question_answers(self.session_dir)),
         )
 
     def model_call_in_flight(self) -> bool:

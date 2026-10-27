@@ -360,12 +360,14 @@ class QuestionPrompt:
         questions: The questions asked.
         asked_ep: When it was asked, as epoch seconds, for the waiting status's age.
         call_id: The gated `ask_user` call; None for a pre-run question.
+        wait: Whether the call waits for the answers; a queued question is answered later.
     """
 
     id: str
     questions: tuple[EventQuestion, ...]
     asked_ep: float | None = None
     call_id: int | None = None
+    wait: bool = True
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -375,12 +377,14 @@ class QuestionAnswer:
     Attributes:
         id: The prompt's id.
         answers: One answer per question.
-        unseen: Nobody was attached, so the harness answered empty.
+        unseen: Nobody could answer and nothing is queued, so the answers are empty.
+        source: Who answered; `late` for a queued question's answers taken at a boundary.
     """
 
     id: str
     answers: tuple[str, ...]
     unseen: bool = False
+    source: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -679,12 +683,16 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 questions=questions,
                 asked_ep=event_epoch(raw.get("ts")),
                 call_id=_call_id(raw),
+                wait=raw.get("wait") is not False,
             )
         case "question.answer":
             raw_ans = raw.get("answers", ()) or ()
             answers = tuple(str(a) for a in raw_ans) if isinstance(raw_ans, (list, tuple)) else ()
             return QuestionAnswer(
-                id=str(raw.get("id", "")), answers=answers, unseen=raw.get("unseen") is True
+                id=str(raw.get("id", "")),
+                answers=answers,
+                unseen=raw.get("unseen") is True,
+                source=str(raw.get("source", "")),
             )
         case "loop.pin.added":
             return PinAdded(text=str(raw.get("text", "")))

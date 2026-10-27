@@ -21,7 +21,7 @@ import os
 import pathlib
 import tempfile
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from typing import Literal, cast
 
 from agent6 import paths, portable
@@ -205,23 +205,32 @@ def _answer_path(directory: pathlib.Path, answer_id: str) -> pathlib.Path:
 TIMESTAMP_SLACK_S = 0.01
 
 
-def clear_pending_answers(session_dir: pathlib.Path, *, started_at: float) -> None:
+def clear_pending_answers(
+    session_dir: pathlib.Path, *, started_at: float, keep_questions: Collection[str] = ()
+) -> None:
     """Drop the bridge state an execution inherits, at its start; best-effort.
 
     The `*.answer` files, the steer answer and marker (a phantom prompt no front-end
     answers), and the stop and compact markers (an instant re-stop) go; only files older
     than the start, less `TIMESTAMP_SLACK_S`: one written since belongs to the execution
-    that is starting. Front-end claims need no sweep: `frontend_is_live` prunes dead ones,
-    and a live watcher's must survive so its modals stay wired up.
+    that is starting. The answer to a question still pending in the journal stays: the new
+    execution delivers it. Front-end claims need no sweep: `frontend_is_live` prunes dead
+    ones, and a live watcher's must survive so its modals stay wired up.
 
     Args:
         session_dir: The session directory.
         started_at: This execution's start as `time.time()`; ACP passes its turn's start,
             a machine's crash recovery passes now.
+        keep_questions: The ids of the questions still pending.
     """
     answer_dirs = (session_dir / APPROVAL_DIR_NAME, session_dir / QUESTION_DIR_NAME)
     markers = (STEER_ANSWER_FILE, STEER_REQUEST_FILE, STOP_REQUEST_FILE, COMPACT_REQUEST_FILE)
-    answers = (f for d in answer_dirs for f in d.glob("*.answer"))
+    answers = (
+        f
+        for d in answer_dirs
+        for f in d.glob("*.answer")
+        if not (d.name == QUESTION_DIR_NAME and f.stem in keep_questions)
+    )
     for path in (*answers, *(session_dir / name for name in markers)):
         with contextlib.suppress(OSError):
             if path.stat().st_mtime < started_at - TIMESTAMP_SLACK_S:
@@ -689,6 +698,27 @@ def write_question_answers(
     return _publish_answer(
         _answer_path(questions_dir(session_dir), question_id), json.dumps(list(answers))
     )
+
+
+def peek_question_answers(session_dir: pathlib.Path, question_id: str) -> tuple[str, ...] | None:
+    """Return the answers on disk for a question, consuming nothing; None when absent.
+
+    Args:
+        session_dir: The session directory.
+        question_id: The question id.
+
+    Returns:
+        The answers, one per question; a bare non-JSON file is one answer.
+    """
+    try:
+        raw = _answer_path(session_dir / QUESTION_DIR_NAME, question_id).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return (raw,)
+    return tuple(str(x) for x in data) if isinstance(data, list) else (str(data),)
 
 
 def question_answers_written(session_dir: pathlib.Path, question_id: str) -> bool:

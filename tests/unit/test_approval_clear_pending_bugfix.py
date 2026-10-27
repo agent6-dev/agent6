@@ -107,3 +107,20 @@ def test_clear_pending_keeps_a_file_written_within_the_tick_of_the_executions_st
     assert ipc.stop_request_pending(session_dir)
     ipc.clear_pending_answers(session_dir, started_at=time.time() + 60)
     assert not ipc.stop_request_pending(session_dir)
+
+
+def test_clear_pending_keeps_a_queued_questions_answer(tmp_path: pathlib.Path) -> None:
+    """A resume's sweep leaves the answer to a question the journal still holds pending."""
+    session_dir = tmp_path / "run"
+    session_dir.mkdir()
+    assert ipc.write_question_answers(session_dir, "question-1", ["kept"])
+    assert ipc.write_question_answers(session_dir, "question-2", ["phantom"])
+    assert ipc.write_answer(session_dir, "approval-1", "yes")
+
+    ipc.clear_pending_answers(
+        session_dir, started_at=time.time() + 60, keep_questions=("question-1",)
+    )
+
+    assert ipc.question_answers_written(session_dir, "question-1")
+    assert not ipc.question_answers_written(session_dir, "question-2")
+    assert not ipc.answer_written(session_dir, "approval-1")

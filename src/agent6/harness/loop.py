@@ -71,7 +71,7 @@ from agent6.providers import (
     ToolDefinition,
 )
 from agent6.sessions import process
-from agent6.tools import dispatch, mcp_client, results, schema
+from agent6.tools import dispatch, mcp_client, operator_prompts, results, schema
 from agent6.tools import errors as tool_errors
 
 # Bytes a repeated tool result must exceed before the dedupe stub replaces it.
@@ -139,6 +139,10 @@ class Harness:
     max_turns: int = 200
     finish_validator: Callable[[dict[str, Any] | None], list[str]] | None = None
     bridge: _operator.OperatorBridge = dataclasses.field(default_factory=_operator.OperatorBridge)
+    # The one gate to the operator: its queued questions and the presence it reads.
+    prompts: operator_prompts.OperatorPrompts = dataclasses.field(
+        default_factory=operator_prompts.OperatorPrompts
+    )
     call: _provider_call.CallSettings = dataclasses.field(
         default_factory=_provider_call.CallSettings
     )
@@ -424,10 +428,12 @@ class Harness:
             else itertools.count(start_turn)
         ):
             self.turns_reached = turn
-            if resume_from is not None and turn == start_turn:
-                seeded = _loop_steer.seeded_steer(self, conversation, turn, state)
-                if seeded is not None:
-                    return seeded
+            if turn == start_turn:
+                opened = _loop_steer.execution_opening(
+                    self, conversation, turn, state, resuming=resume_from is not None
+                )
+                if opened is not None:
+                    return opened
             # Rebuilt per turn: a gate adopted or a policy denied mid-run changes the tool list.
             tools = _toolset.tool_definitions(self.dispatcher, mode=self.mode)
             ctx = self._turn_context(state, turn=turn, execution_start=start_turn)
@@ -960,7 +966,11 @@ class Harness:
             tool_input: Its input.
             tree_before: The sha from `_tree_before_command` for a child-process tool.
         """
-        if name == "ask_user" and isinstance(result, results.AnswersResult):
+        if (
+            name == "ask_user"
+            and isinstance(result, results.AnswersResult)
+            and result.answers is not None
+        ):
             # The result carries the questions the dispatcher accepted; the input is not reparsed.
             for question, answer in zip(result.asked, result.answers, strict=False):
                 self._record_decision(state, question, answer)

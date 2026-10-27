@@ -41,7 +41,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 - the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, turns) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
 - without a terminal a finished run prints its merge and inspect commands, and an unfinished run its resume command
-- `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused
+- `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused; an answer saved for one of its questions (`agent6 answer`) is new work, so a bare resume delivers it
 
 The verify command is the success gate.
 
@@ -172,6 +172,7 @@ Every front-end answers a prompt by writing one file in the session directory, a
   - `[agent6] approval-2 approved (frontend)` when an already-attached front-end answers
   - `[agent6] approval-2 approved (await-frontend)` when the run waits for a front-end reply
 - `agent6 answer <id>` prints the open question; `agent6 answer <id> TEXT...` answers it, one TEXT per question
+- a question is pending from its prompt until its answer; a waiting one pauses the run while the execution that asked it lives, a queued one or one an earlier execution asked pauses nothing; every surface words it the same way (waiting, queued, asked by an earlier execution, answer saved)
 - a prompt `agent6 attach` is showing closes once another front-end answers it: attach prints `already answered from another surface`, writes no answer and keeps following; the TUI's question modal closes the same way, with the same notice
 - an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; `session` approves this call, and `session` and `session-deny` also apply to later calls only where the prompt's event says `standing: true`)
 - a question reads `<session dir>/questions/<id>.answer`: a JSON list of answers in the prompt's order
@@ -371,7 +372,7 @@ The groups, in order:
 - **blocked**: open `block` findings; the row names their count and dates from the oldest one's first panel
 - **unverified**: an ended run whose final tree the gate did not certify whole (no verify, a red or timed-out gate, a pass over selected paths only, a pass with no verification evidence, edits after the last green)
 - **awaiting merge**: a clean run waiting for a merge: no open findings, a complete and current panel with no abstained seat, a whole-tree pass whose evidence certifies the end tree, unmerged work with its chain and branch at the recorded checkpoint, no live worker, not stranded or undone
-- **other**: the rest, with its reason: open warnings or nits, an unreviewed run, a stale, incomplete, inconclusive or freeform review, legacy counts, unreadable evidence, a merged run, commits on the run's refs after it, no recorded checkpoint, an ask or plan
+- **other**: the rest, with its reason: open warnings or nits, an unreviewed, skipped, stale, incomplete, inconclusive or freeform review, a seat that abstained, a review still running, legacy counts, unreadable evidence, a live or unfinished run's status, a fan-out, a merged run, commits on the run's refs after it, no recorded checkpoint, nothing to merge, an ask or plan
 
 Within a group the oldest pending work comes first; rows with nothing pending keep their activity order.
 A fan-out coordinator takes its lanes' earliest group and shows their counts without inheriting a lane's verification.

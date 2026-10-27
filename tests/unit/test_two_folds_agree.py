@@ -288,3 +288,31 @@ def test_both_folds_tell_a_timed_out_gate_from_a_red_one(tmp_path: pathlib.Path)
         events = [_START, _verify_end(124, timeout_s=300.0), later, _END_RED]
         listing, viewer = _shared_facts(events, tmp_path)
         assert listing == viewer and listing["gate_timed_out"] is False
+
+
+def test_the_folds_agree_that_a_queued_question_blocks_nothing(tmp_path: pathlib.Path) -> None:
+    """Both folds carry a queued question past a resume and block only on a waiting one."""
+    prompt = {
+        "ts": "2026-07-14T10:00:01+00:00",
+        "type": "question.prompt",
+        "id": "question-1",
+        "questions": [{"question": "a?", "options": []}],
+        "call_id": 1,
+        "wait": False,
+    }
+    rows = [
+        {"ts": "2026-07-14T10:00:00+00:00", "type": "session.start", "user_task": "t"},
+        prompt,
+        {"ts": "2026-07-14T10:00:02+00:00", "type": "loop.resume.start", "user_task": "t"},
+    ]
+    waiting = {**prompt, "ts": "2026-07-14T10:00:03+00:00", "id": "question-2", "wait": True}
+    for events, blocked in ((rows, False), ([*rows, waiting], True)):
+        log = tmp_path / "logs.jsonl"
+        log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
+        scan = _session_log.scan_session_log(log).status_facts()
+        viewer = status_facts(viewmodel_state.fold_session(events))
+        assert (scan.operator_blocked, scan.blocked_kind) == (
+            blocked,
+            "question" if blocked else "",
+        )
+        assert (viewer.operator_blocked, viewer.blocked_kind) == (blocked, scan.blocked_kind)

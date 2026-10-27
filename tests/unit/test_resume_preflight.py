@@ -1414,3 +1414,37 @@ def test_a_snapshot_written_before_the_turn_rename_refuses_by_version(
     assert _snapshot.SNAPSHOT_VERSION > 4
     with pytest.raises(ValueError, match="version 4, not"):
         _snapshot.load_session_snapshot(snap)
+
+
+def test_the_resume_reads_the_journals_questions(tmp_path: pathlib.Path) -> None:
+    """The questions a resume carries: the open ones, the late answers, the next id number."""
+    import json
+
+    from agent6.app import _carried_questions
+
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {
+            "type": "question.prompt",
+            "id": "question-1",
+            "questions": [{"question": "a?"}],
+            "wait": False,
+        },
+        {
+            "type": "question.prompt",
+            "id": "question-2",
+            "questions": [{"question": "b?", "options": ["x", "y"]}],
+            "wait": False,
+        },
+        {"type": "question.prompt", "id": "question-3", "questions": [{"question": "c?"}]},
+        {"type": "question.answer", "id": "question-3", "answers": ["now"], "source": "frontend"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "question.answer", "id": "question-1", "answers": ["late one"], "source": "late"},
+    ]
+    log = tmp_path / "logs.jsonl"
+    log.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    carried = _carried_questions.carried_questions(log)
+    assert carried.next_number == 4
+    assert [(q.id, q.wait) for q in carried.pending] == [("question-2", False)]
+    assert carried.pending[0].questions[0].options == ("x", "y")
+    assert [(a.id, a.answers) for a in carried.late_answers] == [("question-1", ("late one",))]

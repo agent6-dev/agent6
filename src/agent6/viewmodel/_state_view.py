@@ -18,8 +18,8 @@ import pathlib
 from typing import Any
 
 from agent6.models import registry
+from agent6.sessions import ipc, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.sessions import process
 from agent6.tools import background
 from agent6.viewmodel import _session_status, _state_types, events, format, listing, policy, review
 from agent6.viewmodel import state as session_fold
@@ -38,7 +38,7 @@ def status_facts(state: _state_types.SessionState) -> _session_status.StatusFact
     """
     pending: list[tuple[str, float | None]] = [
         ("approval", a.asked_ep) for a in state.pending_approvals if not a.answered
-    ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered]
+    ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered and q.blocking]
     oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
     gate = state.last_verify
     return _session_status.StatusFacts(
@@ -112,7 +112,10 @@ def session_state_as_dict(
     d["review"] = review.as_dict(state.review)
     d["context_pct"] = context_fill(state)
     d["needs_new_work"] = listing.needs_new_work(
-        finished=state.finished, end_reason=state.end_reason, all_passed=state.all_passed
+        finished=state.finished,
+        end_reason=state.end_reason,
+        all_passed=state.all_passed,
+        saved_answers=len(ipc.saved_question_answers(session_dir)) if session_dir else 0,
     )
     d["budget"]["usd_text"] = format.budget_usd_text(
         state.budget.usd_total,

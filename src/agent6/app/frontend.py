@@ -100,8 +100,8 @@ def settle_away_mode(session_dir: pathlib.Path, cfg: Config, *, can_ask: bool) -
 def apply_spawned_away_default(session_dir: pathlib.Path, scopes: tuple[str, ...]) -> None:
     """Honor AGENT6_DETACHED_AWAY, set by a launcher that spawns a run detached.
 
-    Without it a spawned run with no terminal fabricates empty ask_user answers when no viewer
-    is live. An away mode already on the run dir is the operator's own detach answer and wins:
+    Without it a spawned run with no terminal waits on every approval for a viewer; `deny`
+    answers them. An away mode already on the run dir is the operator's own detach answer and wins:
     overwriting a chosen 'deny' with 'wait' would block the run on an approval nobody answers.
 
     Args:

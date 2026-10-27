@@ -20,7 +20,7 @@ from agent6 import evidence, memory
 from agent6.prompts import review
 from agent6.providers import Provider, ProviderError, ProviderResponse
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import operator_prompts, sessions
+from agent6.tools import sessions
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import summarize_session_dir
 
@@ -160,7 +160,6 @@ class RunDigest:
                 f"({_shown(self.unanswered_questions, self.unanswered_total)}):"
             )
             lines.extend(f"- {question}" for question in self.unanswered_questions)
-            lines.append(f"model was told: {operator_prompts.UNANSWERED_NOTE}")
         if self.verify_runs:
             lines.append(f"\nverify runs ({_shown(self.verify_runs, self.verify_total)}):")
             for v in self.verify_runs:

@@ -443,6 +443,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             max_turns=cfg.harness.max_turns,
             provider=session.provider,
             dispatcher=dispatcher,
+            prompts=inputs.prompts,
             logger=loop_log,
             events=events,
             curator=curator,

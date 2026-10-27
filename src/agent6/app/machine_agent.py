@@ -279,8 +279,18 @@ def _build_machine_bridges(
             )
             if isinstance(reply, tuple):
                 return operator_prompts.QuestionAnswer(reply, "frontend")
-            return operator_prompts.QuestionAnswer(empty, "await-frontend", unseen=True)
-        return operator_prompts.QuestionAnswer(empty, "headless", unseen=True)
+            return operator_prompts.QuestionAnswer(
+                empty,
+                "await-frontend",
+                status="unanswered",
+                note="the wait for a front-end was stopped: no answer",
+            )
+        return operator_prompts.QuestionAnswer(
+            empty,
+            "headless",
+            status="unanswered",
+            note="no front-end attached (a machine agent): not queued, no answer",
+        )
 
     prompts = operator_prompts.OperatorPrompts(
         approver=approve, questioner=ask, journal=events.emit, session_dir=agent_state
@@ -415,11 +425,13 @@ def run_one(
         bridges = _build_machine_bridges(instance_dir, agent_state, events_sink)
     # A state's clone is fresh; a state in the checkout has the operator's environment.
     in_clone = req.root != req.cwd
+    # One gate to the operator: the dispatcher asks through it, the loop drains its answers.
+    prompts = bridges.prompts if bridges is not None else operator_prompts.OperatorPrompts()
     dispatcher = dispatch.ToolDispatcher(
         root=req.root,
         config=cfg,
         isolation=isolation,
-        prompts=bridges.prompts if bridges is not None else None,
+        prompts=prompts,
         events=events_sink,
         curator=None,
         run_root_node_id=None,
@@ -465,6 +477,7 @@ def run_one(
         max_turns=cfg.harness.max_turns,
         provider=provider,
         dispatcher=dispatcher,
+        prompts=prompts,
         logger=reporter.err,
         mode="agent" if mode == "agent" else "run",
         state_dir=paths.state_dir(req.cwd),

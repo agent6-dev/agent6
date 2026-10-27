@@ -27,7 +27,8 @@
       "questions"
     ],
     "properties": {
-      "questions": "array[UserQuestion]"
+      "questions": "array[UserQuestion]",
+      "wait": "boolean"
     },
     "defs": {
       "UserQuestion": {
