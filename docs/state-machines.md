@@ -199,6 +199,7 @@ Where a run state's work lands:
 - each run state executes in a fresh clone (the `--parallel` lane mechanism, `[workspace].base_dir` cache) checked out at the machine chain's tip
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
+- the hub's machine card shows supervision state only; each run state is a session of its own in the [review queue](usage.md#the-review-queue), and merge eligibility is that run's, never the machine's
 - a state's clone is removed as it lands, so nothing is left for `sessions prune` to sweep
 - the chain ref (`refs/agent6/machine-<id>/head`) outlives the instance dir
     - a fresh instance over a leftover chain starts from HEAD once the chain's tip is in HEAD, dropping the ref

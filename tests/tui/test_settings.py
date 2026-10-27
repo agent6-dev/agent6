@@ -30,6 +30,17 @@ def test_theme_roundtrips_in_own_file(cfg: pathlib.Path) -> None:
     assert not (cfg / "config.toml").exists()
 
 
+def test_hub_sort_roundtrips_beside_the_theme(cfg: pathlib.Path) -> None:
+    """The hub's order is a TUI preference in `ui.toml`; an unknown word reads as the default."""
+    assert settings.get_hub_sort() == "review"
+    settings.save_hub_sort("activity")
+    assert settings.get_hub_sort() == "activity"
+    settings.save_theme("agent6-light")
+    assert settings.get_hub_sort() == "activity" and settings.get_theme() == "agent6-light"
+    settings._save_ui_key("hub_sort", "newest")  # pyright: ignore[reportPrivateUsage]
+    assert settings.get_hub_sort() == "review"
+
+
 def test_corrupt_or_missing_file_degrades_to_default(cfg: pathlib.Path) -> None:
     (cfg / "ui.toml").write_text("this is [ not valid toml", encoding="utf-8")
     assert settings.load_ui_settings() == {}  # never raises

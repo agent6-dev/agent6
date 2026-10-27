@@ -28,16 +28,13 @@ from agent6.viewmodel import (
     fold_transcript,
     format,
     is_session_husk,
-    is_winner,
     listing,
     machine_files,
     machine_instance_dirs,
     operator_inputs,
     restate,
-    session_dirs,
     session_state_as_dict,
     summarize_machine_dir,
-    summarize_session_dir,
     tail_events,
     transcript_style,
 )
@@ -184,12 +181,7 @@ def draft_dir_paths(cwd: pathlib.Path) -> list[pathlib.Path]:
 
 def _list_sessions(cwd: pathlib.Path, sort: listing.Sort) -> list[dict[str, Any]]:
     """Return every session the hub lists in the given order, a fan-out's lanes under its row."""
-    tips = git_read.run_ref_tips(cwd)
-    dirs = session_dirs(paths.state_dir(cwd))
-    winners = {p.name for p in dirs if is_winner(p)}
-    rows = listing.nested_rows(
-        (summarize_session_dir(p, branch_tips=tips) for p in dirs), sort=sort
-    )
+    rows, winners = listing.rows_for(cwd, sort=sort)
     return [listing.row_json(r, winners=winners) for r in rows]
 
 
@@ -219,9 +211,7 @@ def _list_machines(cwd: pathlib.Path) -> list[dict[str, Any]]:
 
 def _list_drafts(cwd: pathlib.Path) -> list[dict[str, Any]]:
     """Return the `machine create` drafts as listing rows, newest first."""
-    dirs = [p for p in draft_dir_paths(cwd) if not is_session_husk(p)]
-    rows = listing.nested_rows(summarize_session_dir(p, branch_tips={}) for p in dirs)
-    winners = {p.name for p in dirs if is_winner(p)}
+    rows, winners = listing.rows_for(cwd, buckets=("machines",))
     return [listing.row_json(r, winners=winners) for r in rows]
 
 

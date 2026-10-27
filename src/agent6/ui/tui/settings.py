@@ -18,6 +18,7 @@ from agent6 import paths, portable
 
 DEFAULT_THEME = "agent6-dark"
 DEFAULT_COPY_METHOD = "auto"
+DEFAULT_HUB_SORT = "review"
 
 
 def load_ui_settings(user: paths.RealUser | None = None) -> dict[str, Any]:
@@ -72,6 +73,18 @@ def get_copy_method(default: str = DEFAULT_COPY_METHOD) -> str:
 def save_copy_method(name: str, user: paths.RealUser | None = None) -> None:
     """Persist the copy method."""
     _save_ui_key("copy_method", name, user)
+
+
+def get_hub_sort(default: str = DEFAULT_HUB_SORT) -> str:
+    """Return the persisted hub order, `review` or `activity`, or the default when unset."""
+    ui = load_ui_settings().get("ui")
+    name = ui.get("hub_sort") if isinstance(ui, dict) else None
+    return name if name in ("review", "activity") else default
+
+
+def save_hub_sort(name: str, user: paths.RealUser | None = None) -> None:
+    """Persist the hub order."""
+    _save_ui_key("hub_sort", name, user)
 
 
 def _render_ui_toml(data: dict[str, Any]) -> str:

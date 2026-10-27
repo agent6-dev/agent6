@@ -10,13 +10,14 @@ Every image is from a recorded run; click to enlarge.
 
 ## Hub
 
-`agent6 tui` lists every session for the repository in five columns: updated, status (the mode folded in), cost, id, and task.
-Below 100 columns `updated` keeps only the time for today's runs and only the date for older ones, and a status drops its reason; below 80, cost hides, so the task keeps its room.
+`agent6 tui` lists every session for the repository in [review queue](usage.md#the-review-queue) order with six columns: updated, status (the mode folded in), review (the group, the reason, a fan-out's lanes by group), cost, id, and task; by activity the review column is not shown.
+Below 100 columns `updated` keeps only the time for today's runs and only the date for older ones, a status drops its reason and the review column hides; below 80, cost hides too, so the task keeps its room.
 
 - Enter opens a run
 - `n`: an empty conversation to start a run, plan, or ask (mode, preset and model picked above the composer; the model box shows the model the config resolves for the mode and preset, re-resolved whenever either changes, and a pick overrides it for this run; a refusal shows there with the text kept)
 - `l`: the selected run's event log; `m`: merge its branch (`sessions merge`); `d`: delete its history (`sessions rm`), both after a confirm
 - Space: expand or fold a fan-out's lanes (one row with its lane count otherwise)
+- `s`: switch between review-queue and activity order, remembered in `ui.toml` beside the theme
 - `c`: the config page; `M`: the machines screen; `r`: refresh; `?`: the keys; `q`: quit
 
 The new-work composer accepts `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).

@@ -26,7 +26,6 @@ from agent6.vcs import git_ops, git_policy, git_read
 from agent6.viewmodel import (
     _session_status,
     format,
-    is_winner,
     newest_session_dir,
     session_dirs,
     summarize_session_dir,
@@ -35,34 +34,34 @@ from agent6.viewmodel import (
 from agent6.viewmodel import listing as viewmodel_listing
 
 
-def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
-    """List this repo's sessions, newest first.
+def _cmd_list(
+    *, as_json: bool = False, lanes: bool = False, sort: viewmodel_listing.Sort = "activity"
+) -> int:
+    """List this repo's sessions, newest first or in review-queue order.
 
     Columns: updated, status (the mode folded in when the word does not imply it, the
-    failure reason, the unmerged mark), cost, id, task. A fan-out's lanes nest under its
-    row: folded into a count, or listed indented with `lanes`; the JSON row always nests
-    them. Every bucket, unlike the TUI and web hubs, which give `machine create` drafts
-    their own card.
+    failure reason, the unmerged mark), cost, id, task; `--sort review` adds the review
+    column (the row's queue group and reason) before cost. A fan-out's lanes nest under
+    its row: folded into a count, or listed indented with `lanes`; the JSON row always
+    nests them. Every bucket, unlike the TUI and web hubs, which give `machine create`
+    drafts their own card.
 
     Args:
         as_json: Print the rows as JSON.
         lanes: List each fan-out's lanes.
+        sort: Most recent activity first, or the review queue's groups.
 
     Returns:
         The exit code, 0.
     """
-    cwd = pathlib.Path.cwd()
-    dirs = session_dirs(agent6_paths.state_dir(cwd), sessions_layout.SESSION_BUCKETS)
-    if not dirs:
+    listing, winners = viewmodel_listing.rows_for(
+        pathlib.Path.cwd(), buckets=sessions_layout.SESSION_BUCKETS, sort=sort
+    )
+    if not listing:
         print(
             "[]" if as_json else _common.nothing_yet()
         )  # the empty listing is output, not an error
         return 0
-    winners = {d.name for d in dirs if is_winner(d)}  # fan-out compare winners
-    tips = git_read.run_ref_tips(cwd)
-    listing = viewmodel_listing.nested_rows(
-        summarize_session_dir(d, branch_tips=tips) for d in dirs
-    )
     if as_json:
         print(
             json.dumps([viewmodel_listing.row_json(r, winners=winners) for r in listing], indent=2)
@@ -72,8 +71,8 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
 
     def cells(
         row: viewmodel_listing.ListingRow, id_cell: str
-    ) -> tuple[str, str, str, str, str, _session_status.TaskLabel]:
-        """Return a row's six cells with the id cell as given."""
+    ) -> tuple[str, str, str, str, str, str, _session_status.TaskLabel]:
+        """Return a row's cells with the id cell as given; the review cell is "" by activity."""
         s = row.summary
         styled, plain = _common.styled_status(
             s.status,
@@ -85,12 +84,13 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
             format.format_when(row.mtime),
             styled,
             plain,
+            _review_cell(row) if sort == "review" else "",
             s.cost_cell,
             id_cell,
             s.task_label,
         )
 
-    rows: list[tuple[str, str, str, str, str, _session_status.TaskLabel]] = []
+    rows: list[tuple[str, str, str, str, str, str, _session_status.TaskLabel]] = []
 
     def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""
@@ -108,19 +108,36 @@ def _cmd_list(*, as_json: bool = False, lanes: bool = False) -> int:
     for row in listing:
         emit(row, 0)
     status_w = max(6, *(len(plain) for _, _, plain, *_ in rows))
-    id_w = max(2, *(len(r[4]) for r in rows))
+    review_w = max(6, *(len(r[3]) for r in rows)) if sort == "review" else 0
+    review_head = f"{'review':<{review_w}}  " if review_w else ""
+    id_w = max(2, *(len(r[5]) for r in rows))
     # The task column takes what a tty has left (floor 24); piped output keeps a fixed 60.
-    fixed = 11 + 2 + status_w + 2 + 8 + 2 + id_w + 2
+    fixed = 11 + 2 + status_w + 2 + (review_w + 2 if review_w else 0) + 8 + 2 + id_w + 2
     task_w = max(24, shutil.get_terminal_size().columns - fixed) if color else 60
-    print(f"{'updated':<11}  {'status':<{status_w}}  {'cost':<8}  {'id':<{id_w}}  task")
-    for when, styled, plain, cost, session_id, task in rows:
+    print(
+        f"{'updated':<11}  {'status':<{status_w}}  {review_head}{'cost':<8}  {'id':<{id_w}}  task"
+    )
+    for when, styled, plain, review, cost, session_id, task in rows:
         pad = " " * (status_w - len(plain))
+        review_col = f"{review:<{review_w}}  " if review_w else ""
         task_lines = task.line(max_chars=task_w).splitlines()
         snip = task_lines[0] if task_lines else ""
-        print(f"{when:<11}  {styled}{pad}  {cost:<8}  {session_id:<{id_w}}  {snip}")
+        print(f"{when:<11}  {styled}{pad}  {review_col}{cost:<8}  {session_id:<{id_w}}  {snip}")
         for continuation in task_lines[1:]:
             print(" " * fixed + continuation)
     return 0
+
+
+def _review_cell(row: viewmodel_listing.ListingRow) -> str:
+    """Return the review column's text: the queue group, the reason and the lanes' groups."""
+    group = viewmodel_listing.row_group(row)
+    parts = [group.replace("_", " ") if group != "other" else "", row.summary.review_queue.reason]
+    lanes = ", ".join(
+        f"{n} {name.replace('_', ' ')}" for name, n in viewmodel_listing.lane_groups(row).items()
+    )
+    if lanes:
+        parts.append(f"lanes: {lanes}")
+    return " · ".join(p for p in parts if p)
 
 
 def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: bool = True) -> int:

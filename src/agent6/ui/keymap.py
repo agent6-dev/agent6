@@ -110,6 +110,13 @@ REVIEW_TEXT = {
     "truncated": "\n… (truncated)",
     "panel": "Panel {panel_id}: block_on={block_on}, rejected={blocked}, disarmed={disarmed}",
 }
+# The review queue's groups as the hub names them.
+QUEUE_TEXT = {
+    "blocked": "blocked",
+    "unverified": "unverified",
+    "awaiting_merge": "awaiting merge",
+    "other": "other",
+}
 REVIEW_COLUMNS = ("ID", "Status", "Severity", "Location", "Title")
 REVIEW_HINTS = ("↑↓ selects a finding; Tab focuses its detail or read-only diff.",)
 REVIEW_DISPOSITIONS = (
@@ -138,6 +145,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "view_logs": "l",
         "view_findings": "v",
         "toggle_lanes": "space",
+        "toggle_sort": "s",
         "help": "question_mark",
         "command_palette": "ctrl+p",
     },

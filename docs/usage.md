@@ -362,6 +362,24 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
   A crash between the request and submission records reads as `delivery unknown`; retrying the request ID does not resend it.
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
+## The review queue
+
+Every listing places each session in a review queue, derived from its journal on each read and never stored.
+The groups, in order:
+
+- **blocked**: open `block` findings; the row names their count and dates from the oldest one's first panel
+- **unverified**: an ended run whose final tree the gate did not certify whole (no verify, a red or timed-out gate, a pass over selected paths only, a pass with no verification evidence, edits after the last green)
+- **awaiting merge**: a clean run waiting for a merge: no open findings, a complete and current panel with no abstained seat, a whole-tree pass whose evidence certifies the end tree, unmerged work with its chain and branch at the recorded checkpoint, no live worker, not stranded or undone
+- **other**: the rest, with its reason: open warnings or nits, an unreviewed run, a stale, incomplete, inconclusive or freeform review, legacy counts, unreadable evidence, a merged run, commits on the run's refs after it, no recorded checkpoint, an ask or plan
+
+Within a group the oldest pending work comes first; rows with nothing pending keep their activity order.
+A fan-out coordinator takes its lanes' earliest group and shows their counts without inheriting a lane's verification.
+Lifecycle status stays apart: a running session with an open block reads running in the blocked group, and a failed run reads failed.
+
+`agent6 sessions list --sort review` prints the queue with a review column (the group, the reason, a fan-out's lanes by group); `--sort activity` is the default.
+`sessions list --json` carries each row's `review_queue` (group, reason, open counts, review and verification state, `oldest_open_at`, `source_tip`, `merge_allowed`), `queue_group` and `lane_groups`.
+The web and TUI hubs open in review order with activity one toggle away ([web](web.md#pages), [terminal](terminal.md#hub)); ACP's `/review-queue` lists the repository's queue as text ([ACP](acp.md)).
+
 ## Session receipts
 
 `agent6 sessions receipt <id> [--json]` reads testing, review, risk and reversal evidence from the journal and manifest.

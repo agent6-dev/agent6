@@ -630,7 +630,9 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
     )
 
     if args.sessions_command == "list":
-        return sessions_cmds._cmd_list(as_json=args.list_json, lanes=args.list_lanes)
+        return sessions_cmds._cmd_list(
+            as_json=args.list_json, lanes=args.list_lanes, sort=args.list_sort
+        )
     if args.sessions_command == "findings":
         return sessions_findings.cmd_findings(
             args.session_id, all_findings=args.all, as_json=args.json

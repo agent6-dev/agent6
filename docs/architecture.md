@@ -506,7 +506,7 @@ One listing row shape (`viewmodel.summary_row`) serves `sessions list --json` an
 Two shared layers sit under them.
 
 - the read side, [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel): the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit
-- tolerant session journal scan: `viewmodel/_session_log.py`; shared labels and status decisions: `viewmodel/_session_status.py`; directory discovery and listing rows: `viewmodel/listing.py`
+- tolerant session journal scan: `viewmodel/_session_log.py`; shared labels and status decisions: `viewmodel/_session_status.py`; directory discovery and listing rows: `viewmodel/listing.py`; the review queue's groups: `viewmodel/review_queue.py`
 - session view records: `viewmodel/_state_types.py`; status, context usage and wire rendering: `viewmodel/_state_view.py`; event handling stays in `viewmodel/state.py`
 - machine execution and spend reads: `viewmodel/_machine_logs.py`; watcher cursors: `viewmodel/_machine_watch.py`; journal folding, probes and verb refusals: `viewmodel/machine_state.py`
 - transcript event ordering: `viewmodel/transcript.py`; tool previews and marker text: `viewmodel/_transcript_text.py`

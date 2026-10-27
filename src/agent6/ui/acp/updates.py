@@ -53,6 +53,10 @@ _TOOL_KINDS = {
 # Review commands are front-end actions; only /pin reaches the worker as a directive.
 REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
     {
+        "name": "review-queue",
+        "description": "List sessions by pending review work; a pending row names its command",
+    },
+    {
         "name": "receipt",
         "description": "Inspect recorded testing, review, risk and reversal evidence",
     },

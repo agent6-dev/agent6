@@ -53,6 +53,46 @@ def test_runs_list_marks_the_fan_out_winner(
     assert "fan-l1 ★" not in out and "solo ★" not in out  # losers / non-lanes do not
 
 
+def test_runs_list_sort_review_orders_the_queue_and_adds_its_column(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`--sort review` puts the open block first with its reason; activity keeps newest first."""
+    from tests.unit import test_review_queue as queue_tests
+
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
+    for session_id, rows in (
+        ("run-block", [queue_tests._START, *queue_tests._panel_rows(block=1), queue_tests._END]),
+        (
+            "run-newest",
+            [
+                {
+                    "type": "session.start",
+                    "ts": "2026-10-25T12:00:00+00:00",
+                    "mode": "run",
+                    "user_task": "n",
+                }
+            ],
+        ),
+    ):
+        (runs / session_id).mkdir(parents=True)
+        (runs / session_id / "logs.jsonl").write_text(
+            "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+        )
+    monkeypatch.chdir(tmp_path)
+    assert sessions_cmds._cmd_list(sort="review") == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0].split()[:4] == ["updated", "status", "review", "cost"]
+    assert out[1].startswith("run-block") is False and "run-block" in out[1]
+    assert "blocked · 1 open block finding" in out[1]
+    assert "run-newest" in out[2]
+    assert sessions_cmds._cmd_list() == 0
+    out = capsys.readouterr().out.splitlines()
+    assert "review" not in out[0] and "run-newest" in out[1]
+    assert sessions_cmds._cmd_list(as_json=True, sort="review") == 0
+    rows_json = json.loads(capsys.readouterr().out)
+    assert [r["queue_group"] for r in rows_json] == ["blocked", "other"]
+
+
 def test_runs_list_json_carries_the_row_facts(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

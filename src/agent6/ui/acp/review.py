@@ -13,7 +13,7 @@ from agent6 import review_records
 from agent6.app import review_actions
 from agent6.sessions import process
 from agent6.ui.acp import rpc, session, updates
-from agent6.viewmodel import receipt, review, tail, transcript
+from agent6.viewmodel import listing, receipt, review, tail, transcript
 
 
 class _CommandParser(argparse.ArgumentParser):
@@ -23,7 +23,7 @@ class _CommandParser(argparse.ArgumentParser):
 
 def _parse(command: str, text: str) -> argparse.Namespace:
     parser = _CommandParser(prog=command, add_help=False, allow_abbrev=False)
-    if command == "/receipt":
+    if command in ("/receipt", "/review-queue"):
         return parser.parse_args(shlex.split(text)[1:])
     if command == "/findings":
         parser.add_argument("--all", action="store_true")
@@ -59,6 +59,77 @@ def _findings_text(view: review.ReviewView, *, include_resolved: bool) -> str:
             body += f"\n{finding.resolution.disposition}: {finding.resolution.reason}"
         lines.append(body)
     return "\n\n".join(lines) or "No recorded findings."
+
+
+def _read_only_reply(
+    command: str, sessions: session.Sessions, current: session.Session, args: argparse.Namespace
+) -> str | None:
+    """Return the text a read-only command answers with.
+
+    Args:
+        command: The slash command.
+        sessions: The session manager.
+        current: The current conversation.
+        args: The command's parsed arguments.
+
+    Returns:
+        The reply, or None for a command that acts on a finding.
+
+    Raises:
+        RpcError: A per-run command arrived in a conversation with no recorded run.
+    """
+    if command == "/review-queue":
+        return review_queue_text(current.cwd)
+    if command not in {"/receipt", "/findings"}:
+        return None
+    if not current.session_id:
+        raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
+    saved = current.layout(sessions.state_dir_for(current.cwd))
+    if command == "/receipt":
+        return receipt.render(receipt.read_receipt(saved.session_dir, current.cwd))
+    return _findings_text(review_actions.read_review(saved.session_dir), include_resolved=args.all)
+
+
+def review_queue_text(cwd: pathlib.Path) -> str:
+    """Return the repository's sessions in review-queue order as text.
+
+    Args:
+        cwd: The repository.
+
+    Returns:
+        One line per session under its group heading, a blocked, unverified or awaiting-merge
+        row with the CLI command that acts on it; a note when nothing is recorded.
+    """
+    rows, _winners = listing.rows_for(cwd, sort="review")
+    if not rows:
+        return "No sessions recorded for this repository."
+    lines: list[str] = []
+    group = ""
+    for row in rows:
+        own = listing.row_group(row)
+        if own != group:
+            group = own
+            lines.append(f"{group.replace('_', ' ').capitalize()}:")
+        lines.extend(_queue_lines(row, depth=1))
+    return "\n".join(lines)
+
+
+def _queue_lines(row: listing.ListingRow, *, depth: int) -> list[str]:
+    """Return a row's line and its lanes', indented, a pending row naming what to run."""
+    s = row.summary
+    entry = s.review_queue
+    commands = {
+        "blocked": f"agent6 sessions findings {s.session_id}",
+        "unverified": f"agent6 sessions receipt {s.session_id}",
+        "awaiting_merge": f"agent6 sessions merge {s.session_id}",
+    }
+    words = " · ".join(p for p in (s.status, entry.reason) if p)
+    command = commands.get(entry.group, "")
+    line = f"{'  ' * depth}{s.session_id}: {words}" + (f" ({command})" if command else "")
+    out = [line]
+    for lane in row.lanes:
+        out.extend(_queue_lines(lane, depth=depth + 1))
+    return out
 
 
 def _recorded_updates(
@@ -101,20 +172,14 @@ def handle_command(
         return False
     try:
         args = _parse(command, text)
-        if not current.session_id:
-            raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
-        saved = current.layout(sessions.state_dir_for(current.cwd))
-        if command in {"/receipt", "/findings"}:
-            body = (
-                receipt.render(receipt.read_receipt(saved.session_dir, current.cwd))
-                if command == "/receipt"
-                else _findings_text(
-                    review_actions.read_review(saved.session_dir), include_resolved=args.all
-                )
-            )
+        body = _read_only_reply(command, sessions, current, args)
+        if body is not None:
             notify(updates.message_update(current.acp_id, body))
             finish("end_turn")
             return True
+        if not current.session_id:
+            raise rpc.RpcError(rpc.INVALID_PARAMS, "this conversation has no recorded run")
+        saved = current.layout(sessions.state_dir_for(current.cwd))
         view = review_actions.read_review(saved.session_dir)
         if command == "/fix":
             if current.is_running() or process.worker_is_alive(saved.session_dir):
