@@ -1,0 +1,6 @@
+{"by": "user", "graph_version": 1, "id": "0001", "op": "add_subtask", "parent_id": null, "ts": "2026-10-27T01:21:27.686651+00:00"}
+{"by": "worker", "graph_version": 2, "id": "0002", "op": "add_subtask", "parent_id": "0001", "ts": "2026-10-27T01:22:00.539430+00:00"}
+{"graph_version": 3, "id": "0002", "op": "set_cursor", "ts": "2026-10-27T01:22:00.669082+00:00"}
+{"graph_version": 4, "id": "0002", "new_status": "in_progress", "op": "update_status", "ts": "2026-10-27T01:22:00.693134+00:00"}
+{"graph_version": 5, "id": "0002", "new_status": "passed", "op": "update_status", "ts": "2026-10-27T01:22:01.996913+00:00"}
+{"graph_version": 6, "id": "0001", "new_status": "passed", "op": "update_status", "ts": "2026-10-27T01:22:18.428419+00:00"}

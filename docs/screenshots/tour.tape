@@ -3,7 +3,8 @@
 #
 #   bash docs/screenshots/generate.sh        # seeds fixtures, runs this tape
 #
-# Drives hub -> config -> search -> help -> log -> conversation -> dashboard
+# Drives hub -> config -> search -> help -> log -> findings -> receipt ->
+# conversation -> dashboard
 # and writes one PNG per stop. Requires `vhs`, `ttyd`, `ffmpeg`, and `agent6` on
 # PATH. generate.sh exports XDG_STATE_HOME / XDG_CONFIG_HOME /
 # AGENT6_DEMO_REPO (seeded, isolated) before invoking vhs; the tape inherits
@@ -73,6 +74,24 @@ Sleep 1.5s
 Screenshot docs/screenshots/out/09-logs.png
 Escape
 Sleep 1s
+
+# --- the reviewed run's findings and receipt -----------------------------
+# The selection starts on the top row; review order lists the run with two
+# open warnings fifth, after the four unverified runs.
+Down 4
+Sleep 800ms
+Type "v"
+Sleep 2.5s
+Screenshot docs/screenshots/out/06-findings.png
+Type "e"
+Sleep 2s
+Screenshot docs/screenshots/out/07-receipt.png
+Escape
+Sleep 800ms
+Escape
+Sleep 1s
+Up 4
+Sleep 800ms
 
 # --- open the top run -> the conversation, the run app's primary view ----
 # (assistant turns, tool calls, the composer bar). It opens following the

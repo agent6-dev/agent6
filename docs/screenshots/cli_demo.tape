@@ -6,8 +6,8 @@
 #
 # Beats (one continuous scroll, like a real terminal -- no clears): a failing
 # test -> hand it to agent6 (it finds + fixes the bug, reasoning streamed) ->
-# `runs diff` (the one-line fix, the payoff) -> `attach --since` (the
-# event-log detail: verify passed, auto-commit, finish) -> `runs show` (status).
+# `sessions diff` (the one-line fix, the payoff) -> `attach --since` (the
+# event-log detail: verify passed, auto-commit, finish) -> `sessions show` (status).
 #
 # This tape is pure typing (no shortcut keys), so cli_demo.sh renders it straight
 # with no keystroke-toast overlay pass.

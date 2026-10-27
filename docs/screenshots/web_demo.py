@@ -5,7 +5,8 @@
 
 Drives `agent6 web` in a headless Chromium, recording a .webm at a given
 viewport (desktop, phone or hero) while touring the hub, a run view, the
-conversation, and the config page. A virtual circle cursor glides between targets
+conversation, the config page, and the Git and Files pages of the repository
+`agent6 web` runs in. A virtual circle cursor glides between targets
 and a bottom-center toast narrates each step, the browser analogue of the TUI
 reel's keystroke overlay (keystroke_overlay.py).
 
@@ -177,6 +178,55 @@ def scroll_card(page: Page, selector: str, y: int, *, wait: int = 1500) -> None:
     page.wait_for_timeout(wait)
 
 
+def drive_repo(page: Page, mode: str) -> None:
+    """The Git page (graph, a commit, a diff) and the Files page (a file with blame)."""
+    rail = "nav.tabs a[data-tab='%s']" if mode == "phone" else "aside.rail a[data-tab='%s']"
+    click(page, rail % "git", label="Git: the commit graph, every branch and tag", settle=1200)
+    page.wait_for_selector(".gc-row:not(.gc-wt)")
+    page.wait_for_timeout(900)
+    click(
+        page, ".gc-row:not(.gc-wt) >> nth=1", label="A commit: its message and files", settle=1400
+    )
+    page.wait_for_selector(".gf")
+    click(page, ".gf >> nth=0", label="A file's diff, inline or split", settle=2000)
+
+    # The Files page: the tree at a revision, one file with blame.
+    click(page, rail % "files", label="Files: any revision, read-only", settle=1200)
+    page.wait_for_selector(".gtree")
+    click(page, ".gtree [data-path='README.md']", label="A file, highlighted", settle=1400)
+    page.wait_for_selector("pre.src")
+    click(page, "button.files-blame", label="blame: each line's last commit", settle=1600)
+    page.wait_for_selector(".blame-cell")
+    page.wait_for_timeout(1200)
+
+
+def drive_findings(page: Page, mode: str) -> None:
+    """A reviewed run: its Findings card with two open warnings, then the receipt."""
+    page.evaluate("location.hash = '#/'")
+    page.wait_for_selector(".item")
+    page.wait_for_timeout(700)
+    click(
+        page,
+        ".item:has-text('merry-fountain')",
+        label="A reviewed run: findings stay open until you resolve them",
+        settle=1300,
+    )
+    page.wait_for_selector(".card-findings .finding-counts", state="attached")
+    if mode == "phone":  # the phone shows one widget at a time, picked from the menu
+        click(page, ".wmenu-btn", settle=500)
+        click(page, ".wmenu button[data-w='findings']", settle=900)
+    page.wait_for_selector(".card-findings .finding-counts")
+    page.wait_for_timeout(900)
+    click(
+        page,
+        ".card-findings button.mini:has-text('Receipt')",
+        label="The receipt: tests, review, risk, how to revert",
+        settle=1800,
+    )
+    page.wait_for_selector(".card-findings .receipt pre")
+    page.wait_for_timeout(1500)
+
+
 def drive(page: Page, base: str, mode: str, t0: float, shot: Path | None = None) -> float:
     page.goto(base, wait_until="networkidle")
     page.wait_for_selector(".item")
@@ -229,6 +279,9 @@ def drive(page: Page, base: str, mode: str, t0: float, shot: Path | None = None)
     click(page, "input.filter", settle=300)
     page.keyboard.type("sandbox", delay=120)
     page.wait_for_timeout(1600)
+
+    drive_repo(page, mode)
+    drive_findings(page, mode)
 
     # Back to the hub to close the loop.
     page.evaluate("location.hash = '#/'")

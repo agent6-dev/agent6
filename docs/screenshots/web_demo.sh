@@ -32,9 +32,13 @@ done
 TMP="$(mktemp -d)"
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
-export AGENT6_DEMO_REPO="$TMP/demo-repo"
-mkdir -p "$AGENT6_DEMO_REPO"
-git -C "$AGENT6_DEMO_REPO" init -q
+# The tours run in a clone of this checkout: the Git and Files pages show its history, and
+# the seeded runs' reviewed trees come from the stats demo repository's bundle.
+DEMO="$TMP/demo"
+git clone -q --no-hardlinks "$ROOT" "$DEMO"  # /tmp is often another filesystem
+git -C "$DEMO" fetch -q "$ROOT/docs/screenshots/seed/stats-demo.bundle" \
+  '+refs/heads/*:refs/screenshots/heads/*' '+refs/agent6/*:refs/screenshots/agent6/*'
+export AGENT6_DEMO_REPO="$DEMO"
 
 echo "web_demo: seeding fixtures into $TMP"
 python3 docs/screenshots/seed.py >/dev/null

@@ -29,6 +29,9 @@ ORDER = [
     # (no session.end, "worker exited") stays in the list a row down, where it
     # documents the state without being the site's first impression.
     "ready-rowan-A5P972",
+    # Two runs with current-code evidence: open review findings, and a merged receipt.
+    "merry-fountain-B7XAJS",
+    "upright-fox-5B71YT",
     "willing-glen-9ZYWWB",
     "friendly-crane-1X3ER0",
     "tidy-river-165YS6",

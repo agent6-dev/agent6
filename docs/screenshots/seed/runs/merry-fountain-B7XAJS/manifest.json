@@ -1,0 +1,65 @@
+{
+  "version": 7,
+  "agent6_version": "0.0.39",
+  "session_id": "merry-fountain-B7XAJS",
+  "mode": "run",
+  "start_ts": "2026-10-27T01:24:41.024670+00:00",
+  "user_task": "Add percentile(xs, p) to src/stats.py: p runs from 0 to 100, with linear interpolation between ranks. Add variance(xs) (sample variance) too, and tests for both.",
+  "base_sha": "c8108f7b0cac4a2d254dbb695002194d191d552c",
+  "base_branch": "master",
+  "run_branch": "agent6/merry-fountain-B7XAJS",
+  "git_control": "agent6",
+  "models": {
+    "driver": {
+      "provider": "openrouter",
+      "model": "openai/gpt-4.1-mini"
+    },
+    "reviewer": {
+      "provider": "chatgpt",
+      "model": "gpt-6-astra"
+    },
+    "driver_from_flag": false
+  },
+  "harness": {
+    "review_trigger": "before_finish",
+    "revise_prompt": "off",
+    "preset": "none",
+    "verify_command": [
+      "python3",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-t",
+      "."
+    ],
+    "verify_origin": "configured",
+    "preset_from_flag": false
+  },
+  "policy": {
+    "run_commands": "allow",
+    "isolation": "full",
+    "network": "session",
+    "commit_per_turn": true
+  },
+  "budget": {
+    "max_usd": null,
+    "max_tokens_fallback": null,
+    "max_plan_points": null
+  },
+  "parked_task": "",
+  "parked_reason": "",
+  "source_session_id": null,
+  "parent_session_id": null,
+  "forked_from_turn": null,
+  "forked_from_sha": null,
+  "worktree": null,
+  "worktree_git_dir": null,
+  "workspace_set_up": false,
+  "merged": null,
+  "includes": null,
+  "parallel": null,
+  "compare": null,
+  "fanout": null
+}

@@ -18,7 +18,7 @@ mkdir -p "$OUT"
 
 # The screenshots tour.tape writes, kept in sync with the docs pages that embed
 # them. generate.sh fails if it does not produce every one.
-SHOTS=(01-hub 02-run-dashboard 03-config 04-config-search 05-transcript 08-help 09-logs)
+SHOTS=(01-hub 02-run-dashboard 03-config 04-config-search 05-transcript 06-findings 07-receipt 08-help 09-logs)
 
 for bin in vhs ttyd ffmpeg ffprobe agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "generate.sh: missing required tool: $bin" >&2; exit 1; }
@@ -28,7 +28,13 @@ TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 export XDG_CONFIG_HOME="$TMP/config"
 export XDG_STATE_HOME="$TMP/state"
-export AGENT6_DEMO_REPO="${AGENT6_DEMO_REPO:-$ROOT}"
+# The tours run in a clone of this checkout: the Git and Files pages show its history, and
+# the seeded runs' reviewed trees come from the stats demo repository's bundle.
+DEMO="$TMP/demo"
+git clone -q --no-hardlinks "$ROOT" "$DEMO"  # /tmp is often another filesystem
+git -C "$DEMO" fetch -q "$ROOT/docs/screenshots/seed/stats-demo.bundle" \
+  '+refs/heads/*:refs/screenshots/heads/*' '+refs/agent6/*:refs/screenshots/agent6/*'
+export AGENT6_DEMO_REPO="$DEMO"
 
 echo "screenshots: seeding fixtures into $TMP"
 python3 docs/screenshots/seed.py

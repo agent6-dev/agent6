@@ -1,11 +1,10 @@
 # One agent6 tui session for the tour.webm reel: hub -> open a session (the
 # conversation, the run app's primary view) -> dashboard (Ctrl+D) -> back to
-# hub -> event log (l) -> config -> search -> help -> quit. The whole tour
-# stays inside the TUI (a run is opened with Enter, not a new shell command).
-# No Screenshots, which would stall the video clock; generate.sh records this
-# and overlays keystroke toasts with keystroke_overlay.py to make tour.webm.
-# This bare recording is kept as hero-tui.webm: the README hero (hero.sh) uses
-# it because it carries no toasts.
+# hub -> event log (l) -> findings (v) -> receipt (e) -> config -> search ->
+# help -> quit. The whole tour stays inside the TUI (a run is opened with
+# Enter, not a new shell command). No Screenshots, which would stall the video
+# clock; generate.sh records this and overlays keystroke toasts with
+# keystroke_overlay.py to make tour.webm.
 #
 # Recorded at 1280x720 / Framerate 8: the live dashboard redraws ~5x/s, and at
 # this resolution vhs's capture keeps up, so the recording stays at real time
@@ -49,6 +48,16 @@ Escape
 Sleep 3s
 Type "l"
 Sleep 4.5s
+Escape
+Sleep 1.5s
+Down 4
+Sleep 1s
+Type "v"
+Sleep 4s
+Type "e"
+Sleep 4s
+Escape
+Sleep 1s
 Escape
 Sleep 1.5s
 Type "c"

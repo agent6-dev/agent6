@@ -74,12 +74,16 @@ The screen shows open severity counts and the panel's rejection decision separat
 Fix leaves the finding open, and a failed or unknown delivery stays visible.
 `r` refreshes the journal; the screen also polls while open.
 
+![The findings screen](screenshots/out/06-findings.png)
+
 ## Receipts
 
 Open **Receipt** (`e`) from the Findings screen to inspect [recorded evidence](usage.md#session-receipts).
 The screen shows Testing, Review, Risk and How to revert, with expandable stdout and stderr for each verification attempt.
 **Ask a run to revert** opens New work with a proposed task; submitting it starts work through the existing controls.
 Reading the screen does not run tests or call a provider.
+
+![A receipt](screenshots/out/07-receipt.png)
 
 ## Code-review rule sources
 

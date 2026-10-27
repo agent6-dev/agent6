@@ -32,11 +32,11 @@ GIF encoding uses its own palette filter.
 
 Supporting files:
 
-- `tour.tape`: captures one PNG per stop through hub, config, search, help, log, conversation and dashboard.
+- `tour.tape`: captures one PNG per stop through hub, config, search, help, log, findings, receipt, conversation and dashboard.
 - `reel.tape`: records one TUI tour without screenshot commands, which stall the video clock.
 - `webm.py`: converts VHS output in place and checks WebM colour-space tags for the terminal, browser and overlay encoders.
 - `keystroke_overlay.py`: overlays animated keystroke toasts, scaling the tape's keypress timeline to the recording's duration.
-- `seed/`: sanitized run fixtures with trimmed `logs.jsonl` files and transcripts for the seeded tours, plus demo repos and cassettes.
+- `seed/`: sanitized run fixtures with trimmed `logs.jsonl` files and transcripts for the seeded tours, plus demo repos and cassettes; `stats-demo.bundle` holds the stats repository's history with the two reviewed runs' trees, fetched into the clone of this checkout the tours run in.
 - `seed.py`: installs the run fixtures into an isolated `$XDG_STATE_HOME/agent6` under the demo repo's id and writes `config.toml` and `ui.toml` with theme `agent6-dark`.
 - `build_fixtures.py`: rebuilds run fixtures from `$XDG_STATE_HOME/agent6/`, trimming token deltas and scrubbing paths; not run in CI.
 - `tui_snapshot.py`: captures a run's dashboard, log or transcript through Textual's headless Pilot as SVG, or PNG with Chromium or `rsvg-convert`; not run in CI.
@@ -63,7 +63,7 @@ The seeded TUI and web tours render saved sessions without running a model.
 
 Outputs under `out/` (built by Pages unless marked on demand):
 
-- `cli-demo.webm`: terminal bug-fix run followed by diff, watch and receipt views; on demand, not in CI.
+- `cli-demo.webm`: terminal bug-fix run followed by `sessions diff`, `attach --since` and `sessions show`; on demand, not in CI.
 - `hero-cli.gif`: CLI hero for GitHub's image proxy, built by `hero.sh`.
 - `hero-cli.webm`: CLI hero for the site, built by `hero.sh`.
 - `hero-src-cli.webm`: CLI hero source from `hero_cli.sh`.

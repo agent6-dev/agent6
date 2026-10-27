@@ -15,7 +15,8 @@
 #        auto-commit + diff pane -> hub receipt -> config: sandbox.
 #   cli  the failing suite -> one command, the run streams -> /exit ->
 #        sessions diff (the fix) -> sessions show (the receipt).
-#   web  hub -> session view -> expanded tool detail -> config: sandbox.
+#   web  hub -> session view -> config: sandbox -> git graph -> a commit's
+#        diff -> files with blame -> a reviewed run's findings and receipt -> hub.
 #
 # Sources (record first):
 #   bash docs/screenshots/hero_run.sh                       # -> hero-src-tui.webm
@@ -53,8 +54,8 @@ BG="0x0f1414"   # agent6-dark's background; see src/agent6/ui/tui/theme.py
 WIDTH=1440
 HEIGHT=810
 FPS=24
-GIF_FPS=14      # every frame of a scrolling transcript is a full redraw, so the
-                # gif's size scales with fps; 14 keeps the 10s cuts under the 5 MB cap
+GIF_FPS=12      # every frame of a scrolling transcript is a full redraw, so the
+                # gif's size scales with fps; 12 keeps the 10s cuts under the 5 MB cap
 
 # Segment spec: src : cut-in : window length : target length : hold.
 TUI_SEGMENTS=(
@@ -72,10 +73,13 @@ CLI_SEGMENTS=(
   "hero-src-cli.webm:35.4:4.6:1.4:0.9"
 )
 WEB_SEGMENTS=(
-  "hero-src-web.webm:0.6:3.3:1.9:0"
-  "hero-src-web.webm:3.8:5.5:2.6:0"
-  "hero-src-web.webm:21.2:2.1:1.4:0"
-  "hero-src-web.webm:25.4:2.5:1.6:1.0"
+  "hero-src-web.webm:0.6:3.4:1.0:0"
+  "hero-src-web.webm:4.4:5.0:1.5:0"
+  "hero-src-web.webm:23.0:3.0:0.8:0"
+  "hero-src-web.webm:30.0:4.8:1.4:0"
+  "hero-src-web.webm:38.5:7.0:1.5:0"
+  "hero-src-web.webm:50.0:6.0:1.4:0"
+  "hero-src-web.webm:56.8:2.0:0.6:1.0"
 )
 
 build() {

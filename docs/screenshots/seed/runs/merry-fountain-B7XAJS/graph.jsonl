@@ -1,0 +1,14 @@
+{"by": "user", "graph_version": 1, "id": "0001", "op": "add_subtask", "parent_id": null, "ts": "2026-10-27T01:24:41.287256+00:00"}
+{"by": "worker", "graph_version": 2, "id": "0002", "op": "add_subtask", "parent_id": "0001", "ts": "2026-10-27T01:24:45.062005+00:00"}
+{"by": "worker", "graph_version": 3, "id": "0003", "op": "add_subtask", "parent_id": "0001", "ts": "2026-10-27T01:24:45.131235+00:00"}
+{"by": "worker", "graph_version": 4, "id": "0004", "op": "add_subtask", "parent_id": "0001", "ts": "2026-10-27T01:24:45.207797+00:00"}
+{"graph_version": 5, "id": "0002", "op": "set_cursor", "ts": "2026-10-27T01:24:45.365306+00:00"}
+{"graph_version": 6, "id": "0002", "new_status": "in_progress", "op": "update_status", "ts": "2026-10-27T01:24:45.391972+00:00"}
+{"graph_version": 7, "id": "0002", "new_status": "passed", "op": "update_status", "ts": "2026-10-27T01:26:50.337164+00:00"}
+{"graph_version": 8, "id": "0003", "op": "set_cursor", "ts": "2026-10-27T01:26:50.554854+00:00"}
+{"graph_version": 9, "id": "0003", "new_status": "in_progress", "op": "update_status", "ts": "2026-10-27T01:26:50.586291+00:00"}
+{"graph_version": 10, "id": "0003", "new_status": "passed", "op": "update_status", "ts": "2026-10-27T01:30:22.650170+00:00"}
+{"graph_version": 11, "id": "0004", "op": "set_cursor", "ts": "2026-10-27T01:30:22.769480+00:00"}
+{"graph_version": 12, "id": "0004", "new_status": "in_progress", "op": "update_status", "ts": "2026-10-27T01:30:22.793716+00:00"}
+{"graph_version": 13, "id": "0004", "new_status": "passed", "op": "update_status", "ts": "2026-10-27T01:30:24.529941+00:00"}
+{"graph_version": 14, "id": "0001", "new_status": "passed", "op": "update_status", "ts": "2026-10-27T01:31:31.822567+00:00"}
