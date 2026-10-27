@@ -28,6 +28,11 @@ from agent6.models import pricing
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
 
 
+# A reported reset time that moves later by more than this is a new window; the backend's
+# times jitter by a second between readings.
+RESET_SLACK_S = 60.0
+
+
 class BudgetExceededError(Exception):
     """A configured limit is exceeded; raised by `BudgetTracker.check`."""
 
@@ -341,9 +346,10 @@ class BudgetTracker:
     The call that brings a ledger to or over its cap trips `BudgetExceededError` on
     the next `check`, so one call may cross the line and no further call is issued.
     `max_plan_points` meters consumption: the rise in the account's reported used percent
-    across this run's readings, accumulated across window resets. The reading is
-    account-global, so a concurrent run's spend lands in whichever run reads it next:
-    over-counting, never under.
+    across this run's readings, accumulated across window resets; a window counts as reset
+    when its reported reset time moves later by more than `RESET_SLACK_S`, and a lower
+    reading whose reset time has not moved is out of order and counts nothing. The reading
+    is account-global, so it includes other runs' spend.
 
     Attributes:
         max_usd: The USD cap; required, so the tracker never carries its own default.
@@ -367,7 +373,7 @@ class BudgetTracker:
     _exceeded_reason: str = ""
     # Provider entry to its latest plan reading, the most recently reported last.
     _plans: dict[str, PlanUsage] = dataclasses.field(default_factory=dict)
-    # Per (provider entry, window): the last reading, and this run's consumption sawtooth.
+    # Per (provider entry, window): the high-water reading, and this run's consumption.
     _plan_last_window: dict[tuple[str, str], PlanWindow] = dataclasses.field(default_factory=dict)
     _plan_consumed_by_window: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
@@ -486,11 +492,13 @@ class BudgetTracker:
         )
 
     def _note_plan_usage(self, route: str, plan: PlanUsage) -> None:
-        """Fold one reading into the consumption sawtooth and the credit balance into the USD meter.
+        """Fold one reading into the window's consumption and the credit balance into the USD meter.
 
-        A rise since the last reading is consumption; a drop is a window reset, counted
-        from zero after it. A window's first reading is its baseline. A credit balance
-        that fell is money spent. The lock is held.
+        A window's first reading is its baseline. A rise within the window is consumption. A
+        reset time later by more than `RESET_SLACK_S` is a new window, whose reading counts
+        whole. A reading out of order (another seat read the account first) counts nothing:
+        a lower percent on the same window, or any reading from a window already left. A
+        credit balance that fell is money spent. The lock is held.
 
         Args:
             route: The provider entry the reading came from.
@@ -499,11 +507,18 @@ class BudgetTracker:
         for w in plan.windows:
             key = (route, w.name)
             last = self._plan_last_window.get(key)
-            if last is not None:
+            if last is None:
+                self._plan_last_window[key] = w
+                continue
+            if last.resets_at - w.resets_at > RESET_SLACK_S:
+                continue
+            if w.resets_at - last.resets_at > RESET_SLACK_S:
+                delta = w.used_percent
+            elif w.used_percent >= last.used_percent:
                 delta = w.used_percent - last.used_percent
-                self._plan_consumed_by_window[key] = self._plan_consumed_by_window.get(key, 0.0) + (
-                    delta if delta >= 0 else w.used_percent
-                )
+            else:
+                continue
+            self._plan_consumed_by_window[key] = self._plan_consumed_by_window.get(key, 0.0) + delta
             self._plan_last_window[key] = w
         balance = plan.credits_usd
         if balance is not None:

@@ -209,12 +209,13 @@ def test_the_caps_have_one_home() -> None:
 def test_percent_meter_sawtooth_and_cap() -> None:
     """The percent meter: a sawtooth over window resets, and the cap trips at max_plan_points.
 
-    The first reading is the baseline, rises are the run's consumption and a drop counts from zero;
-    plan calls never drain the fallback ledger and report an authoritative $0.
+    The first reading is the baseline, rises are the run's consumption and a later reset time
+    starts a new window counted from zero; plan calls never drain the fallback ledger and
+    report an authoritative $0.
     """
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_plan_points=10.0)
 
-    def rec(pct: float) -> None:
+    def rec(pct: float, resets_at: float = 2e9) -> None:
         t.record(
             model="gpt-5.6-sol",
             input_tokens=1000,
@@ -222,14 +223,15 @@ def test_percent_meter_sawtooth_and_cap() -> None:
             cache_read_tokens=0,
             cache_creation_tokens=0,
             plan_usage=budget.PlanUsage.single(
-                used_percent=pct, window_minutes=10080, resets_at=2e9
+                used_percent=pct, window_minutes=10080, resets_at=resets_at
             ),
         )
 
+    reset = 2e9 + 7 * 86400
     rec(37.0)  # baseline
     rec(40.0)  # +3
-    rec(2.0)  # reset: +2
-    rec(5.0)  # +3 -> consumed 8
+    rec(2.0, reset)  # a new window: +2
+    rec(5.0, reset)  # +3 -> consumed 8
     t.check()  # under the cap of 10
     snap = t.snapshot()
     assert snap.plan_consumed == pytest.approx(8.0)
@@ -237,7 +239,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
     assert snap.unmetered_tokens == 0  # percent-metered, never fallback
     usd, partial = t.estimate_usd()
     assert usd == 0.0 and partial is False  # authoritative $0, not unpriced
-    rec(8.0)  # +3 -> consumed 11 >= 10
+    rec(8.0, reset)  # +3 -> consumed 11 >= 10
     with pytest.raises(budget.BudgetExceededError, match="plan budget exhausted"):
         t.check()
     assert "plan usage (gpt-5.6-sol): 8% of the 7-day window" in t.format_summary()
@@ -697,3 +699,50 @@ def test_colliding_plan_windows_have_distinguishing_suffixes() -> None:
         assert budget.format_plan_reading("claude", usage) == (
             f"plan usage (claude): 30% of the {label} (resets in 0h)"
         )
+
+
+def _window(used: float, resets_at: float) -> budget.PlanUsage:
+    return budget.PlanUsage.single(used_percent=used, window_minutes=10080, resets_at=resets_at)
+
+
+def test_an_out_of_order_reading_counts_nothing() -> None:
+    """Concurrent seats delivered readings out of order and each drop counted as a reset."""
+    tracker = _t()
+    for used in (20.0, 23.0, 21.0, 23.0):
+        tracker.record_plan_preflight("m", _window(used, 2e9))
+    assert tracker.snapshot().plan_consumed == 3.0
+
+
+def test_a_reset_time_later_by_more_than_a_minute_is_a_new_window() -> None:
+    """A higher reading on a later window counted only its rise over the old window."""
+    tracker = _t()
+    tracker.record_plan_preflight("m", _window(10.0, 2e9))
+    tracker.record_plan_preflight("m", _window(12.0, 2e9 + 7 * 86400))
+    assert tracker.snapshot().plan_consumed == 12.0
+
+
+def test_a_reading_from_a_window_already_left_counts_nothing() -> None:
+    """A delayed reading from the previous window counted as a rise and moved the reset back."""
+    tracker = _t()
+    later = 2e9 + 7 * 86400
+    for used, at in ((90.0, 2e9), (2.0, later), (90.0, 2e9), (3.0, later)):
+        tracker.record_plan_preflight("m", _window(used, at))
+    assert tracker.snapshot().plan_consumed == 3.0
+
+
+def test_a_reset_time_within_a_minute_is_the_same_window() -> None:
+    """A reported reset time that jittered by a second restarted the count."""
+    tracker = _t()
+    for used, at in ((93.0, 2e9), (93.0, 2e9 + 1), (94.0, 2e9 - 1), (93.0, 2e9), (94.0, 2e9)):
+        tracker.record_plan_preflight("m", _window(used, at))
+    assert tracker.snapshot().plan_consumed == 1.0
+
+
+@pytest.mark.parametrize("anchored_at", [2e9 + 150, 2e9 + 7200], ids=["within", "beyond"])
+def test_an_unanchored_window_slides_with_the_clock_and_counts_nothing(anchored_at: float) -> None:
+    """A window's reset time slides with the clock until its first use anchors it."""
+    tracker = _t()
+    tracker.record_plan_preflight("m", _window(0.0, 2e9))
+    tracker.record_plan_preflight("m", _window(0.0, 2e9 + 120))
+    tracker.record_plan_preflight("m", _window(1.0, anchored_at))
+    assert tracker.snapshot().plan_consumed == 1.0

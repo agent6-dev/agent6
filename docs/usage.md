@@ -119,6 +119,7 @@ A session's cost covers every execution, in dollars or in plan points, and in bo
 A fan-out's report ends with the plan's latest reading among its lanes, naming the binding window and reset time (for example, `plan usage (<entry>): N% of the 7-day window (resets in 100h)`); the fan-out itself reads `finished · lanes ranked`, and each lane carries its own gate verdict.
 The end block's plan line reports `window moved ~N points during this run`, with the `max_plan_points` cap when set.
 These points measure account-wide window movement between readings, accumulated across resets, not the run's own spend; other consumers sharing the plan contribute too.
+A window counts as reset when its reported reset time moves later by more than a minute; a lower reading whose reset time has not moved is out of order and counts nothing.
 The tokens and the points against `max_plan_points` on `sessions show` are the latest execution's.
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
