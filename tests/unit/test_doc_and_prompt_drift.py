@@ -268,3 +268,42 @@ def test_bench_container_config_template_validates() -> None:
             assert "verify_command" not in data["harness"]
         else:
             assert data["harness"]["verify_command"][0] == "python3"
+
+
+_EVENT_EMIT = re.compile(r'\b(?:emit|_journal)\(\s*\n?\s*"([a-z][a-z0-9_.]+)"')
+
+
+def _documented_event_types(template: str) -> tuple[set[str], set[str]]:
+    """Return the names and the wildcard prefixes the architecture event table documents."""
+    names: set[str] = set()
+    prefixes: set[str] = set()
+    for cell in re.findall(r"^\| ((?:`[^`]+`(?: / )?)+) \|", template, re.M):
+        base = ""
+        for raw in re.findall(r"`([^`]+)`", cell):
+            # `question.prompt` / `.answer`: a short name takes the previous name's family.
+            name = base.rsplit(".", 1)[0] + raw if raw.startswith(".") else raw
+            base = name
+            if name.endswith("*"):
+                prefixes.add(name[:-1])
+            else:
+                names.add(name)
+    return names, prefixes
+
+
+def _undocumented_event_types(template: str) -> list[str]:
+    """Return the event types emitted by a literal in the source with no row in the table."""
+    names, prefixes = _documented_event_types(template)
+    emitted = {
+        event
+        for path in (REPO / "src" / "agent6").rglob("*.py")
+        for event in _EVENT_EMIT.findall(path.read_text(encoding="utf-8"))
+    }
+    return sorted(
+        e for e in emitted if e not in names and not any(e.startswith(p) for p in prefixes)
+    )
+
+
+def test_the_architecture_event_table_names_every_emitted_event_type() -> None:
+    """A journal event emitted in the source has a row, or a wildcard row, in the event table."""
+    template = (REPO / "docs" / "architecture_template.md").read_text(encoding="utf-8")
+    assert not _undocumented_event_types(template)
