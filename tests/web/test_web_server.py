@@ -205,6 +205,47 @@ def test_hub_lists_runs(server: tuple[web_server.WebServer, int], tmp_path: path
     assert by_id["run-b"]["task_clipped"] == "task b"
 
 
+def test_hub_orders_the_review_queue_and_remembers_activity(
+    server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
+) -> None:
+    """`/api/hub?sort=review` groups pending review work first; activity keeps newest first."""
+    from tests.unit import test_review_queue as queue_tests
+
+    _srv, port = server
+    blocked: list[dict[str, object]] = [
+        queue_tests._START,
+        *queue_tests._panel_rows(block=1),
+        queue_tests._END,
+    ]
+    unverified: list[dict[str, object]] = [
+        queue_tests._START,
+        {**queue_tests._END, "all_passed": None, "verified": "unverified", "final_verify_id": None},
+    ]
+    newest: list[dict[str, object]] = [
+        {
+            "type": "session.start",
+            "ts": "2026-10-25T12:00:00+00:00",
+            "mode": "run",
+            "user_task": "n",
+        }
+    ]
+    _make_run(tmp_path, "run-block", blocked)
+    _make_run(tmp_path, "run-unverified", unverified)
+    _make_run(tmp_path, "run-newest", newest)
+    status, body, _ = _get(port, "/api/hub?sort=review")
+    assert status == 200
+    rows = json.loads(body)["sessions"]
+    assert [(r["session_id"], r["queue_group"]) for r in rows] == [
+        ("run-block", "blocked"),
+        ("run-unverified", "unverified"),
+        ("run-newest", "other"),
+    ]
+    assert rows[0]["review_queue"]["reason"] == "1 open block finding"
+    status, body, _ = _get(port, "/api/hub?sort=activity")
+    assert status == 200 and json.loads(body)["sessions"][0]["session_id"] == "run-newest"
+    assert _get(port, "/api/hub?sort=newest")[0] == 422
+
+
 def test_machine_snapshot_matches_watch_json(
     server: tuple[web_server.WebServer, int],
     tmp_path: pathlib.Path,

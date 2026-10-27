@@ -283,6 +283,9 @@ input.filter {
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 42px;
 }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
+.group { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 10px 0 4px; }
+.sort-toggle { display: flex; gap: 6px; margin: 0 0 8px; }
+.sort-toggle button.on { color: var(--accent); border-color: var(--accent); }
 .err { color: var(--err); }
 
 textarea.field, select.field, input.field {

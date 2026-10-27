@@ -447,12 +447,18 @@ function createMachineDock() {
 }
 
 // A list card: h2 title + one clickable row per entry.
-function listCard(title, entries, empty, paint) {
+// `groupOf` names an entry's group; a heading opens each run of entries sharing one.
+function listCard(title, entries, empty, paint, groupOf) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, title));
   const list = el('div', 'list');
   if (!entries.length) list.appendChild(el('div', 'empty', empty));
+  let group = null;
   for (const e of entries) {
+    if (groupOf) {
+      const next = groupOf(e);
+      if (next !== group) { list.appendChild(el('div', 'group', next)); group = next; }
+    }
     const it = el('div', 'item');
     const g = el('div', 'grow');
     it.appendChild(g);
@@ -478,13 +484,23 @@ function taskTitle(parent, taskLine) {
   if (continued) parent.appendChild(el('div', 'continued', continued));
 }
 
+// The review queue's groups: the server's `queue_group`, its heading and its pill level.
+const QUEUE_LABEL = { blocked: 'Blocked', unverified: 'Unverified', awaiting_merge: 'Awaiting merge', other: 'Other' };
+const QUEUE_LEVEL = { blocked: 'error', unverified: 'warn', awaiting_merge: 'ok' };
+
 function paintSession(r, it, g) {
   it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
   taskTitle(g, r.task_line || r.task_clipped || '(no task)');
   const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
   g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${cost}`));
+  // The queue's reason beside the row, and a fan-out's lanes by group: recorded facts, no re-review.
+  const q = r.review_queue || {};
+  const laneGroups = Object.entries(r.lane_groups || {}).map(([k, n]) => `${n} ${QUEUE_LABEL[k].toLowerCase()}`).join(', ');
+  const review = [q.reason, laneGroups && `lanes: ${laneGroups}`].filter(Boolean).join(' · ');
+  if (review) g.appendChild(el('div', 'sub review-queue', review));
   it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
+  if (QUEUE_LEVEL[r.queue_group]) it.appendChild(pill(QUEUE_LEVEL[r.queue_group], QUEUE_LABEL[r.queue_group]));
   const lanes = r.lanes || [];
   if (!lanes.length) return;
   const open = expandedFanouts.has(r.session_id);
@@ -517,8 +533,20 @@ function paintSession(r, it, g) {
   g.appendChild(nested);
 }
 
-function sessionsCard(sessions) {
-  const card = listCard('Sessions', sessions, 'no sessions yet', paintSession);
+// The hub's order: the review queue (grouped, pending work first) or last activity; the
+// choice is the browser's, remembered like the theme.
+function hubSort() { return recall('a6-hub-sort', 'review') === 'activity' ? 'activity' : 'review'; }
+
+function sessionsCard(sessions, sort, onSort) {
+  const grouped = sort === 'review' ? (r => QUEUE_LABEL[r.queue_group] || 'Other') : null;
+  const card = listCard('Sessions', sessions, 'no sessions yet', paintSession, grouped);
+  const toggle = el('div', 'sort-toggle');
+  for (const [key, label] of [['review', 'Review'], ['activity', 'Activity']]) {
+    const b = el('button', 'mini' + (key === sort ? ' on' : ''), label);
+    b.onclick = () => { remember('a6-hub-sort', key); onSort(key); };
+    toggle.appendChild(b);
+  }
+  card.insertBefore(toggle, card.children[1]);
   // Maintenance sits behind one control, the actions the TUI's File menu
   // holds: the list is what the operator came for.
   const more = el('details', 'more');
@@ -586,24 +614,25 @@ function machineFilesCard(files) {
 
 async function renderHub(focus, gen) {
   setCrumb('');
-  const data = await getJSON('/api/hub');
+  const sort = hubSort();
+  const data = await getJSON('/api/hub?sort=' + sort);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
   view.innerHTML = '';
   const machinesTab = focus === 'machines';
   // Full-width listing stack; the tab's composer docks at the bottom of the
   // viewport (new work on Sessions, create-machine on Machines).
-  const build = (d) => {
+  const build = (d, order) => {
     const lists = el('div', 'grid');
     if (machinesTab) {
       if ((d.machine_files || []).length) lists.appendChild(machineFilesCard(d.machine_files));
       lists.appendChild(machinesCard(d.machines));
       if ((d.drafts || []).length) lists.appendChild(draftsCard(d.drafts));
     } else {
-      lists.appendChild(sessionsCard(d.sessions));
+      lists.appendChild(sessionsCard(d.sessions, order, () => { refreshLists(); }));
     }
     return lists;
   };
-  let lists = build(data);
+  let lists = build(data, sort);
   view.appendChild(lists);
   view.appendChild(machinesTab ? createMachineDock() : newWorkDock(data.presets, data.preset_default_label));
   // Without this the hub paints once, so a lane that finished, failed or
@@ -613,10 +642,12 @@ async function renderHub(focus, gen) {
   const refreshLists = async () => {
     if (document.hidden) return; // a background tab has nobody to mislead
     if (gen !== undefined && gen !== routeGen) return; // superseded; closeLive() clears us
+    const order = hubSort();
     try {
-      const next = await getJSON('/api/hub');
+      const next = await getJSON('/api/hub?sort=' + order);
       if (gen !== undefined && gen !== routeGen) return;
-      const fresh = build(next);
+      if (order !== hubSort()) return; // the toggle moved meanwhile; its own refresh paints
+      const fresh = build(next, order);
       lists.replaceWith(fresh);
       lists = fresh;
     } catch (_) { /* transient: keep the last good paint */ }

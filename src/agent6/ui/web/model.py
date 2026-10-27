@@ -182,12 +182,14 @@ def draft_dir_paths(cwd: pathlib.Path) -> list[pathlib.Path]:
 # --- hub listing -------------------------------------------------------------
 
 
-def _list_sessions(cwd: pathlib.Path) -> list[dict[str, Any]]:
-    """Return every session the hub lists, newest first, a fan-out's lanes under its row."""
+def _list_sessions(cwd: pathlib.Path, sort: listing.Sort) -> list[dict[str, Any]]:
+    """Return every session the hub lists in the given order, a fan-out's lanes under its row."""
     tips = git_read.run_ref_tips(cwd)
     dirs = session_dirs(paths.state_dir(cwd))
     winners = {p.name for p in dirs if is_winner(p)}
-    rows = listing.nested_rows(summarize_session_dir(p, branch_tips=tips) for p in dirs)
+    rows = listing.nested_rows(
+        (summarize_session_dir(p, branch_tips=tips) for p in dirs), sort=sort
+    )
     return [listing.row_json(r, winners=winners) for r in rows]
 
 
@@ -264,10 +266,15 @@ def resume_defaults_payload(
     return {"preset_label": preset_label, "model_label": model_label}
 
 
-def hub_payload(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, Any]:
-    """Return the hub: sessions, machines, drafts, machine files and the preset choices."""
+def hub_payload(
+    cwd: pathlib.Path,
+    config_paths: tuple[pathlib.Path, ...] = (),
+    *,
+    sort: listing.Sort = "review",
+) -> dict[str, Any]:
+    """Return the hub: sessions in the given order, machines, drafts, machine files, presets."""
     return {
-        "sessions": _list_sessions(cwd),
+        "sessions": _list_sessions(cwd, sort),
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),

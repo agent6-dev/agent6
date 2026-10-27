@@ -85,12 +85,12 @@ def test_every_api_path_the_page_calls_is_routed(served: int) -> None:
 
 
 def test_the_page_reads_the_keys_the_hub_actually_sends(tmp_path: pathlib.Path) -> None:
-    """The hub's `build(d)` reads no key the server does not send.
+    """The hub's `build(d, order)` reads no key the server does not send.
 
     `d.runs` survived a rename as a silently undefined lookup: 200 and an empty list.
     """
     source = page.CLIENT_JS
-    start = source.index("const build = (d) => {")
+    start = source.index("const build = (d, order) => {")
     body = source[start : source.index("\n  };", start)]
     read = set(re.findall(r"\bd\.([a-z_]+)\b", body))
     assert read, "the hub render body moved; this test is no longer reading it"

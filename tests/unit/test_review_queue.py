@@ -81,13 +81,13 @@ def _verify_rows(
     ]
 
 
-_START = {
+_START: dict[str, Any] = {
     "type": "session.start",
     "ts": "2026-10-25T09:00:00+00:00",
     "mode": "run",
     "user_task": "t",
 }
-_END = {
+_END: dict[str, Any] = {
     "type": "session.end",
     "ts": "2026-10-25T11:00:00+00:00",
     "reason": "finish_session",
