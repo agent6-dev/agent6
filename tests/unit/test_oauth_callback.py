@@ -110,3 +110,41 @@ def test_the_pasted_callback_is_read_hidden(monkeypatch: pytest.MonkeyPatch) -> 
         "agent6.ui.cli._oauth.getpass.getpass", lambda prompt="": f"{REDIRECT}?code=C9&state=S"
     )
     assert _oauth.paste_callback("S", redirect_uri=REDIRECT) == "C9"
+
+
+def test_the_browser_opens_through_a_trusted_launcher_with_a_curated_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The sign-in URL goes to the platform opener found on PATH, not to `$BROWSER`'s command."""
+    import subprocess
+
+    launched: list[dict[str, object]] = []
+
+    class _Child:
+        pid = 1
+
+    def fake_popen(argv: list[str], **kwargs: object) -> _Child:
+        launched.append({"argv": argv, **kwargs})
+        return _Child()
+
+    monkeypatch.setenv("BROWSER", "/tmp/evil-browser %s")
+    monkeypatch.setenv("PROBE_PROVIDER_KEY", "sk-secret")
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    def which_xdg(name: str) -> str | None:
+        return "/usr/bin/xdg-open" if name == "xdg-open" else None
+
+    monkeypatch.setattr("shutil.which", which_xdg)
+    monkeypatch.setattr("sys.platform", "linux")
+    assert _oauth.open_browser("https://login.example/authorize?x=1") is True
+    (call,) = launched
+    assert call["argv"] == ["/usr/bin/xdg-open", "https://login.example/authorize?x=1"]
+    env = call["env"]
+    assert isinstance(env, dict) and "BROWSER" not in env and "PROBE_PROVIDER_KEY" not in env
+    assert call["start_new_session"] is True
+
+    def which_none(name: str) -> str | None:
+        return None
+
+    monkeypatch.setattr("shutil.which", which_none)
+    assert _oauth.open_browser("https://login.example/authorize") is False

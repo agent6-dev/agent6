@@ -9,17 +9,18 @@ logs nothing and keeps the code in memory; nothing a remote returns is executed.
 
 from __future__ import annotations
 
-import contextlib
 import getpass
 import html
 import http.server
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
-import webbrowser
 from urllib import parse
 
+from agent6 import child_env
 from agent6.providers import _oauth_protocol
 from agent6.ui.cli import _common
 
@@ -149,6 +150,42 @@ def gui_browser_available() -> bool:
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
+def open_browser(url: str) -> bool:
+    """Hand the sign-in URL to the platform's URL opener, found on PATH.
+
+    `webbrowser` would honour `$BROWSER`, an arbitrary command template, and hand the child
+    the whole environment; the opener gets the curated environment and the URL as one
+    argument, with nothing a remote supplied.
+
+    Args:
+        url: The authorize URL, built from the operator's configuration.
+
+    Returns:
+        Whether an opener was started; False leaves the printed URL as the way in.
+    """
+    if sys.platform == "win32":
+        startfile = getattr(os, "startfile", None)
+        if startfile is None:
+            return False
+        startfile(url)  # the shell's own URL handler, no command line involved
+        return True
+    opener = shutil.which("open" if sys.platform == "darwin" else "xdg-open")
+    if opener is None:
+        return False
+    try:
+        subprocess.Popen(  # fixed argv from operator config; on the subprocess allowlist
+            [opener, url],
+            env=child_env.curated_env(desktop=True),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError:
+        return False
+    return True
+
+
 def code_via_callback_server(
     url: str, state: str, *, port: int, path: str = "/auth/callback"
 ) -> str | None:
@@ -168,8 +205,8 @@ def code_via_callback_server(
     except OSError as exc:
         print(f"(no local callback: port {port} unavailable: {exc})")
         return None
-    with contextlib.suppress(Exception):
-        webbrowser.open(url)
+    if not open_browser(url):
+        print("(no URL opener found; open the URL above by hand)")
     print(f"Waiting for the sign-in redirect on localhost:{server.port}")
     print("(Ctrl-C to paste the callback URL by hand instead)")
     try:

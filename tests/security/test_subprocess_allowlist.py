@@ -51,6 +51,7 @@ ALLOWED = {
     "ui/btw.py",
     "ui/cli/_ask.py",
     "ui/cli/_live.py",
+    "ui/cli/_oauth.py",
     "ui/cli/_steer.py",
     "ui/cli/completions_cmd.py",
     "ui/cli/history_cmds.py",

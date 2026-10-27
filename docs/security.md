@@ -636,6 +636,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`), and captures `sessions merge` / `prune` / `rm` and `config set` / `unset`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
 - `ui/cli/` helpers:
+    - `_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
     - `plan_watch.py` and `_steer.py`: `$EDITOR` for plan and steer editing
     - `review_cmds.py`, `sessions_cmds.py` and `_ask.py`: `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
     - `history_cmds.py`: `rg` for history search
