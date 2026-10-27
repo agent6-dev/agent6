@@ -81,7 +81,7 @@ class CallbackServer:
                     return
                 refusal: str | None = None
                 try:
-                    code = _oauth_protocol.parse_callback(parts.query, state=state)
+                    code = _oauth_protocol.parse_callback(f"?{parts.query}", state=state)
                     body = b"<html><body>Signed in. Return to the terminal.</body></html>"
                     status = 200
                 except ValueError as exc:

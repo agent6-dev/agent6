@@ -148,3 +148,21 @@ def test_the_browser_opens_through_a_trusted_launcher_with_a_curated_environment
 
     monkeypatch.setattr("shutil.which", which_none)
     assert _oauth.open_browser("https://login.example/authorize") is False
+
+
+def test_the_callback_query_is_parsed_as_a_query_even_with_an_unencoded_url_in_it() -> None:
+    """An `iss` parameter carrying `https://` must not turn the query into a URL."""
+    import urllib.request
+
+    from agent6.ui.cli import _oauth
+
+    srv = _oauth.CallbackServer("S1", port=0)
+    try:
+        url = (
+            f"http://127.0.0.1:{srv.port}/auth/callback?code=OK&state=S1&iss=https://issuer.example"
+        )
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            assert resp.status == 200
+        assert srv.wait(timeout_s=5.0) == "OK"
+    finally:
+        srv.close()

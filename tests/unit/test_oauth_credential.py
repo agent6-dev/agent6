@@ -321,3 +321,49 @@ def test_the_listing_goes_through_the_credential(
     monkeypatch.setattr(httpx2, "get", fake_get)
     assert cache.fetch_models_live("work", entry, None, timeout_s=5.0) == ["m1"]
     assert seen["headers"]["authorization"] == "Bearer AT1"
+
+
+def test_a_device_poll_never_sleeps_past_the_grant_expiry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An issuer asking for a huge interval cannot hold `connect` past the code's expiry."""
+    clock = {"t": 0.0}
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock["t"] += seconds
+
+    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(400, {"error": "slow_down"})
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    started = _oauth_protocol.DeviceGrant("DC", "AB", "https://l.example/d", "", 1e9, 5.0)
+    with pytest.raises(types.ProviderError, match="expired"):
+        _oauth_protocol.poll_device_grant(
+            "https://l.example/token",
+            "c",
+            started,
+            encoding="form",
+            label="work",
+            sleep=sleep,
+            now=lambda: clock["t"],
+        )
+    assert sleeps == [5.0]
+
+
+def test_a_device_start_caps_the_issuers_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
+        return _Resp(
+            200,
+            {
+                "device_code": "DC",
+                "user_code": "AB",
+                "verification_uri": "https://l.example/d",
+                "interval": 100000,
+            },
+        )
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    started = _oauth_protocol.start_device_grant(
+        "https://l.example/device", "c", scopes=(), encoding="form", label="work"
+    )
+    assert started.interval_s == _oauth_protocol.POLL_INTERVAL_CEILING_S

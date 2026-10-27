@@ -78,7 +78,7 @@ def parse_callback(pasted: str, *, state: str, redirect_uri: str = "") -> str:
             code beside an error; the message names which.
     """
     text = pasted.strip()
-    if "?" in text or "://" in text:
+    if "?" in text or text.startswith(("http://", "https://")):
         parts = parse.urlsplit(text)
         if redirect_uri:
             want = parse.urlsplit(redirect_uri)
@@ -515,6 +515,8 @@ def revoke_tokens(
 
 # A device grant waits this long at most, whatever expiry the issuer reports.
 DEVICE_CEILING_S = 15 * 60.0
+# One poll waits this long at most, whatever interval the issuer asks for or adds.
+POLL_INTERVAL_CEILING_S = 60.0
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -591,7 +593,7 @@ def start_device_grant(
             user_code=str(data["user_code"]),
             verification_uri=uri,
             verification_uri_complete=complete,
-            interval_s=max(1.0, float(data.get("interval") or 5.0)),
+            interval_s=min(max(1.0, float(data.get("interval") or 5.0)), POLL_INTERVAL_CEILING_S),
             expires_at=now() + min(float(data.get("expires_in") or 600.0), DEVICE_CEILING_S),
         )
     except (ValueError, KeyError, TypeError) as exc:
@@ -661,12 +663,13 @@ def poll_device_grant(
         code = error_code_of(resp)
         if resp.status_code < 400 and not code:
             return grant_from_response(resp, operation="device", label=label)
-        if code == "authorization_pending":
-            sleep(interval)
-            continue
         if code == "slow_down":
-            interval += 5.0
-            sleep(interval)
+            interval = min(interval + 5.0, POLL_INTERVAL_CEILING_S)
+        if code in ("authorization_pending", "slow_down"):
+            left = grant.expires_at - now()
+            if left <= 0:
+                break
+            sleep(min(interval, left))
             continue
         if code == "access_denied":
             raise types.ProviderError(f"{label} sign-in was refused at the issuer")
