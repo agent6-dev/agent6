@@ -472,6 +472,22 @@ def test_credentials_are_scrubbed_before_payload_echoes(
     assert not _scan_for_secret(tmp_path, "SECRET123")
 
 
+def test_a_short_attachment_echo_is_omitted_too() -> None:
+    """A document small enough to fit an error echo is scrubbed like any other payload."""
+    import base64
+
+    encoded = base64.b64encode(b"%PDF-1.7\nsecret=abc\n%%EOF").decode("ascii")
+    block = {
+        "type": "document",
+        "source": {"type": "base64", "media_type": "application/pdf", "data": encoded},
+    }
+    out = media.omit_payloads(
+        {"request": {"content": [block]}, "error": f"upstream echoed {encoded} back"}
+    )
+    assert encoded not in json.dumps(out)
+    assert out["error"] == "upstream echoed [media payload omitted] back"
+
+
 def test_payload_omission_preserves_json_tokens() -> None:
     """Short base64 equal to a JSON token cannot corrupt the metadata document."""
     clean = media.omit_payloads(

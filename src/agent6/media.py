@@ -95,8 +95,7 @@ def omit_payloads(value: Any) -> Any:
                 metadata["error"] = "invalid media payload"
             else:
                 metadata.update(byte_size=len(data), sha256=hashlib.sha256(data).hexdigest())
-                if len(data) >= 64:
-                    payloads.add(encoded)
+                payloads.add(encoded)
             return {"type": obj["type"], "source": metadata}
         out = {key: walk(item, path) for key, item in obj.items()}
         if (
