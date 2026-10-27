@@ -119,6 +119,34 @@ def test_refusal_truncation_marks_the_reason_not_the_streams(tmp_path: pathlib.P
     assert end["stdout_truncated"] is False and end["stderr_truncated"] is False
 
 
+@pytest.mark.parametrize("reason_length", [2001, 20001])
+def test_an_execution_refusal_has_no_truncated_stderr(
+    tmp_path: pathlib.Path, reason_length: int
+) -> None:
+    """A long execution refusal is a reason, not a truncated stderr stream."""
+    journal = tmp_path / "logs.jsonl"
+    dispatcher = _dispatcher(tmp_path, journal)
+    raw = kinds.CommandResult(
+        argv=("true",),
+        returncode=127,
+        stdout="",
+        stderr="x" * reason_length,
+        duration_s=0.0,
+        exec_failed=True,
+    )
+    with (
+        mock.patch("agent6.sandbox.jail.run_in_jail", return_value=raw),
+        pytest.raises(errors.OperatorCommandUnexecutableError),
+    ):
+        dispatcher.run_verify()
+    end = _events(journal)[-1]
+    assert end["outcome"] == "unavailable"
+    assert end["reason"] and end["stderr_tail"] == ""
+    assert end["stderr_truncated"] is False
+    assert dispatcher.last_verification is not None
+    assert dispatcher.last_verification.stderr_truncated is False
+
+
 def test_a_verifying_command_cannot_certify_its_own_edit(tmp_path: pathlib.Path) -> None:
     """Exit zero after writing the tree leaves the final tree unverified."""
     repo = tmp_path / "repo"

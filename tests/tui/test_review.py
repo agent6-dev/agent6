@@ -17,6 +17,7 @@ from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import home, modals
 from tests import review_helpers
+from tests.tui import _waits
 
 
 def _shown(widget: widgets.Static) -> str:
@@ -338,9 +339,16 @@ def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
                 == "Ask a run to revert"
             )
             app.screen.query_one("#receipt-revert", widgets.Button).press()
-            await pilot.pause()
+            await _waits.wait_for(
+                pilot,
+                lambda: (
+                    bool(app.screen.query("#draft-input"))
+                    and saved.session_id
+                    in app.screen.query_one("#draft-input", widgets.TextArea).text
+                ),
+                "the reversal request in the new-work draft",
+            )
             assert type(app.screen).__name__ == "NewWorkScreen"
-            assert saved.session_id in app.screen.query_one("#draft-input", widgets.TextArea).text
 
     asyncio.run(scenario())
 

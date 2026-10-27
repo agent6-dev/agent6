@@ -669,7 +669,9 @@ class ToolDispatcher:
             stderr_tail="" if res.exec_failed else res.stderr[-2000:],
             reason=res.stderr if res.exec_failed else "",
             stdout_truncated=True if len(res.stdout) > 2000 else res.stdout_truncated,
-            stderr_truncated=True if len(res.stderr) > 2000 else res.stderr_truncated,
+            stderr_truncated=(
+                False if res.exec_failed else len(res.stderr) > 2000 or res.stderr_truncated
+            ),
         )
         self.last_verification = record
         res = dataclasses.replace(res, command=argv, verification=record)

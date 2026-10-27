@@ -254,7 +254,7 @@ def updates_for(
         elif summary:
             # A stop's sentence (a spend ceiling, an operator stop) is agent6's, not the model's.
             result.append(message_update(acp_session_id, summary))
-        result.append(message_update(acp_session_id, status_line(item) + "\nEvidence: /receipt"))
+        result.append(message_update(acp_session_id, status_line(item)))
         return result
     if item.kind == "commit":
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)

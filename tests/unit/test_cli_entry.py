@@ -143,7 +143,7 @@ def test_cli_main_handles_keyboard_interrupt(
 
 
 def test_a_closed_stdout_ends_quietly(tmp_path: pathlib.Path) -> None:
-    """A write after the reader closed ends at 141 like any SIGPIPE, with no crash report."""
+    """A buffered write after the reader closed ends at 141 with no crash report."""
     read_end, write_end = os.pipe()
     os.close(read_end)
     env = os.environ | {
@@ -152,6 +152,7 @@ def test_a_closed_stdout_ends_quietly(tmp_path: pathlib.Path) -> None:
         "TMPDIR": str(tmp_path),
     }
     env.pop("AGENT6_DEBUG", None)
+    env.pop("PYTHONUNBUFFERED", None)
     script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
     try:
         proc = subprocess.run(
@@ -171,7 +172,7 @@ def test_a_closed_stdout_ends_quietly(tmp_path: pathlib.Path) -> None:
 
 
 def test_a_short_answer_to_a_closed_stdout_ends_at_141_too(tmp_path: pathlib.Path) -> None:
-    """`--version` fit stdout's buffer, so the closed pipe failed its flush at exit: 120."""
+    """Flushing buffered `--version` output to a closed stdout exits quietly at 141."""
     read_end, write_end = os.pipe()
     os.close(read_end)
     env = os.environ | {
@@ -179,6 +180,7 @@ def test_a_short_answer_to_a_closed_stdout_ends_at_141_too(tmp_path: pathlib.Pat
         "XDG_STATE_HOME": str(tmp_path / "s"),
     }
     env.pop("AGENT6_DEBUG", None)
+    env.pop("PYTHONUNBUFFERED", None)
     script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
     try:
         proc = subprocess.run(
@@ -197,7 +199,7 @@ def test_a_short_answer_to_a_closed_stdout_ends_at_141_too(tmp_path: pathlib.Pat
 
 
 def test_a_closed_stderr_ends_at_141_too(tmp_path: pathlib.Path) -> None:
-    """With `2>&1 | head` the exit flush of stderr failed after the handler: exit 120."""
+    """Flushing buffered output to a closed stderr exits quietly at 141."""
     read_end, write_end = os.pipe()
     os.close(read_end)
     env = os.environ | {
@@ -206,6 +208,7 @@ def test_a_closed_stderr_ends_at_141_too(tmp_path: pathlib.Path) -> None:
         "TMPDIR": str(tmp_path),
     }
     env.pop("AGENT6_DEBUG", None)
+    env.pop("PYTHONUNBUFFERED", None)
     script = "import sys; from agent6.ui.cli import cli_main; sys.exit(cli_main())"
     try:
         proc = subprocess.run(

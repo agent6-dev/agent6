@@ -1413,9 +1413,11 @@ def test_the_runs_notices_reach_the_editor(
 ) -> None:
     """The stash notice and the where-are-my-changes footer reach the editor on every run.
 
-    Over ACP they went to stderr only once a journal existed, so stashes accumulated invisibly.
+    The shared footer supplies the receipt command without a second ACP pointer.
     """
-    from agent6 import event_log
+    from agent6 import budget, event_log
+    from agent6.app import finalize
+    from agent6.harness import _snapshot
 
     monkeypatch.chdir(tmp_path)
 
@@ -1429,6 +1431,16 @@ def test_the_runs_notices_reach_the_editor(
         events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         reporter = kw["reporter"]
         assert isinstance(reporter, app_reporter.Reporter)
+        finalize.print_session_end(
+            _snapshot.SessionResult(
+                completed=True, reason="finish_session", summary="done", turns=1, tool_calls=0
+            ),
+            layout=layout,
+            cwd=tmp_path,
+            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
+            console_stream=True,
+            reporter=reporter,
+        )
         reporter.out("\nchanges are on agent6/run-x")
         reporter.out("  merge with:  agent6 sessions merge run-x")
         reporter.note("pre-run changes left stashed; restore with: git stash apply abc123")
@@ -1453,6 +1465,8 @@ def test_the_runs_notices_reach_the_editor(
         text = "\n".join(said)
         assert "git stash apply abc123" in text, text
         assert "merge with:  agent6 sessions merge run-x" in text, text
+        assert text.count("evidence:    agent6 sessions receipt ") == 1, text
+        assert "/receipt" not in text, text
     finally:
         wire.close()
 
