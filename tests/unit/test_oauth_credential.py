@@ -146,10 +146,54 @@ def test_a_non_expiring_grant_without_a_refresh_token_is_used_until_refused(
     _store(entry, refresh_token="", expires_at=None)
     cred = oauth.OAuthCredential("work", entry, now=lambda: 9_999_999.0)
     assert cred.token() == "AT1"
-    assert cred.invalidate(403) is False
-    assert cred.invalidate(401) is True
+    assert cred.invalidate(403, "AT1") is False
+    assert cred.token() == "AT1"
+    assert cred.invalidate(401, "AT1") is True
     with pytest.raises(types.ProviderError, match=r"no refresh token.*agent6 connect work"):
         cred.token()
+
+
+@pytest.mark.parametrize(
+    ("status", "rejected_bearer", "armed"),
+    [(401, "AT1", False), (401, "AT2", True), (403, "AT2", False)],
+)
+def test_only_a_current_bearers_401_arms_a_refresh(
+    gcfg: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    rejected_bearer: str,
+    armed: bool,
+) -> None:
+    """A late refusal of an old bearer must not rotate the shared holder's current grant."""
+    entry = _entry()
+    _store(entry)
+    clock = {"now": 2_000.0}
+    refreshes: list[str] = []
+
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
+        refreshes.append(data["refresh_token"])
+        version = len(refreshes) + 1
+        return _Resp(
+            200,
+            {
+                "access_token": f"AT{version}",
+                "refresh_token": f"RT{version}",
+                "expires_in": 3600,
+            },
+        )
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    cred = oauth.OAuthCredential("work", entry, now=lambda: clock["now"])
+    assert cred.token() == "AT1"
+    clock["now"] = 4_550.0
+    assert cred.token() == "AT2"
+    assert refreshes == ["RT1"]
+
+    assert cred.invalidate(status, rejected_bearer) is armed
+    assert cred.token() == ("AT3" if armed else "AT2")
+    assert refreshes == (["RT1", "RT2"] if armed else ["RT1"])
 
 
 def test_the_second_exchange_runs_first_and_refreshes_the_issuer_once_on_its_401(

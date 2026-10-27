@@ -62,7 +62,7 @@ class CommandToken:
             self._fetched_at = now
             return token
 
-    def invalidate(self, status: int = 401) -> bool:
+    def invalidate(self, status: int, rejected_bearer: str) -> bool:
         """Drop the cached token so the next `token()` re-runs the command.
 
         Both 401 and 403 re-mint: a command-minted bearer is short-lived and scoped,
@@ -70,11 +70,12 @@ class CommandToken:
 
         Args:
             status: The HTTP status that prompted the drop; unused.
+            rejected_bearer: The bearer the transport sent; unused.
 
         Returns:
             True, the provider's signal to retry the request.
         """
-        del status
+        del status, rejected_bearer
         with self._lock:
             self._token = ""
             self._fetched_at = 0.0

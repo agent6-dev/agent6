@@ -247,7 +247,7 @@ def test_every_attempt_mints_its_own_request_id_and_reports_it(
         def token(self) -> str:
             return "t"
 
-        def invalidate(self, status: int = 401) -> bool:
+        def invalidate(self, status: int, rejected_bearer: str) -> bool:
             return True
 
     monkeypatch.setattr(_transport, "http_post", fake_post)

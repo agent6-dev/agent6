@@ -467,19 +467,13 @@ class ChatGPTCredential:
                 secret_store.save_oauth_tokens(self._provider, fresh)
                 return self._adopt(fresh)
 
-    def invalidate(self, status: int = 401) -> bool:
-        """Arm recovery for the next `token()` after an auth failure.
-
-        Args:
-            status: The 401 or 403 the transport saw.
-
-        Returns:
-            True on a 401, the bearer itself being bad; False on a 403, which is
-            permission or entitlement and which no rotation can change.
-        """
+    def invalidate(self, status: int, rejected_bearer: str) -> bool:
+        """Return True and arm recovery only when a 401 rejects the last returned bearer."""
         if status != 401:
             return False
         with self._lock:
+            if rejected_bearer != self._last_returned:
+                return False
             self._force_refresh = True
         return True
 

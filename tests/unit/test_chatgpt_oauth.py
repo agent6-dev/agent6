@@ -250,7 +250,7 @@ def test_every_remedy_names_the_provider_it_diagnosed(
     secret_store.save_oauth_tokens(
         "codex", secret_store.OAuthTokens("AT1", "RT1", time.time() + 3600, "acct-2")
     )
-    cred.invalidate()
+    cred.invalidate(401, "AT0")
     with pytest.raises(types.ProviderError, match="agent6 connect codex"):
         cred.token()  # the stored sign-in moved to another account
     with pytest.raises(types.ProviderError, match="agent6 connect codex"):
@@ -310,8 +310,56 @@ def test_credential_caches_refreshes_and_persists(
     assert cred2.token() == "AT1" and len(refreshes) == 1  # cached until expiry
     assert cred2.account_id() == "acct"
 
-    cred2.invalidate()
+    assert cred2.invalidate(401, "AT1") is True
     assert cred2.token() == "AT2" and refreshes == ["RT1", "RT2"]
+
+
+@pytest.mark.parametrize(
+    ("status", "rejected_bearer", "armed"),
+    [(401, "AT1", False), (401, "AT2", True), (403, "AT2", False)],
+)
+def test_only_a_current_bearers_401_arms_a_refresh(
+    gcfg: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: int,
+    rejected_bearer: str,
+    armed: bool,
+) -> None:
+    """A late refusal of an old bearer must not rotate the shared holder's current grant."""
+    clock = {"now": 1000.0}
+    fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
+    monkeypatch.setattr(chatgpt_oauth, "time", fake_time)
+    secret_store.save_oauth_tokens(
+        "chatgpt", secret_store.OAuthTokens("AT1", "RT1", 5000.0, "acct")
+    )
+    refreshes: list[str] = []
+
+    def fake_post(
+        url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
+    ) -> _Resp:
+        refreshes.append(data["refresh_token"])
+        version = len(refreshes) + 1
+        return _Resp(
+            200,
+            {
+                "access_token": f"AT{version}",
+                "refresh_token": f"RT{version}",
+                "expires_in": 3600,
+            },
+        )
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    cred = chatgpt_oauth.ChatGPTCredential(
+        "chatgpt", issuer="https://auth.example", client_id="app_X"
+    )
+    assert cred.token() == "AT1"
+    clock["now"] = 4800.0
+    assert cred.token() == "AT2"
+    assert refreshes == ["RT1"]
+
+    assert cred.invalidate(status, rejected_bearer) is armed
+    assert cred.token() == ("AT3" if armed else "AT2")
+    assert refreshes == (["RT1", "RT2"] if armed else ["RT1"])
 
 
 def test_credential_adopts_a_sibling_process_rotation(
@@ -521,7 +569,7 @@ def test_credential_refuses_an_account_swap(
     secret_store.save_oauth_tokens(
         "chatgpt", secret_store.OAuthTokens("tokB", "RT2", 9000.0, "acct-B")
     )
-    cred.invalidate(401)
+    cred.invalidate(401, "tokA")
     with pytest.raises(types.ProviderError, match="different account"):
         cred.token()
 
@@ -543,7 +591,7 @@ def test_credential_pins_a_claim_when_the_stored_account_is_empty(
     )
     assert cred.token() == first
     secret_store.save_oauth_tokens("chatgpt", secret_store.OAuthTokens(second, "RT2", 9000.0))
-    cred.invalidate(401)
+    cred.invalidate(401, first)
     with pytest.raises(types.ProviderError, match="different account"):
         cred.token()
 
@@ -572,7 +620,7 @@ def test_post_401_recovery_adopts_a_sibling_grant_first(
     secret_store.save_oauth_tokens(
         "chatgpt", secret_store.OAuthTokens("fresh", "RT2", 9000.0, "acct")
     )
-    cred.invalidate(401)
+    cred.invalidate(401, "revoked")
     assert cred.token() == "fresh"
 
 
@@ -598,7 +646,7 @@ def test_403_does_not_arm_a_refresh(gcfg: pathlib.Path, monkeypatch: pytest.Monk
         "chatgpt", secret_store.OAuthTokens("tok", "RT1", 5000.0, "acct")
     )
     assert cred.token() == "tok"
-    cred.invalidate(403)
+    assert cred.invalidate(403, "tok") is False
     assert cred.token() == "tok"
 
 
@@ -771,14 +819,6 @@ def test_stored_account_must_match_the_tokens_own_claim(
     )
     with pytest.raises(types.ProviderError, match="does not match its own token"):
         cred.token()
-
-
-def test_403_reports_no_retry_worthwhile() -> None:
-    cred = chatgpt_oauth.ChatGPTCredential(
-        "chatgpt", issuer="https://auth.example", client_id="app_X"
-    )
-    assert cred.invalidate(403) is False
-    assert cred.invalidate(401) is True
 
 
 @pytest.mark.parametrize(

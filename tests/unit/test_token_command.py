@@ -60,7 +60,7 @@ def test_token_is_cached_within_ttl(tmp_path: pathlib.Path) -> None:
 def test_invalidate_forces_rerun(tmp_path: pathlib.Path) -> None:
     cred = token_command.CommandToken(_counter_argv(tmp_path), ttl_s=1000.0)
     assert cred.token() == "tok1"
-    cred.invalidate()
+    cred.invalidate(401, "tok1")
     assert cred.token() == "tok2"
 
 

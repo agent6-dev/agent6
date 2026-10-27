@@ -269,7 +269,7 @@ class ProviderCall:
         body: The request body; an adaptation mutates it in place.
         timeout_s: The read budget in seconds.
         api_key: The static credential, used when `credential` is None.
-        credential: A refreshable bearer; a 401 or 403 re-mints it once and retries.
+        credential: A refreshable bearer; retries once on 401 or a recoverable 403.
         transcript_sink: Where each round-trip is recorded; None records nothing.
         budget: The run's tracker; None skips metering.
         model: The model billed.
@@ -360,7 +360,13 @@ class ProviderCall:
                         and not recovered
                         and attempt + 1 < max_attempts
                         and exc.status_code in (401, 403)
-                        and cred.invalidate(exc.status_code)
+                        and (
+                            cred.invalidate(
+                                exc.status_code,
+                                headers.get("authorization", "").removeprefix("Bearer "),
+                            )
+                            or exc.status_code == 401
+                        )
                     ):
                         recovered = True
                         continue
@@ -389,7 +395,13 @@ class ProviderCall:
                 # The transcript contract is one file per round-trip, the refused one included.
                 self.record(headers, resp.status_code, resp.text[:8192])
                 recorded = True
-                if cred.invalidate(resp.status_code):
+                if (
+                    cred.invalidate(
+                        resp.status_code,
+                        headers.get("authorization", "").removeprefix("Bearer "),
+                    )
+                    or resp.status_code == 401
+                ):
                     recovered = True
                     continue
             if 300 <= resp.status_code < 400:

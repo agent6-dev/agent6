@@ -302,15 +302,8 @@ class BearerCredential(Protocol):
         """Return a fresh-enough bearer."""
         ...
 
-    def invalidate(self, status: int = 401) -> bool:
-        """React to one auth failure.
-
-        Args:
-            status: The 401 or 403 the transport saw.
-
-        Returns:
-            Whether a retry is worthwhile; False when recovery changed nothing.
-        """
+    def invalidate(self, status: int, rejected_bearer: str) -> bool:
+        """Return whether the rejected bearer arms credential recovery."""
         ...
 
 
