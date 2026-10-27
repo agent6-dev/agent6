@@ -300,7 +300,7 @@ def test_bad_entry_input_leaves_config_untouched(tmp_path: pathlib.Path) -> None
             "command",
             "argv",
         ),
-        ("skills.state", {"state": ["enabled", "disabled", "always"]}, "state", "Per-skill state"),
+        ("skills.state", {"state": ["enabled", "disabled", "always"]}, "state", "per-skill state"),
     ],
 )
 def test_entry_form_schema(

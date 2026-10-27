@@ -46,9 +46,10 @@ class SkillsConfig(pydantic.BaseModel):
         # agent6.viewmodel.config_view reads this opt-in when rendering mapping values.
         json_schema_extra={"display_safe": True},
         description=(
-            "Per-skill state by name: `enabled` (indexed, loaded on `use_skill`), `disabled` "
-            "(dropped), or `always` (its full text sits in the system prompt). Layers merge key by "
-            "key; `agent6 skills enable|disable [--repo]` writes it."
+            'per-skill state by name; `skills.state.<name> = "enabled"`: indexed, loaded on '
+            '`use_skill`; `skills.state.<name> = "disabled"`: dropped; `skills.state.<name> = '
+            '"always"`: full text in the system prompt; layers merged key by key; written by '
+            "`agent6 skills enable [--repo]` or `agent6 skills disable [--repo]`"
         ),
     )
 
@@ -73,8 +74,8 @@ class MachineNotifyConfig(pydantic.BaseModel):
     on_event: _base.Argv = pydantic.Field(
         default=(),
         description=(
-            "A command run on every machine notify event and at the machine's end, as argv (no "
-            "shell), with the event in `AGENT6_MACHINE_*` variables. Empty: no hook."
+            "argv command on every machine notify event and at machine end, no shell; event in "
+            "`AGENT6_MACHINE_*` variables; no hook when empty"
         ),
     )
     timeout_s: float = pydantic.Field(
@@ -94,28 +95,28 @@ class MachineConfig(pydantic.BaseModel):
         ge=0,
         default=5,
         description=(
-            "How many blackboard snapshots a machine instance keeps (`machine status` reads the "
-            "latest; recovery and `machine replay` fold the journal). `0` keeps all."
+            "blackboard snapshots kept per machine instance; latest read by `machine status`, "
+            "journal folded for recovery and `machine replay`; `machine.snapshot_keep = 0`: all "
+            "snapshots"
         ),
     )
     state_log_keep: int = pydantic.Field(
         ge=0,
         default=50,
         description=(
-            "How many per-state log dirs a machine instance keeps under `<instance>/states/` (the "
-            "watchable logs of each state's execution; the journal keeps the full transition "
-            "history regardless). `0` keeps all."
+            "per-state log dirs kept under `<instance>/states/`, watchable logs of each state's "
+            "execution; full transition history in the journal regardless; "
+            "`machine.state_log_keep = 0`: all logs"
         ),
     )
     notify: MachineNotifyConfig = pydantic.Field(default_factory=MachineNotifyConfig)
     pass_env: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Environment variable names a machine's `tool` state may receive from the"
-            " operator's environment when its own `pass_env` names them; a state naming one"
-            " not listed here refuses the run at startup. Global/repo config only (a machine"
-            " `[config]` overlay setting it is rejected); a provider's `api_key_env` is never"
-            " allowed."
+            "operator environment variable names allowed in a machine `tool` state's own "
+            "`pass_env`; startup refused for a state naming an unlisted variable; global/repo "
+            "config only, machine `[config]` overlay refused; provider `api_key_env` variables "
+            "never allowed"
         ),
     )
 
@@ -213,8 +214,8 @@ class NotifyConfig(pydantic.BaseModel):
     on_complete: _base.Argv = pydantic.Field(
         default=(),
         description=(
-            "A command run when a run or resume ends, as argv (no shell), with "
-            "`AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON` in its environment. Empty: no hook."
+            "argv command at run or resume end, no shell; environment with "
+            "`AGENT6_SESSION_ID/DIR/OK/VERIFIED/REASON`; no hook when empty"
         ),
     )
     timeout_s: float = pydantic.Field(
@@ -252,24 +253,22 @@ class WorkspaceConfig(pydantic.BaseModel):
     base_dir: str = pydantic.Field(
         default="",
         description=(
-            "Base directory for lane clones, machine state clones, forks and "
-            "`run --worktree` worktrees, grouped by repository. Empty: "
-            "`<cache_dir>/parallel`. A lane's clone is removed after its work is imported; a "
-            "fork's or a `run --worktree` run's worktree by `sessions prune` once the session "
-            "is merged or holds no work."
+            "base directory for lane clones, machine-state clones, forks and `run --worktree` "
+            "worktrees, grouped by repo; empty: `<cache_dir>/parallel`; lane clone removed "
+            "after work import; fork and `run --worktree` worktrees removed by `sessions prune` "
+            "once merged or holding no work"
         ),
     )
     setup_command: _base.Argv = pydantic.Field(
         default=(),
         description=(
-            "The command that builds the environment of a new isolated workspace, as argv (no "
-            'shell; wrap a pipeline as `["sh", "-c", "a && b"]`). A `run --worktree` worktree, a '
-            "fork's worktree, a lane's clone and a machine state's clone hold tracked files "
-            "only, so an untracked environment (`.venv`, `node_modules`) is absent there. The "
-            "command runs once in each, before the first turn, in the run's own sandbox: the "
-            "isolation, network and grants every command of that run gets. A nonzero exit, or "
-            "600 seconds without one, ends the session before any turn. Unset: an AGENTS.md "
-            "`## Setup command` fenced block supplies it, read as the `## Verify command` "
-            "block is, and the run prints it; with neither, nothing runs."
+            "environment-setup command for a new isolated workspace as argv, no shell (pipeline "
+            'form: `["sh", "-c", "a && b"]`); `run --worktree` and fork worktrees, lane and '
+            "machine-state clones: tracked files only, no untracked `.venv` or `node_modules`; "
+            "command run once in each workspace before the first turn, under the run's command "
+            "sandbox (same isolation, network and grants); nonzero exit or 600-second timeout: "
+            "session ended before any turn; unset: AGENTS.md `## Setup command` fenced block, "
+            "parsed like `## Verify command`, command printed; no configured or inferred "
+            "command: nothing run"
         ),
     )

@@ -446,13 +446,13 @@ None of them is reachable by the model.
 | Variable | Effect |
 |---|---|
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, `XDG_DATA_HOME` | The XDG base directories; agent6 lives in an `agent6/` dir under each (config and secrets; per-repo state; the cache; installed skills). |
-| `AGENT6_DETACHED_AWAY` | `wait`, `deny` or `approve`: what a run nobody can answer for (no terminal, no editor) does at an approval or question. `wait` parks both for a front-end; `deny` refuses the approval and `approve` grants it, and under either a question gets empty answers with a note to decide alone (`sessions show` counts them). The hub and machine spawns set `wait`; a `--parallel` fan-out's lanes take the coordinator's own marker, else `wait` with a terminal to attach from, else `deny`. |
+| `AGENT6_DETACHED_AWAY` | approval and question handling without a terminal or editor; `AGENT6_DETACHED_AWAY=wait`: both parked for a front-end; `AGENT6_DETACHED_AWAY=deny`: approval refused; `AGENT6_DETACHED_AWAY=approve`: approval granted; deny or approve: questions answered with empty answers and a note to decide alone, counted by `sessions show`; hub and machine spawns: `AGENT6_DETACHED_AWAY=wait`; `--parallel` lanes: coordinator's marker, otherwise wait with a terminal to attach from, deny without one |
 | `AGENT6_AUTO_APPROVE` | `1` grants every command approval to a machine's agent states, as `--auto-approve` does (a configured `deny` stays deny). |
 | `AGENT6_NO_COMMANDS` | `1` withholds every command tool from a machine's agent states, as `--no-commands` does. |
 | `AGENT6_JAIL_BIN` | Path to a specific `agent6-jail` binary (else bundled). |
 | `AGENT6_DISABLE_SANDBOX` | `1` forces `sandbox.isolation = "none"` for one invocation (same as `--disable-sandbox`). |
 | `AGENT6_ALLOW_ROOT` | `1` permits running as root (same as `--allow-root`). |
-| `AGENT6_WEB_SECRET` | The secret a browser signs in to `agent6 web` with, at least 12 characters after lowercasing and joining words with single hyphens (same as `--secret`, which wins). Unset: each launch mints one and prints it. |
+| `AGENT6_WEB_SECRET` | browser sign-in secret for `agent6 web`; at least 12 characters after lowercasing and joining words with single hyphens; overridden by `--secret`; unset: fresh secret generated and printed per launch |
 
 A provider's `api_key_env` names the env var supplying its key; omit it to read `secrets.toml`.
 The bench and development switches are listed in [architecture.md](architecture.md#bench-and-development-switches).

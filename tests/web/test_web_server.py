@@ -2529,7 +2529,7 @@ def test_the_config_entry_tables_serve_the_form_schema(
             ["state"],
             {"state": ["enabled", "disabled", "always"]},
             "state",
-            "Per-skill state",
+            "per-skill state",
         ),
     ):
         table = tables[path]

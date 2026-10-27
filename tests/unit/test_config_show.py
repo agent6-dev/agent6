@@ -111,15 +111,15 @@ def test_mapping_setting_prints_its_contents(
 def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
     """`--descriptions` adds each leaf's meaning; the default stays values-only."""
     eff = _layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
-    assert "Cap on the metered spend" not in config_view.render_show(eff)
-    assert "Cap on the metered spend" in config_view.render_show(eff, descriptions=True)
+    assert "cap on the metered spend" not in config_view.render_show(eff)
+    assert "cap on the metered spend" in config_view.render_show(eff, descriptions=True)
 
 
 def test_key_detail_always_carries_the_meaning() -> None:
     """`config show <key>` carries the meaning with no flag."""
     eff = _layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
     detail = config_view.render_key_detail(eff, ["budget.max_usd"])
-    assert "meaning: Cap on the metered spend" in detail
+    assert "meaning: cap on the metered spend" in detail
 
 
 def test_key_detail_takes_several_keys_in_the_order_asked() -> None:

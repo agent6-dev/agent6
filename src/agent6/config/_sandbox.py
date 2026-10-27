@@ -28,11 +28,12 @@ class SandboxConfig(pydantic.BaseModel):
     isolation: Literal["auto", "full", "partial", "none"] = pydantic.Field(
         default="auto",
         description=(
-            "How jailed commands are confined: `full` (user + mount namespaces, seccomp, Landlock "
-            "where the kernel has it), `partial` (Landlock + seccomp, no namespaces), or `none` "
-            "(unconfined). `auto` picks the strongest the host supports and warns when that is "
-            "below `full`. An explicit `full` or `partial` refuses to start where the host cannot "
-            "honor it. `none` also via `--disable-sandbox` or `AGENT6_DISABLE_SANDBOX=1`."
+            'jailed-command confinement; `sandbox.isolation = "full"`: user and mount '
+            "namespaces, seccomp, Landlock where supported by the kernel; `sandbox.isolation = "
+            '"partial"`: Landlock and seccomp, no namespaces; `sandbox.isolation = "none"`: '
+            "unconfined, also via `--disable-sandbox` or `AGENT6_DISABLE_SANDBOX=1`; "
+            '`sandbox.isolation = "auto"`: strongest host-supported level, warning below full '
+            "isolation; explicit full or partial isolation refused on an unsupported host"
         ),
     )
     # A jailed child never out-reaches the process that launches it.
@@ -41,25 +42,25 @@ class SandboxConfig(pydantic.BaseModel):
     network: Literal["auto", "session", "host"] = pydantic.Field(
         default="auto",
         description=(
-            "Which network jailed commands join. `session`: the run's private network (commands "
-            "reach each other, nothing off the box, nothing outside reaches in), refused where it "
-            "cannot be enforced. `host`: the machine's network. `auto`: `session` under `full` "
-            "`sandbox.isolation`, degraded to the host's network with a warning under `partial` "
-            "or `none`. A run's "
-            "commands share one launcher, so there is no per-command `none`; a machine state sets "
-            "its own value in its `config` table, never wider than this one."
+            'jailed-command network; `sandbox.network = "session"`: private to the run, '
+            "commands mutually reachable, no off-box access or outside ingress, refused if "
+            'unenforceable; `sandbox.network = "host"`: machine\'s network; `sandbox.network = '
+            '"auto"`: session network with `sandbox.isolation = "full"`, host network with a '
+            "warning under partial or no isolation; one launcher shared by the run's commands, "
+            "no per-command network isolation; machine-state override in its `config` table, "
+            "never wider than this setting"
         ),
     )
     run_commands: Literal["allow", "deny", "ask"] = pydantic.Field(
         default="ask",
         description=(
-            "Whether the model may run commands (`run_command`, `run_verify_command`, "
-            "`run_metric_command`, `stop_background`, one decision for all four): `allow` runs "
-            "them, `deny` withholds the "
-            "tools (and the verify gate with them), `ask` prompts per call with "
-            "allow-for-this-session answers. `ask` and `plan` clamp `allow` to `ask`. Per "
-            "invocation: `--auto-approve` (never over a configured `deny`), `--no-commands`. A run "
-            "set to `ask` with nobody to answer refuses to start."
+            "one permission for `run_command`, `run_verify_command`, `run_metric_command` and "
+            '`stop_background`; `sandbox.run_commands = "allow"`: commands allowed; '
+            '`sandbox.run_commands = "deny"`: tools and verify gate withheld; '
+            '`sandbox.run_commands = "ask"`: per-call prompt with allow-for-this-session '
+            "answers, startup refused without someone to answer; allow clamped to ask in `ask` "
+            "and `plan` modes; per-invocation flags: `--auto-approve` (never over configured "
+            "deny), `--no-commands`"
         ),
     )
     # Hosts, never URL prefixes: a prefix invites `evil.com/docs.python.org`.
@@ -67,41 +68,42 @@ class SandboxConfig(pydantic.BaseModel):
     fetch_approved_hosts: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Hosts the `fetch` tool may read without asking; any other host prompts, and an absent "
-            'operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows '
-            "subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of "
-            "fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when "
-            'a jailed command already has the host network (`network = "host"`, or any '
-            "`sandbox.isolation` but `full`); withheld from machine and agent states."
+            "hosts readable by `fetch` without approval; other hosts: prompt, refusal without "
+            'an operator; empty: every fetch prompts; `sandbox.fetch_approved_hosts = ["*"]`: '
+            "any host; leading dot: subdomains allowed (`.readthedocs.io`); host entries only, "
+            "never URL prefixes; fixed fetch limits: https only, 1 MiB, redirects returned "
+            "without following; tool hidden when jailed commands have host networking "
+            '(`sandbox.network = "host"` or `sandbox.isolation` other than `"full"`); tool '
+            "withheld from machine and agent states"
         ),
     )
     # A read-only bind-remount; the harness's own commits run outside the jail and are unaffected.
     protect_git: Literal["auto", "on", "off"] = pydantic.Field(
         default="auto",
         description=(
-            "Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter "
-            "that agent6's host-side commits would execute. `on` requires `full` "
-            "`sandbox.isolation` to bind-remount `.git` read-only and refuses to start elsewhere; "
-            'it is refused beside `git.control = "model"`. `auto`: the bind under `full` '
-            "`sandbox.isolation`, a warning below it, and off where the model controls git. "
-            "`off`: writable. Under "
-            "`on` and `auto` the in-process edit tools refuse `.git` writes at every level."
+            "`.git/` write protection against jailed commands planting filters for agent6's "
+            'host-side commits to execute; `sandbox.protect_git = "on"`: read-only '
+            'bind-remount, requires `sandbox.isolation = "full"`, startup refused elsewhere or '
+            'with `git.control = "model"`; `sandbox.protect_git = "auto"`: bind under full '
+            "isolation, warning below it, off under model git control; `sandbox.protect_git = "
+            '"off"`: writable; in-process `.git` writes refused at every isolation level with '
+            '`sandbox.protect_git = "on"` or `"auto"`'
         ),
     )
     # The cache dir is paths.jail_cache_home, keyed on the repository.
     home: Literal["auto", "tmp", "cache"] = pydantic.Field(
         default="auto",
         description=(
-            "The HOME jailed commands get: `tmp` is `/tmp/agent6-home` inside the run's private "
-            "tmpfs, gone with the run, and needs `full` `sandbox.isolation` (it refuses to start "
-            "elsewhere); `cache` is the persistent `$XDG_CACHE_HOME/agent6/homes/<repo-id>`, one "
-            "directory per repository (created `0700`, refused once loosened), bind-mounted "
-            "read-write at its real path; `auto` is `tmp` under `full` and `cache` under "
-            "`partial` or `none`, which have no private tmpfs. Persistence is a cross-run "
-            "channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias written "
-            "by one run reaches the next jailed run in the same repository, never another "
-            "repository's runs and never your own tools. For Go builds, `cache` retains the "
-            "compiled-package cache across runs without granting your host cache."
+            'home directory (HOME) for jailed commands; `sandbox.home = "tmp"`: '
+            "`/tmp/agent6-home` in the run's private tmpfs, removed with the run, requires "
+            '`sandbox.isolation = "full"`, startup refused elsewhere; `sandbox.home = "cache"`: '
+            "persistent `$XDG_CACHE_HOME/agent6/homes/<repo-id>`, one directory per repo, "
+            "created `0700`, refused if loosened, read-write bind at its real path; "
+            '`sandbox.home = "auto"`: tmp under full isolation, cache under partial or no '
+            "isolation (no private tmpfs); persistent HOME: cross-run channel inside the jail, "
+            "poisoned caches or `~/.gitconfig` aliases reaching later jailed runs in the same "
+            "repo, never other repos or the operator's tools; cached HOME for Go builds: "
+            "compiled-package cache retained across runs without a host-cache grant"
         ),
     )
     # RLIMIT_DATA rather than RLIMIT_AS so V8, the JVM and ASAN, which reserve address space
@@ -111,19 +113,19 @@ class SandboxConfig(pydantic.BaseModel):
         default=0,
         ge=0,
         description=(
-            "`RLIMIT_DATA` per-process data-segment cap in MiB (1024 * 1024 bytes) on each jailed "
-            "process, inherited by its children. `0`: no cap. Set one to bound a specific task; "
-            "a process over it fails as an ordinary command error."
+            "per-process `RLIMIT_DATA` data-segment cap in MiB (1024 * 1024 bytes) for jailed "
+            "processes and their children; `sandbox.memory_limit_mib = 0`: no cap; explicit cap "
+            "to bound a task; cap exceeded: ordinary command error"
         ),
     )
     # On top of /usr /bin /lib /lib64 /etc /dev and the workspace; no effect under `none`.
     extra_read_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Absolute paths outside the repo the run may read and execute, at their real "
-            "locations: a toolchain, an interpreter (conda, Go, Rust, Node), a shared data dir. "
-            "Mounted for jailed commands and readable by the in-process tools. Widens the sandbox; "
-            "list only what the build needs."
+            "absolute paths outside the repo readable and executable at their real locations "
+            "(toolchains, conda/Go/Rust/Node interpreters, shared data dirs); mounted for "
+            "jailed commands, readable by in-process tools; wider sandbox, only paths needed by "
+            "the build"
         ),
     )
 
@@ -153,9 +155,9 @@ class SandboxConfig(pydantic.BaseModel):
     extra_write_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Absolute paths outside the repo the run may read and write, at their real locations: "
-            "a build cache, an output dir, a sibling checkout the task edits. Write implies read. "
-            "Widens the sandbox; list only what the task writes."
+            "absolute paths outside the repo readable and writable at their real locations "
+            "(build caches, output dirs, sibling checkouts edited by the task); read access "
+            "included with write access; wider sandbox, only paths written by the task"
         ),
     )
 
@@ -183,11 +185,11 @@ class SandboxConfig(pydantic.BaseModel):
     extra_device_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Device nodes under /dev the jail exposes read-write (GPU compute: /dev/nvidiactl, "
-            "/dev/nvidia0, /dev/nvidia-uvm). By default a jailed command reaches only the device "
-            "nodes /dev/null, /dev/zero, /dev/urandom, /dev/random and /dev/full. Each path must "
-            "be an existing character or block device at run start, or the run refuses. Widens "
-            "the sandbox: a device node is direct hardware access."
+            "device nodes under `/dev` exposed read-write (GPU compute: `/dev/nvidiactl`, "
+            "`/dev/nvidia0`, `/dev/nvidia-uvm`); default device access only to `/dev/null`, "
+            "`/dev/zero`, `/dev/urandom`, `/dev/random` and `/dev/full`; existing character or "
+            "block devices required at run start, otherwise startup refused; wider sandbox, "
+            "direct hardware access"
         ),
     )
 
@@ -214,14 +216,13 @@ class SandboxConfig(pydantic.BaseModel):
     hide_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Absolute paths the run may never read or write, even under a broader grant. agent6's "
-            "config dir and state base are always hidden, so an `extra_read_paths` grant of "
-            "`$HOME` never exposes `secrets.toml` or run history (the data dir and cache stay "
-            "readable: installed skills work). Enforced twice: the in-process tools refuse them at "
-            "every isolation level, and jailed commands see them masked (a dir reads empty, a file "
-            "reads empty). Masking needs the mount namespace: under `partial` `sandbox.isolation` "
-            "an entry it cannot mask refuses the run, and a grant exposing the always-hidden dirs "
-            "warns loudly instead."
+            "absolute paths never readable or writable by the run, even under a broader grant; "
+            "agent6 config dir and state base always hidden, `secrets.toml` and run history "
+            "excluded even from `sandbox.extra_read_paths` granting `$HOME`; data dir and cache "
+            "readable for installed skills; in-process refusal at every isolation level; "
+            "jailed-command masking: empty dirs and files, mount namespace required; under "
+            '`sandbox.isolation = "partial"`: run refused for an unmaskable entry, loud warning '
+            "instead for a grant exposing always-hidden dirs"
         ),
     )
 
@@ -284,9 +285,9 @@ class MCPSandbox(pydantic.BaseModel):
     extra_read_paths: _base.StrTuple = pydantic.Field(
         default=(),
         description=(
-            "Read+execute paths for this server beyond the run's sandbox (absolute or `~`). "
-            "The workspace, system dirs, tool dirs and a writable `HOME` are already there, "
-            "so a block names only the server's own data."
+            "read and execute paths for this server beyond the run's sandbox (absolute or `~`); "
+            "workspace, system dirs, tool dirs and writable `HOME` included without extra "
+            "grants; only the server's own data needed here"
         ),
     )
     extra_write_paths: _base.StrTuple = pydantic.Field(
@@ -297,18 +298,18 @@ class MCPSandbox(pydantic.BaseModel):
     network: Literal["auto", "none", "session", "host"] = pydantic.Field(
         default="auto",
         description=(
-            "Which network this server joins. `auto`: one of its own where the host can give a "
-            "namespace, degrading to the host's with a warning. `none`: the same, refusing "
-            "rather than running connected. `session`: the run's network, so a dev server a "
-            "background command started answers this server too (a browser server driving the "
-            "app under test), and still nothing off the box. `host`: the machine's network."
+            'server network; `network = "auto"`: private namespace where supported, otherwise '
+            'host network with a warning; `network = "none"`: private network or refusal, never '
+            'a connected fallback; `network = "session"`: run\'s network, background dev servers '
+            "reachable by this server (such as a browser testing the app), no off-box access; "
+            '`network = "host"`: machine\'s network'
         ),
     )
     unconfined: bool = pydantic.Field(
         default=False,
         description=(
-            "No sandbox at all, for a server whose job is arbitrary host access. Contradicts every "
-            "other field here, so setting both is refused rather than half-applied."
+            "no sandbox for a server needing arbitrary host access; refused alongside any other "
+            "field in this block, no partial application"
         ),
     )
 
@@ -375,24 +376,24 @@ class MCPServerEntry(pydantic.BaseModel):
     command: _base.Argv = pydantic.Field(
         default=(),
         description=(
-            "argv of a stdio MCP server agent6 spawns (jailed like a command, plus `sandbox`). "
-            "Exactly one of `command` or `url`."
+            "argv of a spawned stdio MCP server; jailed like a command, plus `sandbox` grants; "
+            "exactly one of `command` or `url` required"
         ),
     )
     url: str = pydantic.Field(
         default="",
         description=(
-            "An http(s) MCP endpoint you run yourself; agent6 only connects, owning none of its "
-            "environment or confinement. Exactly one of `command` or `url`."
+            "operator-run http(s) MCP endpoint; connection only, environment and confinement "
+            "outside agent6's control; exactly one of `command` or `url` required"
         ),
     )
     # Named, never inlined: a secret in a config file is a secret in a backup.
     token_env: str = pydantic.Field(
         default="",
         description=(
-            "For a `url` server: the environment variable holding its bearer token, named here and "
-            "never inlined or logged. Over plaintext `http://` to a non-loopback host the token is "
-            "readable on the wire: `mcp add` asks first, and every run that starts it warns."
+            "bearer-token environment variable for a `url` server, named rather than inlined, "
+            "never logged; token readable on the wire over plaintext `http://` to a "
+            "non-loopback host; approval in `mcp add`, warning on every run starting it"
         ),
     )
     enabled: bool = pydantic.Field(
@@ -412,20 +413,20 @@ class MCPServerEntry(pydantic.BaseModel):
     sandbox: MCPSandbox | None = pydantic.Field(
         default=None,
         description=(
-            "Extra grants for a spawned server beyond the sandbox a jailed command gets; unset "
-            "means exactly that sandbox. A `url` server is your own process: confine it where you "
-            "start it."
+            "extra grants for a spawned server beyond a jailed command's sandbox; unset: "
+            "exactly that sandbox; `url` server: operator's process, confinement at its launch "
+            "site"
         ),
     )
     # A server's tools do things agent6 cannot classify, so the default is a command's: ask.
     approve: Literal["ask", "allow"] = pydantic.Field(
         default="ask",
         description=(
-            "`ask` prompts before each of this server's tool calls, showing the arguments the "
-            'model chose; `allow` never asks. The session answers are per server: "allow all" '
-            "covers this server for the run (not the command tools, not a sibling server), "
-            '"deny all" withdraws its tools from the next turn. `--auto-approve` sets `allow` for '
-            "the run. There is no `deny`: `enabled = false` is how a server's tools are withheld."
+            'approval policy for this server\'s tools; `approve = "ask"`: prompt before each '
+            'call with the model\'s arguments; `approve = "allow"`: no prompt; session answer '
+            '"allow all": this server only for the run, not command tools or sibling servers; '
+            '"deny all": tools withdrawn from the next turn; `--auto-approve`: `approve = '
+            '"allow"` for the run; no deny mode, tools withheld with `enabled = false`'
         ),
     )
     startup_timeout_s: float = pydantic.Field(
@@ -447,9 +448,9 @@ class MCPServerEntry(pydantic.BaseModel):
     http_trust_env: bool = pydantic.Field(
         default=False,
         description=(
-            "For a `url` server: honor the ambient `HTTP(S)_PROXY`, `.netrc`, and `SSL_CERT_FILE`. "
-            "`false` so a local server's bearer token never routes to a proxy; set it for a "
-            "server reachable only through the environment's proxy."
+            "ambient `HTTP(S)_PROXY`, `.netrc` and `SSL_CERT_FILE` for a `url` server; "
+            "`http_trust_env = false`: no proxy routing of a local server's bearer token; "
+            "opt-in for a server reachable only through the environment's proxy"
         ),
     )
 

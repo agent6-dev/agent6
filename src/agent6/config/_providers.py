@@ -159,9 +159,9 @@ class _ProviderBase(pydantic.BaseModel):
     base_url: str = pydantic.Field(
         default="",
         description=(
-            "The endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for "
-            "`vertex` and `azure`. The provider API destination; a ChatGPT sign-in also dials "
-            "its fixed OAuth authority."
+            "provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); "
+            'required for `deployment = "vertex"` or `"azure"`; ChatGPT sign-in also '
+            "connected to its fixed OAuth authority"
         ),
     )
     auth_style: AuthStyle = pydantic.Field(
@@ -177,16 +177,16 @@ class _ProviderBase(pydantic.BaseModel):
         default=None,
         min_length=1,
         description=(
-            "The environment variable holding the API key; it wins over `secrets.toml`. Unset for "
-            "a key `agent6 connect` stored, or an unauthenticated local endpoint."
+            "environment variable holding the API key; precedence over `secrets.toml`; unset "
+            "for a key stored by `agent6 connect` or an unauthenticated local endpoint"
         ),
     )
     token_command: _base.Argv = pydantic.Field(
         default=(),
         description=(
-            "A command (argv) that prints a short-lived bearer token to stdout, re-run when "
-            "`token_command_ttl_s` expires and once after a `401` or `403`. Wins over "
-            "`api_key_env`."
+            "argv command printing a short-lived bearer token to stdout; re-run after "
+            "`token_command_ttl_s` and once after a `401` or `403`; precedence over "
+            "`api_key_env`"
         ),
     )
     token_command_ttl_s: float = pydantic.Field(
@@ -197,17 +197,17 @@ class _ProviderBase(pydantic.BaseModel):
     extra_headers: dict[str, str] = pydantic.Field(
         default_factory=dict,
         description=(
-            "Extra HTTP headers on every request to this provider. Never a secret: the config file "
-            "is not `0600`."
+            "extra HTTP headers on every provider request; no secrets, config file not `0600`"
         ),
     )
     extra_body: dict[str, Any] = pydantic.Field(
         default_factory=dict,
         description=(
-            "Provider-specific JSON merged last into every request body, so tuning keys "
-            "(`max_tokens`, `temperature`) win; the structural keys agent6 owns (messages, model, "
-            "stream, tools, tool choice, response shape) are filtered out. Values must be "
-            "JSON-shaped (a TOML date or time is refused). OpenRouter's routing options go here."
+            "provider-specific JSON merged last into every request body; precedence for tuning "
+            "keys (`max_tokens`, `temperature`); agent6-owned structural keys "
+            "filtered out (messages, model, stream, tools, tool choice, response shape); "
+            "JSON-shaped values only, TOML dates and times refused; OpenRouter routing options "
+            "here"
         ),
     )
     extra_query: dict[str, str] = pydantic.Field(
@@ -326,8 +326,8 @@ class AnthropicProviderEntry(_ProviderBase):
     prompt_caching: bool = pydantic.Field(
         default=True,
         description=(
-            "Anthropic prompt caching: the system prompt, the tools, and the growing conversation "
-            "are re-read at 0.1x the input price. `anthropic` format only."
+            'prompt caching for `api_format = "anthropic"` only; system prompt, tools and '
+            "growing conversation re-read at 0.1x the input price"
         ),
     )
 
@@ -442,8 +442,7 @@ class ClaudeCodeProviderEntry(pydantic.BaseModel):
         default="claude",
         min_length=1,
         description=(
-            "The Claude Code executable: a name on PATH or an absolute path. `claude_code`"
-            " format only."
+            'executable for `api_format = "claude_code"` only; a name on PATH or an absolute path'
         ),
     )
 

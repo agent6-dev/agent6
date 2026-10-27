@@ -53,13 +53,15 @@ class ModelsConfig(pydantic.BaseModel):
     reviewer: _harness.RoleModel | None = pydantic.Field(
         default=None,
         description=(
-            "Drives `agent6 review`, the in-loop review panel, the context summariser and"
-            " gister, and the prompt reviser. Unset falls back to `worker`."
+            "model for `agent6 review`, the in-loop review panel, context summariser and "
+            "gister, and prompt reviser; fallback to `models.worker` when unset"
         ),
     )
     planner: _harness.RoleModel | None = pydantic.Field(
         default=None,
-        description="Drives `agent6 plan` (the planning pass). Unset falls back to `worker`.",
+        description=(
+            "model for `agent6 plan` (planning pass); fallback to `models.worker` when unset"
+        ),
     )
 
     def configured(self) -> dict[str, _harness.RoleModel]:
@@ -132,9 +134,9 @@ class Config(pydantic.BaseModel):
     providers: dict[str, _providers.ProviderEntry] = pydantic.Field(
         default_factory=dict,
         description=(
-            "Provider endpoints by name (`[providers.<name>]`); a `[models.*]` role names one. "
-            "Names use only ASCII letters, digits, '-' and '_', with at least one character. "
-            "`agent6 connect` writes them."
+            "provider endpoints by name (`[providers.<name>]`), referenced by `[models.*]` "
+            "roles; names: one or more ASCII letters, digits, `-` or `_`; written by `agent6 "
+            "connect`"
         ),
     )
     models: ModelsConfig = pydantic.Field(default_factory=ModelsConfig)
@@ -156,12 +158,11 @@ class Config(pydantic.BaseModel):
     preset: Annotated[str, pydantic.AfterValidator(preset_name)] = pydantic.Field(
         default="none",
         description=(
-            "The selected preset: `none` (no preset), `no_review` (review panel off), "
-            "`review` (three review seats that can block the finish), `deep_review` (five "
-            "repo-scope review seats that can block the finish), or a `[presets.<name>]` "
-            "of your own. A preset overrides settings in the layer that selects it. "
-            "`--preset` selects per run, `resume --preset` per resumed execution. "
-            "`none` stops preset lookup; an empty string is refused."
+            'selected preset; `preset = "none"`: no preset, stop preset lookup; `preset = '
+            '"no_review"`: panel off; `preset = "review"`: three seats able to block the '
+            'finish; `preset = "deep_review"`: five repo-scope seats able to block the finish; '
+            "custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: "
+            "per run; `resume --preset`: per resumed execution; empty string refused"
         ),
     )
 
