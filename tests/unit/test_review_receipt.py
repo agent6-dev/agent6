@@ -317,6 +317,16 @@ def test_summary_states_the_outcome_once() -> None:
     assert receipt.verification_summary(passed).startswith("v: passed, exit 0, full gate\n")
 
 
+def test_receipt_payload_carries_the_rendered_text(tmp_path: pathlib.Path) -> None:
+    """The web client rendered its own receipt; the payload carries the shared text."""
+    from agent6.viewmodel import receipt
+
+    (tmp_path / "manifest.json").write_text("{}")
+    (tmp_path / "logs.jsonl").write_text("")
+    view = receipt.read_receipt(tmp_path, tmp_path)
+    assert receipt.as_dict(view)["text"] == receipt.render(view, include_output=False)
+
+
 def test_receipt_uses_one_shared_scan_without_per_line_adapters(tmp_path: pathlib.Path) -> None:
     """Receipt reads share the listing scan and do not build schemas per journal line."""
     import json

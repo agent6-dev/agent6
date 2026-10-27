@@ -175,10 +175,11 @@ def as_dict(view: ReceiptView) -> dict[str, Any]:
         view: The derived receipt.
 
     Returns:
-        Its structured wire form.
+        Its structured wire form, with the shared rendering (output bodies left out) as `text`.
     """
     payload = pydantic.TypeAdapter(ReceiptView).dump_python(view, mode="json")
     payload["revert_request"] = revert_request(view)
+    payload["text"] = render(view, include_output=False)
     return payload
 
 
