@@ -76,8 +76,8 @@ class GitCommitConfig(pydantic.BaseModel):
         description=(
             "author and committer email for agent6 commits; also passed as `GIT_AUTHOR_EMAIL` "
             'and `GIT_COMMITTER_EMAIL` to jailed `git commit` under `git.control = "model"`; '
-            "repo's own `git config` identity when unset; startup refused without a resolvable "
-            "identity"
+            "the `GIT_COMMITTER_*` variables, then the repo's own `git config` identity, when"
+            " unset; startup refused without a resolvable identity"
         ),
     )
     trailer: str = pydantic.Field(

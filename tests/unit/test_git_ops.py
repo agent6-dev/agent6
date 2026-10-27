@@ -528,6 +528,9 @@ def test_verify_git_identity_missing_raises(
 ) -> None:
     # The temporary home has no Git config, so no global identity leaks in.
     monkeypatch.setenv("HOME", str(tmp_path))
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.delenv(f"GIT_{role}_NAME", raising=False)
+        monkeypatch.delenv(f"GIT_{role}_EMAIL", raising=False)
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main", str(repo)], check=True)

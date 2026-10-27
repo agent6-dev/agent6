@@ -465,13 +465,13 @@ def test_config_payload_masks_provider_mapping_entries(tmp_path: pathlib.Path) -
     cfg = tmp_path / "c.toml"
     cfg.write_text(
         '[providers.demo]\napi_format = "openai"\n'
-        'extra_headers = { token = "header-secret" }\n'
-        'extra_query = { token = "query-secret" }\n'
-        'extra_body = { token = "body-secret", nested = { token = "nested-secret" } }\n',
+        'extra_headers = { token = "header-s3kr1t" }\n'
+        'extra_query = { token = "query-s3kr1t" }\n'
+        'extra_body = { token = "body-s3kr1t", nested = { token = "nested-s3kr1t" } }\n',
         encoding="utf-8",
     )
     payload = model.config_payload(tmp_path, (cfg,))
-    assert "-secret" not in json.dumps(payload)
+    assert "s3kr1t" not in json.dumps(payload)
     for field in ("extra_body", "extra_headers", "extra_query"):
         assert f"providers.demo.{field}" not in payload
         setting = payload[f"providers.demo.{field}.token"]

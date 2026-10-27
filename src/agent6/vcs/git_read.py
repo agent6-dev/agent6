@@ -61,9 +61,9 @@ class CommitIdentity:
 def verify_git_identity(path: pathlib.Path, identity: CommitIdentity) -> tuple[str, str]:
     """Resolve the author identity future commits use.
 
-    Per field, the `[git.commit]` override wins over the repo's `git config`.
-    A silently auto-generated identity is noticed weeks later in `git log`, so
-    an empty field refuses.
+    Per field, the `[git.commit]` override wins, then the `GIT_COMMITTER_*` variables git
+    itself would use, then the repo's `git config`. A silently auto-generated identity is
+    noticed weeks later in `git log`, so an empty field refuses.
 
     Args:
         path: The repository.
@@ -76,10 +76,14 @@ def verify_git_identity(path: pathlib.Path, identity: CommitIdentity) -> tuple[s
         GitError: Either field is empty after both sources.
     """
     name = (
-        identity.name or _git_command.run(path, "config", "user.name", check=False).stdout.strip()
+        identity.name
+        or os.environ.get("GIT_COMMITTER_NAME", "").strip()
+        or _git_command.run(path, "config", "user.name", check=False).stdout.strip()
     )
     email = (
-        identity.email or _git_command.run(path, "config", "user.email", check=False).stdout.strip()
+        identity.email
+        or os.environ.get("GIT_COMMITTER_EMAIL", "").strip()
+        or _git_command.run(path, "config", "user.email", check=False).stdout.strip()
     )
     missing: list[str] = []
     if not name:

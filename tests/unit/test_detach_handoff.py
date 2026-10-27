@@ -223,7 +223,7 @@ def _stub_execution_internals(
             estimate_usd=lambda: (0.01, False),
             settle=lambda: False,
         ),
-        rm_role=types.SimpleNamespace(model="fake/model"),
+        rm_role=types.SimpleNamespace(model="fake/model", provider="fake"),
         provider=None,
         summariser_provider=None,
         review_seats=[],

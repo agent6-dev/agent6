@@ -108,7 +108,7 @@ The transport owns `authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `c
 | Field | Default | Meaning |
 |---|---|---|
 | `template` | *(required)* | literal text with `{fact}` placeholders (`{{` and `}}` are literal braces); the facts: `request_id`, `agent6_version` on every request, and on a model call `model`, `session_id`, `initiator`, `is_first_turn`, `is_subagent`, `has_tool_results`, `has_images` |
-| `targets` | `["inference"]` | the request classes the header reaches: `inference` (model calls), `models` (the listing), `usage` (the plan reading), `oauth` (device, token and revocation requests), `exchange` (the configured second exchange). The `oauth` and `exchange` targets require an `oauth` setting on the entry |
+| `targets` | `["inference"]` | the request classes the header reaches: `inference` (model calls), `models` (the listing), `usage` (the plan reading), `oauth` (device, token and revocation requests), `exchange` (the configured second exchange); `oauth` and `exchange` need an `oauth` setting on the entry |
 | `when` | none | a Boolean fact; the header is sent only while it is true (model calls only) |
 
 ### Configured OAuth
@@ -353,7 +353,7 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 | Field | Default | Meaning |
 |---|---|---|
 | `name` | none | author and committer name for agent6 commits; also passed as `GIT_AUTHOR_NAME` and `GIT_COMMITTER_NAME` to jailed `git commit` under `git.control = "model"`; repo's own `git config` identity when unset; startup refused without a resolvable identity |
-| `email` | none | author and committer email for agent6 commits; also passed as `GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_EMAIL` to jailed `git commit` under `git.control = "model"`; repo's own `git config` identity when unset; startup refused without a resolvable identity |
+| `email` | none | author and committer email for agent6 commits; also passed as `GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_EMAIL` to jailed `git commit` under `git.control = "model"`; the `GIT_COMMITTER_*` variables, then the repo's own `git config` identity, when unset; startup refused without a resolvable identity |
 | `trailer` | `""` | git trailer line (`Key: value`) on every agent6 commit, such as `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`; `{model}`: the code-writing model, several joined with `, `; no trailer when empty |
 
 ### `[git.commit.checkpoint]` and `[git.commit.squash]`

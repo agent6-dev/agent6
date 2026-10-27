@@ -23,6 +23,7 @@ from typing import Any
 
 import pytest
 
+from agent6 import kinds
 from agent6.tools import results as results_mod
 
 _HIT: dict[str, Any] = {"path": "a.py", "line": 1, "text": "x"}
@@ -56,6 +57,13 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
         "ok",
     ),
     ("read_file", results_mod.ReadFileResult(content="hi", size=2, lines_total=1), "2 bytes"),
+    (
+        "read_file_media",
+        results_mod.ReadMediaResult(
+            media=kinds.MediaAttachment(b"\x89PNG\r\n\x1a\n" + b"\0" * 100, "image/png", "shot.png")
+        ),
+        "image: shot.png, 1 KiB",
+    ),
     (
         "read_file_slice",
         results_mod.ReadFileResult(

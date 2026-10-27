@@ -89,16 +89,19 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 def _hermetic_git(  # pyright: ignore[reportUnusedFunction]
     monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    """Pin a suite-owned Git identity in a temporary home.
+    """Pin a suite-owned Git identity and blank the system and global git config.
 
-    agent6 strips shell GIT_CONFIG_* overrides, so its Git reads the fixture's ~/.gitconfig.
+    The tests' own git calls read the fixture's global config; agent6's git passes only the
+    author and committer variables through, so the identity rides those too. HOME stays the
+    operator's: rustup and the home rows of `check sandbox` read it.
     """
-    home = tmp_path_factory.mktemp("git-home")
-    cfg = home / ".gitconfig"
+    cfg = tmp_path_factory.mktemp("git-identity") / "gitconfig"
     cfg.write_text("[user]\n\tname = t\n\temail = t@t\n", encoding="utf-8")
-    monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(cfg))
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{role}_NAME", "t")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", "t@t")
 
 
 @pytest.fixture

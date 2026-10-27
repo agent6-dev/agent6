@@ -419,6 +419,9 @@ def test_runs_merge_without_identity_refuses_with_clean_tree(
 ) -> None:
     # No git identity anywhere: isolate from ~/.gitconfig and drop the fixture's local identity.
     monkeypatch.setenv("HOME", str(tmp_path))
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.delenv(f"GIT_{role}_NAME", raising=False)
+        monkeypatch.delenv(f"GIT_{role}_EMAIL", raising=False)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
     monkeypatch.chdir(tmp_path)

@@ -131,9 +131,10 @@ def input_capabilities(cfg: Config, rm: RoleModel | None) -> media.InputCapabili
     Returns:
         The route's cached facts, unknown when no route is configured.
     """
-    if rm is None:
+    entry = cfg.providers.get(rm.provider) if rm is not None else None
+    if rm is None or entry is None:
         return media.InputCapabilities()
-    return models_cache.cached_input_capabilities(rm.provider, cfg.providers[rm.provider], rm.model)
+    return models_cache.cached_input_capabilities(rm.provider, entry, rm.model)
 
 
 def build_role_provider(
