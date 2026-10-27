@@ -289,6 +289,7 @@ class AnthropicProvider:
         auth_style: The auth header style: `x_api_key` direct, `bearer` on Vertex.
         prompt_caching: Whether the system block and the last tool are cache marked.
         timeout_s: The read budget in seconds.
+        auth_observer: Receives settled authentication outcomes; None observes nothing.
         transcript_sink: Where each round-trip is recorded.
         budget: The run's tracker; None skips metering.
         effort: The reasoning level; anything but "off" enables extended thinking
@@ -307,6 +308,7 @@ class AnthropicProvider:
     prompt_caching: bool = True
     timeout_s: float = 120.0
     transcript_sink: types.TranscriptRecorder | None = None
+    auth_observer: types.AuthObserver | None = None
     budget: agent6_budget.BudgetTracker | None = None
     effort: str | None = None
     extra_headers: _headers.HeaderSet = dataclasses.field(default_factory=_headers.HeaderSet)
@@ -496,6 +498,7 @@ class AnthropicProvider:
             timeout_s=self.timeout_s,
             api_key=self.api_key,
             credential=self.credential,
+            auth_observer=self.auth_observer,
             transcript_sink=self.transcript_sink,
             budget=self.budget,
             model=self.model,

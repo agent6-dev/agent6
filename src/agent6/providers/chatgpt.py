@@ -194,6 +194,7 @@ class ChatGPTProvider:
         extra_body: Operator body keys merged last; the structural keys are reserved.
         extra_query: Operator query parameters.
         timeout_s: The read budget in seconds.
+        auth_observer: Receives settled authentication outcomes; None observes nothing.
         transcript_sink: Where each round-trip is recorded.
         budget: The run's tracker; None skips metering and the preflight.
         reasoning_effort: The role's effort; unset takes the model's default, and
@@ -209,6 +210,7 @@ class ChatGPTProvider:
     extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     timeout_s: float = 600.0
     transcript_sink: types.TranscriptRecorder | None = None
+    auth_observer: types.AuthObserver | None = None
     budget: agent6_budget.BudgetTracker | None = None
     reasoning_effort: str | None = None
     # One usage preflight per provider; a list, since the dataclass is frozen.
@@ -369,6 +371,7 @@ class ChatGPTProvider:
             timeout_s=self.timeout_s,
             api_key="",
             credential=self.credential,
+            auth_observer=self.auth_observer,
             transcript_sink=self.transcript_sink,
             budget=self.budget,
             model=self.model,

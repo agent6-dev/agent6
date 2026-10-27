@@ -127,6 +127,7 @@ def build_role_provider(
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     seat: str = "",
+    events: event_log.EventSink | None = None,
 ) -> Provider:
     """Construct the configured provider for a role.
 
@@ -139,6 +140,7 @@ def build_role_provider(
         budget: The tracker the provider bills.
         seat: The transcript seat stamp for an actor sharing the role's route; the role
             itself when empty.
+        events: The run's journal sink; None emits no authentication events.
 
     Returns:
         The provider, with the role's effort as its default reasoning effort.
@@ -163,6 +165,7 @@ def build_role_provider(
         # The conversation fold keeps the worker's seat and skips the side-calls' seats.
         transcript_sink=transcript_sink.for_seat(seat or role),
         budget=budget,
+        events=events,
     )
 
 
@@ -174,6 +177,7 @@ def _provider_from_entry(
     *,
     transcript_sink: TranscriptRecorder,
     budget: agent6_budget.BudgetTracker,
+    events: event_log.EventSink | None = None,
 ) -> Provider:
     """Build the provider for one `[providers.<name>]` entry, model and effort.
 
@@ -184,6 +188,7 @@ def _provider_from_entry(
         effort: The default reasoning effort, or None.
         transcript_sink: The recorder the provider's round-trips go to.
         budget: The tracker the provider bills.
+        events: The run's journal sink; None emits no authentication events.
 
     Returns:
         The provider.
@@ -207,11 +212,21 @@ def _provider_from_entry(
             budget=budget,
             context_tokens=models_registry.context_window(provider_name, model),
         )
+
+    def observe_auth(event: types.AuthEvent) -> None:
+        if events is not None:
+            events.emit(
+                "provider.auth", provider=provider_name, kind=event.kind, outcome=event.outcome
+            )
+
+    auth_observer = observe_auth if events is not None else None
     extra_headers = _headers.HeaderSet.from_config(entry.extra_headers)
     extra_body = dict(entry.extra_body)
     extra_query = dict(entry.extra_query)
     if isinstance(entry, ChatGPTProviderEntry):
-        chatgpt_credential = oauth.OAuthCredential(provider_name, entry)
+        chatgpt_credential = oauth.OAuthCredential(
+            provider_name, entry, auth_observer=auth_observer
+        )
         account = chatgpt_credential.account_id()  # raises the connect hint when not signed in
         if not account:
             raise ProviderError(
@@ -221,6 +236,7 @@ def _provider_from_entry(
         return ChatGPTProvider(
             model=model,
             credential=chatgpt_credential,
+            auth_observer=auth_observer,
             account_id=account,
             base_url=entry.base_url,
             extra_headers=extra_headers,
@@ -239,7 +255,7 @@ def _provider_from_entry(
     )
     if entry.oauth is not None:
         # A configured issuer is the one credential source: the stored, bound grant.
-        credential = oauth.OAuthCredential(provider_name, entry)
+        credential = oauth.OAuthCredential(provider_name, entry, auth_observer=auth_observer)
         key = ""
     if isinstance(entry, AnthropicProviderEntry):
         # Anthropic needs a key, a token_command credential or `auth_style = "none"`.
@@ -263,6 +279,7 @@ def _provider_from_entry(
             extra_body=extra_body,
             extra_query=extra_query,
             credential=credential,
+            auth_observer=auth_observer,
         )
     if isinstance(entry, ResponsesProviderEntry):
         return ResponsesProvider(
@@ -278,6 +295,7 @@ def _provider_from_entry(
             budget=budget,
             reasoning_effort=effort,
             credential=credential,
+            auth_observer=auth_observer,
         )
     return OpenAIProvider(
         api_key=key or "",
@@ -293,6 +311,7 @@ def _provider_from_entry(
         budget=budget,
         reasoning_effort=effort,
         credential=credential,
+        auth_observer=auth_observer,
     )
 
 
@@ -544,7 +563,7 @@ def reviewer_seat_provider(
         The instrumented provider.
     """
     inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat=seat
+        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat=seat, events=events
     )
     rm = cfg.models.resolve("reviewer")
     assert rm is not None  # "reviewer" resolves to the reviewer or worker model
@@ -620,6 +639,7 @@ def build_review_seats(
             rm.effort,
             transcript_sink=transcript_sink.for_seat(f"review:{seat_focus}"),
             budget=budget,
+            events=events,
         )
         if events is not None:
             provider = InstrumentedProvider(

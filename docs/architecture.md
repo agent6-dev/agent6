@@ -271,6 +271,12 @@ The other classified codes are `refresh_token_expired`, `refresh_token_invalidat
 `_oauth_exchange.py` owns the optional second exchange and its expiry parser.
 
 Configured issuers and ChatGPT use `OAuthCredential` and bound `StoredGrant` records.
+`app/providers.py` injects an observer that writes `provider.auth` to the run's journal.
+A refresh or exchange reports success after persistence, or failure after an issuer refusal; the observer runs outside both credential locks.
+Recovery reports the answer to the one post-401 retry, not the decision to rotate.
+A sibling adoption without a refresh, a cached read and an initial 403 refusal emit nothing.
+Holders and transports built without an observer emit nothing.
+The transcript fold produces no item for this event, as for other unknown events.
 ChatGPT model listings read through the holder with refresh disabled and fall back to the cache on failure.
 `ui/cli/_oauth.py` selects and runs browser, device and paste flows through the resolved profile.
 ChatGPT's proprietary device flow falls back to the displayed authorization URL and pasted callback on refusal or cancellation.
@@ -588,6 +594,7 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `role.call` | `role`, `model`, `provider`, `model_call_id` (shared with its result), `seat_index` under a review panel |
 | `role.result` | `role`, `model`, `provider`, `model_call_id`, `seat_index` under a review panel, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
 | `provider.request` | one HTTP attempt of a model call: `role`, `provider`, `model`, `request_id` (fresh per attempt, the `{request_id}` header fact), `target` (`inference`); never a header value |
+| `provider.auth` | `provider` (entry name), `kind` (`refresh`, `exchange`, `recovery`), `outcome` (`success`, `failure`); no other payload fields |
 | `role.text_delta` | streamed assistant text chunk |
 | `role.thinking_delta` | streamed reasoning chunk |
 | `session.steer_requested` | `source` (`"sigint"`): mid-run Ctrl-C |

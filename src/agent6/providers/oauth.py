@@ -234,6 +234,7 @@ class OAuthCredential:
 
     __slots__ = (
         "_account",
+        "_auth_observer",
         "_entry",
         "_force",
         "_grant",
@@ -246,7 +247,12 @@ class OAuthCredential:
     )
 
     def __init__(
-        self, provider_name: str, entry: _OAuthEntry, *, now: Callable[[], float] = time.time
+        self,
+        provider_name: str,
+        entry: _OAuthEntry,
+        *,
+        now: Callable[[], float] = time.time,
+        auth_observer: types.AuthObserver | None = None,
     ) -> None:
         """Bind the credential to a provider's stored sign-in; nothing is read yet."""
         self._profile = profile_for(entry)
@@ -259,6 +265,7 @@ class OAuthCredential:
         self._force = False
         self._last_returned = ""
         self._now = now
+        self._auth_observer = auth_observer
 
     def _stored(self) -> secret_store.StoredGrant:
         return self._same_account(load_bound_grant(self._provider, self._entry))
@@ -349,27 +356,38 @@ class OAuthCredential:
             ProviderError: No usable sign-in is stored, the binding differs, the lock could
                 not be taken, or a refresh or exchange failed.
         """
-        with self._lock:
-            grant = self._grant or self._stored()
-            if not refresh or (not self._force and self._fresh(grant)):
-                return self._adopt(grant)
-            with portable.locked_file(paths.secrets_path()) as held:
-                if not held:
-                    raise types.ProviderError(
-                        "could not take the credential-refresh lock beside"
-                        f" {paths.secrets_path()}; refusing to rotate the sign-in ({_LOCK_HINT})"
-                    )
-                stored = self._stored()
-                # A sibling process that finished first is adopted rather than rotating again.
-                if self._fresh(stored) and self._bearer(stored) != self._last_returned:
-                    return self._adopt(stored)
-                return self._adopt(self._renew(stored))
+        outcomes: list[types.AuthEvent] = []
+        try:
+            with self._lock:
+                grant = self._grant or self._stored()
+                if not refresh or (not self._force and self._fresh(grant)):
+                    return self._adopt(grant)
+                with portable.locked_file(paths.secrets_path()) as held:
+                    if not held:
+                        raise types.ProviderError(
+                            "could not take the credential-refresh lock beside"
+                            f" {paths.secrets_path()}; refusing to rotate the sign-in"
+                            f" ({_LOCK_HINT})"
+                        )
+                    stored = self._stored()
+                    # A sibling process that finished first is adopted rather than rotating again.
+                    if self._fresh(stored) and self._bearer(stored) != self._last_returned:
+                        return self._adopt(stored)
+                    return self._adopt(self._renew(stored, outcomes))
+        finally:
+            # Observers may read the holder or the store; neither lock may be held here.
+            if self._auth_observer is not None:
+                for outcome in outcomes:
+                    self._auth_observer(outcome)
 
-    def _renew(self, grant: secret_store.StoredGrant) -> secret_store.StoredGrant:
+    def _renew(
+        self, grant: secret_store.StoredGrant, outcomes: list[types.AuthEvent]
+    ) -> secret_store.StoredGrant:
         """Replace what is stale: the exchanged token first, the issuer grant when it needs it.
 
         Args:
             grant: The stored grant, read under the lock.
+            outcomes: Settled operations to deliver after both locks release.
 
         Returns:
             The grant as stored after the renewal.
@@ -381,22 +399,25 @@ class OAuthCredential:
         oauth = self._profile
         issuer_stale = self._issuer_stale(grant)
         if issuer_stale or (self._force and not oauth.exchange):
-            grant = self._refresh_issuer(grant)
+            grant = self._refresh_issuer(grant, outcomes)
         if not oauth.exchange:
             return grant
         try:
-            return self._exchange(grant, oauth.exchange)
+            return self._exchange(grant, oauth.exchange, outcomes)
         except types.ProviderError as exc:
             if exc.status_code != 401 or issuer_stale:
                 raise
             # The issuer's bearer was refused: refresh it once, then exchange again.
-            return self._exchange(self._refresh_issuer(grant), oauth.exchange)
+            return self._exchange(self._refresh_issuer(grant, outcomes), oauth.exchange, outcomes)
 
-    def _refresh_issuer(self, grant: secret_store.StoredGrant) -> secret_store.StoredGrant:
+    def _refresh_issuer(
+        self, grant: secret_store.StoredGrant, outcomes: list[types.AuthEvent]
+    ) -> secret_store.StoredGrant:
         """Trade the refresh token for a new issuer grant and persist it before any exchange.
 
         Args:
             grant: The stored grant.
+            outcomes: Settled operations to deliver after both locks release.
 
         Returns:
             The renewed grant, with the exchange fields cleared.
@@ -421,8 +442,13 @@ class OAuthCredential:
                 encoding=oauth.request_encoding,
                 headers=self._header_set.renderer("oauth"),
             )
-        except _oauth_protocol.OAuthError as exc:
-            if exc.code != "refresh_token_reused":
+        except types.ProviderError as exc:
+            if exc.status_code is not None:
+                outcomes.append(types.AuthEvent("refresh", "failure"))
+            if (
+                not isinstance(exc, _oauth_protocol.OAuthError)
+                or exc.code != "refresh_token_reused"
+            ):
                 raise
             # A rotation on another host can reach the secrets file after this host's refusal.
             time.sleep(1.0)
@@ -434,26 +460,39 @@ class OAuthCredential:
             stored_grant_for(fresh, self._entry, now=self._now(), previous=grant)
         )
         secret_store.save_oauth_grant(self._provider, renewed)
+        outcomes.append(types.AuthEvent("refresh", "success"))
         return renewed
 
     def _exchange(
-        self, grant: secret_store.StoredGrant, exchange: oauth_config.OAuthExchangeConfig
+        self,
+        grant: secret_store.StoredGrant,
+        exchange: oauth_config.OAuthExchangeConfig,
+        outcomes: list[types.AuthEvent],
     ) -> secret_store.StoredGrant:
         """Run the second exchange and persist its token beside the issuer grant.
 
         Args:
             grant: The stored grant whose issuer token is fresh.
             exchange: The configured exchange.
+            outcomes: Settled operations to deliver after both locks release.
 
         Returns:
             The grant with the exchanged token.
+
+        Raises:
+            ProviderError: The exchange failed.
         """
-        token, expires_at = _oauth_exchange.run_exchange(
-            exchange,
-            grant.access_token,
-            headers=self._header_set.render(_headers.plain_facts("exchange")),
-            now=self._now,
-        )
+        try:
+            token, expires_at = _oauth_exchange.run_exchange(
+                exchange,
+                grant.access_token,
+                headers=self._header_set.render(_headers.plain_facts("exchange")),
+                now=self._now,
+            )
+        except types.ProviderError as exc:
+            if exc.status_code is not None:
+                outcomes.append(types.AuthEvent("exchange", "failure"))
+            raise
         renewed = dataclasses.replace(
             grant,
             exchange_access_token=token,
@@ -461,6 +500,7 @@ class OAuthCredential:
             exchange_expires_at=expires_at,
         )
         secret_store.save_oauth_grant(self._provider, renewed)
+        outcomes.append(types.AuthEvent("exchange", "success"))
         return renewed
 
     def invalidate(self, status: int, rejected_bearer: str) -> bool:

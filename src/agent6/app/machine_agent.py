@@ -337,10 +337,10 @@ def _build_agent_providers(
         The instrumented worker, the summariser, and the sink or None without a log.
     """
     transcript_sink = TranscriptSink(req.transcript_dir)
-    inner_provider = providers.build_role_provider(
-        cfg, "worker", transcript_sink=transcript_sink, budget=budget
-    )
     events_sink = event_log.EventSink(req.events_log) if req.events_log is not None else None
+    inner_provider = providers.build_role_provider(
+        cfg, "worker", transcript_sink=transcript_sink, budget=budget, events=events_sink
+    )
     rm = cfg.models.resolve("worker")
     if events_sink is not None:
         attach_console(events_sink)

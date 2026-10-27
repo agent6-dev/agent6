@@ -270,6 +270,7 @@ class ProviderCall:
         timeout_s: The read budget in seconds.
         api_key: The static credential, used when `credential` is None.
         credential: A refreshable bearer; retries once on 401 or a recoverable 403.
+        auth_observer: Receives the post-401 retry's outcome; None observes nothing.
         transcript_sink: Where each round-trip is recorded; None records nothing.
         budget: The run's tracker; None skips metering.
         model: The model billed.
@@ -302,6 +303,7 @@ class ProviderCall:
     require_metered: Callable[[dict[str, Any]], None]
     parse: Callable[[dict[str, Any]], types.ProviderResponse]
     stream: Callable[[dict[str, str]], types.ProviderResponse] | None = None
+    auth_observer: types.AuthObserver | None = None
 
     def record(self, headers: dict[str, str], status: int, response: dict[str, Any] | str) -> None:
         """Write one transcript entry for this request; nothing without a sink."""
@@ -329,6 +331,13 @@ class ProviderCall:
             facts.context.observe(facts)
         return headers
 
+    def _observe_recovery(self, pending: bool, status: int | None) -> None:
+        """Report a pending retry's answer, never an interrupted or unanswered request."""
+        if pending and self.auth_observer is not None and status is not None:
+            self.auth_observer(
+                types.AuthEvent("recovery", "success" if 200 <= status < 300 else "failure")
+            )
+
     def run(self) -> types.ProviderResponse:
         """Make the call, retrying once for a credential recovery and once per body adaptation.
 
@@ -343,14 +352,17 @@ class ProviderCall:
         max_attempts = (2 if cred is not None else 1) + self.adapt_attempts
         # One credential recovery per call: an adaptation slot never buys a second rotation.
         recovered = False
+        recovery_pending = False
         for attempt in range(max_attempts):
             token = cred.token() if cred is not None else self.api_key
             headers = self._attempt_headers(token)
 
             if self.stream is not None:
                 try:
-                    return self.stream(headers)
+                    result = self.stream(headers)
                 except types.ProviderError as exc:
+                    self._observe_recovery(recovery_pending, exc.status_code)
+                    recovery_pending = False
                     if attempt + 1 < max_attempts and self.adapt_400(
                         exc.status_code, str(exc), self.body
                     ):
@@ -369,8 +381,11 @@ class ProviderCall:
                         )
                     ):
                         recovered = True
+                        recovery_pending = exc.status_code == 401
                         continue
                     raise
+                self._observe_recovery(recovery_pending, 200)
+                return result
 
             try:
                 resp = http_post(
@@ -403,8 +418,10 @@ class ProviderCall:
                     or resp.status_code == 401
                 ):
                     recovered = True
+                    recovery_pending = resp.status_code == 401
                     continue
             if 300 <= resp.status_code < 400:
+                self._observe_recovery(recovery_pending, resp.status_code)
                 # Redirects are never followed: the bearer would go wherever `location` says.
                 raise types.ProviderError(
                     f"{self.api_label} API redirected (HTTP {resp.status_code}); refusing to"
@@ -412,6 +429,8 @@ class ProviderCall:
                     status_code=resp.status_code,
                 )
             if not 200 <= resp.status_code < 300:
+                self._observe_recovery(recovery_pending, resp.status_code)
+                recovery_pending = False
                 if not recorded:
                     self.record(headers, resp.status_code, resp.text[:8192])
                 if attempt + 1 < max_attempts and self.adapt_400(
@@ -424,17 +443,22 @@ class ProviderCall:
                     status_code=resp.status_code,
                     retry_after_s=types.parse_retry_after(resp.headers),
                 )
-            return self._decode_success(headers, resp)
+            return self._decode_success(headers, resp, recovery_pending=recovery_pending)
         raise types.ProviderError(f"{self.api_label} auth retry exhausted")  # pragma: no cover
 
     def _decode_success(
-        self, headers: dict[str, str], resp: httpx2.Response
+        self,
+        headers: dict[str, str],
+        resp: httpx2.Response,
+        *,
+        recovery_pending: bool = False,
     ) -> types.ProviderResponse:
         """Decode, record, check and meter a 2xx response.
 
         Args:
             headers: The attempt's request headers.
             resp: The response.
+            recovery_pending: Whether this is the one post-401 retry's answer.
 
         Returns:
             The parsed response.
@@ -466,6 +490,7 @@ class ProviderCall:
         # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
         err = data.get("error")
         if err and not _has_assistant_output(data):
+            self._observe_recovery(recovery_pending, envelope_status(err))
             raise types.ProviderError(
                 f"{self.api_label} error in 2xx body: "
                 f"{types.scrub_secret_values(_envelope_detail(err), headers)}",
@@ -482,4 +507,5 @@ class ProviderCall:
                 f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
             ) from exc
         meter_completion(self.budget, self.model, parsed, self.api_label)
+        self._observe_recovery(recovery_pending, resp.status_code)
         return parsed

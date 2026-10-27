@@ -16,6 +16,7 @@ import threading
 from collections.abc import Generator
 
 from agent6 import budget as agent6_budget
+from agent6 import event_log
 from agent6.app import compare, providers
 from agent6.config import Config
 from agent6.harness import judge
@@ -64,10 +65,15 @@ def _judging_status() -> Generator[None]:
 
 
 def _reviewer_provider(
-    cfg: Config, sink: TranscriptSink, budget: agent6_budget.BudgetTracker
+    cfg: Config,
+    sink: TranscriptSink,
+    budget: agent6_budget.BudgetTracker,
+    events: event_log.EventSink | None,
 ) -> Provider:
     """Return the configured `reviewer` provider for the judge call."""
-    return providers.build_role_provider(cfg, "reviewer", transcript_sink=sink, budget=budget)
+    return providers.build_role_provider(
+        cfg, "reviewer", transcript_sink=sink, budget=budget, events=events
+    )
 
 
 def rank(

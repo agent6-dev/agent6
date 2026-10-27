@@ -596,6 +596,7 @@ def _freeform_review(
             "reviewer",
             transcript_sink=transcript_sink,
             budget=budget,
+            events=journal,
         )
     except ProviderError as exc:
         _common.error(f"provider init failed: {exc}")

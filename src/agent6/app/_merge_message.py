@@ -114,6 +114,7 @@ def model_squash_message(
             "worker",
             transcript_sink=TranscriptSink(transcript_dir),
             budget=tracker,
+            events=events,
         )
         if events is not None:
             rm = cfg.models.resolve("worker")

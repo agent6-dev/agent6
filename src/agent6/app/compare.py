@@ -26,7 +26,9 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.viewmodel import _session_status, format, listing
 
 # Builds the reviewer provider the judge call uses.
-BuildProvider = Callable[[Config, TranscriptSink, agent6_budget.BudgetTracker], Provider]
+BuildProvider = Callable[
+    [Config, TranscriptSink, agent6_budget.BudgetTracker, event_log.EventSink | None], Provider
+]
 # The CLI's progress indicator while the judge ranks the candidates.
 JudgingStatus = Callable[[], contextlib.AbstractContextManager[None]]
 
@@ -93,7 +95,7 @@ def rank(
         sink = TranscriptSink(transcript_dir)
         budget = _setup.budget_tracker(cfg, max_usd=max_usd)
         try:
-            provider: Provider = build_provider(cfg, sink, budget)
+            provider: Provider = build_provider(cfg, sink, budget, events)
             if events is not None:
                 provider = providers.InstrumentedProvider(
                     inner=provider,

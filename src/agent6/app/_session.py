@@ -216,7 +216,9 @@ def build_session_providers(
     """
     conversations = conversations or _conversations.Conversations()
     budget = _setup.budget_tracker(cfg)
-    inner = providers.build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
+    inner = providers.build_role_provider(
+        cfg, role, transcript_sink=transcript_sink, budget=budget, events=events
+    )
     rm_role = cfg.models.resolve(role)
     assert rm_role is not None  # require_runnable validated this
     preflight.warn_if_prompt_override_incomplete(cfg, reporter=reporter)

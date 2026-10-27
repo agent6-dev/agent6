@@ -650,7 +650,7 @@ def infer_verify_if_unset(
 
     def _llm_call(context: str) -> str:
         inner = providers.build_role_provider(
-            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget
+            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, events=events
         )
         rm = cfg.models.resolve("reviewer")
         provider = providers.InstrumentedProvider(

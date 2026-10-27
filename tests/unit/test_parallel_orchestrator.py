@@ -2825,7 +2825,9 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
 
     seen: list[agent6_budget.BudgetTracker] = []
 
-    def build(cfg: Config, sink: object, budget: agent6_budget.BudgetTracker) -> object:
+    def build(
+        cfg: Config, sink: object, budget: agent6_budget.BudgetTracker, events: object
+    ) -> object:
         seen.append(budget)
         raise ProviderError("captured; fall back to mechanical")
 
@@ -3286,7 +3288,9 @@ def test_the_compare_judge_streams_into_the_coordinators_journal(
                 cache_creation_tokens=0,
             )
 
-    def build_provider(_cfg: Config, _sink: object, _budget: object) -> StreamingJudge:
+    def build_provider(
+        _cfg: Config, _sink: object, _budget: object, _events: object
+    ) -> StreamingJudge:
         return StreamingJudge()
 
     cfg = _provider_cfg("judge-model")

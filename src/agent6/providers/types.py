@@ -14,9 +14,9 @@ import json
 import math
 import pathlib
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from email import utils
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from agent6 import paths, portable
 
@@ -293,6 +293,22 @@ class TranscriptSink:
         text = scrub_secret_values(json.dumps(payload, indent=2, sort_keys=True), request_headers)
         portable.atomic_write(path, text)
         return path
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class AuthEvent:
+    """A settled authentication operation, without credential or endpoint data.
+
+    Attributes:
+        kind: The operation whose outcome is known.
+        outcome: Whether it succeeded or was refused.
+    """
+
+    kind: Literal["refresh", "exchange", "recovery"]
+    outcome: Literal["success", "failure"]
+
+
+type AuthObserver = Callable[[AuthEvent], None]
 
 
 class BearerCredential(Protocol):
