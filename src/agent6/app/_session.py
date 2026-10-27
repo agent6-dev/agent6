@@ -228,7 +228,6 @@ def build_session_providers(
         events=events,
         budget=budget,
         stream_text=stream_text,
-        operator_driven=True,
         conversations=conversations,
     )
     summariser_provider = providers.reviewer_seat_provider(

@@ -25,10 +25,12 @@ class RequestContext:
     """What the application knows about a model call before it is serialized.
 
     Attributes:
-        session_id: The opaque id of the conversation the call belongs to.
+        session_id: The opaque id of the conversation the call belongs to; "" names the
+            initiator only, and the application fills the rest from its conversation state.
         is_first_turn: No call of this conversation has completed yet.
         is_subagent: The call belongs to a fan-out lane.
-        initiator: `user` when the latest semantic input is the operator's, else `agent`.
+        initiator: `user` when the latest input is the operator's (the task, a steer, an
+            answer), else `agent`.
         observe: Receives each HTTP attempt's facts; None observes nothing.
     """
 
@@ -37,6 +39,18 @@ class RequestContext:
     is_subagent: bool
     initiator: str
     observe: Callable[[RequestFacts], None] | None = None
+
+    @classmethod
+    def initiated_by(cls, initiator: str) -> RequestContext:
+        """Return the partial context a caller states the initiator with.
+
+        Args:
+            initiator: `user` or `agent`.
+
+        Returns:
+            A context with no session id; the application fills it in.
+        """
+        return cls(session_id="", is_first_turn=False, is_subagent=False, initiator=initiator)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -195,7 +209,8 @@ class HeaderSet:
             facts: The request's facts, its request id minted.
 
         Returns:
-            The headers, names lowercased.
+            The headers, names lowercased; a header needing a fact this request lacks (a
+            conversation fact on a call outside a conversation) is left out.
 
         Raises:
             ProviderError: A rendered value holds a control character or a newline.
@@ -206,11 +221,15 @@ class HeaderSet:
         for spec in self.templates:
             if facts.target not in spec.targets:
                 continue
-            if spec.when is not None and facts.value(spec.when) != "true":
+            try:
+                if spec.when is not None and facts.value(spec.when) != "true":
+                    continue
+                value = "".join(
+                    seg.value if seg.kind == "text" else facts.value(seg.value)
+                    for seg in spec.segments
+                )
+            except KeyError:
                 continue
-            value = "".join(
-                seg.value if seg.kind == "text" else facts.value(seg.value) for seg in spec.segments
-            )
             if not header_config.VALUE_OK.fullmatch(value):
                 raise types.ProviderError(
                     f"extra_headers.{spec.name} rendered a value that cannot ride an HTTP header"
@@ -233,27 +252,6 @@ class HeaderSet:
 def _parts(content: Any) -> list[dict[str, Any]]:
     """Return a message's content as its list of typed parts; a string has none."""
     return [part for part in content if isinstance(part, dict)] if isinstance(content, list) else []
-
-
-def latest_input_is_human(messages: list[dict[str, Any]]) -> bool:
-    """Return whether a conversation's latest semantic input is the operator's text.
-
-    A trailing user message whose last block is text (the task, a steer, an answer) is
-    the operator's; one ending in tool results continues the model's own work.
-
-    Args:
-        messages: The conversation in the provider-neutral shape.
-
-    Returns:
-        True for operator text, False otherwise or for an empty conversation.
-    """
-    if not messages or messages[-1].get("role") != "user":
-        return False
-    content = messages[-1].get("content")
-    if isinstance(content, str):
-        return True
-    parts = _parts(content)
-    return bool(parts) and parts[-1].get("type") == "text"
 
 
 def _has_type(parts: list[dict[str, Any]], names: frozenset[str]) -> bool:

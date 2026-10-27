@@ -29,7 +29,7 @@ from __future__ import annotations
 import dataclasses
 import json
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Literal
 
 _EPHEMERAL = {"type": "ephemeral"}
 
@@ -71,13 +71,16 @@ class Notice:
     """Harness or operator text in a user message.
 
     The initial task, nudges, critiques, steering and the tier-2 restart summary
-    are notices.
+    are notices. The origin lives in memory only: the wire carries text, so a
+    notice read back from a snapshot is the harness's.
 
     Attributes:
         text: The text.
+        origin: `operator` for the task, a steer or an answer; `harness` otherwise.
     """
 
     text: str
+    origin: Literal["harness", "operator"] = "harness"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -232,13 +235,28 @@ class Conversation:
             )
         self._messages.append(message)
 
-    def notice(self, text: str) -> None:
+    def notice(self, text: str, *, origin: Literal["harness", "operator"] = "harness") -> None:
         """Append harness or operator text as its own user message.
 
         Args:
             text: The notice.
+            origin: `operator` for the task, a steer or an answer.
         """
-        self._append_notices((Notice(text),))
+        self._append_notices((Notice(text, origin),))
+
+    @property
+    def initiator(self) -> str:
+        """Who the next call answers: `user` when operator text arrived since the last reply.
+
+        A harness notice after the operator's text (a gate baseline, a presence note) does
+        not make the turn the harness's; a nudge after the model's own reply does.
+        """
+        for message in reversed(self._messages):
+            if isinstance(message, AssistantMessage):
+                break
+            if any(isinstance(it, Notice) and it.origin == "operator" for it in message.items):
+                return "user"
+        return "agent"
 
     def _append_notices(self, items: tuple[ToolResultItem | Notice, ...]) -> None:
         self._require_no_open_call("a notice")

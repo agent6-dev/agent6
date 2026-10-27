@@ -112,40 +112,6 @@ def test_every_fact_renders_for_the_class_that_has_it() -> None:
     assert set(listing) == {"x-ver"}  # the model-call facts are not the listing's to render
 
 
-@pytest.mark.parametrize(
-    ("messages", "human"),
-    [
-        ([{"role": "user", "content": "do the task"}], True),
-        ([{"role": "user", "content": [{"type": "text", "text": "do it"}]}], True),
-        (
-            [
-                {"role": "assistant", "content": [{"type": "tool_use", "id": "t", "name": "x"}]},
-                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t"}]},
-            ],
-            False,
-        ),
-        (
-            [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "tool_result", "tool_use_id": "t"},
-                        {"type": "text", "text": "a steer"},
-                    ],
-                }
-            ],
-            True,
-        ),
-        ([{"role": "assistant", "content": "done"}], False),
-        ([], False),
-    ],
-)
-def test_the_initiator_follows_the_latest_semantic_input(
-    messages: list[dict[str, Any]], human: bool
-) -> None:
-    assert _headers.latest_input_is_human(messages) is human
-
-
 def test_body_facts_read_the_serialized_request_per_format() -> None:
     assert _headers.openai_body_facts(
         {
@@ -289,7 +255,7 @@ class _Inner:
         return _resp()
 
 
-def _instrumented(inner: _Inner, *, operator_driven: bool) -> providers.InstrumentedProvider:
+def _instrumented(inner: _Inner) -> providers.InstrumentedProvider:
     return providers.InstrumentedProvider(
         inner=inner,  # type: ignore[arg-type]
         role="worker",
@@ -297,32 +263,36 @@ def _instrumented(inner: _Inner, *, operator_driven: bool) -> providers.Instrume
         provider_name="work",
         events=mock.MagicMock(),
         budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
-        operator_driven=operator_driven,
     )
 
 
-def test_the_instrumented_provider_supplies_the_context_and_reports_each_attempt() -> None:
+def test_the_instrumented_provider_fills_the_context_and_reports_each_attempt() -> None:
+    """A caller names the initiator; the conversation supplies the id and the turn state."""
     inner = _Inner()
-    wrapped = _instrumented(inner, operator_driven=True)
+    wrapped = _instrumented(inner)
     task = [{"role": "user", "content": "do the task"}]
-    continuation = [{"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t"}]}]
+    wrapped.call(system="s", messages=task, context=_headers.RequestContext.initiated_by("user"))
+    wrapped.call(system="s", messages=task, context=_headers.RequestContext.initiated_by("agent"))
     wrapped.call(system="s", messages=task)
-    wrapped.call(system="s", messages=continuation)
-    first, second = inner.contexts
+    first, second, third = inner.contexts
     assert (first.initiator, first.is_first_turn) == ("user", True)
     assert (second.initiator, second.is_first_turn) == ("agent", False)
-    assert first.session_id == second.session_id
+    assert third.initiator == "agent" and len(third.session_id) == 32
+    assert first.session_id == second.session_id == third.session_id
     events = wrapped.events
     assert isinstance(events, mock.MagicMock)
     requests = [c for c in events.emit.call_args_list if c.args[0] == "provider.request"]
-    assert len(requests) == 2
+    assert len(requests) == 3
     assert requests[0].kwargs["provider"] == "work" and requests[0].kwargs["target"] == "inference"
     assert len(requests[0].kwargs["request_id"]) == 32
     assert "x-" not in str(requests[0].kwargs)  # no header value rides the event
 
-    side = _Inner()
-    _instrumented(side, operator_driven=False).call(system="s", messages=task)
-    assert side.contexts[0].initiator == "agent"
+
+def test_a_call_outside_a_conversation_sends_no_conversation_header() -> None:
+    entry = _entry({"x-sess": {"template": "{session_id}"}, "x-id": {"template": "{request_id}"}})
+    hs = _headers.HeaderSet.from_config(entry.extra_headers)
+    rendered = hs.render(_headers.call_facts("m", (False, False), None).attempt())
+    assert set(rendered) == {"x-id"}
 
 
 def test_an_oauth_targeted_template_reaches_the_token_endpoint_and_a_literal_does_not(

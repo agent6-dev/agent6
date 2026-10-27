@@ -325,8 +325,6 @@ class InstrumentedProvider:
             panel.
         stream_text: Whether to fan text and reasoning deltas out as events without a
             caller callback.
-        operator_driven: The role converses with the operator, so a call whose latest
-            input is the operator's text has the initiator `user`.
         conversations: The session's conversation state; a side call holds its own.
     """
 
@@ -338,7 +336,6 @@ class InstrumentedProvider:
     budget: agent6_budget.BudgetTracker
     stream_text: bool = False
     seat_index: int | None = None
-    operator_driven: bool = False
     conversations: _conversations.Conversations = dataclasses.field(
         default_factory=_conversations.Conversations
     )
@@ -371,7 +368,8 @@ class InstrumentedProvider:
             thinking_delta_callback: Receives each reasoning piece as it streams.
             should_abort: Polled to abort the call.
             should_interrupt: Polled to interrupt the call.
-            context: An outer context; None takes the conversation's own.
+            context: The caller's context; one without a session id names the initiator
+                only, and the conversation supplies the rest; None is an agent-initiated call.
 
         Returns:
             The inner provider's response.
@@ -380,12 +378,8 @@ class InstrumentedProvider:
             ProviderError: The inner call failed; the provider name is filled in.
         """
         model_call_id = uuid.uuid4().hex
-        if context is None:
-            initiator = (
-                "user"
-                if self.operator_driven and _headers.latest_input_is_human(messages)
-                else "agent"
-            )
+        if context is None or not context.session_id:
+            initiator = context.initiator if context is not None else "agent"
             context = self.conversations.context(
                 self.role, self.provider_name, initiator=initiator, observe=self._observe
             )

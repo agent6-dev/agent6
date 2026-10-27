@@ -248,7 +248,7 @@ class Harness:
         )
         initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
         conversation = _conversation.Conversation()
-        conversation.notice(initial_user)
+        conversation.notice(initial_user, origin="operator")
 
         return self._drive_loop(
             system=system,
@@ -698,7 +698,13 @@ class Harness:
             steer discarded the turn.
         """
         try:
-            return self.caller.call(system, wire, tools, self._worker_max_tokens(state))
+            return self.caller.call(
+                system,
+                wire,
+                tools,
+                self._worker_max_tokens(state),
+                initiator=conversation.initiator,
+            )
         except agent6_budget.BudgetExceededError as exc:
             self.log(f"LOOP: budget exhausted at turn {turn}")
             return self.finish(

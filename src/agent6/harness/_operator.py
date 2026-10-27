@@ -186,7 +186,7 @@ class Steering:
         asked = _conversation.last_assistant_prose(conversation)
         if question := _nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)
-        conversation.notice(f"{heading}\n{steer_text}")
+        conversation.notice(f"{heading}\n{steer_text}", origin="operator")
         return None
 
     def skill(self, conversation: _conversation.Conversation, steer_text: str) -> bool:
@@ -209,7 +209,8 @@ class Steering:
         self.emit("loop.steer.skill", name=skill.name, args=args)
         conversation.notice(
             "OPERATOR STEERING (a mid-run instruction from the operator):\n"
-            + skills.skill_steer_payload(skill.name, skill.text, args)
+            + skills.skill_steer_payload(skill.name, skill.text, args),
+            origin="operator",
         )
         return True
 
@@ -248,7 +249,8 @@ class Steering:
             conversation.notice(
                 f"OPERATOR STEERING (not pinned: the {PINS_MAX_CHARS}-char pin cap is"
                 " full, so this instruction does not survive context compaction):\n"
-                f"{instruction}"
+                f"{instruction}",
+                origin="operator",
             )
             return True
         self.log(f"  pinned instruction ({len(instruction)} chars, {len(state.pins)} pins)")
@@ -256,7 +258,8 @@ class Steering:
         conversation.notice(
             "OPERATOR STEERING (pinned: this instruction survives context compaction"
             " and binds for the rest of the run):\n"
-            f"{instruction}"
+            f"{instruction}",
+            origin="operator",
         )
         return True
 

@@ -21,6 +21,7 @@ from agent6.providers import (
     ProviderInterrupted,
     ProviderResponse,
     ToolDefinition,
+    _headers,
     output_cap_truncated,
 )
 
@@ -151,6 +152,8 @@ class ProviderCaller:
         messages: list[dict[str, Any]],
         tools: list[ToolDefinition],
         max_tokens: int,
+        *,
+        initiator: str = "agent",
     ) -> ProviderResponse:
         """Call the provider under the retry.
 
@@ -159,6 +162,8 @@ class ProviderCaller:
             messages: The conversation.
             tools: The tool definitions.
             max_tokens: The output cap.
+            initiator: `user` when the latest input is the operator's, else `agent`; every
+                attempt of this logical call carries it.
 
         Returns:
             The first usable response, or the last empty one.
@@ -180,6 +185,7 @@ class ProviderCaller:
                     temperature=self.temperature,
                     should_abort=self.should_abort,
                     should_interrupt=self.should_interrupt,
+                    context=_headers.RequestContext.initiated_by(initiator),
                 )
             except (ProviderAborted, ProviderInterrupted):
                 raise  # an operator stop or steer is handled, never retried
