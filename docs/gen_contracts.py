@@ -44,7 +44,6 @@ def _module_href(dotted: str) -> str:
 
 
 # A bigger primary shape gets only the source link.
-_MAX_INLINE_FIELDS = 24
 
 
 @dataclasses.dataclass(frozen=True)
@@ -446,6 +445,15 @@ def _guard_tests(contract: Contract) -> list[str]:
 
 
 @dataclasses.dataclass(frozen=True)
+class Shape:
+    """One documented class on a card: its name, first sentence and own (name, type, default) rows."""
+
+    name: str
+    sentence: str
+    fields: tuple[tuple[str, str, str], ...]
+
+
+@dataclasses.dataclass(frozen=True)
 class Card:
     """One derived card.
 
@@ -454,8 +462,7 @@ class Card:
         module: The home module, dotted.
         kind: The shape's one-line description.
         invariant: The module docstring's first paragraph.
-        shapes: Each documented primary's name and first sentence.
-        fields: The primary's own (name, type, default) rows.
+        shapes: Each documented primary: its name, first sentence and own fields.
         members: The union members or result subclasses, when the primary is a family.
         writers: The src-relative modules that construct it.
         readers: The src-relative modules that import it.
@@ -467,8 +474,7 @@ class Card:
     module: str
     kind: str
     invariant: str
-    shapes: tuple[tuple[str, str], ...]
-    fields: tuple[tuple[str, str, str], ...]
+    shapes: tuple[Shape, ...]
     members: tuple[str, ...]
     writers: tuple[str, ...]
     readers: tuple[str, ...]
@@ -482,22 +488,18 @@ def _derive(contract: Contract) -> Card:
     importers = _importers(contract.module, _SRC_IMPORTS)
     readers = tuple(r for r in importers if r not in contract.writers)
     shapes = tuple(
-        (name, _first_sentence(facts.class_docs.get(name)))
+        Shape(name, _first_sentence(facts.class_docs.get(name)), facts.class_fields.get(name, ()))
         for name in contract.primary
         if facts.class_docs.get(name)
     )
     primary = contract.primary[0]
-    fields = facts.class_fields.get(primary, ())
     members = facts.unions.get(primary, ()) or facts.subclasses.get(primary, ())
-    if len(fields) > _MAX_INLINE_FIELDS or members:
-        fields = ()  # a family's shape is its member list
     return Card(
         title=contract.title,
         module=contract.module,
         kind=_kind(facts, primary),
         invariant=_first_para(facts.module_doc),
         shapes=shapes,
-        fields=fields,
         members=members,
         writers=contract.writers,
         readers=readers,
@@ -544,8 +546,8 @@ Every card is generated from the module and class docstrings, so edit those rath
 """
 
 
-def _md_fields(card: Card) -> list[str]:
-    if not card.fields:
+def _md_fields(fields: tuple[tuple[str, str, str], ...]) -> list[str]:
+    if not fields:
         return []
 
     def cell(text: str) -> str:
@@ -559,7 +561,7 @@ def _md_fields(card: Card) -> list[str]:
     rows += [
         f"| {cell(name)} | {cell(ftype)} |"
         f" {'required' if default == 'required' else cell(default)} |"
-        for name, ftype, default in card.fields
+        for name, ftype, default in fields
     ]
     return rows
 
@@ -572,11 +574,11 @@ def _md_card(card: Card) -> str:
         "",
         card.invariant,
     ]
-    for name, sentence in card.shapes:
-        lines += ["", f"**{name}** &mdash; {sentence}"]
+    for shape in card.shapes:
+        lines += ["", f"**{shape.name}** &mdash; {shape.sentence}"]
+        lines += _md_fields(shape.fields)
     if card.members:
         lines += ["", "Members: " + ", ".join(f"`{m}`" for m in card.members)]
-    lines += _md_fields(card)
     lines += [
         "",
         f"- **Written by:** {_group(card.writers)}",
@@ -768,11 +770,27 @@ def _inline(text: str) -> str:
     return re.sub(r"`([^`]+)`", r"<code>\1</code>", html.escape(text))
 
 
+def _html_fields(fields: tuple[tuple[str, str, str], ...]) -> str:
+    """Return one class's field table as HTML, "" when it has no fields."""
+    if not fields:
+        return ""
+    rows = "".join(
+        f"<tr><td><code>{html.escape(n)}</code></td><td><code>{html.escape(t)}</code></td>"
+        f"<td>{'required' if d == 'required' else f'<code>{html.escape(d)}</code>'}</td></tr>"
+        for n, t, d in fields
+    )
+    return (
+        '<table class="cfields"><thead><tr><th>field</th><th>type</th><th>default</th>'
+        f"</tr></thead><tbody>{rows}</tbody></table>"
+    )
+
+
 def _html_card(card: Card) -> str:
     """Return one card as HTML."""
     shapes = "".join(
-        f'<div class="cshape"><b>{html.escape(name)}</b> &mdash; {_inline(sentence)}</div>'
-        for name, sentence in card.shapes
+        f'<div class="cshape"><b>{html.escape(shape.name)}</b> &mdash; {_inline(shape.sentence)}'
+        f"</div>{_html_fields(shape.fields)}"
+        for shape in card.shapes
     )
     members = (
         '<div class="cshape">members: '
@@ -781,24 +799,13 @@ def _html_card(card: Card) -> str:
         if card.members
         else ""
     )
-    fields = ""
-    if card.fields:
-        rows = "".join(
-            f"<tr><td><code>{html.escape(n)}</code></td><td><code>{html.escape(t)}</code></td>"
-            f"<td>{'required' if d == 'required' else f'<code>{html.escape(d)}</code>'}</td></tr>"
-            for n, t, d in card.fields
-        )
-        fields = (
-            '<table class="cfields"><thead><tr><th>field</th><th>type</th><th>default</th>'
-            f"</tr></thead><tbody>{rows}</tbody></table>"
-        )
     return (
         '<div class="card">'
         f'<div class="cname">{html.escape(card.title)}</div>'
         f'<div class="chome"><a href="{html.escape(_module_href(card.module))}">'
         f"{html.escape(card.module)}</a> &middot; {html.escape(card.kind)}</div>"
         f'<div class="cinv">{_inline(card.invariant)}</div>'
-        f"{shapes}{members}{fields}"
+        f"{shapes}{members}"
         "<dl>"
         f"<dt>written by</dt><dd>{_inline(_group(card.writers))}</dd>"
         f"<dt>read by</dt><dd>{_inline(_group(card.readers))}</dd>"

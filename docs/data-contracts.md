@@ -16,10 +16,6 @@ Fold review evidence and operator history for every session reader.
 
 **FindingView** &mdash; Keep a finding's observations and operator history independently of panel verdicts.
 
-**ReviewView** &mdash; Fold durable review evidence in journal append order.
-
-**MergeReviewGuard** &mdash; Report open grounded blocks and unreadable evidence without enforcing a merge.
-
 | field | type | default |
 | --- | --- | --- |
 | `finding_id` | `str` | required |
@@ -30,6 +26,28 @@ Fold review evidence and operator history for every session reader.
 | `anchor_state` | `Literal['unknown', 'current', 'outdated']` | `'unknown'` |
 | `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | `'none'` |
 | `opened_at` | `float | None` | `None` |
+
+**ReviewView** &mdash; Fold durable review evidence in journal append order.
+
+| field | type | default |
+| --- | --- | --- |
+| `panels` | `tuple[PanelView, ...]` | `()` |
+| `findings` | `tuple[FindingView, ...]` | `()` |
+| `version` | `int` | `0` |
+| `open_counts` | `SeverityCounts` | `dataclasses.field(default_factory=SeverityCounts)` |
+| `completion` | `Completion` | `'unknown'` |
+| `freshness` | `Freshness` | `'unknown'` |
+| `legacy_notice` | `str` | `''` |
+| `read_failure` | `str | None` | `None` |
+| `comparison` | `review_records.ReviewTarget | None` | `None` |
+| `event_ids` | `tuple[str, ...]` | `()` |
+
+**MergeReviewGuard** &mdash; Report open grounded blocks and unreadable evidence without enforcing a merge.
+
+| field | type | default |
+| --- | --- | --- |
+| `open_block_ids` | `tuple[str, ...]` | `()` |
+| `read_failure` | `str | None` | `None` |
 
 - **Written by:** viewmodel/{_session_log, state}
 - **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, receipt, review_queue, telemetry, transcript}
@@ -43,24 +61,6 @@ Define immutable review evidence and validate review boundary payloads.
 
 **ReviewTarget** &mdash; Identify the immutable trees and path coverage of a review.
 
-**ReviewLocation** &mdash; Name a repository-relative path on one side, with an optional inclusive line range.
-
-**Finding** &mdash; Hold one review finding at a structured location.
-
-**SeatReply** &mdash; Validate the verdict and findings returned by a review seat.
-
-**ReviewVerdict** &mdash; Hold one indexed seat's verdict, including an explicit abstention on failure.
-
-**LineOrigin** &mdash; Record byte-level evidence without dating a defect or changing its severity.
-
-**FindingObservation** &mdash; Associate a finding with its panel and the seats that reported it.
-
-**ReviewPanel** &mdash; Validate a completed panel's durable evidence, including its worker feedback.
-
-**FindingResolution** &mdash; Record the operator's conclusion without inferring verification success.
-
-**FindingAction** &mdash; Validate an operator request against a known review-state version.
-
 | field | type | default |
 | --- | --- | --- |
 | `base_commit` | `str | None` | required |
@@ -70,6 +70,108 @@ Define immutable review evidence and validate review boundary payloads.
 | `snapshot_commit` | `str` | required |
 | `paths` | `tuple[str, ...]` | required |
 | `source` | `Literal['revisions', 'worktree']` | required |
+
+**ReviewLocation** &mdash; Name a repository-relative path on one side, with an optional inclusive line range.
+
+| field | type | default |
+| --- | --- | --- |
+| `path` | `str` | required |
+| `side` | `Literal['base', 'head']` | required |
+| `start_line` | `int | None` | `None` |
+| `end_line` | `int | None` | `None` |
+
+**Finding** &mdash; Hold one review finding at a structured location.
+
+| field | type | default |
+| --- | --- | --- |
+| `category` | `str` | required |
+| `severity` | `Severity` | required |
+| `title` | `str` | required |
+| `detail` | `str` | `''` |
+| `location` | `ReviewLocation` | required |
+
+**SeatReply** &mdash; Validate the verdict and findings returned by a review seat.
+
+| field | type | default |
+| --- | --- | --- |
+| `verdict` | `Literal['pass', 'block']` | required |
+| `summary` | `str` | required |
+| `findings` | `tuple[Finding, ...]` | required |
+| `risk` | `str` | `''` |
+| `risk_truncated` | `bool` | `False` |
+
+**ReviewVerdict** &mdash; Hold one indexed seat's verdict, including an explicit abstention on failure.
+
+| field | type | default |
+| --- | --- | --- |
+| `seat_index` | `int` | required |
+| `focus` | `str` | required |
+| `model_route` | `str` | required |
+| `verdict` | `Literal['pass', 'block', 'abstain']` | required |
+| `findings` | `tuple[Finding, ...]` | `()` |
+| `summary` | `str` | `''` |
+| `error` | `str | None` | `None` |
+| `risk` | `str` | `''` |
+| `risk_truncated` | `bool` | `False` |
+
+**LineOrigin** &mdash; Record byte-level evidence without dating a defect or changing its severity.
+
+| field | type | default |
+| --- | --- | --- |
+| `kind` | `Literal['pre_existing', 'changed', 'unknown']` | `'unknown'` |
+| `reason` | `str` | `'Historical observations contain no line-origin evidence.'` |
+| `base_location` | `ReviewLocation | None` | `None` |
+| `commits` | `tuple[Identifier, ...]` | `()` |
+
+**FindingObservation** &mdash; Associate a finding with its panel and the seats that reported it.
+
+| field | type | default |
+| --- | --- | --- |
+| `finding_id` | `str` | required |
+| `panel_id` | `str` | required |
+| `finding` | `Finding` | required |
+| `seat_indexes` | `tuple[int, ...]` | required |
+| `line_origin` | `LineOrigin` | `dataclasses.field(default_factory=LineOrigin)` |
+
+**ReviewPanel** &mdash; Validate a completed panel's durable evidence, including its worker feedback.
+
+| field | type | default |
+| --- | --- | --- |
+| `panel_id` | `Identifier` | required |
+| `execution_id` | `Identifier` | required |
+| `turn` | `int` | required |
+| `trigger` | `str` | required |
+| `target` | `ReviewTarget` | required |
+| `findings` | `tuple[FindingObservation, ...]` | required |
+| `injected_finding_ids` | `tuple[str, ...]` | required |
+| `block_on` | `Literal['none', 'any', 'all', 'model_quorum']` | required |
+| `raw_blocked` | `bool` | required |
+| `blocked` | `bool` | required |
+| `disarmed` | `bool` | required |
+| `n_block` | `int` | required |
+| `n_abstain` | `int` | required |
+| `completion` | `Literal['complete', 'inconclusive']` | required |
+
+**FindingResolution** &mdash; Record the operator's conclusion without inferring verification success.
+
+| field | type | default |
+| --- | --- | --- |
+| `disposition` | `Literal['fixed', 'false_positive', 'intentional', 'wont_fix', 'duplicate', 'pre_existing']` | required |
+| `reason` | `Reason` | required |
+| `duplicate_of` | `Identifier | None` | `None` |
+| `commit` | `str | None` | `None` |
+| `verify_id` | `str | None` | `None` |
+
+**FindingAction** &mdash; Validate an operator request against a known review-state version.
+
+| field | type | default |
+| --- | --- | --- |
+| `request_id` | `Identifier` | required |
+| `expected_version` | `int` | required |
+| `action` | `Literal['fix', 'resolve', 'reopen']` | required |
+| `resolution` | `FindingResolution | None` | `None` |
+| `reason` | `Reason | None` | `None` |
+| `resume` | `bool` | `False` |
 
 - **Written by:** app/review_actions, harness/{_panel, _review_history, _review_seat, _reviewer}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
 - **Read by:** harness/{_chain, _context, _loop_state, code_review}, ui/acp/review, ui/cli/review_cmds, ui/tui/{_diff_pane, review}, viewmodel/review
@@ -95,6 +197,37 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
+| field | type | default |
+| --- | --- | --- |
+| `version` | `int` | `MANIFEST_VERSION` |
+| `agent6_version` | `str` | `''` |
+| `session_id` | `str` | `''` |
+| `mode` | `str` | `''` |
+| `start_ts` | `str` | `''` |
+| `user_task` | `str` | `''` |
+| `base_sha` | `str` | `''` |
+| `base_branch` | `str` | `''` |
+| `run_branch` | `str | None` | `None` |
+| `git_control` | `str` | `'agent6'` |
+| `models` | `ModelsBrief` | `ModelsBrief()` |
+| `harness` | `HarnessStamp` | `HarnessStamp()` |
+| `policy` | `PolicyStamp` | `PolicyStamp()` |
+| `budget` | `BudgetStamp` | `BudgetStamp()` |
+| `parked_task` | `str` | `''` |
+| `parked_reason` | `str` | `''` |
+| `source_session_id` | `str | None` | `None` |
+| `parent_session_id` | `str | None` | `None` |
+| `forked_from_turn` | `int | None` | `None` |
+| `forked_from_sha` | `str | None` | `None` |
+| `worktree` | `pathlib.Path | None` | `None` |
+| `worktree_git_dir` | `pathlib.Path | None` | `None` |
+| `workspace_set_up` | `bool` | `False` |
+| `merged` | `MergeStamp | None` | `None` |
+| `includes` | `IncludedRun | None` | `None` |
+| `parallel` | `ParallelLineage | None` | `None` |
+| `compare` | `CompareStamp | None` | `None` |
+| `fanout` | `FanoutStamp | None` | `None` |
+
 - **Written by:** app/stamps
 - **Read by:** app/{_execution, _merge_message, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{_session_status, _state_view, format, listing, policy, receipt, wire}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (27 test files exercise it)
@@ -106,6 +239,41 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 Hold a session's end and the snapshot a resume re-enters.
 
 **SessionSnapshot** &mdash; Hold the persisted state of an in-flight session, what a resume re-enters and a fork clones.
+
+| field | type | default |
+| --- | --- | --- |
+| `version` | `int` | `SNAPSHOT_VERSION` |
+| `system` | `str` | required |
+| `messages` | `list[dict[str, Any]]` | required |
+| `tool_calls` | `int` | required |
+| `next_turn` | `int` | required |
+| `root_task_id` | `str | None` | required |
+| `original_task` | `str` | required |
+| `verify_command` | `tuple[str, ...]` | required |
+| `review_rejections_total` | `int` | `0` |
+| `verify_ever_passed` | `bool` | `False` |
+| `verify_ever_failed` | `bool` | `False` |
+| `gateless_ever_edited` | `bool` | `False` |
+| `metric_best_score` | `float | None` | `None` |
+| `metric_at_ceiling` | `bool` | `False` |
+| `final_verify_id` | `str | None` | `None` |
+| `verify_tree` | `str | None` | `None` |
+| `last_verify_ok` | `bool | None` | `None` |
+| `edited_since_verify` | `bool` | `False` |
+| `baseline_ok` | `bool | None` | `None` |
+| `verify_scoped` | `bool` | `False` |
+| `verify_withheld` | `bool` | `False` |
+| `memory_written` | `bool` | `False` |
+| `memory_flip_nudged` | `bool` | `False` |
+| `ok_tool_calls` | `int` | `0` |
+| `standing_tools_mark` | `int` | `-1` |
+| `standing_fruitless` | `int` | `0` |
+| `parallel_groups_dispatched` | `int` | `0` |
+| `pins` | `tuple[str, ...]` | `()` |
+| `head_sha` | `str` | `''` |
+| `graph_version` | `int` | `0` |
+| `operator_task` | `str` | `''` |
+| `base_sha` | `str` | `''` |
 
 - **Written by:** harness/loop
 - **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_resume, _loop_state, _loop_steer, _metric, _verify_gate}, ui/acp/frontend, ui/cli/_ask
