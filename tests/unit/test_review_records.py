@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import Any
+from typing import Any, Literal
 
 import pydantic
 import pytest
@@ -67,15 +67,20 @@ def test_locations_require_positive_complete_inclusive_ranges(start: Any, end: A
 
 
 @pytest.mark.parametrize(
-    ("start", "end", "text"),
-    [(None, None, "a.py"), (11, 11, "a.py:11"), (11, 13, "a.py:11-13")],
+    ("side", "start", "end", "text"),
+    [
+        ("base", None, None, "a.py (base)"),
+        ("base", 11, 11, "a.py:11 (base)"),
+        ("base", 11, 13, "a.py:11-13 (base)"),
+        ("head", None, None, "a.py"),
+        ("head", 11, 11, "a.py:11"),
+        ("head", 11, 13, "a.py:11-13"),
+    ],
 )
 def test_locations_render_without_an_ambiguous_stored_citation(
-    start: int | None, end: int | None, text: str
+    side: Literal["base", "head"], start: int | None, end: int | None, text: str
 ) -> None:
-    location = review_records.ReviewLocation(
-        path="a.py", side="head", start_line=start, end_line=end
-    )
+    location = review_records.ReviewLocation(path="a.py", side=side, start_line=start, end_line=end)
     assert str(location) == text
 
 

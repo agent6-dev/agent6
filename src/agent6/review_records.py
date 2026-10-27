@@ -67,10 +67,11 @@ class ReviewLocation(pydantic.BaseModel):
         return self
 
     def __str__(self) -> str:
+        suffix = " (base)" if self.side == "base" else ""
         if self.start_line is None:
-            return self.path
+            return f"{self.path}{suffix}"
         end = f"-{self.end_line}" if self.end_line != self.start_line else ""
-        return f"{self.path}:{self.start_line}{end}"
+        return f"{self.path}:{self.start_line}{end}{suffix}"
 
 
 class Finding(pydantic.BaseModel):

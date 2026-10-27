@@ -162,7 +162,7 @@ def diff_hunks(diff: str) -> _Hunks:
     its old line number and neither name grounds the other's. A `+++ ` line counts as a header
     only after a `--- ` line. A file touched without hunks (binary, a pure rename, a mode
     change) is recorded with none, so a path-only citation of it grounds and a line citation
-    does not.
+    does not. A type change's deletion and addition each contribute their present side.
 
     Args:
         diff: The unified diff.
@@ -172,45 +172,40 @@ def diff_hunks(diff: str) -> _Hunks:
     """
     hunks: _Hunks = {}
     newpath = oldpath = ""
-    prev_minus = False
     lines = diff.splitlines()
     for i, raw in enumerate(lines):
         if g := _GIT_HDR_RE.match(raw):
-            oldpath = _unquote_git_path(g.group(1))
-            newpath = _unquote_git_path(g.group(2))
-            hunks.setdefault((oldpath, "base"), [])
-            hunks.setdefault((newpath, "head"), [])
-            prev_minus = False
-            continue
-        if raw.startswith(("new file mode ", "deleted file mode ")):
-            absent: tuple[str, Literal["base", "head"]] = (
-                (oldpath, "base") if raw.startswith("new") else (newpath, "head")
-            )
-            hunks.pop(absent, None)
-        # A "--- " header is always followed by "+++ "; the lookahead rejects a deleted "-- " line.
-        if raw.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
-            oldpath, newpath, prev_minus = _hdr_path(raw), "", True
             if oldpath:
                 hunks.setdefault((oldpath, "base"), [])
-            continue
-        if raw.startswith("+++ ") and prev_minus:
-            newpath, prev_minus = _hdr_path(raw), False
             if newpath:
                 hunks.setdefault((newpath, "head"), [])
+            oldpath = _unquote_git_path(g.group(1))
+            newpath = _unquote_git_path(g.group(2))
             continue
-        prev_minus = False
+        if raw.startswith("new file mode "):
+            oldpath = ""
+        elif raw.startswith("deleted file mode "):
+            newpath = ""
+        # A "--- " header is always followed by "+++ "; the lookahead rejects a deleted "-- " line.
+        if raw.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
+            oldpath, newpath = _hdr_path(raw), _hdr_path(lines[i + 1])
+            continue
         m = _HUNK_RE.match(raw)
         if m:
             old, new = _span(m.group(1), m.group(2)), _span(m.group(3), m.group(4))
-            if newpath and newpath == oldpath:
-                hunk = Hunk(old=old, new=new)
-                hunks.setdefault((oldpath, "base"), []).append(hunk)
-                hunks.setdefault((newpath, "head"), []).append(hunk)
-            else:
-                if newpath:
-                    hunks.setdefault((newpath, "head"), []).append(Hunk(old=None, new=new))
-                if oldpath:
-                    hunks.setdefault((oldpath, "base"), []).append(Hunk(old=old, new=None))
+            paths: dict[Literal["base", "head"], str] = {"base": oldpath, "head": newpath}
+            for side, path in paths.items():
+                if path:
+                    hunks.setdefault((path, side), []).append(
+                        Hunk(
+                            old=old if path == oldpath else None,
+                            new=new if path == newpath else None,
+                        )
+                    )
+    if oldpath:
+        hunks.setdefault((oldpath, "base"), [])
+    if newpath:
+        hunks.setdefault((newpath, "head"), [])
     return hunks
 
 

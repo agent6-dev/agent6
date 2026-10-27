@@ -292,6 +292,17 @@ def test_render_findings_formats_and_empty() -> None:
     assert "[block:security]" in out and "foo.py:11" in out and "leak" in out and "fix it" in out
 
 
+def test_render_findings_distinguishes_base_and_head_locations() -> None:
+    """Name the base side when both sides cite the same path and line."""
+    findings = (
+        _block("security", _location("foo.py", 11, side="base")),
+        _block("security", _location("foo.py", 11)),
+    )
+    assert harness__panel.render_findings(findings) == (
+        "- [block:security] (foo.py:11 (base)) x\n- [block:security] (foo.py:11) x"
+    )
+
+
 def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
     finding = _block("security", _location("foo.py", 11))
     contradictory = review_records.ReviewVerdict(
@@ -777,6 +788,18 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
 
 
+def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
+    """Keep the prior findings' sides visible at the same path and line."""
+    from agent6.harness import _review_seat  # pyright: ignore[reportPrivateUsage]
+
+    prior = (
+        _block("security", _location("foo.py", 11, side="base")),
+        _block("security", _location("foo.py", 11)),
+    )
+    prompt = _review_seat.build_user_message(_ctx(prior_findings=prior))
+    assert "ALREADY RAISED (do not repeat): foo.py:11 (base) security; foo.py:11 security" in prompt
+
+
 def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
     from agent6.harness import _review_seat  # pyright: ignore[reportPrivateUsage]
 
@@ -843,7 +866,7 @@ def test_side_and_location_distinguish_findings_in_overlapping_hunks() -> None:
         _block("security", _location("bar.py", 55, side="base")),
     )
     res = _agg([seat], ctx=ctx)
-    assert [str(f.location) for f in res.merged_findings] == ["bar.py:23", "bar.py:55"]
+    assert [str(f.location) for f in res.merged_findings] == ["bar.py:23", "bar.py:55 (base)"]
 
 
 def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
@@ -898,6 +921,34 @@ def test_file_level_locations_exclude_absent_sides() -> None:
     assert harness__panel.is_grounded(_location("old.bin", side="base"), hunks)
     assert not harness__panel.is_grounded(_location("new.bin", side="base"), hunks)
     assert not harness__panel.is_grounded(_location("old.bin"), hunks)
+
+
+def test_type_changed_path_keeps_both_sides_hunks() -> None:
+    """Keep the deleted symlink's base hunk when its regular-file addition follows."""
+    diff = (
+        "diff --git a/config b/config\n"
+        "deleted file mode 120000\n"
+        "index 1de5659..0000000\n"
+        "--- a/config\n+++ /dev/null\n"
+        "@@ -1 +0,0 @@\n-config.default\n\\ No newline at end of file\n"
+        "diff --git a/config b/config\n"
+        "new file mode 100644\n"
+        "index 0000000..3b5d5c3\n"
+        "--- /dev/null\n+++ b/config\n"
+        "@@ -0,0 +1,2 @@\n+enabled = true\n+timeout = 30\n"
+    )
+    hunks = harness__panel.diff_hunks(diff)
+    assert hunks == {
+        ("config", "base"): [harness__panel.Hunk(old=(1, 1), new=None)],
+        ("config", "head"): [harness__panel.Hunk(old=None, new=(1, 2))],
+    }
+    assert harness__panel.is_grounded(_location("config", 1, side="base"), hunks)
+    assert harness__panel.is_grounded(_location("config", 2), hunks)
+    assert not harness__panel.is_grounded(_location("config", 2, side="base"), hunks)
+    finding = _block("data-loss", _location("config", 1, side="base"))
+    result = _agg([_seat("m1", finding)], ctx=harness__panel.ReviewContext(diff=diff))
+    assert result.merged_findings == (finding,)
+    assert result.blocked and result.n_block == 1
 
 
 def test_grounding_uses_only_the_cited_side() -> None:
