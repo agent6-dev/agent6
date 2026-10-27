@@ -176,6 +176,7 @@ depends_on = [
   "agent6.vcs.commit_message",
   "agent6.vcs.git_ops",
   "agent6.vcs.git_read",
+  "agent6.vcs.review",
   "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
   "agent6.viewmodel",  # the run review folds a session's record with the one listing scan
 ]
@@ -464,6 +465,10 @@ depends_on = ["agent6.errors", "agent6.vcs._git_command", "agent6.vcs.commit_mes
 [[modules]]
 path = "agent6.vcs.git_policy"
 depends_on = ["agent6.errors"]
+
+[[modules]]
+path = "agent6.vcs.review"
+depends_on = ["agent6.errors", "agent6.review_records", "agent6.vcs._git_command", "agent6.vcs.git_files", "agent6.vcs.git_history", "agent6.vcs.git_read"]
 
 [[modules]]
 # The package __init__ re-exports the models as the public API.

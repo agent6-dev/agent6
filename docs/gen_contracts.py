@@ -83,6 +83,7 @@ CONTRACTS: tuple[Contract, ...] = (
             "Finding",
             "SeatReply",
             "ReviewVerdict",
+            "LineOrigin",
             "FindingObservation",
             "ReviewPanel",
             "FindingResolution",
@@ -91,10 +92,12 @@ CONTRACTS: tuple[Contract, ...] = (
         writers=(
             "app/review_actions.py",
             "harness/_panel.py",
+            "harness/_review_history.py",
             "harness/_review_seat.py",
             "harness/_reviewer.py",
             "ui/cli/sessions_findings.py",
             "ui/web/review_routes.py",
+            "vcs/review.py",
         ),
         pins=(
             "tests/unit/test_review_action_execution.py",

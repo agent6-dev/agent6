@@ -57,6 +57,9 @@ Before the first model call, the header names the role and model from the manife
 - on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
 - on a finished run, Run > Review this run… runs `agent6 sessions review` on it (a model call that can take minutes) and opens the markdown in a modal; a live run is refused until it ends
 
+Inspect persisted [line-origin evidence](usage.md#session-findings) with `agent6 sessions findings <id>` or the web Findings card.
+The terminal UI has no line-origin badge.
+
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
 ## Findings

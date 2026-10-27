@@ -137,6 +137,25 @@ def test_frozen_records_round_trip() -> None:
             setattr(record, dataclasses.fields(record)[0].name, "different")
 
 
+def test_observation_line_origin_round_trips_and_defaults_to_historical_unknown() -> None:
+    adapter = pydantic.TypeAdapter(review_records.FindingObservation)
+    legacy = dict(finding_id="f", panel_id="p", finding=_finding().model_dump(), seat_indexes=[0])
+    observation = adapter.validate_python(legacy)
+    assert observation.line_origin.kind == "unknown"
+    assert "historical" in observation.line_origin.reason.lower()
+    evidence = dict(
+        kind="pre_existing",
+        reason="The cited lines exist at the base.",
+        base_location=dict(path="a.py", side="base", start_line=1, end_line=2),
+        commits=["a" * 40],
+    )
+    observation = adapter.validate_python({**legacy, "line_origin": evidence})
+    assert adapter.validate_json(adapter.dump_json(observation)) == observation
+    assert observation.line_origin.commits == ("a" * 40,)
+    with pytest.raises(pydantic.ValidationError):
+        adapter.validate_python({**legacy, "line_origin": {**evidence, "commits": []}})
+
+
 def test_abstentions_are_distinct_from_passes() -> None:
     verdict = review_records.ReviewVerdict(
         seat_index=0,

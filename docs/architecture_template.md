@@ -84,6 +84,10 @@ It does not capture a separate snapshot or move the operator's index, HEAD or ru
 `harness/_review_history.py` restores those records on resume.
 Only exact normalized finding content, location and the cited blob identify a repeat.
 The journal keeps repeated observations even when the worker feedback omits them.
+`vcs/review.py` owns diff hunk ranges and line-origin classification.
+Before the panel event is written, each observation records its line origin against the immutable base and head blobs.
+An exact unchanged range carries its base location and bounded blame attribution.
+Unsupported files, ambiguous mappings and unavailable history carry an unknown reason.
 Findings cut from the feedback notice remain eligible for a later notice.
 Every execution start carries an `execution_id`, every panel has a unique `panel_id`, and every durable event has an `event_id`.
 Journal append order, not timestamps, orders events.

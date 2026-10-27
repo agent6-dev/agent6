@@ -14,6 +14,22 @@ from agent6.viewmodel import _session_log
 from tests import review_helpers
 
 
+def test_cli_lists_line_evidence_without_lowering_severity(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    saved = review_helpers.reviewed_repo(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["sessions", "findings", saved.session_id]) == 0
+    text = capsys.readouterr().out
+    assert text.count("Pre-existing line") == 1
+    assert "old.txt:2" in text and text.count("  block  ") == 4
+    assert "Blame:" in text
+    assert main(["sessions", "findings", saved.session_id, "--json"]) == 0
+    wire = json.loads(capsys.readouterr().out)
+    assert wire["findings"][0]["line_origin"]["kind"] == "pre_existing"
+    assert wire["findings"][2]["line_origin"]["kind"] == "changed"
+
+
 def _resolve(request_id: str = "resolve", version: int = 1) -> review_records.FindingAction:
     return review_records.FindingAction(
         request_id=request_id,

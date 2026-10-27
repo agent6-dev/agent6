@@ -109,6 +109,31 @@ class ReviewVerdict:
     error: str | None = None
 
 
+class LineOrigin(pydantic.BaseModel):
+    """Record byte-level evidence without dating a defect or changing its severity."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["pre_existing", "changed", "unknown"] = "unknown"
+    reason: str = "Historical observations contain no line-origin evidence."
+    base_location: ReviewLocation | None = None
+    commits: tuple[Identifier, ...] = ()
+
+    @pydantic.model_validator(mode="after")
+    def _evidence(self) -> Self:
+        if self.kind == "pre_existing":
+            if (
+                self.base_location is None
+                or self.base_location.side != "base"
+                or self.base_location.start_line is None
+                or not self.commits
+            ):
+                raise ValueError("pre-existing lines require a base range and attribution commits")
+        elif self.base_location is not None or self.commits:
+            raise ValueError("only pre-existing lines carry base attribution")
+        return self
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class FindingObservation:
     """Associate a finding with its panel and the seats that reported it."""
@@ -117,6 +142,7 @@ class FindingObservation:
     panel_id: str
     finding: Finding
     seat_indexes: tuple[int, ...]
+    line_origin: LineOrigin = dataclasses.field(default_factory=LineOrigin)
 
 
 class ReviewPanel(pydantic.BaseModel):

@@ -99,6 +99,10 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
                 f"{report.location} ({report.location.side}): {report.title}"
             )
             print(f"  {report.detail}")
+            origin = finding.line_origin
+            if origin.kind == "pre_existing":
+                print(f"  Pre-existing line: {origin.base_location}. {origin.reason}")
+                print(f"  Blame: {', '.join(origin.commits)}")
             if finding.resolution:
                 print(f"  {finding.resolution.disposition}: {finding.resolution.reason}")
             if finding.fix_state != "none":

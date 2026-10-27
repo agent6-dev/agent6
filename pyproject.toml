@@ -468,6 +468,7 @@ banned-from = [
     "agent6.vcs.git_ops",
     "agent6.vcs.git_policy",
     "agent6.vcs.git_read",
+    "agent6.vcs.review",
     "agent6.verify_infer",
     "agent6.viewmodel._machine_logs",
     "agent6.viewmodel._machine_watch",

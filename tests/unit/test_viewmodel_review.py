@@ -118,6 +118,31 @@ def test_repeated_observation_preserves_resolution_and_history(tmp_path: pathlib
     assert state.fold_session([*rows, rows[-1]]).review == live
 
 
+def test_line_origin_follows_the_latest_observation_without_changing_merge_policy() -> None:
+    first = _panel()
+    first["findings"][0]["line_origin"] = dict(
+        kind="pre_existing",
+        reason="The cited lines exist at the base.",
+        base_location=dict(path="old.py", side="base", start_line=7, end_line=7),
+        commits=["a" * 40],
+    )
+    result = state.fold_session([first])
+    assert result.review.findings[0].line_origin.kind == "pre_existing"
+    assert result.review.merge_guard.open_block_ids == ("f1",)
+    wire = _state_view.session_state_as_dict(result)["review"]
+    assert wire["findings"][0]["line_origin"] == first["findings"][0]["line_origin"]
+    later = _panel("p2")
+    later["findings"][0]["line_origin"] = dict(kind="changed", reason="Changed lines.")
+    finding = state.fold_session([first, later]).review.findings[0]
+    assert finding.line_origin.kind == "changed"
+    assert finding.observations[0].line_origin.kind == "pre_existing"
+    legacy = _panel()
+    legacy["findings"][0].pop("line_origin", None)
+    finding = state.fold_session([legacy]).review.findings[0]
+    assert finding.line_origin.kind == "unknown"
+    assert "historical" in finding.line_origin.reason.lower()
+
+
 def test_fix_delivery_is_unknown_until_submission_and_never_resolves() -> None:
     """Keep a requested Fix open and show an unconfirmed delivery as unknown."""
     requested = _action("fix.requested", target=dataclasses.asdict(_target()), action="live-steer")

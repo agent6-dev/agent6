@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 import subprocess
@@ -17,7 +18,7 @@ from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.tui import home
 from agent6.ui.web import server
-from agent6.vcs import git_ops, git_read
+from agent6.vcs import git_ops, git_read, review
 from tests import review_helpers
 from tests.web import signin
 
@@ -35,15 +36,40 @@ def run(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> layout.Sessi
         spawn, "agent6_exe", lambda: str(pathlib.Path(sys.executable).with_name("agent6"))
     )
     _git(tmp_path, "init", "-qb", "main")
-    (tmp_path / "parser.py").write_text("base\n")
+    (tmp_path / "parser.py").write_text("base\ncontext\nolder defect\nlast\n")
     _git(tmp_path, "add", ".")
     _git(tmp_path, "commit", "-qm", "base")
     base = _git(tmp_path, "rev-parse", "HEAD")
     _git(tmp_path, "switch", "-qc", "agent6/review-run")
-    (tmp_path / "parser.py").write_text("changed\n")
+    (tmp_path / "parser.py").write_text("changed\ncontext\nolder defect\nlast\n")
     _git(tmp_path, "commit", "-qam", "work")
     _git(tmp_path, "switch", "-q", "main")
     saved = review_helpers.reviewed_session(tmp_path)
+    head = _git(tmp_path, "rev-parse", "agent6/review-run")
+    target = review_records.ReviewTarget(
+        base,
+        git_read.tree_sha(tmp_path, base),
+        head,
+        git_read.tree_sha(tmp_path, head),
+        head,
+        (),
+        "revisions",
+    )
+    panel = review_records.ReviewPanel.model_validate_json(saved.logs_path.read_text())
+    panel = panel.model_copy(
+        update={
+            "target": target,
+            "findings": tuple(
+                dataclasses.replace(
+                    f, line_origin=review.classify_line_origin(tmp_path, target, f.finding.location)
+                )
+                for f in panel.findings
+            ),
+        }
+    )
+    saved.logs_path.write_text(
+        json.dumps({"type": "loop.review.panel", **panel.model_dump(mode="json")}) + "\n"
+    )
     saved.manifest_path.write_text(
         manifest.SessionManifest(
             session_id=saved.session_id,
@@ -99,6 +125,8 @@ def test_every_merge_path_refuses_open_blocks_even_when_panel_did_not_reject(
 ) -> None:
     """An HTTP POST and both terminal actions reach the same guard as auto-merge."""
     base = _git(tmp_path, "rev-parse", "main")
+    view = review_actions.read_review(run.session_dir)
+    assert all(f.line_origin.kind == "pre_existing" for f in view.findings)
     if surface == "cli":
         ok = main(["sessions", "merge", run.session_id]) == 0
         captured = capsys.readouterr()

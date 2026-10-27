@@ -70,6 +70,25 @@ def test_findings_routes_share_versions_and_idempotent_results(api: int) -> None
     )
 
 
+def test_findings_routes_return_line_evidence(tmp_path: pathlib.Path, api: int) -> None:
+    code, legacy = _request(api)
+    assert code == 200
+    assert legacy["findings"][0]["line_origin"]["kind"] == "unknown"
+    review_helpers.reviewed_repo(tmp_path)
+    code, view = _request(api)
+    assert code == 200
+    assert [f["line_origin"]["kind"] for f in view["findings"]] == [
+        "pre_existing",
+        "changed",
+        "changed",
+        "unknown",
+    ]
+    origin = view["findings"][0]["line_origin"]
+    assert origin["base_location"]["path"] == "old.txt"
+    assert origin["commits"] == [view["panels"][0]["target"]["base_commit"]]
+    assert len(view["merge_guard"]["open_block_ids"]) == 4
+
+
 def test_findings_routes_distinguish_missing_invalid_and_conflicting(api: int) -> None:
     base = dict(request_id="fix", expected_version=1)
     assert _request(api, "/missing/fix", base)[0] == 404

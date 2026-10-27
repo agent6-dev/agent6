@@ -228,6 +228,11 @@ File-level findings appear beside the patch; locations outside a truncated patch
 A different comparison shows a link to the reviewed comparison instead of an inline anchor.
 Compare links retain `panel`, `finding`, `path` and `side` query parameters across reloads.
 **Reviewed file** opens the Files tab at the recorded tree, including deleted files on the base side.
+
+The **Pre-existing line** badge opens the mapped lines in the recorded base file.
+The adjacent **Blame** links open their attribution commits.
+Its tooltip describes line evidence, not the age of the defect; the [severity and merge rules](usage.md#session-findings) stay the same.
+Finding routes include `line_origin` on each observation and the latest evidence on each finding.
 Finding text and operator reasons render as text, never HTML.
 
 ## Remote access (Tailscale)

@@ -13,7 +13,7 @@ from unittest import mock
 import pytest
 
 from agent6 import errors, kinds
-from agent6.vcs import _git_command, commit_message, git_ops, git_policy, git_read
+from agent6.vcs import _git_command, commit_message, git_ops, git_policy, git_read, review
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -1991,7 +1991,7 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     assert "--- a/README.md" in diff and "+++ b/README.md" in diff
     assert _panel.is_grounded(
         review_records.ReviewLocation(path="README.md", side="head", start_line=2, end_line=2),
-        _panel.diff_hunks(diff),
+        review.diff_hunks(diff),
     )
 
 

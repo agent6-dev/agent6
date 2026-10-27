@@ -7,7 +7,7 @@ import uuid
 import pydantic
 
 from agent6 import review_records
-from agent6.vcs import git_read
+from agent6.vcs import git_read, review
 
 
 class ReviewHistoryError(Exception):
@@ -81,6 +81,9 @@ def observations(
     panel_id: str,
     verdicts: tuple[review_records.ReviewVerdict, ...],
     known: dict[str, str],
+    *,
+    root: pathlib.Path,
+    target: review_records.ReviewTarget,
 ) -> tuple[review_records.FindingObservation, ...]:
     """Return every grounded finding, including repeats omitted from feedback."""
     grouped: dict[str, tuple[review_records.Finding, list[int]]] = {}
@@ -95,6 +98,7 @@ def observations(
             panel_id=panel_id,
             finding=finding,
             seat_indexes=tuple(seats),
+            line_origin=review.classify_line_origin(root, target, finding.location),
         )
         for key, (finding, seats) in grouped.items()
     )

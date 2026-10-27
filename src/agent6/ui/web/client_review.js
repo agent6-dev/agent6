@@ -23,6 +23,19 @@ function findingCard(entry) {
   card.appendChild(el('span', 'muted', entry.finding.finding_id + ' · ' + loc.side + ' · ' + loc.path + range));
   card.appendChild(el('span', 'finding-detail', f.detail));
   const links = el('span', 'row wrap'); card.appendChild(links);
+  const origin = entry.observation.line_origin;
+  if (origin?.kind === 'pre_existing') {
+    const base = origin.base_location, badge = el('a', 'finding-origin', 'Pre-existing line');
+    badge.title = origin.reason;
+    badge.href = '#/files/' + entry.panel.target.base_tree + '/' + base.path.split('/').map(encodeURIComponent).join('/')
+      + '?' + new URLSearchParams({panel: entry.panel.panel_id, side: 'base', line: base.start_line, end_line: base.end_line});
+    links.appendChild(badge);
+    for (const sha of origin.commits) {
+      const blame = el('a', null, 'Blame ' + sha.slice(0, 7));
+      blame.href = '#/git/commit/' + encodeURIComponent(sha); blame.title = sha;
+      links.appendChild(blame);
+    }
+  }
   const diff = el('a', null, 'Reviewed comparison'); diff.href = reviewLink(entry); links.appendChild(diff);
   const file = el('a', null, 'Reviewed file'); file.href = reviewFileLink(entry); links.appendChild(file);
   if (entry.session_id) {
@@ -183,6 +196,13 @@ async function renderReviewedFile(gen, path, query) {
     const entries = reviewEntries(panel.review, panel.session_id, panel_id).filter(e => e.observation.finding.location.side === side);
     drawDiffFindings(box, entries, {path}, side === 'base' ? 'old' : 'new');
     focusFinding(box, query.get('finding'));
+    const start = Number(query.get('line')), end = Number(query.get('end_line')) || start;
+    if (start > 0 && end >= start) {
+      for (const row of box.querySelectorAll('[data-line]')) {
+        if (Number(row.dataset.line) >= start && Number(row.dataset.line) <= end) row.classList.add('finding-selected');
+      }
+      box.querySelector('[data-line="' + start + '"]')?.scrollIntoView({block: 'center'});
+    }
   };
   await load(false);
 }

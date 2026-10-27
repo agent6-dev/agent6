@@ -21,6 +21,7 @@ from agent6.app import _setup, providers
 from agent6.config import layer
 from agent6.harness import _panel as harness__panel
 from agent6.harness import _reviewer as harness__reviewer
+from agent6.vcs import review
 from tests.unit import test_review_diff_collect
 
 # A real unified diff touching foo.py new-lines 10..14 and creating bar.py 1..2.
@@ -91,14 +92,14 @@ def _agg(
 
 
 def test_diff_hunks_parses_paths_and_both_sides_of_each_hunk() -> None:
-    hunks = harness__panel.diff_hunks(SAMPLE_DIFF)
+    hunks = review.diff_hunks(SAMPLE_DIFF)
     # A created file has no base-side location.
-    assert hunks[("foo.py", "head")] == [harness__panel.Hunk(old=(10, 12), new=(10, 14))]
-    assert hunks[("bar.py", "head")] == [harness__panel.Hunk(old=None, new=(1, 2))]
+    assert hunks[("foo.py", "head")] == [review.Hunk(old=(10, 12), new=(10, 14))]
+    assert hunks[("bar.py", "head")] == [review.Hunk(old=None, new=(1, 2))]
 
 
 def test_is_grounded_line_in_range_path_only_and_misses() -> None:
-    ranges = harness__panel.diff_hunks(SAMPLE_DIFF)
+    ranges = review.diff_hunks(SAMPLE_DIFF)
     assert harness__panel.is_grounded(_location("foo.py", 11), ranges)  # inside 10..14
     assert harness__panel.is_grounded(_location("foo.py"), ranges)  # path-only, file touched
     assert not harness__panel.is_grounded(
@@ -108,7 +109,7 @@ def test_is_grounded_line_in_range_path_only_and_misses() -> None:
 
 
 def test_a_colon_in_the_path_is_not_a_line_separator() -> None:
-    hunks = harness__panel.diff_hunks("--- a/src/a:b.py\n+++ b/src/a:b.py\n@@ -1 +1 @@\n-x\n+y\n")
+    hunks = review.diff_hunks("--- a/src/a:b.py\n+++ b/src/a:b.py\n@@ -1 +1 @@\n-x\n+y\n")
     assert harness__panel.is_grounded(_location("src/a:b.py", 1), hunks)
     assert not harness__panel.is_grounded(_location("src/a", 1), hunks)
 
@@ -325,11 +326,11 @@ def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
         "@@ -1,2 +1,3 @@\n keep\n+++ b/evil.py\n+real = 1\n"
         "@@ -10,2 +10,3 @@\n ctx\n+added\n more\n"
     )
-    ranges = harness__panel.diff_hunks(diff)
+    ranges = review.diff_hunks(diff)
     assert ("evil.py", "head") not in ranges
     assert ranges[("foo.py", "head")] == [
-        harness__panel.Hunk(old=(1, 2), new=(1, 3)),
-        harness__panel.Hunk(old=(10, 11), new=(10, 12)),
+        review.Hunk(old=(1, 2), new=(1, 3)),
+        review.Hunk(old=(10, 11), new=(10, 12)),
     ]
 
 
@@ -344,7 +345,7 @@ def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
         "@@ -10,3 +10,2 @@\n CREATE TABLE t (\n--- legacy column note\n   id INT\n"
         "@@ -50,2 +50,3 @@\n cols\n+  api_key TEXT\n more\n"
     )
-    ranges = harness__panel.diff_hunks(diff)
+    ranges = review.diff_hunks(diff)
     assert ("legacy column note", "base") not in ranges  # the deletion was not read as a header
     assert harness__panel.is_grounded(
         _location("schema.sql", 51), ranges
@@ -356,7 +357,7 @@ def test_in_place_modification_grounds_old_side_lines() -> None:
     # the deleted code at its OLD line number grounds, so a review of deleted
     # code can gate.
     diff = "--- a/mod.py\n+++ b/mod.py\n@@ -100,5 +50,2 @@\n ctx\n-gone1\n-gone2\n-gone3\n ctx2\n"
-    ranges = harness__panel.diff_hunks(diff)
+    ranges = review.diff_hunks(diff)
     assert [h.old for h in ranges[("mod.py", "base")]] == [
         (100, 104)
     ]  # old side of the in-place hunk
@@ -374,13 +375,13 @@ def test_pure_deletion_grounds_on_the_old_path() -> None:
     # A file deleted entirely (post-image /dev/null) still grounds a citation
     # of the deleted file, so a data-loss block on it can gate.
     diff = "--- a/gone.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-a\n-b\n-c\n"
-    ranges = harness__panel.diff_hunks(diff)
-    assert ranges[("gone.py", "base")] == [harness__panel.Hunk(old=(1, 3), new=None)]
+    ranges = review.diff_hunks(diff)
+    assert ranges[("gone.py", "base")] == [review.Hunk(old=(1, 3), new=None)]
     assert harness__panel.is_grounded(_location("gone.py", 2, side="base"), ranges)
 
 
 def test_grounding_accepts_a_single_line_and_an_inclusive_range() -> None:
-    ranges = harness__panel.diff_hunks(SAMPLE_DIFF)
+    ranges = review.diff_hunks(SAMPLE_DIFF)
     assert harness__panel.is_grounded(_location("foo.py", 11), ranges)
     assert harness__panel.is_grounded(
         _location("foo.py", 11, 13), ranges
@@ -391,7 +392,7 @@ def test_grounding_range_overlap_not_just_start_line() -> None:
     # foo.py changed lines 10..14. A range whose START line is unchanged but whose
     # INTERIOR overlaps the touched range must still ground (FINDING 2 regression:
     # previously only the start line was checked, so this was wrongly ungrounded).
-    ranges = harness__panel.diff_hunks(SAMPLE_DIFF)
+    ranges = review.diff_hunks(SAMPLE_DIFF)
     assert harness__panel.is_grounded(
         _location("foo.py", 8, 12), ranges
     )  # start 8 untouched, but 10..12 overlap
@@ -415,7 +416,7 @@ def test_grounding_range_overlap_not_just_start_line() -> None:
 def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
     """A location keeps a real top-level `a/` or `b/` directory in its path."""
     diff = "--- a/a/foo.py\n+++ b/a/foo.py\n@@ -1,2 +1,2 @@\n x\n-y\n+z\n"
-    ranges = harness__panel.diff_hunks(diff)
+    ranges = review.diff_hunks(diff)
     assert list(ranges) == [("a/foo.py", "base"), ("a/foo.py", "head")]
     assert harness__panel.is_grounded(
         _location("a/foo.py", 2), ranges
@@ -427,9 +428,7 @@ def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
     )
     assert res.blocked is True and res.merged_findings[0].severity == "block"
     # Repository paths are literal, not diff-header paths.
-    assert not harness__panel.is_grounded(
-        _location("b/foo.py", 11), harness__panel.diff_hunks(SAMPLE_DIFF)
-    )
+    assert not harness__panel.is_grounded(_location("b/foo.py", 11), review.diff_hunks(SAMPLE_DIFF))
 
 
 def test_range_block_with_unchanged_start_still_gates() -> None:
@@ -761,7 +760,7 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
         "old mode 100644\n"
         "new mode 100755\n"
     )
-    ranges = harness__panel.diff_hunks(diff)
+    ranges = review.diff_hunks(diff)
     assert ranges == {
         ("img.png", "base"): [],
         ("img.png", "head"): [],
@@ -877,10 +876,10 @@ def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
     own side.
     """
     diff = "--- a/old.py\n+++ b/new.py\n@@ -10,3 +200,3 @@\n a\n-b\n+B\n c\n"
-    hunks = harness__panel.diff_hunks(diff)
+    hunks = review.diff_hunks(diff)
     assert hunks == {
-        ("new.py", "head"): [harness__panel.Hunk(old=None, new=(200, 202))],
-        ("old.py", "base"): [harness__panel.Hunk(old=(10, 12), new=None)],
+        ("new.py", "head"): [review.Hunk(old=None, new=(200, 202))],
+        ("old.py", "base"): [review.Hunk(old=(10, 12), new=None)],
     }
     assert harness__panel.is_grounded(
         _location("old.py", 11, side="base"), hunks
@@ -890,17 +889,15 @@ def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
     ) and not harness__panel.is_grounded(_location("new.py", 11), hunks)
     # A pure deletion inside a kept file still grounds the post-image line it
     # sits at, and a pure insertion the pre-image one.
-    kept = harness__panel.diff_hunks(
-        "--- a/k.py\n+++ b/k.py\n@@ -10,5 +9,0 @@\n-a\n-b\n-c\n-d\n-e\n"
-    )
-    assert kept[("k.py", "head")] == [harness__panel.Hunk(old=(10, 14), new=(9, 9))]
+    kept = review.diff_hunks("--- a/k.py\n+++ b/k.py\n@@ -10,5 +9,0 @@\n-a\n-b\n-c\n-d\n-e\n")
+    assert kept[("k.py", "head")] == [review.Hunk(old=(10, 14), new=(9, 9))]
     assert harness__panel.is_grounded(_location("k.py", 9), kept) and harness__panel.is_grounded(
         _location("k.py", 12, side="base"), kept
     )
 
 
 def test_file_level_locations_keep_the_rename_side() -> None:
-    hunks = harness__panel.diff_hunks(
+    hunks = review.diff_hunks(
         "diff --git a/old.py b/new.py\n"
         "similarity index 100%\nrename from old.py\nrename to new.py\n"
     )
@@ -911,7 +908,7 @@ def test_file_level_locations_keep_the_rename_side() -> None:
 
 
 def test_file_level_locations_exclude_absent_sides() -> None:
-    hunks = harness__panel.diff_hunks(
+    hunks = review.diff_hunks(
         "diff --git a/new.bin b/new.bin\nnew file mode 100644\n"
         "Binary files /dev/null and b/new.bin differ\n"
         "diff --git a/old.bin b/old.bin\ndeleted file mode 100644\n"
@@ -937,10 +934,10 @@ def test_type_changed_path_keeps_both_sides_hunks() -> None:
         "--- /dev/null\n+++ b/config\n"
         "@@ -0,0 +1,2 @@\n+enabled = true\n+timeout = 30\n"
     )
-    hunks = harness__panel.diff_hunks(diff)
+    hunks = review.diff_hunks(diff)
     assert hunks == {
-        ("config", "base"): [harness__panel.Hunk(old=(1, 1), new=None)],
-        ("config", "head"): [harness__panel.Hunk(old=None, new=(1, 2))],
+        ("config", "base"): [review.Hunk(old=(1, 1), new=None)],
+        ("config", "head"): [review.Hunk(old=None, new=(1, 2))],
     }
     assert harness__panel.is_grounded(_location("config", 1, side="base"), hunks)
     assert harness__panel.is_grounded(_location("config", 2), hunks)
@@ -953,9 +950,7 @@ def test_type_changed_path_keeps_both_sides_hunks() -> None:
 
 def test_grounding_uses_only_the_cited_side() -> None:
     """A head citation cannot borrow an old line number from the same file."""
-    hunks = harness__panel.diff_hunks(
-        "--- a/mod.py\n+++ b/mod.py\n@@ -100,3 +10,2 @@\n a\n-b\n c\n"
-    )
+    hunks = review.diff_hunks("--- a/mod.py\n+++ b/mod.py\n@@ -100,3 +10,2 @@\n a\n-b\n c\n")
     base = review_records.ReviewLocation(path="mod.py", side="base", start_line=101, end_line=101)
     head = review_records.ReviewLocation(path="mod.py", side="head", start_line=101, end_line=101)
     assert harness__panel.is_grounded(base, hunks)

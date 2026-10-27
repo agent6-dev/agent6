@@ -83,6 +83,33 @@ const patch = parseUnifiedDiff('diff --git a/old.txt b/new.txt\n'
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def test_line_origin_badge_uses_the_observation_and_links_immutable_base_evidence() -> None:
+    _run("""
+const e = entry('head', 8, 'new.txt');
+e.observation.line_origin = {kind: 'pre_existing',
+  reason: 'The cited lines exist at the base. This does not date the defect.',
+  base_location: {path: 'old name.txt', side: 'base', start_line: 2, end_line: 3},
+  commits: ['abc1234']};
+e.finding.line_origin = {kind: 'changed'};
+const card = findingCard(e), badge = card.querySelector('.finding-origin');
+assert.ok(badge, 'pre-existing badge missing');
+assert.equal(badge.textContent, 'Pre-existing line');
+assert.ok(badge.title.includes('exist at the base') && badge.title.includes('does not date'));
+assert.ok(badge.href.startsWith('#/files/bt/old%20name.txt?'));
+const q = new URLSearchParams(badge.href.split('?')[1]);
+assert.equal(q.get('side'), 'base');
+assert.equal(q.get('panel'), 'panel');
+assert.equal(q.get('line'), '2');
+assert.equal(q.get('end_line'), '3');
+assert.ok(card.querySelectorAll('a').some(a => a.href === '#/git/commit/abc1234'));
+assert.ok(card.textContent.includes('block · open'));
+for (const kind of ['changed', 'unknown']) {
+  e.observation.line_origin = {kind};
+  assert.equal(findingCard(e).querySelector('.finding-origin'), null);
+}
+""")
+
+
 @pytest.mark.parametrize("mode", ["inline", "split", "old", "new"])
 def test_findings_attach_to_the_correct_side_without_interpreting_html(mode: str) -> None:
     _run(

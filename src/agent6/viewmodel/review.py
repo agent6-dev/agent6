@@ -1,4 +1,7 @@
-"""Fold review evidence and operator history for every session reader."""
+"""Fold review evidence and operator history for every session reader.
+
+`FindingView.line_origin` reads the latest observation; `as_dict` includes it in the wire form.
+"""
 
 from __future__ import annotations
 
@@ -47,6 +50,11 @@ class FindingView:
     actions: tuple[ActionRecord, ...] = ()
     anchor_state: Literal["unknown", "current", "outdated"] = "unknown"
     fix_state: Literal["none", "delivery_unknown", "submitted", "failed"] = "none"
+
+    @property
+    def line_origin(self) -> review_records.LineOrigin:
+        """Return the latest observation's evidence without discarding earlier attribution."""
+        return self.observations[-1].line_origin
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -414,4 +422,6 @@ def as_dict(view: ReviewView) -> dict[str, Any]:
     """Return JSON-ready evidence, including nested boundary models and merge facts."""
     result = pydantic.TypeAdapter(ReviewView).dump_python(view, mode="json")
     result["merge_guard"] = dataclasses.asdict(view.merge_guard)
+    for row, finding in zip(result["findings"], view.findings, strict=True):
+        row["line_origin"] = finding.line_origin.model_dump(mode="json")
     return result

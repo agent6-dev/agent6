@@ -448,7 +448,9 @@ class Reviewer:
                 result.merged_findings, _panel.REVIEW_NOTICE_BYTES - _NOTICE_ROOM
             )
         )
-        observations = _review_history.observations(panel_id, result.per_seat, known)
+        observations = _review_history.observations(
+            panel_id, result.per_seat, known, root=self.chain.root, target=target
+        )
         shown_keys = {review_records.finding_key(f) for f in shown}
         record = review_records.ReviewPanel(
             panel_id=panel_id,

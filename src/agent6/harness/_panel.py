@@ -11,10 +11,10 @@ models.
 from __future__ import annotations
 
 import dataclasses
-import re
 from typing import Literal
 
 from agent6 import review_records
+from agent6.vcs import review
 
 ReviewBlockOn = Literal["none", "any", "model_quorum", "all"]
 
@@ -108,113 +108,12 @@ def review_notice(text: str) -> str:
     return f"[review]\n{head}\n[review: {len(body) - len(head.encode())} more bytes cut]"
 
 
-# Diff grounding: the (path, line) citations this diff supports.
-# Both the old-side and new-side line numbers, so a deletion grounds against the pre-image path.
-_HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-_GIT_HDR_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
-
-
-def _unquote_git_path(p: str) -> str:
-    """Return the path with git's C-string quoting stripped, so it matches a citation."""
-    p = p.strip()
-    if len(p) >= 2 and p.startswith('"') and p.endswith('"'):
-        p = p[1:-1].replace('\\"', '"').replace("\\\\", "\\")
-    return p
-
-
-def _hdr_path(raw: str) -> str:
-    """Return the path of a `--- ` or `+++ ` header line, or "" for /dev/null."""
-    target = _unquote_git_path(raw[4:].split("\t", 1)[0])
-    return "" if target == "/dev/null" else re.sub(r"^[ab]/", "", target)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Hunk:
-    """One hunk as it addresses one path.
-
-    A side with no lines spans the line the change sits at, so a citation of it grounds.
-
-    Attributes:
-        old: The pre-image lines it replaced, an inclusive span; None when that side is another
-            file's (a rename's other name) or absent (a created file).
-        new: The post-image lines it produced, likewise; None for a rename's other name or a
-            deleted file.
-    """
-
-    old: tuple[int, int] | None
-    new: tuple[int, int] | None
-
-
-def _span(start: str, count: str | None) -> tuple[int, int]:
-    """Return the inclusive span of a hunk side from its header start and count."""
-    s, n = int(start), int(count) if count is not None else 1
-    return (s, s + max(n, 1) - 1)
-
-
-_Hunks = dict[tuple[str, Literal["base", "head"]], list[Hunk]]
-
-
-def diff_hunks(diff: str) -> _Hunks:
-    """Map each touched path and side to its hunks, for grounding and dedup.
-
-    An in-place hunk carries both sides under its path. A rename's, a created file's or a
-    deleted file's hunk carries each side under that side's path, so deleted code grounds at
-    its old line number and neither name grounds the other's. A `+++ ` line counts as a header
-    only after a `--- ` line. A file touched without hunks (binary, a pure rename, a mode
-    change) is recorded with none, so a path-only citation of it grounds and a line citation
-    does not. A type change's deletion and addition each contribute their present side.
-
-    Args:
-        diff: The unified diff.
-
-    Returns:
-        The hunks by repository path and side.
-    """
-    hunks: _Hunks = {}
-    newpath = oldpath = ""
-    lines = diff.splitlines()
-    for i, raw in enumerate(lines):
-        if g := _GIT_HDR_RE.match(raw):
-            if oldpath:
-                hunks.setdefault((oldpath, "base"), [])
-            if newpath:
-                hunks.setdefault((newpath, "head"), [])
-            oldpath = _unquote_git_path(g.group(1))
-            newpath = _unquote_git_path(g.group(2))
-            continue
-        if raw.startswith("new file mode "):
-            oldpath = ""
-        elif raw.startswith("deleted file mode "):
-            newpath = ""
-        # A "--- " header is always followed by "+++ "; the lookahead rejects a deleted "-- " line.
-        if raw.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
-            oldpath, newpath = _hdr_path(raw), _hdr_path(lines[i + 1])
-            continue
-        m = _HUNK_RE.match(raw)
-        if m:
-            old, new = _span(m.group(1), m.group(2)), _span(m.group(3), m.group(4))
-            paths: dict[Literal["base", "head"], str] = {"base": oldpath, "head": newpath}
-            for side, path in paths.items():
-                if path:
-                    hunks.setdefault((path, side), []).append(
-                        Hunk(
-                            old=old if path == oldpath else None,
-                            new=new if path == newpath else None,
-                        )
-                    )
-    if oldpath:
-        hunks.setdefault((oldpath, "base"), [])
-    if newpath:
-        hunks.setdefault((newpath, "head"), [])
-    return hunks
-
-
 def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
     """Return whether two inclusive spans share a line."""
     return a[0] <= b[1] and b[0] <= a[1]
 
 
-def is_grounded(location: review_records.ReviewLocation, hunks: _Hunks) -> bool:
+def is_grounded(location: review_records.ReviewLocation, hunks: review.Hunks) -> bool:
     """Return whether the location overlaps a hunk on its specified side.
 
     A file-level location grounds on a touched path on that side.
@@ -262,7 +161,7 @@ def _ground_severity(f: review_records.Finding, ctx: ReviewContext) -> review_re
 
 
 def _ground_seat(
-    v: review_records.ReviewVerdict, ctx: ReviewContext, hunks: _Hunks
+    v: review_records.ReviewVerdict, ctx: ReviewContext, hunks: review.Hunks
 ) -> review_records.ReviewVerdict:
     """Ground one seat's findings.
 
@@ -365,7 +264,7 @@ def aggregate_verdicts(
     Returns:
         The panel result.
     """
-    hunks = diff_hunks(ctx.diff)
+    hunks = review.diff_hunks(ctx.diff)
     prior_keys = {review_records.finding_key(f) for f in ctx.prior_findings}
 
     grounded_seats: list[review_records.ReviewVerdict] = []
@@ -441,12 +340,10 @@ def render_findings(findings: tuple[review_records.Finding, ...]) -> str:
 __all__ = [
     "ALLOWED_BLOCK_CATEGORIES",
     "ALL_CATEGORIES",
-    "Hunk",
     "PanelResult",
     "ReviewBlockOn",
     "ReviewContext",
     "aggregate_verdicts",
-    "diff_hunks",
     "findings_within",
     "is_grounded",
     "render_findings",

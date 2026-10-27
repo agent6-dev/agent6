@@ -33,6 +33,9 @@ ACP carries a tool call as two messages.
 
 Worker text and thinking arrive as they stream; side-role output stays out of the conversation.
 
+Inspect persisted [line-origin evidence](usage.md#session-findings) with `agent6 sessions findings <id>` or the web Findings card.
+ACP notices do not include line-origin tags.
+
 Three more updates ride the journal.
 
 - `session_info_update`: the task's headline as the session title, the line `agent6 sessions list` shows

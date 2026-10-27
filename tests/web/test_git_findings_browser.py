@@ -17,6 +17,40 @@ browser = test_web_browser.browser
 open_page = test_web_browser.open_page
 
 
+def test_pre_existing_badge_opens_base_lines_and_blame_without_changing_severity(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    evidence: tuple[int, dict[str, Any]],
+) -> None:
+    from playwright.sync_api import expect
+
+    port, revs = evidence
+    page, errors = open_page(port)
+    url = f"http://127.0.0.1:{port}/#/session/review-run"
+    page.goto(url)
+    older = page.locator('.card-findings .finding[data-finding="rename"]')
+    changed = page.locator('.card-findings .finding[data-finding="head"]')
+    expect(older).to_contain_text("block · open")
+    expect(changed).to_contain_text("block · open")
+    assert changed.locator(".finding-origin").count() == 0
+    badge = older.get_by_role("link", name="Pre-existing line", exact=True)
+    expect(badge).to_be_visible()
+    expect(badge).to_have_attribute(
+        "title", "The cited lines exist at the base. This does not date the defect."
+    )
+    badge.click()
+    expect(page.locator('.files-text [data-line="2"].finding-selected')).to_contain_text("second")
+    page.reload()
+    expect(page.locator('.files-text [data-line="2"].finding-selected')).to_contain_text("second")
+    page.goto(url)
+    older.get_by_role("link", name="Blame " + revs["base"][:7], exact=True).click()
+    expect(page).to_have_url(f"http://127.0.0.1:{port}/#/git/commit/{revs['base']}")
+    expect(page.locator(".git-app")).to_contain_text("base")
+    page.goto(url)
+    expect(older).to_contain_text("block · open")
+    expect(changed).to_contain_text("block · open")
+    assert not errors
+
+
 @pytest.mark.parametrize("mode", ["inline", "split", "old", "new", "narrow", "truncated"])
 def test_reviewed_diff_deep_link_reload_and_exact_file(
     open_page: Callable[[int], tuple[Page, list[str]]],

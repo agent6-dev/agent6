@@ -4,8 +4,11 @@ import dataclasses
 import pathlib
 import subprocess
 
+import pydantic
+
 from agent6 import event_log, paths, review_records
 from agent6.sessions import layout
+from agent6.vcs import review
 
 
 def reviewed_session(cwd: pathlib.Path) -> layout.SessionLayout:
@@ -105,6 +108,13 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
             ("file", "context.txt", "head", None),
         )
     )
+    findings = tuple(
+        dataclasses.replace(
+            observation,
+            line_origin=review.classify_line_origin(cwd, target, observation.finding.location),
+        )
+        for observation in findings
+    )
     sink = event_log.EventSink(saved.logs_path)
     sink.emit("session.start", session_id=saved.session_id, mode="run", task="Review parser")
     sink.emit(
@@ -114,9 +124,9 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         turn=1,
         trigger="before_finish",
         target=dataclasses.asdict(target),
-        findings=[
-            dataclasses.asdict(f) | {"finding": f.finding.model_dump(mode="json")} for f in findings
-        ],
+        findings=pydantic.TypeAdapter(tuple[review_records.FindingObservation, ...]).dump_python(
+            findings, mode="json"
+        ),
         injected_finding_ids=[f.finding_id for f in findings],
         block_on="none",
         raw_blocked=False,

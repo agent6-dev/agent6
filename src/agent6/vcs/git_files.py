@@ -184,7 +184,7 @@ def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path) -> str:
 
 
 def blame_lines(
-    path: pathlib.Path, rev: str, name: str, data: bytes, *, lines: int
+    path: pathlib.Path, rev: str, name: str, data: bytes, *, lines: int, start_line: int = 1
 ) -> tuple[BlameLine, ...]:
     """Return attribution from one porcelain read, using checked bytes for the working tree.
 
@@ -193,23 +193,27 @@ def blame_lines(
         rev: A resolved commit or WORKTREE.
         name: The checked repository path.
         data: The bytes the regular-file reader returned, never reopened by blame.
-        lines: The displayed lines, after the text cap.
+        lines: The number of lines to attribute.
+        start_line: The first line to attribute, counted from one.
 
     Returns:
         Attribution in displayed line order, with UTC dates.
 
     Raises:
-        GitError: Git cannot attribute the file, or a `blame.ignoreRevsFile` is not a
-            repository-relative regular file.
+        GitError: The range is invalid, Git cannot attribute the file, or a
+            `blame.ignoreRevsFile` is not a repository-relative regular file.
     """
+    if start_line < 1 or lines < 0:
+        raise errors.GitError("blame requires a positive start line and a nonnegative line count")
     if not lines:
         return ()
+    end_line = start_line + lines - 1
     working = rev == git_history.WORKTREE
     if working and (
         git_history.worktree_entry(path, name) == "untracked"
         or not git_history.head_commit(path)[0]
     ):
-        return tuple(BlameLine(n, "", "not committed", "") for n in range(1, lines + 1))
+        return tuple(BlameLine(n, "", "not committed", "") for n in range(start_line, end_line + 1))
     args = ("--contents", "-") if working else ()
     revs = () if working else (rev,)
     with tempfile.TemporaryDirectory(prefix="agent6-blame-") as tmp:
@@ -222,7 +226,7 @@ def blame_lines(
             "blame",
             "--porcelain",
             "-L",
-            f"1,{lines}",
+            f"{start_line},{end_line}",
             *args,
             *revs,
             "--end-of-options",
