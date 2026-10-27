@@ -100,11 +100,6 @@ def needs_refresh(*, issued_at: float, expires_at: float | None, skew_s: float, 
     return now >= expires_at - margin
 
 
-def _header_safe(token: str) -> bool:
-    """Return whether a token can ride an HTTP header value."""
-    return bool(token) and all(0x21 <= ord(ch) <= 0x7E for ch in token)
-
-
 def _expiry_of(
     data: dict[str, Any], exchange: oauth_config.OAuthExchangeConfig, *, now: float
 ) -> float:
@@ -198,7 +193,10 @@ def run_exchange(
                 trust_env=trust_env,
             )
     except httpx2.HTTPError as exc:
-        raise types.ProviderError(f"could not reach {exchange.endpoint}: {exc}") from exc
+        raise types.ProviderError(
+            f"could not reach {exchange.endpoint}:"
+            f" {_oauth_protocol.scrub(str(exc), (issuer_token,))}"
+        ) from exc
     if 300 <= resp.status_code < 400:
         raise types.ProviderError(
             f"credential exchange redirected (HTTP {resp.status_code}); refusing to follow"
@@ -216,7 +214,7 @@ def run_exchange(
     except ValueError as exc:
         raise types.ProviderError("credential exchange returned a non-JSON body") from exc
     token = data.get(exchange.access_token_field) if isinstance(data, dict) else None
-    if not isinstance(token, str) or not _header_safe(token):
+    if not isinstance(token, str) or not _oauth_protocol.header_safe(token):
         raise types.ProviderError(
             f"credential exchange answered without a usable `{exchange.access_token_field}`"
         )

@@ -74,7 +74,7 @@ def http_stream(
         if 300 <= resp.status_code < 400:
             raise types.ProviderError(
                 f"provider redirected (HTTP {resp.status_code}) to"
-                f" {resp.headers.get('location', '?')}; refusing to follow with credentials",
+                f" {_transport.redirect_host(resp)}; refusing to follow with credentials",
                 status_code=resp.status_code,
             )
         yield resp

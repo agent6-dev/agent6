@@ -51,6 +51,11 @@ def trust_env_for(url: str) -> bool:
     return not _surfaces.is_loopback_host(parse.urlsplit(url).hostname or "")
 
 
+def redirect_host(resp: httpx2.Response) -> str:
+    """Return the host a redirect points at; the rest of its Location may echo a credential."""
+    return parse.urlsplit(resp.headers.get("location", "")).netloc or "?"
+
+
 def http_post(
     url: str, *, headers: dict[str, str], content: bytes, timeout: float
 ) -> httpx2.Response:
@@ -356,7 +361,7 @@ class ProviderCall:
                 # Redirects are never followed: the bearer would go wherever `location` says.
                 raise types.ProviderError(
                     f"{self.api_label} API redirected (HTTP {resp.status_code}) to"
-                    f" {resp.headers.get('location', '?')}; refusing to follow with credentials",
+                    f" {redirect_host(resp)}; refusing to follow with credentials",
                     status_code=resp.status_code,
                 )
             if not 200 <= resp.status_code < 300:

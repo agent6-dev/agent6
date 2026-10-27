@@ -108,7 +108,7 @@ def parse_callback(pasted: str, *, state: str, redirect_uri: str = "") -> str:
         raise ValueError("the callback carries both a code and an error; it must carry one of them")
     if errors:
         descriptions = [v for k, v in pairs if k == "error_description"]
-        detail = (descriptions[0] if descriptions else "") or errors[0]
+        detail = printable((descriptions[0] if descriptions else "") or errors[0])
         raise ValueError(f"sign-in was refused: {detail}")
     if len(codes) > 1:
         raise ValueError("the callback must carry exactly one code")
@@ -233,10 +233,15 @@ def grant_from_response(resp: httpx2.Response, *, operation: str, label: str) ->
     access = data.get("access_token") if isinstance(data, dict) else None
     if not isinstance(access, str) or not access:
         raise types.ProviderError(f"{label} token {operation} response carried no access_token")
+    if not header_safe(access):
+        raise types.ProviderError(
+            f"{label} token {operation} response carried an access_token that cannot ride a"
+            " header (a control character or a non-ASCII byte; the value is not shown)"
+        )
     refresh = data.get("refresh_token")
     if refresh is None:
         refresh = ""
-    if not isinstance(refresh, str):
+    if not isinstance(refresh, str) or not header_safe(refresh or "x"):
         raise types.ProviderError(
             f"{label} token {operation} response carried an unusable refresh_token"
         )
@@ -266,6 +271,11 @@ def grant_from_response(resp: httpx2.Response, *, operation: str, label: str) ->
     )
 
 
+def header_safe(token: str) -> bool:
+    """Return whether a token can ride an HTTP header value: visible ASCII, no space."""
+    return bool(token) and all(0x21 <= ord(ch) <= 0x7E for ch in token)
+
+
 def scrub(text: str, secrets: tuple[str, ...]) -> str:
     """Return the text with every echoed credential value replaced.
 
@@ -290,9 +300,14 @@ def redirect_refusal(resp: httpx2.Response, *, operation: str, label: str) -> ty
     """Return the error for a token endpoint that answered with a redirect, never followed."""
     return types.ProviderError(
         f"{label} token {operation} redirected (HTTP {resp.status_code}) to"
-        f" {resp.headers.get('location', '?')}; refusing to follow with credentials",
+        f" {_transport.redirect_host(resp)}; refusing to follow with credentials",
         status_code=resp.status_code,
     )
+
+
+def printable(text: str, limit: int = 300) -> str:
+    """Return remote text fit for a terminal: printable characters only, clipped."""
+    return "".join(ch for ch in text if ch.isprintable())[:limit]
 
 
 def token_error(
@@ -316,11 +331,11 @@ def token_error(
         A 401 naming the reconnect for a dead refresh token; otherwise an error
         carrying the response's status for the retry policy.
     """
-    body = scrub(resp.text[:2000], secrets)
+    body = scrub(resp.text, secrets)[:2000]
     code = ""
     try:
         err = json.loads(body).get("error")
-        code = str(err.get("code") if isinstance(err, dict) else err or "")
+        code = printable(str(err.get("code") if isinstance(err, dict) else err or ""), 80)
     except (ValueError, AttributeError):
         pass
     if resp.status_code == 401 or code in PERMANENT_REFRESH_CODES:
@@ -383,7 +398,9 @@ def exchange_code(
             headers=headers,
         )
     except httpx2.HTTPError as exc:
-        raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
+        raise types.ProviderError(
+            f"could not reach {token_endpoint}: {scrub(str(exc), (code, verifier))}"
+        ) from exc
     if 300 <= resp.status_code < 400:
         raise redirect_refusal(resp, operation="exchange", label=label)
     if resp.status_code >= 400:
@@ -435,7 +452,9 @@ def refresh_grant(
             headers=headers,
         )
     except httpx2.HTTPError as exc:
-        raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
+        raise types.ProviderError(
+            f"could not reach {token_endpoint}: {scrub(str(exc), (refresh_token,))}"
+        ) from exc
     if 300 <= resp.status_code < 400:
         raise redirect_refusal(resp, operation="refresh", label=label)
     if resp.status_code >= 400:
@@ -483,7 +502,12 @@ def revoke_tokens(
             revocation_endpoint, body, encoding=encoding, timeout_s=timeout_s, headers=headers
         )
     except httpx2.HTTPError as exc:
-        return f"could not reach {revocation_endpoint}: {exc}"
+        return f"could not reach {revocation_endpoint}: {scrub(str(exc), (token,))}"
+    if 300 <= resp.status_code < 400:
+        return (
+            f"redirected (HTTP {resp.status_code}) to {_transport.redirect_host(resp)};"
+            " not followed, so nothing was revoked"
+        )
     if resp.status_code >= 400:
         return f"HTTP {resp.status_code}: {scrub(resp.text, (token,))[:200]}"
     return None
@@ -572,8 +596,11 @@ def start_device_grant(
         )
     except (ValueError, KeyError, TypeError) as exc:
         raise types.ProviderError(f"{label} device sign-in response was malformed") from exc
-    if parse.urlsplit(grant.verification_uri).scheme != "https":
-        raise types.ProviderError(f"{label} device sign-in named a verification URI off https")
+    uris = (grant.verification_uri, grant.verification_uri_complete)
+    if parse.urlsplit(grant.verification_uri).scheme != "https" or any(
+        u != printable(u, 2048) for u in uris
+    ):
+        raise types.ProviderError(f"{label} device sign-in named an unusable verification URI")
     if not grant.user_code.isprintable() or len(grant.user_code) > 64:
         raise types.ProviderError(f"{label} device sign-in response carried an unusable user code")
     return grant
@@ -626,7 +653,9 @@ def poll_device_grant(
                 token_endpoint, body, encoding=encoding, timeout_s=timeout_s, headers=headers
             )
         except httpx2.HTTPError as exc:
-            raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
+            raise types.ProviderError(
+                f"could not reach {token_endpoint}: {scrub(str(exc), (grant.device_code,))}"
+            ) from exc
         if 300 <= resp.status_code < 400:
             raise redirect_refusal(resp, operation="device poll", label=label)
         code = error_code_of(resp)
