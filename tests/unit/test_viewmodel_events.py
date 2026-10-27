@@ -41,6 +41,20 @@ def test_unknown_and_telemetry_and_typeless_become_rawevent() -> None:
 def test_coercion_matches_the_folds_historical_defaults() -> None:
     # Missing fields default, not raise (the fold never validated).
     assert ev.parse_event({"type": "role.call"}) == ev.RoleCall(role="", model="", provider="")
+    # The pairing fields read with defaults, so a journal written without them folds as before;
+    # a seat index is an int, never a bool.
+    paired = ev.parse_event(
+        {"type": "role.call", "role": "review:x", "model_call_id": "abc", "seat_index": 1}
+    )
+    assert paired == ev.RoleCall(
+        role="review:x", model="", provider="", model_call_id="abc", seat_index=1
+    )
+    result = ev.parse_event(
+        {"type": "role.result", "ok": False, "model_call_id": "abc", "seat_index": True}
+    )
+    assert isinstance(result, ev.RoleResult)
+    assert (result.ok, result.model_call_id, result.seat_index) == (False, "abc", None)
+    assert ev.parse_event({"type": "role.result", "tokens_out": 7}).ok is True  # type: ignore[union-attr]
     # as_int swallows a non-numeric token to 0 (role.result context math).
     assert ev.parse_event({"type": "role.result", "tokens_in": "nope"}).tokens_in == 0  # type: ignore[union-attr]
     # ok tolerates the legacy stringified booleans: "True" folds ok, "False"

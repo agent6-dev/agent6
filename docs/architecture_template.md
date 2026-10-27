@@ -503,8 +503,8 @@ The `logs.jsonl` vocabulary is small and stable, and is the data contract for an
 | `verify.start` / `.end` | `verify_id`, `execution_id`, command, scope, selected paths, timeout and `tree_before`; end adds `tree_after`, outcome, exit code, duration, 2,000-character stdout and stderr tails and nullable truncation flags |
 | `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `decisions.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
 | `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`resumed`: an adopted gate carried into a new execution; `agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
-| `role.call` | `role`, `model`, `provider` |
-| `role.result` | `role`, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
+| `role.call` | `role`, `model`, `provider`, `model_call_id` (shared with its result), `seat_index` under a review panel |
+| `role.result` | `role`, `model`, `provider`, `model_call_id`, `seat_index` under a review panel, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
 | `role.text_delta` | streamed assistant text chunk |
 | `role.thinking_delta` | streamed reasoning chunk |
 | `session.steer_requested` | `source` (`"sigint"`): mid-run Ctrl-C |

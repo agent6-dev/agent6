@@ -67,6 +67,13 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
     providers.build_review_seats(cfg, transcript_sink=sink, budget=mock.MagicMock(), n=1)
     assert sink.for_seat.call_args == mock.call("review:security")
 
+    # Each instrumented seat carries its roster index, so concurrent seats' calls pair up.
+    unpinned = cfg.model_copy(update={"review": ReviewConfig(trigger="on_verify_fail")})
+    seats = providers.build_review_seats(
+        unpinned, transcript_sink=sink, budget=mock.MagicMock(), n=2, events=mock.MagicMock()
+    )
+    assert [getattr(s.provider, "seat_index", None) for s in seats] == [0, 1]
+
     # The role builders keep stamping the role itself.
     sink = mock.MagicMock()
     providers.build_role_provider(cfg, "worker", transcript_sink=sink, budget=mock.MagicMock())

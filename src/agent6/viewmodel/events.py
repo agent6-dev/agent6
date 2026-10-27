@@ -86,6 +86,12 @@ def readable_summary(value: Any) -> str:
     return str(value)
 
 
+def _seat_index(raw: dict[str, Any]) -> int | None:
+    """Return the panel seat index a role event carries, None outside a panel."""
+    value = raw.get("seat_index")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 def as_int(value: object) -> int:
     """Return an event field as an int, 0 for anything unusable."""
     try:
@@ -142,20 +148,29 @@ class AutoCommit:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class RoleCall:
-    """role.call: a model call began for a role."""
+    """role.call: a model call began for a role; `model_call_id` pairs it with its result."""
 
     role: str
     model: str
     provider: str
+    model_call_id: str = ""
+    seat_index: int | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class RoleResult:
-    """role.result: a model call returned, with its input token counts."""
+    """role.result: a model call returned, with its identity, outcome and token counts."""
 
     tokens_in: int
     cache_read: int
     cache_creation: int
+    tokens_out: int = 0
+    ok: bool = True
+    role: str = ""
+    model: str = ""
+    provider: str = ""
+    model_call_id: str = ""
+    seat_index: int | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -573,12 +588,21 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
                 role=str(raw.get("role", "")),
                 model=str(raw.get("model", "")),
                 provider=str(raw.get("provider", "")),
+                model_call_id=str(raw.get("model_call_id", "")),
+                seat_index=_seat_index(raw),
             )
         case "role.result":
             return RoleResult(
                 tokens_in=as_int(raw.get("tokens_in")),
                 cache_read=as_int(raw.get("cache_read")),
                 cache_creation=as_int(raw.get("cache_creation")),
+                tokens_out=as_int(raw.get("tokens_out")),
+                ok=raw.get("ok") is not False,
+                role=str(raw.get("role", "")),
+                model=str(raw.get("model", "")),
+                provider=str(raw.get("provider", "")),
+                model_call_id=str(raw.get("model_call_id", "")),
+                seat_index=_seat_index(raw),
             )
         case "role.text_delta":
             return RoleTextDelta(text=str(raw.get("text", "")))

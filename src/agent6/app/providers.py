@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import dataclasses
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -295,6 +296,8 @@ class InstrumentedProvider:
         provider_name: The provider entry name the events carry.
         events: The sink the events go to; None emits nothing.
         budget: The tracker whose snapshot `budget.update` carries.
+        seat_index: The review panel seat's index, carried by its events; None outside a
+            panel.
         stream_text: Whether to fan text and reasoning deltas out as events without a
             caller callback.
     """
@@ -306,6 +309,7 @@ class InstrumentedProvider:
     events: event_log.EventSink | None
     budget: agent6_budget.BudgetTracker
     stream_text: bool = False
+    seat_index: int | None = None
 
     def call(
         self,
@@ -341,13 +345,9 @@ class InstrumentedProvider:
         Raises:
             ProviderError: The inner call failed; the provider name is filled in.
         """
+        model_call_id = uuid.uuid4().hex
         if self.events is not None:
-            self.events.emit(
-                "role.call",
-                role=self.role,
-                model=self.model,
-                provider=self.provider_name,
-            )
+            self.events.emit("role.call", **self._identity(model_call_id))
         # Every live view subscribes to the delta events; a caller callback chains through.
         role_for_event = self.role
         events = self.events
@@ -388,13 +388,15 @@ class InstrumentedProvider:
             if isinstance(exc, ProviderError) and not exc.provider:
                 exc.provider = self.provider_name  # the hint names the config key
             if self.events is not None:
-                self.events.emit("role.result", role=self.role, ok=False, error=str(exc)[:200])
+                self.events.emit(
+                    "role.result", **self._identity(model_call_id), ok=False, error=str(exc)[:200]
+                )
             self._emit_budget()
             raise
         if self.events is not None:
             self.events.emit(
                 "role.result",
-                role=self.role,
+                **self._identity(model_call_id),
                 ok=True,
                 # The settled prose: a headless run streams no deltas, so this is its only text.
                 text=resp.text,
@@ -406,6 +408,18 @@ class InstrumentedProvider:
             )
         self._emit_budget()
         return resp
+
+    def _identity(self, model_call_id: str) -> dict[str, Any]:
+        """Return the fields that pair a `role.call` with its `role.result`."""
+        fields: dict[str, Any] = {
+            "role": self.role,
+            "model": self.model,
+            "provider": self.provider_name,
+            "model_call_id": model_call_id,
+        }
+        if self.seat_index is not None:
+            fields["seat_index"] = self.seat_index
+        return fields
 
     def close(self) -> None:
         """Release what the inner provider holds."""
@@ -542,7 +556,7 @@ def build_review_seats(
                 f" [providers.{rm.provider}] is missing"
             )
     seats: list[_reviewer.ReviewSeat] = []
-    for seat_focus, rm in resolved:
+    for seat_index, (seat_focus, rm) in enumerate(resolved):
         assert rm is not None  # every route was checked before constructing any provider
         provider = _provider_from_entry(
             rm.provider,
@@ -560,6 +574,7 @@ def build_review_seats(
                 provider_name=rm.provider,
                 events=events,
                 budget=budget,
+                seat_index=seat_index,
             )
         seats.append(
             _reviewer.ReviewSeat(

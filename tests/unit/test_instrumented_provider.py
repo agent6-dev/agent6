@@ -8,6 +8,7 @@ run.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 from typing import Any
@@ -42,6 +43,42 @@ def _wrap(inner: mock.MagicMock) -> providers.InstrumentedProvider:
         events=mock.MagicMock(),
         budget=agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
     )
+
+
+def _emitted(events: mock.MagicMock, kind: str) -> list[dict[str, Any]]:
+    return [dict(c.kwargs) for c in events.emit.call_args_list if c.args == (kind,)]
+
+
+def test_a_call_and_its_result_share_one_id_and_identity() -> None:
+    """`role.call` and `role.result` carry one `model_call_id`, the model and the provider."""
+    inner = mock.MagicMock()
+    inner.call.return_value = _resp()
+    wrapper = _wrap(inner)
+    wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    (call,) = _emitted(wrapper.events, "role.call")  # type: ignore[arg-type]
+    (result,) = _emitted(wrapper.events, "role.result")  # type: ignore[arg-type]
+    assert len(call["model_call_id"]) == 32 and call["model_call_id"] == result["model_call_id"]
+    assert "seat_index" not in call and "seat_index" not in result
+    for fields in (call, result):
+        assert (fields["role"], fields["model"], fields["provider"]) == (
+            "worker",
+            "moonshotai/kimi-k2.6",
+            "openai",
+        )
+    assert result["ok"] is True and result["tokens_out"] == 1
+
+
+def test_a_failed_call_keeps_its_id_and_a_seat_carries_its_index() -> None:
+    inner = mock.MagicMock()
+    inner.call.side_effect = RuntimeError("down")
+    wrapper = dataclasses.replace(_wrap(inner), seat_index=2)
+    with pytest.raises(RuntimeError):
+        wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    (call,) = _emitted(wrapper.events, "role.call")  # type: ignore[arg-type]
+    (result,) = _emitted(wrapper.events, "role.result")  # type: ignore[arg-type]
+    assert call["model_call_id"] == result["model_call_id"]
+    assert call["seat_index"] == result["seat_index"] == 2
+    assert result["ok"] is False and result["model"] == "moonshotai/kimi-k2.6"
 
 
 def test_instrumented_provider_forwards_reasoning_effort() -> None:
