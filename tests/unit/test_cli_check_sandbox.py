@@ -33,7 +33,8 @@ _ENV = detect.Environment(
 _MOUNTS = (
     tool_paths.ToolMount(pathlib.Path("/opt/tools/bin"), on_path=True),
     tool_paths.ToolMount(
-        pathlib.Path("/opt/tools/lib/x"), links=(pathlib.Path("/opt/tools/bin/x"),)
+        pathlib.Path("/opt/tools/lib/x"),
+        links=(tool_paths.ToolLink(pathlib.Path("/opt/tools/bin/x")),),
     ),
 )
 
@@ -846,6 +847,93 @@ def test_linked_tool_keeps_bin_when_the_install_root_holds_path(
     assert bin_row == _sandbox_paths.Row("ro", target.parent, note, "tool")
     _check_render.rows([bin_row])
     assert capsys.readouterr().out.strip() == f"ro  tool  {target.parent}  ({note})"
+
+
+@pytest.mark.parametrize("plain_first", [False, True])
+def test_linked_tool_row_names_the_directory_link(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    plain_first: bool,
+) -> None:
+    """Name the directory link whose parent keeps a shim's target visible."""
+    bins = tmp_path / "pathdir"
+    bins.mkdir()
+    pythons = tmp_path / "data" / "python"
+    root = pythons / "cpython-3.12.13-linux"
+    target = root / "bin" / "py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    directory = pythons / "cpython-3.12-linux"
+    directory.symlink_to(root.name, target_is_directory=True)
+    shim = bins / "py"
+    shim.symlink_to(directory / "bin" / "py")
+    if plain_first:
+        plain = pythons / "bin" / "py"
+        plain.parent.mkdir()
+        plain.touch()
+        (bins / "a").symlink_to(plain)
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
+
+    rows = _sandbox_paths._tool_rows()
+
+    assert {r.path for r in rows} == {bins, pythons}
+    row = next(r for r in rows if r.path == pythons)
+    note = f"{shim} links into {pythons} through {directory}"
+    if plain_first:
+        note += ", 1 more"
+    assert row == _sandbox_paths.Row("ro", pythons, note, "tool")
+    _check_render.rows([row])
+    assert capsys.readouterr().out.strip() == f"ro  tool  {pythons}  ({note})"
+
+
+@pytest.mark.parametrize("parent_kind", ["ancestor", "home", "path", "private", "private-parent"])
+def test_linked_tool_keeps_resolved_root_when_link_parent_is_unsafe(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    parent_kind: str,
+) -> None:
+    """Refuse an unsafe directory-link parent and report the resolved-root fallback."""
+    home = tmp_path / "home"
+    bins = home / ".local" / "bin"
+    bins.mkdir(parents=True)
+    root = tmp_path / "data" / "python" / "cpython-3.12.13-linux"
+    target = root / "bin" / "py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    private_parent = tmp_path / "private-holder"
+    private = private_parent / "agent6"
+    private.mkdir(parents=True)
+    parent = {
+        "ancestor": tmp_path,
+        "home": home,
+        "path": root.parent,
+        "private": private,
+        "private-parent": private_parent,
+    }[parent_kind]
+    directory = parent / "cpython-3.12-linux"
+    directory.symlink_to(root, target_is_directory=True)
+    shim = bins / "py"
+    shim.symlink_to(directory / "bin" / "py")
+    path_dirs = [bins]
+    if parent_kind == "path":
+        path_dir = parent / "other" / "bin"
+        path_dir.mkdir(parents=True)
+        path_dirs.append(path_dir)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(private_parent))
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: tuple(path_dirs))
+
+    _, mounts = tool_paths.operator_tool_paths()
+
+    assert mounts == tuple(sorted((*path_dirs, root)))
+    rows = [r for r in _sandbox_paths._tool_rows() if r.path == root]
+    refusal = f"{parent} holds a PATH directory" if parent_kind == "path" else str(parent)
+    note = f"{shim} links into {root}; install root not widened: {refusal}"
+    assert rows == [_sandbox_paths.Row("ro", root, note, "tool")]
+    _check_render.rows(rows)
+    assert capsys.readouterr().out.strip() == f"ro  tool  {root}  ({note})"
 
 
 @pytest.mark.parametrize("target_dir", ["bin", "libexec"])

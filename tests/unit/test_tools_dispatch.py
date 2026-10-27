@@ -2027,7 +2027,41 @@ def test_linked_tool_widens_only_roots_without_path_directories(
     grant = root if path_subdir is None else target.parent
     assert mounts == tuple(sorted({*path_dirs, grant}))
     mount = next(m for m in tool_paths.operator_tool_mounts() if m.path == grant)
-    assert mount.links == (link,)
+    assert mount.links == (tool_paths.ToolLink(link),)
+
+
+@pytest.mark.parametrize("target_kind", ["plain", "directory-link", "shim-chain"])
+def test_linked_tool_keeps_directory_links_visible(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target_kind: str
+) -> None:
+    """Keep the directory link in the grant without widening a plain install target."""
+    from agent6.sandbox import tool_paths
+
+    bins = tmp_path / "pathdir"
+    bins.mkdir()
+    pythons = tmp_path / "data" / "python"
+    root = pythons / "cpython-3.12.13-linux"
+    target = root / "bin" / "py"
+    target.parent.mkdir(parents=True)
+    target.touch()
+    directory = pythons / "cpython-3.12-linux"
+    directory.symlink_to(root.name, target_is_directory=True)
+    shim = bins / "py"
+    if target_kind == "plain":
+        shim.symlink_to(target)
+    elif target_kind == "directory-link":
+        shim.symlink_to(directory / "bin" / "py")
+    else:
+        launcher = tmp_path / "data" / "launcher"
+        launcher.symlink_to(f"python/{directory.name}/bin/py")
+        shim.symlink_to("../data/launcher")
+    monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
+
+    path, mounts = tool_paths.operator_tool_paths()
+
+    grant = root if target_kind == "plain" else pythons
+    assert mounts == tuple(sorted((bins, grant)))
+    assert str(grant) not in path.split(":")
 
 
 @pytest.mark.parametrize("linked", [False, True])
@@ -2061,7 +2095,7 @@ def test_operator_tool_paths_grants_uv_python_only_through_a_shim(
     assert str(root) not in path.split(":")
     if linked:
         mount = next(m for m in tool_paths.operator_tool_mounts() if m.path == root)
-        assert mount.links == (shim,)
+        assert mount.links == (tool_paths.ToolLink(shim),)
 
 
 def test_tool_mounts_have_no_uv_specific_description() -> None:

@@ -169,9 +169,12 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
       agent6 warns about such a grant at run start and in `agent6 check sandbox`.
       Under `full` `sandbox.isolation`, agent6 hides only its own config dir and state base, plus the paths in `sandbox.hide_paths`
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
-    - a symlink into `<root>/bin` grants `<root>` read-only only if no jail PATH directory lies at or under `<root>`; other targets grant their directory.
+    - a tool shim whose target passes through a directory symlink grants the parent of the first such link read-only, so the link stays visible.
+      `agent6 check sandbox` names the link in the grant's row.
+      If that parent is refused, or the target has no directory link, a symlink into `<root>/bin` grants `<root>` read-only; other targets grant their directory.
       A refused root keeps the `bin` grant.
-      Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
+      Refused widening: a dir holding a jail PATH directory, a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it.
+      The row names each refusal
     - a fork's execution or a `run --worktree` run (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `full` `sandbox.isolation`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
       The main checkout's `.git` is read-only only under `full` `sandbox.isolation` with `protect_git`, so a worktree's is the more confined of the two.
       The model's prompt says so

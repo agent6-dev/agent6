@@ -56,28 +56,90 @@ def _never_mounted(p: pathlib.Path) -> bool:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ToolLink:
+    """A tool shim and the directory link preserved by its grant."""
+
+    source: pathlib.Path
+    through: pathlib.Path | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class ToolMount:
     """A real dir the jail mounts read+exec for operator tools.
 
     Attributes:
         path: The dir, at its real location.
         on_path: The directory is on the jail's PATH.
-        links: Symlink sources whose targets live under this directory.
-        root_refusal: The refused install root, with the PATH reason when applicable.
+        links: Tool shims whose targets pass through this directory.
+        root_refusal: Refused widening, with the PATH reason when applicable.
     """
 
     path: pathlib.Path
     on_path: bool = False
-    links: tuple[pathlib.Path, ...] = ()
+    links: tuple[ToolLink, ...] = ()
     root_refusal: str = ""
+
+
+def _first_linked_directory(entry: pathlib.Path) -> pathlib.Path | None:
+    """Find the first directory link in a shim's unresolved target chain.
+
+    Returns:
+        The directory link, or None when the chain has none.
+    """
+    # Match the kernel's limit so a changing chain cannot keep discovery running.
+    for _ in range(40):
+        if not entry.is_symlink():
+            break
+        entry = entry.parent / entry.readlink()
+        for parent in reversed(entry.parents):
+            if parent.is_symlink():
+                return parent
+    return None
+
+
+def _root_refusal(root: pathlib.Path, path_dirs: tuple[pathlib.Path, ...]) -> str:
+    if _never_mounted(root):
+        return str(root)
+    if any(p.is_relative_to(root) for p in path_dirs):
+        return f"{root} holds a PATH directory"
+    return ""
+
+
+def _linked_tool_mount(
+    entry: pathlib.Path, path_dirs: tuple[pathlib.Path, ...]
+) -> ToolMount | None:
+    try:
+        real = entry.resolve()
+        directory = _first_linked_directory(entry)
+    except (OSError, RuntimeError):
+        return None
+    parent = real.parent
+    if not real.is_file() or _never_mounted(parent):
+        return None
+    refusal = ""
+    through = None
+    if directory is not None:
+        root = directory.parent.resolve()
+        refusal = _root_refusal(root, path_dirs)
+        if not refusal:
+            parent, through = root, directory
+    if through is None and parent.name == "bin":
+        root = parent.parent
+        if root_refusal := _root_refusal(root, path_dirs):
+            refusal = "; ".join(dict.fromkeys(r for r in (refusal, root_refusal) if r))
+        else:
+            parent = root
+    if _under_system_root(parent) and not refusal:
+        return None
+    return ToolMount(parent, links=(ToolLink(entry, through),), root_refusal=refusal)
 
 
 def operator_tool_mounts() -> tuple[ToolMount, ...]:
     """Return the dirs the jail mounts read+exec, each with its reason, sorted by path.
 
-    Recomputed per call, so a tool just installed is picked up. A symlink into
-    `<root>/bin` grants the root only if it holds no jail PATH directory and passes
-    the mount safety checks. Other links grant the target's directory.
+    Recomputed per call, so a tool just installed is picked up. A shim through a
+    directory link grants that link's parent if safe. Otherwise, a target in
+    `<root>/bin` grants the root if safe; other targets grant their directory.
 
     Returns:
         The mounts, with every discovery source retained for each directory.
@@ -85,7 +147,7 @@ def operator_tool_mounts() -> tuple[ToolMount, ...]:
     bin_dirs = tuple(d for d in _tool_bin_dirs() if d.is_dir())
     path_dirs = tuple(pathlib.Path(p) for p in _JAIL_BASE_PATH_DIRS) + bin_dirs
     on_path: set[pathlib.Path] = set()
-    links: dict[pathlib.Path, list[pathlib.Path]] = {}
+    links: dict[pathlib.Path, list[ToolLink]] = {}
     root_refusals: dict[pathlib.Path, str] = {}
     for d in bin_dirs:
         if not _under_system_root(d) and not _never_mounted(d):
@@ -97,23 +159,11 @@ def operator_tool_mounts() -> tuple[ToolMount, ...]:
         for entry in sorted(entries):
             if not entry.is_symlink():
                 continue
-            try:
-                real = entry.resolve()
-            except OSError:
-                continue
-            parent = real.parent
-            if not real.is_file() or _never_mounted(parent):
-                continue
-            if parent.name == "bin":
-                root = parent.parent
-                if _never_mounted(root):
-                    root_refusals[parent] = str(root)
-                elif any(p.is_relative_to(root) for p in path_dirs):
-                    root_refusals[parent] = f"{root} holds a PATH directory"
-                else:
-                    parent = root
-            if not _under_system_root(parent) or parent in root_refusals:
-                links.setdefault(parent, []).append(entry)
+            mount = _linked_tool_mount(entry, path_dirs)
+            if mount is not None:
+                links.setdefault(mount.path, []).extend(mount.links)
+                if mount.root_refusal:
+                    root_refusals[mount.path] = mount.root_refusal
     return tuple(
         ToolMount(path, path in on_path, tuple(links.get(path, ())), root_refusals.get(path, ""))
         for path in sorted(on_path | links.keys())

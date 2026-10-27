@@ -102,9 +102,10 @@ def _tool_rows(mounts: tuple[tool_paths.ToolMount, ...] | None = None) -> list[R
     for mount in tool_paths.operator_tool_mounts() if mounts is None else mounts:
         notes = ["on the jail's PATH"] if mount.on_path else []
         if mount.links:
-            first, *others = mount.links
+            first, *others = sorted(mount.links, key=lambda link: link.through is None)
             more = f", {len(others)} more" if others else ""
-            notes.append(f"{first} links into {mount.path}{more}")
+            through = f" through {first.through}" if first.through is not None else ""
+            notes.append(f"{first.source} links into {mount.path}{through}{more}")
         if mount.root_refusal:
             notes.append(f"install root not widened: {mount.root_refusal}")
         rows.append(Row("ro", mount.path, "; ".join(notes), "tool"))
@@ -118,10 +119,15 @@ def _group_install_roots(
 ) -> list[Row]:
     roots: dict[pathlib.Path, tool_paths.ToolMount] = {}
     for mount in mounts:
-        if mount.on_path or not mount.links or mount.root_refusal:
+        if (
+            mount.on_path
+            or not mount.links
+            or mount.root_refusal
+            or any(link.through is not None for link in mount.links)
+        ):
             continue
         try:
-            if any(link.resolve().parent == mount.path / "bin" for link in mount.links):
+            if any(link.source.resolve().parent == mount.path / "bin" for link in mount.links):
                 roots[mount.path] = mount
         except OSError:
             # A link that disappears during the report leaves its grant in a separate row.
@@ -137,7 +143,7 @@ def _group_install_roots(
             continue
         first = group[0]
         links = [roots[row.path].links for row in group]
-        shown = [entries[0] for entries in links]
+        shown = [entries[0].source for entries in links]
         names = [str(shown[0])] + [
             link.name if link.parent == shown[0].parent else str(link) for link in shown[1:]
         ]
