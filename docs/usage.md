@@ -175,6 +175,8 @@ Every front-end answers a prompt by writing one file in the session directory, a
   - `[agent6] approval-2 approved (frontend)` when an already-attached front-end answers
   - `[agent6] approval-2 approved (await-frontend)` when the run waits for a front-end reply
 - `agent6 answer <id>` lists the pending questions; `agent6 answer <id> [--question QID] TEXT...` answers one set, one TEXT per question; a queued question's answer reaches the run at its next turn, an ended run's at its resume
+  - `finish_session` polls for queued answers before ending and defers to another model turn if one arrived.
+  - An answer arriving after that poll waits for resume.
 - a question is pending from its prompt until its answer; a waiting one pauses the run while the execution that asked it lives, a queued one or one an earlier execution asked pauses nothing; every surface words it the same way (waiting, queued, asked by an earlier execution, answer saved)
 - a prompt `agent6 attach` is showing closes once another front-end answers it: attach prints `already answered from another surface`, writes no answer and keeps following; the TUI's question modal closes the same way, with the same notice
 - an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; `session` approves this call, and `session` and `session-deny` also apply to later calls only where the prompt's event says `standing: true`)

@@ -97,17 +97,21 @@ def operator_boundary(
 
 
 def operator_state(
-    harness: loop.Harness, conversation: _conversation.Conversation, state: _loop_state.LoopState
+    harness: loop.Harness,
+    conversation: _conversation.Conversation,
+    state: _loop_state.LoopState,
+    *,
+    boundary: bool = True,
 ) -> bool:
-    """Tell the model what the operator's side holds since the last boundary.
+    """Record operator presence and deliver queued answers once.
 
-    The presence (the front-end claim and the away mode) when it first reads or changes, and
-    the answers to queued questions, each recorded as a ruling and delivered once.
+    Presence changes are journaled on every poll but reach the model only at a turn boundary.
 
     Args:
         harness: The execution's harness.
         conversation: The conversation the notices enter.
         state: The execution's state.
+        boundary: Whether to deliver the current presence rather than only journal it.
 
     Returns:
         Whether an answer was delivered.
@@ -116,8 +120,10 @@ def operator_state(
     presence = prompts.presence()
     if presence and presence != state.operator_presence:
         state.operator_presence = presence
-        conversation.notice(f"OPERATOR PRESENCE: {presence}.")
         harness.emit("loop.operator.presence", presence=presence)
+    if boundary and presence and presence != state.operator_presence_notified:
+        state.operator_presence_notified = presence
+        conversation.notice(f"OPERATOR PRESENCE: {presence}.")
     late = prompts.collect_answers()
     if not late:
         return False
@@ -279,7 +285,7 @@ def park_for_steer(
             # A queued task, goal or retirement is work; the next focus banner names it.
             harness.emit("loop.parked.resumed", turn=turn)
             return None
-        if operator_state(harness, conversation, state):
+        if operator_state(harness, conversation, state, boundary=False):
             # A queued question's answer is work too; the model reads it on its next turn.
             harness.emit("loop.parked.resumed", turn=turn)
             return None

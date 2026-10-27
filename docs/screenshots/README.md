@@ -19,86 +19,79 @@ GIF encoding uses its own palette filter.
 
 ## Files
 
-- `tour.tape`: vhs script for the PNGs. Drives hub -> config -> search -> help ->
-  log -> conversation -> dashboard and captures one PNG per stop.
-- `reel.tape`: vhs script for the TUI video. One TUI session (hub, into a
-  run's conversation, Ctrl+D dashboard, back to hub, log, config, search, help)
-  with no `Screenshot` commands (they stall the video clock). Holds are paced by
-  how dense each screen is. The bare recording is kept as `hero-tui.webm` (the
-  hero's TUI segment); `tour.webm` is that recording plus keystroke toasts.
-- `webm.py`: converts VHS output in place and checks WebM colour-space tags.
-  The browser and keystroke overlay encoders share its conversion and check.
-- `keystroke_overlay.py`: overlays animated keystroke toasts on the recording,
-  parsing the tape and scaling the keypress timeline to the actual duration.
-- `seed/`: committed, sanitized run fixtures (trimmed `logs.jsonl` + a few
-  transcripts). The TUI renders the hub and dashboard entirely from these.
-- `seed.py`: installs `seed/` into an isolated `$XDG_STATE_HOME/agent6` under the demo
-  repo's id and writes a demo `config.toml` + `ui.toml` (theme `agent6-dark`).
-- `generate.sh`: the orchestrator. Seeds a temp home, runs `tour.tape` for the
-  PNGs (1920x1080), then records `reel.tape` (`hero-tui.webm`) and overlays
-  keystroke toasts to make `tour.webm`.
-- `build_fixtures.py`: dev tool, not run in CI. Rebuilds `seed/` from real runs
-  under `$XDG_STATE_HOME/agent6/`, trimming token-delta bloat and scrubbing paths.
-- `tui_snapshot.py`: dev tool, not run in CI. Snapshots a TUI screen (dashboard /
-  log / transcript) of any run dir to an SVG (or PNG, if a chromium /
-  `rsvg-convert` is found) via Textual's headless Pilot -- to "see" the TUI while
-  iterating on it, without a terminal. `uv run python docs/screenshots/tui_snapshot.py
-  <session_dir> <out.(svg|png)> [screen]`.
-- `hero.sh`: the three per-surface heroes (`hero-tui`, `hero-cli`, `hero-web`,
-  each `.webm` for the site plus `.gif` for GitHub, which animates a GIF
-  through its image proxy but will not play a webm from another host). Cuts
-  windows out of the three BARE source recordings (`hero-src-tui.webm` from
-  `hero_run.sh`, `hero-src-cli.webm` from `hero_cli.sh`, `hero-src-web.webm`
-  from `web_demo.sh hero` -- no keystroke toasts, no narration banner) and
-  retimes each onto its target length in one ffmpeg pass per surface.
-  Both formats use a 1440x810 canvas.
-- `web_demo.py` + `web_demo.sh`: the web-UI tour (`web-desktop.webm`,
-  `web-phone.webm`). Drives `agent6 web` against the same `seed/` fixtures in a
-  headless Chromium via Playwright, at desktop (1280x800) and phone (390x844)
-  viewports, with an on-page caption banner per step (the browser analogue of
-  `keystroke_overlay.py`).
-  `web_demo.sh hero` records the desktop tour at 1600x900 with `--mode hero --no-narration` to `hero-src-web.webm`.
-  Each video is trimmed
-  (ffmpeg) to drop the SPA loading-screen head so it opens on the hub, the
-  poster frame shown before play.
-  Deterministic, no key, no live LLM. Needs a Playwright-capable Python and
-  ffmpeg; point `$WEB_DEMO_PY` at it (see the script header).
+- `cli_demo.sh`: records or replays a terminal bug-fix run with `cli_demo.tape`, `seed/cli-repo/` and `seed/cli-cassette.jsonl`.
+- `generate.sh`: seeds a temporary home, captures TUI PNGs with `tour.tape`, then records `reel.tape` and overlays keystroke toasts.
+- `hero.sh`: cuts and retimes the three hero source recordings into 1440x810 WebM and GIF clips, one per surface.
+- `hero_cli.sh`: replays the CLI cassette through `hero_cli.tape` to record the CLI hero source without overlays.
+- `hero_run.sh`: replays the CLI cassette in the run TUI through `hero_run.tape` (or a supplied tape) to record the TUI hero source without overlays.
+- `machine_demo.sh`: records or replays the code-fixer machine in the TUI with `machine_demo.tape`, `seed/machine-repo/` and `seed/machine-cassette.jsonl`.
+- `rename_demo.sh`: records or replays the `TASK.md` rename from `Cart` to `ShoppingCart` across `shop/` with `rename_demo.tape`, `seed/rename-repo/` and `seed/rename-cassette.jsonl`.
+- `temps_demo.sh`: records or replays a temperature-conversion fix with `temps_demo.tape`, `seed/temps-repo/` and `seed/temps-cassette.jsonl`.
+- `web_demo.sh`: records seeded desktop and phone web tours, or the web hero source with the `hero` argument, using Playwright.
+- `web_machine_demo.sh`: replays the machine cassette and records the code-fixer machine started and watched from the browser.
+
+Supporting files:
+
+- `tour.tape`: captures one PNG per stop through hub, config, search, help, log, conversation and dashboard.
+- `reel.tape`: records one TUI tour without screenshot commands, which stall the video clock.
+- `webm.py`: converts VHS output in place and checks WebM colour-space tags for the terminal, browser and overlay encoders.
+- `keystroke_overlay.py`: overlays animated keystroke toasts, scaling the tape's keypress timeline to the recording's duration.
+- `seed/`: sanitized run fixtures with trimmed `logs.jsonl` files and transcripts for the seeded tours, plus demo repos and cassettes.
+- `seed.py`: installs the run fixtures into an isolated `$XDG_STATE_HOME/agent6` under the demo repo's id and writes `config.toml` and `ui.toml` with theme `agent6-dark`.
+- `build_fixtures.py`: rebuilds run fixtures from `$XDG_STATE_HOME/agent6/`, trimming token deltas and scrubbing paths; not run in CI.
+- `tui_snapshot.py`: captures a run's dashboard, log or transcript through Textual's headless Pilot as SVG, or PNG with Chromium or `rsvg-convert`; not run in CI.
+- `web_demo.py`: drives the browser tours with Playwright and trims the loading screen from each recording.
+- `llm_proxy.py`: serves recorded LLM responses or forwards live requests to OpenRouter while recording a cassette.
+- `make_cover.py`: composes the README cover from TUI and web screenshots and a frame from the temperature demo.
+- `sync_theme.py`: copies the terminal palette into each tape's `Set Theme` line.
+
+Run a headless TUI snapshot with `uv run python docs/screenshots/tui_snapshot.py <session_dir> <out.(svg|png)> [screen]`.
+Browser recordings need a Playwright-capable Python with Chromium installed; set `$WEB_DEMO_PY` as described in `web_demo.sh`.
 
 ## Demo videos (record/replay)
 
-The demo videos (`cli-demo.webm`, `temps-demo.webm`, `rename-demo.webm`, `machine-demo.webm`) are **real agent6 runs**,
-not seeded fixtures: a real loop, real tools, real verify + commit. Determinism
-comes from `llm_proxy.py`, a tiny stdlib HTTP server agent6 talks to as a local
-model (no agent6 changes, no monkey-patching):
+The cassette-backed demos run the real agent6 loop, tools, verification and commits against their seed repos.
+`llm_proxy.py` supplies the model responses without changing agent6:
 
-- `record` (live, real key): forwards each LLM call to OpenRouter, relays the
-  response, and captures it to a cassette. Run once to capture a real trajectory.
-- `replay` (no key): serves the recorded cassette in order, fully deterministic,
-  so the same run reproduces exactly. This is what CI renders.
+- `record` forwards calls to OpenRouter with a real key and saves the responses to a cassette.
+- `replay` serves the committed cassette in order without a key; CI uses this mode.
 
-Both demos force streaming (`AGENT6_FORCE_STREAM=1`) so the cassette is SSE and
-the model's reasoning streams live in the recording, the same as a real terminal.
+These demos force streaming with `AGENT6_FORCE_STREAM=1` so the SSE cassette streams the model's reasoning in the recording.
+The cassette and its seed repo are committed together because the recorded edits target that exact source.
+Re-record with `record` only when the run itself should change.
+The seeded TUI and web tours render saved sessions without running a model.
 
-- `cli_demo.sh` (`record`|`replay`) + `cli_demo.tape`: a terminal bug-fix run for
-  the CLI audience. `agent6 run` (headless) fixes a failing test, then `sessions diff`,
-  `watch`, `sessions show`. Pure typing, so it renders straight with no toast overlay.
-  Seed: `seed/cli-repo/` (the buggy stats repo) + `seed/cli-cassette.jsonl`; the two
-  hero sources replay this cassette.
-- `temps_demo.sh` (`record`|`replay`) + `temps_demo.tape`: the same shape over
-  `seed/temps-repo/` (a temperature-conversion module with one failing test) +
-  `seed/temps-cassette.jsonl`; `temps-demo.webm` is the run the Terminal UI page embeds.
-- `rename_demo.sh` (`record`|`replay`) + `rename_demo.tape`: a rename task from a
-  `TASK.md` (`Cart` to `ShoppingCart` across `shop/`) over `seed/rename-repo/` +
-  `seed/rename-cassette.jsonl`; rendered on demand, not in CI.
-- `machine_demo.sh` (`record`|`replay`) + `machine_demo.tape`: the code-fixer
-  state machine in the TUI. The Machines page runs the fix-loop (agent edits ->
-  tool verifies -> branch loops) and the watch view streams the agent's reasoning.
-  Seed: `seed/machine-repo/` (the machine bundle + buggy source) +
-  `seed/machine-cassette.jsonl`.
+Outputs under `out/` (built by Pages unless marked on demand):
 
-The cassette and its seed repo are committed together: the recorded edits target
-that exact source. Re-record (`… record`, needs a key) only when the run itself
-should change.
+- `cli-demo.webm`: terminal bug-fix run followed by diff, watch and receipt views; on demand, not in CI.
+- `hero-cli.gif`: CLI hero for GitHub's image proxy, built by `hero.sh`.
+- `hero-cli.webm`: CLI hero for the site, built by `hero.sh`.
+- `hero-src-cli.webm`: CLI hero source from `hero_cli.sh`.
+- `hero-src-tui.webm`: TUI hero source from `hero_run.sh`.
+- `hero-src-web.webm`: 1600x900 web hero source without narration from `web_demo.sh hero`.
+- `hero-tui.gif`: TUI hero for GitHub's image proxy, built by `hero.sh`.
+- `hero-tui.webm`: TUI hero for the site, built by `hero.sh`.
+- `hero-web.gif`: web hero for GitHub's image proxy, built by `hero.sh`.
+- `hero-web.webm`: web hero for the site, built by `hero.sh`.
+- `machine-demo.webm`: code-fixer machine run and watch view in the TUI, with keystroke toasts.
+- `rename-demo.webm`: terminal class-rename task from `rename_demo.sh`; on demand, not in CI.
+- `temps-demo.webm`: terminal temperature-conversion fix embedded on the Terminal UI page.
+- `tour.webm`: seeded TUI tour with keystroke toasts from `generate.sh`.
+- `web-desktop.webm`: seeded 1280x800 web tour with captions from `web_demo.sh`.
+- `web-machine.webm`: browser code-fixer machine tour from `web_machine_demo.sh`.
+- `web-phone.webm`: seeded 390x844 web tour with captions from `web_demo.sh`.
+
+Still images under `out/` (all built by Pages):
+
+- `01-hub.png`: TUI hub from `generate.sh`.
+- `02-run-dashboard.png`: TUI run dashboard from `generate.sh`.
+- `03-config.png`: TUI configuration from `generate.sh`.
+- `04-config-search.png`: TUI configuration search from `generate.sh`.
+- `05-transcript.png`: TUI conversation from `generate.sh`.
+- `08-help.png`: TUI help from `generate.sh`.
+- `09-logs.png`: TUI log from `generate.sh`.
+- `cover.png`: 1600x900 README cover from `make_cover.py`.
+- `web-shot.png`: web session screenshot from the desktop tour.
 
 The reel records at 1280x720 / Framerate 8. The live dashboard redraws ~5x/s, and at
 full resolution vhs cannot capture that fast (the dashboard records several times too
@@ -117,6 +110,8 @@ bash docs/screenshots/rename_demo.sh     # -> rename-demo.webm (replay, no key)
 bash docs/screenshots/machine_demo.sh    # -> machine-demo.webm (replay, no key)
 bash docs/screenshots/hero_run.sh        # -> hero-src-tui.webm (replay, no key)
 bash docs/screenshots/hero_cli.sh        # -> hero-src-cli.webm (replay, no key)
+WEB_DEMO_PY=… bash docs/screenshots/web_demo.sh       # -> web-desktop.webm + web-phone.webm + web-shot.png
+WEB_DEMO_PY=… bash docs/screenshots/web_machine_demo.sh # -> web-machine.webm
 WEB_DEMO_PY=… bash docs/screenshots/web_demo.sh hero   # -> hero-src-web.webm
 bash docs/screenshots/hero.sh            # -> hero-{tui,cli,web}.webm + .gif (needs the three sources)
 ```
@@ -126,10 +121,6 @@ vhs renders through a headless Chromium; on Ubuntu set
 
 ## In CI
 
-The [`pages`](../../.github/workflows/pages.yml) workflow runs `generate.sh`,
-`machine_demo.sh` and `temps_demo.sh` (replay mode, no key), the two hero sources,
-the web tours, and `hero.sh` before
-`mkdocs build` on every release (or manual dispatch), so the published site's
-images -- and the hero the README embeds from it -- always match the current UI.
-The media ships inside the site artifact (not release assets, not committed), so
-it never expires.
+The [`pages`](../../.github/workflows/pages.yml) workflow builds the outputs listed above before `mkdocs build` on each published release or manual dispatch.
+It also runs `make_cover.py` to compose the README cover.
+The media ships inside the site artifact, not as release assets or committed files, so it never expires.

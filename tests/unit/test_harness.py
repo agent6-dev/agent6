@@ -9167,6 +9167,94 @@ def test_a_late_answer_enters_at_the_operator_boundary(tmp_path: pathlib.Path) -
     assert len(_texts(conversation)) == 2
 
 
+@pytest.mark.parametrize("land_answer", [True, False])
+def test_finish_delivers_an_answer_that_lands_during_its_turn(
+    tmp_path: pathlib.Path, land_answer: bool
+) -> None:
+    """A finishing turn reads a landed answer before ending, without waiting for missing ones."""
+    from agent6 import paths
+    from agent6.sessions import layout as sessions_layout
+    from agent6.tools import dispatch
+
+    repo = tmp_path / "repo"
+    _metric_repo(repo)
+    saved = sessions_layout.SessionLayout(paths.state_dir(repo), "finishing-answer")
+    saved.ensure()
+    prompts, log = _gate(saved.session_dir)
+    sink = event_log.EventSink(log)
+    cfg = Config.model_validate({"git": {"commit_per_turn": False}})
+    dispatcher = dispatch.ToolDispatcher(
+        root=repo,
+        config=cfg,
+        prompts=prompts,
+        events=sink,
+        session_dir=saved.session_dir,
+        isolation="none",
+    )
+    snapshot_path = saved.session_dir / "loop_state.json"
+    calls: list[list[dict[str, Any]]] = []
+
+    class ProviderStub:
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            calls.append(kwargs["messages"])
+            if len(calls) == 1:
+                return _tool_resp(
+                    "ask_user", {"questions": [{"question": "Which DB?"}], "wait": False}
+                )
+            if len(calls) == 2:
+                if land_answer:
+                    assert ipc.write_question_answers(saved.session_dir, "question-1", ["pg"])
+                return _tool_resp("finish_session", {"summary": "done"}, tool_id="finish-1")
+            assert len(calls) == 3
+            snap = _snapshot.load_session_snapshot(snapshot_path)
+            assert snap.delivered_questions == ("question-1",)
+            return _tool_resp("finish_session", {"summary": "Use pg."}, tool_id="finish-2")
+
+    wf = _wf(
+        root=repo,
+        ref=None,
+        per_turn=False,
+        config=cfg,
+        provider=ProviderStub(),
+        dispatcher=dispatcher,
+        prompts=prompts,
+        events=sink,
+        max_turns=3,
+        resume_state_path=snapshot_path,
+    )
+    try:
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=_conversation.Conversation.from_wire(_TASK_WIRE),
+            tool_calls=0,
+            start_turn=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    finally:
+        dispatcher.close()
+    assert result.reason == "finish_session"
+    assert len(calls) == (3 if land_answer else 2)
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    delivered = [row for row in rows if row["type"] == "loop.question.delivered"]
+    if land_answer:
+        notices = [
+            block["text"]
+            for message in calls[-1]
+            if message["role"] == "user"
+            for block in message["content"]
+            if block["type"] == "text" and block["text"].startswith("OPERATOR ANSWERS")
+        ]
+        assert len(notices) == 1
+        assert "question-1" in notices[0] and "Which DB?" in notices[0] and "pg" in notices[0]
+        assert result.summary == "Use pg."
+        assert [row["ids"] for row in delivered] == [["question-1"]]
+        assert not ipc.question_answers_written(saved.session_dir, "question-1")
+    else:
+        assert result.summary == "done" and delivered == []
+    assert len([row for row in rows if row["type"] == "session.end"]) == 1
+
+
 def test_the_presence_notice_fires_once_and_on_change(tmp_path: pathlib.Path) -> None:
     """The model is told the operator's presence at the first boundary and when it changes."""
     import os
@@ -9182,6 +9270,63 @@ def test_the_presence_notice_fires_once_and_on_change(tmp_path: pathlib.Path) ->
     process.register_frontend(tmp_path, os.getpid())
     _loop_steer.operator_boundary(wf, conversation, 3, state)
     assert _texts(conversation)[-1] == "OPERATOR PRESENCE: a front-end is attached."
+
+
+@pytest.mark.parametrize("wake", ["answer", "steer"])
+def test_presence_flips_in_a_park_coalesce_at_the_turn_boundary(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, wake: str
+) -> None:
+    """A park journals every observed flip but tells the model only the boundary's presence."""
+    import os
+
+    from agent6 import paths
+    from agent6.sessions import layout as sessions_layout
+
+    saved = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "presence")
+    saved.ensure()
+    prompts, log = _gate(saved.session_dir)
+    wf = _wf(prompts=prompts, events=event_log.EventSink(log))
+    state = _state()
+    conversation = _conversation.Conversation()
+    _loop_steer.execution_opening(wf, conversation, 1, state, resuming=False)
+    away = prompts.presence()
+    conversation.assistant([{"type": "text", "text": "Waiting for your answer."}])
+    prompts.ask((tools_schema.UserQuestion(question="Which DB?"),), wait=False)
+    steers: list[str] = []
+    wf.bridge = _operator.OperatorBridge(
+        steer_requested=lambda: bool(steers), steer_prompt=lambda: steers.pop(0)
+    )
+    polls = 0
+
+    def flip_tabs_then_wake(_seconds: float) -> None:
+        nonlocal polls
+        polls += 1
+        if polls in (1, 3):
+            process.register_frontend(saved.session_dir, os.getpid())
+        elif polls == 2:
+            process.unregister_frontend(saved.session_dir, os.getpid())
+        elif polls == 4:
+            if wake == "answer":
+                assert ipc.write_question_answers(saved.session_dir, "question-1", ["pg"])
+            else:
+                steers.append("Continue with pg.")
+        else:
+            pytest.fail("the park did not wake")
+
+    monkeypatch.setattr(_loop_steer.time, "sleep", flip_tabs_then_wake)
+    assert _loop_steer.park_for_steer(wf, conversation, state, turn=1, reason="quiet") is None
+    assert _loop_steer.operator_boundary(wf, conversation, 1, state) is None
+    rows = [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines()]
+    assert [row["presence"] for row in rows if row["type"] == "loop.operator.presence"] == [
+        away,
+        "a front-end is attached",
+        away,
+        "a front-end is attached",
+    ]
+    assert [text for text in _texts(conversation) if text.startswith("OPERATOR PRESENCE")] == [
+        f"OPERATOR PRESENCE: {away}.",
+        "OPERATOR PRESENCE: a front-end is attached.",
+    ]
 
 
 def test_a_resume_opens_with_the_answers_and_the_pending_questions(tmp_path: pathlib.Path) -> None:

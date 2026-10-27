@@ -92,8 +92,9 @@ class LoopState:
     pins: list[str] = dataclasses.field(default_factory=list)
     # The queued questions whose answers the model has read; a resume never repeats one.
     delivered_questions: list[str] = dataclasses.field(default_factory=list)
-    # The operator's presence as last told to the model; "" before the first boundary.
+    # The journal keeps each observed change; the model hears only the boundary's presence.
     operator_presence: str = ""
+    operator_presence_notified: str = ""
     spiral: _spiral.SpiralGuard = dataclasses.field(default_factory=_spiral.SpiralGuard)
     no_progress: _guards.Ladder = dataclasses.field(default_factory=_guards.no_progress_ladder)
     settled: _guards.SettledGuard = dataclasses.field(default_factory=_guards.SettledGuard)

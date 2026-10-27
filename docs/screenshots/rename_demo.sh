@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
-# CLI demo video: a real agent6 run from the terminal fixing a class rename across a package, from a TASK.md.
-# Not faked logs -- a real `agent6 run` (real loop, tools, verify, commit) whose
-# LLM calls are served deterministically by the record/replay proxy
-# (llm_proxy.py), so it reproduces exactly with no key.
+# Record or replay a terminal run that renames Cart to ShoppingCart across the shop package.
 #
 #   bash docs/screenshots/rename_demo.sh            # replay (default): no key, renders the video
 #   bash docs/screenshots/rename_demo.sh replay
@@ -11,7 +8,7 @@
 # record forwards each LLM call to OPENROUTER and saves the trajectory into
 # seed/rename-cassette.jsonl (needs a real key in ~/.config/agent6/secrets.toml).
 # replay serves that cassette and drives vhs to produce out/rename-demo.webm.
-# The cassette and seed/rename-repo (the buggy stats repo) are committed together;
+# The cassette and seed/rename-repo (the shop package) are committed together;
 # the cassette's edits target that exact source.
 #
 # Needs vhs, ttyd, ffmpeg, agent6, python3 on PATH (replay); record needs only

@@ -1483,6 +1483,16 @@ class Harness:
             return self.finish(state, stop.end(), turn=turn.number)
         finish = turn.finish
         if finish is not None:
+            if finish.kind == "finish_session" and _loop_steer.operator_state(
+                self, conversation, state, boundary=False
+            ):
+                turn.finish = None
+                state.settled.restart()
+                conversation.notice(
+                    "[harness] finish_session deferred: an operator answer arrived."
+                    " Read it before finishing."
+                )
+                return None
             self.log(f"LOOP: {finish.kind} called at turn {turn.number}")
             self.checkpoints.final(turn=turn.number)
             # A finish_session over a red or stale verify reads "finished", not "passed".
