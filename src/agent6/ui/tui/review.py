@@ -271,6 +271,10 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Offer only actions that fit the selected finding's state.
 
+        Args:
+            action: The action name.
+            parameters: The action arguments, unused.
+
         Returns:
             True for an available action, otherwise None to grey it out.
         """

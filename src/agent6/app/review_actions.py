@@ -59,6 +59,9 @@ class _Reply(pydantic.BaseModel):
 def read_review(session_dir: pathlib.Path) -> review.ReviewView:
     """Read the shared review fold, refusing missing or unreadable evidence.
 
+    Args:
+        session_dir: The directory containing the session journal.
+
     Returns:
         The session's review evidence.
 
@@ -237,6 +240,11 @@ def _apply(
 def drain(events: event_log.EventSink, *, execution_id: str, resume_steer: str = "") -> None:
     """Apply queued actions in the worker before it polls the steer bridge.
 
+    Args:
+        events: The worker's journal sink.
+        execution_id: The current execution ID.
+        resume_steer: The resume steer text to acknowledge, or "".
+
     Raises:
         ReviewActionError: Resume acknowledgement cannot read the stored evidence.
     """
@@ -322,6 +330,14 @@ def act(
 
     Resume is an explicit, confirmed request. Its injected launcher returns an error or "".
     The existing worker lock excludes another offline action and a concurrent resume.
+
+    Args:
+        session_dir: The session directory.
+        finding_id: The finding to act on.
+        action: The operator's action request.
+        source: The front-end submitting the action.
+        resume: The launcher for a confirmed resume.
+        wait_s: The maximum seconds to wait for the live worker's reply.
 
     Returns:
         The recorded result or an explicit queued or unknown delivery state.

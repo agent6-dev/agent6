@@ -31,6 +31,10 @@ from agent6.viewmodel import listing, machine_state
 def complete_finding_ids(prefix: str, **kw: Any) -> list[str]:
     """Complete finding IDs from the selected session's saved evidence.
 
+    Args:
+        prefix: The typed finding ID prefix.
+        **kw: The argcomplete context containing parsed_args.
+
     Returns:
         Matching finding IDs, or an empty list without a readable session.
     """

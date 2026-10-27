@@ -137,6 +137,14 @@ def _blob_lines(root: pathlib.Path, tree: str, name: str) -> list[bytes]:
 def _unchanged_spans(patch: str, old_size: int, new_size: int) -> list[tuple[int, int, int]]:
     """Return unchanged (base start, head start, count) spans using Git's line accounting.
 
+    Args:
+        patch: The single-file diff between the base and head blobs.
+        old_size: The base blob's line count.
+        new_size: The head blob's line count.
+
+    Returns:
+        Base start, head start and line count for each unchanged span.
+
     Raises:
         LineOriginError: The patch is incomplete or does not describe one exact mapping.
     """
@@ -186,6 +194,15 @@ def _mapped_range(
     spans: list[tuple[int, int, int]], start: int, end: int, side: Literal["base", "head"]
 ) -> tuple[int, int] | None:
     """Return the opposite-side range, or None when any cited line changed.
+
+    Args:
+        spans: Unchanged spans as (base start, head start, count).
+        start: The first cited line, one-based.
+        end: The last cited line, inclusive.
+        side: The cited side.
+
+    Returns:
+        The inclusive opposite-side range, or None if any cited line changed.
 
     Raises:
         LineOriginError: The unchanged range maps to disjoint lines.
@@ -279,6 +296,11 @@ def classify_line_origin(
     root: pathlib.Path, target: review_records.ReviewTarget, location: review_records.ReviewLocation
 ) -> review_records.LineOrigin:
     """Classify a cited range against immutable blobs and bounded base blame.
+
+    Args:
+        root: The repository root.
+        target: The immutable comparison being reviewed.
+        location: The cited path, side and line range.
 
     Returns:
         Evidence with a base range and commits, or a changed or unknown reason.

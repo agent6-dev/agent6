@@ -914,6 +914,11 @@ def _review_path(session_dir: pathlib.Path, request_id: str, suffix: str) -> pat
 def queue_review_action(session_dir: pathlib.Path, request_id: str, payload: str) -> None:
     """Publish a whole action envelope for the session worker, keeping the first request.
 
+    Args:
+        session_dir: The session directory.
+        request_id: The action's retry identity.
+        payload: The JSON action envelope.
+
     Raises:
         ValueError: The request ID escapes the bridge or names a different pending action.
     """
@@ -925,6 +930,9 @@ def queue_review_action(session_dir: pathlib.Path, request_id: str, payload: str
 
 def review_requests(session_dir: pathlib.Path) -> list[tuple[str, str]]:
     """Read pending action envelopes without deleting evidence before the worker replies.
+
+    Args:
+        session_dir: The session directory.
 
     Returns:
         Request IDs and their whole JSON envelopes.
@@ -945,6 +953,10 @@ def reply_review_action(session_dir: pathlib.Path, request_id: str, payload: str
 
 def read_review_reply(session_dir: pathlib.Path, request_id: str) -> str | None:
     """Read an action reply without consuming it, so retries retain the same result.
+
+    Args:
+        session_dir: The session directory.
+        request_id: The action's retry identity.
 
     Returns:
         The JSON reply, or None while no reply is recorded.

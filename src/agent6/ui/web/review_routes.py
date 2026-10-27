@@ -154,6 +154,14 @@ def panel(
 ) -> tuple[int, dict[str, Any]]:
     """Read a recorded comparison or file without consulting a mutable checkout.
 
+    Args:
+        cwd: The repository root.
+        panel_id: The recorded panel ID.
+        sub: "file" or "diff" for file evidence, otherwise the panel overview.
+        path: The repository-relative file path.
+        side: The side for file evidence: base or head.
+        whole: Whether to omit the display limit for file text or diffs.
+
     Returns:
         An HTTP status and the evidence or refusal payload.
     """
@@ -193,6 +201,14 @@ def act(
     config_paths: tuple[pathlib.Path, ...],
 ) -> tuple[int, dict[str, Any]]:
     """Validate an HTTP action and return its result with the application status code.
+
+    Args:
+        cwd: The repository root.
+        session_dir: The session directory.
+        finding_id: The finding to act on.
+        verb: The action named by the route.
+        body: The action fields from the JSON request.
+        config_paths: The config overlays for a detached resume, in order.
 
     Returns:
         An HTTP status and the result or refusal payload.

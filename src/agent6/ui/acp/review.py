@@ -73,6 +73,13 @@ def handle_command(
 ) -> bool:
     """Handle an advertised review command before the prompt reaches the worker.
 
+    Args:
+        sessions: The session manager.
+        current: The current conversation.
+        text: The prompt text.
+        notify: The callback that sends session updates.
+        finish: The callback that ends the prompt with a stop reason.
+
     Returns:
         True when this command was handled; False for an ordinary prompt.
 

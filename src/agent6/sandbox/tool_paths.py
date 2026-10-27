@@ -83,6 +83,9 @@ class ToolMount:
 def _first_linked_directory(entry: pathlib.Path) -> pathlib.Path | None:
     """Find the first directory link in a shim's unresolved target chain.
 
+    Args:
+        entry: The unresolved shim path.
+
     Returns:
         The directory link, or None when the chain has none.
     """

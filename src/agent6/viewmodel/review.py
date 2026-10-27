@@ -370,6 +370,9 @@ def apply_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
 def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
     """Render review evidence and dispositions as shared transcript notices.
 
+    Args:
+        event: The journal event to render.
+
     Returns:
         Plain text notices, or none for events without an operator-facing result.
     """

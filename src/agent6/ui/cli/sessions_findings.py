@@ -72,6 +72,11 @@ def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> Non
 def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
     """Print the shared review evidence, with resolved findings only when requested.
 
+    Args:
+        session_id: The session selector.
+        all_findings: Whether to include resolved findings.
+        as_json: Whether to print JSON instead of plain text.
+
     Returns:
         Zero on success, 2 when the session or review evidence is unreadable.
     """
@@ -126,6 +131,18 @@ def cmd_action(
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> int:
     """Submit an action and print its delivery result, never an inferred fix.
+
+    Args:
+        session_id: The session selector.
+        finding_id: The finding to act on.
+        action: The action to submit.
+        reason: The reason for resolving or reopening.
+        disposition: The resolution category.
+        duplicate_of: The original finding ID for a duplicate resolution.
+        request_id: The retry identity, or "" to generate one.
+        expected_version: The required review version, or None to use the current version.
+        resume: Whether the operator confirmed resuming to fix.
+        config_paths: The config overlays for a detached resume, in order.
 
     Returns:
         Zero for a recorded or queued action, 2 for a refusal or failed delivery.
