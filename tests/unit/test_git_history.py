@@ -468,3 +468,16 @@ def test_a_submodule_pointer_is_a_diffable_entry(tmp_path: pathlib.Path) -> None
     patch, _ = git_history.file_patch(tmp_path, one, two, "sub", max_bytes=1 << 20)
     assert "-Subproject commit" in patch and "+Subproject commit" in patch
     assert git_files.blob_at(tmp_path, two, "sub", max_bytes=1 << 20) is None
+
+
+def test_tree_entry_reads_a_repository_path_from_a_subdirectory(tmp_path: pathlib.Path) -> None:
+    """The entry's path is from the repository root whichever directory git runs in."""
+    build_history(tmp_path)
+    (tmp_path / "dir").mkdir(exist_ok=True)
+    (tmp_path / "dir" / "inner.txt").write_text("i\n", encoding="utf-8")
+    _git(tmp_path, "add", "dir/inner.txt")
+    _git(tmp_path, "commit", "-q", "-m", "inner")
+    from_root = git_read.tree_entry(tmp_path, "HEAD", "dir/inner.txt")
+    assert from_root.startswith("100644 blob ")
+    assert git_read.tree_entry(tmp_path / "dir", "HEAD", "dir/inner.txt") == from_root
+    assert git_read.tree_entry(tmp_path / "dir", "HEAD", "b.txt")

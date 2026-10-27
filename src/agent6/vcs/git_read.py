@@ -785,7 +785,7 @@ def tree_entry(path: pathlib.Path, rev: str, name: str) -> str:
     Args:
         path: The repository.
         rev: The tree or commit.
-        name: The entry's path in the tree.
+        name: The entry's path from the repository root, whichever directory `path` is.
 
     Returns:
         The entry's `<mode> <type> <sha>`, or "".
@@ -794,7 +794,7 @@ def tree_entry(path: pathlib.Path, rev: str, name: str) -> str:
         GitError: The rev cannot be read or git fails.
     """
     entries = _git_command.nul_fields(
-        path, "ls-tree", "-z", rev, "--", name, env_extra=LITERAL_PATHSPECS
+        path, "ls-tree", "-z", "--full-tree", rev, "--", name, env_extra=LITERAL_PATHSPECS
     )
     for entry in entries:
         metadata, _, found = entry.partition("\t")
