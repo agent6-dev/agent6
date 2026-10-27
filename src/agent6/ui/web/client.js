@@ -250,13 +250,15 @@ async function route() {
       } catch (_) { /* no meta: fall through to the hub */ }
     }
   }
-  const parts = h.split('/').filter(Boolean); // e.g. ['session','abc']
+  const [routePath, queryText = ''] = h.split('?');
+  const query = new URLSearchParams(queryText);
+  const parts = routePath.split('/').filter(Boolean); // e.g. ['session','abc']
   try {
     if (parts.length === 0) { setTab('hub'); await renderHub(undefined, gen); }
     else if (parts[0] === 'machines') { setTab('machines'); await renderHub('machines', gen); }
     else if (parts[0] === 'config') { setTab('config'); await renderConfig(gen); }
-    else if (parts[0] === 'git') { setTab('git'); await renderGit(gen, parts.slice(1).map(decodeURIComponent)); }
-    else if (parts[0] === 'files') { setTab('files'); await renderFiles(gen, decodeURIComponent(parts[1] || ''), parts.slice(2).map(decodeURIComponent).join('/')); }
+    else if (parts[0] === 'git') { setTab('git'); await renderGit(gen, parts.slice(1).map(decodeURIComponent), query); }
+    else if (parts[0] === 'files') { setTab('files'); await renderFiles(gen, decodeURIComponent(parts[1] || ''), parts.slice(2).map(decodeURIComponent).join('/'), query); }
     else if (parts[0] === 'session' && parts[1]) { setTab('hub'); await renderRun(decodeURIComponent(parts[1]), undefined, gen); }
     else if (parts[0] === 'machine' && parts[1]) { setTab('machines'); await renderMachine(decodeURIComponent(parts[1]), gen); }
     else if (parts[0] === 'draft' && parts[1]) { const n = decodeURIComponent(parts[1]); setTab('machines'); await renderRun(n, { base: '/api/draft/' + encodeURIComponent(n), readOnly: true, title: 'Machine draft', crumb: 'draft ' + n }, gen); }

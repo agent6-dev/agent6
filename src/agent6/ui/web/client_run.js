@@ -161,6 +161,7 @@ async function renderRun(id, opts, gen) {
   // The run review, shown once Review run has filled it.
   mk('review', 'Run review', 'scroll');
   cards.review.parentElement.style.display = 'none';
+  mk('findings', 'Findings', 'scroll');
   mk('tasks', 'Task graph', 'scroll');
   mk('budget', 'Budget', '');
   mk('tools', 'Tool calls', 'scroll');
@@ -182,7 +183,7 @@ async function renderRun(id, opts, gen) {
 
   // The phone widget menu: pick which single widget the page shows.
   const entries = [['conv', 'Conversation'], ['head', 'Overview'], ['plan', 'plan.md'],
-                   ['review', 'Run review'],
+                   ['review', 'Run review'], ['findings', 'Findings'],
                    ['tasks', 'Task graph'], ['budget', 'Budget'], ['tools', 'Tool calls'],
                    ['shells', 'Background shells'], ['diff', 'Latest commit'], ['log', 'Event log']];
   const wbtn = el('button', 'wmenu-btn', '☰');
@@ -417,6 +418,7 @@ function paintDetails(cards, s, asOf) {
 }
 
 function paintRun(cards, s) {
+  paintFindings(cards, s);
   // Stop/compact/answers only mean something on a live run; a finished run
   // ignores the bridge markers. The composer flips to resume mode instead of
   // disabling, and a dead run's prompt boxes reconcile away like the machine
@@ -440,11 +442,12 @@ function paintRun(cards, s) {
     cards._review_btn.title = isDead ? 'review this run\'s record (a model call)' : 'the session is still live; its record is not complete';
   }
   if (cards._merge_btn) {
-    cards._merge_btn.disabled = !notLive(s) || !s.commits_ref || !!s.merged_into;
-    cards._merge_btn.title = !notLive(s) ? 'the session is still live; stop or let it finish first'
+    const reviewRefusal = reviewMergeReason(s.review);
+    cards._merge_btn.disabled = !notLive(s) || !s.commits_ref || !!s.merged_into || !!reviewRefusal;
+    cards._merge_btn.title = reviewRefusal || (!notLive(s) ? 'the session is still live; stop or let it finish first'
       : s.merged_into ? 'already merged into ' + s.merged_into
       : s.commits_ref ? 'merge ' + s.commits_ref + (s.base_branch ? ' into ' + s.base_branch : '')
-      : 'this session recorded no commits to merge';
+      : 'this session recorded no commits to merge');
   }
   if (cards._composer) cards._composer.setState(s);
   // header

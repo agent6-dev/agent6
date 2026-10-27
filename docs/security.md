@@ -422,6 +422,13 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - A live worker is the only journal writer for finding actions.
   `sessions.ipc` publishes whole request and reply files under the private session's `review-actions/`; request IDs cannot escape that directory.
   Without a live worker, the action path acquires the existing `worker.lock` and rechecks liveness and the review version before appending.
+- All agent6 merge paths enforce open grounded block findings in `app.merge.execute_merge()`, independent of browser controls and `review.block_on`.
+  The existing session writer lock excludes dispositions and concurrent session writers until the pinned source commit lands and its merge stamp is recorded.
+  Git's conditional target-ref update still refuses a concurrently moved target.
+  Resolve-with-reason is the only finding bypass; unreadable evidence refuses with its reason.
+- Review comparison and file routes use the web server's authentication and read Git objects by recorded tree ID.
+  Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
+  Finding text and resolution reasons enter the browser as text, not HTML.
   This excludes a concurrent resume or offline disposition without a separate journal lock.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   No telemetry, no auto-update, no remote control plane.

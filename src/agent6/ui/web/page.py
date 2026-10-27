@@ -21,6 +21,8 @@ _CLIENT_FILES = (
     "client_machine.js",
     "client_config.js",
     "client_source.js",
+    "client_review.js",
+    "client_git_diff.js",
     "client_git.js",
     "client_files.js",
 )

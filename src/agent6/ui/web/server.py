@@ -761,6 +761,20 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "session":
             self._route_session(parts[2], parts[3] if len(parts) > 3 else "")
             return
+        if (len(parts) == 3 or (len(parts) == 4 and parts[3] in {"diff", "file"})) and parts[
+            :2
+        ] == ["api", "reviews"]:
+            query = parse.parse_qs(parse.urlsplit(self.path).query)
+            status, payload = review_routes.panel(
+                self.cwd,
+                parts[2],
+                parts[3] if len(parts) > 3 else "",
+                path=(query.get("path") or [""])[0],
+                side=(query.get("side") or [""])[0],
+                whole=(query.get("whole") or [""])[0] == "1",
+            )
+            self._send_json(payload, status=status)
+            return
         if len(parts) in (3, 4) and parts[0] == "api" and parts[1] == "machine":
             self._route_machine(parts[2], parts[3] if len(parts) > 3 else "")
             return
@@ -784,6 +798,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 cwd, arg("rev"), arg("path"), whole=arg("whole") == "1"
             ),
             "compare": lambda: git_model.compare_payload(cwd, arg("base"), arg("head")),
+            "findings": lambda: review_routes.comparison(cwd, arg("base"), arg("head")),
             "diff": lambda: git_model.diff_payload(
                 cwd,
                 arg("base"),

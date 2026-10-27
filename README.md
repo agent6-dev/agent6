@@ -76,7 +76,7 @@ Other commands:
 | `agent6 review` | review a diff |
 | `agent6 attach <id>` | follow a live session |
 | `agent6 steer <id> "instruction"` | direct the next steps |
-| `agent6 sessions findings <id>` | inspect [session findings](docs/usage.md#session-findings), then Fix, Resolve or Reopen |
+| `agent6 sessions findings <id>` | inspect [session findings](docs/usage.md#session-findings), then Fix, Resolve or Reopen; [web findings](docs/web.md#finding-actions-api) link to the reviewed diff |
 | `agent6 stop <id> --after-step` | stop after the current step |
 | `agent6 resume <id>` | continue an interrupted run |
 | `agent6 fork <id> --at-turn 7` | fork a coding run from an earlier turn into a separate worktree |

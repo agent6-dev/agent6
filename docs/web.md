@@ -193,6 +193,11 @@ With `cumulative=1`, the patch covers the chain through that commit.
 ## Finding actions API
 
 `GET /api/session/<id>/findings` returns the shared review evidence and its `version`, with open finding rows.
+The run's **Findings** card shows open severity counts, status and severity filters, and resolution history.
+Fix submits stored evidence through the steer bridge; **Resume to fix** asks for confirmation before resuming a stopped session.
+Resolve and Reopen require a reason.
+The card shows the panel's worker-finish decision separately from the open-block merge rule.
+Merge is disabled for open block findings or unreadable evidence, and the server enforces the same rule on direct requests.
 `?status=all` includes resolved rows.
 
 `POST /api/session/<id>/findings/<finding-id>/{fix,resolve,reopen}` calls the same application path as the [CLI finding actions](usage.md#session-findings).
@@ -209,7 +214,21 @@ Every body includes `request_id` and `expected_version` from the read response.
   Authentication and request body limits match the other session routes.
 
 These routes return JSON evidence, not HTML.
-The browser page has no finding action buttons.
+`GET /api/git/findings?base=<revision>&head=<revision>` returns recorded findings and whether both displayed trees match each observation.
+Working-tree comparisons have no immutable match.
+`GET /api/reviews/<panel_id>` returns the recorded target and changed files.
+Its `/diff?path=<path>` and `/file?side=<base-or-head>&path=<path>` routes read those trees, not the checkout.
+The diff route accepts either path of a rename.
+Both content routes mark truncation and accept `whole=1` with the Git tab's existing size limits.
+An unknown panel or file returns 404; invalid paths and sides return 422; unreadable panel evidence returns 409.
+
+The Git tab places findings on their recorded base or head line in inline, split, old and new modes.
+A rename's base finding uses its old path.
+File-level findings appear beside the patch; locations outside a truncated patch link to the full reviewed file.
+A different comparison shows a link to the reviewed comparison instead of an inline anchor.
+Compare links retain `panel`, `finding`, `path` and `side` query parameters across reloads.
+**Reviewed file** opens the Files tab at the recorded tree, including deleted files on the base side.
+Finding text and operator reasons render as text, never HTML.
 
 ## Remote access (Tailscale)
 

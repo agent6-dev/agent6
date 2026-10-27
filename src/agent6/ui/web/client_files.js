@@ -4,7 +4,8 @@
 // with line numbers and highlighting, an image, or a binary file's size and kind. The
 // picked revision outlives a visit to another tab; the tree is fetched again on return.
 const filesState = { rev: null }; // the picker's { rev, label }; null until the first visit
-async function renderFiles(gen, revision = '', path = '') {
+async function renderFiles(gen, revision = '', path = '', query = new URLSearchParams()) {
+  if (query.has('panel')) return renderReviewedFile(gen, path, query);
   setCrumb('files');
   const refsData = await getJSON('/api/git/refs');
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint

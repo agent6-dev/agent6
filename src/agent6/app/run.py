@@ -538,6 +538,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 standing_goal=standing_goal,
                 pins=tuple(pins),
                 worktree_git_dir=worktree_git_dir,
+                worker_lock_fd=worker_lock_fd,
             ),
             frontend=frontend,
             reporter=reporter,

@@ -299,6 +299,12 @@ Review freshness is unknown until a reader supplies the requested base tree, hea
 
 ## Session findings
 
+Every agent6 merge path refuses open grounded `block` findings and unreadable review evidence.
+Resolve each blocking finding with a reason before merging, including findings you decide not to fix.
+This rule is separate from `review.block_on`, which decides whether a panel rejects the worker's finish.
+A missing or stale review does not prevent a merge; legacy counts are not reconstructed findings.
+The web [Findings card](web.md#finding-actions-api) offers the same actions and links each finding to its reviewed diff and file version.
+
 ```bash
 agent6 sessions findings <id>                    # open findings and review version
 agent6 sessions findings <id> --all --json        # include resolved findings and action history

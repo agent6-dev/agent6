@@ -9,6 +9,7 @@ method dispatch and the manifest record.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime
 import pathlib
@@ -21,8 +22,10 @@ from agent6 import errors, event_log
 from agent6.app import _merge_message, _setup, stamps
 from agent6.config import Config
 from agent6.sessions import layout as sessions_layout
+from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
+from agent6.viewmodel import scan_session_log
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -238,11 +241,12 @@ def execute_merge(
     budget: agent6_budget.BudgetTracker | None = None,
     events: event_log.EventSink | None = None,
     warn: Callable[[str], None] = lambda _m: None,
+    worker_lock_fd: int | None = None,
 ) -> MergeOutcome:
     """Land the run's branch on the target and record the merge.
 
     Ref plumbing only: the checkout is never switched and the worktree is never required
-    clean. The caller validates first; this mutates.
+    clean. The existing writer lock serializes review dispositions and this mutation.
 
     Args:
         cwd: The repository.
@@ -258,85 +262,99 @@ def execute_merge(
         budget: The run's tracker, when the merge runs inside one.
         events: The run's event sink, when the merge runs inside one.
         warn: Where a degraded squash message is reported.
+        worker_lock_fd: The executing worker's held lock, else this call takes the lock.
 
     Returns:
         What the merge did.
     """
     _setup.apply_git_ops_policy(cfg)
-    # Without base_sha `git log ..<branch>` counts from HEAD: a wrong list with a clean exit.
-    refusal = (
-        NO_BASE_SHA
-        if not base_sha
-        else f"target branch {target!r} does not exist"
-        if not git_read.branch_exists(cwd, target)
-        else None
-    )
-    if refusal is not None:
-        return MergeOutcome("error", error=refusal)
-    if (
-        method == "ff_only"
-        and not git_read.is_ancestor(cwd, target, run_branch)
-        and not git_read.is_ancestor(cwd, run_branch, target)
-    ):
-        # A run the target already contains is not refused: that is a clean noop below.
-        return MergeOutcome(
-            "error",
-            error=(
-                f"{target!r} has moved since the run started, so a"
-                " fast-forward is impossible; merge with --method merge or"
-                " squash instead"
-            ),
-        )
-    # Every method that merges something moves the target; unmoved means nothing to merge.
-    target_tip_before = git_read.branch_tip_sha(cwd, target) or ""
     try:
-        merge_base = landed_base(
-            cwd, layout, manifest, target, git_read.chain_tip(cwd, run_branch) or ""
-        )
-        result = dispatch_merge(
-            cwd,
-            method,
-            target,
-            run_branch,
-            base_sha,
-            manifest,
-            message,
-            cfg,
-            identity,
-            transcript_dir=layout.session_dir / "transcripts",
-            budget=budget,
-            events=events,
-            warn=warn,
-            merge_base=merge_base,
-            finish_summaries=_merge_message.finish_summaries(layout),
-        )
-    except errors.GitError as exc:
+        with contextlib.ExitStack() as cleanup:
+            if worker_lock_fd is None:
+                fd = lock.acquire_single_writer(layout.session_dir)
+                cleanup.callback(lock.release_single_writer, fd)
+                if fd is None or process.worker_is_alive(layout.session_dir):
+                    return MergeOutcome(
+                        "error", error="session writer is busy; wait for it to finish"
+                    )
+            # A mutable ref must never reach the message builder, merge plumbing or stamp.
+            tip = git_read.chain_tip(cwd, run_branch)
+            guard = scan_session_log(layout.logs_path).review.merge_guard
+            refusal = (
+                f"cannot read review evidence: {guard.read_failure}"
+                if guard.read_failure
+                else "open block findings: "
+                + ", ".join(guard.open_block_ids)
+                + "; resolve each with a reason before merging"
+                if guard.open_block_ids
+                else NO_BASE_SHA
+                if not base_sha
+                else f"target branch {target!r} does not exist"
+                if not git_read.branch_exists(cwd, target)
+                else f"source ref {run_branch!r} does not exist"
+                if tip is None
+                else ""
+            )
+            if refusal:
+                return MergeOutcome("error", error=refusal)
+            assert tip is not None
+            if (
+                method == "ff_only"
+                and not git_read.is_ancestor(cwd, target, tip)
+                and not git_read.is_ancestor(cwd, tip, target)
+            ):
+                return MergeOutcome(
+                    "error",
+                    error=(
+                        f"{target!r} has moved since the run started, so a"
+                        " fast-forward is impossible; merge with --method merge or"
+                        " squash instead"
+                    ),
+                )
+            target_tip_before = git_read.branch_tip_sha(cwd, target) or ""
+            merge_base = landed_base(cwd, layout, manifest, target, tip)
+            result = dispatch_merge(
+                cwd,
+                method,
+                target,
+                tip,
+                base_sha,
+                manifest,
+                f"Merge {run_branch}" if method == "merge" and message is None else message,
+                cfg,
+                identity,
+                transcript_dir=layout.session_dir / "transcripts",
+                budget=budget,
+                events=events,
+                warn=warn,
+                merge_base=merge_base,
+                finish_summaries=_merge_message.finish_summaries(layout),
+            )
+            if result.conflicted:
+                return MergeOutcome("conflict", conflicts=result.conflicts)
+            noop = bool(result.merged_sha) and result.merged_sha == target_tip_before
+            already_recorded = noop and manifest.merged is not None and manifest.merged.tip == tip
+            stamp_error = ""
+            if not already_recorded:
+                stamp_error = record_merge_in_manifest(
+                    layout,
+                    merged_into=target,
+                    merged_sha=sessions_manifest.NO_MERGE_COMMIT if noop else result.merged_sha,
+                    merged_tip=tip,
+                    into_tip=target_tip_before if noop else "",
+                )
+            if not noop:
+                _land_included_run(cwd, layout, manifest, target, result.merged_sha)
+            return MergeOutcome(
+                "noop" if noop else "merged",
+                merged_sha=result.merged_sha,
+                stamp_error=stamp_error,
+                recorded=noop and not already_recorded and not stamp_error,
+                left_behind=result.left_behind,
+                target_before=target_tip_before,
+            )
+    except (errors.GitError, OSError) as exc:
         return MergeOutcome("error", error=f"merge failed: {exc}")
-    if result.conflicted:
-        return MergeOutcome("conflict", conflicts=result.conflicts)
-    noop = bool(result.merged_sha) and result.merged_sha == target_tip_before
-    merged_tip = git_read.chain_tip(cwd, run_branch) or ""
-    if noop and manifest.merged is not None and manifest.merged.tip == merged_tip:
-        # Stamping the target's tip over the record would credit the run with later commits.
-        return MergeOutcome("noop", merged_sha=result.merged_sha)
-    # A merge that added nothing still records the run as merged up to this tip.
-    stamp_error = record_merge_in_manifest(
-        layout,
-        merged_into=target,
-        merged_sha=sessions_manifest.NO_MERGE_COMMIT if noop else result.merged_sha,
-        merged_tip=merged_tip,
-        into_tip=target_tip_before if noop else "",
-    )
-    if not noop:
-        _land_included_run(cwd, layout, manifest, target, result.merged_sha)
-    return MergeOutcome(
-        "noop" if noop else "merged",
-        merged_sha=result.merged_sha,
-        stamp_error=stamp_error,
-        recorded=noop and not stamp_error,
-        left_behind=result.left_behind,
-        target_before=target_tip_before,
-    )
 
 
 def _land_included_run(

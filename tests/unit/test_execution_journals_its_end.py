@@ -524,7 +524,7 @@ def _wired_frontend(
     monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
 
-    def _chown(_path: pathlib.Path) -> None:
+    def _chown(_path: pathlib.Path, _user: object = None) -> None:
         order.append("chown")
 
     def _merge(*_args: object, **_kwargs: object) -> None:

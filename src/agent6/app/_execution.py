@@ -83,6 +83,7 @@ class ExecutionInputs:
         resume_steer: The steer that started this resumed execution.
         worktree_git_dir: The repository git dir of a session in its own worktree, the one
             grant its jail makes beyond the workspace.
+        worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
     """
 
     session_id: str
@@ -108,6 +109,7 @@ class ExecutionInputs:
     resuming: bool = False
     resume_steer: str = ""
     worktree_git_dir: pathlib.Path | None = None
+    worker_lock_fd: int | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -602,7 +604,13 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             if not interrupted and result is not None and cfg.git.auto_merge and mode == "run":
                 if finalize.auto_merge_eligible(result):
                     finalize.finalize_auto_merge(
-                        cwd, layout=layout, cfg=cfg, reporter=reporter, budget=budget, events=events
+                        cwd,
+                        layout=layout,
+                        cfg=cfg,
+                        reporter=reporter,
+                        budget=budget,
+                        events=events,
+                        worker_lock_fd=inputs.worker_lock_fd,
                     )
                 else:
                     reason = (

@@ -597,6 +597,7 @@ def finalize_auto_merge(
     reporter: app_reporter.Reporter,
     budget: agent6_budget.BudgetTracker | None = None,
     events: event_log.EventSink | None = None,
+    worker_lock_fd: int | None = None,
 ) -> None:
     """Land the run branch on its base with `git.merge_method`, best-effort.
 
@@ -610,6 +611,7 @@ def finalize_auto_merge(
         reporter: Receives the notes.
         budget: The tracker a squash message's model call bills, when one runs.
         events: The sink the merge's events go to.
+        worker_lock_fd: The executing lifecycle's held session writer lock.
     """
     try:
         manifest = sessions_manifest.read_manifest(layout.session_dir)
@@ -652,6 +654,7 @@ def finalize_auto_merge(
         budget=budget,
         events=events,
         warn=reporter.note,
+        worker_lock_fd=worker_lock_fd,
     )
     if outcome.status == "merged":
         reporter.note(

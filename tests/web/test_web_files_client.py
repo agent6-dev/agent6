@@ -100,7 +100,13 @@ def _run(scenario: str) -> None:
         + "\n"
         + "\n".join(
             web.joinpath(name).read_text(encoding="utf-8")
-            for name in ("client_source.js", "client_git.js", "client_files.js")
+            for name in (
+                "client_source.js",
+                "client_review.js",
+                "client_git_diff.js",
+                "client_git.js",
+                "client_files.js",
+            )
         )
     )
     script = (

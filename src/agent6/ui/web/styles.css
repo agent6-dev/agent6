@@ -24,6 +24,17 @@
 }
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 input[type=checkbox] { accent-color: var(--accent); }
+.finding { display: block; white-space: normal; overflow-wrap: anywhere; min-width: 0; margin: 10px 0; padding: 12px; border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 6px; background: var(--surface); color: var(--text); font: 13px/1.5 system-ui, sans-serif; }
+.finding > span { display: block; }
+.finding .row { display: flex; gap: 10px; margin-top: 8px; }
+.finding-title { font-weight: 600; }
+.finding-detail, .finding-history { white-space: pre-wrap; margin: 6px 0; }
+.finding-selected { outline: 2px solid var(--accent); outline-offset: 2px; }
+.finding-form { display: grid; gap: 8px; margin-top: 10px; }
+.finding-form[hidden] { display: none; }
+.finding-form .field { min-width: 0; width: 100%; }
+.finding-form textarea { min-height: 70px; }
+.finding-counts { font-weight: 600; margin-bottom: 8px; }
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -256,7 +256,7 @@ function gitPicker(name, initial, onPick, listHost, fixed) {
   return { root, get: () => value, set: (v) => { value = v; input.value = v ? v.label : ''; } };
 }
 
-async function renderGit(gen, link = []) {
+async function renderGit(gen, link = [], query = new URLSearchParams()) {
   setCrumb('git');
   const [refsData, wtData] = await Promise.all([getJSON('/api/git/refs'), getJSON('/api/git/worktree')]);
   if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
@@ -278,102 +278,7 @@ async function renderGit(gen, link = []) {
   const graph = el('div', 'git-graph'); body.appendChild(graph);
   const side = el('div', 'git-side'); body.appendChild(side);
 
-  // -- a file's diff: it takes the whole body; the list is one step back --------------
-  const diffView = el('div', 'git-diff'); body.appendChild(diffView);
-  const diffs = new Map();
-  const closeDiff = () => { body.classList.remove('diffing'); diffView.innerHTML = ''; delete diffView.dataset.key; };
-  const showDiff = async (ctx, i, whole) => {
-    const f = ctx.files[i];
-    const key = ctx.base + '|' + ctx.head + '|' + f.path + (whole ? '|whole' : '');
-    diffView.dataset.key = key;
-    diffView.innerHTML = '';
-    body.classList.add('diffing');
-    const head = el('div', 'git-diff-head row');
-    const back = el('button', 'mini', '‹ files'); back.onclick = closeDiff;
-    head.appendChild(back);
-    head.appendChild(statusBadge(f.status));
-    head.appendChild(filePath(f));
-    head.appendChild(fileCounts(f));
-    head.appendChild(el('span', 'muted git-diff-pos', (i + 1) + ' / ' + ctx.files.length));
-    const prev = el('button', 'mini', '‹'); prev.title = 'previous file'; prev.disabled = i === 0;
-    prev.onclick = () => showDiff(ctx, i - 1);
-    const next = el('button', 'mini', '›'); next.title = 'next file'; next.disabled = i === ctx.files.length - 1;
-    next.onclick = () => showDiff(ctx, i + 1);
-    head.appendChild(prev); head.appendChild(next);
-    let mode = recall(DIFF_MODE_KEY, 'inline');
-    if (!DIFF_MODES.includes(mode)) mode = 'inline';
-    const modes = el('span', 'gview');
-    for (const m of DIFF_MODES) {
-      const b = el('button', 'mini' + (m === mode ? ' active' : ''), m);
-      b.title = { inline: 'the unified patch', split: 'old and new side by side', old: 'the file at the base, deletions marked', new: 'the file at the head, additions marked' }[m];
-      b.onclick = () => { remember(DIFF_MODE_KEY, m); showDiff(ctx, i, whole); };
-      modes.appendChild(b);
-    }
-    head.appendChild(modes);
-    diffView.appendChild(head);
-    const box = el('div', 'git-diff-body'); diffView.appendChild(box);
-    let d = diffs.get(key);
-    if (!d) {
-      box.appendChild(el('div', 'muted', 'loading…'));
-      try {
-        const q = '?base=' + encodeURIComponent(ctx.base) + '&head=' + encodeURIComponent(ctx.head)
-          + '&path=' + encodeURIComponent(f.path) + '&old_path=' + encodeURIComponent(f.old_path || '')
-          + (whole ? '&whole=1' : '');
-        d = await getJSON('/api/git/diff' + q);
-      } catch (e) {
-        if (diffView.dataset.key === key) { box.innerHTML = ''; box.appendChild(el('div', 'err', e.message)); }
-        return;
-      }
-      if (ctx.head !== GIT_WORKTREE) diffs.set(key, d); // the working tree changes under the tab
-      if (diffView.dataset.key !== key || !diffView.isConnected) return; // superseded
-      box.innerHTML = '';
-    }
-    // The states come first, above the patch, so a cut patch reads as cut.
-    if (isImagePath(f.path)) box.appendChild(imagePair(ctx, f));
-    if (d.binary) box.appendChild(el('div', 'muted gf-note', 'binary file: no text diff'));
-    if (d.truncated) {
-      const note = el('div', 'err gf-note', 'the patch is cut at ' + Math.round(d.max_bytes / 1024) + ' KiB ');
-      const all = el('button', 'mini', 'Show the whole patch'); all.onclick = () => showDiff(ctx, i, true);
-      note.appendChild(all); box.appendChild(note);
-    }
-    const patch = el('div', 'gf-patch'); box.appendChild(patch);
-    const parsed = parseUnifiedDiff(d.patch || '');
-    const file = parsed[0] || { preamble: [], hunks: [], binary: d.binary };
-    if (mode === 'split' && window.matchMedia('(max-width: 780px)').matches) {
-      patch.appendChild(el('div', 'muted gf-note', 'split needs a wider screen: showing inline'));
-      mode = 'inline';
-    }
-    if (mode === 'inline') patch.appendChild(renderUnified(parsed, true));
-    else if (mode === 'split') patch.appendChild(renderSplit(file));
-    else await showSide(patch, ctx, f, file, mode, key, whole, () => showDiff(ctx, i, true));
-  };
-  // The file at one side of a diff, its changed lines marked: the deletions on the old
-  // side, the additions on the new. The text comes highlighted from /api/git/text.
-  const showSide = async (host, ctx, f, file, side, key, whole, openWhole) => {
-    if ((side === 'old' && f.status === 'A') || (side === 'new' && f.status === 'D')) {
-      host.appendChild(el('div', 'muted gf-note', 'no ' + side + ' side: the file ' + (side === 'old' ? 'was added' : 'was deleted')));
-      return;
-    }
-    const rev = side === 'old' ? ctx.base : ctx.head, path = side === 'old' ? (f.old_path || f.path) : f.path;
-    host.appendChild(el('div', 'muted', 'loading…'));
-    let t;
-    try { t = await getJSON('/api/git/text?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(path) + (whole ? '&whole=1' : '')); }
-    catch (e) { if (diffView.dataset.key === key) { host.innerHTML = ''; host.appendChild(el('div', 'err', e.message)); } return; }
-    if (diffView.dataset.key !== key || !host.isConnected) return;
-    host.innerHTML = '';
-    if (t.binary) { host.appendChild(el('div', 'muted gf-note', 'binary file: no text')); return; }
-    if (t.truncated) {
-      const note = el('div', 'err gf-note', 'the file is cut at ' + Math.round(t.max_bytes / 1024) + ' KiB ');
-      const all = el('button', 'mini', 'Show the whole file'); all.onclick = openWhole;
-      note.appendChild(all); host.appendChild(note);
-    }
-    const marks = new Set();
-    for (const h of file.hunks) for (const l of h.lines) {
-      if (side === 'old' && l.kind === 'del') marks.add(l.old);
-      if (side === 'new' && l.kind === 'add') marks.add(l.new);
-    }
-    host.appendChild(renderLines(splitLines(t.text), t.spans, marks));
-  };
+  const {closeDiff, showDiff} = gitDiffViewer(body);
 
   // -- the graph -------------------------------------------------------------------
   let commits = [], tips = null, hasMore = false, selected = null, loading = 0;
@@ -456,7 +361,7 @@ async function renderGit(gen, link = []) {
     return h;
   };
   const openSide = () => side.classList.add('open');
-  const setCompare = (which, v) => { gitState.compare[which] = v; showCompare(); };
+  const setCompare = (which, v) => { query = new URLSearchParams(); gitState.compare[which] = v; showCompare(); };
   // The working tree's panel: no message; HEAD is the base every file diffs against.
   const showWorktree = () => {
     closeDiff();
@@ -546,24 +451,37 @@ async function renderGit(gen, link = []) {
       result.innerHTML = '';
       if (!base || !h) { setViewHash('#/git'); result.appendChild(el('div', 'muted', 'pick a base and a head: a branch, a tag, a commit, or text from a commit message')); return; }
       const n = ++compareRun;
-      setViewHash('#/git/compare/' + encodeURIComponent(base.rev) + '..' + encodeURIComponent(h.rev));
+      setViewHash('#/git/compare/' + encodeURIComponent(base.rev) + '..' + encodeURIComponent(h.rev) + (query.size ? '?' + query : ''));
       result.appendChild(el('div', 'muted', 'comparing…'));
       try {
-        const d = await getJSON('/api/git/compare?base=' + encodeURIComponent(base.rev) + '&head=' + encodeURIComponent(h.rev));
+        const panel = query.has('panel') ? await getJSON('/api/reviews/' + encodeURIComponent(query.get('panel'))) : null;
+        const target = panel?.panel.target;
+        const reviewed = target && [target.base_tree, target.base_commit].includes(base.rev) && [target.head_tree, target.head_commit].includes(h.rev);
+        const d = reviewed ? {base: {sha: target.base_tree, short: target.base_tree.slice(0, 7), subject: 'reviewed base'},
+          head: {sha: target.head_tree, short: target.head_tree.slice(0, 7), subject: 'reviewed head'}, files: panel.files, truncated: panel.truncated}
+          : await getJSON('/api/git/compare?base=' + encodeURIComponent(base.rev) + '&head=' + encodeURIComponent(h.rev));
         if (n !== compareRun || !result.isConnected) return;
         result.innerHTML = '';
         const sum = el('div', 'gcmp-sum muted');
         sum.appendChild(el('span', 'mono', d.base.short)); sum.appendChild(el('span', null, ' ' + d.base.subject + '  →  '));
         sum.appendChild(el('span', 'mono', d.head.short)); sum.appendChild(el('span', null, ' ' + d.head.subject));
         result.appendChild(sum);
-        result.appendChild(fileList(d.files, d.truncated, (i) => showDiff({ base: d.base.sha, head: d.head.sha, files: d.files }, i)));
+        const path = query.get('path');
+        let selectedFile = d.files.findIndex(f => path === f.path || path === f.old_path);
+        if (reviewed && path && selectedFile < 0) {
+          selectedFile = d.files.length;
+          d.files.push({path, status: 'M', old_path: '', additions: 0, deletions: 0});
+        }
+        const ctx = {base: d.base.sha, head: d.head.sha, files: d.files, panel: reviewed ? query.get('panel') : '', query};
+        result.appendChild(fileList(d.files, d.truncated, (i) => showDiff(ctx, i)));
+        if (path && selectedFile >= 0) await showDiff(ctx, selectedFile);
       } catch (e) { if (n === compareRun) { result.innerHTML = ''; result.appendChild(el('div', 'err', e.message)); } }
     };
     const listHost = el('div', 'gpick-host');
-    const pickBase = gitPicker('base', gitState.compare.base, (v) => { gitState.compare.base = v; run(); }, listHost);
-    const pickHead = gitPicker('head', gitState.compare.head, (v) => { gitState.compare.head = v; run(); }, listHost, [GIT_WORKTREE_PICK]);
+    const pickBase = gitPicker('base', gitState.compare.base, (v) => { query = new URLSearchParams(); gitState.compare.base = v; run(); }, listHost);
+    const pickHead = gitPicker('head', gitState.compare.head, (v) => { query = new URLSearchParams(); gitState.compare.head = v; run(); }, listHost, [GIT_WORKTREE_PICK]);
     const swap = el('button', 'mini', '⇄'); swap.title = 'swap base and head';
-    swap.onclick = () => { const { base, head: h } = gitState.compare; gitState.compare = { base: h, head: base }; pickBase.set(h); pickHead.set(base); run(); };
+    swap.onclick = () => { query = new URLSearchParams(); const { base, head: h } = gitState.compare; gitState.compare = { base: h, head: base }; pickBase.set(h); pickHead.set(base); run(); };
     const row = el('div', 'gcmp-pick');
     row.appendChild(pickBase.root); row.appendChild(swap); row.appendChild(pickHead.root);
     pad.appendChild(row);
@@ -571,7 +489,7 @@ async function renderGit(gen, link = []) {
     pad.appendChild(el('div', 'hint', 'the files that differ between the two revisions, as git diff base head lists them'));
     pad.appendChild(result);
     openSide();
-    run();
+    return run();
   };
   compareBtn.onclick = showCompare;
 
@@ -627,7 +545,7 @@ async function renderGit(gen, link = []) {
   else if (link[0] === 'compare' && link[1]) {
     const [base, head] = link[1].split('..');
     gitState.compare = { base: { rev: base || '', label: base || '' }, head: { rev: head || '', label: head || '' } };
-    showCompare();
+    await showCompare();
   }
   else if (link[0] === 'worktree' && wt.files.length) showWorktree();
   else side.appendChild(el('div', 'empty', 'click a commit for its files and diff, or Compare for any two revisions'));

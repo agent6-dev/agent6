@@ -292,7 +292,11 @@ The fold retains action reasons in append order and never treats a fixed disposi
 Freshness compares both tree IDs and path coverage with an explicit requested comparison.
 Without that comparison, freshness is unknown.
 Legacy counts carry an unknown-evidence notice; an unreadable journal or structured record retains its error in `MergeReviewGuard`.
-The guard is a read model, not merge enforcement.
+`app.merge.execute_merge()` enforces the guard for CLI, web, TUI and auto-merge.
+It holds the existing session writer lock while re-reading the review fold, merging a pinned source commit, and recording that tip.
+Auto-merge uses the lock its lifecycle already holds; live dispositions wait in the IPC queue.
+An open grounded block or unreadable evidence refuses the merge with its reason.
+Missing, stale and legacy count-only reviews do not block a merge.
 A finding's location names a repository-relative path, a base or head side, and an optional positive, inclusive line range.
 The record types do not capture Git trees or persist panel events.
 
@@ -304,6 +308,11 @@ A repeated request ID returns its journal result or retained worker reply before
 A worker refusal is final for that request ID; a new attempt needs a new ID.
 Fix records its request before submitting the server-built instruction, so a crash between those writes leaves delivery unknown rather than a claimed success.
 An explicit resume releases the writer lock before the injected launcher runs; the resumed worker records submission when it takes that instruction.
+
+The web Findings card reads the same review fold as the merge guard.
+`ui/web/review_routes.py` serves recorded comparisons and files from immutable tree IDs, without a checkout or private review refs.
+`client_git_diff.js` owns each diff request's lifetime; `client_review.js` attaches findings through the source renderer's line attributes only when both comparison trees match.
+Reviewed file links keep the panel and side, so Files reads the cited version rather than the working tree.
 
 `agent6 sessions review <id>` ([harness/run_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/run_review.py)) reviews a finished session's record the same way: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.

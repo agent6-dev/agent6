@@ -766,6 +766,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 sandbox_overrides=sandbox_overrides,
                 resuming=True,
                 worktree_git_dir=manifest.worktree_git_dir,
+                worker_lock_fd=worker_lock_fd,
             ),
             frontend=frontend,
             reporter=reporter,
