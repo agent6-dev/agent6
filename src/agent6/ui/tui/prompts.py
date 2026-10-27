@@ -50,7 +50,8 @@ class PromptDispatcher:
     def dispatch(self, session_dir: pathlib.Path, state: SessionState) -> None:
         """Push a modal for each waiting, unclaimed question; announce a queued one once.
 
-        A question answered elsewhere closes its modal.
+        A question answered elsewhere closes its modal. A question a dead run left
+        waiting is a queued one: its answer waits for the resume.
 
         Args:
             session_dir: The session the answers are written to.
@@ -63,7 +64,7 @@ class PromptDispatcher:
                 closed = self._open.pop(key, None)
                 if closed is not None:
                     closed.close_answered_elsewhere(on_top=self._app.screen is closed)
-            elif not qp.blocking:
+            elif not qp.blocking or not self._answerable():
                 if self.claim(session_dir, qp.id):
                     first = qp.questions[0].question if qp.questions else ""
                     self._app.notify(
@@ -84,9 +85,10 @@ class PromptDispatcher:
         Returns:
             Whether a modal opened; False when no queued question is pending.
         """
+        live = self._answerable()
         for qp in state.pending_questions:
             key = f"{session_dir}|{qp.id}"
-            if qp.answered or qp.blocking or key in self._open:
+            if qp.answered or (qp.blocking and live) or key in self._open:
                 continue
             if ipc.question_answers_written(session_dir, qp.id):
                 continue  # answered here already; the run reads the file at its next turn

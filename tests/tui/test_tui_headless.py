@@ -2063,3 +2063,50 @@ def test_a_queued_question_pops_no_modal_until_asked_for(tmp_path: pathlib.Path)
             assert ipc.read_question_answers(tmp_path, "question-2", timeout_s=1.0) == ("pg",)
 
     asyncio.run(scenario())
+
+
+def test_a_waiting_question_of_a_dead_run_is_answered_for_the_resume(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A question a dead worker left waiting opens no modal on its own; the Run menu answers it."""
+    folded = state.fold_session(
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {
+                "type": "question.prompt",
+                "id": "question-1",
+                "questions": [{"question": "Which DB?", "options": ["pg", "sqlite"]}],
+            },
+        ]
+    )
+
+    class _Host(textual_app.App[None]):
+        def __init__(self) -> None:
+            super().__init__()
+            self.dispatcher = prompts.PromptDispatcher(self, answerable=lambda: False, lost="lost")
+            self.notices: list[str] = []
+
+        def notify(self, message: Any, **kwargs: Any) -> None:  # type: ignore[override]
+            self.notices.append(str(message))
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.dispatcher.dispatch(tmp_path, folded)
+            app.dispatcher.dispatch(tmp_path, folded)
+            await pilot.pause()
+            assert not isinstance(app.screen, modals.QuestionModal)
+            assert len([n for n in app.notices if "Run menu: Answer a question" in n]) == 1
+            assert app.dispatcher.open_queued(tmp_path, folded) is True
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, modals.QuestionModal) and modal.queued
+            modal.query_one("#opt-0-0", widgets.Button).press()
+            await pilot.pause()
+            await pilot.press("ctrl+s")
+            await pilot.pause()
+            assert app.dispatcher.open_queued(tmp_path, folded) is False  # the file waits
+            assert ipc.read_question_answers(tmp_path, "question-1", timeout_s=1.0) == ("pg",)
+
+    asyncio.run(scenario())
