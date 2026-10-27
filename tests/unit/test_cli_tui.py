@@ -11,6 +11,8 @@ import json
 import os
 import pathlib
 import re
+import threading
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -56,6 +58,35 @@ def _live(_d: object) -> bool:
 
 def _dead(_d: object) -> bool:
     return False
+
+
+def _when_called(
+    monkeypatch: pytest.MonkeyPatch, module: object, name: str, act: Callable[[], object]
+) -> None:
+    """Run `act` on a thread once `module.name` is next called; the call itself runs unchanged.
+
+    An answer written before `OperatorPrompts.approve` clears its slot is deleted and the wait
+    never ends, so an answering thread starts from the wait the test pins.
+
+    Args:
+        monkeypatch: The patcher.
+        module: The module holding the function.
+        name: The function's name.
+        act: What the thread does.
+    """
+    entered = threading.Event()
+    real = getattr(module, name)
+
+    def observed(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        return real(*args, **kwargs)
+
+    def go() -> None:
+        entered.wait(timeout=10)
+        act()
+
+    monkeypatch.setattr(module, name, observed)
+    threading.Thread(target=go, daemon=True).start()
 
 
 def _ans_yes(_d: object, _pid: object, **_k: object) -> str:
@@ -122,10 +153,8 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
 def test_approver_consumes_an_answer_written_after_the_prompt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The legitimate path: the front-end writes the answer after it renders the prompt.
+    # The legitimate path: the front-end writes the answer once the run polls for it.
     import functools
-    import threading
-    import time
 
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
@@ -134,16 +163,11 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
         ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=3.0, poll_s=0.05)
     )
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
-
-    def writer() -> None:
-        time.sleep(0.3)  # after the prompt is emitted and the poll starts
-        ipc.write_answer(tmp_path, "approval-1", "yes")
-
-    t = threading.Thread(target=writer, daemon=True)
-    t.start()
+    _when_called(
+        monkeypatch, ipc, "read_answer", lambda: ipc.write_answer(tmp_path, "approval-1", "yes")
+    )
     approve = _prompts(tmp_path, events).approve
     assert approve("run `ls`?", scope=ipc.COMMAND_SCOPE) is True
-    t.join(timeout=2)
     assert _events_of(log, "approval.answer")[0]["source"] == "frontend"
 
 
@@ -168,9 +192,6 @@ def test_approver_headless_no_frontend_waits_not_denies(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No terminal, no away-mode, nothing attached: the run waits for a front-end, never denies.
-    import threading
-    import time
-
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
     # The real frontend_is_live: nothing is attached at approve() time, so the wait path runs.
@@ -178,11 +199,10 @@ def test_approver_headless_no_frontend_waits_not_denies(
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
 
     def attach_and_answer() -> None:
-        time.sleep(0.3)
         process.register_frontend(tmp_path, os.getpid())
         ipc.write_answer(tmp_path, "approval-1", "yes")
 
-    threading.Thread(target=attach_and_answer, daemon=True).start()
+    _when_called(monkeypatch, ipc, "await_frontend_reply", attach_and_answer)
     approve = _prompts(tmp_path, events).approve
     assert approve("rm -rf build", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
@@ -375,21 +395,16 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # away="wait" with nothing attached blocks until a front-end attaches and answers.
-    import threading
-    import time
-
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
     ipc.set_away_mode(tmp_path, "wait")
 
     def attach_and_answer() -> None:
-        time.sleep(0.3)
-        # a front-end re-attaches
         process.register_frontend(tmp_path, os.getpid())
-        ipc.write_answer(tmp_path, "approval-1", "yes")  # and answers
+        ipc.write_answer(tmp_path, "approval-1", "yes")
 
-    threading.Thread(target=attach_and_answer, daemon=True).start()
+    _when_called(monkeypatch, ipc, "await_frontend_reply", attach_and_answer)
     approve = _prompts(tmp_path, events).approve
     assert approve("ls", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "await-frontend"
@@ -404,7 +419,6 @@ def test_a_stop_request_ends_an_away_wait(
 
     A run blocked before its start has no step for `stop --after-step` to stop after.
     """
-    import threading
     import time
 
     log = tmp_path / "logs.jsonl"
@@ -462,7 +476,6 @@ def test_approver_wait_consumes_a_claimless_answer(
 
     The web UI writes answers without ever registering a claim.
     """
-    import threading
     import time
 
     log = tmp_path / "logs.jsonl"
@@ -470,16 +483,17 @@ def test_approver_wait_consumes_a_claimless_answer(
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
     monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
 
-    def answer_never_claiming() -> None:
-        time.sleep(0.3)
-        ipc.write_answer(tmp_path, "approval-1", "yes")  # no register_frontend
-
     def abort_if_wedged() -> None:
         # A wait loop that never reads a claim-less answer fails fast instead of hanging the suite.
         time.sleep(15)
         ipc.write_steer_answer(tmp_path, "abort")
 
-    threading.Thread(target=answer_never_claiming, daemon=True).start()
+    _when_called(  # no register_frontend
+        monkeypatch,
+        ipc,
+        "await_frontend_reply",
+        lambda: ipc.write_answer(tmp_path, "approval-1", "yes"),
+    )
     threading.Thread(target=abort_if_wedged, daemon=True).start()
     approve = _prompts(tmp_path, events).approve
     assert approve("run_verify_command", scope=ipc.COMMAND_SCOPE) is True
