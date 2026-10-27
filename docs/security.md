@@ -468,6 +468,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - it spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
     - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags.
+      By default, these flags switch off the repository's hooks, fsmonitor, external diff, textconv, commit signing, and filter and merge drivers.
       `sessions diff` and `ask` read only.
       `skills install` clones with fixed argv.
       By default, `review` runs no repository code.

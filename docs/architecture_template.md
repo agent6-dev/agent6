@@ -17,8 +17,8 @@ Any layer may also use the shared substrate: <!-- generated: substrate-names -->
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `_git_command.py`.
 It runs each git command with a 120-second timeout.
-By default, it switches off the repository's hooks, fsmonitor, external diff, commit signing, and filter and merge drivers.
-`git_policy.py` shares hardening flags and hook/filter policy; `errors.py` owns `GitError`.
+By default, it switches off the repository's hooks, fsmonitor, external diff, textconv, commit signing, and filter and merge drivers.
+`git_policy.py` holds those switches and the hook and driver policy; `errors.py` owns `GitError`.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
     - the four front-ends: `ui/cli`, `ui/tui`, `ui/web`, `ui/acp`

@@ -35,7 +35,7 @@ Sandboxing supports **Linux on x86_64 and aarch64**; macOS runs without it, and 
 Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/), then connect a provider and select a model:
 
 ```sh
-uv tool install agent6      # or: pipx install agent6
+uv tool install agent6      # or pipx install agent6
 agent6 connect              # configure a provider
 agent6 model worker         # choose a model
 ```
@@ -98,12 +98,18 @@ The worker, planner, and reviewer can use different models and reasoning effort;
 ## [Security][security]
 
 The sandbox confines model commands; the agent6 process remains trusted, holds provider credentials, and connects to your configured providers.
+agent6's own git never pushes, rewrites history or runs `reset --hard`, and no config key turns that on.
 MCP is off by default, and locally spawned servers use the command sandbox unless explicitly configured otherwise.
 
 `sandbox.isolation = "auto"` selects the strongest available level (`full`, `partial`, or `none`) and warns when it falls back, including to no confinement.
 Under `full`, the default `sandbox.network = "auto"` gives a run's commands a private network; `partial` and `none` `sandbox.isolation` use the host network.
 The defaults are `sandbox.network = "auto"`, `sandbox.run_commands = "ask"` and `sandbox.protect_git = "auto"`.
 `agent6 check sandbox` shows the effective file and command boundaries, network and approval settings, and live probe results.
+
+## How it compares
+
+Compared with an agent in a container or a VM, agent6 confines the run's commands in place, on your host.
+There is no image to build or keep current, the jail sees your installed toolchains read-only, and the repository stays at its real path.
 <!-- --8<-- [end:guide] -->
 
 [acp]: https://agent6.dev/acp/
