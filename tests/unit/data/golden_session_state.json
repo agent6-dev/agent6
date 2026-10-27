@@ -64,6 +64,26 @@
     }
   ],
   "last_verify": null,
+  "review": {
+    "panels": [],
+    "findings": [],
+    "version": 0,
+    "open_counts": {
+      "block": 0,
+      "warn": 0,
+      "nit": 0
+    },
+    "completion": "unknown",
+    "freshness": "unknown",
+    "legacy_notice": "",
+    "read_failure": null,
+    "comparison": null,
+    "event_ids": [],
+    "merge_guard": {
+      "open_block_ids": [],
+      "read_failure": null
+    }
+  },
   "budget": {
     "input_total": 0,
     "output_total": 0,
