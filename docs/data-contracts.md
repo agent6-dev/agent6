@@ -70,6 +70,7 @@ Define immutable review evidence and validate review boundary payloads.
 | `snapshot_commit` | `str` | required |
 | `paths` | `tuple[str, ...]` | required |
 | `source` | `Literal['revisions', 'worktree']` | required |
+| `hidden_paths` | `tuple[str, ...]` | `()` |
 
 **ReviewLocation** &mdash; Name a repository-relative path on one side, with an optional inclusive line range.
 
@@ -174,7 +175,7 @@ Define immutable review evidence and validate review boundary payloads.
 | `resume` | `bool` | `False` |
 
 - **Written by:** app/review_actions, harness/{_panel, _review_history, _review_seat, _reviewer}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
-- **Read by:** harness/{_chain, _context, _loop_state, code_review}, ui/acp/review, ui/cli/review_cmds, ui/tui/{_diff_pane, review}, viewmodel/review
+- **Read by:** harness/{_chain, _context, _loop_state, code_review}, ui/acp/review, ui/cli/review_cmds, ui/tui/{_diff_pane, review}, vcs/_review_rules, viewmodel/review
 - **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (20 test files exercise it)
 
 ## Conversation

@@ -337,7 +337,7 @@ def _reviewed_diff(
     except (errors.GitError, OSError) as exc:
         _common.error(f"git diff failed: {terminal.printable_name(str(exc))}")
         return 2
-    if compared.hidden_paths:
+    if compared.target.hidden_paths:
         print("note: review excludes hidden paths (sandbox.hide_paths).", file=sys.stderr)
     if compared.dirty_submodules:
         names = ", ".join(terminal.printable_name(name) for name in compared.dirty_submodules)

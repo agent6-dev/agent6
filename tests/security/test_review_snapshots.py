@@ -374,7 +374,7 @@ def test_root_exclusions_preserve_tracked_ignored_children(
 def test_revision_review_excludes_hidden_deletions_and_modifications(
     tmp_path: pathlib.Path,
 ) -> None:
-    """Hidden paths on either tree stay out of the diff and recorded coverage."""
+    """Hidden paths on either tree stay out of the diff and have their own record."""
     _git(tmp_path, "init", "-q")
     private = tmp_path / "private"
     private.mkdir()
@@ -389,9 +389,9 @@ def test_revision_review_excludes_hidden_deletions_and_modifications(
     compared = review.comparison(
         tmp_path, base="HEAD~1", head="HEAD", paths=(), hide=(str(private),)
     )
-    assert compared.target.paths == ("a.py",)
+    assert compared.target.paths == ()
     assert "private/" not in compared.diff
-    assert compared.hidden_paths == ("private/changed", "private/deleted")
+    assert compared.target.hidden_paths == ("private/changed", "private/deleted")
 
 
 @pytest.mark.parametrize("side", ["base", "head"])

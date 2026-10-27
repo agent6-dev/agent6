@@ -478,6 +478,7 @@ banned-from = [
     "agent6.ui.web.review_routes",
     "agent6.ui.web.server",
     "agent6.vcs._git_command",
+    "agent6.vcs._review_rules",
     "agent6.vcs._review_submodules",
     "agent6.vcs.commit_graph",
     "agent6.vcs.commit_message",

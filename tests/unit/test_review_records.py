@@ -137,6 +137,24 @@ def test_frozen_records_round_trip() -> None:
             setattr(record, dataclasses.fields(record)[0].name, "different")
 
 
+def test_review_target_defaults_missing_hidden_paths_and_round_trips_exclusions() -> None:
+    """Older targets remain readable while new targets retain their excluded names."""
+    adapter = pydantic.TypeAdapter(review_records.ReviewTarget)
+    legacy = dict(
+        base_commit="base",
+        base_tree="base-tree",
+        head_commit="head",
+        head_tree="head-tree",
+        snapshot_commit="head",
+        paths=[],
+        source="revisions",
+    )
+    assert adapter.validate_python(legacy).hidden_paths == ()
+    target = adapter.validate_python({**legacy, "hidden_paths": ["private/file"]})
+    assert target.paths == () and target.hidden_paths == ("private/file",)
+    assert adapter.validate_json(adapter.dump_json(target)) == target
+
+
 def test_observation_line_origin_round_trips_and_defaults_to_historical_unknown() -> None:
     adapter = pydantic.TypeAdapter(review_records.FindingObservation)
     legacy = dict(finding_id="f", panel_id="p", finding=_finding().model_dump(), seat_indexes=[0])

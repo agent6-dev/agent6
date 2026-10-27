@@ -77,7 +77,7 @@ A run keeps one message history with one provider and one model.
 - the model drives by calling tools; the harness dispatches, snapshots, tracks budget
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
-- `_context.review_rules` loads base-tree rule blobs through `vcs.review`; `loop.review.start` records the paths, blob IDs, byte counts and completeness, shared by the panel and standalone code review
+- `_context.review_rules` loads base-tree rule blobs through `vcs._review_rules`; `loop.review.start` records the paths, blob IDs, byte counts and completeness, shared by the panel and standalone code review
 - under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as text whenever a call is not a continuation of its last round ([Config](config.md))
 
 An in-loop panel records the run base and chain commit's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.

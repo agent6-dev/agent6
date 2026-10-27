@@ -150,6 +150,61 @@ def test_the_panel_verdict_is_saved_too(
     assert f"review saved: {saved[0]}" in out.err
 
 
+@pytest.mark.parametrize("committed", [False, True], ids=["worktree", "revisions"])
+@pytest.mark.parametrize("selection", [(), ("lib.py", "private")], ids=["all", "selected"])
+def test_review_journal_keeps_selection_separate_from_hidden_paths(
+    repo: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    committed: bool,
+    selection: tuple[str, ...],
+) -> None:
+    """Hidden files must not expand the recorded selection into every visible filename."""
+    private = repo / "private"
+    private.mkdir()
+    for name in ("changed", "deleted"):
+        (private / name).write_text("old private content\n")
+    test_review_diff_collect._git(repo, "add", "private")
+    test_review_diff_collect._git(repo, "commit", "-qm", "private files")
+    base = test_review_diff_collect._git(repo, "rev-parse", "HEAD").strip()
+    (private / "changed").write_text("new private content\n")
+    (private / "deleted").unlink()
+    if committed:
+        test_review_diff_collect._git(repo, "commit", "-qam", "change")
+    cfg = _reviewer_config()
+    cfg = cfg.model_copy(
+        update={"sandbox": cfg.sandbox.model_copy(update={"hide_paths": (str(private),)})}
+    )
+    monkeypatch.setattr(
+        layer, "load_effective", mock.Mock(return_value=types.SimpleNamespace(config=cfg))
+    )
+    monkeypatch.setattr(
+        providers,
+        "build_review_seats",
+        mock.Mock(
+            return_value=[_reviewer.ReviewSeat("correctness", "reviewer", _PassingSeatProvider())]
+        ),
+    )
+
+    assert (
+        review_cmds._cmd_review(
+            (), base=base if committed else "", head="HEAD", paths=selection, reviewers=1
+        )
+        == 0
+    )
+
+    (journal,) = (paths.state_dir(repo) / "reviews").glob("*.jsonl")
+    rows = [json.loads(line) for line in journal.read_text().splitlines()]
+    targets = {
+        row["type"]: row["target"]
+        for row in rows
+        if row["type"] in ("loop.review.start", "loop.review.panel")
+    }
+    assert set(targets) == {"loop.review.start", "loop.review.panel"}
+    for target in targets.values():
+        assert tuple(target["paths"]) == selection
+        assert tuple(target["hidden_paths"]) == ("private/changed", "private/deleted")
+
+
 @pytest.mark.parametrize("nested", [False, True], ids=["root", "subdirectory"])
 @pytest.mark.parametrize("committed", [False, True], ids=["worktree", "revisions"])
 @pytest.mark.parametrize("hidden", [False, True], ids=["ordinary", "hidden-ignore-revs"])

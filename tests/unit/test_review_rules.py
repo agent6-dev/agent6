@@ -77,6 +77,19 @@ def test_absent_optional_files_are_complete(repo: pathlib.Path) -> None:
     assert rules.sources == () and rules.text == ""
 
 
+def test_absent_rule_under_a_hidden_directory_is_optional(repo: pathlib.Path) -> None:
+    """A hidden directory without AGENTS.md does not make the rule set incomplete."""
+    sub = repo / "sub"
+    sub.mkdir()
+    (sub / "code.py").write_text("value = 1\n")
+    tree = _commit(repo)
+
+    rules = _context.review_rules(sub, tree, hide=(str(sub),))
+
+    assert rules.complete and rules.reason is None
+    assert not rules.sources and not rules.text
+
+
 def test_historical_rules_survive_head_deletion_and_checkout_links(repo: pathlib.Path) -> None:
     (repo / "AGENTS.md").write_text("  keep this rule\r\n", newline="")
     tree = _commit(repo)
@@ -96,7 +109,7 @@ def test_present_unsafe_rule_refuses_the_whole_set(
     (repo / "src").mkdir()
     path = repo / "src" / "AGENTS.md"
     if kind == "symlink":
-        path.symlink_to("../AGENTS.md")
+        path.symlink_to("../../outside.md")
     elif kind == "directory":
         path.mkdir()
         (path / "entry").write_text("not a rule file")
@@ -118,6 +131,80 @@ def test_present_unsafe_rule_refuses_the_whole_set(
     assert not rules.complete
     assert rules.sources == () and not rules.text
     assert rules.reason and "src/AGENTS.md" in rules.reason
+
+
+@pytest.mark.parametrize("kind", ["parent", "directory", "chain"])
+def test_rule_links_resolve_only_against_the_base_tree(repo: pathlib.Path, kind: str) -> None:
+    """Relative parents and directory links must resolve without consulting the checkout."""
+    (repo / "docs").mkdir()
+    (repo / "docs/agents.md").write_text("base rules\n")
+    cwd = repo
+    source = "AGENTS.md"
+    if kind == "parent":
+        cwd = repo / "sub"
+        cwd.mkdir()
+        source = "sub/AGENTS.md"
+        (repo / source).symlink_to("../docs/agents.md")
+    elif kind == "directory":
+        (repo / "alias").symlink_to("docs")
+        (repo / source).symlink_to("alias/agents.md")
+    else:
+        (repo / source).symlink_to("hop0")
+        for i in range(7):
+            (repo / f"hop{i}").symlink_to(f"hop{i + 1}" if i < 6 else "docs/agents.md")
+    tree = _commit(repo)
+    (repo / "docs/agents.md").unlink()
+    (repo / "docs/agents.md").symlink_to("/etc/passwd")
+
+    rules = _context.review_rules(cwd, tree)
+
+    assert rules.complete, rules.reason
+    assert len(rules.sources) == 1
+    assert dataclasses.asdict(rules.sources[0]) == {
+        "path": source,
+        "blob_id": _git(repo, "rev-parse", f"{tree}:docs/agents.md"),
+        "supplied_bytes": len(b"base rules\n"),
+    }
+    assert rules.text.endswith("base rules\n")
+
+
+@pytest.mark.parametrize("target", ["/etc/passwd", "../outside.md", "missing.md", "loop", "hop0"])
+def test_unsafe_rule_links_refuse_with_no_partial_rules(repo: pathlib.Path, target: str) -> None:
+    """Escaping, dangling, looping and overlong links cannot supply review rules."""
+    (repo / "AGENTS.md").symlink_to(target)
+    (repo / "loop").symlink_to("AGENTS.md")
+    for i in range(8):
+        (repo / f"hop{i}").symlink_to(f"hop{i + 1}" if i < 7 else "rules.md")
+    (repo / "rules.md").write_text("not supplied\n")
+    tree = _commit(repo)
+
+    rules = _context.review_rules(repo, tree)
+
+    assert not rules.complete and not rules.sources and not rules.text
+    assert rules.reason and "not a regular file in the base tree" in rules.reason
+
+
+@pytest.mark.parametrize("hidden", ["target", "directory", "intermediate"])
+def test_rule_links_cannot_read_hidden_blobs(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, hidden: str
+) -> None:
+    """Every historical link hop is checked against the shared hidden-path boundary."""
+    (repo / "private").mkdir()
+    (repo / "private/rules.md").write_text("hidden rule\n")
+    (repo / "hop").symlink_to("private/rules.md")
+    (repo / "AGENTS.md").symlink_to("hop")
+    tree = _commit(repo)
+    denied = {"target": "private/rules.md", "directory": "private", "intermediate": "hop"}[hidden]
+    (repo / "private/rules.md").unlink()
+    (repo / "private/rules.md").symlink_to("../visible.md")
+    reader = mock.Mock(wraps=git_files.blob_at)
+    monkeypatch.setattr(git_files, "blob_at", reader)
+
+    rules = _context.review_rules(repo, tree, hide=(str(repo / denied),))
+
+    assert not rules.complete and not rules.sources and not rules.text
+    assert rules.reason and "hidden" in rules.reason
+    assert all(call.args[2] != "private/rules.md" for call in reader.call_args_list)
 
 
 @pytest.mark.parametrize("size,complete", [(65536, True), (65538, False)])
@@ -153,11 +240,18 @@ def _reviewer_for(
     )
 
 
-def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path) -> None:
-    (repo / "AGENTS.md").write_text("base rule\n")
+@pytest.mark.parametrize("linked", [False, True], ids=["regular", "linked"])
+def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path, linked: bool) -> None:
+    name = "docs/agents.md" if linked else "AGENTS.md"
+    (repo / "docs").mkdir()
+    (repo / name).write_text("base rule\n")
+    if linked:
+        (repo / "AGENTS.md").symlink_to(name)
     (repo / "foo.py").write_text("x = 1\n")
     tree = _commit(repo)
-    blob = _git(repo, "rev-parse", f"{tree}:AGENTS.md")
+    blob = _git(repo, "rev-parse", f"{tree}:{name}")
+    if linked:
+        (repo / name).write_text("checkout rule\n")
     provider = mock.MagicMock()
     provider.call.return_value = test_review_gate._resp('{"verdict":"pass","findings":[]}')
     sink = event_log.EventSink(repo / "logs.jsonl")
@@ -167,9 +261,10 @@ def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path) -> 
     target = reviewer.chain.review_target()
     assert target is not None
     diff = git_read.diff_range(repo, target.base_tree, target.head_tree)
-    reviewer.critique(
+    result = reviewer.critique(
         _loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
     )
+    assert result is not None
     assert provider.call.call_args.kwargs["messages"] == [
         {
             "role": "user",
@@ -186,15 +281,22 @@ def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path) -> 
 
 
 @pytest.mark.parametrize("reviewers", [0, 1])
+@pytest.mark.parametrize("linked", [False, True], ids=["regular", "linked"])
 def test_cli_uses_base_rules_and_records_the_compared_trees(
-    repo: pathlib.Path, reviewers: int, monkeypatch: pytest.MonkeyPatch
+    repo: pathlib.Path, reviewers: int, monkeypatch: pytest.MonkeyPatch, linked: bool
 ) -> None:
     from agent6.ui.cli import review_cmds
 
-    (repo / "AGENTS.md").write_text("base rule\n")
+    name = "docs/agents.md" if linked else "AGENTS.md"
+    (repo / "docs").mkdir()
+    (repo / name).write_text("base rule\n")
+    if linked:
+        (repo / "AGENTS.md").symlink_to(name)
     (repo / "foo.py").write_text("x = 1\n")
     tree = _commit(repo)
     (repo / "AGENTS.md").unlink()
+    if linked:
+        (repo / name).write_text("checkout rule\n")
     (repo / "foo.py").write_text("x = 2\n")
     provider = mock.MagicMock()
     provider.call.return_value = test_review_gate._resp(
@@ -217,14 +319,21 @@ def test_cli_uses_base_rules_and_records_the_compared_trees(
     assert review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=reviewers) == 0
     message = provider.call.call_args.kwargs["messages"][0]["content"]
     assert "REVIEW RULES (base tree):\nAGENTS.md (blob " in message
-    assert "base rule\n" in message
+    rules_message = message.partition("\n\nDIFF:")[0]
+    assert "base rule\n" in rules_message and "checkout rule" not in rules_message
     journals = list((paths.state_dir(repo) / "reviews").glob("*.jsonl"))
     assert len(journals) == 1
     rows = [json.loads(line) for line in journals[0].read_text().splitlines()]
     start = next(row for row in rows if row["type"] == "loop.review.start")
     assert start["target"]["base_tree"] == tree
     assert start["target"]["head_tree"] != tree
-    assert start["rule_sources"][0]["path"] == "AGENTS.md"
+    assert start["rule_sources"] == [
+        {
+            "path": "AGENTS.md",
+            "blob_id": _git(repo, "rev-parse", f"{tree}:{name}"),
+            "supplied_bytes": 10,
+        }
+    ]
 
 
 @pytest.mark.parametrize("head_link", [False, True])
@@ -243,13 +352,13 @@ def test_hidden_rules_are_refused_before_blob_read(
     reader.assert_not_called()
 
 
-def test_base_directory_symlink_is_not_an_absent_rule(repo: pathlib.Path) -> None:
+def test_dangling_base_directory_link_is_not_an_absent_rule(repo: pathlib.Path) -> None:
     (repo / "src").symlink_to("elsewhere")
     tree = _commit(repo)
     (repo / "src").unlink()
     (repo / "src").mkdir()
     rules = _context.review_rules(repo / "src", tree)
-    assert not rules.complete and rules.reason and "src is not a directory" in rules.reason
+    assert not rules.complete and rules.reason and "not a regular file" in rules.reason
 
 
 @pytest.mark.parametrize("complete", [False, True], ids=["refusal", "sources"])

@@ -400,55 +400,12 @@ def classify_line_origin(
         return review_records.LineOrigin(reason=str(exc))
 
 
-def rule_blob(
-    root: pathlib.Path, tree: str, name: str, *, max_bytes: int
-) -> tuple[review_records.RuleSource, str] | None:
-    """Read an optional regular rule blob, refusing links, non-text and oversized content.
-
-    Args:
-        root: The repository root.
-        tree: The immutable reviewed base tree.
-        name: The repository-relative rule path.
-        max_bytes: The remaining byte allowance for the combined rule set.
-
-    Returns:
-        The source and text, or None when absent.
-
-    Raises:
-        GitError: A present path cannot supply a whole regular rule file.
-        UnicodeDecodeError: The blob is not UTF-8 text.
-    """
-    parts = pathlib.PurePosixPath(name).parts
-    for i in range(1, len(parts)):
-        parent = "/".join(parts[:i])
-        entry = git_read.tree_entry(root, tree, parent)
-        if not entry:
-            return None
-        if not entry.startswith("040000 tree "):
-            raise errors.GitError(f"{parent} is not a directory in the base tree")
-    entry = git_read.tree_entry(root, tree, name)
-    if not entry:
-        return None
-    if not entry.startswith(("100644 blob ", "100755 blob ")):
-        raise errors.GitError("not a regular file in the base tree (symlinks are refused)")
-    blob = git_files.blob_at(root, tree, name, max_bytes=max_bytes)
-    if blob is None:
-        raise errors.GitError("rule blob is unavailable")
-    if blob.data is None:
-        raise errors.GitError("combined rules exceed 64 KiB; reduce the base-tree rule files")
-    text = blob.data.decode("utf-8")
-    if "\x00" in text:
-        raise errors.GitError("rule blob contains NUL bytes")
-    return review_records.RuleSource(name, entry.split()[2], len(blob.data)), text
-
-
 @dataclasses.dataclass(frozen=True, slots=True)
 class Comparison:
     """Keep the diff with the immutable trees it compares."""
 
     target: review_records.ReviewTarget
     diff: str
-    hidden_paths: tuple[str, ...] = ()
     dirty_submodules: tuple[str, ...] = ()
 
 
@@ -617,8 +574,9 @@ def comparison(
         head_commit,
         head_tree,
         head_commit or "",
-        selected if paths or hidden else (),
+        paths,
         "revisions" if base else "worktree",
+        hidden,
     )
     diff = (
         _git_command.run(
@@ -641,7 +599,7 @@ def comparison(
         workspace.is_denied(repo / name) for name in _diff_names(root, target, specs, exclusions)
     ):
         raise errors.GitError("Git pathspecs cannot enforce the review's hidden paths")
-    return Comparison(target, diff, hidden, dirty_submodules)
+    return Comparison(target, diff, dirty_submodules)
 
 
 def _diff_names(

@@ -346,7 +346,7 @@ def test_exclusion_only_selection_is_repository_wide(
     )
 
     assert "+x = 99" in compared.diff
-    assert compared.target.paths == ("tracked.py",)
+    assert compared.target.paths == (exclude + "ignored.txt",)
     assert "excluded bytes" not in compared.diff
     assert _git(repo, "show", f"{compared.target.head_tree}:tracked.py") == "x = 99\n"
     if not committed:
@@ -356,10 +356,10 @@ def test_exclusion_only_selection_is_repository_wide(
 
 @pytest.mark.parametrize("committed", [False, True], ids=["worktree", "revisions"])
 @pytest.mark.parametrize("nested", [False, True], ids=["root", "subdirectory"])
-def test_coverage_names_the_same_repository_paths_as_the_diff(
+def test_selection_stays_relative_to_the_review_directory(
     repo: pathlib.Path, committed: bool, nested: bool
 ) -> None:
-    """A subdirectory's f.py cannot be recorded as the repository root's f.py."""
+    """The selection stays as given while the diff names repository-relative paths."""
     (repo / "sub").mkdir()
     for name in ("f.py", "sub/f.py"):
         (repo / name).write_text("old\n")
@@ -377,7 +377,7 @@ def test_coverage_names_the_same_repository_paths_as_the_diff(
         paths=("f.py",),
     )
     expected = "sub/f.py" if nested else "f.py"
-    assert compared.target.paths == (expected,)
+    assert compared.target.paths == ("f.py",)
     assert list(review.diff_hunks(compared.diff)) == [(expected, "base"), (expected, "head")]
 
 
@@ -403,7 +403,7 @@ def test_review_coverage_includes_staged_deletions(
 
     compared = review.comparison(repo, base="", head="HEAD", paths=selected)
 
-    assert "gone.py" in compared.target.paths
+    assert compared.target.paths == selected
     assert "deleted file mode" in compared.diff and "-deleted content" in compared.diff
     tracked_selected = selected in (("*.py",), ("gone.py", "tracked.py"))
     assert ("+changed" in compared.diff) is tracked_selected

@@ -45,6 +45,7 @@ class ReviewTarget:
     snapshot_commit: str
     paths: tuple[str, ...]
     source: Literal["revisions", "worktree"]
+    hidden_paths: tuple[str, ...] = ()
 
 
 class ReviewLocation(pydantic.BaseModel):

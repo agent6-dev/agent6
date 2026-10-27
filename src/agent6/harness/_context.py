@@ -14,7 +14,7 @@ import pathlib
 
 from agent6 import errors, kinds, review_records, terminal
 from agent6.tools import _path_safety
-from agent6.vcs import git_read, review
+from agent6.vcs import _review_rules, git_read
 
 _REPO_MAP_MAX_LINES = 60
 _REPO_MAP_MAX_FILES_PER_DIR = 6
@@ -58,11 +58,7 @@ def review_rules(
     try:
         for directory in directories:
             name = (directory / "AGENTS.md").as_posix()
-            if workspace.is_denied(base / name) and git_read.tree_entry(base, base_tree, name):
-                return review_records.ReviewRules(
-                    complete=False, reason=f"review rules incomplete: {name}: path is hidden"
-                )
-            entry = review.rule_blob(base, base_tree, name, max_bytes=remaining)
+            entry = _review_rules.rule_blob(workspace, base_tree, name, max_bytes=remaining)
             if entry is None:
                 continue
             source, text = entry

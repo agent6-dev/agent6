@@ -47,7 +47,23 @@ def blob_at(path: pathlib.Path, rev: str, name: str, *, max_bytes: int) -> Blob 
     metadata = git_read.tree_entry(path, rev, name)
     if not metadata.startswith(("100644 blob ", "100755 blob ")):
         return None
-    sha = metadata.split()[2]
+    return read_blob(path, metadata.split()[2], max_bytes=max_bytes)
+
+
+def read_blob(path: pathlib.Path, sha: str, *, max_bytes: int) -> Blob:
+    """Read a blob by object ID under a byte cap.
+
+    Args:
+        path: The repository.
+        sha: The blob's object ID.
+        max_bytes: The most bytes read; a larger blob comes back as its size only.
+
+    Returns:
+        The blob's size and, when within the cap, its bytes.
+
+    Raises:
+        GitError: The blob cannot be read.
+    """
     size = int(_git_command.run(path, "cat-file", "-s", sha).stdout)
     if size > max_bytes:
         return Blob(size, None)

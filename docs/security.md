@@ -271,7 +271,8 @@ Every path they take resolves through `Workspace`:
 **Code-review rules.** The reviewer reads historical `AGENTS.md` blobs from the base tree, not the checkout.
 The workspace hidden-path policy applies before reading a rule blob.
 A checkout symlink cannot redirect a configured hidden path away from its historical name.
-Historical symlinks are refused, including ancestor symlinks; current checkout links do not redirect a historical read.
+Historical symlinks resolve within the same base tree, through at most eight links, to a regular file outside the hidden set.
+Current checkout links do not redirect a historical read.
 A present file that cannot be read safely makes the review incomplete; missing optional files do not.
 `AGENTS.md` cannot grant tools, network access or operator permissions, and cannot alter the aggregator's severity restrictions.
 Model obedience is not a security boundary.
