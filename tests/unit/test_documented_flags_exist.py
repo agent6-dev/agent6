@@ -19,12 +19,13 @@ from agent6.ui.cli import parser as cli_parser
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 DOCS = [*sorted((ROOT / "docs").glob("*.md")), ROOT / "README.md"]
 
-# Other tools' flags named in prose: git's, uv's, and Claude Code's on the claude_code argv.
+# Other tools' flags named in prose: git's, uv's, Docker's, and Claude Code's on its argv.
 _NOT_OURS = {
     "--link-mode",
     "--no-ext-diff",
     "--no-textconv",
     "--no-ff",
+    "--security-opt",
     "--allowed",
     "--disable-slash-commands",
     "--no-session-persistence",

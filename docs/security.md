@@ -150,6 +150,10 @@ Probed per host: `unshare` for namespaces, the Landlock ABI syscall, the seccomp
 | `none` | any | `none`, warned |
 
 `--disable-sandbox` and `AGENT6_DISABLE_SANDBOX=1` force `none` `sandbox.isolation` for one invocation.
+Inside a container the same probes decide the level.
+Docker's default seccomp and AppArmor profiles block unprivileged user namespaces, so a plain devcontainer resolves `sandbox.isolation = "auto"` to `partial`, with the container's network and `.git` writable to commands, warned at startup (measured 2026-10-27 with `agent6 check sandbox` in `python:3.12-slim` under Docker 29.1).
+The same container started with `--security-opt seccomp=unconfined --security-opt apparmor=unconfined` resolves to `full`, with the private network and the read-only `.git`; the host must also allow unprivileged user namespaces (on Ubuntu 24.04, `kernel.apparmor_restrict_unprivileged_userns = 0`).
+`agent6 check sandbox` names the level and what blocks a stronger one.
 Config, flag, and env var are operator-only; the model reaches neither argv nor env.
 
 **Inside the jail**

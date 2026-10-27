@@ -108,8 +108,17 @@ The defaults are `sandbox.network = "auto"`, `sandbox.run_commands = "ask"` and 
 
 ## How it compares
 
-Compared with an agent in a container or a VM, agent6 confines the run's commands in place, on your host.
-There is no image to build or keep current, the jail sees your installed toolchains read-only, and the repository stays at its real path.
+A container or a VM confines the whole agent.
+agent6 confines the model's commands in a jail on your host.
+Its own work runs outside the jail.
+Under `sandbox.isolation = "full"` or `sandbox.isolation = "partial"`, the commands cannot read your provider keys or the secrets file.
+Under `sandbox.isolation = "full"`, the default `sandbox.protect_git = "auto"` keeps the project's `.git` read-only to the commands, so nothing can be planted for agent6's own git to run.
+The repository stays at its real path.
+The jail sees your installed toolchains read-only.
+agent6 runs inside or outside a devcontainer.
+Inside a container, `sandbox.isolation = "auto"` selects the strongest level the container allows, and `agent6 check sandbox` names it.
+Docker's default seccomp and AppArmor profiles block user namespaces, so a plain devcontainer gets `sandbox.isolation = "partial"`: the container's network, and `.git` writable to the commands, warned at startup.
+A container started with `--security-opt seccomp=unconfined --security-opt apparmor=unconfined` allows `sandbox.isolation = "full"`.
 <!-- --8<-- [end:guide] -->
 
 [acp]: https://agent6.dev/acp/
