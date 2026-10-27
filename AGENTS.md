@@ -152,15 +152,15 @@
 - Push, `--force`, history rewrites and `reset --hard` belong to the operator: the `vcs` package spells none of them, and only its modules may import the private git runner (pinned by `test_the_vcs_package_never_spells_a_destructive_verb` and `test_only_the_vcs_package_imports_the_runner`).
   `branch -D` has one operator-only exception: `sessions prune --delete-squashed` on a branch the manifest confirms was squash-merged.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat(scope):`, `fix(scope):`, `ci:`, `docs:`, `bench:`; the scope matches a directory under `src/agent6/` or a top-level area.
-- One concern per commit, each worth keeping on its own.
-  Squash iterative churn only: a fix-up to unpushed work folds into its origin commit.
+- One concern per commit; HEAD passes the gate, an intermediate commit need not.
+  A fix-up to unpushed work folds into its origin commit when the fold is easy.
 - A commit message is committed prose and meets the same test (Writing style); the author field is the one place a name appears.
 - The operator signs and pushes, from another machine.
   Messages and docs name neither commit hashes (signing changes them) nor branch names (transient).
 - Pushed history is immutable; unpushed commits are rewritten when asked.
   One exception: a leak in an unpushed commit is rewritten out at its origin, every occurrence of it found first.
 - Stage named files only, so scratch notes, session artifacts and generated output stay out.
-- Working directly on master is fine; the agent folds its session's churn (zero-diff verified) before returning control, so the operator takes over a release-ready master.
+- Working directly on master is fine; the operator takes over a master whose HEAD is green and whose history holds no leak and no false message.
   A squashed body keeps the decisions, and what was tried and rejected; durable design reasoning goes to docs.
 
 ### Verify command
@@ -175,7 +175,7 @@ uv run ruff check && uv run ruff format --check && \
 - All five must pass; a red `tach check` means the module map is stale: record the new edge in `tach.toml` and move on.
 - Read the gate's own exit status: capture to a file and test `$?`, or `set -o pipefail`, since a bare pipe through `tail`/`head`/`grep` reports the filter's code instead.
 - Scoped runs guide iteration; the full gate certifies a series of commits, at the end of the batch and before calling master push-ready.
-- On failure, bisect to the offending commit and fold the fix there.
+- On failure, fix at HEAD; fold into the offending commit when easy.
 - Push-ready adds the CI mirror: pyright at its latest release (`PYRIGHT_PYTHON_FORCE_VERSION=<latest> uv run pyright`), and, when `src/agent6/jail/` or `Cargo.*` changed, both musl target builds plus the wheel with the bundled jail binary exercised.
 
 ### Self-review
