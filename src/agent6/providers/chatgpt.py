@@ -362,17 +362,7 @@ class ChatGPTProvider:
                 wire = accepted[0]  # the served model refused the level once; its floor stands in
             body["reasoning"] = {"effort": wire, "summary": "auto"}
         if self.extra_body:
-            reserved = {
-                "model",
-                "instructions",
-                "input",
-                "tools",
-                "tool_choice",
-                "store",
-                "stream",
-                "include",
-                "prompt_cache_key",
-            }
+            reserved = _responses.RESERVED_BODY | {"prompt_cache_key"}
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
 
         return _transport.ProviderCall(

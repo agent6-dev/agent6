@@ -1366,3 +1366,23 @@ def test_a_reasoning_item_replays_only_to_its_own_route() -> None:
         "reasoning",
         "message",
     ]
+
+
+def test_the_chatgpt_profile_keeps_the_shared_reserved_body_keys(
+    signed_in: chatgpt_oauth.ChatGPTCredential,
+) -> None:
+    """The continuation and cap keys stay agent6's on the subscription path too."""
+    seen: dict[str, Any] = {}
+
+    def stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
+        seen["body"] = json.loads(kwargs["content"])
+        return _FakeStreamResponse(status_code=200, lines=_happy_stream())
+
+    provider = _provider(
+        signed_in,
+        extra_body={"previous_response_id": "r0", "max_output_tokens": 5, "metadata": {"a": 1}},
+    )
+    with mock.patch("agent6.providers._stream.http_stream", side_effect=stream):
+        provider.call(system="s", messages=[{"role": "user", "content": "x"}])
+    assert "previous_response_id" not in seen["body"] and "max_output_tokens" not in seen["body"]
+    assert seen["body"]["metadata"] == {"a": 1} and seen["body"]["store"] is False

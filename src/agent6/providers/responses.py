@@ -20,27 +20,6 @@ from agent6.providers import _headers, _responses, _stream, _transport, types, w
 
 DEFAULT_MAX_TOKENS = 8192
 _LABEL = "Responses"
-# Body keys the adapter or the harness owns; `extra_body` never reaches them: retention,
-# remote continuation, the output cap and the output format stay agent6's.
-RESERVED_BODY = frozenset(
-    {
-        "background",
-        "conversation",
-        "include",
-        "input",
-        "instructions",
-        "max_output_tokens",
-        "model",
-        "parallel_tool_calls",
-        "previous_response_id",
-        "response_format",
-        "store",
-        "stream",
-        "text",
-        "tool_choice",
-        "tools",
-    }
-)
 
 
 def _require_usage(usage: object) -> None:
@@ -231,7 +210,9 @@ class ResponsesProvider:
         if temperature is not None and not self._omit_temperature[0]:
             body["temperature"] = temperature
         if self.extra_body:
-            body.update({k: v for k, v in self.extra_body.items() if k not in RESERVED_BODY})
+            body.update(
+                {k: v for k, v in self.extra_body.items() if k not in _responses.RESERVED_BODY}
+            )
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
         return _transport.ProviderCall(
             api_label=_LABEL,

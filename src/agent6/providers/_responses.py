@@ -26,6 +26,27 @@ from agent6.providers import _openai_messages, _openai_recovery, _stream, types
 REPLAY_KEY = "reasoning_replay"
 # Each carries the final response object; `response.failed` carries an envelope instead.
 TERMINAL_EVENTS = frozenset({"response.completed", "response.done", "response.incomplete"})
+# Body keys the adapter or the harness owns; `extra_body` never reaches them: retention,
+# remote continuation, the output cap and the output format stay agent6's.
+RESERVED_BODY = frozenset(
+    {
+        "background",
+        "conversation",
+        "include",
+        "input",
+        "instructions",
+        "max_output_tokens",
+        "model",
+        "parallel_tool_calls",
+        "previous_response_id",
+        "response_format",
+        "store",
+        "stream",
+        "text",
+        "tool_choice",
+        "tools",
+    }
+)
 
 
 def replay_route(api_format: str, base_url: str, model: str) -> str:
