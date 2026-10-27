@@ -233,8 +233,9 @@ def test_run_silent_finish_stays_silent_finish() -> None:
 
 
 class _EventCapture:
-    def __init__(self) -> None:
+    def __init__(self, path: pathlib.Path = pathlib.Path("logs.jsonl")) -> None:
         self.events: list[dict[str, Any]] = []
+        self.path = path
 
     def emit(self, event_type: str, /, **fields: Any) -> None:
         self.events.append({"type": event_type, **fields})
@@ -1682,7 +1683,7 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
             verify_infer=True,
         ),
     )
-    ev = _EventCapture()
+    ev = _EventCapture(tmp_path / "logs.jsonl")
     wf = _wf(
         root=tmp_path,
         config=config,
@@ -2495,6 +2496,8 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
     events: list[dict[str, Any]] = []
 
     class _Events:
+        path = tmp_path / "logs.jsonl"
+
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
@@ -6561,6 +6564,8 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
     events: list[dict[str, Any]] = []
 
     class _Events:
+        path = tmp_path / "logs.jsonl"
+
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
@@ -6630,6 +6635,8 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
     events: list[dict[str, Any]] = []
 
     class _Events:
+        path = tmp_path / "logs.jsonl"
+
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
@@ -6702,6 +6709,8 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
     events: list[dict[str, Any]] = []
 
     class _Events:
+        path = tmp_path / "logs.jsonl"
+
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
@@ -6774,6 +6783,8 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
     events: list[dict[str, Any]] = []
 
     class _Events:
+        path = tmp_path / "logs.jsonl"
+
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
@@ -6997,6 +7008,8 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
     events: list[dict[str, Any]] = []
 
     class _Events:
+        path = tmp_path / "logs.jsonl"
+
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
@@ -7060,6 +7073,8 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
     events: list[dict[str, Any]] = []
 
     class _Events:
+        path = tmp_path / "logs.jsonl"
+
         def emit(self, event_type: str, /, **fields: Any) -> None:
             events.append({"type": event_type, **fields})
 
