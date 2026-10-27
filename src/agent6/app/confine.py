@@ -451,7 +451,9 @@ def unmaskable_exposures(
         return ()
     regions = _partial_grant_regions(cfg, root, worktree_git_dir)
     out: list[tuple[pathlib.Path, pathlib.Path, str]] = []
-    for h in paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths):
+    for h in paths.hidden_paths(root, (pathlib.Path(p) for p in cfg.sandbox.hide_paths)):
+        if h.name == ".agent6" and not h.exists():
+            continue
         hr = h.resolve()
         for region, source in regions:
             rr = region.resolve()

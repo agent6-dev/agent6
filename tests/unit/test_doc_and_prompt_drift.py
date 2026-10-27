@@ -129,6 +129,20 @@ def test_usage_says_which_listed_directives_a_scripted_steer_refuses() -> None:
         assert "`agent6 steer` refuses it" in line, line
 
 
+def test_usage_documents_both_state_transfer_commands() -> None:
+    """The workspace transfer instructions name both registered verbs and their boundary."""
+    from agent6.ui.cli import parser
+
+    usage = (REPO / "docs/usage.md").read_text()
+    assert "## Carry your state with the workspace" in usage
+    for verb in ("pack", "unpack"):
+        assert parser.build_parser().parse_args([verb]).command == verb
+        assert f"agent6 {verb}" in usage
+    for item in ("pack.json", "pack-base.json", "secrets.toml", "locks/", "three-way"):
+        assert item in usage
+    assert ".agent6/" in (REPO / "docs/security.md").read_text()
+
+
 def test_readme_dependency_count_matches_pyproject() -> None:
     deps = tomllib.loads((REPO / "pyproject.toml").read_text())["project"]["dependencies"]
     words = {5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten"}

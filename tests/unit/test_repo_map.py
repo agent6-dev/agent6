@@ -82,6 +82,17 @@ def test_repo_prior_labels_the_filtered_top_level_listing(tmp_path: pathlib.Path
     assert "Top-level (dot-prefixed entries omitted):" in prompt
 
 
+def test_repo_summary_omits_packed_file_names_even_if_git_tracks_them(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The prompt's file map and count share the file tools' hidden-path boundary."""
+    _init_repo(tmp_path, {"public.py": "x", ".agent6/config/secrets.toml": "synthetic"})
+    summary = _context.load_repo_summary(tmp_path)
+    assert summary.file_count == 1
+    assert ".agent6" not in summary.repo_map and "secrets.toml" not in summary.repo_map
+    assert summary.top_level == ("public.py",)
+
+
 def test_repo_map_escapes_a_name_that_is_not_utf8(tmp_path: pathlib.Path) -> None:
     """A latin-1 file name reads escaped in the map; raw, the snapshot's JSON refused the prompt."""
     _init_repo(tmp_path, {"a.py": "", os.fsdecode(b"caf\xe9.txt"): ""})

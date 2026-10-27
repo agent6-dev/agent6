@@ -963,7 +963,9 @@ class ToolDispatcher:
                 self._config.skills.extra_dirs,
                 self._config.skills.state,
                 paths.data_dir() / "skills",
-                hidden=paths.hidden_paths(pathlib.Path(p) for p in self._config.sandbox.hide_paths),
+                hidden=paths.hidden_paths(
+                    self._root, (pathlib.Path(p) for p in self._config.sandbox.hide_paths)
+                ),
             )
         return self._skills_cache
 

@@ -340,7 +340,7 @@ def policy_spec(policy: kinds.JailPolicy) -> dict[str, Any]:
         "tool_paths": [str(p) for p in policy.tool_paths],
         # The builtin private set is unioned at this one choke point, so no policy can omit it:
         # secrets and state never enter the jail even under a $HOME-wide grant.
-        "hide_paths": sorted({str(p) for p in paths.hidden_paths(policy.hide_paths)}),
+        "hide_paths": sorted({str(p) for p in paths.hidden_paths(policy.cwd, policy.hide_paths)}),
         "timeout_s": policy.timeout_s,
         # The launcher's wire key keeps the old suffix.
         "memory_limit_mb": policy.memory_limit_mib,

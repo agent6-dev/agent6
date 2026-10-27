@@ -20,6 +20,10 @@ class OperatorError(Exception):
     """
 
 
+class PackError(OperatorError):
+    """Refuse an unsafe or conflicting state transfer."""
+
+
 class GitError(Exception):
     """Generic git failure."""
 

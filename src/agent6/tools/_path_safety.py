@@ -109,6 +109,10 @@ class Workspace:
     write_roots: tuple[pathlib.Path, ...] = ()
     exempt: tuple[pathlib.Path, ...] = ()
 
+    def __post_init__(self) -> None:
+        hidden = paths.hidden_paths(self.root, self.denied)
+        object.__setattr__(self, "denied", tuple(resolved(p) for p in hidden))
+
     def _denying(self, abs_path: pathlib.Path) -> pathlib.Path | None:
         """Return the denied root covering the path, or None; the one owner of the verdict."""
         if any(path_within(abs_path, e) for e in self.exempt):
@@ -184,7 +188,9 @@ class Workspace:
         # Refused, not answered empty: a tool result can carry an error where a jail mask cannot.
         d = self._denying(sp.abs_path)
         if d is not None:
-            raise tools_errors.ToolError(f"Path is hidden from this run: {candidate!r} (under {d})")
+            raise tools_errors.ToolError(
+                f"Path is absent (hidden from this run): {candidate!r} (under {d})"
+            )
 
 
 def contain(base: pathlib.Path, candidate: str | pathlib.Path) -> SafePath:
@@ -389,7 +395,7 @@ def host_workspace(root: pathlib.Path, hide: Iterable[str] = ()) -> Workspace:
     Returns:
         The workspace, each denied root resolved.
     """
-    denied = (root / ".git", *paths.hidden_paths(pathlib.Path(p) for p in hide))
+    denied = (root / ".git", *paths.hidden_paths(root, (pathlib.Path(p) for p in hide)))
     # realpath, not resolve(): on Python 3.12 resolve() raises RuntimeError on a symlink loop.
     return Workspace(root=root, denied=tuple(pathlib.Path(os.path.realpath(p)) for p in denied))
 

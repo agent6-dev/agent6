@@ -22,7 +22,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, kinds, paths
+from agent6 import event_log, kinds, pack, paths
 from agent6.app import _execution, _session, _setup
 from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
@@ -386,6 +386,49 @@ def _seed_source_run(
         layout.checkpoint_path(turns[-1]).read_text(encoding="utf-8"), encoding="utf-8"
     )
     return layout
+
+
+def test_transferred_session_resolves_in_the_new_checkout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A moved checkout lists and forks imported state without rewriting its history."""
+    import shutil
+
+    from agent6.config import ConfigError
+    from agent6.ui.cli import entry
+
+    origin = tmp_path / "origin"
+    head = _git_repo(origin)
+    source = _seed_source_run(paths.state_dir(origin), "travel-AAAAAA", head_sha=head, turns=(1,))
+    before = source.manifest_path.read_bytes()
+    pack.pack(origin)
+    destination = tmp_path / "destination"
+    shutil.copytree(origin, destination)
+    shutil.rmtree(origin)
+    monkeypatch.chdir(destination)
+    pack.unpack(destination)
+    imported = paths.state_dir(destination) / "sessions/runs/travel-AAAAAA"
+    assert (imported / "manifest.json").read_bytes() == before
+    assert entry.cli_main(["--allow-root", "sessions", "list"]) == 0
+    assert "travel-AAAAAA" in capsys.readouterr().out
+    child, rc = app_fork.create_fork(
+        (), "travel-AAAAAA", cwd=destination, new_session_id="child-BBBBBB"
+    )
+    assert rc == 0 and child == "child-BBBBBB"
+    fork_manifest = json.loads(
+        (paths.state_dir(destination) / "sessions/runs" / child / "manifest.json").read_text()
+    )
+    assert fork_manifest["worktree_git_dir"] == str(destination / ".git")
+    seen: list[pathlib.Path] = []
+
+    def stop_before_provider(repo: pathlib.Path, *_args: object, **_kwargs: object) -> None:
+        seen.append(repo)
+        raise ConfigError("relocation probe stops before provider setup")
+
+    monkeypatch.setattr(_setup, "load_session_config", stop_before_provider)
+    assert entry.cli_main(["--allow-root", "resume", "travel-AAAAAA"]) == 2
+    assert seen == [destination]
+    assert "relocation probe stops" in capsys.readouterr().err
 
 
 def test_fork_preserves_source_run_mode(

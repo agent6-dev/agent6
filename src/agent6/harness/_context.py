@@ -213,22 +213,27 @@ def load_repo_summary(root: pathlib.Path, hide: tuple[str, ...] = ()) -> kinds.R
 
     Args:
         root: The workspace directory.
-        hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
+        hide: `[sandbox].hide_paths`, omitted from file counts, listings and AGENTS.md reads.
 
     Returns:
         The layout, AGENTS.md, recent commits and the repo map.
     """
     in_git = git_read.is_git_repo(root)
     st = git_read.status(root) if in_git else None
+    workspace = _path_safety.host_workspace(root, hide)
     top = tuple(
         sorted(
             terminal.printable_name(p.name) + ("/" if p.is_dir() else "")
             for p in root.iterdir()
-            if not p.name.startswith(".")
+            if not p.name.startswith(".") and not workspace.is_denied(p.resolve())
         )
     )
     # An unfiltered rglob would count .git/.venv/build junk and walk the tree every startup.
-    tracked = git_read.tracked_files(root) if in_git else ()
+    tracked = tuple(
+        name
+        for name in (git_read.tracked_files(root) if in_git else ())
+        if not workspace.is_denied((root / name).resolve())
+    )
     return kinds.RepoSummary(
         root=root,
         branch=st.branch if st is not None else "",

@@ -186,12 +186,14 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
       The policy builder refuses when the pointer no longer resolves to the record.
       A linked worktree agent6 did not record gets no grant
     - under `partial` `sandbox.isolation`, a `hide_paths` entry inside the recorded dir refuses like any other unmaskable entry
-- Masked last, after every bind (`full` `sandbox.isolation`): the config dir, the state base, `[sandbox].hide_paths`
+- Masked last, after every bind (`full` `sandbox.isolation`): the config dir, the state base, the project root's `.agent6/` pack directory, `[sandbox].hide_paths`
     - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
     - a hidden path inside the tree a symlinked grant resolves to is masked under the grant's spelled name too, where the jail shows that tree
     - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
     - a grant at or inside a private dir is refused at config load
     - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
+    - a present `.agent6/` follows the implicit-private-path rule under `partial`: startup warns that commands can read its contents.
+      Set `sandbox.isolation = "full"` or unpack before starting work; explicitly listing it in `sandbox.hide_paths` refuses under `partial`
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork, a `run --worktree` run or a machine state works in
     - a `hide_paths` entry inside the workspace stays out of every tree agent6 writes or compares (chain commits, review diffs, dirty checks, undo, resume) and out of the run's pre-run stash, whose change stays in place: no blob of it enters the object store through agent6
@@ -242,6 +244,7 @@ Every path they take resolves through `Workspace`:
       + [sandbox].extra_read_paths (read) / extra_write_paths (write)
       - [sandbox].hide_paths
       - agent6's own config dir and state base
+      - .agent6/ at the workspace and project roots
 
 - The boundary comes from config values
     - a degradation (`auto` falling back to `partial` or `none`, a host with no jail) leaves it unchanged; under `none` `sandbox.isolation` it is the only boundary
@@ -533,6 +536,14 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - `true` honors them (the Git-LFS opt-in)
 
 ### 8. Secrets and `connect`
+
+`agent6 pack` deliberately copies credentials into the workspace at `.agent6/config/secrets.toml`.
+The directory is gitignored and hidden from file tools, symbol indexing, host-side tree reads and the `full` jail.
+The secrets copy is created through a `0600` descriptor in a `0700` directory, not a plain copy.
+A workspace sync can expose it to the sync service and the destination host; use only trusted destinations.
+A devcontainer that maps the user to another uid can leave a synced secrets file foreign-owned, which the secrets loader refuses.
+`agent6 unpack` creates a fresh `0600` secrets file owned by the importing user rather than preserving ownership.
+The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) explains import conflicts and startup refusals.
 
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned; opened without following a link and judged by the descriptor it opened; rewritten only under its sibling lock), or come from `[providers.<name>].api_key_env` (env wins).
 - `config set --secret telemetry.headers.<name> <value>` and `config unset --secret telemetry.headers.<name>` use the same locked, atomic secrets writer for `[telemetry.headers]`.

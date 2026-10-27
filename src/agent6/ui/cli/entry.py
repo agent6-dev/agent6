@@ -1075,6 +1075,13 @@ def _dispatch_acp(args: argparse.Namespace) -> int:
     return serve_acp(config_paths=args.config)
 
 
+def _dispatch_pack(args: argparse.Namespace) -> int:
+    """Return the exit code of a state transfer command."""
+    from agent6.ui.cli import pack_cmds
+
+    return pack_cmds.cmd_unpack() if args.command == "unpack" else pack_cmds.cmd_pack()
+
+
 def _dispatch_system(args: argparse.Namespace) -> int:
     """Return the exit code of a `agent6 system` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli import system_cmds
@@ -1112,6 +1119,8 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "telemetry": _dispatch_telemetry,
     "ps": _dispatch_ps,
     "init": _dispatch_init,
+    "pack": _dispatch_pack,
+    "unpack": _dispatch_pack,
     "review": _dispatch_review,
     "machine": _dispatch_machine,
     "mcp": _dispatch_mcp,

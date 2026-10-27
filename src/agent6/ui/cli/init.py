@@ -187,7 +187,7 @@ def _missing_gitignore_entries(root: pathlib.Path, *, ecosystem: str) -> list[st
     return [e for e in entries if e not in existing_lines]
 
 
-def _append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
+def append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
     """Append the missing entries to `.gitignore` under an agent6 comment.
 
     Args:
@@ -200,7 +200,7 @@ def _append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
     gi = root / ".gitignore"
     existing_text = gi.read_text(encoding="utf-8") if gi.is_file() else ""
     verb = "appended to" if existing_text else "created"
-    block = ["", "# agent6 (added by `agent6 init`)", *missing, ""]
+    block = ["", "# agent6", *missing, ""]
     new_text = existing_text
     if new_text and not new_text.endswith("\n"):
         new_text += "\n"
@@ -344,7 +344,7 @@ def init_workspace(
         if not missing:
             print("  .gitignore already has all agent6 entries")
         elif ask(f"Add {len(missing)} entries to .gitignore ({', '.join(missing)})?", True):
-            print("  " + _append_gitignore(root, missing))
+            print("  " + append_gitignore(root, missing))
         else:
             print("  skipped .gitignore")
 

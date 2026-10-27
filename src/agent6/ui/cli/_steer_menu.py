@@ -100,7 +100,9 @@ def skill_menu_table(config_paths: tuple[pathlib.Path, ...] = ()) -> dict[str, t
             cfg.skills.extra_dirs,
             cfg.skills.state,
             paths.data_dir() / "skills",
-            hidden=paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths),
+            hidden=paths.hidden_paths(
+                pathlib.Path.cwd(), (pathlib.Path(p) for p in cfg.sandbox.hide_paths)
+            ),
         )
     except Exception as exc:  # the pause prompt survives any config error
         print(f"[agent6] skill commands unavailable: {exc}")

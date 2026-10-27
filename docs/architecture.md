@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `config`, `directive`, `errors`, `event_log`, `evidence`, `graph`, `kinds`, `machine`, `media`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `vcs`, `verify_infer`, `viewmodel`.
+Any layer may also use the shared substrate: `_data`, `_pack_manifest`, `budget`, `child_env`, `config`, `directive`, `errors`, `event_log`, `evidence`, `graph`, `kinds`, `machine`, `media`, `memory`, `models`, `pack`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `vcs`, `verify_infer`, `viewmodel`.
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `_git_command.py`.
@@ -52,6 +52,9 @@ By default, it switches off the repository's hooks, fsmonitor, external diff, te
 - config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`, then a machine agent's per-state overlay; a selected preset sits just above the layer that named it); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secrets.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secret_store.py)
   `config/_layer_data.py` discovers and merges layers with per-leaf provenance; `config/_presets.py` selects and lists presets.
 - per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, written `<state-dir>` below, keyed on the repository (a subdirectory reaches the same runs, memory and config, and so does a linked worktree, through its `.git` file)
+- `pack.py` copies and imports portable workspace state; `_pack_manifest.py` validates its trust boundary without importing path resolution.
+  `ui/cli/pack_cmds.py` owns the two command surfaces and shares init's `.gitignore` writer.
+  `paths.project_root` refuses a foreign pack until `unpack` imports it.
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
 
 Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `review`, the in-loop panel and the loop's side calls (the context summariser and gister, the prompt reviser).
@@ -464,6 +467,9 @@ Where the workspace's HEAD does not hold the landing commit (a worktree run, a f
 A run branch that is not at the chain tip (a commit made on `agent6/<id>`) refuses the resume, naming the commit; `--force` continues on the chain and leaves the branch.
 
 ## Session state on disk
+
+`pack-base.json` in the repository state directory records each imported pack-relative file's SHA256 for the next three-way transfer.
+The temporary workspace `.agent6/` layout and the transfer rules are documented under [Carry your state with the workspace](usage.md#carry-your-state-with-the-workspace).
 
 Each session directory is `<state-dir>/sessions/<bucket>/<session-id>/`, where the bucket is the mode plus `s`: `runs/`, `plans/`, `asks/`, and `machines/` for `machine create` authoring.
 Ids are one namespace across every bucket, since every surface addresses a session by bare id.

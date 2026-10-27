@@ -101,6 +101,7 @@ depends_on = [
   "agent6.models.cache",
   "agent6.models.choices",
   "agent6.models.validate",
+  "agent6.pack",
   "agent6.paths",
   "agent6.portable",
   "agent6.providers",
@@ -524,7 +525,7 @@ depends_on = ["agent6.errors", "agent6.vcs._git_command", "agent6.vcs.git_policy
 
 [[modules]]
 path = "agent6.vcs.git_read"
-depends_on = ["agent6.errors", "agent6.vcs._git_command", "agent6.vcs.commit_message"]
+depends_on = ["agent6.errors", "agent6.paths", "agent6.vcs._git_command", "agent6.vcs.commit_message"]
 
 [[modules]]
 path = "agent6.vcs.git_policy"
@@ -601,8 +602,16 @@ path = "agent6.child_env"
 depends_on = []
 
 [[modules]]
+path = "agent6.pack"
+depends_on = ["agent6._pack_manifest", "agent6.errors", "agent6.paths", "agent6.portable"]
+
+[[modules]]
 path = "agent6.paths"
-depends_on = []
+depends_on = ["agent6._pack_manifest"]
+
+[[modules]]
+path = "agent6._pack_manifest"
+depends_on = ["agent6.errors"]
 
 [[modules]]
 path = "agent6.secret_store"

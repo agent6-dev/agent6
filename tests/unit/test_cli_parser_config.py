@@ -212,6 +212,15 @@ def test_list_config_verbs_do_not_advertise_the_secret_target(verb: str) -> None
     assert "--secret" not in _subcommands(config)[verb].format_help()
 
 
+@pytest.mark.parametrize("verb", ["pack", "unpack"])
+def test_transfer_verbs_are_top_level_commands(verb: str) -> None:
+    """Completion and parsing share the registered top-level transfer verbs."""
+    parser = cli_parser.build_parser()
+    assert verb in _subcommands(parser)
+    assert f"    {verb} " in parser.format_help()
+    assert parser.parse_args([verb]).command == verb
+
+
 def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
     """Each default-verb group lists exactly the parser's real subcommands.
 

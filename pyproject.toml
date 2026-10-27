@@ -158,6 +158,7 @@ max-complexity = 20
 # is the module style, and the rule would refuse it.
 banned-from = [
     "agent6._data.words",
+    "agent6._pack_manifest",
     "agent6.app._carried_questions",
     "agent6.app._conversations",
     "agent6.app._execution",
@@ -289,6 +290,7 @@ banned-from = [
     "agent6.models.pricing",
     "agent6.models.registry",
     "agent6.models.validate",
+    "agent6.pack",
     "agent6.paths",
     "agent6.portable",
     "agent6.prompts.judge",
@@ -421,6 +423,7 @@ banned-from = [
     "agent6.ui.cli.memory_cmds",
     "agent6.ui.cli.model",
     "agent6.ui.cli.net_cmds",
+    "agent6.ui.cli.pack_cmds",
     "agent6.ui.cli.parallel",
     "agent6.ui.cli.parser",
     "agent6.ui.cli.plan_watch",

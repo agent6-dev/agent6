@@ -46,6 +46,59 @@ agent6 model worker anthropic/claude-sonnet-5
 agent6 model all openrouter/moonshotai/kimi-k2.6   # set every role at once
 ```
 
+## Carry your state with the workspace
+
+Run `agent6 pack` before syncing a checkout to a devcontainer, remote-ssh host or new location.
+It copies this home's state into `<project root>/.agent6/` and adds `.agent6/` to the project's `.gitignore` if that line is missing.
+Home keeps its copies.
+Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
+It deletes `.agent6/` after a successful import.
+A repeated `pack` replaces a snapshot from the same host and home; a pack from another origin requires `unpack` first.
+
+The pack contains:
+
+- `pack.json`: version 1, UTC pack time, origin host, home, repo id and workspace, and each file's SHA256, UTC mtime and last shared hash.
+- `config/`: global `config.toml`, `ui.toml` and `secrets.toml`.
+- `skills/`: installed skills from the data directory.
+- `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/`.
+
+The cache, jail homes, parallel workspaces and completions do not travel.
+File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `0700` directory.
+Symlinks and special files refuse rather than following a path outside the snapshot.
+**The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
+
+`unpack` uses a three-way rule per file: P is the pack's current hash, B is its recorded base hash (possibly null), and H is the home's hash (possibly absent).
+
+- H absent: move in.
+- H equals P: identical, keep home's and drop the pack copy.
+- B present and H equals B: home unchanged since the last sync, take the pack's.
+- B present and P equals B: the pack is unchanged, keep home's and drop the pack copy.
+- Otherwise: a conflict.
+
+Any conflict refuses the entire import with exit 2 before moving files.
+The command lists every conflict's home path and pack path with both mtimes.
+Hand-merge the files or delete the side to replace, then rerun `agent6 unpack`.
+Pack files edited by hand are hashed again; deleting a pack file leaves the home's copy untouched.
+Files at home that the pack does not carry stay untouched.
+The imported hashes are saved in `<state-dir>/pack-base.json` for the trip back.
+
+Commands that resolve the project root refuse with exit 2 if `.agent6/pack.json` names another host or home.
+The message names the origin and pack time and says to run `agent6 unpack` or delete `.agent6/`.
+An own-home pack is allowed, and `unpack` is exempt.
+
+For a devcontainer or remote-ssh round trip:
+
+1. Run `agent6 pack` here.
+2. Sync the workspace, including the hidden, gitignored `.agent6/` directory.
+3. Run `agent6 unpack` there and work.
+4. Run `agent6 pack` there and sync the workspace back.
+5. Run `agent6 unpack` here.
+
+Recorded absolute paths in journals and session manifests remain history.
+Ordinary sessions resolve against the current checkout.
+A session's cached linked worktree does not travel; `resume` names the missing worktree and recommends `agent6 fork ID` to continue from its commits in a new worktree.
+The synced checkout must carry those git objects and refs.
+
 ## Your first run
 
 ```sh

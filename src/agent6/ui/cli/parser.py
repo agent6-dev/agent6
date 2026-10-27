@@ -206,7 +206,10 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("sessions", ("sessions", "ps", "history", "telemetry")),
     ("context", ("prompt", "skills", "memory")),
     ("tools", ("mcp",)),
-    ("setup", ("init", "connect", "model", "config", "check", "completions", "system")),
+    (
+        "setup",
+        ("init", "connect", "model", "config", "check", "completions", "system", "pack", "unpack"),
+    ),
 )
 
 
@@ -380,6 +383,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " comes from each session's own directory."
         ),
     )
+
+    _common._sub(sub, "pack", help="Copy this home's state into .agent6/ for workspace sync.")
+    _common._sub(sub, "unpack", help="Move .agent6/ state into this home, refusing conflicts.")
 
     init_p = _common._sub(
         sub,

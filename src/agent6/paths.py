@@ -19,6 +19,8 @@ import pathlib
 import pwd
 from collections.abc import Iterable
 
+from agent6 import _pack_manifest
+
 _ALLOW_ROOT_ENV = "AGENT6_ALLOW_ROOT"
 
 
@@ -236,19 +238,23 @@ def private_dirs() -> tuple[pathlib.Path, ...]:
     return (global_config_dir(), state_base())
 
 
-def hidden_paths(extra: Iterable[pathlib.Path]) -> tuple[pathlib.Path, ...]:
-    """Return every tree hidden from a run: `[sandbox].hide_paths` plus the private dirs.
+def hidden_paths(
+    root: pathlib.Path, extra: Iterable[pathlib.Path] = ()
+) -> tuple[pathlib.Path, ...]:
+    """Return every hidden tree: explicit entries, private dirs and workspace packs.
 
     One owner, because the jail and the in-process `Workspace` both enforce it, and a
     boundary they disagree about is a hole.
 
     Args:
+        root: The workspace root.
         extra: The `[sandbox].hide_paths` entries.
 
     Returns:
-        `extra`, then the private dirs, unresolved.
+        The hidden paths, including packs at the workspace and project roots.
     """
-    return (*extra, *private_dirs())
+    packs = (root.resolve() / ".agent6", project_root(root, allow_pack=True) / ".agent6")
+    return tuple(dict.fromkeys((*extra, *private_dirs(), *packs)))
 
 
 # The filesystem limit is 255 bytes per component, and CJK or emoji run 3 to 4 bytes a character.
@@ -329,7 +335,7 @@ def _tail_bytes(s: str, limit: int) -> str:
     return ""
 
 
-def project_root(start: pathlib.Path) -> pathlib.Path:
+def project_root(start: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Path:
     """Return the project the path is inside, or the path itself outside one.
 
     Walks for `.git` rather than asking git, since this is on every command's path.
@@ -340,6 +346,7 @@ def project_root(start: pathlib.Path) -> pathlib.Path:
 
     Args:
         start: The path, such as the cwd.
+        allow_pack: Allow a foreign pack while importing it.
 
     Returns:
         The project root, resolved.
@@ -348,7 +355,9 @@ def project_root(start: pathlib.Path) -> pathlib.Path:
     if (root / ".git").is_file():
         git_dir = linked_worktree_git_dir(root)
         if git_dir is not None and git_dir.name == ".git":
-            return git_dir.parent
+            root = git_dir.parent
+    if not allow_pack:
+        _pack_manifest.check_origin(root, effective_user().home)
     return root
 
 
@@ -393,9 +402,9 @@ def linked_worktree_git_dir(root: pathlib.Path) -> pathlib.Path | None:
         return None
 
 
-def state_dir(repo_root: pathlib.Path) -> pathlib.Path:
+def state_dir(repo_root: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Path:
     """Return the per-repo state directory, keyed on the project rather than the cwd."""
-    return state_base() / repo_id(project_root(repo_root))
+    return state_base() / repo_id(project_root(repo_root, allow_pack=allow_pack))
 
 
 def repo_config_path(repo_root: pathlib.Path) -> pathlib.Path:

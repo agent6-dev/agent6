@@ -43,7 +43,9 @@ def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
         cfg.skills.extra_dirs,
         cfg.skills.state,
         paths.data_dir() / "skills",
-        hidden=paths.hidden_paths(pathlib.Path(p) for p in cfg.sandbox.hide_paths),
+        hidden=paths.hidden_paths(
+            pathlib.Path.cwd(), (pathlib.Path(p) for p in cfg.sandbox.hide_paths)
+        ),
     )
     by_name = {s.name: s for s in (*resolved.enabled, *resolved.always)}
     blocks: list[str] = []

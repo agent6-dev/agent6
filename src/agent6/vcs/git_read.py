@@ -12,7 +12,7 @@ import shutil
 import tempfile
 from collections.abc import Collection
 
-from agent6 import errors
+from agent6 import errors, paths
 from agent6.vcs import _git_command, commit_message
 
 # A name handed to git as a pathspec is the file, never a glob: `a*.txt` matches only itself.
@@ -186,7 +186,7 @@ def excluded(rel: str, exclude: Collection[str]) -> bool:
 
 
 def hidden_in_repo(path: pathlib.Path, hide: Collection[str]) -> frozenset[str]:
-    """Return the `[sandbox].hide_paths` entries inside the repository, repo-relative.
+    """Return hidden paths inside the repository, including workspace packs, repo-relative.
 
     Args:
         path: Any directory of the repository.
@@ -198,7 +198,7 @@ def hidden_in_repo(path: pathlib.Path, hide: Collection[str]) -> frozenset[str]:
     """
     root = pathlib.Path(os.path.realpath(toplevel(path) or path))
     inside: set[str] = set()
-    for entry in hide:
+    for entry in paths.hidden_paths(root, (pathlib.Path(p) for p in hide)):
         real = pathlib.Path(os.path.realpath(entry))
         if real != root and real.is_relative_to(root):
             inside.add(real.relative_to(root).as_posix())

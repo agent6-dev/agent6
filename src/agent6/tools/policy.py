@@ -402,7 +402,7 @@ def workspace_for(
     Returns:
         The workspace.
     """
-    denied = paths.hidden_paths(pathlib.Path(p) for p in config.sandbox.hide_paths)
+    denied = paths.hidden_paths(root, (pathlib.Path(p) for p in config.sandbox.hide_paths))
     if grants is None:
         grants = resolve_grants(config, root)
     readable = tuple(real for _path, real in grants.read)
