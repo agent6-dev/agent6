@@ -7,11 +7,8 @@ the model reads (harness/loop.py). That JSON -- keys, key ORDER (dicts
 preserve insertion order), and value formats -- is frozen LLM I/O: a drift
 silently changes every model's tool feedback. This pins a representative
 handler from each family, including the optional-field, score-append, preview,
-and error shapes, so the 8b typed-result reshape must reproduce the bytes.
-
-``_wire`` bridges the reshape: ``dispatch`` returns a bare dict today and a
-typed result carrying ``to_wire()`` after. Either way this compares the exact
-model-facing bytes, so the file stays green across the change unedited.
+and error shapes. ``dispatch`` returns a typed ``ToolResult`` whose ``to_wire()``
+gives the model-facing bytes this file compares.
 """
 
 from __future__ import annotations
@@ -67,10 +64,7 @@ def _config(tmp_path: pathlib.Path, *, extra: str = "") -> Config:
 
 
 def _wire(result: object) -> dict[str, Any]:
-    """Model-facing bytes of a dispatch result, before or after the typed reshape.
-
-    Post-reshape ``dispatch`` returns a result with ``to_wire()``; today it returns the dict itself.
-    """
+    """Return the model-facing bytes of a dispatch result."""
     to_wire = getattr(result, "to_wire", None)
     return to_wire() if callable(to_wire) else result  # type: ignore[return-value]
 

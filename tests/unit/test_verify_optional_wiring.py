@@ -113,9 +113,8 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: pathlib.Path) -> Non
     assert "finish_session" not in plan_block and "commits" not in plan_block
     assert "finish_session" not in ask_block and "finish_planning" not in ask_block
     assert "commits" not in ask_block
-    # The commit claim is the base sentinel's, one owner (run mode only);
-    # the block no longer needs an "Ignore any other instruction" patch-line
-    # because no verify prose leaks outside the verify block.
+    # The commit claim is the base sentinel's, one owner (run mode only); no verify
+    # prose sits outside the verify block.
     assert "commits" not in run_block and "commits each editing turn" in run
     for b in (run_block, plan_block, ask_block):
         assert "Ignore any" not in b

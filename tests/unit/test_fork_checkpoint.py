@@ -300,7 +300,7 @@ def _seed_source_run(
     head_sha: str,
     turns: tuple[int, ...],
     mode: str = "run",
-    workflow_profile: str = "none",
+    preset: str = "none",
     preset_from_flag: bool | None = None,
 ) -> sessions_layout.SessionLayout:
     """Lay down a source session dir with a manifest, graph DAG, and checkpoints."""
@@ -321,10 +321,10 @@ def _seed_source_run(
                 "harness": {
                     "review_trigger": "off",
                     "revise_prompt": "off",
-                    "preset": workflow_profile,
+                    "preset": preset,
                     # A flag-selected preset the fork replays; False for a config-selected one.
                     "preset_from_flag": (
-                        workflow_profile != "none" if preset_from_flag is None else preset_from_flag
+                        preset != "none" if preset_from_flag is None else preset_from_flag
                     ),
                 },
             }
@@ -435,9 +435,7 @@ def test_fork_preserves_source_run_profile(
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
-    _seed_source_run(
-        state, "src-AAAA11", head_sha=head, turns=(1, 2), workflow_profile="deep_review"
-    )
+    _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2), preset="deep_review")
 
     rc = fork._cmd_fork((), "src", new_session_id="child-BBBB22", no_run=True)
     assert rc == 0
@@ -468,7 +466,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
-    _seed_source_run(state, "src-PROF11", head_sha=head, turns=(1,), workflow_profile="fast")
+    _seed_source_run(state, "src-PROF11", head_sha=head, turns=(1,), preset="fast")
 
     rc = fork._cmd_fork((), "src-PROF11", new_session_id="child-PROF22", no_run=True)
     assert rc == 0
@@ -518,7 +516,7 @@ def test_fork_of_a_config_selected_profile_stamps_the_current_config_name(
         "src-CFG11",
         head_sha=head,
         turns=(1,),
-        workflow_profile="stale-old-name",
+        preset="stale-old-name",
         preset_from_flag=False,
     )
 

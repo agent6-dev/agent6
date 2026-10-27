@@ -176,11 +176,9 @@ def test_all_requires_every_non_abstaining_seat_to_block() -> None:
 
 
 def test_all_lone_blocker_with_mostly_errored_panel_does_not_gate() -> None:
-    # FINDING 1 regression: a 5-seat panel where 4 seats abstained (provider
-    # error) and ONE seat blocks must NOT gate under "all" -- "all" means the
-    # panel that actually reviewed unanimously agreed, and one vote is not a
-    # min_blocking_models of five. Previously this blocked because abstentions were filtered
-    # out before the all(...) check, so all(...) ran over the single survivor.
+    """Abstentions filtered out before the `all` check let one lone block gate an errored panel."""
+    # "all" means the seats that reviewed agreed unanimously, and one vote is not a
+    # min_blocking_models of five.
     blk = _seat("m1", _block("security", _location("foo.py", 11)), seat="a")
     errs = [_seat(f"m{i}", seat=f"s{i}", error="provider timeout") for i in range(2, 6)]
     res = _agg([blk, *errs], block_on="all")
@@ -313,7 +311,7 @@ def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
     assert res.blocked is False and res.n_block == 0
 
 
-# --- diff-parsing edge cases (regressions fixed in the pre-squash review) ------
+# --- diff-parsing edge cases ------
 
 
 def test_quoted_paths_ground_by_their_name() -> None:
@@ -422,8 +420,7 @@ def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
 
 def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
     # A DELETED line whose CONTENT begins with "-- " renders as "--- ..." and must
-    # not be mistaken for a "--- " file header (the symmetric "+++ " side was
-    # already guarded; the "--- " side was not). Otherwise it clobbers the path
+    # not be mistaken for a "--- " file header. Otherwise it clobbers the path
     # and every LATER hunk's range is mis-attributed, so a grounded block citing a
     # real line in a later hunk is silently downgraded to a warning.
     diff = (
@@ -475,9 +472,9 @@ def test_grounding_accepts_a_single_line_and_an_inclusive_range() -> None:
 
 
 def test_grounding_range_overlap_not_just_start_line() -> None:
+    """A range was grounded on its start line alone."""
     # foo.py changed lines 10..14. A range whose START line is unchanged but whose
-    # INTERIOR overlaps the touched range must still ground (FINDING 2 regression:
-    # previously only the start line was checked, so this was wrongly ungrounded).
+    # INTERIOR overlaps the touched range grounds.
     ranges = review.diff_hunks(SAMPLE_DIFF)
     assert harness__panel.is_grounded(
         _location("foo.py", 8, 12), ranges

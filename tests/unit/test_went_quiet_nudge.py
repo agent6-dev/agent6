@@ -190,7 +190,7 @@ def test_starvation_injects_nudge_without_suppressing_reasoning(tmp_path: pathli
 
     assert result.completed is True
     assert provider.call.call_count == 4
-    # The loop must never drive reasoning_effort itself anymore.
+    # The loop never sets reasoning_effort itself.
     efforts = [c.kwargs.get("reasoning_effort") for c in provider.call.call_args_list]
     assert efforts == [None, None, None, None]
     # The starvation-specific nudge is still injected.
@@ -295,7 +295,7 @@ def test_went_quiet_budget_refills_on_a_bounced_prose_turn(tmp_path: pathlib.Pat
         _resp_text("I think the answer is..."),  # turn 1: prose, bounced (early stall)
         _empty_resp(),  # turn 2: quiet -> nudge 1/1
         _resp_text("Let me explain more..."),  # turn 3: prose, bounced -> REFILL
-        _empty_resp(),  # turn 4: quiet -> nudge 1/1 again (old code: budget dead -> went_quiet)
+        _empty_resp(),  # turn 4: quiet -> nudge 1/1 again
         _resp_with_tool("read_file", {"path": "x.txt"}, tu_id="t1"),  # turn 5
         _resp_text("done"),  # turn 6: legitimate silent finish
     ]

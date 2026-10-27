@@ -73,7 +73,7 @@ def test_make_steer_state_without_tty_uses_bridge(
     monkeypatch.setattr("builtins.open", fake_open)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     steer = _steer.make_steer_state(events, tmp_path)
-    # The old null steer answered False here even with a request pending.
+    # Without /dev/tty, a pending request still reads as requested.
     sessions_ipc.request_steer(tmp_path)
     assert steer.requested() is True
 

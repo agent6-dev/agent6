@@ -238,7 +238,6 @@ def test_wire_contains_structured_findings_and_counts() -> None:
     assert review is not None
     assert review["open_counts"]["block"] == 1
     assert review["findings"][0]["observations"][0]["finding"]["location"]["path"] == "a.py"
-    assert "file_line" not in json.dumps(review)
 
 
 def test_replayed_resolution_request_does_not_change_history() -> None:

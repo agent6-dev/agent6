@@ -1809,7 +1809,7 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             original_task="t",
         )
 
-    # The verify->edit turn produced no 'verify passed' commit (old code did).
+    # The verify->edit turn makes no 'verify passed' commit.
     assert commits == []
     assert result.reason == "finish_session"
 
@@ -6818,7 +6818,7 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
     assert "forked-child-ID" in result.summary
     undone = [e for e in events if e["type"] == "session.undone"]
     assert undone and undone[-1]["new_session_id"] == "forked-child-ID"
-    # An undo journals a session.end (undone -> "stopped"); the run read "stale" before.
+    # An undo journals a session.end (undone -> "stopped"), so the run never reads "stale".
     ends = [e for e in events if e["type"] == "session.end"]
     assert ends and ends[-1]["reason"] == "undone" and ends[-1]["all_passed"] is False
 

@@ -291,7 +291,7 @@ def test_blame_reads_a_private_copy_of_the_ignore_revs_file(
     """Git opened the configured ignore-revs path itself, after the check of the real file.
 
     A jailed command that swapped the file for a link between the check and git's open had
-    git read a host file; blame now runs in a private work tree holding a copy.
+    git read a host file; blame runs in a private work tree holding a copy.
     """
     from agent6.vcs import _git_command, git_files
 
