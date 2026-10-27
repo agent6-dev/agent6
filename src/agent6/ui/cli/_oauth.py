@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The terminal side of an OAuth sign-in: the loopback callback and the pasted URL.
 
-`agent6 connect` picks the flow; this module runs the parts that touch the browser and
-the terminal. The callback receiver binds a loopback address only, answers one path,
+This module selects and runs browser, device and paste flows for resolved profiles.
+The callback receiver binds a loopback address only, answers one path,
 logs nothing and keeps the code in memory; nothing a remote returns is executed.
 """
 
@@ -13,6 +13,7 @@ import getpass
 import html
 import http.server
 import os
+import secrets
 import shutil
 import socket
 import subprocess
@@ -22,7 +23,7 @@ import time
 from urllib import parse
 
 from agent6 import child_env
-from agent6.providers import _oauth_protocol
+from agent6.providers import _headers, _oauth_profile, _oauth_protocol, chatgpt_oauth, types
 from agent6.ui.cli import _common
 
 CALLBACK_WAIT_S = 300.0
@@ -200,28 +201,6 @@ def open_browser(url: str) -> bool:
     return True
 
 
-def code_via_callback_server(
-    url: str, state: str, *, port: int, path: str = "/auth/callback"
-) -> str | None:
-    """Open the browser and wait on the loopback for the redirect: the GUI path.
-
-    Args:
-        url: The authorize URL the browser opens.
-        state: The state the callback must echo.
-        port: The loopback port the redirect names.
-        path: The callback path the redirect names.
-
-    Returns:
-        The code, or None on timeout, Ctrl-C or an unbindable port; the caller falls back.
-    """
-    try:
-        server = CallbackServer(state, port=port, path=path)
-    except OSError as exc:
-        print(f"(no local callback: port {port} unavailable: {exc})")
-        return None
-    return wait_for_redirect(server, url)
-
-
 def wait_for_redirect(server: CallbackServer, url: str) -> str | None:
     """Open the browser and wait on a bound receiver for the redirect, then close it.
 
@@ -270,3 +249,231 @@ def paste_callback(state: str, *, redirect_uri: str = "") -> str | None:
     except ValueError as exc:
         _common.error(f"{exc}")
         return None
+
+
+def _chatgpt_device_grant(
+    issuer: str, client_id: str, provider: str
+) -> _oauth_protocol.TokenGrant | None:
+    """Show a short code and poll while the person enters it at the issuer's device page.
+
+    The no-display path: nothing to forward over SSH.
+
+    Args:
+        issuer: The OAuth issuer.
+        client_id: The client registration.
+        provider: The provider name, for the reconnect hint.
+
+    Returns:
+        The grant, or None when the issuer has the flow disabled, on an error or on Ctrl-C;
+        the caller falls back to pasting the callback URL.
+    """
+    try:
+        device = chatgpt_oauth.start_device_auth(issuer, client_id)
+    except types.ProviderError as exc:
+        print(f"(device sign-in unavailable: {exc})")
+        return None
+    if device is None:
+        return None
+    print(f"On any device, open  {issuer.rstrip('/')}{chatgpt_oauth.DEVICE_VERIFY_PATH}")
+    print(f"and enter the code:  {device.user_code}")
+    print("(waiting; Ctrl-C to paste the callback URL by hand instead)")
+    try:
+        return chatgpt_oauth.poll_device_auth(issuer, client_id, device, provider=provider)
+    except KeyboardInterrupt:
+        print()
+        return None
+    except types.ProviderError as exc:
+        print(f"(device sign-in failed: {exc})")
+        return None
+
+
+def _pick_flow(flow: str, issuer: _oauth_profile.OAuthProfile) -> str | None:
+    """Return the configured issuer's way in: browser, device or paste.
+
+    Args:
+        flow: The `--flow` value.
+        issuer: The resolved sign-in profile.
+
+    Returns:
+        The flow, or None after printing why the issuer's settings cannot run it.
+    """
+    has_code = issuer.authorization_endpoint is not None
+    fixed_port = bool(parse.urlsplit(issuer.redirect_uri).port)
+    if flow == "auto":
+        if has_code and sys.stdin.isatty() and gui_browser_available():
+            return "browser"
+        if issuer.device_authorization_endpoint is not None and (
+            issuer.device_flow != "chatgpt" or sys.stdin.isatty()
+        ):
+            return "device"
+        flow = "paste"
+    if flow == "device" and issuer.device_authorization_endpoint is None:
+        _common.error("--flow device needs oauth.device_authorization_endpoint in the provider.")
+        return None
+    if flow in ("browser", "paste") and not has_code:
+        _common.error(f"--flow {flow} needs oauth.authorization_endpoint in the provider.")
+        return None
+    if flow == "paste" and not fixed_port:
+        _common.error(
+            "pasting the callback needs a fixed port in oauth.redirect_uri (port 0 serves the"
+            " local listener only); set one, or add oauth.device_authorization_endpoint."
+        )
+        return None
+    return flow
+
+
+def _with_port(uri: str, port: int) -> str:
+    """Return the redirect with the listener's bound port in place of port 0."""
+    parts = parse.urlsplit(uri)
+    host = parts.hostname or ""
+    netloc = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+    return parse.urlunsplit(parts._replace(netloc=netloc))
+
+
+def _code_grant(
+    name: str,
+    issuer: _oauth_profile.OAuthProfile,
+    headers: _headers.HeaderSet,
+    *,
+    browser: bool,
+    device: bool = False,
+) -> _oauth_protocol.TokenGrant | None:
+    """Run authorization code with PKCE: the loopback redirect, else the pasted callback.
+
+    Args:
+        name: The provider name.
+        issuer: The resolved sign-in profile.
+        headers: The entry's extra headers; those addressed to `oauth` ride the exchange.
+        browser: Open the browser and listen for the redirect first.
+        device: Try the ChatGPT device flow before the pasted callback.
+
+    Returns:
+        The grant, or None after printing why none was taken.
+
+    Raises:
+        ProviderError: The token endpoint was unreachable or refused the code.
+    """
+    assert issuer.authorization_endpoint is not None
+    verifier, challenge = _oauth_protocol.pkce_pair()
+    state = secrets.token_urlsafe(24)
+    parts = parse.urlsplit(issuer.redirect_uri)
+    server: CallbackServer | None = None
+    if browser:
+        try:
+            server = CallbackServer(
+                state, port=parts.port or 0, path=parts.path, host=issuer.callback_host
+            )
+        except OSError as exc:
+            print(f"(no local callback: {exc}; paste the callback URL instead)")
+    if server is None and not parts.port:
+        _common.error(
+            "pasting the callback needs a fixed port in oauth.redirect_uri; set one and retry."
+        )
+        return None
+    redirect = (
+        issuer.redirect_uri
+        if server is None or parts.port
+        else _with_port(issuer.redirect_uri, server.port)
+    )
+    url = _oauth_protocol.authorization_url(
+        issuer.authorization_endpoint,
+        issuer.client_id,
+        redirect_uri=redirect,
+        scopes=issuer.scopes,
+        state=state,
+        challenge=challenge,
+        extra=dict(issuer.authorization_params),
+    )
+    where = f"with your {issuer.label} account" if issuer.label else f"at {issuer.issuer}"
+    print(f"Open this URL to sign in {where}:\n\n  {url}\n")
+    if device:
+        grant = _chatgpt_device_grant(issuer.issuer, issuer.client_id, name)
+        if grant is not None:
+            return grant
+    code = wait_for_redirect(server, url) if server is not None else None
+    if code is None:
+        code = paste_callback(state, redirect_uri=redirect)
+        if code is None:
+            return None
+    return _oauth_protocol.exchange_code(
+        issuer.token_endpoint,
+        issuer.client_id,
+        code=code,
+        verifier=verifier,
+        redirect_uri=redirect,
+        provider=name,
+        label=issuer.label or name,
+        encoding=issuer.request_encoding,
+        headers=headers.renderer("oauth"),
+    )
+
+
+def _device_grant(
+    name: str, issuer: _oauth_profile.OAuthProfile, headers: _headers.HeaderSet
+) -> _oauth_protocol.TokenGrant | None:
+    """Show the issuer's user code and poll while the person enters it on any device.
+
+    Args:
+        name: The provider name.
+        issuer: The resolved sign-in profile.
+        headers: The entry's extra headers; those addressed to `oauth` ride the requests.
+
+    Returns:
+        The grant, or None on Ctrl-C.
+
+    Raises:
+        ProviderError: The issuer was unreachable, refused, or the code expired.
+    """
+    assert issuer.device_authorization_endpoint is not None
+    started = _oauth_protocol.start_device_grant(
+        issuer.device_authorization_endpoint,
+        issuer.client_id,
+        scopes=issuer.scopes,
+        encoding=issuer.request_encoding,
+        label=issuer.label or name,
+        headers=headers.renderer("oauth"),
+    )
+    print(f"On any device, open  {started.verification_uri}")
+    print(f"and enter the code:  {started.user_code}")
+    if started.verification_uri_complete:
+        print(f"(or open {started.verification_uri_complete}, which carries the code)")
+    print("(waiting; Ctrl-C to stop)")
+    try:
+        return _oauth_protocol.poll_device_grant(
+            issuer.token_endpoint,
+            issuer.client_id,
+            started,
+            encoding=issuer.request_encoding,
+            label=issuer.label or name,
+            headers=headers.renderer("oauth"),
+        )
+    except KeyboardInterrupt:
+        print()
+        return None
+
+
+def sign_in_grant(
+    name: str, profile: _oauth_profile.OAuthProfile, headers: _headers.HeaderSet, flow: str
+) -> _oauth_protocol.TokenGrant | None:
+    """Run the selected sign-in flow and return its grant.
+
+    Args:
+        name: The provider key for reconnect hints.
+        profile: The resolved issuer settings and flow policy.
+        headers: The provider's request headers.
+        flow: Auto, browser, device or paste.
+
+    Returns:
+        The grant, or None after a refusal or cancelled input.
+
+    Raises:
+        ProviderError: The issuer refused or could not be reached.
+    """
+    chosen = _pick_flow(flow, profile)
+    if chosen is None:
+        return None
+    if chosen == "device" and profile.device_flow != "chatgpt":
+        return _device_grant(name, profile, headers)
+    return _code_grant(
+        name, profile, headers, browser=chosen == "browser", device=chosen == "device"
+    )

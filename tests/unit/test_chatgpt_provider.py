@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import pathlib
 import time
@@ -18,13 +19,15 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6 import secret_store
 from agent6.app import _conversations
+from agent6.config import ChatGPTProviderEntry
 from agent6.providers import (
     ProviderError,
     _headers,
+    _oauth_protocol,
     _responses,
     _transport,
     chatgpt,
-    chatgpt_oauth,
+    oauth,
     types,
 )
 
@@ -37,22 +40,18 @@ def _replay(item: dict[str, Any]) -> dict[str, Any]:
 
 
 @pytest.fixture
-def signed_in(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> chatgpt_oauth.ChatGPTCredential:
+def signed_in(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> oauth.OAuthCredential:
     """A gcfg-backed credential holding an unexpired sign-in."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    secret_store.save_oauth_tokens(
-        "chatgpt", secret_store.OAuthTokens("AT0", "RT1", time.time() + 3600, "acct-1")
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    grant = oauth.stored_grant_for(
+        _oauth_protocol.TokenGrant("AT0", "RT1", 3600), entry, now=time.time()
     )
-    return chatgpt_oauth.ChatGPTCredential(
-        "chatgpt", issuer="https://auth.example", client_id="app_X"
-    )
+    secret_store.save_oauth_grant("chatgpt", dataclasses.replace(grant, account_id="acct-1"))
+    return oauth.OAuthCredential("chatgpt", entry)
 
 
-def _provider(
-    credential: chatgpt_oauth.ChatGPTCredential, **kwargs: Any
-) -> chatgpt.ChatGPTProvider:
+def _provider(credential: oauth.OAuthCredential, **kwargs: Any) -> chatgpt.ChatGPTProvider:
     return chatgpt.ChatGPTProvider(
         model="gpt-5-codex",
         credential=credential,
@@ -132,7 +131,7 @@ def _happy_stream() -> list[str]:
 
 
 def test_request_body_and_headers_speak_the_codex_dialect(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     provider = _provider(signed_in, reasoning_effort="medium")
     captured: dict[str, Any] = {}
@@ -213,7 +212,7 @@ def test_request_body_and_headers_speak_the_codex_dialect(
 
 
 def test_calls_use_the_context_conversation_id(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """Both wire fields follow the call's context, not the adapter instance."""
     provider = _provider(signed_in, extra_body={"prompt_cache_key": "operator-key"})
@@ -241,7 +240,7 @@ def test_calls_use_the_context_conversation_id(
 
 
 def test_resumed_conversation_keeps_both_wire_ids(
-    signed_in: chatgpt_oauth.ChatGPTCredential, tmp_path: pathlib.Path
+    signed_in: oauth.OAuthCredential, tmp_path: pathlib.Path
 ) -> None:
     """A fresh adapter sends the persisted conversation id in both wire fields."""
     path = tmp_path / _conversations.FILE_NAME
@@ -270,7 +269,7 @@ def test_resumed_conversation_keeps_both_wire_ids(
 
 @pytest.mark.parametrize("context", [None, _headers.RequestContext.initiated_by("user")])
 def test_a_call_without_a_conversation_sends_neither_wire_id(
-    signed_in: chatgpt_oauth.ChatGPTCredential, context: _headers.RequestContext | None
+    signed_in: oauth.OAuthCredential, context: _headers.RequestContext | None
 ) -> None:
     """Missing and initiator-only contexts send no session header or cache key."""
     provider = _provider(signed_in, extra_body={"prompt_cache_key": "operator-key"})
@@ -282,7 +281,7 @@ def test_a_call_without_a_conversation_sends_neither_wire_id(
 
 
 def test_stream_deltas_feed_callbacks_and_usage_normalises(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     provider = _provider(signed_in)
     pieces: list[str] = []
@@ -301,7 +300,7 @@ def test_stream_deltas_feed_callbacks_and_usage_normalises(
     assert resp.cost_usd == 0.0
 
 
-def test_tool_call_and_reasoning_items_parse(signed_in: chatgpt_oauth.ChatGPTCredential) -> None:
+def test_tool_call_and_reasoning_items_parse(signed_in: oauth.OAuthCredential) -> None:
     lines: list[str] = []
     lines += _evt(
         {
@@ -359,7 +358,7 @@ def test_lenient_empty_tool_arguments_are_not_replaced_by_a_raw_sentinel() -> No
 
 
 def test_incomplete_max_output_tokens_maps_to_max_tokens(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     lines = _evt(
         {
@@ -389,7 +388,7 @@ def test_incomplete_max_output_tokens_maps_to_max_tokens(
 
 
 def test_response_done_uses_an_incomplete_response_status(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     message = {
         "type": "message",
@@ -414,7 +413,7 @@ def test_response_done_uses_an_incomplete_response_status(
 
 
 def test_response_done_raises_and_bills_a_failed_response(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     lines = _evt(
         {
@@ -440,7 +439,7 @@ def test_response_done_raises_and_bills_a_failed_response(
 
 
 def test_response_done_raises_and_bills_a_cancelled_response(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     lines = _evt({"type": "response.done", "response": {"status": "cancelled", "usage": _USAGE}})
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
@@ -457,7 +456,7 @@ def test_response_done_raises_and_bills_a_cancelled_response(
 
 
 def test_failed_event_raises_with_usage_limit_status(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     lines = _evt(
         {
@@ -483,7 +482,7 @@ def test_failed_event_raises_with_usage_limit_status(
     assert exc.value.status_code == 429 and "plus plan" in str(exc.value)
 
 
-def test_failed_event_usage_is_recorded(signed_in: chatgpt_oauth.ChatGPTCredential) -> None:
+def test_failed_event_usage_is_recorded(signed_in: oauth.OAuthCredential) -> None:
     lines = _evt(
         {
             "type": "response.failed",
@@ -509,7 +508,7 @@ def test_failed_event_usage_is_recorded(signed_in: chatgpt_oauth.ChatGPTCredenti
 
 
 def test_cut_stream_is_retryable_not_a_completed_turn(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     lines = _evt({"type": "response.output_text.delta", "delta": "half"})
     provider = _provider(signed_in)
@@ -524,7 +523,7 @@ def test_cut_stream_is_retryable_not_a_completed_turn(
 
 
 def test_401_refreshes_the_credential_once_and_retries(
-    signed_in: chatgpt_oauth.ChatGPTCredential, monkeypatch: pytest.MonkeyPatch
+    signed_in: oauth.OAuthCredential, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A 401 refreshes the credential once and re-sends with the fresh bearer."""
 
@@ -557,7 +556,7 @@ def test_401_refreshes_the_credential_once_and_retries(
     assert resp.text == "hello"
 
 
-def test_budgeted_call_requires_usage(signed_in: chatgpt_oauth.ChatGPTCredential) -> None:
+def test_budgeted_call_requires_usage(signed_in: oauth.OAuthCredential) -> None:
     lines = _evt({"type": "response.completed", "response": {"id": "r", "status": "completed"}})
     provider = _provider(
         signed_in,
@@ -578,7 +577,7 @@ def test_budgeted_call_requires_usage(signed_in: chatgpt_oauth.ChatGPTCredential
 
 
 def test_malformed_usage_count_is_a_provider_error(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     usage = {**_USAGE, "output_tokens": "nine"}
     lines = _evt(
@@ -696,7 +695,7 @@ def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
 
 
 def test_plan_usage_headers_feed_the_percent_budget(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """The x-codex primary-window headers feed the percent budget as plan-metered spend."""
     provider = _provider(
@@ -731,7 +730,7 @@ def test_plan_usage_headers_feed_the_percent_budget(
 
 
 def test_http_error_plan_headers_reach_the_budget(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = _provider(signed_in, budget=budget)
@@ -760,7 +759,7 @@ def test_http_error_plan_headers_reach_the_budget(
 
 
 def test_completed_stream_without_message_item_keeps_delta_text(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """A completed stream with no final message item still yields the streamed text.
 
@@ -789,7 +788,7 @@ def test_completed_stream_without_message_item_keeps_delta_text(
 
 
 def test_terminal_output_supplies_items_missing_from_done_events(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     message = {
         "type": "message",
@@ -819,7 +818,7 @@ def test_terminal_output_supplies_items_missing_from_done_events(
 
 
 def test_tool_calling_completed_turn_reports_tool_use(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """A completed response holding function_call items says stop_reason tool_use.
 
@@ -1156,7 +1155,7 @@ def _usage_get(body: dict[str, Any], status: int = 200):
 
 
 def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """The preflight refuses a credit-spending run before its first call.
 
@@ -1204,7 +1203,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
 
 
 def test_the_budget_reads_the_plan_once_more_after_the_run(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """The preflight was the only `/usage` read, so a run's last calls never moved its figure."""
     get, urls = _usage_get(json.loads(json.dumps(_USAGE_BODY)))
@@ -1225,7 +1224,7 @@ def test_the_budget_reads_the_plan_once_more_after_the_run(
 
 @pytest.mark.parametrize("cap", [16, 1024])
 def test_usage_reading_uses_the_capped_request(
-    signed_in: chatgpt_oauth.ChatGPTCredential, monkeypatch: pytest.MonkeyPatch, cap: int
+    signed_in: oauth.OAuthCredential, monkeypatch: pytest.MonkeyPatch, cap: int
 ) -> None:
     """The plan read uses the default cap and treats an oversized reply as no reading."""
     provider = _provider(signed_in)
@@ -1256,7 +1255,7 @@ def test_usage_reading_uses_the_capped_request(
     )
 
 
-def test_preflight_failure_never_blocks(signed_in: chatgpt_oauth.ChatGPTCredential) -> None:
+def test_preflight_failure_never_blocks(signed_in: oauth.OAuthCredential) -> None:
     """A preflight transport error or non-200 reads as no reading, and the call proceeds."""
     get, _urls = _usage_get({}, status=503)
     provider = _provider(
@@ -1285,22 +1284,22 @@ def test_preflight_failure_never_blocks(signed_in: chatgpt_oauth.ChatGPTCredenti
     assert resp.text == "hello"
 
 
-class _FlakyCredential(chatgpt_oauth.ChatGPTCredential):
+class _FlakyCredential(oauth.OAuthCredential):
     """The signed-in credential, raising once from `token()`."""
 
     def __init__(self) -> None:
-        super().__init__("chatgpt", issuer="https://auth.example", client_id="app_X")
+        super().__init__("chatgpt", ChatGPTProviderEntry(api_format="chatgpt"))
         self.faults = 1
 
-    def token(self) -> str:
+    def token(self, *, refresh: bool = True) -> str:
         if self.faults:
             self.faults -= 1
             raise ProviderError("refresh failed")
-        return super().token()
+        return super().token(refresh=refresh)
 
 
 def test_a_credential_fault_in_the_preflight_is_no_reading(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """A credential fault in the preflight is no reading.
 
@@ -1322,7 +1321,7 @@ def test_a_credential_fault_in_the_preflight_is_no_reading(
 
 
 def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """A completed round the guard refuses still books the plan window its headers reported.
 
@@ -1372,7 +1371,7 @@ def test_two_message_items_in_a_response_stay_separated() -> None:
 
 
 def test_an_effort_the_served_model_refuses_is_resent_at_its_lowest_accepted_level(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """A 400 naming `reasoning.effort` unsupported resends at the listed floor, then keeps it.
 
@@ -1410,7 +1409,7 @@ def test_an_effort_the_served_model_refuses_is_resent_at_its_lowest_accepted_lev
 
 @pytest.mark.parametrize("frame", ["error", "flat_error", "response.failed", "response.completed"])
 def test_a_stream_frame_effort_refusal_adapts_without_surfacing_and_keeps_the_floor(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
     capsys: pytest.CaptureFixture[str],
     frame: str,
 ) -> None:
@@ -1447,7 +1446,7 @@ def test_a_stream_frame_effort_refusal_adapts_without_surfacing_and_keeps_the_fl
 
 @pytest.mark.parametrize("param", [None, "temperature"])
 def test_a_stream_refusal_without_the_effort_param_is_not_adapted(
-    signed_in: chatgpt_oauth.ChatGPTCredential, param: str | None
+    signed_in: oauth.OAuthCredential, param: str | None
 ) -> None:
     """An unsupported value without an effort param stays an error, not an effort retry."""
     lines = _evt(
@@ -1497,7 +1496,7 @@ def test_a_reasoning_item_replays_only_to_its_own_route() -> None:
 
 
 def test_the_chatgpt_profile_keeps_the_shared_reserved_body_keys(
-    signed_in: chatgpt_oauth.ChatGPTCredential,
+    signed_in: oauth.OAuthCredential,
 ) -> None:
     """The continuation and cap keys stay agent6's on the subscription path too."""
     seen: dict[str, Any] = {}

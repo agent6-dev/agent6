@@ -14,7 +14,13 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 `connect` prompts locally and executes nothing a remote returns.
 
 A provider whose sign-in is not built in takes a hand-written [`[providers.<name>].oauth`](config.md#configured-oauth) table; `agent6 connect <name>` then signs in at that issuer and stores the grant, bound to the entry's settings.
-`--flow browser|device|paste` picks the way in (default `auto`); `--logout` revokes the grant at `oauth.revocation_endpoint` when one is set and removes it locally either way.
+`--flow browser|device|paste` picks the way in (default `auto`), including for `agent6 connect chatgpt`.
+ChatGPT grants are also bound to the provider settings; an older unbound sign-in needs `agent6 connect <name>` again.
+Connect reports the saved grant separately from any live check.
+`--logout` attempts revocation only for a bound grant at its profile's revocation endpoint and removes it locally either way.
+Legacy or rebound grants are removed locally only; the provider configuration stays.
+`agent6 check config` reports local credential refusals and exits 1; a passing local check does not verify remote authentication.
+`agent6 model` keeps its assignments and catalog visible and warns with the same sign-in cause and reconnect command.
 
 agent6 routes three model roles; `reviewer` and `planner` fall back to `worker` when unset.
 

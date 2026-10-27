@@ -279,7 +279,12 @@ def _doctor_check_config(cfg: Config) -> list[kinds.DoctorCheck]:
     else:
         env_err = _setup.check_provider_keys(cfg)
         ok_env = env_err is None
-        detail_env = "all referenced provider keys resolve" if ok_env else env_err or ""
+        detail_env = (
+            "all referenced provider credentials resolve locally;"
+            " remote authentication is not verified"
+            if ok_env
+            else env_err or ""
+        )
         out.append(
             kinds.DoctorCheck(
                 name="config.provider_keys",

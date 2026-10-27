@@ -27,7 +27,6 @@ from agent6.harness import _reviewer
 from agent6.models import registry as models_registry
 from agent6.providers import (
     AnthropicProvider,
-    ChatGPTCredential,
     ChatGPTProvider,
     ClaudeCodeProvider,
     CommandToken,
@@ -212,7 +211,7 @@ def _provider_from_entry(
     extra_body = dict(entry.extra_body)
     extra_query = dict(entry.extra_query)
     if isinstance(entry, ChatGPTProviderEntry):
-        chatgpt_credential = ChatGPTCredential(provider_name)
+        chatgpt_credential = oauth.OAuthCredential(provider_name, entry)
         account = chatgpt_credential.account_id()  # raises the connect hint when not signed in
         if not account:
             raise ProviderError(

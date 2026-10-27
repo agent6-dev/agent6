@@ -336,8 +336,16 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
         "[harness]\nverify_infer = false\n",
         encoding="utf-8",
     )
-    secret_store.save_oauth_tokens(
-        "chatgpt", secret_store.OAuthTokens("test-access", "test-refresh", time.time() + 3600)
+    from agent6.config import ChatGPTProviderEntry
+    from agent6.providers import _oauth_protocol, oauth
+
+    secret_store.save_oauth_grant(
+        "chatgpt",
+        oauth.stored_grant_for(
+            _oauth_protocol.TokenGrant("test-access", "test-refresh", 3600),
+            ChatGPTProviderEntry(api_format="chatgpt"),
+            now=time.time(),
+        ),
     )
 
     def no_models(*_a: object, **_k: object) -> list[str]:

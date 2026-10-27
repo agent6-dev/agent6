@@ -85,9 +85,7 @@ def test_a_grant_round_trips_the_store_at_0600(gcfg: pathlib.Path) -> None:
     path = secret_store.paths.secrets_path()
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert secret_store.load_oauth_grant("work") == stored
-    assert secret_store.load_oauth_tokens("work") is None  # the ChatGPT shape is another
     _store(entry, refresh_token="RT-full")
-    assert secret_store.load_oauth_tokens("work") is None  # a refresh token changes nothing
     text = path.read_text(encoding="utf-8")
     assert "oauth_version" in text and "oauth_binding" in text
 
@@ -237,15 +235,17 @@ def test_a_non_expiring_grant_without_a_refresh_token_is_used_until_refused(
     ("status", "rejected_bearer", "armed"),
     [(401, "AT1", False), (401, "AT2", True), (403, "AT2", False)],
 )
+@pytest.mark.parametrize("chatgpt", [False, True])
 def test_only_a_current_bearers_401_arms_a_refresh(
     gcfg: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     status: int,
     rejected_bearer: str,
     armed: bool,
+    chatgpt: bool,
 ) -> None:
     """A late refusal of an old bearer must not rotate the shared holder's current grant."""
-    entry = _entry()
+    entry = ChatGPTProviderEntry(api_format="chatgpt") if chatgpt else _entry()
     _store(entry)
     clock = {"now": 2_000.0}
     refreshes: list[str] = []
@@ -613,7 +613,16 @@ def test_shared_holder_pins_first_account_before_refresh_or_adoption(
 def test_read_only_bound_grant_validation(gcfg: pathlib.Path, kind: str) -> None:
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     if kind == "legacy":
-        secret_store.save_oauth_tokens("work", secret_store.OAuthTokens("AT", "RT", 4600, "a"))
+        secret_store.save_secret(
+            "work",
+            "",
+            extra={
+                "oauth_access_token": "AT",
+                "oauth_refresh_token": "RT",
+                "oauth_expires_at": "4600",
+                "oauth_account_id": "a",
+            },
+        )
     elif kind != "missing":
         _store(
             entry,
@@ -798,3 +807,38 @@ def test_partial_refresh_preserves_the_pinned_account(
     stored = secret_store.load_oauth_grant("work")
     assert stored is not None and stored.account_id == "account-a"
     assert stored.refresh_token == "RT1"
+
+
+@pytest.mark.parametrize("source", ["sibling", "rescue"])
+def test_pinned_holder_refuses_an_unidentified_stored_grant(
+    gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    """A different sign-in without identity cannot inherit this run's pinned account."""
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    _store(entry, account_id="account-a")
+    holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
+    assert holder.token() == "AT1"
+    assert holder.account_id() == "account-a"
+    holder.invalidate(401, "AT1")
+    sleeps: list[float] = []
+
+    def publish(seconds: float) -> None:
+        sleeps.append(seconds)
+        _store(entry, access_token="unidentified", refresh_token="RT2", account_id=None)
+
+    def refresh(*_args: object, **_kwargs: object) -> httpx2.Response:
+        assert source == "rescue", "sibling adoption must not refresh"
+        return httpx2.Response(400, json={"error": "refresh_token_reused"})
+
+    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    monkeypatch.setattr(oauth.time, "sleep", publish)
+    if source == "sibling":
+        publish(0)
+    with pytest.raises(types.ProviderError, match="unidentified sign-in") as refused:
+        holder.token()
+    assert "agent6 connect work" in str(refused.value)
+    assert refused.value.status_code == 401
+    assert sleeps == ([0] if source == "sibling" else [1])
+    stored = secret_store.load_oauth_grant("work")
+    assert stored is not None and stored.account_id is None
+    assert holder.account_id() == "account-a"

@@ -17,7 +17,58 @@ from agent6 import secret_store
 from agent6.config import AnthropicProviderEntry, ChatGPTProviderEntry, OpenAIProviderEntry
 from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
-from agent6.providers import _transport, types
+from agent6.providers import _oauth_protocol, _transport, oauth, types
+
+
+def test_chatgpt_listing_refuses_legacy_before_sending_a_bearer(
+    cache_home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A legacy listing cannot send the stored bearer to an unbound destination."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    secret_store.save_secret(
+        "work",
+        "",
+        extra={
+            "oauth_access_token": "AT",
+            "oauth_refresh_token": "RT",
+            "oauth_expires_at": "9999999999",
+        },
+    )
+    with (
+        mock.patch.object(_transport, "http_request") as request,
+        pytest.raises(types.ProviderError, match="predates credential binding"),
+    ):
+        models_cache._fetch("work", ChatGPTProviderEntry(api_format="chatgpt"), None, 1)
+    request.assert_not_called()
+
+
+def test_chatgpt_listing_uses_holder_without_refresh_and_falls_back_to_cache(
+    cache_home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An expired bound bearer goes through the holder without rotating during a listing."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    secret_store.save_oauth_grant(
+        "work", oauth.stored_grant_for(_oauth_protocol.TokenGrant("expired", "RT", 1), entry, now=1)
+    )
+    path = cache_home / "models" / "work.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"models": ["cached"]}))
+    real_token = oauth.OAuthCredential.token
+    seen: list[dict[str, object]] = []
+
+    def token(self: oauth.OAuthCredential, **kwargs: object) -> str:
+        seen.append(kwargs)
+        return real_token(self, **kwargs)  # type: ignore[arg-type]
+
+    def refused(method: str, url: str, **kwargs: object) -> httpx2.Response:
+        assert kwargs["headers"]["authorization"] == "Bearer expired"  # type: ignore[index]
+        return httpx2.Response(401, request=httpx2.Request(method, url))
+
+    monkeypatch.setattr(oauth.OAuthCredential, "token", token)
+    monkeypatch.setattr(_transport, "http_request", refused)
+    assert models_cache.list_models("work", entry, None, ttl_s=0) == ["cached"]
+    assert seen == [{"refresh": False}]
 
 
 @pytest.fixture
@@ -64,9 +115,13 @@ def test_model_listings_use_the_capped_request(
 ) -> None:
     """Both listing formats use the default cap and propagate its retryable refusal."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    secret_store.save_oauth_tokens(
-        "p", secret_store.OAuthTokens("AT", "RT", time.time() + 3600, "acct-1")
-    )
+    if isinstance(entry, ChatGPTProviderEntry):
+        secret_store.save_oauth_grant(
+            "p",
+            oauth.stored_grant_for(
+                _oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
+            ),
+        )
     url = "https://models.example/v1/models"
     if isinstance(entry, ChatGPTProviderEntry):
         url += "?client_version=1.0.0"
@@ -311,8 +366,20 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     from agent6.config import ChatGPTProviderEntry
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    secret_store.save_oauth_tokens(
-        "chatgpt", secret_store.OAuthTokens("AT", "RT", time.time() + 3600, "acct-1")
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    secret_store.save_oauth_grant(
+        "chatgpt",
+        secret_store.StoredGrant(
+            oauth.binding_fingerprint(entry),
+            "AT",
+            "RT",
+            time.time(),
+            time.time() + 3600,
+            "",
+            0,
+            None,
+            "acct-1",
+        ),
     )
     seen: dict[str, object] = {}
 

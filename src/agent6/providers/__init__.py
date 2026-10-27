@@ -17,7 +17,6 @@ from agent6.providers import _headers
 from agent6.providers._claude_code_wire import CLAUDE_CODE_PERSIST_BYTES, result_text  # noqa: ICN003  # re-export
 from agent6.providers.anthropic import AnthropicProvider  # noqa: ICN003  # re-export
 from agent6.providers.chatgpt import ChatGPTProvider  # noqa: ICN003  # re-export
-from agent6.providers.chatgpt_oauth import ChatGPTCredential  # noqa: ICN003  # re-export
 from agent6.providers.claude_code import ClaudeCodeProvider  # noqa: ICN003  # re-export
 from agent6.providers.openai import OpenAIProvider  # noqa: ICN003  # re-export
 from agent6.providers.responses import ResponsesProvider  # noqa: ICN003  # re-export
@@ -117,7 +116,6 @@ def call_for_text(provider: Provider, *, system: str, user: str, max_tokens: int
 __all__ = [
     "CLAUDE_CODE_PERSIST_BYTES",
     "AnthropicProvider",
-    "ChatGPTCredential",
     "ChatGPTProvider",
     "ClaudeCodeProvider",
     "CommandToken",

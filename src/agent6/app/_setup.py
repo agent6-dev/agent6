@@ -12,6 +12,7 @@ import argparse
 import dataclasses
 import pathlib
 from collections.abc import Iterable
+from typing import Any
 
 import pydantic
 
@@ -33,7 +34,7 @@ from agent6.config import (
     plan_metered,
 )
 from agent6.models import cache
-from agent6.providers import claude_code, oauth
+from agent6.providers import claude_code, oauth, types
 from agent6.sandbox import detect, jail, namespaces_work
 from agent6.sessions import manifest
 from agent6.tools import mcp_client, mcp_http, policy
@@ -354,40 +355,32 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     return None
 
 
-def _sign_in_refusal(
+def sign_in_refusal(
     name: str,
     entry: (
         ChatGPTProviderEntry | AnthropicProviderEntry | OpenAIProviderEntry | ResponsesProviderEntry
     ),
-    secrets: dict[str, str],
+    secrets: dict[str, Any] | None = None,
 ) -> str | None:
     """Return why a provider's stored sign-in cannot run, or None.
 
     Args:
         name: The provider's name under `[providers]`.
         entry: A ChatGPT entry, or one whose `oauth` table is set.
-        secrets: The loaded secrets file.
+        secrets: The loaded secrets file; None reads it.
 
     Returns:
-        The refusal naming `agent6 connect <name>`, or None when the sign-in is stored and,
-        for a configured issuer, bound to the entry's settings.
+        The refusal naming `agent6 connect <name>`, or None when the stored sign-in
+        matches the provider settings and its account claim.
     """
-    if isinstance(entry, ChatGPTProviderEntry):
-        if secret_store.load_oauth_tokens(name, secrets=secrets) is None:
-            return f"no ChatGPT sign-in stored for [providers.{name}]; run `agent6 connect {name}`."
-        return None
-    grant = secret_store.load_oauth_grant(name, secrets=secrets)
-    if grant is None:
-        return f"no sign-in stored for [providers.{name}]; run `agent6 connect {name}`."
-    if grant.binding != oauth.binding_fingerprint(entry):
-        return (
-            f"the sign-in stored for [providers.{name}] was made under other provider"
-            f" settings; run `agent6 connect {name}` to sign in again."
-        )
+    try:
+        oauth.load_bound_grant(name, entry, secrets=secrets)
+    except (types.ProviderError, secret_store.SecretsError) as exc:
+        return str(exc)
     return None
 
 
-def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) -> str | None:
+def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, Any]) -> str | None:
     """Return why one routed provider cannot run, or None.
 
     A keyed endpoint or a signed-in ChatGPT provider passes and refreshes its model listing
@@ -406,7 +399,7 @@ def _provider_refusal(name: str, entry: ProviderEntry, secrets: dict[str, str]) 
         err = claude_code.login_status(entry.binary)
         return f"[providers.{name}]: {err}" if err is not None else None
     if isinstance(entry, ChatGPTProviderEntry) or entry.oauth is not None:
-        if (err := _sign_in_refusal(name, entry, secrets)) is not None:
+        if (err := sign_in_refusal(name, entry, secrets)) is not None:
             return err
         cache.list_models(name, entry, None)  # through the stored sign-in
         return None

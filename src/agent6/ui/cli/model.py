@@ -12,6 +12,7 @@ import sys
 from typing import cast
 
 from agent6 import paths, secret_store
+from agent6.app import _setup
 from agent6.config import (
     ClaudeCodeProviderEntry,
     ConfigError,
@@ -21,7 +22,7 @@ from agent6.config import (
     write,
 )
 from agent6.models import choices
-from agent6.providers import claude_code, oauth
+from agent6.providers import claude_code
 from agent6.ui.cli import _common
 
 
@@ -40,6 +41,7 @@ def _models_for(config_paths: tuple[pathlib.Path, ...], provider: str) -> list[s
         eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     except ConfigError:
         return []
+    _warn_unusable_provider(config_paths, provider)
     return choices.provider_model_choices(eff.config, provider)
 
 
@@ -109,6 +111,8 @@ def _show_assignments(config_paths: tuple[pathlib.Path, ...]) -> int:
             effort = rm.effort or "-"
             origin = src if source == r else f"worker's, {src}"
             print(f"  {r:<9} {rm.provider}/{rm.model}  effort={effort}  [{origin}]")
+    for provider in sorted({rm.provider for rm in eff.config.models.configured().values()}):
+        _warn_unusable_provider(config_paths, provider)
     print(
         "\nSet one with: agent6 model worker provider/model"
         " [--effort low|medium|high|xhigh|max]  (prompted if omitted on a terminal)"
@@ -144,7 +148,7 @@ def _print_catalog(config_paths: tuple[pathlib.Path, ...], role: str, provider: 
 
 
 def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: str) -> None:
-    """Warn when a set names a keyless provider: config accepts it, the first run would refuse."""
+    """Warn why a displayed or assigned provider cannot run without hiding its models."""
     try:
         eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
     except ConfigError:
@@ -157,27 +161,11 @@ def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: st
         if (err := claude_code.login_status(entry.binary)) is not None:
             _common.warn(f"provider {provider!r}: {err}")
         return
-    if entry.oauth is not None:
-        grant = secret_store.load_oauth_grant(provider)
-        if grant is None:
-            _common.warn(
-                f"provider {provider!r} has no sign-in stored;"
-                f" run `agent6 connect {provider}` before using it."
-            )
-        elif grant.binding != oauth.binding_fingerprint(entry):
-            _common.warn(
-                f"provider {provider!r}: the stored sign-in was made under other provider"
-                f" settings; run `agent6 connect {provider}` before using it."
-            )
+    if entry.api_format == "chatgpt" or entry.oauth is not None:
+        if (err := _setup.sign_in_refusal(provider, entry)) is not None:
+            _common.warn(err)
         return
     if entry.auth_style == "none" or entry.token_command:
-        return
-    if entry.api_format == "chatgpt":
-        if secret_store.load_oauth_tokens(provider) is None:
-            _common.warn(
-                f"provider {provider!r} has no ChatGPT sign-in;"
-                f" run `agent6 connect {provider}` before using it."
-            )
         return
     if secret_store.resolve_api_key(provider, entry.api_key_env) is None:
         remedy = (

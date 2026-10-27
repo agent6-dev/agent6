@@ -20,7 +20,7 @@ from urllib import parse
 
 import httpx2
 
-from agent6 import paths, secret_store
+from agent6 import paths
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -244,20 +244,18 @@ def _chatgpt_models_endpoint(
         entry's extra headers, the stored access token and account id, and `originator`.
 
     Raises:
-        ProviderError: No sign-in is stored for the provider.
+        ProviderError: The sign-in is absent, legacy, rebound or contradicts its account claim.
     """
-    tokens = secret_store.load_oauth_tokens(provider_name)
-    if tokens is None:
-        raise types.ProviderError(
-            f"no ChatGPT sign-in stored for {provider_name!r}; run `agent6 connect {provider_name}`"
-        )
+    credential = oauth.OAuthCredential(provider_name, entry)
+    token = credential.token(refresh=False)
+    account = credential.account_id()
     url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
     headers = _headers.HeaderSet.from_config(entry.extra_headers).render(
         _headers.plain_facts("models")
     )
-    headers["authorization"] = f"Bearer {tokens.access_token}"
-    if tokens.account_id:
-        headers["chatgpt-account-id"] = tokens.account_id
+    headers["authorization"] = f"Bearer {token}"
+    if account:
+        headers["chatgpt-account-id"] = account
     headers["originator"] = "agent6"
     return url, headers
 

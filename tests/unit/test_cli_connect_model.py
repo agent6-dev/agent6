@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import pathlib
 import stat
+import time
 import tomllib
 from collections.abc import Callable
 
@@ -13,9 +15,9 @@ import httpx2
 import pytest
 
 from agent6 import paths, secret_store
-from agent6.config import OpenAIProviderEntry
+from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry
 from agent6.models import cache
-from agent6.providers import _transport
+from agent6.providers import _oauth_protocol, _transport, chatgpt_oauth, oauth, types
 from agent6.ui.cli import _common, _oauth, main
 from agent6.ui.cli import model as modelmod
 
@@ -570,7 +572,7 @@ def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
     assert secret_store.resolve_api_key("anthropic", None) is None
 
 
-def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
+def test_connect_config_rollback_precedes_oauth_sign_in(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The provider block is validated and written before the ChatGPT sign-in stores any token."""
@@ -579,12 +581,12 @@ def test_connect_config_rollback_precedes_the_chatgpt_sign_in(
     def bad_combination(*_args: object, **_kwargs: object) -> str:
         return "bad combination"
 
-    def _sign_in(name: str) -> int:
+    def _sign_in(name: str, *_args: object) -> int:
         signed_in.append(name)
         return 0
 
     monkeypatch.setattr("agent6.config.write.set_config_leaves", bad_combination)
-    monkeypatch.setattr("agent6.ui.cli.connect._chatgpt_sign_in", _sign_in)
+    monkeypatch.setattr("agent6.ui.cli.connect._sign_in", _sign_in)
 
     assert main(["connect", "chatgpt"]) == 2
     assert "bad combination" in capsys.readouterr().err
@@ -859,6 +861,108 @@ def _grant_jwt() -> str:
     return f"h.{payload}.s"
 
 
+@pytest.mark.parametrize("state", ["legacy", "rebound"])
+def test_logout_unbound_chatgpt_is_local_only(
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    state: str,
+) -> None:
+    """Logout cannot send a legacy or rebound bearer and keeps the provider config."""
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('[providers.work]\napi_format = "chatgpt"\n')
+    if state == "legacy":
+        secret_store.save_secret(
+            "work",
+            "",
+            extra={
+                "oauth_access_token": "AT",
+                "oauth_refresh_token": "RT",
+                "oauth_expires_at": "9999999999",
+            },
+        )
+    else:
+        grant = oauth.stored_grant_for(
+            _oauth_protocol.TokenGrant("AT", "RT", 3600),
+            ChatGPTProviderEntry(api_format="chatgpt"),
+            now=time.time(),
+        )
+        secret_store.save_oauth_grant("work", dataclasses.replace(grant, binding="other"))
+    requests: list[str] = []
+
+    def request(method: str, url: str, **kwargs: object) -> httpx2.Response:
+        requests.append(url)
+        return httpx2.Response(200)
+
+    monkeypatch.setattr(_transport, "http_request", request)
+    assert main(["connect", "work", "--logout"]) == 0
+    assert requests == []
+    output = capsys.readouterr()
+    assert "locally only" in output.out + output.err
+    assert "Revoked" not in output.out
+    assert secret_store.load_secrets().get("providers", {}) == {}
+    assert config.read_text() == '[providers.work]\napi_format = "chatgpt"\n'
+
+
+def test_chatgpt_connect_replaces_legacy_atomically_with_bound_grant(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The published replacement is bound and contains no legacy-only fields or id token."""
+    secret_store.save_secret(
+        "chatgpt",
+        "",
+        extra={
+            "oauth_access_token": "old",
+            "oauth_refresh_token": "old-refresh",
+            "legacy_only": "discard",
+        },
+    )
+    secret_store.save_secret("sibling", "keep")
+    old = paths.secrets_path().read_bytes()
+    published: list[str] = []
+    real_write = secret_store.portable.atomic_write
+
+    def publish(path: pathlib.Path, text: str, **kwargs: object) -> None:
+        if path == paths.secrets_path():
+            assert path.read_bytes() == old
+            published.append(text)
+        real_write(path, text, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(secret_store.portable, "atomic_write", publish)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    def paste(*_args: object, **_kwargs: object) -> str:
+        return "code"
+
+    def exchange(*_args: object, **_kwargs: object) -> _TokenResp:
+        return _TokenResp()
+
+    monkeypatch.setattr(_oauth, "paste_callback", paste)
+    monkeypatch.setattr(_oauth_protocol, "post_form", exchange)
+    assert main(["connect", "chatgpt", "--no-verify"]) == 0
+    assert len(published) == 1 and "legacy_only" not in published[0]
+    grant = secret_store.load_oauth_grant("chatgpt")
+    assert grant is not None
+    assert grant.binding == oauth.binding_fingerprint(ChatGPTProviderEntry(api_format="chatgpt"))
+    assert secret_store.resolve_api_key("sibling", None) == "keep"
+    output = capsys.readouterr().out
+    assert "(0600), bound to [providers.chatgpt]" in output
+    assert "plus plan" in output and "Data controls" in output
+    assert "validated" not in output and "Checking" not in output
+
+
+def test_logout_without_config_reports_local_removal(
+    iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A legacy grant without a provider entry can only be removed locally."""
+    secret_store.save_secret("chatgpt", "", extra={"oauth_access_token": "old"})
+    assert main(["connect", "chatgpt", "--logout"]) == 0
+    output = capsys.readouterr()
+    assert "locally only" in output.out
+    assert "Revoked" not in output.out
+
+
 class _TokenResp:
     status_code = 200
     text = ""
@@ -885,7 +989,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     the training-data notice; no subprocess, no browser.
     """
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     exchanges: list[dict[str, str]] = []
 
     def fake_post(url: str, data: dict[str, str], timeout_s: float, **_kw: object) -> _TokenResp:
@@ -914,7 +1018,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
 
     sp = tmp_path / "g" / "agent6" / "secrets.toml"
     assert stat.S_IMODE(sp.stat().st_mode) == 0o600
-    tokens = secret_store.load_oauth_tokens("chatgpt")
+    tokens = secret_store.load_oauth_grant("chatgpt")
     assert tokens is not None and tokens.account_id == "acct-7"
 
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
@@ -962,14 +1066,14 @@ def test_connect_chatgpt_state_mismatch_refuses(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
         "agent6.ui.cli._oauth.getpass.getpass",
         lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=EVIL",
     )
     rc = main(["connect", "chatgpt"])
     assert rc == 2
-    assert secret_store.load_oauth_tokens("chatgpt") is None
+    assert secret_store.load_oauth_grant("chatgpt") is None
 
 
 def test_oauth_callback_server_round_trip() -> None:
@@ -1001,10 +1105,16 @@ def test_connect_logout_revokes_and_removes_tokens(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """--logout revokes a ChatGPT grant at the issuer and removes the secrets entry."""
-    import time
-
-    secret_store.save_oauth_tokens(
-        "chatgpt", secret_store.OAuthTokens("AT", "RT", time.time() + 3600, "acct")
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text('[providers.chatgpt]\napi_format = "chatgpt"\n')
+    secret_store.save_oauth_grant(
+        "chatgpt",
+        oauth.stored_grant_for(
+            _oauth_protocol.TokenGrant("AT", "RT", 3600),
+            ChatGPTProviderEntry(api_format="chatgpt"),
+            now=time.time(),
+        ),
     )
     revoked: list[dict[str, object]] = []
 
@@ -1023,7 +1133,7 @@ def test_connect_logout_revokes_and_removes_tokens(
     assert rc == 0
     assert revoked[0]["url"] == "https://auth.openai.com/oauth/revoke"
     assert revoked[0]["token"] == "RT" and revoked[0]["token_type_hint"] == "refresh_token"
-    assert secret_store.load_oauth_tokens("chatgpt") is None
+    assert secret_store.load_oauth_grant("chatgpt") is None
     assert "Removed stored credentials" in capsys.readouterr().out
 
     rc = main(["connect", "chatgpt", "--logout"])
@@ -1065,7 +1175,7 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
 
     rc = main(["connect", "chatgpt"])
     assert rc == 0 and opened == []
-    tokens = secret_store.load_oauth_tokens("chatgpt")
+    tokens = secret_store.load_oauth_grant("chatgpt")
     assert tokens is not None and tokens.refresh_token == "RT9"
     out = capsys.readouterr().out
     assert "enter the code:  AB-12" in out and "/codex/device" in out
@@ -1106,22 +1216,37 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
 
     assert main(["connect", "codex"]) == 0
     assert told == ["codex"]
-    tokens = secret_store.load_oauth_tokens("codex")
+    tokens = secret_store.load_oauth_grant("codex")
     assert tokens is not None and tokens.refresh_token == "RT9"
 
 
-def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
-    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("failure", ["disabled", "start-error", "poll-error", "interrupt"])
+def test_connect_chatgpt_device_failure_falls_back_to_paste(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
     monkeypatch.delenv("DISPLAY", raising=False)
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    def disabled(issuer: str, client_id: str) -> None:
-        return None
+    def start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth | None:
+        if failure == "disabled":
+            return None
+        if failure == "start-error":
+            raise types.ProviderError("unavailable")
+        return chatgpt_oauth.DeviceAuth("device", "AB-CD", 5)
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", disabled)
-    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
+    def poll(*_args: object, **_kwargs: object) -> _oauth_protocol.TokenGrant:
+        if failure == "interrupt":
+            raise KeyboardInterrupt
+        raise types.ProviderError("poll refused")
+
+    def no_listener(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("a failed device flow must fall back to paste, not a listener")
+
+    monkeypatch.setattr(_oauth, "CallbackServer", no_listener)
+    monkeypatch.setattr(chatgpt_oauth, "start_device_auth", start)
+    monkeypatch.setattr(chatgpt_oauth, "poll_device_auth", poll)
+    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
 
     def fake_post(
         url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
@@ -1135,7 +1260,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
     )
     rc = main(["connect", "chatgpt"])
     assert rc == 0
-    assert secret_store.load_oauth_tokens("chatgpt") is not None
+    assert secret_store.load_oauth_grant("chatgpt") is not None
 
 
 def test_connect_eof_at_the_api_format_prompt_says_why(

@@ -4,18 +4,118 @@
 
 from __future__ import annotations
 
+import base64
+import dataclasses
+import json
 import pathlib
 import shlex
+import time
 from unittest import mock
 
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import event_log
+from agent6 import event_log, paths, secret_store
 from agent6.app import _setup, preflight
-from agent6.config import Config
+from agent6.config import ChatGPTProviderEntry, Config, load_config
+from agent6.providers import _oauth_protocol, _transport, oauth, types
 from agent6.sandbox import detect
 from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import main
+
+
+@pytest.mark.parametrize("name", ["chatgpt", "work"])
+@pytest.mark.parametrize("state", ["missing", "legacy", "rebound", "contradiction"])
+def test_chatgpt_diagnosis_is_shared_by_check_and_model(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    name: str,
+    state: str,
+) -> None:
+    """Every model surface preserves its output while naming the credential check's cause."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        f'[providers.{name}]\napi_format = "chatgpt"\n'
+        f'[models.worker]\nprovider = "{name}"\nmodel = "m1"\n'
+    )
+    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    claim = json.dumps({"https://api.openai.com/auth": {"chatgpt_account_id": "claim"}})
+    access = "e30." + base64.urlsafe_b64encode(claim.encode()).decode().rstrip("=") + ".sig"
+    if state == "legacy":
+        secret_store.save_secret(
+            name,
+            "",
+            extra={
+                "oauth_access_token": access,
+                "oauth_refresh_token": "refresh-secret",
+                "oauth_expires_at": "9999999999",
+            },
+        )
+    elif state != "missing":
+        grant = oauth.stored_grant_for(
+            _oauth_protocol.TokenGrant(access, "refresh-secret", 3600), entry, now=time.time()
+        )
+        secret_store.save_oauth_grant(
+            name,
+            dataclasses.replace(
+                grant,
+                binding="other" if state == "rebound" else grant.binding,
+                account_id="contradicting" if state == "contradiction" else "claim",
+            ),
+        )
+    with pytest.raises(types.ProviderError) as refused:
+        oauth.OAuthCredential(name, entry).token()
+    cause = str(refused.value)
+    assert f"agent6 connect {name}`" in cause
+    assert {
+        "missing": "No ChatGPT sign-in",
+        "legacy": "predates credential binding",
+        "rebound": "other provider settings",
+        "contradiction": "does not match its own token",
+    }[state] in cause
+    assert _setup.check_provider_keys(load_config(config)) == cause
+    with mock.patch.object(_transport, "http_request") as request:
+        assert main(["check", "config"]) == 1
+        checked = capsys.readouterr()
+        assert f"[FAIL] config.provider_keys: {cause}" in checked.out
+        for command in (["model"], ["model", "worker", name], ["model", "worker", f"{name}/m2"]):
+            assert main(command) == 0
+            output = capsys.readouterr()
+            assert cause in output.err
+            assert output.out
+            assert access not in output.out + output.err
+            assert "refresh-secret" not in output.out + output.err
+        request.assert_not_called()
+    worker = load_config(config).models.worker
+    assert worker is not None and worker.model == "m2"
+
+
+def test_healthy_local_sign_in_check_does_not_claim_remote_acceptance(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A listing failure cannot turn a local credential check into remote authentication."""
+    monkeypatch.chdir(tmp_path)
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[providers.chatgpt]\napi_format = "chatgpt"\n'
+        '[models.worker]\nprovider = "chatgpt"\nmodel = "m1"\n'
+    )
+    grant = oauth.stored_grant_for(
+        _oauth_protocol.TokenGrant("AT", "RT", 3600),
+        ChatGPTProviderEntry(api_format="chatgpt"),
+        now=time.time(),
+    )
+    secret_store.save_oauth_grant("chatgpt", dataclasses.replace(grant, account_id="account"))
+    with mock.patch.object(_transport, "http_request", side_effect=types.ProviderError("offline")):
+        assert main(["check", "config"]) == 0
+    out = capsys.readouterr().out
+    assert "[PASS] config.provider_keys" in out
+    assert "resolve locally" in out and "remote authentication is not verified" in out
 
 
 def test_no_providers_is_info_not_pass(capsys: pytest.CaptureFixture[str]) -> None:

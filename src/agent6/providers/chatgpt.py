@@ -27,7 +27,6 @@ from agent6.providers import (
     _responses,
     _stream,
     _transport,
-    chatgpt_oauth,
     types,
 )
 from agent6.providers import wire as providers_wire
@@ -202,7 +201,7 @@ class ChatGPTProvider:
     """
 
     model: str
-    credential: chatgpt_oauth.ChatGPTCredential
+    credential: types.BearerCredential
     account_id: str
     base_url: str
     extra_headers: _headers.HeaderSet = dataclasses.field(default_factory=_headers.HeaderSet)

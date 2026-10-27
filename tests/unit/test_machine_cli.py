@@ -1210,16 +1210,21 @@ def test_machine_preflight_judges_the_states_routes(
 
     monkeypatch.chdir(tmp_path)
     _stub_agent_result(monkeypatch)
-    monkeypatch.setattr(secret_store, "load_secrets", dict)
-
-    def stored(*_args: object, **_kwargs: object) -> object:
-        return object()
+    from agent6.config import ChatGPTProviderEntry
+    from agent6.providers import _oauth_protocol, oauth
 
     def listed(*_args: object, **_kwargs: object) -> list[str]:
         return []
 
     if signed_in:
-        monkeypatch.setattr(secret_store, "load_oauth_tokens", stored)
+        secret_store.save_oauth_grant(
+            "plan",
+            oauth.stored_grant_for(
+                _oauth_protocol.TokenGrant("AT", "RT", 3600),
+                ChatGPTProviderEntry(api_format="chatgpt"),
+                now=0,
+            ),
+        )
     monkeypatch.setattr(cache, "list_models", listed)
     cards = paths.cache_dir() / "models"
     cards.mkdir(parents=True, exist_ok=True)

@@ -177,56 +177,14 @@ def test_concurrent_save_secret_loses_no_provider(gcfg: pathlib.Path) -> None:
     assert not p.with_name(p.name + ".lock").exists()
 
 
-def test_oauth_tokens_round_trip_beside_api_keys(gcfg: pathlib.Path) -> None:
-    """OAuth tokens replace their provider's entry, preserve siblings, stay 0600."""
-    secret_store.save_secret("anthropic", "sk-ant-123")
-    tokens = secret_store.OAuthTokens(
-        access_token="eyJ.access", refresh_token="rt-1", expires_at=1755.5, account_id="acct-9"
-    )
-    path = secret_store.save_oauth_tokens("chatgpt", tokens)
-    assert (path.stat().st_mode & 0o777) == 0o600
-    assert secret_store.load_oauth_tokens("chatgpt") == tokens
-    assert secret_store.resolve_api_key("anthropic", None) == "sk-ant-123"
-    # Re-connect rotates the whole entry; no stale fields survive.
-    secret_store.save_oauth_tokens(
-        "chatgpt", secret_store.OAuthTokens("a2", "r2", 2000.0, "acct-9")
-    )
-    loaded = secret_store.load_oauth_tokens("chatgpt")
-    assert loaded is not None and loaded.access_token == "a2" and loaded.refresh_token == "r2"
-
-
-def test_load_oauth_tokens_absent_or_mangled_is_none(gcfg: pathlib.Path) -> None:
-    """load_oauth_tokens reads an absent or mangled entry as None.
-
-    No entry, an api-key-only entry and an unparseable expiry all read as absent; the caller's
-    repair path is `agent6 connect` either way.
-    """
-    assert secret_store.load_oauth_tokens("chatgpt") is None
-    secret_store.save_secret("chatgpt", "sk-not-oauth")
-    assert secret_store.load_oauth_tokens("chatgpt") is None
-    assert (
-        secret_store.load_oauth_tokens(
-            "chatgpt",
-            secrets={
-                "providers": {
-                    "chatgpt": {
-                        "oauth_access_token": "a",
-                        "oauth_refresh_token": "r",
-                        "oauth_expires_at": "not-a-float",
-                    }
-                }
-            },
-        )
-        is None
-    )
-
-
 def test_delete_provider_secrets_preserves_siblings(gcfg: pathlib.Path) -> None:
     secret_store.save_secret("anthropic", "sk-1")
-    secret_store.save_oauth_tokens("chatgpt", secret_store.OAuthTokens("a", "r", 100.0, "id"))
+    secret_store.save_oauth_grant(
+        "chatgpt", secret_store.StoredGrant("binding", "a", "r", 0, 100, "", 0, None, "id")
+    )
     assert secret_store.delete_provider_secrets("chatgpt") is True
     assert secret_store.delete_provider_secrets("chatgpt") is False
-    assert secret_store.load_oauth_tokens("chatgpt") is None
+    assert secret_store.load_oauth_grant("chatgpt") is None
     assert secret_store.resolve_api_key("anthropic", None) == "sk-1"
 
 

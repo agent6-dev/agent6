@@ -167,6 +167,7 @@ def test_budget_preflight_prices_a_seat_pinned_model() -> None:
 
 def test_chatgpt_provider_without_sign_in_is_refused_statically(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
 ) -> None:
     """A chatgpt provider without a sign-in is refused statically.
 
@@ -174,15 +175,22 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     connect chatgpt`), not mid-setup after state exists; with tokens stored it passes without any
     key lookup.
     """
-    monkeypatch.setattr(secret_store, "load_secrets", dict)
+    from agent6.config import ChatGPTProviderEntry
+    from agent6.providers import _oauth_protocol, oauth
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     cfg = _cfg("gpt-5-codex", {"chatgpt": {"api_format": "chatgpt"}})
     err = _setup.check_provider_keys(cfg)
     assert err is not None and "agent6 connect chatgpt" in err
 
-    def stored(*_a: object, **_k: object) -> object:
-        return object()
-
-    monkeypatch.setattr(secret_store, "load_oauth_tokens", stored)
+    secret_store.save_oauth_grant(
+        "chatgpt",
+        oauth.stored_grant_for(
+            _oauth_protocol.TokenGrant("AT", "RT", 3600),
+            ChatGPTProviderEntry(api_format="chatgpt"),
+            now=0,
+        ),
+    )
     listed: list[str] = []
 
     def fake_list(name: str, *_a: object, **_k: object) -> list[str]:

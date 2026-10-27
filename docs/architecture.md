@@ -265,12 +265,17 @@ Configured redirect validation accepts only loopback literals.
 
 `load_bound_grant(provider_name, entry, secrets=...)` validates a stored binding and account claim without refreshing or writing.
 `OAuthCredential` pins the first account, preserves an omitted account on refresh, and refuses a different account on refresh, sibling adoption or rescue.
+A stored grant without an account cannot replace a pinned identity; only a refresh of the known grant inherits its account.
 A classified `OAuthError.code` of `refresh_token_reused` permits one reread after one second, accepting only a different, fresh, binding-valid, same-account grant.
 The other classified codes are `refresh_token_expired`, `refresh_token_invalidated` and `invalid_grant`; unclassified refusals have `code=None`.
 `_oauth_exchange.py` owns the optional second exchange and its expiry parser.
 
-Configured issuers use `OAuthCredential` and `StoredGrant`.
-The shared holder also accepts the fixed ChatGPT profile, but ChatGPT consumers and connect use `ChatGPTCredential` and `OAuthTokens`.
+Configured issuers and ChatGPT use `OAuthCredential` and bound `StoredGrant` records.
+ChatGPT model listings read through the holder with refresh disabled and fall back to the cache on failure.
+`ui/cli/_oauth.py` selects and runs browser, device and paste flows through the resolved profile.
+ChatGPT's proprietary device flow falls back to the displayed authorization URL and pasted callback on refusal or cancellation.
+Legacy ChatGPT records refuse with `agent6 connect <name>`; a successful connect replaces the entry atomically.
+`app/_setup.py::sign_in_refusal` shares the bound-grant diagnosis between run preflight, `check config` and `model`.
 The bound store's security rules are in [Security](security.md#8-secrets-and-connect).
 
 ## Tool dispatch

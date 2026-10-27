@@ -125,7 +125,7 @@ def test_the_paste_flow_sends_the_fixed_redirect_and_exchanges_the_code(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_config(_CONFIG.replace("http://127.0.0.1:0/auth/callback", "http://127.0.0.1:8765/cb"))
-    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
         "agent6.ui.cli._oauth.getpass.getpass",
         lambda prompt="": "http://127.0.0.1:8765/cb?code=C1&state=STATE1",
@@ -158,7 +158,7 @@ def test_a_pasted_callback_with_another_state_stores_nothing(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_config(_CONFIG.replace("http://127.0.0.1:0/auth/callback", "http://127.0.0.1:8765/cb"))
-    monkeypatch.setattr("agent6.ui.cli.connect.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
         "agent6.ui.cli._oauth.getpass.getpass",
         lambda prompt="": "http://127.0.0.1:8765/cb?code=C1&state=EVIL",
@@ -303,7 +303,7 @@ def test_the_run_preflight_wants_a_bound_grant(
     entry = cfg.providers["work"]
     assert isinstance(entry, OpenAIProviderEntry)
     assert _setup.check_provider_keys(cfg) == (
-        "no sign-in stored for [providers.work]; run `agent6 connect work`."
+        "No sign-in stored for provider 'work'; run `agent6 connect work` to sign in again."
     )
     grant = secret_store.StoredGrant(
         binding="stale",
@@ -345,7 +345,9 @@ def test_model_set_names_the_missing_or_rebound_sign_in(
     monkeypatch.setattr(cache, "list_models", listed)
     assert main(["model", "worker", "work/m1"]) == 0
     err = capsys.readouterr().err
-    assert "has no sign-in stored" in err and "agent6 connect work" in err
+    cause = _setup.check_provider_keys(load_config(gc))
+    assert cause is not None and cause in err
+    assert "agent6 connect work" in err
 
     grant = secret_store.StoredGrant(
         binding="stale",
@@ -392,8 +394,8 @@ def test_logout_does_not_revoke_a_grant_made_under_other_settings(
 
     monkeypatch.setattr(_transport, "http_request", never)
     assert main(["connect", "work", "--logout"]) == 0
-    err = capsys.readouterr().err
-    assert "other provider settings" in err and "removed locally" in err
+    output = capsys.readouterr()
+    assert "other provider settings" in output.err and "locally only" in output.out
     assert secret_store.load_oauth_grant("work") is None
 
 

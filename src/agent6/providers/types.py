@@ -296,7 +296,7 @@ class TranscriptSink:
 
 
 class BearerCredential(Protocol):
-    """A refreshable bearer source (`CommandToken`, `ChatGPTCredential`)."""
+    """A refreshable bearer source (`CommandToken`, `OAuthCredential`)."""
 
     def token(self) -> str:
         """Return a fresh-enough bearer."""

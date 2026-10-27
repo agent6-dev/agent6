@@ -264,28 +264,34 @@ class OAuthCredential:
         return self._same_account(load_bound_grant(self._provider, self._entry))
 
     def _same_account(self, grant: secret_store.StoredGrant) -> secret_store.StoredGrant:
-        """Pin the first account and keep it when a later grant omits the claim.
+        """Pin the first account and refuse another or an unidentified sign-in.
 
         Args:
             grant: A grant whose metadata agrees with its access-token claim.
 
         Returns:
-            The grant with the pinned account.
+            The grant, unchanged.
 
         Raises:
-            ProviderError: The grant names another account.
+            ProviderError: The grant names another account or lacks the pinned identity.
         """  # noqa: DOC501  # `_reconnect` builds the ProviderError named above
         account = grant.account_id
         if not self._account:
             self._account = account
-        elif account and account != self._account:
+        elif not account:
+            raise _reconnect(
+                self._provider,
+                f"The stored grant for {self._provider!r} is an unidentified sign-in;"
+                " it cannot replace this run's pinned account",
+            )
+        elif account != self._account:
             label = f"{self._profile.label} " if self._profile.label else ""
             raise _reconnect(
                 self._provider,
                 f"The stored {label}sign-in for {self._provider!r} belongs to a different"
                 " account than this run started under",
             )
-        return dataclasses.replace(grant, account_id=self._account)
+        return grant
 
     def account_id(self) -> str:
         """Return the pinned account id, or an empty string when none is known."""
@@ -330,8 +336,11 @@ class OAuthCredential:
             cap_skew=self._profile.cap_refresh_skew,
         )
 
-    def token(self) -> str:
-        """Return a fresh-enough bearer, rotating or exchanging the stored grant when needed.
+    def token(self, *, refresh: bool = True) -> str:
+        """Return the bound bearer, renewing it unless refresh is disabled.
+
+        Args:
+            refresh: False reads the bound bearer without rotating or exchanging it.
 
         Returns:
             The bearer the model endpoint takes.
@@ -342,7 +351,7 @@ class OAuthCredential:
         """
         with self._lock:
             grant = self._grant or self._stored()
-            if not self._force and self._fresh(grant):
+            if not refresh or (not self._force and self._fresh(grant)):
                 return self._adopt(grant)
             with portable.locked_file(paths.secrets_path()) as held:
                 if not held:
