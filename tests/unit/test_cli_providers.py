@@ -29,7 +29,7 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     )
     assert isinstance(prov, OpenAIProvider)
     assert prov.extra_body == {"provider": {"sort": "throughput"}}
-    assert ("X-Title", "agent6") in prov.extra_headers
+    assert ("x-title", "agent6") in prov.extra_headers.literal
 
 
 def test_reviewer_family_builders_stamp_their_own_seats() -> None:

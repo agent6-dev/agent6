@@ -26,6 +26,7 @@ import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6.providers import (
+    _headers,
     _openai_messages,
     _openai_recovery,
     _stream,
@@ -453,7 +454,7 @@ class ChatGPTProvider:
         credential: The OAuth credential; a 401 refreshes it once.
         account_id: The `chatgpt-account-id` header.
         base_url: The backend's base URL.
-        extra_headers: Operator headers merged over the built ones.
+        extra_headers: The entry's extra headers, rendered per request.
         extra_body: Operator body keys merged last; the structural keys are reserved.
         extra_query: Operator query parameters.
         timeout_s: The read budget in seconds.
@@ -469,7 +470,7 @@ class ChatGPTProvider:
     credential: chatgpt_oauth.ChatGPTCredential
     account_id: str
     base_url: str
-    extra_headers: tuple[tuple[str, str], ...] = ()
+    extra_headers: _headers.HeaderSet = dataclasses.field(default_factory=_headers.HeaderSet)
     extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
     extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     timeout_s: float = 600.0
@@ -496,7 +497,7 @@ class ChatGPTProvider:
             url = f"{self.base_url.rstrip('/')}/usage"
             resp = httpx2.get(
                 url,
-                headers=self._build_headers(token),
+                headers=self._build_headers(token, _headers.plain_facts("usage")),
                 timeout=20.0,
                 follow_redirects=False,
                 trust_env=_transport.trust_env_for(url),
@@ -532,8 +533,8 @@ class ChatGPTProvider:
         reasoning["effort"] = accepted[0]
         return True
 
-    def _build_headers(self, token: str) -> dict[str, str]:
-        """Return one attempt's request headers, built from its token."""
+    def _build_headers(self, token: str, facts: _headers.RequestFacts) -> dict[str, str]:
+        """Return one attempt's request headers, built from its token and the request's facts."""
         headers = {
             "content-type": "application/json",
             "authorization": f"Bearer {token}",
@@ -542,8 +543,7 @@ class ChatGPTProvider:
             "originator": "agent6",
             "session-id": self.session_id,
         }
-        for k, v in self.extra_headers:
-            headers[k.lower()] = v
+        headers.update(self.extra_headers.render(facts))
         return headers
 
     def call(
@@ -560,6 +560,7 @@ class ChatGPTProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        context: _headers.RequestContext | None = None,
     ) -> types.ProviderResponse:
         """Make one Responses call over SSE.
 
@@ -575,6 +576,7 @@ class ChatGPTProvider:
             thinking_delta_callback: Receives reasoning summaries as they stream.
             should_abort: Polled during the stream; True abandons the turn.
             should_interrupt: Polled during the stream; True ends the turn to steer.
+            context: The application's context for the call; None outside a conversation.
 
         Returns:
             The parsed response.
@@ -646,6 +648,7 @@ class ChatGPTProvider:
             transcript_sink=self.transcript_sink,
             budget=self.budget,
             model=self.model,
+            facts=_headers.call_facts(self.model, _headers.responses_body_facts(body), context),
             build_headers=self._build_headers,
             adapt_400=self._adapt_effort_400,
             adapt_attempts=1,

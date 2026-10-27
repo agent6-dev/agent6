@@ -24,6 +24,7 @@ import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6.providers import (
+    _headers,
     _openai_messages,
     _openai_parse,
     _stream,
@@ -168,7 +169,7 @@ class OpenAIProvider:
         base_url: The endpoint's base URL.
         deployment: The URL profile.
         auth_style: The auth header style: `bearer`, `api_key_header` (Azure) or `none`.
-        extra_headers: Operator headers merged over the built ones.
+        extra_headers: The entry's extra headers, rendered per request.
         extra_body: Operator body keys merged last; the structural keys are reserved.
         extra_query: Operator query parameters (Azure's `api-version`).
         timeout_s: The read budget in seconds.
@@ -183,7 +184,7 @@ class OpenAIProvider:
     base_url: str = OPENAI_DEFAULT_BASE_URL
     deployment: wire.Deployment = "direct"
     auth_style: wire.AuthStyle = "bearer"
-    extra_headers: tuple[tuple[str, str], ...] = ()
+    extra_headers: _headers.HeaderSet = dataclasses.field(default_factory=_headers.HeaderSet)
     extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
     extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     timeout_s: float = 120.0
@@ -226,14 +227,13 @@ class OpenAIProvider:
             return True
         return False
 
-    def _build_headers(self, token: str) -> dict[str, str]:
-        """Return one attempt's request headers, built from its token."""
+    def _build_headers(self, token: str, facts: _headers.RequestFacts) -> dict[str, str]:
+        """Return one attempt's request headers, built from its token and the request's facts."""
         headers: dict[str, str] = {"content-type": "application/json"}
         authed = wire.auth_header(self.auth_style, token)
         if authed is not None:
             headers[authed[0]] = authed[1]
-        for k, v in self.extra_headers:
-            headers[k.lower()] = v
+        headers.update(self.extra_headers.render(facts))
         return headers
 
     def call(  # noqa: PLR0912
@@ -250,6 +250,7 @@ class OpenAIProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        context: _headers.RequestContext | None = None,
     ) -> types.ProviderResponse:
         """Make one Chat Completions call, streaming when a delta callback is set.
 
@@ -265,6 +266,7 @@ class OpenAIProvider:
             thinking_delta_callback: Receives reasoning text as it streams.
             should_abort: Polled during a stream; True abandons the turn.
             should_interrupt: Polled during a stream; True ends the turn to steer.
+            context: The application's context for the call; None outside a conversation.
 
         Returns:
             The parsed response.
@@ -359,6 +361,7 @@ class OpenAIProvider:
             transcript_sink=self.transcript_sink,
             budget=self.budget,
             model=self.model,
+            facts=_headers.call_facts(self.model, _headers.openai_body_facts(body), context),
             build_headers=self._build_headers,
             adapt_400=self._adapt_body_for_400,
             adapt_attempts=int("max_tokens" in body) + int("temperature" in body),

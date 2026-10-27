@@ -16,7 +16,7 @@ import json
 import math
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 from urllib import parse
 
@@ -117,11 +117,14 @@ def parse_callback(pasted: str, *, state: str, redirect_uri: str = "") -> str:
     return codes[0]
 
 
-def post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Response:
+def post_form(
+    url: str, data: dict[str, str], timeout_s: float, headers: Mapping[str, str] | None = None
+) -> httpx2.Response:
     """Return a token endpoint's response to a form POST; the seam tests stub."""
     return httpx2.post(
         url,
         headers={
+            **(headers or {}),
             "content-type": "application/x-www-form-urlencoded",
             "accept": "application/json",
         },
@@ -132,19 +135,31 @@ def post_form(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Respon
     )
 
 
-def post_json(url: str, data: dict[str, str], timeout_s: float) -> httpx2.Response:
+def post_json(
+    url: str, data: dict[str, str], timeout_s: float, headers: Mapping[str, str] | None = None
+) -> httpx2.Response:
     """Return an endpoint's response to a JSON POST; the seam tests stub."""
     return httpx2.post(
         url,
         json=data,
-        headers={"accept": "application/json"},
+        headers={**(headers or {}), "accept": "application/json"},
         timeout=timeout_s,
         follow_redirects=False,
         trust_env=_transport.trust_env_for(url),
     )
 
 
-def _post(url: str, data: dict[str, str], *, encoding: str, timeout_s: float) -> httpx2.Response:
+HeadersFactory = Callable[[], Mapping[str, str]]
+
+
+def _post(
+    url: str,
+    data: dict[str, str],
+    *,
+    encoding: str,
+    timeout_s: float,
+    headers: HeadersFactory | None = None,
+) -> httpx2.Response:
     """Send a device or token request in the configured encoding.
 
     Args:
@@ -152,13 +167,16 @@ def _post(url: str, data: dict[str, str], *, encoding: str, timeout_s: float) ->
         data: The parameters.
         encoding: "form" or "json".
         timeout_s: The request timeout.
+        headers: Renders the operator's headers addressed to this request; None sends none.
 
     Returns:
         The response.
     """
-    return (
-        post_json(url, data, timeout_s) if encoding == "json" else post_form(url, data, timeout_s)
-    )
+    poster = post_json if encoding == "json" else post_form
+    extra = dict(headers()) if headers is not None else {}
+    if not extra:
+        return poster(url, data, timeout_s)  # the seam's stubs take three arguments
+    return poster(url, data, timeout_s, extra)
 
 
 def authorization_url(
@@ -327,6 +345,7 @@ def exchange_code(
     provider: str,
     label: str,
     encoding: str = "form",
+    headers: HeadersFactory | None = None,
     timeout_s: float = TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
     """Exchange an authorization code for a token grant.
@@ -340,6 +359,7 @@ def exchange_code(
         provider: The provider name, for the reconnect hint.
         label: The sign-in the errors name.
         encoding: "form" or "json".
+        headers: Renders the operator's headers addressed to this request; None sends none.
         timeout_s: The request timeout.
 
     Returns:
@@ -360,6 +380,7 @@ def exchange_code(
             },
             encoding=encoding,
             timeout_s=timeout_s,
+            headers=headers,
         )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
@@ -380,6 +401,7 @@ def refresh_grant(
     provider: str,
     label: str,
     encoding: str = "form",
+    headers: HeadersFactory | None = None,
     timeout_s: float = TOKEN_TIMEOUT_S,
 ) -> TokenGrant:
     """Trade a refresh token for a fresh grant; tokens may rotate.
@@ -391,6 +413,7 @@ def refresh_grant(
         provider: The provider name, for the reconnect hint.
         label: The sign-in the errors name.
         encoding: "form" or "json".
+        headers: Renders the operator's headers addressed to this request; None sends none.
         timeout_s: The request timeout.
 
     Returns:
@@ -409,6 +432,7 @@ def refresh_grant(
             },
             encoding=encoding,
             timeout_s=timeout_s,
+            headers=headers,
         )
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
@@ -428,6 +452,7 @@ def revoke_tokens(
     access_token: str,
     refresh_token: str,
     encoding: str,
+    headers: HeadersFactory | None = None,
     timeout_s: float = TOKEN_TIMEOUT_S,
 ) -> str | None:
     """Revoke the grant at sign-out, best effort.
@@ -440,6 +465,7 @@ def revoke_tokens(
         access_token: The stored access token.
         refresh_token: The stored refresh token; "" when the grant has none.
         encoding: "form" (RFC 7009) or "json".
+        headers: Renders the operator's headers addressed to this request; None sends none.
         timeout_s: The request timeout.
 
     Returns:
@@ -453,7 +479,9 @@ def revoke_tokens(
     if hint == "refresh_token":
         body["client_id"] = client_id
     try:
-        resp = _post(revocation_endpoint, body, encoding=encoding, timeout_s=timeout_s)
+        resp = _post(
+            revocation_endpoint, body, encoding=encoding, timeout_s=timeout_s, headers=headers
+        )
     except httpx2.HTTPError as exc:
         return f"could not reach {revocation_endpoint}: {exc}"
     if resp.status_code >= 400:
@@ -493,6 +521,7 @@ def start_device_grant(
     scopes: tuple[str, ...],
     encoding: str,
     label: str,
+    headers: HeadersFactory | None = None,
     timeout_s: float = TOKEN_TIMEOUT_S,
     now: Callable[[], float] = time.monotonic,
 ) -> DeviceGrant:
@@ -503,6 +532,7 @@ def start_device_grant(
         client_id: The client registration.
         scopes: The scopes requested; empty sends no `scope`.
         encoding: "form" or "json".
+        headers: Renders the operator's headers addressed to this request; None sends none.
         label: The sign-in the errors name.
         timeout_s: The request timeout.
         now: The monotonic clock.
@@ -517,7 +547,7 @@ def start_device_grant(
     if scopes:
         body["scope"] = " ".join(scopes)
     try:
-        resp = _post(endpoint, body, encoding=encoding, timeout_s=timeout_s)
+        resp = _post(endpoint, body, encoding=encoding, timeout_s=timeout_s, headers=headers)
     except httpx2.HTTPError as exc:
         raise types.ProviderError(f"could not reach {endpoint}: {exc}") from exc
     if 300 <= resp.status_code < 400:
@@ -556,6 +586,7 @@ def poll_device_grant(
     *,
     encoding: str,
     label: str,
+    headers: HeadersFactory | None = None,
     timeout_s: float = TOKEN_TIMEOUT_S,
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.monotonic,
@@ -570,6 +601,7 @@ def poll_device_grant(
         client_id: The client registration.
         grant: The started grant.
         encoding: "form" or "json".
+        headers: Renders the operator's headers addressed to this request; None sends none.
         label: The sign-in the errors name.
         timeout_s: The request timeout.
         sleep: The wait between polls.
@@ -590,7 +622,9 @@ def poll_device_grant(
             "client_id": client_id,
         }
         try:
-            resp = _post(token_endpoint, body, encoding=encoding, timeout_s=timeout_s)
+            resp = _post(
+                token_endpoint, body, encoding=encoding, timeout_s=timeout_s, headers=headers
+            )
         except httpx2.HTTPError as exc:
             raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
         if 300 <= resp.status_code < 400:

@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 from agent6 import budget as agent6_budget
 from agent6 import errors, event_log, kinds, paths
 from agent6.app import (
+    _conversations,
     _session,
     _setup,
     finalize,
@@ -299,6 +300,10 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
+        conversations = _conversations.Conversations(
+            path=layout.session_dir / _conversations.FILE_NAME,
+            is_subagent=stamps.parallel_lineage() is not None,
+        )
         session = _session.build_session_providers(
             cfg,
             role=role,
@@ -306,10 +311,15 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             transcript_sink=transcript_sink,
             stream_text=stream_text,
             reporter=reporter,
+            conversations=conversations,
         )
         budget = session.budget
         prompt_reviser_provider = providers.build_prompt_reviser_provider(
-            cfg, transcript_sink=transcript_sink, budget=budget, events=events
+            cfg,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            events=events,
+            conversations=conversations,
         )
         cfg = inputs.gate(cfg, budget)
 

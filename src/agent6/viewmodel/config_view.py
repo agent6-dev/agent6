@@ -116,7 +116,8 @@ def _value_models(ann: Any) -> tuple[type[pydantic.BaseModel], ...]:
 
     Returns:
         One model for a plain model value, several for a discriminated union (the
-        provider entries), empty when the value is not model-shaped.
+        provider entries), empty when the value is not model-shaped or a union that also
+        takes a scalar (a header map whose entries are strings or template tables).
     """
     ann = _unwrap_optional(ann)
     if get_origin(ann) is not dict:
@@ -125,7 +126,9 @@ def _value_models(ann: Any) -> tuple[type[pydantic.BaseModel], ...]:
     if get_origin(val) is Annotated:
         val = get_args(val)[0]
     if get_origin(val) in (Union, types.UnionType):
-        return tuple(m for m in get_args(val) if _nested_model(m) is not None)
+        members = get_args(val)
+        models = tuple(m for m in members if _nested_model(m) is not None)
+        return models if len(models) == len(members) else ()
     model = _nested_model(val)
     return (model,) if model is not None else ()
 

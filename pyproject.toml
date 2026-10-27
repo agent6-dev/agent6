@@ -159,6 +159,7 @@ max-complexity = 20
 banned-from = [
     "agent6._data.words",
     "agent6.app._carried_questions",
+    "agent6.app._conversations",
     "agent6.app._execution",
     "agent6.app._lane_watch",
     "agent6.app._merge_message",
@@ -203,6 +204,7 @@ banned-from = [
     "agent6.config._base",
     "agent6.config._git",
     "agent6.config._harness",
+    "agent6.config._headers",
     "agent6.config._layer_data",
     "agent6.config._oauth",
     "agent6.config._presets",
@@ -297,6 +299,7 @@ banned-from = [
     "agent6.providers._claude_code_session",
     "agent6.providers._claude_code_stream",
     "agent6.providers._claude_code_wire",
+    "agent6.providers._headers",
     "agent6.providers._oauth_protocol",
     "agent6.providers._openai_messages",
     "agent6.providers._openai_parse",

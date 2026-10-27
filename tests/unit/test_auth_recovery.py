@@ -9,7 +9,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6.providers import _transport, types
+from agent6.providers import _headers, _transport, types
 
 
 class _AlwaysRefreshing:
@@ -40,7 +40,8 @@ def _call(cred: _AlwaysRefreshing, *, adapt_attempts: int) -> _transport.Provide
         transcript_sink=None,
         budget=None,
         model="m",
-        build_headers=lambda token: {"authorization": f"Bearer {token}"},
+        facts=_headers.RequestFacts(target="inference", model="m"),
+        build_headers=lambda token, _facts: {"authorization": f"Bearer {token}"},
         adapt_400=lambda _s, _t, _b: False,
         adapt_attempts=adapt_attempts,
         require_metered=lambda _d: None,

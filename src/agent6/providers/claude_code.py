@@ -46,6 +46,7 @@ from agent6.providers import (
     _claude_code_session,
     _claude_code_stream,
     _claude_code_wire,
+    _headers,
     _stream,
     types,
 )
@@ -152,6 +153,7 @@ class ClaudeCodeProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        context: _headers.RequestContext | None = None,
     ) -> types.ProviderResponse:
         """Run one round on the worker's process, or one process for a tool-less call.
 
@@ -166,6 +168,7 @@ class ClaudeCodeProvider:
             thinking_delta_callback: Receives reasoning text as it streams.
             should_abort: Polled each tick; True abandons the turn.
             should_interrupt: Polled each tick; True ends the turn to steer.
+            context: The application's context for the call; None outside a conversation.
 
         Returns:
             The round's response.
@@ -174,6 +177,7 @@ class ClaudeCodeProvider:
             ProviderError: The run is over budget, the child failed, or the round
                 could not be metered.
         """
+        del context  # a local process; there are no request headers to render
         del max_tokens, temperature, reasoning_effort
         if self.budget is not None:
             self.budget.check()

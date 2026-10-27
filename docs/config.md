@@ -78,12 +78,34 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `api_key_env` | none | environment variable holding the API key; precedence over `secrets.toml`; unset for a key stored by `agent6 connect` or an unauthenticated local endpoint |
 | `token_command` | `[]` | argv command printing a short-lived bearer token to stdout; re-run after `token_command_ttl_s` and once after a `401` or `403`; precedence over `api_key_env` |
 | `token_command_ttl_s` | `300.0` | Seconds a `token_command` token is reused before the command runs again. |
-| `extra_headers` | `{}` | extra HTTP headers on every provider request; no secrets, config file not `0600` |
 | `extra_body` | `{}` | provider-specific JSON merged last into every request body; precedence for tuning keys (`max_tokens`, `temperature`); agent6-owned structural keys filtered out (messages, model, stream, tools, tool choice, response shape); JSON-shaped values only, TOML dates and times refused; OpenRouter routing options here |
 | `extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
 | `prompt_caching` | `true` | prompt caching for `api_format = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
 | `binary` | `"claude"` | executable for `api_format = "claude_code"` only; a name on PATH or an absolute path |
+
+### Request headers
+
+`[providers.<name>.extra_headers]` is the one place extra HTTP headers come from.
+A literal string (`"x-title" = "agent6"`) rides every API request: model calls, the model listing and the plan reading.
+A template table renders from request facts for the request classes it names, and only a template whose `targets` name `oauth` or `exchange` reaches a credential endpoint.
+The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `session_id` (an opaque id per role and provider, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
+`{{` and `}}` are literal braces; a placeholder holds a fact name and nothing else.
+The transport owns `authorization`, `x-api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; naming one refuses at config load, as does a control character, two spellings of one header, or a template its target cannot render.
+
+```toml
+[providers.work.extra_headers]
+"x-title" = "agent6"
+"user-agent" = { template = "agent6/{agent6_version}", targets = ["inference", "models", "oauth"] }
+"x-initiator" = { template = "{initiator}" }
+"x-vision" = { template = "true", when = "has_images" }
+```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `template` | *(required)* | literal text with `{fact}` placeholders (`{{` and `}}` are literal braces); the facts: `request_id`, `agent6_version` on every request, and on a model call `model`, `session_id`, `initiator`, `is_first_turn`, `is_subagent`, `has_tool_results`, `has_images` |
+| `targets` | `["inference"]` | the request classes the header reaches: `inference` (model calls), `models` (the listing), `usage` (the plan reading), `oauth` (device, token and revocation requests), `exchange` (the configured second exchange) |
+| `when` | none | a Boolean fact; the header is sent only while it is true (model calls only) |
 
 ### Configured OAuth
 

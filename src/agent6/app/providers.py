@@ -11,6 +11,7 @@ from typing import Any
 
 from agent6 import budget as agent6_budget
 from agent6 import event_log, secret_store
+from agent6.app import _conversations
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -36,6 +37,7 @@ from agent6.providers import (
     ToolDefinition,
     TranscriptRecorder,
     TranscriptSink,
+    _headers,
     oauth,
     types,
 )
@@ -204,7 +206,7 @@ def _provider_from_entry(
             budget=budget,
             context_tokens=models_registry.context_window(provider_name, model),
         )
-    extra_headers = tuple(sorted(entry.extra_headers.items()))
+    extra_headers = _headers.HeaderSet.from_config(entry.extra_headers)
     extra_body = dict(entry.extra_body)
     extra_query = dict(entry.extra_query)
     if isinstance(entry, ChatGPTProviderEntry):
@@ -306,6 +308,9 @@ class InstrumentedProvider:
             panel.
         stream_text: Whether to fan text and reasoning deltas out as events without a
             caller callback.
+        operator_driven: The role converses with the operator, so a call whose latest
+            input is the operator's text has the initiator `user`.
+        conversations: The session's conversation state; a side call holds its own.
     """
 
     inner: Provider
@@ -316,6 +321,10 @@ class InstrumentedProvider:
     budget: agent6_budget.BudgetTracker
     stream_text: bool = False
     seat_index: int | None = None
+    operator_driven: bool = False
+    conversations: _conversations.Conversations = dataclasses.field(
+        default_factory=_conversations.Conversations
+    )
 
     def call(
         self,
@@ -330,6 +339,7 @@ class InstrumentedProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        context: _headers.RequestContext | None = None,
     ) -> ProviderResponse:
         """Call the inner provider and emit the role and budget events around it.
 
@@ -344,6 +354,7 @@ class InstrumentedProvider:
             thinking_delta_callback: Receives each reasoning piece as it streams.
             should_abort: Polled to abort the call.
             should_interrupt: Polled to interrupt the call.
+            context: An outer context; None takes the conversation's own.
 
         Returns:
             The inner provider's response.
@@ -352,6 +363,15 @@ class InstrumentedProvider:
             ProviderError: The inner call failed; the provider name is filled in.
         """
         model_call_id = uuid.uuid4().hex
+        if context is None:
+            initiator = (
+                "user"
+                if self.operator_driven and _headers.latest_input_is_human(messages)
+                else "agent"
+            )
+            context = self.conversations.context(
+                self.role, self.provider_name, initiator=initiator, observe=self._observe
+            )
         if self.events is not None:
             self.events.emit("role.call", **self._identity(model_call_id))
         # Every live view subscribes to the delta events; a caller callback chains through.
@@ -389,6 +409,7 @@ class InstrumentedProvider:
                 thinking_delta_callback=effective_thinking_cb,
                 should_abort=should_abort,
                 should_interrupt=should_interrupt,
+                context=context,
             )
         except Exception as exc:
             if isinstance(exc, ProviderError) and not exc.provider:
@@ -399,6 +420,7 @@ class InstrumentedProvider:
                 )
             self._emit_budget()
             raise
+        self.conversations.completed(self.role, self.provider_name)
         if self.events is not None:
             self.events.emit(
                 "role.result",
@@ -426,6 +448,18 @@ class InstrumentedProvider:
         if self.seat_index is not None:
             fields["seat_index"] = self.seat_index
         return fields
+
+    def _observe(self, facts: _headers.RequestFacts) -> None:
+        """Emit `provider.request` for one HTTP attempt: its id and class, never a header value."""
+        if self.events is not None:
+            self.events.emit(
+                "provider.request",
+                role=self.role,
+                provider=self.provider_name,
+                model=facts.model,
+                request_id=facts.request_id,
+                target=facts.target,
+            )
 
     def close(self) -> None:
         """Release what the inner provider holds."""
@@ -484,6 +518,7 @@ def reviewer_seat_provider(
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None,
+    conversations: _conversations.Conversations | None = None,
 ) -> Provider:
     """Build the reviewer route under a seat's label, instrumented.
 
@@ -493,6 +528,7 @@ def reviewer_seat_provider(
         transcript_sink: The recorder the provider's round-trips go to.
         budget: The tracker the provider bills.
         events: The sink the role and budget events go to.
+        conversations: The session's conversation state; None holds one for this seat.
 
     Returns:
         The instrumented provider.
@@ -509,6 +545,7 @@ def reviewer_seat_provider(
         provider_name=rm.provider,
         events=events,
         budget=budget,
+        conversations=conversations or _conversations.Conversations(),
     )
 
 
@@ -524,6 +561,7 @@ def build_review_seats(
     n: int,
     focus: tuple[str, ...] = (),
     events: event_log.EventSink | None = None,
+    conversations: _conversations.Conversations | None = None,
 ) -> list[_reviewer.ReviewSeat]:
     """Build the review-panel seats, one per roster entry.
 
@@ -538,6 +576,7 @@ def build_review_seats(
         focus: The focus values to cycle; the built-in set when empty.
         events: The sink each seat's events go to; None leaves the seats uninstrumented,
             so their spend reaches no surface.
+        conversations: The session's conversation state; None holds one per seat.
 
     Returns:
         The seats in roster order.
@@ -581,6 +620,7 @@ def build_review_seats(
                 events=events,
                 budget=budget,
                 seat_index=seat_index,
+                conversations=conversations or _conversations.Conversations(),
             )
         seats.append(
             _reviewer.ReviewSeat(
@@ -600,6 +640,7 @@ def build_prompt_reviser_provider(
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink,
+    conversations: _conversations.Conversations | None = None,
 ) -> Provider | None:
     """Route the reviewer role as a one-shot prompt reviser.
 
@@ -608,6 +649,7 @@ def build_prompt_reviser_provider(
         transcript_sink: The recorder the reviser's round-trips go to.
         budget: The tracker the reviser bills.
         events: The sink the role and budget events go to.
+        conversations: The session's conversation state; None holds one for the reviser.
 
     Returns:
         The instrumented provider, or None when `prompt.revise_prompt` is off.
@@ -615,5 +657,10 @@ def build_prompt_reviser_provider(
     if cfg.prompt.revise_prompt == "off":
         return None
     return reviewer_seat_provider(
-        cfg, "prompt_reviser", transcript_sink=transcript_sink, budget=budget, events=events
+        cfg,
+        "prompt_reviser",
+        transcript_sink=transcript_sink,
+        budget=budget,
+        events=events,
+        conversations=conversations,
     )

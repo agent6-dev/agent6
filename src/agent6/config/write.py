@@ -17,7 +17,7 @@ import difflib
 import pathlib
 import shlex
 from collections.abc import Generator, Sequence
-from typing import Any, Literal, get_args, get_origin
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 import pydantic
 import pydantic.fields
@@ -514,8 +514,20 @@ def _models_at(
         return None
     annotation = field.annotation
     if get_origin(annotation) is dict:
-        return _model_members(get_args(annotation)[1]) or None
+        value = get_args(annotation)[1]
+        # A map whose entries may be scalars (a header map) is one leaf, edited per entry.
+        return _model_members(value) if _only_models(value) else None
     return _model_members(annotation) or None
+
+
+def _only_models(annotation: object) -> bool:
+    """Return whether every member an annotation can hold is a BaseModel."""
+    if isinstance(annotation, type):
+        return issubclass(annotation, pydantic.BaseModel)
+    args = get_args(annotation)
+    if get_origin(annotation) is Annotated:
+        return _only_models(args[0])
+    return bool(args) and all(_only_models(arg) for arg in args)
 
 
 def _model_members(annotation: object) -> tuple[type[pydantic.BaseModel], ...]:

@@ -23,7 +23,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, anthropic
+from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, _headers, anthropic
 
 
 class _FakeResponse:
@@ -298,7 +298,9 @@ def test_required_prompt_cache_beta_is_merged_with_extra_betas(
         api_key="sk-test",
         model="claude-test",
         prompt_caching=True,
-        extra_headers=(("Anthropic-Beta", "interleaved-thinking-2025-05-14"),),
+        extra_headers=_headers.HeaderSet.from_config(
+            {"Anthropic-Beta": "interleaved-thinking-2025-05-14"}
+        ),
     )
     provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
     assert set(headers[0]["anthropic-beta"].split(",")) == {

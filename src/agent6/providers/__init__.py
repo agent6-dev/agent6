@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
+from agent6.providers import _headers
 from agent6.providers._claude_code_wire import CLAUDE_CODE_PERSIST_BYTES, result_text  # noqa: ICN003  # re-export
 from agent6.providers.anthropic import AnthropicProvider  # noqa: ICN003  # re-export
 from agent6.providers.chatgpt import ChatGPTProvider  # noqa: ICN003  # re-export
@@ -55,6 +56,7 @@ class Provider(Protocol):
         thinking_delta_callback: Callable[[str], None] | None = ...,
         should_abort: Callable[[], bool] | None = ...,
         should_interrupt: Callable[[], bool] | None = ...,
+        context: _headers.RequestContext | None = ...,
     ) -> ProviderResponse:
         """Make one model call.
 
@@ -70,6 +72,8 @@ class Provider(Protocol):
             should_abort: Polled during the call; True abandons it with `ProviderAborted`.
             should_interrupt: Polled during the call; True ends it early with
                 `ProviderInterrupted`.
+            context: The application's context for the call: the conversation id, the turn
+                state and the initiator; None outside a conversation.
 
         Returns:
             The parsed response.

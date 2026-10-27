@@ -22,6 +22,7 @@ from agent6.config._harness import (  # noqa: ICN003  # re-export
     ReviewScope,
     RoleModel,
 )
+from agent6.config._headers import HeaderTemplate  # noqa: ICN003  # re-export
 from agent6.config._oauth import OAuthConfig, OAuthExchangeConfig  # noqa: ICN003  # re-export
 from agent6.config._providers import (  # noqa: ICN003  # re-export
     AnthropicProviderEntry,
@@ -75,6 +76,7 @@ __all__ = [
     "GitCommitConfig",
     "GitConfig",
     "HarnessConfig",
+    "HeaderTemplate",
     "MCPConfig",
     "MCPServerEntry",
     "MachineConfig",

@@ -16,7 +16,15 @@ from collections.abc import Callable
 import agent6
 from agent6 import budget as agent6_budget
 from agent6 import event_log, kinds
-from agent6.app import _setup, confine, frontend, preflight, providers, review_actions
+from agent6.app import (
+    _conversations,
+    _setup,
+    confine,
+    frontend,
+    preflight,
+    providers,
+    review_actions,
+)
 from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
@@ -190,6 +198,7 @@ def build_session_providers(
     transcript_sink: TranscriptSink,
     stream_text: bool,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+    conversations: _conversations.Conversations | None = None,
 ) -> SessionProviders:
     """Build the driving role's provider and the summariser and review seats.
 
@@ -200,10 +209,12 @@ def build_session_providers(
         transcript_sink: Where every provider call is transcribed.
         stream_text: Whether the provider streams text into the sink.
         reporter: Where the prompt-override warning goes.
+        conversations: The session's conversation state; None holds it for this process.
 
     Returns:
         The providers, metering into one tracker.
     """
+    conversations = conversations or _conversations.Conversations()
     budget = _setup.budget_tracker(cfg)
     inner = providers.build_role_provider(cfg, role, transcript_sink=transcript_sink, budget=budget)
     rm_role = cfg.models.resolve(role)
@@ -217,14 +228,26 @@ def build_session_providers(
         events=events,
         budget=budget,
         stream_text=stream_text,
+        operator_driven=True,
+        conversations=conversations,
     )
     summariser_provider = providers.reviewer_seat_provider(
-        cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events
+        cfg,
+        "summariser",
+        transcript_sink=transcript_sink,
+        budget=budget,
+        events=events,
+        conversations=conversations,
     )
     # The panel is the in-loop review: a trigger with no seats builds one seat on the reviewer.
     review_seats = (
         providers.build_review_seats(
-            cfg, transcript_sink=transcript_sink, budget=budget, n=1, events=events
+            cfg,
+            transcript_sink=transcript_sink,
+            budget=budget,
+            n=1,
+            events=events,
+            conversations=conversations,
         )
         if cfg.review.trigger != "off"
         else []

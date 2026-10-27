@@ -12,7 +12,7 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6.providers import ProviderError, openai, token_command
+from agent6.providers import ProviderError, _headers, openai, token_command
 
 
 def _fake_response(body: dict[str, Any], status: int = 200) -> httpx2.Response:
@@ -274,7 +274,9 @@ def test_base_url_override_and_extra_headers() -> None:
         api_key="or-test",
         model="meta-llama/llama-3.3-70b-instruct",
         base_url="https://openrouter.ai/api/v1",
-        extra_headers=(("HTTP-Referer", "https://example.com/r"), ("X-Title", "agent6")),
+        extra_headers=_headers.HeaderSet.from_config(
+            {"HTTP-Referer": "https://example.com/r", "X-Title": "agent6"}
+        ),
     )
     captured: dict[str, Any] = {}
 

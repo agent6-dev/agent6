@@ -27,7 +27,7 @@ from agent6.config import (
     write,
 )
 from agent6.models import cache
-from agent6.providers import _oauth_protocol, chatgpt_oauth, claude_code, oauth, types
+from agent6.providers import _headers, _oauth_protocol, chatgpt_oauth, claude_code, oauth, types
 from agent6.ui.cli import _common, _oauth
 
 
@@ -438,13 +438,14 @@ def _with_port(uri: str, port: int) -> str:
 
 
 def _code_grant(
-    name: str, issuer: OAuthConfig, *, browser: bool
+    name: str, issuer: OAuthConfig, headers: _headers.HeaderSet, *, browser: bool
 ) -> _oauth_protocol.TokenGrant | None:
     """Run authorization code with PKCE: the loopback redirect, else the pasted callback.
 
     Args:
         name: The provider name.
         issuer: The `[providers.<name>].oauth` table.
+        headers: The entry's extra headers; those addressed to `oauth` ride the exchange.
         browser: Open the browser and listen for the redirect first.
 
     Returns:
@@ -497,15 +498,19 @@ def _code_grant(
         provider=name,
         label=name,
         encoding=issuer.request_encoding,
+        headers=headers.renderer("oauth"),
     )
 
 
-def _device_grant(name: str, issuer: OAuthConfig) -> _oauth_protocol.TokenGrant | None:
+def _device_grant(
+    name: str, issuer: OAuthConfig, headers: _headers.HeaderSet
+) -> _oauth_protocol.TokenGrant | None:
     """Show the issuer's user code and poll while the person enters it on any device.
 
     Args:
         name: The provider name.
         issuer: The `[providers.<name>].oauth` table.
+        headers: The entry's extra headers; those addressed to `oauth` ride the requests.
 
     Returns:
         The grant, or None on Ctrl-C.
@@ -520,6 +525,7 @@ def _device_grant(name: str, issuer: OAuthConfig) -> _oauth_protocol.TokenGrant 
         scopes=issuer.scopes,
         encoding=issuer.request_encoding,
         label=name,
+        headers=headers.renderer("oauth"),
     )
     print(f"On any device, open  {started.verification_uri}")
     print(f"and enter the code:  {started.user_code}")
@@ -533,6 +539,7 @@ def _device_grant(name: str, issuer: OAuthConfig) -> _oauth_protocol.TokenGrant 
             started,
             encoding=issuer.request_encoding,
             label=name,
+            headers=headers.renderer("oauth"),
         )
     except KeyboardInterrupt:
         print()
@@ -586,11 +593,12 @@ def _configured_sign_in(
     chosen = _pick_flow(flow, issuer)
     if chosen is None:
         return 2
+    headers = _headers.HeaderSet.from_config(entry.extra_headers)
     try:
         grant = (
-            _device_grant(name, issuer)
+            _device_grant(name, issuer, headers)
             if chosen == "device"
-            else _code_grant(name, issuer, browser=chosen == "browser")
+            else _code_grant(name, issuer, headers, browser=chosen == "browser")
         )
     except types.ProviderError as exc:
         _common.error(f"{exc}")
@@ -675,12 +683,14 @@ def _revoke(name: str, entry: ProviderEntry | None) -> None:
         if grant is None or issuer.revocation_endpoint is None:
             return
         where = issuer.revocation_endpoint
+        assert isinstance(entry, (AnthropicProviderEntry, OpenAIProviderEntry))
         err = _oauth_protocol.revoke_tokens(
             where,
             issuer.client_id,
             access_token=grant.access_token,
             refresh_token=grant.refresh_token,
             encoding=issuer.request_encoding,
+            headers=_headers.HeaderSet.from_config(entry.extra_headers).renderer("oauth"),
         )
     else:
         tokens = secret_store.load_oauth_tokens(name)

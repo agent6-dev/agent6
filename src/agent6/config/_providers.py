@@ -10,7 +10,7 @@ from urllib import parse
 
 import pydantic
 
-from agent6.config import _base, _oauth, _sandbox
+from agent6.config import _base, _headers, _oauth, _sandbox
 
 ApiFormat = Literal["anthropic", "openai", "chatgpt", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
@@ -198,10 +198,12 @@ class _ProviderBase(pydantic.BaseModel):
         default=300.0,
         description="Seconds a `token_command` token is reused before the command runs again.",
     )
-    extra_headers: dict[str, str] = pydantic.Field(
+    extra_headers: dict[str, str | _headers.HeaderTemplate] = pydantic.Field(
         default_factory=dict,
         description=(
-            "extra HTTP headers on every provider request; no secrets, config file not `0600`"
+            "extra HTTP headers: a literal string rides every API request; a template table"
+            " (`template`, `targets`, `when`) renders from request facts for the request classes"
+            " it names; no secrets, config file not `0600`"
         ),
     )
     extra_body: dict[str, Any] = pydantic.Field(
@@ -324,6 +326,26 @@ class _ProviderBase(pydantic.BaseModel):
             )
         return self
 
+    @pydantic.field_validator("extra_headers")
+    @classmethod
+    def _headers_are_sendable(
+        cls, v: dict[str, str | _headers.HeaderTemplate]
+    ) -> dict[str, str | _headers.HeaderTemplate]:
+        """Refuse a header the transport owns, an invalid name, a duplicate or an unsendable value.
+
+        Args:
+            v: The configured headers.
+
+        Returns:
+            The headers unchanged.
+
+        Raises:
+            ValueError: The refusal `extra_headers_refusal` names.
+        """
+        if refusal := _headers.extra_headers_refusal(v):
+            raise ValueError(refusal)
+        return v
+
     @pydantic.model_validator(mode="after")
     def _oauth_is_the_one_credential_source(self) -> _ProviderBase:
         """Refuse a key source or a non-bearer auth style beside a configured issuer.
@@ -419,7 +441,9 @@ class ChatGPTProviderEntry(_ProviderBase):
 
     @pydantic.field_validator("extra_headers")
     @classmethod
-    def _reserved_headers_stay_structural(cls, v: dict[str, str]) -> dict[str, str]:
+    def _reserved_headers_stay_structural(
+        cls, v: dict[str, str | _headers.HeaderTemplate]
+    ) -> dict[str, str | _headers.HeaderTemplate]:
         """Refuse an override of the auth headers, which would re-route or mislabel every call.
 
         Args:

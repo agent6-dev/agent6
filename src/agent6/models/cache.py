@@ -29,7 +29,7 @@ from agent6.config import (
     ProviderEntry,
 )
 from agent6.models import pricing as models_pricing
-from agent6.providers import _transport, oauth, types, wire
+from agent6.providers import _headers, _transport, oauth, types, wire
 
 __all__ = ["cached_context_window", "list_models"]
 
@@ -208,7 +208,9 @@ def _models_endpoint(
         auth header, and `anthropic-version` for a direct Anthropic entry.
     """
     url = entry.base_url.rstrip("/") + "/models"
-    headers = dict(entry.extra_headers)
+    headers = _headers.HeaderSet.from_config(entry.extra_headers).render(
+        _headers.plain_facts("models")
+    )
     # Vertex and Azure have no uniform /models endpoint; the caller swallows that failure.
     if isinstance(entry, AnthropicProviderEntry) and entry.deployment == "direct":
         headers["anthropic-version"] = _ANTHROPIC_VERSION
@@ -248,7 +250,9 @@ def _chatgpt_models_endpoint(
             f"no ChatGPT sign-in stored for {provider_name!r}; run `agent6 connect {provider_name}`"
         )
     url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
-    headers = dict(entry.extra_headers)
+    headers = _headers.HeaderSet.from_config(entry.extra_headers).render(
+        _headers.plain_facts("models")
+    )
     headers["authorization"] = f"Bearer {tokens.access_token}"
     if tokens.account_id:
         headers["chatgpt-account-id"] = tokens.account_id

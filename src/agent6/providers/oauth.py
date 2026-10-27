@@ -17,15 +17,16 @@ import json
 import math
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any, Protocol
 from urllib import parse
 
 import httpx2
 
 from agent6 import paths, portable, secret_store
+from agent6.config import _headers as header_config
 from agent6.config import _oauth as oauth_config
-from agent6.providers import _oauth_protocol, _transport, types
+from agent6.providers import _headers, _oauth_protocol, _transport, types
 
 # A rotation refused for want of the lock: the message names the file to clear.
 _LOCK_HINT = "remove a stale .lock sibling if one is left over"
@@ -45,6 +46,8 @@ class _OAuthEntry(Protocol):
     @property
     def extra_query(self) -> dict[str, str]: ...
     @property
+    def extra_headers(self) -> Mapping[str, str | header_config.HeaderTemplate]: ...
+    @property
     def oauth(self) -> oauth_config.OAuthConfig | None: ...
 
 
@@ -52,8 +55,8 @@ def binding_fingerprint(entry: _OAuthEntry) -> str:
     """Return the fingerprint a stored grant is bound to.
 
     It covers the effective transport (format, deployment, the resolved URL and query, the
-    auth style) and every OAuth setting but the refresh margin, so a changed overlay cannot
-    send a stored grant somewhere its sign-in never agreed to.
+    auth style, the extra headers) and every OAuth setting but the refresh margin, so a
+    changed overlay cannot send a stored grant somewhere its sign-in never agreed to.
 
     Args:
         entry: The provider entry, whose `oauth` is set.
@@ -69,6 +72,10 @@ def binding_fingerprint(entry: _OAuthEntry) -> str:
         "base_url": entry.base_url,
         "extra_query": dict(sorted(entry.extra_query.items())),
         "auth_style": entry.auth_style,
+        "extra_headers": {
+            name: value if isinstance(value, str) else value.model_dump(mode="json")
+            for name, value in sorted(entry.extra_headers.items())
+        },
         "oauth": oauth.model_dump(mode="json", exclude={"refresh_skew_s"}),
     }
     canonical = json.dumps(facts, sort_keys=True, separators=(",", ":"))
@@ -232,6 +239,7 @@ class OAuthCredential:
         "_fingerprint",
         "_force",
         "_grant",
+        "_header_set",
         "_last_returned",
         "_lock",
         "_now",
@@ -246,6 +254,7 @@ class OAuthCredential:
         self._provider = provider_name
         self._entry = entry
         self._fingerprint = binding_fingerprint(entry)
+        self._header_set = _headers.HeaderSet.from_config(entry.extra_headers)
         self._lock = threading.Lock()
         self._grant: secret_store.StoredGrant | None = None
         self._force = False
@@ -392,6 +401,7 @@ class OAuthCredential:
             provider=self._provider,
             label=self._provider,
             encoding=oauth.request_encoding,
+            headers=self._header_set.renderer("oauth"),
         )
         now = self._now()
         renewed = secret_store.StoredGrant(
@@ -420,7 +430,12 @@ class OAuthCredential:
         Returns:
             The grant with the exchanged token.
         """
-        token, expires_at = run_exchange(exchange, grant.access_token, now=self._now)
+        token, expires_at = run_exchange(
+            exchange,
+            grant.access_token,
+            headers=self._header_set.render(_headers.plain_facts("exchange")),
+            now=self._now,
+        )
         renewed = secret_store.StoredGrant(
             binding=grant.binding,
             access_token=grant.access_token,

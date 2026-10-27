@@ -68,6 +68,25 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 <!-- config-table: providers.<name> -->
 
+### Request headers
+
+`[providers.<name>.extra_headers]` is the one place extra HTTP headers come from.
+A literal string (`"x-title" = "agent6"`) rides every API request: model calls, the model listing and the plan reading.
+A template table renders from request facts for the request classes it names, and only a template whose `targets` name `oauth` or `exchange` reaches a credential endpoint.
+The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `session_id` (an opaque id per role and provider, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
+`{{` and `}}` are literal braces; a placeholder holds a fact name and nothing else.
+The transport owns `authorization`, `x-api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; naming one refuses at config load, as does a control character, two spellings of one header, or a template its target cannot render.
+
+```toml
+[providers.work.extra_headers]
+"x-title" = "agent6"
+"user-agent" = { template = "agent6/{agent6_version}", targets = ["inference", "models", "oauth"] }
+"x-initiator" = { template = "{initiator}" }
+"x-vision" = { template = "true", when = "has_images" }
+```
+
+<!-- config-table: providers.<name>.extra_headers.<name> -->
+
 ### Configured OAuth
 
 `[providers.<name>.oauth]` names an issuer and the public-client registration the operator made there; `agent6 connect <name>` signs in with authorization code and PKCE (`authorization_endpoint`, a loopback redirect or a pasted callback) or the device grant (`device_authorization_endpoint`), and stores the grant in `secrets.toml`.

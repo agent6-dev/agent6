@@ -21,7 +21,7 @@ import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6.config import _surfaces
-from agent6.providers import types
+from agent6.providers import _headers, types
 
 # The handshake bound; only a blackholed connect takes longer, and the watchdog cannot cut one.
 CONNECT_TIMEOUT_S = 20.0
@@ -233,7 +233,8 @@ class ProviderCall:
         transcript_sink: Where each round-trip is recorded; None records nothing.
         budget: The run's tracker; None skips metering.
         model: The model billed.
-        build_headers: Builds the attempt's headers from its token.
+        facts: The call's request facts; every attempt mints its own request id.
+        build_headers: Builds the attempt's headers from its token and facts.
         adapt_400: Receives `(status, error_text, body)` and returns True after
             rewriting the body (and latching provider state) so the next attempt
             sends the adapted request.
@@ -254,7 +255,8 @@ class ProviderCall:
     transcript_sink: types.TranscriptRecorder | None
     budget: agent6_budget.BudgetTracker | None
     model: str
-    build_headers: Callable[[str], dict[str, str]]
+    facts: _headers.RequestFacts
+    build_headers: Callable[[str, _headers.RequestFacts], dict[str, str]]
     adapt_400: Callable[[int | None, str, dict[str, Any]], bool]
     adapt_attempts: int
     require_metered: Callable[[dict[str, Any]], None]
@@ -272,6 +274,21 @@ class ProviderCall:
                 response_body=response,
             )
 
+    def _attempt_headers(self, token: str) -> dict[str, str]:
+        """Mint one attempt's request id, build its headers and report the attempt.
+
+        Args:
+            token: The attempt's credential.
+
+        Returns:
+            The headers.
+        """
+        facts = self.facts.attempt()
+        headers = self.build_headers(token, facts)
+        if facts.context is not None and facts.context.observe is not None:
+            facts.context.observe(facts)
+        return headers
+
     def run(self) -> types.ProviderResponse:
         """Make the call, retrying once for a credential recovery and once per body adaptation.
 
@@ -288,7 +305,7 @@ class ProviderCall:
         recovered = False
         for attempt in range(max_attempts):
             token = cred.token() if cred is not None else self.api_key
-            headers = self.build_headers(token)
+            headers = self._attempt_headers(token)
 
             if self.stream is not None:
                 try:

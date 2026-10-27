@@ -18,7 +18,7 @@ from typing import Any
 import httpx2
 
 from agent6 import budget as agent6_budget
-from agent6.providers import _stream, _transport, types, wire
+from agent6.providers import _headers, _stream, _transport, types, wire
 
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -293,7 +293,7 @@ class AnthropicProvider:
         budget: The run's tracker; None skips metering.
         effort: The reasoning level; anything but "off" enables extended thinking
             and drops `temperature`, which the wire rejects while thinking.
-        extra_headers: Operator headers merged over the built ones.
+        extra_headers: The entry's extra headers, rendered per request.
         extra_body: Operator body keys merged last; the structural keys are reserved.
         extra_query: Operator query parameters.
         credential: A short-lived bearer source; a 401 or 403 re-mints it once.
@@ -309,7 +309,7 @@ class AnthropicProvider:
     transcript_sink: types.TranscriptRecorder | None = None
     budget: agent6_budget.BudgetTracker | None = None
     effort: str | None = None
-    extra_headers: tuple[tuple[str, str], ...] = ()
+    extra_headers: _headers.HeaderSet = dataclasses.field(default_factory=_headers.HeaderSet)
     extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
     extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     credential: types.BearerCredential | None = None
@@ -334,11 +334,12 @@ class AnthropicProvider:
         body.pop("temperature", None)
         return True
 
-    def _build_headers(self, token: str) -> dict[str, str]:
+    def _build_headers(self, token: str, facts: _headers.RequestFacts) -> dict[str, str]:
         """Build one attempt's request headers from its token.
 
         Args:
             token: The attempt's credential.
+            facts: The request's facts.
 
         Returns:
             The headers, with an operator `anthropic-beta` merged into the built one.
@@ -352,8 +353,7 @@ class AnthropicProvider:
             headers["anthropic-version"] = version_value
         if self.prompt_caching:
             headers["anthropic-beta"] = "prompt-caching-2024-07-31"
-        for k, v in self.extra_headers:
-            key = k.lower()
+        for key, v in self.extra_headers.render(facts).items():
             if key == "anthropic-beta" and key in headers:
                 betas = [part.strip() for part in f"{headers[key]},{v}".split(",")]
                 headers[key] = ",".join(dict.fromkeys(part for part in betas if part))
@@ -374,6 +374,7 @@ class AnthropicProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
+        context: _headers.RequestContext | None = None,
     ) -> types.ProviderResponse:
         """Make one Messages call, streaming when a delta callback is set.
 
@@ -388,6 +389,7 @@ class AnthropicProvider:
             thinking_delta_callback: Receives reasoning text as it streams.
             should_abort: Polled during a stream; True abandons the turn.
             should_interrupt: Polled during a stream; True ends the turn to steer.
+            context: The application's context for the call; None outside a conversation.
 
         Returns:
             The parsed response.
@@ -497,6 +499,7 @@ class AnthropicProvider:
             transcript_sink=self.transcript_sink,
             budget=self.budget,
             model=self.model,
+            facts=_headers.call_facts(self.model, _headers.anthropic_body_facts(body), context),
             build_headers=self._build_headers,
             adapt_400=self._adapt_body_for_400,
             adapt_attempts=int("temperature" in body),
