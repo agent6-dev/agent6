@@ -317,7 +317,7 @@ def _run_review_panel(
     )
     for v in result.per_seat:
         status = f"abstain: {v.error}" if v.error else f"{v.verdict} ({len(v.findings)} findings)"
-        print(f"  - {v.seat} [{v.model}]: {status}", file=sys.stderr)
+        print(f"  - {v.focus} [{v.model_route}]: {status}", file=sys.stderr)
     print(budget.format_summary(), file=sys.stderr)
     return rc
 

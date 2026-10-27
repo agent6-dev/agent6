@@ -282,6 +282,7 @@ agent6 ask "how does the task-graph curator work?"
 ```
 
 - `review --reviewers 3 --focus security,correctness,tests`: build a one-off panel on the resolved reviewer role, with findings checked against the diff.
+  Each finding cites a repository-relative path on the base or head side, with an inclusive line range or a file-level location.
   Configure [`review.reviewers`](config.md#review) tables to give each reviewer a `focus`, `provider`, `model`, `effort` and `temperature`.
 - `review --reviewers 3 --scope repo`: let the panel read the checkout through read-only tools instead of making one call over the diff (`--scope diff`).
   Each repo seat makes at most `review.repo_max_turns` provider calls (default 20) and abstains if it has no verdict after them.

@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import dataclasses
 
+from agent6 import review_records
 from agent6.harness import (
     _advice,
     _conversation,
     _finish_gates,
     _guards,
     _metric,
-    _panel,
     _quiet_turns,
     _snapshot,
     _spiral,
@@ -99,7 +99,7 @@ class LoopState:
     reach: _guards.ReachabilityGuard = dataclasses.field(default_factory=_guards.ReachabilityGuard)
     focus: _guards.FocusGuard = dataclasses.field(default_factory=_guards.FocusGuard)
     gates: _finish_gates.FinishGates = dataclasses.field(default_factory=_finish_gates.FinishGates)
-    review_findings: tuple[_panel.Finding, ...] = ()
+    review_findings: tuple[review_records.Finding, ...] = ()
     budget_nudges: _guards.BudgetNudges = dataclasses.field(default_factory=_guards.BudgetNudges)
 
 

@@ -15,6 +15,7 @@ from unittest import mock
 
 import pytest
 
+from agent6 import review_records
 from agent6.harness import _chain, _conversation, _panel, _reviewer, loop
 from agent6.tools import results
 from tests.unit.test_review_gate import (
@@ -36,7 +37,8 @@ _DIFF = """\
 """
 _BLOCK = (
     '{"verdict":"block","summary":"leak","findings":[{"category":"security",'
-    '"severity":"block","file_line":"foo.py:11","title":"hardcoded key","detail":"x"}]}'
+    '"severity":"block","location":{"path":"foo.py","side":"head","start_line":11,"end_line":11},'
+    '"title":"hardcoded key","detail":"x"}]}'
 )
 _PASS = '{"verdict":"pass","summary":"ok","findings":[]}'
 _BLOCK_AND_NEW = json.dumps(
@@ -48,7 +50,7 @@ _BLOCK_AND_NEW = json.dumps(
             {
                 "category": "data-loss",
                 "severity": "block",
-                "file_line": "foo.py:11",
+                "location": {"path": "foo.py", "side": "head", "start_line": 11, "end_line": 11},
                 "title": "overwrites data",
                 "detail": "x",
             },
@@ -57,7 +59,8 @@ _BLOCK_AND_NEW = json.dumps(
 )
 _NONGATING = (  # grounded but a non-block-eligible category -> downgraded, never gates
     '{"verdict":"block","summary":"style","findings":[{"category":"style",'
-    '"severity":"block","file_line":"foo.py:11","title":"rename it","detail":"x"}]}'
+    '"severity":"block","location":{"path":"foo.py","side":"head","start_line":11,"end_line":11},'
+    '"title":"rename it","detail":"x"}]}'
 )
 
 
@@ -361,7 +364,9 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     from agent6.harness import _loop_state, _panel
     from agent6.harness import _reviewer as review_mod
 
-    abstain = _panel.ReviewVerdict(seat="s", model="m", verdict="pass", error="output hit the cap")
+    abstain = review_records.ReviewVerdict(
+        seat_index=0, focus="s", model_route="m", verdict="abstain", error="output hit the cap"
+    )
     res = _panel.PanelResult(
         panel_id="p",
         block_on="none",
@@ -402,7 +407,12 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
                 {
                     "category": category,
                     "severity": "block",
-                    "file_line": "foo.py:11",
+                    "location": {
+                        "path": "foo.py",
+                        "side": "head",
+                        "start_line": 11,
+                        "end_line": 11,
+                    },
                     "title": f"finding {i}",
                     "detail": "d" * 500,
                 }

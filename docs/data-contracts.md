@@ -5,8 +5,44 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 
 # Data contracts
 
-Each of the 9 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
+Each of the 10 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
 Every card is generated from the module and class docstrings, so edit those rather than this page.
+
+## Review records
+
+[`agent6.review_records`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py) &middot; frozen dataclass
+
+Define immutable review evidence and validate review boundary payloads.
+
+**ReviewTarget** &mdash; Identify the immutable trees and path coverage of a review.
+
+**ReviewLocation** &mdash; Name a repository-relative path on one side, with an optional inclusive line range.
+
+**Finding** &mdash; Hold one review finding at a structured location.
+
+**SeatReply** &mdash; Validate the verdict and findings returned by a review seat.
+
+**ReviewVerdict** &mdash; Hold one indexed seat's verdict, including an explicit abstention on failure.
+
+**FindingObservation** &mdash; Associate a finding with its panel and the seats that reported it.
+
+**FindingResolution** &mdash; Record the operator's conclusion without inferring verification success.
+
+**FindingAction** &mdash; Validate an operator request against a known review-state version.
+
+| field | type | default |
+| --- | --- | --- |
+| `base_commit` | `str | None` | required |
+| `base_tree` | `str` | required |
+| `head_commit` | `str | None` | required |
+| `head_tree` | `str` | required |
+| `snapshot_commit` | `str` | required |
+| `paths` | `tuple[str, ...]` | required |
+| `source` | `Literal['revisions', 'worktree']` | required |
+
+- **Written by:** harness/{_panel, _review_seat}
+- **Read by:** harness/{_loop_state, _reviewer}
+- **Guarded by:** [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py) (5 test files exercise it)
 
 ## Conversation
 
@@ -55,7 +91,7 @@ Typed tool-handler results.
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`
 
 - **Written by:** tools/{_command_tools, _control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
-- **Read by:** harness/{_guards, _memory_touch, _metric_sampler, _reviewer, _toolset, _verify_gate, loop}, tools/_result_format
+- **Read by:** harness/{_guards, _memory_touch, _metric_sampler, _review_seat, _toolset, _verify_gate, loop}, tools/_result_format
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (29 test files exercise it)
 
 ## Event union

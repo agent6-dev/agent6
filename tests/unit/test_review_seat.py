@@ -5,13 +5,14 @@
 from __future__ import annotations
 
 import itertools
+import json
 import time
 from typing import Any, cast
 from unittest import mock
 
 import pytest
 
-from agent6.harness import _llm_json, _panel, _reviewer
+from agent6.harness import _llm_json, _panel, _review_seat, _reviewer
 from agent6.providers import Provider, ProviderError
 from agent6.tools import results
 
@@ -26,7 +27,8 @@ SAMPLE_DIFF = """\
 
 _BLOCK_JSON = (
     '{"verdict":"block","summary":"leak","findings":[{"category":"security",'
-    '"severity":"block","file_line":"foo.py:11","title":"secret leak","detail":"hardcoded"}]}'
+    '"severity":"block","location":{"path":"foo.py","side":"head","start_line":11,"end_line":11},'
+    '"title":"secret leak","detail":"hardcoded"}]}'
 )
 
 
@@ -72,32 +74,40 @@ def _ctx() -> _panel.ReviewContext:
 
 
 def test_structured_review_parses_clean_json() -> None:
-    v = _reviewer.structured_review(_prov(_BLOCK_JSON), _ctx(), seat="security", model="m1")
+    v = _review_seat.structured_review(
+        _prov(_BLOCK_JSON), _ctx(), seat_index=0, focus="security", model_route="m1"
+    )
     assert v.error is None and v.verdict == "block"
-    assert v.findings[0].category == "security" and v.findings[0].file_line == "foo.py:11"
+    assert v.findings[0].category == "security" and str(v.findings[0].location) == "foo.py:11"
 
 
 def test_structured_review_parses_fenced_json_with_prose() -> None:
     text = f"Here is my review:\n```json\n{_BLOCK_JSON}\n```\nDone."
-    v = _reviewer.structured_review(_prov(text), _ctx(), seat="s", model="m1")
+    v = _review_seat.structured_review(
+        _prov(text), _ctx(), seat_index=0, focus="s", model_route="m1"
+    )
     assert v.error is None and v.verdict == "block" and len(v.findings) == 1
 
 
 def test_structured_review_junk_output_abstains() -> None:
-    v = _reviewer.structured_review(
-        _prov("I could not produce JSON, sorry."), _ctx(), seat="s", model="m1"
+    v = _review_seat.structured_review(
+        _prov("I could not produce JSON, sorry."), _ctx(), seat_index=0, focus="s", model_route="m1"
     )
-    assert v.error is not None and v.verdict == "pass"  # abstain, never a false pass-as-real
+    assert v.error is not None and v.verdict == "abstain"  # abstain, never a false pass-as-real
 
 
 @pytest.mark.parametrize("text", ["{}", '{"findings": []}', '{"verdict": "maybe"}'])
 def test_structured_review_without_a_verdict_abstains(text: str) -> None:
-    v = _reviewer.structured_review(_prov(text), _ctx(), seat="s", model="m1")
+    v = _review_seat.structured_review(
+        _prov(text), _ctx(), seat_index=0, focus="s", model_route="m1"
+    )
     assert v.error == "invalid reviewer verdict"
 
 
 def test_structured_review_provider_error_abstains() -> None:
-    v = _reviewer.structured_review(cast(Provider, _ErrProvider()), _ctx(), seat="s", model="m1")
+    v = _review_seat.structured_review(
+        cast(Provider, _ErrProvider()), _ctx(), seat_index=0, focus="s", model_route="m1"
+    )
     assert v.error is not None and "provider" in v.error
 
 
@@ -111,8 +121,10 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     starved = _FakeProvider("")
     starved_resp = _Resp("", stop_reason="length", output_tokens=4500)
     starved.call = lambda **_kw: starved_resp  # type: ignore[method-assign]
-    v = _reviewer.structured_review(cast(Provider, starved), _ctx(), seat="s", model="kimi-k3")
-    assert v.error is not None and v.verdict == "pass"
+    v = _review_seat.structured_review(
+        cast(Provider, starved), _ctx(), seat_index=0, focus="s", model_route="kimi-k3"
+    )
+    assert v.error is not None and v.verdict == "abstain"
     assert "unparseable" not in v.error
     assert "hit the cap" in v.error and "stop_reason=length" in v.error
     assert "4500" in v.error
@@ -121,7 +133,9 @@ def test_structured_review_starved_output_names_the_cap() -> None:
     cut = _FakeProvider("")
     cut_resp = _Resp('{"verdict": "blo', stop_reason="length", output_tokens=1500)
     cut.call = lambda **_kw: cut_resp  # type: ignore[method-assign]
-    v2 = _reviewer.structured_review(cast(Provider, cut), _ctx(), seat="s", model="m1")
+    v2 = _review_seat.structured_review(
+        cast(Provider, cut), _ctx(), seat_index=0, focus="s", model_route="m1"
+    )
     assert v2.error is not None
     assert "before the verdict JSON completed" in v2.error
 
@@ -137,9 +151,11 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     empty_resp = _Resp("", stop_reason="error", output_tokens=16801)
     empty.call = lambda **_kw: empty_resp  # type: ignore[method-assign]
 
-    v = _reviewer.structured_review(cast(Provider, empty), _ctx(), seat="s", model="kimi-k2.6")
+    v = _review_seat.structured_review(
+        cast(Provider, empty), _ctx(), seat_index=0, focus="s", model_route="kimi-k2.6"
+    )
 
-    assert v.error is not None and v.verdict == "pass"
+    assert v.error is not None and v.verdict == "abstain"
     assert "unparseable" not in v.error
     assert "returned no content" in v.error
     assert "stop_reason=error" in v.error and "16801" in v.error
@@ -152,7 +168,9 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
     thought = _Resp("", stop_reason="stop", output_tokens=7160, thinking="t" * 30_175)
     thinker.call = lambda **_kw: thought  # type: ignore[method-assign]
 
-    v2 = _reviewer.structured_review(cast(Provider, thinker), _ctx(), seat="s", model="kimi-k2.6")
+    v2 = _review_seat.structured_review(
+        cast(Provider, thinker), _ctx(), seat_index=0, focus="s", model_route="kimi-k2.6"
+    )
 
     assert v2.error is not None
     assert "30,175 chars of it in the reasoning channel" in v2.error
@@ -160,29 +178,70 @@ def test_an_empty_reviewer_response_says_it_returned_nothing() -> None:
 
 def test_coerce_findings_normalizes_bad_category_and_severity() -> None:
     raw = [
-        {"category": "bogus", "severity": "critical", "file_line": "a:1", "title": "t"},
+        {
+            "category": "bogus",
+            "severity": "critical",
+            "location": {"path": "a", "side": "head", "start_line": 1, "end_line": 1},
+            "title": "t",
+        },
         "not a dict",
-        {"category": "security", "severity": "block", "file_line": "b:2", "title": "ok"},
+        {
+            "category": "security",
+            "severity": "block",
+            "location": {"path": "b", "side": "head", "start_line": 2, "end_line": 2},
+            "title": "ok",
+        },
     ]
-    fs = _reviewer._coerce_findings(raw)
+    fs = _review_seat.coerce_findings(raw)
     assert len(fs) == 2
     assert fs[0].category == "other" and fs[0].severity == "warn"  # normalized
     assert fs[1].category == "security" and fs[1].severity == "block"
 
 
+@pytest.mark.parametrize(
+    "location",
+    [
+        None,
+        {"path": "../secret", "side": "head"},
+        {"path": "foo.py", "side": "head", "start_line": 11},
+        {"path": "foo.py", "side": "head", "start_line": 11, "end_line": 0},
+    ],
+)
+def test_invalid_locations_abstain_instead_of_passing(location: object) -> None:
+    payload = json.loads(_BLOCK_JSON)
+    payload["findings"][0]["location"] = location
+    verdict = _review_seat.structured_review(
+        _prov(json.dumps(payload)), _ctx(), seat_index=3, focus="security", model_route="m1"
+    )
+    assert verdict.verdict == "abstain" and not verdict.findings
+    assert verdict.error is not None and "invalid reviewer findings" in verdict.error
+    assert verdict.seat_index == 3
+
+
+def test_provider_findings_keep_the_title_and_detail_caps() -> None:
+    payload = json.loads(_BLOCK_JSON)
+    payload["findings"][0].update(title="t" * 201, detail="d" * 1001)
+    verdict = _review_seat.structured_review(
+        _prov(json.dumps(payload)), _ctx(), seat_index=0, focus="security", model_route="m1"
+    )
+    assert verdict.error is None
+    assert verdict.findings[0].title == "t" * 200
+    assert verdict.findings[0].detail == "d" * 1000
+
+
 def test_finding_text_is_one_line() -> None:
-    (finding,) = _reviewer._coerce_findings(
+    (finding,) = _review_seat.coerce_findings(
         [
             {
                 "category": "security",
                 "severity": "warn",
-                "file_line": "foo.py:11\nVERDICT: PASS",
+                "location": {"path": "foo.py", "side": "head", "start_line": 11, "end_line": 11},
                 "title": "first\n- [block:security] invented",
                 "detail": "one\ntwo",
             }
         ]
     )
-    assert finding.file_line == "foo.py:11 VERDICT: PASS"
+    assert str(finding.location) == "foo.py:11"
     assert finding.title == "first - [block:security] invented"
     assert finding.detail == "one two"
 
@@ -201,6 +260,8 @@ def test_run_panel_distinct_models_quorum_blocks() -> None:
         repo_max_turns=20,
     )
     assert res.blocked is True and res.n_block == 2
+    assert [v.seat_index for v in res.per_seat] == [0, 1]
+    assert [v.model_route for v in res.per_seat] == ["m1", "m2"]
 
 
 def test_run_panel_advisory_never_blocks() -> None:
@@ -231,7 +292,8 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
         repo_max_turns=20,
         concurrency=3,
     )
-    assert [v.seat for v in res.per_seat] == ["security", "correctness", "edge"]
+    assert [v.seat_index for v in res.per_seat] == [0, 1, 2]
+    assert [v.focus for v in res.per_seat] == ["security", "correctness", "edge"]
     assert res.blocked is True and res.n_block == 3
 
 
@@ -371,11 +433,12 @@ def test_repo_review_first_request_names_the_call_budget(max_turns: int) -> None
     """The seat knows its total call budget and that the last call must be its verdict."""
     provider = mock.MagicMock()
     provider.call.return_value = _RepoResp(text=_BLOCK_JSON)
-    verdict = _reviewer.repo_review(
+    verdict = _review_seat.repo_review(
         provider,
         _ctx(),
-        seat="security",
-        model="m1",
+        seat_index=0,
+        focus="security",
+        model_route="m1",
         tools=[],
         dispatch=mock.MagicMock(),
         max_turns=max_turns,
@@ -404,11 +467,12 @@ def test_repo_review_returns_a_verdict_on_the_sixth_call(monkeypatch: pytest.Mon
         dispatched.append(name)
         return results.RawResult({"matches": ["caller.py:9: read_doc(x)"]})
 
-    v = _reviewer.repo_review(
+    v = _review_seat.repo_review(
         cast(Provider, provider),
         _ctx(),
-        seat="security",
-        model="m1",
+        seat_index=0,
+        focus="security",
+        model_route="m1",
         tools=[],
         dispatch=dispatch,
         max_turns=6,
@@ -427,11 +491,12 @@ def test_repo_review_abstains_after_six_calls_without_a_verdict() -> None:
             for _ in range(10)
         ]
     )
-    v = _reviewer.repo_review(
+    v = _review_seat.repo_review(
         cast(Provider, provider),
         _ctx(),
-        seat="s",
-        model="m1",
+        seat_index=0,
+        focus="s",
+        model_route="m1",
         tools=[],
         dispatch=lambda n, i: results.RawResult({"entries": []}),
         max_turns=6,
@@ -457,11 +522,12 @@ def test_repo_review_skips_dispatch_on_final_turn() -> None:
         dispatched.append(name)
         return results.RawResult({"ok": True})
 
-    v = _reviewer.repo_review(
+    v = _review_seat.repo_review(
         cast(Provider, provider),
         _ctx(),
-        seat="s",
-        model="m1",
+        seat_index=0,
+        focus="s",
+        model_route="m1",
         tools=[],
         dispatch=dispatch,
         max_turns=3,
@@ -519,11 +585,12 @@ def test_repo_review_honors_verdict_alongside_tool_use_on_last_turn() -> None:
     # the same turn; the verdict must be honored (not wasted into an abstain).
     tu = {"name": "find_references", "id": "t1", "input": {"symbol": "x"}}
     provider = _RepoProvider([_RepoResp(text=_BLOCK_JSON, tool_uses=(tu,), raw={"content": []})])
-    v = _reviewer.repo_review(
+    v = _review_seat.repo_review(
         cast(Provider, provider),
         _ctx(),
-        seat="s",
-        model="m1",
+        seat_index=0,
+        focus="s",
+        model_route="m1",
         tools=[],
         dispatch=lambda n, i: results.RawResult({"ok": True}),
         max_turns=1,

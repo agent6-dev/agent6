@@ -1973,6 +1973,7 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     `diff.noprefix`, `diff.mnemonicPrefix` and `diff.srcPrefix` would file each file under a path no
     citation matched.
     """
+    from agent6 import review_records
     from agent6.harness import _panel
 
     _init_repo(tmp_path)
@@ -1988,7 +1989,10 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     diff = git_read.diff_since(tmp_path, base)
     assert "diff --git a/README.md b/README.md" in diff
     assert "--- a/README.md" in diff and "+++ b/README.md" in diff
-    assert _panel.is_grounded("README.md:2", _panel.diff_hunks(diff))
+    assert _panel.is_grounded(
+        review_records.ReviewLocation(path="README.md", side="head", start_line=2, end_line=2),
+        _panel.diff_hunks(diff),
+    )
 
 
 def test_worktree_matches_reads_repo_relative_paths_from_a_subdirectory(

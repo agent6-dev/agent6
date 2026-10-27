@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from agent6 import kinds
-from agent6.harness import _reviewer
+from agent6.harness import _review_seat
 from agent6.providers import ToolDefinition
 from agent6.tools import dispatch as tools_dispatch
 from agent6.tools import errors, results
@@ -95,7 +95,7 @@ def tool_definitions(
 
 def build_readonly_review_tools(
     dispatcher: tools_dispatch.ToolDispatcher,
-) -> tuple[list[ToolDefinition], _reviewer.ReviewDispatch]:
+) -> tuple[list[ToolDefinition], _review_seat.ReviewDispatch]:
     """Build the read-only tool surface a review seat gets.
 
     Args:

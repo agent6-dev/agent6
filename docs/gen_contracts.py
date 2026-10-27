@@ -68,6 +68,26 @@ class Contract:
 
 CONTRACTS: tuple[Contract, ...] = (
     Contract(
+        title="Review records",
+        module="agent6.review_records",
+        primary=(
+            "ReviewTarget",
+            "ReviewLocation",
+            "Finding",
+            "SeatReply",
+            "ReviewVerdict",
+            "FindingObservation",
+            "FindingResolution",
+            "FindingAction",
+        ),
+        writers=("harness/_panel.py", "harness/_review_seat.py"),
+        pins=(
+            "tests/unit/test_review_panel.py",
+            "tests/unit/test_review_records.py",
+            "tests/unit/test_review_seat.py",
+        ),
+    ),
+    Contract(
         title="Conversation",
         module="agent6.harness._conversation",
         primary=("Conversation",),

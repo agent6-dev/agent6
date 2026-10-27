@@ -1,32 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run the review panel's seats.
-
-A seat is one reviewer: a grounded call over the diff and verify result that returns a
-`ReviewVerdict`. The network calls live here; the grounding and aggregation stay in `_panel`,
-testable without a provider.
-"""
+"""Schedule the review panel and apply its verdict to the run."""
 
 from __future__ import annotations
 
 import dataclasses
-import json
 import threading
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
-from agent6 import budget
+from agent6 import budget, review_records
 from agent6.config import ReviewScope
-from agent6.harness import _chain, _context, _llm_json, _panel
-from agent6.prompts import review
-from agent6.providers import (
-    Provider,
-    ProviderError,
-    ProviderResponse,
-    ToolDefinition,
-    output_cap_truncated,
-)
-from agent6.tools import results
+from agent6.harness import _chain, _context, _panel, _review_seat
+from agent6.providers import Provider, ToolDefinition
 
 if TYPE_CHECKING:
     from agent6.harness import _loop_state
@@ -46,10 +32,6 @@ class CritiqueResult:
     text: str
     satisfied: bool
     capped: bool = False
-
-
-# A read-only dispatch callable for repo-scope seats: (tool_name, input) -> result.
-ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -101,217 +83,6 @@ class ReviewSettings:
     repo_max_turns: int = 20
 
 
-def _build_user_message(ctx: _panel.ReviewContext) -> str:
-    parts: list[str] = [f"TASK:\n{ctx.task.strip()[:4000]}"]
-    if ctx.agents_md.strip():
-        parts.append(f"AGENTS.md:\n{ctx.agents_md.strip()[:8000]}")
-    if ctx.verify_ok is None:
-        parts.append("VERIFY: not run.")
-    else:
-        status = "PASSED" if ctx.verify_ok else "FAILED"
-        out = ctx.verify_output.strip()[-2000:]
-        parts.append(f"VERIFY: {status}\n{out}" if out else f"VERIFY: {status}")
-    if ctx.prior_findings:
-        already = "; ".join(f"{f.file_line} {f.category}" for f in ctx.prior_findings[:20])
-        parts.append(f"ALREADY RAISED (do not repeat): {already}")
-    parts.append(f"DIFF:\n{ctx.diff}")
-    return "\n\n".join(parts)
-
-
-def _coerce_findings(raw: object) -> tuple[_panel.Finding, ...]:
-    out: list[_panel.Finding] = []
-    if not isinstance(raw, list):
-        return ()
-    for item in raw:
-        if not isinstance(item, dict):
-            continue
-        category = str(item.get("category", "other"))
-        if category not in _panel.ALL_CATEGORIES:
-            category = "other"
-        severity = str(item.get("severity", "warn"))
-        if severity not in ("block", "warn", "nit"):
-            severity = "warn"
-        out.append(
-            _panel.Finding(
-                category=category,
-                severity=severity,  # type: ignore[arg-type]
-                file_line=" ".join(str(item.get("file_line", "")).split()),
-                title=" ".join(str(item.get("title", "")).split())[:200],
-                detail=" ".join(str(item.get("detail", "")).split())[:1000],
-            )
-        )
-    return tuple(out)
-
-
-def _no_verdict_error(resp: ProviderResponse) -> str:
-    """Return why a seat produced no verdict JSON: the output cap, no content, or junk.
-
-    Args:
-        resp: The seat's response.
-
-    Returns:
-        The error text for the abstaining verdict.
-    """
-    if output_cap_truncated(resp):
-        detail = (
-            "before emitting any content (likely all reasoning)"
-            if not resp.text.strip()
-            else "mid-answer, before the verdict JSON completed"
-        )
-        return (
-            f"output hit the cap {detail}"
-            f" (stop_reason={resp.stop_reason}, {resp.output_tokens} output tokens);"
-            " raise max_tokens or use a model with more output headroom"
-        )
-    if not resp.text.strip():
-        # The reasoning produced tells a starved reasoner from an upstream error.
-        thought = sum(
-            len(str(block.get("thinking") or ""))
-            for block in (resp.raw.get("content") or [])
-            if isinstance(block, dict) and block.get("type") == "thinking"
-        )
-        channel = f", {thought:,} chars of it in the reasoning channel" if thought else ""
-        return (
-            f"the reviewer returned no content (stop_reason={resp.stop_reason},"
-            f" {resp.output_tokens} output tokens{channel})"
-        )
-    return "unparseable reviewer output"
-
-
-def structured_review(
-    provider: Provider,
-    ctx: _panel.ReviewContext,
-    *,
-    seat: str,
-    model: str,
-    max_tokens: int = 1500,
-    temperature: float | None = 0.0,
-) -> _panel.ReviewVerdict:
-    """Run one diff-scope seat.
-
-    Args:
-        provider: The seat's provider.
-        ctx: The review context, with the seat's focus.
-        seat: The seat's name.
-        model: The model name, for the verdict.
-        max_tokens: The output cap of the call.
-        temperature: The sampling temperature.
-
-    Returns:
-        The seat's verdict; a provider error or junk output abstains with `error` set.
-    """
-    system = review.REVIEW_SYSTEM_PROMPT.format(focus=ctx.focus or "general correctness")
-    try:
-        resp = provider.call(
-            system=system,
-            messages=[{"role": "user", "content": _build_user_message(ctx)}],
-            max_tokens=max_tokens,
-            temperature=temperature,
-        )
-    except ProviderError as exc:
-        return _panel.ReviewVerdict(
-            seat=seat, model=model, verdict="pass", error=f"provider: {exc}"
-        )
-    obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
-    if obj is None:
-        return _panel.ReviewVerdict(
-            seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
-        )
-    return _verdict_from_obj(obj, seat, model)
-
-
-def _verdict_from_obj(obj: dict[str, Any], seat: str, model: str) -> _panel.ReviewVerdict:
-    raw_verdict = obj.get("verdict")
-    if not isinstance(raw_verdict, str) or raw_verdict.lower() not in ("pass", "block"):
-        return _panel.ReviewVerdict(
-            seat=seat, model=model, verdict="pass", error="invalid reviewer verdict"
-        )
-    findings = _coerce_findings(obj.get("findings"))
-    verdict = "block" if raw_verdict.lower() == "block" else "pass"
-    return _panel.ReviewVerdict(
-        seat=seat,
-        model=model,
-        verdict=verdict,
-        findings=findings,
-        summary=str(obj.get("summary", "")).strip()[:300],
-    )
-
-
-def repo_review(
-    provider: Provider,
-    ctx: _panel.ReviewContext,
-    *,
-    seat: str,
-    model: str,
-    tools: list[ToolDefinition],
-    dispatch: ReviewDispatch,
-    max_turns: int,
-    max_tokens: int = 2000,
-    temperature: float | None = 0.0,
-) -> _panel.ReviewVerdict:
-    """Run one repo-scope seat with at most `max_turns` provider calls.
-
-    Args:
-        provider: The seat's provider.
-        ctx: The review context, with the seat's focus.
-        seat: The seat's name.
-        model: The model name, for the verdict.
-        tools: The read-only tools offered.
-        dispatch: The dispatch that refuses every other tool.
-        max_turns: The provider calls allowed.
-        max_tokens: The output cap of each call.
-        temperature: The sampling temperature on every call.
-
-    Returns:
-        The seat's verdict; a provider error or no valid verdict abstains with `error` set.
-    """
-    system = review.REPO_REVIEW_SYSTEM_PROMPT.format(
-        focus=ctx.focus or "general correctness", max_turns=max_turns
-    )
-    messages: list[dict[str, Any]] = [{"role": "user", "content": _build_user_message(ctx)}]
-    for i in range(max_turns):
-        try:
-            resp = provider.call(
-                system=system,
-                messages=messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            )
-        except ProviderError as exc:
-            return _panel.ReviewVerdict(
-                seat=seat, model=model, verdict="pass", error=f"provider: {exc}"
-            )
-        messages.append({"role": "assistant", "content": resp.raw.get("content") or []})
-        if not resp.tool_uses:
-            obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
-            if obj is None:
-                return _panel.ReviewVerdict(
-                    seat=seat, model=model, verdict="pass", error=_no_verdict_error(resp)
-                )
-            return _verdict_from_obj(obj, seat, model)
-        # On the last turn a verdict beside tool calls counts; without one no tool runs.
-        if i == max_turns - 1:
-            obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
-            if obj is not None and ("verdict" in obj or "findings" in obj):
-                return _verdict_from_obj(obj, seat, model)
-            break
-        tool_results: list[dict[str, Any]] = []
-        for tu in resp.tool_uses:
-            name = tu.get("name", "")
-            tu_id = tu.get("id", "")
-            try:
-                out = dispatch(name, tu.get("input", {}) or {})
-                content = json.dumps(out.to_wire(), ensure_ascii=False)[:8000]
-            except Exception as exc:
-                content = f"error: {exc}"[:2000]
-            tool_results.append({"type": "tool_result", "tool_use_id": tu_id, "content": content})
-        messages.append({"role": "user", "content": tool_results})
-    return _panel.ReviewVerdict(
-        seat=seat, model=model, verdict="pass", error=f"repo: no verdict within {max_turns} calls"
-    )
-
-
 def run_panel(
     seats: Sequence[ReviewSeat],
     ctx: _panel.ReviewContext,
@@ -322,7 +93,7 @@ def run_panel(
     repo_max_turns: int,
     concurrency: int = 1,
     tools: list[ToolDefinition] | None = None,
-    dispatch: ReviewDispatch | None = None,
+    dispatch: _review_seat.ReviewDispatch | None = None,
 ) -> _panel.PanelResult:
     """Run every seat over the same context and aggregate the verdicts in seat order.
 
@@ -341,27 +112,33 @@ def run_panel(
         The aggregated panel result.
     """
 
-    def _run(s: ReviewSeat) -> _panel.ReviewVerdict:
+    def _run(i: int, s: ReviewSeat) -> review_records.ReviewVerdict:
         seat_ctx = dataclasses.replace(ctx, focus=s.focus)
         if s.scope == "repo" and tools is not None and dispatch is not None:
-            return repo_review(
+            return _review_seat.repo_review(
                 s.provider,
                 seat_ctx,
-                seat=s.focus,
-                model=s.model,
+                seat_index=i,
+                focus=s.focus,
+                model_route=s.model,
                 tools=tools,
                 dispatch=dispatch,
                 max_turns=repo_max_turns,
                 temperature=s.temperature,
             )
-        return structured_review(
-            s.provider, seat_ctx, seat=s.focus, model=s.model, temperature=s.temperature
+        return _review_seat.structured_review(
+            s.provider,
+            seat_ctx,
+            seat_index=i,
+            focus=s.focus,
+            model_route=s.model,
+            temperature=s.temperature,
         )
 
     if concurrency > 1 and len(seats) > 1:
         verdicts = _run_seats_concurrently(seats, _run, concurrency)
     else:
-        verdicts = [_run(s) for s in seats]
+        verdicts = [_run(i, s) for i, s in enumerate(seats)]
     return _panel.aggregate_verdicts(
         verdicts, ctx, block_on=block_on, min_blocking_models=min_blocking_models, panel_id=panel_id
     )
@@ -369,9 +146,9 @@ def run_panel(
 
 def _run_seats_concurrently(
     seats: Sequence[ReviewSeat],
-    run_seat: Callable[[ReviewSeat], _panel.ReviewVerdict],
+    run_seat: Callable[[int, ReviewSeat], review_records.ReviewVerdict],
     concurrency: int,
-) -> list[_panel.ReviewVerdict]:
+) -> list[review_records.ReviewVerdict]:
     """Run the seat calls on daemon threads, results in seat order.
 
     A thread pool's workers are joined at exit and a seat call has no abort hook, so Ctrl-C
@@ -389,7 +166,7 @@ def _run_seats_concurrently(
     Raises:
         RuntimeError: When a thread ended with neither a verdict nor an error.
     """
-    slots: list[_panel.ReviewVerdict | None] = [None] * len(seats)
+    slots: list[review_records.ReviewVerdict | None] = [None] * len(seats)
     errors: list[BaseException] = []
     gate = threading.Semaphore(min(concurrency, len(seats)))
     done = threading.Semaphore(0)
@@ -397,7 +174,7 @@ def _run_seats_concurrently(
     def work(i: int, seat: ReviewSeat) -> None:
         with gate:
             try:
-                slots[i] = run_seat(seat)
+                slots[i] = run_seat(i, seat)
             except BaseException as exc:  # surfaced below; a pool would do the same
                 errors.append(exc)
             finally:
@@ -418,15 +195,6 @@ def _run_seats_concurrently(
     if len(verdicts) != len(seats):  # a worker ended with neither verdict nor error
         raise RuntimeError("review seat thread ended without a verdict")
     return verdicts
-
-
-__all__ = [
-    "ReviewDispatch",
-    "ReviewSeat",
-    "repo_review",
-    "run_panel",
-    "structured_review",
-]
 
 
 # The before-finish panel's rejection by the ending it rejected; the findings follow.
@@ -472,7 +240,7 @@ class Reviewer:
     settings: ReviewSettings
     chain: _chain.RunChain
     hide: tuple[str, ...]
-    review_tools: Callable[[], tuple[list[ToolDefinition], ReviewDispatch]]
+    review_tools: Callable[[], tuple[list[ToolDefinition], _review_seat.ReviewDispatch]]
     budget_remaining: Callable[[], float | None]
     log: Callable[[str], None]
     emit: Callable[..., None]
@@ -611,7 +379,7 @@ class Reviewer:
             seats=len(self.settings.reviewers),
         )
         tools: list[ToolDefinition] | None = None
-        dispatch: ReviewDispatch | None = None
+        dispatch: _review_seat.ReviewDispatch | None = None
         if any(s.scope == "repo" for s in self.settings.reviewers):
             tools, dispatch = self.review_tools()
         try:
@@ -633,9 +401,9 @@ class Reviewer:
             self.emit(
                 "loop.review.seat",
                 turn=turn,
-                seat=v.seat,
-                model=v.model,
-                verdict="abstain" if v.error else v.verdict,
+                seat=v.focus,
+                model=v.model_route,
+                verdict=v.verdict,
                 findings=len(v.findings),
             )
         disarmed = state.gates.review_rejections >= self.settings.max_review_rejections

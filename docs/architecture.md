@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `config`, `directive`, `errors`, `event_log`, `graph`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `vcs`, `verify_infer`, `viewmodel`.
+Any layer may also use the shared substrate: `_data`, `budget`, `child_env`, `config`, `directive`, `errors`, `event_log`, `graph`, `kinds`, `machine`, `memory`, `models`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `secret_store`, `sessions`, `skills`, `task_text`, `terminal`, `vcs`, `verify_infer`, `viewmodel`.
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `_git_command.py`.
@@ -39,7 +39,7 @@ By default, it switches off the repository's hooks, fsmonitor, external diff, co
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
     - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `code_review` (the single call behind `agent6 review`), `run_review` (the read-only pass behind `agent6 sessions review`) and the review panel (`_panel`, `_reviewer`); the agent loop makes its own provider calls inline.
+- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `code_review` (the single call behind `agent6 review`), `run_review` (the read-only pass behind `agent6 sessions review`) and the review panel (`_panel`, `_review_seat`, `_reviewer`); the agent loop makes its own provider calls inline.
   `harness/_loop_resume.py` owns snapshot carryover and persistence; `harness/_loop_steer.py` applies steering at execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
   `harness/_toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
@@ -272,6 +272,10 @@ The table routes `agent6_docs`, `read_file`, `list_dir`, `outline`, `find_defini
 A single read-only pass ([harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
 It prints a markdown review, and makes no edits, no commits, and no `run_command`; `--reviewers N` runs the adversarial panel instead, which returns structured findings.
 Either output is also saved as `<stamp>-review.md` under `<state-dir>/reviews/`, beside the provider transcripts, so a later session reads a module's review there.
+
+[Review records](data-contracts.md#review-records) owns the shared findings, seat replies, verdicts, immutable target identifiers, observations and operator request models in `review_records.py`.
+A finding's location names a repository-relative path, a base or head side, and an optional positive, inclusive line range.
+The record types do not capture Git trees or persist panel events.
 
 `agent6 sessions review <id>` ([harness/run_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/run_review.py)) reviews a finished session's record the same way: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.
@@ -548,7 +552,7 @@ A `run_command` approval publishes as `approval.prompt`.
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
 | Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings the loop, review, judge, and machine assemble; `revision.py` holds the loop's prompt-revision, summariser, gist and restart-notice prompts) |
-| Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); the panel is `harness/_panel.py` and `harness/_reviewer.py` |
+| Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); the panel is `harness/_panel.py`, `harness/_review_seat.py` and `harness/_reviewer.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_ops.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_ops.py) |

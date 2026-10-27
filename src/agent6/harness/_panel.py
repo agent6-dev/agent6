@@ -14,8 +14,8 @@ import dataclasses
 import re
 from typing import Literal
 
-Severity = Literal["block", "warn", "nit"]
-Verdict = Literal["pass", "block"]
+from agent6 import review_records
+
 ReviewBlockOn = Literal["none", "any", "model_quorum", "all"]
 
 # Only the first set may gate; the rest advise, being too noisy to block on.
@@ -24,46 +24,6 @@ ALLOWED_BLOCK_CATEGORIES: frozenset[str] = frozenset(
 )
 ADVISORY_CATEGORIES: frozenset[str] = frozenset({"test-gap", "style", "over-eng", "other"})
 ALL_CATEGORIES: frozenset[str] = ALLOWED_BLOCK_CATEGORIES | ADVISORY_CATEGORIES
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class Finding:
-    """One reviewer finding.
-
-    Attributes:
-        category: One of `ALL_CATEGORIES`.
-        severity: block, warn or nit.
-        file_line: The citation the grounding check reads: "path:line" or "path".
-        title: One line.
-        detail: The rest, or "".
-    """
-
-    category: str
-    severity: Severity
-    file_line: str
-    title: str
-    detail: str = ""
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class ReviewVerdict:
-    """One seat's verdict.
-
-    Attributes:
-        seat: The seat's name.
-        model: The model that reviewed.
-        verdict: pass or block.
-        findings: The seat's findings.
-        summary: The seat's summary, or "".
-        error: Set when the seat failed; the seat then abstains rather than passes.
-    """
-
-    seat: str
-    model: str
-    verdict: Verdict
-    findings: tuple[Finding, ...] = ()
-    summary: str = ""
-    error: str | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -86,7 +46,7 @@ class ReviewContext:
     verify_ok: bool | None = None
     verify_output: str = ""
     focus: str = ""
-    prior_findings: tuple[Finding, ...] = ()
+    prior_findings: tuple[review_records.Finding, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -107,8 +67,8 @@ class PanelResult:
     panel_id: str
     block_on: ReviewBlockOn
     blocked: bool
-    merged_findings: tuple[Finding, ...]
-    per_seat: tuple[ReviewVerdict, ...]
+    merged_findings: tuple[review_records.Finding, ...]
+    per_seat: tuple[review_records.ReviewVerdict, ...]
     n_block: int
     n_abstain: int
     skipped_reason: str | None = None
@@ -191,8 +151,11 @@ def _span(start: str, count: str | None) -> tuple[int, int]:
     return (s, s + max(n, 1) - 1)
 
 
-def diff_hunks(diff: str) -> dict[str, list[Hunk]]:
-    """Map each touched path to its hunks, for grounding and dedup.
+_Hunks = dict[tuple[str, Literal["base", "head"]], list[Hunk]]
+
+
+def diff_hunks(diff: str) -> _Hunks:
+    """Map each touched path and side to its hunks, for grounding and dedup.
 
     An in-place hunk carries both sides under its path. A rename's, a created file's or a
     deleted file's hunk carries each side under that side's path, so deleted code grounds at
@@ -205,75 +168,50 @@ def diff_hunks(diff: str) -> dict[str, list[Hunk]]:
         diff: The unified diff.
 
     Returns:
-        The hunks by repo path.
+        The hunks by repository path and side.
     """
-    hunks: dict[str, list[Hunk]] = {}
+    hunks: _Hunks = {}
     newpath = oldpath = ""
     prev_minus = False
     lines = diff.splitlines()
     for i, raw in enumerate(lines):
         if g := _GIT_HDR_RE.match(raw):
-            hunks.setdefault(_unquote_git_path(g.group(1)), [])
-            hunks.setdefault(_unquote_git_path(g.group(2)), [])
-            oldpath = newpath = ""
+            oldpath = _unquote_git_path(g.group(1))
+            newpath = _unquote_git_path(g.group(2))
+            hunks.setdefault((oldpath, "base"), [])
+            hunks.setdefault((newpath, "head"), [])
             prev_minus = False
             continue
+        if raw.startswith(("new file mode ", "deleted file mode ")):
+            absent: tuple[str, Literal["base", "head"]] = (
+                (oldpath, "base") if raw.startswith("new") else (newpath, "head")
+            )
+            hunks.pop(absent, None)
         # A "--- " header is always followed by "+++ "; the lookahead rejects a deleted "-- " line.
         if raw.startswith("--- ") and i + 1 < len(lines) and lines[i + 1].startswith("+++ "):
             oldpath, newpath, prev_minus = _hdr_path(raw), "", True
+            if oldpath:
+                hunks.setdefault((oldpath, "base"), [])
             continue
         if raw.startswith("+++ ") and prev_minus:
             newpath, prev_minus = _hdr_path(raw), False
+            if newpath:
+                hunks.setdefault((newpath, "head"), [])
             continue
         prev_minus = False
         m = _HUNK_RE.match(raw)
         if m:
             old, new = _span(m.group(1), m.group(2)), _span(m.group(3), m.group(4))
             if newpath and newpath == oldpath:
-                hunks.setdefault(newpath, []).append(Hunk(old=old, new=new))
+                hunk = Hunk(old=old, new=new)
+                hunks.setdefault((oldpath, "base"), []).append(hunk)
+                hunks.setdefault((newpath, "head"), []).append(hunk)
             else:
                 if newpath:
-                    hunks.setdefault(newpath, []).append(Hunk(old=None, new=new))
+                    hunks.setdefault((newpath, "head"), []).append(Hunk(old=None, new=new))
                 if oldpath:
-                    hunks.setdefault(oldpath, []).append(Hunk(old=old, new=None))
+                    hunks.setdefault((oldpath, "base"), []).append(Hunk(old=old, new=None))
     return hunks
-
-
-def _split_cite(file_line: str, hunks: dict[str, list[Hunk]]) -> tuple[str, tuple[int, int] | None]:
-    """Parse one citation into its repo path and cited line span.
-
-    The forms a reviewer writes: 'foo.py', 'a/foo.py:2', 'foo.py:2-4', 'foo.py:2:' and
-    'foo.py:12:5' (`path:line:col`). The path resolves against the hunks first; a leading `a/`
-    or `b/` is dropped only when the unstripped path is not in the diff.
-
-    Args:
-        file_line: The citation.
-        hunks: The diff's hunks by repo path.
-
-    Returns:
-        The path and the span, or None for a path-only citation; ("", None) for an empty one.
-    """
-    cite = file_line.strip().rstrip(":")
-    if not cite:
-        return "", None
-    parts = cite.split(":")
-    # Trailing numeric fields are position (line, then column); a drive letter is not numeric.
-    nums: list[str] = []
-    while len(parts) > 1 and _is_span(parts[-1]):
-        nums.insert(0, parts.pop())
-    raw = _unquote_git_path(":".join(parts))
-    path = raw if raw in hunks else re.sub(r"^[ab]/", "", raw)
-    if not nums:
-        return path, None
-    ends = nums[0].split("-", 1)  # "2-4" -> ["2", "4"]; "2" -> ["2"]
-    lo, hi = int(ends[0]), int(ends[-1])
-    return path, (min(lo, hi), max(lo, hi))  # a reversed range normalizes
-
-
-def _is_span(field: str) -> bool:
-    """Return whether the field is a numeric position: a line ("12") or a range ("2-4")."""
-    ends = field.split("-", 1)
-    return all(e.isdigit() for e in ends) and bool(ends[0])
 
 
 def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
@@ -281,40 +219,37 @@ def _overlaps(a: tuple[int, int], b: tuple[int, int]) -> bool:
     return a[0] <= b[1] and b[0] <= a[1]
 
 
-def is_grounded(file_line: str, hunks: dict[str, list[Hunk]]) -> bool:
-    """Return whether the citation is in the diff.
+def is_grounded(location: review_records.ReviewLocation, hunks: _Hunks) -> bool:
+    """Return whether the location overlaps a hunk on its specified side.
 
-    A path-only citation grounds on a touched path; a line or range grounds when it overlaps a
-    hunk on either side, so a changed span whose first line is unchanged still grounds.
+    A file-level location grounds on a touched path on that side.
 
     Args:
-        file_line: The citation.
-        hunks: The diff's hunks by repo path.
+        location: The cited path, side and optional line range.
+        hunks: The diff's hunks by repository path and side.
 
     Returns:
-        Whether the citation grounds.
+        Whether the location grounds.
     """
-    path, span = _split_cite(file_line, hunks)
-    if not path:
-        return False
-    if span is None:  # path-only: grounded if the diff touched that file at all
-        return path in hunks
+    key = (location.path, location.side)
+    if location.start_line is None or location.end_line is None:
+        return key in hunks
+    span = (location.start_line, location.end_line)
     return any(
-        (h.new is not None and _overlaps(span, h.new))
-        or (h.old is not None and _overlaps(span, h.old))
-        for h in hunks.get(path, ())
+        target is not None and _overlaps(span, target)
+        for h in hunks.get(key, ())
+        for target in (h.old if location.side == "base" else h.new,)
     )
 
 
 DedupKey = tuple[str, str, Hunk | tuple[int, int] | None]
 
 
-def _dedup_key(f: Finding, hunks: dict[str, list[Hunk]]) -> DedupKey:
+def _dedup_key(f: review_records.Finding, hunks: _Hunks) -> DedupKey:
     """Return a finding's identity across seats and turns: file, category and hunk.
 
-    The hunk whose post-image span holds the citation decides first, else the one whose
-    pre-image span does; the two sides of one hunk key alike. A citation outside every hunk
-    keys on its own span, a path-only one on the file.
+    The hunk on the cited side decides; the two sides of one hunk key alike.
+    A citation outside every hunk keys on its own span, a path-only one on the file.
 
     Args:
         f: The finding.
@@ -323,15 +258,14 @@ def _dedup_key(f: Finding, hunks: dict[str, list[Hunk]]) -> DedupKey:
     Returns:
         The key.
     """
-    path, span = _split_cite(f.file_line, hunks)
-    if span is None:
+    location = f.location
+    path = location.path
+    if location.start_line is None or location.end_line is None:
         return (path, f.category, None)
-    mine = hunks.get(path, ())
-    for h in mine:
-        if h.new is not None and _overlaps(span, h.new):
-            return (path, f.category, h)
-    for h in mine:
-        if h.old is not None and _overlaps(span, h.old):
+    span = (location.start_line, location.end_line)
+    for h in hunks.get((path, location.side), ()):
+        target = h.old if location.side == "base" else h.new
+        if target is not None and _overlaps(span, target):
             return (path, f.category, h)
     return (path, f.category, span)
 
@@ -339,7 +273,7 @@ def _dedup_key(f: Finding, hunks: dict[str, list[Hunk]]) -> DedupKey:
 _SEV_ORDER = {"block": 0, "warn": 1, "nit": 2}
 
 
-def _ground_severity(f: Finding, ctx: ReviewContext, hunks: dict[str, list[Hunk]]) -> Severity:
+def _ground_severity(f: review_records.Finding, ctx: ReviewContext) -> review_records.Severity:
     """Return the severity a finding keeps after grounding.
 
     A `block` survives only in a gating category, and `verify-uncovered-correctness` only when
@@ -348,7 +282,6 @@ def _ground_severity(f: Finding, ctx: ReviewContext, hunks: dict[str, list[Hunk]
     Args:
         f: The finding.
         ctx: The review context, for the verify result.
-        hunks: The diff's hunks by repo path; unread here.
 
     Returns:
         The severity.
@@ -362,8 +295,8 @@ def _ground_severity(f: Finding, ctx: ReviewContext, hunks: dict[str, list[Hunk]
 
 
 def _ground_seat(
-    v: ReviewVerdict, ctx: ReviewContext, hunks: dict[str, list[Hunk]]
-) -> ReviewVerdict:
+    v: review_records.ReviewVerdict, ctx: ReviewContext, hunks: _Hunks
+) -> review_records.ReviewVerdict:
     """Ground one seat's findings.
 
     An uncited finding is dropped; a block the category cannot carry, or one on a seat whose
@@ -377,19 +310,19 @@ def _ground_seat(
     Returns:
         The verdict with its grounded findings.
     """
-    out: list[Finding] = []
+    out: list[review_records.Finding] = []
     for f in v.findings:
-        if not is_grounded(f.file_line, hunks):
+        if not is_grounded(f.location, hunks):
             continue
-        sev = _ground_severity(f, ctx, hunks)
+        sev = _ground_severity(f, ctx)
         if v.verdict != "block" and sev == "block":
             sev = "warn"
-        out.append(f if sev == f.severity else dataclasses.replace(f, severity=sev))
+        out.append(f if sev == f.severity else f.model_copy(update={"severity": sev}))
     return dataclasses.replace(v, findings=tuple(out))
 
 
 def _has_new_block(
-    v: ReviewVerdict, prior_keys: set[DedupKey], hunks: dict[str, list[Hunk]]
+    v: review_records.ReviewVerdict, prior_keys: set[DedupKey], hunks: _Hunks
 ) -> bool:
     """Return whether the seat carries a surviving block that is not a prior finding.
 
@@ -441,7 +374,7 @@ def _decide(
 
 
 def aggregate_verdicts(
-    per_seat: list[ReviewVerdict],
+    per_seat: list[review_records.ReviewVerdict],
     ctx: ReviewContext,
     *,
     block_on: ReviewBlockOn,
@@ -470,22 +403,22 @@ def aggregate_verdicts(
     hunks = diff_hunks(ctx.diff)
     prior_keys = {_dedup_key(f, hunks) for f in ctx.prior_findings}
 
-    grounded_seats: list[ReviewVerdict] = []
+    grounded_seats: list[review_records.ReviewVerdict] = []
     blocking_models: set[str] = set()  # distinct models with >=1 surviving non-prior block
     n_abstain = n_seats_blocking = 0
     for v in per_seat:
-        if v.error is not None:
+        if v.error is not None or v.verdict == "abstain":
             n_abstain += 1
-            grounded_seats.append(dataclasses.replace(v, findings=()))
+            grounded_seats.append(dataclasses.replace(v, verdict="abstain", findings=()))
             continue
         gv = _ground_seat(v, ctx, hunks)
         grounded_seats.append(gv)
         if _has_new_block(gv, prior_keys, hunks):
-            blocking_models.add(v.model)
+            blocking_models.add(v.model_route)
             n_seats_blocking += 1
 
     # Merge and dedup the grounded findings, dropping those already injected.
-    merged: dict[DedupKey, Finding] = {}
+    merged: dict[DedupKey, review_records.Finding] = {}
     for v in grounded_seats:
         for f in v.findings:
             key = _dedup_key(f, hunks)
@@ -495,7 +428,7 @@ def aggregate_verdicts(
             if cur is None or _SEV_ORDER[f.severity] < _SEV_ORDER[cur.severity]:
                 merged[key] = f
     merged_findings = tuple(
-        sorted(merged.values(), key=lambda f: (_SEV_ORDER[f.severity], f.file_line, f.category))
+        sorted(merged.values(), key=lambda f: (_SEV_ORDER[f.severity], str(f.location), f.category))
     )
 
     n_block = len(blocking_models)  # distinct-model blocking seats
@@ -518,7 +451,9 @@ def aggregate_verdicts(
     )
 
 
-def findings_within(findings: tuple[Finding, ...], budget: int) -> tuple[Finding, ...]:
+def findings_within(
+    findings: tuple[review_records.Finding, ...], budget: int
+) -> tuple[review_records.Finding, ...]:
     """Return the longest leading run of findings whose rendering fits the budget in bytes."""
     for n in range(len(findings), 0, -1):
         if len(render_findings(findings[:n]).encode()) <= budget:
@@ -526,13 +461,13 @@ def findings_within(findings: tuple[Finding, ...], budget: int) -> tuple[Finding
     return ()
 
 
-def render_findings(findings: tuple[Finding, ...]) -> str:
+def render_findings(findings: tuple[review_records.Finding, ...]) -> str:
     """Return merged findings as a `[review]` block for the worker or the CLI, "" when empty."""
     if not findings:
         return ""
     lines = []
     for f in findings:
-        lines.append(f"- [{f.severity}:{f.category}] ({f.file_line}) {f.title}")
+        lines.append(f"- [{f.severity}:{f.category}] ({f.location}) {f.title}")
         if f.detail.strip():
             lines.append(f"    {f.detail.strip()}")
     return "\n".join(lines)
@@ -541,12 +476,10 @@ def render_findings(findings: tuple[Finding, ...]) -> str:
 __all__ = [
     "ALLOWED_BLOCK_CATEGORIES",
     "ALL_CATEGORIES",
-    "Finding",
     "Hunk",
     "PanelResult",
     "ReviewBlockOn",
     "ReviewContext",
-    "ReviewVerdict",
     "aggregate_verdicts",
     "diff_hunks",
     "findings_within",

@@ -4,7 +4,7 @@
 
 The run review (`sessions review`) reads a finished session's record; each adversarial seat
 sees the panel prompt, or its repo-scope variant, with a `{focus}` placeholder.
-`harness.run_review` and `harness._reviewer` own the calls.
+`harness.run_review` and `harness._review_seat` own the calls.
 """
 
 from __future__ import annotations
@@ -56,8 +56,11 @@ Everything else (style, naming, missing tests, "could be cleaner",
 over-engineering, speculation) is at most a "warn" or "nit", never a block.
 
 Rules:
-  - Cite every finding at a `path:line` that appears in the DIFF. Uncited or
-    out-of-diff findings are ignored by the aggregator.
+  - Cite each finding with a repository-relative path and a side (base or head).
+    Use the path on that side, including the old path of a rename.
+    Set start_line and end_line to positive, inclusive lines in the DIFF,
+    or set both to null for a file-level finding.
+    Uncited or out-of-diff findings are ignored by the aggregator.
   - A diff with nothing to report is verdict "pass" with an empty findings
     list; a "pass" still carries its warn and nit findings.
 
@@ -70,7 +73,8 @@ Output STRICT JSON and nothing else (no prose, no markdown fence):
   "findings": [
     {{"category": "<one of the categories listed above>",
       "severity": "block|warn|nit",
-      "file_line": "path:line",
+      "location": {{"path": "repo/path", "side": "base|head",
+                    "start_line": 1, "end_line": 1}},
       "title": "<short>",
       "detail": "<why, terse>"}}
   ]}}"""

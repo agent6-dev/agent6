@@ -132,6 +132,7 @@ depends_on = [
 ]
 
 [[modules]]
+# _reviewer and _toolset use _review_seat; _review_seat uses _panel and _llm_json.
 # _compactor and _compaction use _compaction_result and _compaction_window.
 # _compaction_window uses _conversation and _compaction_result; the result cap
 # reads _panel and _verify_gate notice sizes within this harness boundary.
@@ -150,6 +151,7 @@ depends_on = [
   "agent6.portable",
   "agent6.prompts",  # pure prompt/template text the loop assembles
   "agent6.providers",
+  "agent6.review_records",
   # prompt show resolves the isolation a run here would get, so the preview
   # renders the same level-aware blocks the loop does
   "agent6.sandbox.detect",
@@ -187,6 +189,10 @@ depends_on = [
   "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent
   "agent6.secret_store",
 ]
+
+[[modules]]
+path = "agent6.review_records"
+depends_on = []
 
 [[modules]]
 path = "agent6.event_log"
