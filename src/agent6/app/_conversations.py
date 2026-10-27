@@ -51,15 +51,15 @@ class Conversations:
             return
         try:
             data: Any = json.loads(self.path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return
-        routes = data.get("routes") if isinstance(data, dict) else None
-        if isinstance(routes, dict):
-            self._routes = {
-                str(k): _Route(str(v["id"]), int(v.get("completed", 0)))
-                for k, v in routes.items()
-                if isinstance(v, dict) and v.get("id")
-            }
+            routes = data.get("routes") if isinstance(data, dict) else None
+            if isinstance(routes, dict):
+                self._routes = {
+                    str(k): _Route(str(v["id"]), int(v.get("completed", 0)))
+                    for k, v in routes.items()
+                    if isinstance(v, dict) and v.get("id")
+                }
+        except (OSError, ValueError, TypeError):
+            self._routes = {}
 
     def context(
         self,
