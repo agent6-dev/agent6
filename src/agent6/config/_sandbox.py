@@ -217,6 +217,7 @@ class SandboxConfig(pydantic.BaseModel):
         default=(),
         description=(
             "absolute paths never readable or writable by the run, even under a broader grant; "
+            "an entry inside the repository stays out of every tree agent6 commits or compares; "
             "agent6 config dir and state base always hidden, `secrets.toml` and run history "
             "excluded even from `sandbox.extra_read_paths` granting `$HOME`; data dir and cache "
             "readable for installed skills; in-process refusal at every isolation level; "

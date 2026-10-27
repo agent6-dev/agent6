@@ -466,7 +466,11 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             if unmerged_run and not stashed:
                 # Included: when the tree is exactly that run's tip, this run's merge lands it.
                 included = preflight.included_run(
-                    cwd, unmerged_run, base_sha=base_sha, exclude=untracked_at_start
+                    cwd,
+                    unmerged_run,
+                    base_sha=base_sha,
+                    exclude=untracked_at_start
+                    | git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths),
                 )
                 if included is not None:
                     stamps.stamp_includes(layout.session_dir, included)

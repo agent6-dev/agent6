@@ -190,6 +190,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork, a `run --worktree` run or a machine state works in
+    - a `hide_paths` entry inside the workspace stays out of every tree agent6 writes or compares (chain commits, review diffs, dirty checks, undo, resume): no blob of it enters the object store through agent6
     - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
 - `/dev` (`full` `sandbox.isolation`): `/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/random`, `/dev/full`, a private `/dev/shm`; no `/dev/tty`
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute).

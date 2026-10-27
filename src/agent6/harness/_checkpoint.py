@@ -118,7 +118,7 @@ class Checkpoints:
         self.log(f"  auto-commit failed: {exc}")
         worktree_status = ""
         try:
-            st = git_read.status(self.chain.root, exclude=self.chain.untracked_at_start)
+            st = git_read.status(self.chain.root, exclude=self.chain.excluded)
             worktree_status = (
                 f"branch={st.branch}"
                 f" head={st.head_sha[:12]}"

@@ -43,7 +43,8 @@ def outside_edits(
         end_tree: The tree the run left: the one its last end recorded, or HEAD's once its
             work landed there; "" when none was recorded.
         seed: The commit that tree was staged over: the chain tip, else the run's base.
-        exclude: The operator's untracked files, left out of both trees.
+        exclude: The operator's untracked files and the run's hidden paths, left out of
+            both trees.
         written: The paths the run's own tools wrote, which stay its own when no tree was
             recorded.
 

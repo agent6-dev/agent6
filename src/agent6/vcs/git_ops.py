@@ -392,7 +392,8 @@ def chain_commit(
         identity: The author and committer overrides.
         also_branch: A visible branch moved with the ref; a checked-out one has its
             index brought forward.
-        exclude: Repo-relative paths kept out, the run's `untracked_at_start`.
+        exclude: Repo-relative paths kept out, each with everything under it: the run's
+            `untracked_at_start` and its hidden paths.
 
     Returns:
         The new sha, or None when the tree equals the parent's.

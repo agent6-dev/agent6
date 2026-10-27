@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import os
 import pathlib
 import shutil
 import tempfile
@@ -162,6 +163,44 @@ def modified_paths(path: pathlib.Path) -> list[str]:
     return [rel for code, rel in porcelain_entries(path) if code != "??"]
 
 
+def excluded(rel: str, exclude: Collection[str]) -> bool:
+    """Return whether the path, or a directory above it, is in the exclude set.
+
+    Args:
+        rel: A repo-relative path; a directory may end in a slash, as `status` prints one.
+        exclude: Repo-relative paths, each covering everything under it.
+
+    Returns:
+        True when the path or one of its ancestors is listed.
+    """
+    rel = rel.rstrip("/")
+    while rel:
+        if rel in exclude:
+            return True
+        rel = rel.rpartition("/")[0]
+    return False
+
+
+def hidden_in_repo(path: pathlib.Path, hide: Collection[str]) -> frozenset[str]:
+    """Return the `[sandbox].hide_paths` entries inside the repository, repo-relative.
+
+    Args:
+        path: Any directory of the repository.
+        hide: The entries, absolute paths.
+
+    Returns:
+        The repo-relative paths; an entry outside the repository, or the repository itself,
+        is left out.
+    """
+    root = pathlib.Path(os.path.realpath(toplevel(path) or path))
+    inside: set[str] = set()
+    for entry in hide:
+        real = pathlib.Path(os.path.realpath(entry))
+        if real != root and real.is_relative_to(root):
+            inside.add(real.relative_to(root).as_posix())
+    return frozenset(inside)
+
+
 def untracked_paths(path: pathlib.Path) -> frozenset[str]:
     """Return every untracked, non-ignored file, repo-relative.
 
@@ -182,7 +221,8 @@ def status(path: pathlib.Path, *, exclude: Collection[str] = ()) -> GitStatus:
 
     Args:
         path: The repository.
-        exclude: Untracked files not counted, a run's `untracked_at_start`.
+        exclude: Repo-relative paths not counted, each with everything under it: a run's
+            `untracked_at_start` and its hidden paths.
 
     Returns:
         The status.
@@ -204,7 +244,7 @@ def status(path: pathlib.Path, *, exclude: Collection[str] = ()) -> GitStatus:
     modified = 0
     for code, rel in porcelain_entries(path):
         if code == "??":
-            if rel not in exclude:
+            if not excluded(rel, exclude):
                 untracked += 1
         else:
             modified += 1
@@ -499,8 +539,9 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
     Args:
         path: The repository.
         seed: The commit the tree is diffed or parented against; None in an unborn repo.
-        exclude: Repo-relative paths kept out of the tree, the run's `untracked_at_start`,
-            passed as pathspecs from a file so any size and filename work.
+        exclude: Repo-relative paths kept out of the tree, each with everything under it:
+            the run's `untracked_at_start` and its hidden paths, passed as pathspecs from a
+            file so any size and filename work.
 
     Returns:
         The tree sha.
@@ -682,7 +723,8 @@ def worktree_name_status(
 
     Args:
         path: The repository.
-        exclude: Untracked paths left out, the run's `untracked_at_start`.
+        exclude: Repo-relative paths left out, each with everything under it: the run's
+            `untracked_at_start` and its hidden paths.
 
     Returns:
         The (status, path) pairs.
@@ -693,7 +735,7 @@ def worktree_name_status(
         if len(line) < 4:
             continue
         rel = line[3:].strip()
-        if rel in exclude:
+        if excluded(rel, exclude):
             continue
         code = line[:2].strip() or "M"
         pairs.append(("A" if code in ("??", "A", "AM") else code[:1], rel))
@@ -785,8 +827,9 @@ def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = 
     Args:
         path: The repository.
         base_sha: The diff base.
-        exclude: Untracked paths left out, the run's `untracked_at_start`; a review diff
-            showing them as the run's additions would have a panel order their removal.
+        exclude: Repo-relative paths left out, each with everything under it: the run's
+            `untracked_at_start` and its hidden paths; a review diff showing them as the
+            run's additions would have a panel order their removal.
 
     Returns:
         The diff text; "" when the diff fails.

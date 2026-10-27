@@ -234,7 +234,7 @@ class VerifyGate:
         ):
             return False
         try:
-            status = git_read.status(self.chain.root, exclude=self.chain.untracked_at_start)
+            status = git_read.status(self.chain.root, exclude=self.chain.excluded)
         except (errors.GitError, OSError):
             return False
         return status.is_clean and status.head_sha == self.chain.base_sha

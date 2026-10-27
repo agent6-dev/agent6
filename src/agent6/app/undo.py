@@ -246,7 +246,7 @@ def _rewind_checkout(
         tip: The chain commit holding the current content.
         sha: The commit to rewind to.
         end_tree: The tree the run's last end recorded, "" when none.
-        exclude: The session's untracked-at-start files, left alone.
+        exclude: The session's untracked-at-start files and hidden paths, left alone.
 
     Returns:
         The paths put back and the paths left as the operator's.
@@ -395,6 +395,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
     ref = git_read.chain_ref_for(undone.session_id)
     where = manifest.run_branch or ref
     exclude = sessions_layout.read_untracked_at_start(undone.session_dir)
+    left_alone = exclude | git_read.hidden_in_repo(checkout, cfg.sandbox.hide_paths)
     try:
         try:
             kept = git_ops.chain_commit(
@@ -406,7 +407,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                     name=cfg.git.commit.name, email=cfg.git.commit.email
                 ),
                 also_branch=manifest.run_branch,
-                exclude=exclude,
+                exclude=left_alone,
             )
         except errors.GitError as exc:
             reporter.error(f"the tree as it stands could not be committed onto {where}: {exc}")
@@ -441,7 +442,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 tip=git_read.chain_tip(checkout, ref) or sha,
                 sha=sha,
                 end_tree=_session_log.scan_session_log(undone.logs_path).end_tree,
-                exclude=exclude,
+                exclude=left_alone,
             )
         except errors.GitError as exc:
             reporter.error(

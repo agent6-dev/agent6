@@ -199,7 +199,9 @@ def _journal_escape(
     return reason
 
 
-def _tree_left_before_the_loop(cwd: pathlib.Path, inputs: ExecutionInputs) -> str:
+def _tree_left_before_the_loop(
+    cwd: pathlib.Path, inputs: ExecutionInputs, hidden: frozenset[str]
+) -> str:
     """Return the tree a run leaves when it escapes before its harness exists; "" outside run mode.
 
     Seeded on the chain tip like a chain commit, as the harness's own read is; the escape's
@@ -208,6 +210,7 @@ def _tree_left_before_the_loop(cwd: pathlib.Path, inputs: ExecutionInputs) -> st
     Args:
         cwd: The workspace.
         inputs: The execution's inputs.
+        hidden: The run's hidden paths inside the repository, left out like its untracked files.
 
     Returns:
         The tree's sha; "" outside run mode or when the read fails or is interrupted.
@@ -217,7 +220,7 @@ def _tree_left_before_the_loop(cwd: pathlib.Path, inputs: ExecutionInputs) -> st
     try:
         chain_tip = git_read.chain_tip(cwd, git_read.chain_ref_for(inputs.session_id))
         return git_read.worktree_tree(
-            cwd, chain_tip or inputs.base_sha or None, inputs.untracked_at_start
+            cwd, chain_tip or inputs.base_sha or None, inputs.untracked_at_start | hidden
         )
     except (errors.GitError, OSError, KeyboardInterrupt):
         return ""
@@ -280,6 +283,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     label = "resume" if inputs.resuming else "run"
     session: _session.SessionProviders | None = None
     prompt_reviser_provider: Provider | None = None
+    hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
     try:
         # The interactive revision prompt reads the terminal, which the TUI may own.
         effective_revise_prompt = cfg.prompt.revise_prompt
@@ -325,7 +329,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if stamps.parked_stamp(layout.session_dir) is not None:
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
-            tree = _tree_left_before_the_loop(cwd, inputs)
+            tree = _tree_left_before_the_loop(cwd, inputs, hidden)
             reason = _journal_escape(events, exc, turns=0, tree=tree)
             reporter.err(f"\n[agent6] {label} {reason}")
         with contextlib.ExitStack() as cleanup:
@@ -427,6 +431,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 branch=inputs.chain_branch,
                 fallback_parent=inputs.base_sha or None,
                 untracked_at_start=untracked_at_start,
+                hidden=hidden,
                 identity=_chain.commit_identity(
                     cfg.git.commit,
                     commit_message.render_commit_trailer(

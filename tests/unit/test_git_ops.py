@@ -2089,3 +2089,33 @@ def test_diff_since_sees_an_edit_made_in_the_index_entrys_second(tmp_path: pathl
     os.utime(index, ns=(past, past))
 
     assert "x = 2" in git_read.diff_since(tmp_path, "HEAD")
+
+
+def test_hidden_in_repo_keeps_the_entries_inside_the_repository(tmp_path: pathlib.Path) -> None:
+    """The entries map to repo-relative paths from any directory; the root and outsiders drop."""
+    _init_repo(tmp_path)
+    (tmp_path / "sub").mkdir()
+    hide = (
+        str(tmp_path / "secrets"),
+        str(tmp_path / "sub" / ".env"),
+        str(tmp_path),
+        str(tmp_path.parent / "elsewhere"),
+    )
+    assert git_read.hidden_in_repo(tmp_path, hide) == frozenset({"secrets", "sub/.env"})
+    assert git_read.hidden_in_repo(tmp_path / "sub", hide) == frozenset({"secrets", "sub/.env"})
+
+
+def test_status_and_name_status_leave_out_everything_under_an_excluded_directory(
+    tmp_path: pathlib.Path,
+) -> None:
+    """An exclude entry covers the files under it: a hidden directory's files never count."""
+    _init_repo(tmp_path)
+    (tmp_path / "secrets" / "deep").mkdir(parents=True)
+    (tmp_path / "secrets" / "deep" / "key.txt").write_text("k\n", encoding="utf-8")
+    (tmp_path / "secrets.txt").write_text("not under it\n", encoding="utf-8")
+    assert git_read.status(tmp_path, exclude={"secrets"}).untracked_count == 1
+    assert git_read.status(tmp_path, exclude={"secrets", "secrets.txt"}).is_clean
+    assert git_read.worktree_name_status(tmp_path, exclude={"secrets"}) == (("A", "secrets.txt"),)
+    assert git_read.excluded("secrets/deep/key.txt", {"secrets"})
+    assert git_read.excluded("secrets/", {"secrets"})
+    assert not git_read.excluded("secrets.txt", {"secrets"})

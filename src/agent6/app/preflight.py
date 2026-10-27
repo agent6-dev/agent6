@@ -304,7 +304,7 @@ def included_run(
         cwd: The workspace.
         session_id: The unmerged run whose work the tree holds.
         base_sha: The commit the new run starts on, the seed of its first commit's tree.
-        exclude: The new run's `untracked_at_start`.
+        exclude: The new run's `untracked_at_start` and its hidden paths.
 
     Returns:
         The run and its chain tip, or None.

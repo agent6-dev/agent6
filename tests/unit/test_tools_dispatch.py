@@ -2858,3 +2858,52 @@ def test_apply_edit_takes_one_edit_flat_the_way_the_claude_code_edit_tool_does(
         d.dispatch("apply_edit", {"path": "a.txt"})
     assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "y\n"
     assert schema.wire_schema(schema.ApplyEditInput)["required"] == ["path"]
+
+
+def test_a_bare_dispatchers_tree_omits_hidden_paths(tmp_path: pathlib.Path) -> None:
+    """Hidden paths are out of a bare dispatcher's identity; its own new files are in."""
+    import subprocess
+
+    cfg = _config(tmp_path)
+    cfg = cfg.model_copy(
+        update={
+            "sandbox": cfg.sandbox.model_copy(update={"hide_paths": (str(tmp_path / "secrets"),)})
+        }
+    )
+    subprocess.run(["git", "init", "-q", "-b", "main", str(tmp_path)], check=True)
+    (tmp_path / "a.txt").write_text("tracked\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "a.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "a",
+        ],
+        check=True,
+    )
+    d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
+    before = d._verification_tree()  # pyright: ignore[reportPrivateUsage]
+    assert before
+    (tmp_path / "secrets").mkdir()
+    (tmp_path / "secrets" / "key").write_text("s3cret\n", encoding="utf-8")
+    assert d._verification_tree() == before  # pyright: ignore[reportPrivateUsage]
+    blob = subprocess.run(
+        ["git", "-C", str(tmp_path), "hash-object", "secrets/key"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert (
+        subprocess.run(["git", "-C", str(tmp_path), "cat-file", "-e", blob], check=False).returncode
+        != 0
+    )
+    (tmp_path / "scratch.txt").write_text("written during a verify\n", encoding="utf-8")
+    assert d._verification_tree() != before  # pyright: ignore[reportPrivateUsage]

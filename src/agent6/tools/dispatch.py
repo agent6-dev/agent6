@@ -688,10 +688,17 @@ class ToolDispatcher:
         return res
 
     def _verification_tree(self) -> str:
-        """Return a bare dispatcher's content identity; a harness supplies its chain reader."""
+        """Return a bare dispatcher's content identity; a harness supplies its chain reader.
+
+        Returns:
+            The worktree's tree, hidden paths left out so no blob of theirs enters the object
+            store; "" when git cannot say.
+        """
         try:
             return git_read.worktree_tree(
-                self._root, git_read.status(self._root).head_sha or None, ()
+                self._root,
+                git_read.status(self._root).head_sha or None,
+                git_read.hidden_in_repo(self._root, self._config.sandbox.hide_paths),
             )
         except (errors.GitError, OSError):
             return ""

@@ -56,6 +56,8 @@ class RunChain:
         untracked_at_start: The files untracked when the run started, repo-root
             relative: the operator's, so no commit records them and no dirty check
             counts them; a file the model creates is committed.
+        hidden: `[sandbox].hide_paths` inside the repository, repo-root relative: the run
+            never sees them, so no tree it writes or compares holds them.
         identity: The author and trailer of every commit; None leaves it to git.
         per_turn: `[git].commit_per_turn`; False keeps the work in the worktree only,
             and resume-from-git, `sessions diff`, `merge` and a `/parallel` dispatch
@@ -69,9 +71,15 @@ class RunChain:
     branch: str | None = None
     fallback_parent: str | None = None
     untracked_at_start: frozenset[str] = frozenset()
+    hidden: frozenset[str] = frozenset()
     identity: git_read.CommitIdentity | None = None
     per_turn: bool = True
     base_sha: str = ""
+
+    @property
+    def excluded(self) -> frozenset[str]:
+        """Return the paths every tree the chain writes or compares leaves out."""
+        return self.untracked_at_start | self.hidden
 
     def commit(self, subject: str) -> str:
         """Commit the worktree onto the chain.
@@ -92,7 +100,7 @@ class RunChain:
                 fallback_parent=self.fallback_parent,
                 identity=self.identity,
                 also_branch=self.branch,
-                exclude=self.untracked_at_start,
+                exclude=self.excluded,
             )
             or ""
         )
@@ -147,9 +155,9 @@ class RunChain:
         """
         if self.ref is not None:
             return git_read.chain_dirty(
-                self.root, self.ref, self.fallback_parent, exclude=self.untracked_at_start
+                self.root, self.ref, self.fallback_parent, exclude=self.excluded
             )
-        return not git_read.status(self.root, exclude=self.untracked_at_start).is_clean
+        return not git_read.status(self.root, exclude=self.excluded).is_clean
 
     def dirty(self) -> bool:
         """Return `is_dirty`, reading clean when git cannot say.
@@ -179,7 +187,7 @@ class RunChain:
                 self.ref,
                 self.fallback_parent,
                 _DIRTY_NOTE_CAP,
-                exclude=self.untracked_at_start,
+                exclude=self.excluded,
             )
         except (errors.GitError, OSError):
             return ""
@@ -190,14 +198,14 @@ class RunChain:
         return f"; worktree left dirty ({len(paths)}{more} {noun} uncommitted, not checkpointed)"
 
     def tree_sha(self) -> str:
-        """Return the tree sha of the worktree's content, minus `untracked_at_start`.
+        """Return the tree sha of the worktree's content, minus the excluded paths.
 
         Returns:
             The sha, seeded on the chain tip like a chain commit; "" when git cannot say.
         """
         try:
             return git_read.worktree_tree(
-                self.root, self.tip() or self.fallback_parent, self.untracked_at_start
+                self.root, self.tip() or self.fallback_parent, self.excluded
             )
         except (errors.GitError, OSError):
             return ""
@@ -225,7 +233,7 @@ class RunChain:
         Returns:
             The pairs in `git status` order.
         """
-        return git_read.worktree_name_status(self.root, exclude=self.untracked_at_start)
+        return git_read.worktree_name_status(self.root, exclude=self.excluded)
 
     def diff_since_base(self) -> str:
         """Return the run's cumulative change: the base commit against the working tree.
@@ -239,7 +247,7 @@ class RunChain:
         """
         if not self.base_sha:
             return ""
-        return git_read.diff_since(self.root, self.base_sha, exclude=self.untracked_at_start)
+        return git_read.diff_since(self.root, self.base_sha, exclude=self.excluded)
 
     def review_target(self) -> review_records.ReviewTarget | None:
         """Return the base and head a panel reviews.

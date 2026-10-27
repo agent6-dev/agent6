@@ -465,6 +465,7 @@ def run_one(
             else None,
             fallback_parent=_machine_head_sha(req.root) if not read_only else None,
             untracked_at_start=setup_left,
+            hidden=git_read.hidden_in_repo(req.root, cfg.sandbox.hide_paths),
             identity=_chain.commit_identity(
                 cfg.git.commit,
                 commit_message.render_commit_trailer(

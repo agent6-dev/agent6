@@ -612,6 +612,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             return undo.undo_fork(config_paths, session_id, cwd=repo, reporter=reporter)
 
         untracked_at_start = sessions_layout.read_untracked_at_start(layout.session_dir)
+        hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
         outside: list[str] = []
         end_tree = ""
         seed: str | None = None
@@ -661,7 +662,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 # file taken as the run's above stays its own.
                 runs_own = written | arrived if died_in_turn else written
                 outside = _resume_tree.outside_edits(
-                    cwd, end_tree, seed, untracked_at_start, written=runs_own
+                    cwd, end_tree, seed, untracked_at_start | hidden, written=runs_own
                 )
                 unsettled = _resume_tree.refusal(
                     cwd,
@@ -745,7 +746,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     git_read.chain_ref_for(session_id),
                     resume_base_sha,
                     5,
-                    exclude=untracked_at_start,
+                    exclude=untracked_at_start | hidden,
                 )
                 if dirty:
                     shown = map(terminal.printable_name, dirty[:4])
