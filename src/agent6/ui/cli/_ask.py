@@ -65,7 +65,7 @@ def fmt_run_event(e: dict[str, Any]) -> str:
     if t == "tool.call":
         return f"tool.call {e.get('name', '')} {str(e.get('args', ''))[:80]}".rstrip()
     if t == "verify.end":
-        label = evidence.result_label(e.get("exit_code"), evidence.outcome(e))
+        label = evidence.result_label(e.get("exit_code"), evidence.outcome(e), joiner="=")
         reason = f": {e['reason']}" if e.get("reason") else ""
         return f"verify.end {label}{reason}"
     if t == "session.end":

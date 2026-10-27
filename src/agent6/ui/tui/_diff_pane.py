@@ -239,7 +239,9 @@ class DiffPane(forms.ScrollPane):
             dt.append(format.clip_cell(" ".join(verify.cmd), 200) + "\n")
             dt.append("…", style="dim")
         elif verify is not None and verify.exit_code != 0:
-            label = evidence.result_label(verify.exit_code, verify.outcome or "unavailable")
+            label = evidence.result_label(
+                verify.exit_code, verify.outcome or "unavailable", joiner="="
+            )
             dt.append(f"verify {label} ", style="bold red")
             if verify.reason:
                 dt.append(f"Reason: {verify.reason}\n")

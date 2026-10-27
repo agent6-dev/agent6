@@ -193,11 +193,10 @@ def verification_summary(record: evidence.VerificationEvidence) -> str:
     """
     scope = "scoped" if record.scoped else "full gate"
     baseline = "baseline; " if record.baseline else ""
-    result = evidence.result_label(record.exit_code, record.outcome)
+    code = f"exit {record.exit_code}, " if record.exit_code is not None else ""
     reason = f"Reason: {record.reason}\n" if record.reason else ""
     return (
-        f"{record.verify_id or 'unrecorded id'}: {baseline}{record.outcome}, "
-        f"{result}, {scope}\n"
+        f"{record.verify_id or 'unrecorded id'}: {baseline}{record.outcome}, {code}{scope}\n"
         f"{reason}"
         f"Command: {shlex.join(record.cmd)}\n"
         f"Tested tree: {record.tree_before or 'unknown'}; after: {record.tree_after or 'unknown'}\n"

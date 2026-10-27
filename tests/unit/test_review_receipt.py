@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import dataclasses
 import pathlib
-from typing import Literal
+from typing import Any, Literal
 from unittest import mock
 
 import pytest
 
-from agent6 import paths
+from agent6 import evidence, paths
 from agent6.app import merge
 from agent6.config import Config
 from agent6.sessions import layout as sessions_layout
@@ -283,13 +284,49 @@ def test_revert_request_carries_recorded_facts(tmp_path: pathlib.Path, method: s
     assert "Inspect the receipt" not in task and "isolated run" not in task
 
 
+def _record(**changes: Any) -> evidence.VerificationEvidence:
+    return dataclasses.replace(
+        evidence.VerificationEvidence(
+            verify_id="v",
+            execution_id=None,
+            cmd=("true",),
+            tree_before=None,
+            tree_after=None,
+            scoped=False,
+            selected_paths=(),
+            outcome="denied",
+            exit_code=None,
+            duration_s=0.0,
+            timeout_s=0.0,
+            stdout_tail="",
+            stderr_tail="",
+            stdout_truncated=False,
+            stderr_truncated=False,
+            reason="not available",
+        ),
+        **changes,
+    )
+
+
+def test_summary_states_the_outcome_once() -> None:
+    """A denied attempt's summary read "denied, denied"; the outcome is said once."""
+    from agent6.viewmodel import receipt
+
+    assert receipt.verification_summary(_record()).startswith("v: denied, full gate\n")
+    passed = _record(outcome="passed", exit_code=0)
+    assert receipt.verification_summary(passed).startswith("v: passed, exit 0, full gate\n")
+
+
 def test_receipt_uses_one_shared_scan_without_per_line_adapters(tmp_path: pathlib.Path) -> None:
     """Receipt reads share the listing scan and do not build schemas per journal line."""
+    import json
+
     import pydantic
 
     from agent6.viewmodel import _session_log, receipt
 
-    (tmp_path / "logs.jsonl").write_text('{"type":"turn.start","turn":1}\n' * 2000)
+    row = json.dumps({"type": "verify.end", "verify_id": "v", "cmd": ["true"], "exit_code": 0})
+    (tmp_path / "logs.jsonl").write_text((row + "\n") * 2000)
     with (
         mock.patch.object(
             _session_log, "scan_session_log", wraps=_session_log.scan_session_log

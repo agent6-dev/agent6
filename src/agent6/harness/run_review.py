@@ -164,7 +164,7 @@ class RunDigest:
         if self.verify_runs:
             lines.append(f"\nverify runs ({_shown(self.verify_runs, self.verify_total)}):")
             for v in self.verify_runs:
-                result = evidence.result_label(v.exit_code, v.outcome).replace("exit=", "exit ")
+                result = evidence.result_label(v.exit_code, v.outcome)
                 tail = f": {v.tail}" if v.tail else ""
                 lines.append(f"- {result} ({v.duration_s:.1f}s){tail}")
                 lines.append(

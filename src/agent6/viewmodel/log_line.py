@@ -194,7 +194,9 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "verify.end":
             dur = event.get("duration_s")
             dur_s = f"{dur:.1f}s" if isinstance(dur, (int, float)) else f"{dur}s"
-            label = evidence.result_label(event.get("exit_code"), evidence.outcome(event))
+            label = evidence.result_label(
+                event.get("exit_code"), evidence.outcome(event), joiner="="
+            )
             salient = f"{label} dur={dur_s}"
             if reason := event.get("reason"):
                 salient += f": {reason}"

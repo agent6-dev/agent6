@@ -71,18 +71,19 @@ def outcome(event: Mapping[str, Any]) -> str:
     return "passed" if code == 0 else "failed" if isinstance(code, int) else "unavailable"
 
 
-def result_label(exit_code: object, outcome: str, reason: str = "") -> str:
+def result_label(exit_code: object, outcome: str, reason: str = "", *, joiner: str = " ") -> str:
     """Name an exit code when present, otherwise the finished attempt's outcome.
 
     Args:
         exit_code: The command's exit code, if it ran to an observed exit.
         outcome: The recorded attempt's outcome.
         reason: The reason the command did not run, if recorded.
+        joiner: What joins "exit" to the code: a space in prose, "=" on a key=value line.
 
     Returns:
         A result label that never prints a missing code.
     """
-    label = f"exit={exit_code}" if isinstance(exit_code, int) else outcome
+    label = f"exit{joiner}{exit_code}" if isinstance(exit_code, int) else outcome
     return f"{label}: {reason}" if reason else label
 
 

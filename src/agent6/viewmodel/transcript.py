@@ -287,7 +287,7 @@ class TranscriptFold:
             dur = float(event.get("duration_s", 0) or 0)
             label = evidence.result_label(
                 code, evidence.outcome(event), str(event.get("reason") or "")
-            ).replace("exit=", "exit ")
+            )
             badge = "✓ pass" if code == 0 else f"✗ {label}"
             timed_out = viewmodel_events.verify_limit_hit(code, event.get("timeout_s")) > 0
             self._verify = (code == 0, f"{badge} · {dur:.1f}s", timed_out)
