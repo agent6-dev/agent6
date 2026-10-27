@@ -431,6 +431,8 @@ banned-from = [
     "agent6.ui.notify",
     "agent6.ui.spawn",
     "agent6.ui.steer",
+    "agent6.ui.telemetry._otlp",
+    "agent6.ui.telemetry._prometheus",
     "agent6.ui.tui.__main__",
     "agent6.ui.tui._config_forms",
     "agent6.ui.tui._dashboard_header",

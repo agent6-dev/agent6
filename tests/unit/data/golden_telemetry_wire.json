@@ -1,0 +1,980 @@
+{
+  "logs": {
+    "resourceLogs": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "agent6"
+              }
+            },
+            {
+              "key": "agent6.repo",
+              "value": {
+                "stringValue": "0123abcd"
+              }
+            }
+          ]
+        },
+        "scopeLogs": [
+          {
+            "logRecords": [
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.source",
+                    "value": {
+                      "stringValue": "tui"
+                    }
+                  }
+                ],
+                "body": {
+                  "stringValue": "approval approved"
+                },
+                "severityNumber": 9,
+                "severityText": "INFO",
+                "spanId": "837fcc361747f24c",
+                "timeUnixNano": "1792922409000000000",
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.verify.outcome",
+                    "value": {
+                      "stringValue": "failed"
+                    }
+                  },
+                  {
+                    "key": "agent6.verify.exit_code",
+                    "value": {
+                      "intValue": "1"
+                    }
+                  }
+                ],
+                "body": {
+                  "stringValue": "verify failed"
+                },
+                "severityNumber": 17,
+                "severityText": "ERROR",
+                "spanId": "1fa58c3c51ec0844",
+                "timeUnixNano": "1792922440000000000",
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.panel.id",
+                    "value": {
+                      "stringValue": "p"
+                    }
+                  }
+                ],
+                "body": {
+                  "stringValue": "review panel blocked"
+                },
+                "severityNumber": 13,
+                "severityText": "WARN",
+                "spanId": "0966e7ec35edc5c3",
+                "timeUnixNano": "1792922445000000000",
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.end.reason",
+                    "value": {
+                      "stringValue": "finish_session"
+                    }
+                  },
+                  {
+                    "key": "agent6.verified",
+                    "value": {
+                      "stringValue": "failed"
+                    }
+                  }
+                ],
+                "body": {
+                  "stringValue": "execution ended: finish_session, gate failed"
+                },
+                "severityNumber": 17,
+                "severityText": "ERROR",
+                "spanId": "b7877cff0df9a0e7",
+                "timeUnixNano": "1792922460000000000",
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              }
+            ],
+            "scope": {
+              "name": "agent6.telemetry",
+              "version": "<agent6 version>"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "metrics": {
+    "resourceMetrics": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "agent6"
+              }
+            },
+            {
+              "key": "agent6.repo",
+              "value": {
+                "stringValue": "0123abcd"
+              }
+            }
+          ]
+        },
+        "scopeMetrics": [
+          {
+            "metrics": [
+              {
+                "description": "Sessions whose journal was read.",
+                "name": "agent6_sessions_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Execution starts: runs and resumes.",
+                "name": "agent6_executions_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Execution ends by end reason and the gate's word for the final tree.",
+                "name": "agent6_execution_ends_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [
+                        {
+                          "key": "reason",
+                          "value": {
+                            "stringValue": "finish_session"
+                          }
+                        },
+                        {
+                          "key": "verified",
+                          "value": {
+                            "stringValue": "failed"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Model calls by model, provider and outcome.",
+                "name": "agent6_model_calls_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [
+                        {
+                          "key": "model",
+                          "value": {
+                            "stringValue": "m"
+                          }
+                        },
+                        {
+                          "key": "outcome",
+                          "value": {
+                            "stringValue": "ok"
+                          }
+                        },
+                        {
+                          "key": "provider",
+                          "value": {
+                            "stringValue": "p"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Tokens by type (input, output, cache_read, cache_creation), model and provider.",
+                "name": "agent6_tokens_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 2.0,
+                      "attributes": [
+                        {
+                          "key": "model",
+                          "value": {
+                            "stringValue": "m"
+                          }
+                        },
+                        {
+                          "key": "provider",
+                          "value": {
+                            "stringValue": "p"
+                          }
+                        },
+                        {
+                          "key": "type",
+                          "value": {
+                            "stringValue": "cache_read"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    },
+                    {
+                      "asDouble": 10.0,
+                      "attributes": [
+                        {
+                          "key": "model",
+                          "value": {
+                            "stringValue": "m"
+                          }
+                        },
+                        {
+                          "key": "provider",
+                          "value": {
+                            "stringValue": "p"
+                          }
+                        },
+                        {
+                          "key": "type",
+                          "value": {
+                            "stringValue": "input"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    },
+                    {
+                      "asDouble": 5.0,
+                      "attributes": [
+                        {
+                          "key": "model",
+                          "value": {
+                            "stringValue": "m"
+                          }
+                        },
+                        {
+                          "key": "provider",
+                          "value": {
+                            "stringValue": "p"
+                          }
+                        },
+                        {
+                          "key": "type",
+                          "value": {
+                            "stringValue": "output"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "{token}"
+              },
+              {
+                "description": "Priced spend from the journal's cumulative budget readings.",
+                "name": "agent6_cost_usd_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 0.25,
+                      "attributes": [],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "USD"
+              },
+              {
+                "description": "1 when the latest budget reading says some spend is unpriced, so the cost is a floor.",
+                "gauge": {
+                  "dataPoints": [
+                    {
+                      "asDouble": 0.0,
+                      "attributes": [],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ]
+                },
+                "name": "agent6_cost_partial",
+                "unit": "1"
+              },
+              {
+                "description": "Plan-window movement the run observed; the account's whole window, not this run alone.",
+                "name": "agent6_plan_observed_points_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 3.0,
+                      "attributes": [],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "The latest plan-window reading, 0 to 1.",
+                "gauge": {
+                  "dataPoints": [
+                    {
+                      "asDouble": 0.12,
+                      "attributes": [],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ]
+                },
+                "name": "agent6_plan_used_ratio",
+                "unit": "1"
+              },
+              {
+                "description": "Tool dispatches by tool and outcome.",
+                "name": "agent6_tool_calls_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [
+                        {
+                          "key": "outcome",
+                          "value": {
+                            "stringValue": "ok"
+                          }
+                        },
+                        {
+                          "key": "tool",
+                          "value": {
+                            "stringValue": "run_command"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Verification attempts by outcome.",
+                "name": "agent6_verify_attempts_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [
+                        {
+                          "key": "outcome",
+                          "value": {
+                            "stringValue": "failed"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Verification attempt durations.",
+                "histogram": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "attributes": [],
+                      "bucketCounts": [
+                        "0",
+                        "0",
+                        "0",
+                        "1",
+                        "0",
+                        "0",
+                        "0",
+                        "0",
+                        "0",
+                        "0"
+                      ],
+                      "count": "1",
+                      "explicitBounds": [
+                        1.0,
+                        5.0,
+                        15.0,
+                        30.0,
+                        60.0,
+                        120.0,
+                        300.0,
+                        600.0,
+                        1800.0
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "sum": 30.0,
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ]
+                },
+                "name": "agent6_verify_duration_seconds",
+                "unit": "s"
+              },
+              {
+                "description": "Distinct review findings by severity.",
+                "name": "agent6_findings_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [
+                        {
+                          "key": "severity",
+                          "value": {
+                            "stringValue": "block"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Open review findings by severity.",
+                "gauge": {
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [
+                        {
+                          "key": "severity",
+                          "value": {
+                            "stringValue": "block"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    },
+                    {
+                      "asDouble": 0.0,
+                      "attributes": [
+                        {
+                          "key": "severity",
+                          "value": {
+                            "stringValue": "nit"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    },
+                    {
+                      "asDouble": 0.0,
+                      "attributes": [
+                        {
+                          "key": "severity",
+                          "value": {
+                            "stringValue": "warn"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ]
+                },
+                "name": "agent6_open_findings",
+                "unit": "1"
+              },
+              {
+                "description": "Approval answers by decision and source.",
+                "name": "agent6_approvals_total",
+                "sum": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "asDouble": 1.0,
+                      "attributes": [
+                        {
+                          "key": "decision",
+                          "value": {
+                            "stringValue": "approved"
+                          }
+                        },
+                        {
+                          "key": "source",
+                          "value": {
+                            "stringValue": "tui"
+                          }
+                        }
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ],
+                  "isMonotonic": true
+                },
+                "unit": "1"
+              },
+              {
+                "description": "Time a run waited on an operator, by prompt kind.",
+                "histogram": {
+                  "aggregationTemporality": 2,
+                  "dataPoints": [
+                    {
+                      "attributes": [
+                        {
+                          "key": "kind",
+                          "value": {
+                            "stringValue": "approval"
+                          }
+                        }
+                      ],
+                      "bucketCounts": [
+                        "0",
+                        "0",
+                        "1",
+                        "0",
+                        "0",
+                        "0",
+                        "0",
+                        "0"
+                      ],
+                      "count": "1",
+                      "explicitBounds": [
+                        1.0,
+                        5.0,
+                        15.0,
+                        60.0,
+                        300.0,
+                        900.0,
+                        3600.0
+                      ],
+                      "startTimeUnixNano": "1792922400000000000",
+                      "sum": 6.0,
+                      "timeUnixNano": "1792922460000000000"
+                    }
+                  ]
+                },
+                "name": "agent6_operator_wait_duration_seconds",
+                "unit": "s"
+              }
+            ],
+            "scope": {
+              "name": "agent6.telemetry",
+              "version": "<agent6 version>"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "traces": {
+    "resourceSpans": [
+      {
+        "resource": {
+          "attributes": [
+            {
+              "key": "service.name",
+              "value": {
+                "stringValue": "agent6"
+              }
+            },
+            {
+              "key": "agent6.repo",
+              "value": {
+                "stringValue": "0123abcd"
+              }
+            }
+          ]
+        },
+        "scopeSpans": [
+          {
+            "scope": {
+              "name": "agent6.telemetry",
+              "version": "<agent6 version>"
+            },
+            "spans": [
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.role",
+                    "value": {
+                      "stringValue": "worker"
+                    }
+                  },
+                  {
+                    "key": "agent6.model",
+                    "value": {
+                      "stringValue": "m"
+                    }
+                  },
+                  {
+                    "key": "agent6.provider",
+                    "value": {
+                      "stringValue": "p"
+                    }
+                  },
+                  {
+                    "key": "agent6.ok",
+                    "value": {
+                      "boolValue": true
+                    }
+                  },
+                  {
+                    "key": "agent6.tokens_in",
+                    "value": {
+                      "intValue": "10"
+                    }
+                  },
+                  {
+                    "key": "agent6.tokens_out",
+                    "value": {
+                      "intValue": "5"
+                    }
+                  },
+                  {
+                    "key": "agent6.cache_read",
+                    "value": {
+                      "intValue": "2"
+                    }
+                  },
+                  {
+                    "key": "agent6.cache_creation",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "agent6.stop_reason",
+                    "value": {
+                      "stringValue": "tool_use"
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922403000000000",
+                "kind": 3,
+                "name": "agent6.model_call",
+                "parentSpanId": "2807016c73f5f1db",
+                "spanId": "9faba09783670e6c",
+                "startTimeUnixNano": "1792922401000000000",
+                "status": {
+                  "code": 1
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.wait.kind",
+                    "value": {
+                      "stringValue": "approval"
+                    }
+                  },
+                  {
+                    "key": "agent6.source",
+                    "value": {
+                      "stringValue": "tui"
+                    }
+                  },
+                  {
+                    "key": "agent6.approved",
+                    "value": {
+                      "boolValue": true
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922409000000000",
+                "kind": 1,
+                "name": "agent6.wait",
+                "parentSpanId": "c126109701736822",
+                "spanId": "837fcc361747f24c",
+                "startTimeUnixNano": "1792922403000000000",
+                "status": {
+                  "code": 1
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.tool",
+                    "value": {
+                      "stringValue": "run_command"
+                    }
+                  },
+                  {
+                    "key": "agent6.ok",
+                    "value": {
+                      "boolValue": true
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922410000000000",
+                "kind": 1,
+                "name": "agent6.tool",
+                "parentSpanId": "2807016c73f5f1db",
+                "spanId": "c126109701736822",
+                "startTimeUnixNano": "1792922403000000000",
+                "status": {
+                  "code": 1
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.verify.id",
+                    "value": {
+                      "stringValue": "v1"
+                    }
+                  },
+                  {
+                    "key": "agent6.verify.scoped",
+                    "value": {
+                      "boolValue": false
+                    }
+                  },
+                  {
+                    "key": "agent6.verify.outcome",
+                    "value": {
+                      "stringValue": "failed"
+                    }
+                  },
+                  {
+                    "key": "agent6.verify.exit_code",
+                    "value": {
+                      "intValue": "1"
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922440000000000",
+                "kind": 1,
+                "name": "agent6.verify",
+                "parentSpanId": "2807016c73f5f1db",
+                "spanId": "1fa58c3c51ec0844",
+                "startTimeUnixNano": "1792922410000000000",
+                "status": {
+                  "code": 2
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.turn",
+                    "value": {
+                      "intValue": "1"
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922441000000000",
+                "kind": 1,
+                "name": "agent6.turn",
+                "parentSpanId": "b7877cff0df9a0e7",
+                "spanId": "2807016c73f5f1db",
+                "startTimeUnixNano": "1792922401000000000",
+                "status": {
+                  "code": 0
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.panel.id",
+                    "value": {
+                      "stringValue": "p"
+                    }
+                  },
+                  {
+                    "key": "agent6.panel.trigger",
+                    "value": {
+                      "stringValue": ""
+                    }
+                  },
+                  {
+                    "key": "agent6.panel.seats",
+                    "value": {
+                      "intValue": "0"
+                    }
+                  },
+                  {
+                    "key": "agent6.panel.blocked",
+                    "value": {
+                      "boolValue": true
+                    }
+                  },
+                  {
+                    "key": "agent6.panel.completion",
+                    "value": {
+                      "stringValue": "complete"
+                    }
+                  },
+                  {
+                    "key": "agent6.panel.block_findings",
+                    "value": {
+                      "intValue": "1"
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922445000000000",
+                "kind": 1,
+                "name": "agent6.review_panel",
+                "parentSpanId": "c2dda89e6fbff5a5",
+                "spanId": "0966e7ec35edc5c3",
+                "startTimeUnixNano": "1792922442000000000",
+                "status": {
+                  "code": 2
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.turn",
+                    "value": {
+                      "intValue": "2"
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922460000000000",
+                "kind": 1,
+                "name": "agent6.turn",
+                "parentSpanId": "b7877cff0df9a0e7",
+                "spanId": "c2dda89e6fbff5a5",
+                "startTimeUnixNano": "1792922441000000000",
+                "status": {
+                  "code": 0
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              },
+              {
+                "attributes": [
+                  {
+                    "key": "agent6.session.id",
+                    "value": {
+                      "stringValue": "run-AAAAAA"
+                    }
+                  },
+                  {
+                    "key": "agent6.execution.id",
+                    "value": {
+                      "stringValue": "e1"
+                    }
+                  },
+                  {
+                    "key": "agent6.execution.kind",
+                    "value": {
+                      "stringValue": "start"
+                    }
+                  },
+                  {
+                    "key": "agent6.mode",
+                    "value": {
+                      "stringValue": "run"
+                    }
+                  },
+                  {
+                    "key": "agent6.end.reason",
+                    "value": {
+                      "stringValue": "finish_session"
+                    }
+                  },
+                  {
+                    "key": "agent6.verified",
+                    "value": {
+                      "stringValue": "failed"
+                    }
+                  },
+                  {
+                    "key": "agent6.turns",
+                    "value": {
+                      "intValue": "2"
+                    }
+                  }
+                ],
+                "endTimeUnixNano": "1792922460000000000",
+                "kind": 1,
+                "name": "agent6.execution",
+                "spanId": "b7877cff0df9a0e7",
+                "startTimeUnixNano": "1792922400000000000",
+                "status": {
+                  "code": 2
+                },
+                "traceId": "570c1c9a161e5dec6450a35beb5fd13c"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
