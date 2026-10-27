@@ -203,7 +203,7 @@ State is snapshotted before each model call and checkpointed per turn.
 - a run merged `--into` a branch other than the one it started on keeps its base, and merges into that branch again from its landed tip
 - `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with what landed
 - a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` lands it with the run, or `resume --force` continues without it
-- files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside, `include` lets the run's next commit take them ([Config](config.md))
+- files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` lets the run's next commit take them ([Config](config.md))
 - when `stash` refuses over a file the run also changed, its printed `git restore --source ...` command discards only your edit and keeps the run's last tree; plain `git restore FILE` returns to HEAD, which can remove the run's work
 - a new untracked file is left out of the run's commits as yours, unless the last execution died mid-turn (a kill, a crash): a command of that turn may have written it, so the run keeps it, and the resume names each file either way
 

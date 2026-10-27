@@ -2111,10 +2111,18 @@ def test_status_and_name_status_leave_out_everything_under_an_excluded_directory
     """An exclude entry covers the files under it: a hidden directory's files never count."""
     _init_repo(tmp_path)
     (tmp_path / "secrets" / "deep").mkdir(parents=True)
+    (tmp_path / "secrets" / "tracked.txt").write_text("t\n", encoding="utf-8")
+    (tmp_path / "secrets" / "gone.txt").write_text("g\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "tracked"], check=True)
+    (tmp_path / "secrets" / "tracked.txt").write_text("changed\n", encoding="utf-8")
+    (tmp_path / "secrets" / "gone.txt").unlink()
     (tmp_path / "secrets" / "deep" / "key.txt").write_text("k\n", encoding="utf-8")
     (tmp_path / "secrets.txt").write_text("not under it\n", encoding="utf-8")
     assert git_read.status(tmp_path, exclude={"secrets"}).untracked_count == 1
+    assert git_read.status(tmp_path, exclude={"secrets"}).modified_count == 0
     assert git_read.status(tmp_path, exclude={"secrets", "secrets.txt"}).is_clean
+    assert git_read.status(tmp_path).modified_count == 2
     assert git_read.worktree_name_status(tmp_path, exclude={"secrets"}) == (("A", "secrets.txt"),)
     assert git_read.excluded("secrets/deep/key.txt", {"secrets"})
     assert git_read.excluded("secrets/", {"secrets"})

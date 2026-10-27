@@ -72,7 +72,10 @@ def session_exit_code(result: _snapshot.SessionResult, *, stranded: bool = False
 
 
 def stranded_edits(
-    result: _snapshot.SessionResult, layout: sessions_layout.SessionLayout, cwd: pathlib.Path
+    result: _snapshot.SessionResult,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
+    hidden: frozenset[str] = frozenset(),
 ) -> bool:
     """Tell whether a completed run left its edits uncommitted with no commit landed.
 
@@ -83,6 +86,8 @@ def stranded_edits(
         result: The session's result.
         layout: The session's layout.
         cwd: The checkout.
+        hidden: The run's hidden paths inside the repository, left out like its
+            untracked files.
 
     Returns:
         Whether the edits are stranded.
@@ -104,7 +109,7 @@ def stranded_edits(
         return False
     dirty = False
     with contextlib.suppress(errors.GitError):
-        exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
+        exclude = sessions_layout.read_untracked_at_start(layout.session_dir) | hidden
         dirty = not git_read.status(cwd, exclude=exclude).is_clean
     return dirty
 
@@ -339,6 +344,7 @@ def print_session_end(
     budget: agent6_budget.BudgetTracker,
     console_stream: bool,
     reporter: app_reporter.Reporter,
+    hidden: frozenset[str] = frozenset(),
 ) -> None:
     """Print the composed end-of-run block: outcome, summary, cost and the next step.
 
@@ -346,6 +352,8 @@ def print_session_end(
         result: The session's result.
         layout: The session's layout.
         cwd: The checkout.
+        hidden: The run's hidden paths inside the repository, left out like its
+            untracked files.
         budget: The execution's tracker.
         console_stream: Whether a live console view already rendered the done line, so
             only cost and the footer are added.
@@ -393,7 +401,7 @@ def print_session_end(
     reporter.cost(budget.format_summary(include_stop_reason=result.reason != "budget_exhausted"))
     _print_run_total_across_executions(layout, reporter=reporter)
     reporter.out(f"  evidence:    agent6 sessions receipt {layout.session_id}")
-    _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter)
+    _print_run_branch_footer(result, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
 
 
 _LEFT_OUT_CAP = 10  # paths the end summary's left-out line names before it counts the rest
@@ -405,6 +413,7 @@ def _print_run_branch_footer(
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
     reporter: app_reporter.Reporter,
+    hidden: frozenset[str] = frozenset(),
 ) -> None:
     """Print where the run's changes are, every claim checked against git.
 
@@ -412,6 +421,8 @@ def _print_run_branch_footer(
         result: The session's result.
         layout: The session's layout.
         cwd: The checkout.
+        hidden: The run's hidden paths inside the repository, left out like its
+            untracked files.
         reporter: Receives the lines.
     """
     run_branch = ""
@@ -463,7 +474,12 @@ def _print_run_branch_footer(
     elif result.completed and (manifest is None or manifest.mode not in ("plan", "ask")):
         # A plan or an ask never commits: its deliverable is printed above.
         _print_no_commit_footer(
-            result, layout=layout, cwd=cwd, run_branch=run_branch, reporter=reporter
+            result,
+            layout=layout,
+            cwd=cwd,
+            run_branch=run_branch,
+            reporter=reporter,
+            hidden=hidden,
         )
     elif (
         not result.completed
@@ -521,6 +537,7 @@ def _print_no_commit_footer(
     cwd: pathlib.Path,
     run_branch: str,
     reporter: app_reporter.Reporter,
+    hidden: frozenset[str] = frozenset(),
 ) -> None:
     """Print the footer for a run whose commit never landed.
 
@@ -531,18 +548,20 @@ def _print_no_commit_footer(
         result: The session's result.
         layout: The session's layout.
         cwd: The checkout.
+        hidden: The run's hidden paths inside the repository, left out like its
+            untracked files.
         run_branch: The promised branch, or "".
         reporter: Receives the lines.
     """
     try:
-        exclude = sessions_layout.read_untracked_at_start(layout.session_dir)
+        exclude = sessions_layout.read_untracked_at_start(layout.session_dir) | hidden
         tree_clean: bool | None = git_read.status(cwd, exclude=exclude).is_clean
     except errors.GitError as exc:
         tree_clean = None
         reporter.out(
             f"\ncould not check the working tree (git failed: {exc}); inspect it manually."
         )
-    if tree_clean is not None and stranded_edits(result, layout, cwd):
+    if tree_clean is not None and stranded_edits(result, layout, cwd, hidden=hidden):
         where = f" on {run_branch}, so the branch was never created" if run_branch else ""
         reporter.out(f"\nWARNING: the run finished with no commit{where}.")
         reporter.out(

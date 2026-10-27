@@ -341,7 +341,13 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             run_branch = git_read.run_branch_for(effective_session_id)
 
         # A run that would have to ask about tracked changes but cannot refuses here.
-        modified = git_read.modified_paths(cwd) if mode == "run" else []
+        hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
+        # A hidden path's change is the operator's business: never asked about, never stashed.
+        modified = (
+            [p for p in git_read.modified_paths(cwd) if not git_read.excluded(p, hidden)]
+            if mode == "run"
+            else []
+        )
         must_ask = bool(modified) and cfg.git.dirty_tree == "ask"
         answerable = frontend.capabilities.can_ask or ipc.away_mode(layout.session_dir) == "wait"
         unmerged_run = (
@@ -453,7 +459,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 if choice == "stash":
                     try:
                         git_ops.stash_tracked_changes(
-                            cwd, git_ops.auto_stash_message(effective_session_id)
+                            cwd,
+                            git_ops.auto_stash_message(effective_session_id),
+                            paths=modified if hidden else (),
                         )
                         stashed = True
                     except errors.GitError as exc:
@@ -469,8 +477,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                     cwd,
                     unmerged_run,
                     base_sha=base_sha,
-                    exclude=untracked_at_start
-                    | git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths),
+                    exclude=untracked_at_start | hidden,
                 )
                 if included is not None:
                     stamps.stamp_includes(layout.session_dir, included)

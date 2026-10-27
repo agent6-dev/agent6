@@ -221,8 +221,8 @@ def status(path: pathlib.Path, *, exclude: Collection[str] = ()) -> GitStatus:
 
     Args:
         path: The repository.
-        exclude: Repo-relative paths not counted, each with everything under it: a run's
-            `untracked_at_start` and its hidden paths.
+        exclude: Repo-relative paths not counted, untracked or changed, each with everything
+            under it: a run's `untracked_at_start` and its hidden paths.
 
     Returns:
         The status.
@@ -243,9 +243,10 @@ def status(path: pathlib.Path, *, exclude: Collection[str] = ()) -> GitStatus:
     untracked = 0
     modified = 0
     for code, rel in porcelain_entries(path):
+        if excluded(rel, exclude):
+            continue
         if code == "??":
-            if not excluded(rel, exclude):
-                untracked += 1
+            untracked += 1
         else:
             modified += 1
     return GitStatus(
