@@ -101,8 +101,22 @@ _UNSAFE: list[tuple[Callable[[str], str], str]] = [
         ),
         "127.0.0.1",
     ),
-    # a reserved authorization parameter
+    # a reserved authorization parameter, in the table or in the endpoint's own query
     (lambda t: t + '\n[providers.work.oauth.authorization_params]\nstate = "fixed"\n', "state"),
+    (
+        lambda t: t.replace(
+            'authorization_endpoint = "https://login.example/authorize"',
+            'authorization_endpoint = "https://login.example/authorize?client_id=other"',
+        ),
+        "client_id",
+    ),
+    # a plaintext base_url off loopback would carry the grant readable
+    (
+        lambda t: t.replace(
+            'base_url = "https://models.example/v1"', 'base_url = "http://10.0.0.5/v1"'
+        ),
+        "plain http",
+    ),
     # an unknown key
     (lambda t: t + 'client_secret = "nope"\n', "client_secret"),
 ]

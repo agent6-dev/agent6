@@ -363,6 +363,8 @@ class _ProviderBase(pydantic.BaseModel):
         """
         if self.oauth is None:
             return self
+        if refusal := _oauth.credential_url_refusal(self.base_url, field="base_url"):
+            raise ValueError(f"with oauth set, the grant rides every request: {refusal}")
         if self.api_key_env or self.token_command:
             named = "api_key_env" if self.api_key_env else "token_command"
             raise ValueError(
@@ -457,15 +459,12 @@ class ChatGPTProviderEntry(_ProviderBase):
             The headers unchanged.
 
         Raises:
-            ValueError: A header names authorization, chatgpt-account-id, originator or
-                session-id in any case.
+            ValueError: A header names chatgpt-account-id, originator or session-id in any
+                case, or fails the shared `extra_headers_refusal`.
         """
-        reserved = {"authorization", "chatgpt-account-id", "originator", "session-id"}
-        clash = sorted(k for k in v if k.lower() in reserved)
-        if clash:
-            raise ValueError(
-                f"extra_headers may not override the chatgpt auth headers: {', '.join(clash)}"
-            )
+        reserved = frozenset({"chatgpt-account-id", "originator", "session-id"})
+        if refusal := _headers.extra_headers_refusal(v, reserved=reserved):
+            raise ValueError(refusal)
         return v
 
     @pydantic.model_validator(mode="after")

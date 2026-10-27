@@ -57,6 +57,9 @@ def test_a_literal_string_stays_literal_and_rides_the_api_classes_only() -> None
     [
         ({"authorization": "Bearer x"}, "transport owns"),
         ({"Cookie": "a=b"}, "transport owns"),
+        ({"API-Key": "x"}, "transport owns"),
+        ({"x-t": {"template": "a\nb"}}, "control character"),
+        ({"x-t": {"template": "caf\u00e9 {model}"}}, "control character"),
         ({"X-A": "1", "x-a": "2"}, "same header twice"),
         ({"x-a": "bad\r\nvalue"}, "control character"),
         ({"bad name": "v"}, "not a valid header name"),

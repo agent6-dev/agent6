@@ -42,6 +42,7 @@ API_TARGETS: frozenset[str] = frozenset({"inference", "models", "usage"})
 PROTECTED_HEADERS: frozenset[str] = frozenset(
     {
         "accept",
+        "api-key",
         "authorization",
         "connection",
         "content-length",
@@ -165,7 +166,10 @@ class HeaderTemplate(pydantic.BaseModel):
                 credential or listing target, a `when` off the inference target, or a
                 repeated target.
         """
-        facts = self.facts()
+        segments = parse_template(self.template)
+        if any(s.kind == "text" and not VALUE_OK.fullmatch(s.value) for s in segments):
+            raise ValueError("template text holds a control character, newline or non-ASCII byte")
+        facts = frozenset(s.value for s in segments if s.kind == "fact")
         unknown = sorted(facts - FACTS_EVERYWHERE - FACTS_INFERENCE)
         if unknown:
             raise ValueError(f"template names no such fact: {', '.join(unknown)}")

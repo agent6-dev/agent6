@@ -245,6 +245,31 @@ class OAuthConfig(pydantic.BaseModel):
             return None
         return _require_credential_url(v, f"oauth.{info.field_name}")
 
+    @pydantic.field_validator("authorization_endpoint")
+    @classmethod
+    def _endpoint_query_leaves_the_protocol_alone(cls, v: str | None) -> str | None:
+        """Refuse an authorization endpoint whose own query sets a sign-in parameter.
+
+        Args:
+            v: The URL, or None.
+
+        Returns:
+            The URL unchanged.
+
+        Raises:
+            ValueError: The query names one of `RESERVED_AUTHORIZATION_PARAMS`.
+        """
+        if v is None:
+            return None
+        keys = {k for k, _ in parse.parse_qsl(parse.urlsplit(v).query, keep_blank_values=True)}
+        clash = sorted(keys & RESERVED_AUTHORIZATION_PARAMS)
+        if clash:
+            raise ValueError(
+                f"oauth.authorization_endpoint {v!r} sets the sign-in's own parameters in its"
+                f" query: {', '.join(clash)}"
+            )
+        return v
+
     @pydantic.field_validator("redirect_uri")
     @classmethod
     def _redirect_is_a_loopback_path(cls, v: str) -> str:
