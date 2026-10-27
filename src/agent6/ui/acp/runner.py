@@ -244,14 +244,6 @@ class Announced:
                 self._changed.wait(0.5)  # abandonment is polled; add and close wake at once
 
 
-def _result_paths(event: dict[str, Any]) -> tuple[str, ...]:
-    """Return the paths a tool.result journaled, for the editor's follow-along."""
-    raw = event.get("paths")
-    if not isinstance(raw, list):
-        return ()
-    return tuple(path for path in raw if isinstance(path, str) and path.strip())
-
-
 @dataclasses.dataclass
 class RunBridge:
     """Run prompts for one ACP connection.
@@ -634,7 +626,7 @@ class RunBridge:
                 event_type = str(event.get("type", ""))
                 for body in info.feed(event) if info is not None else ():
                     self.server.notify_raw(body)
-                paths = _result_paths(event) if event_type == "tool.result" else ()
+                paths = updates.result_paths(event) if event_type == "tool.result" else ()
                 if event_type == "role.call":
                     streamed.clear()
                 is_delta = event_type in ("role.thinking_delta", "role.text_delta")
@@ -696,7 +688,7 @@ class RunBridge:
             prompt: The prompt this execution runs; the editor shows it already, so its
                 echo as steering is not sent, while a steer from another front-end is.
         """
-        if item.kind == "operator" and item.body.strip() == prompt.strip():
+        if item.kind == "task" or (item.kind == "operator" and item.body.strip() == prompt.strip()):
             return
         wire_id = (
             updates.tool_call_id(item, session.session_id, announced.execution)

@@ -10,17 +10,18 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent6 import directive, evidence
-from agent6.viewmodel import _session_status, _state_view, receipt, transcript
+from agent6.viewmodel import _session_status, _state_view, events, receipt, transcript
 
 # The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {
     "thinking": "agent_thought_chunk",
     "text": "agent_message_chunk",
     "operator": "user_message_chunk",
+    "task": "user_message_chunk",
 }
 
 # ACP's kind per built-in tool, the editor's icon; an MCP tool reads `other`.
@@ -213,6 +214,68 @@ class RunInfo:
         return [_update(self.acp_session_id, usage)]
 
 
+def replay(
+    journal: Iterable[dict[str, Any]],
+    *,
+    acp_session_id: str,
+    cwd: pathlib.Path,
+    notify: Callable[[dict[str, Any]], None],
+) -> int:
+    """Replay a recorded run through the shared fold and ACP projection.
+
+    Args:
+        journal: The run's events in emission order.
+        acp_session_id: The conversation id, also the recorded run's id.
+        cwd: The working directory for tool locations.
+        notify: Sends each notification before the load request returns.
+
+    Returns:
+        The number of recorded executions, for the next prompt's tool call ids.
+    """
+    fold = transcript.TranscriptFold()
+    execution = 0
+    announced: set[str] = set()
+
+    def send(item: transcript.TranscriptItem, paths: tuple[str, ...] = ()) -> None:
+        wire_id = tool_call_id(item, acp_session_id, max(1, execution))
+        for body in updates_for(
+            item,
+            acp_session_id=acp_session_id,
+            wire_id=wire_id,
+            announced=wire_id in announced,
+            cwd=cwd,
+            paths=paths,
+        ):
+            notify(body)
+        if item.kind == "tool":
+            announced.add(wire_id)
+
+    for event in journal:
+        event_type = event.get("type")
+        paths = result_paths(event) if event_type == "tool.result" else ()
+        for item in fold.feed(event):
+            wire_item = item
+            if item.kind == "task":
+                # The fold's task is a headline; a loaded conversation keeps the full prompt.
+                wire_item = dataclasses.replace(item, body=str(event.get("user_task", "")))
+            send(wire_item, paths)
+        if event_type in events.SESSION_START_EVENTS:
+            # The fold settles the previous execution's open calls before this boundary.
+            execution += 1
+            announced.clear()
+    for item in fold.settle_open_calls("the run died"):
+        send(item)
+    return execution
+
+
+def result_paths(event: dict[str, Any]) -> tuple[str, ...]:
+    """Return the paths a tool.result journaled, for the editor's follow-along."""
+    raw = event.get("paths")
+    if not isinstance(raw, list):
+        return ()
+    return tuple(path for path in raw if isinstance(path, str) and path.strip())
+
+
 def updates_for(
     item: transcript.TranscriptItem,
     *,
@@ -238,8 +301,8 @@ def updates_for(
         streamed: The item is one delta of a message in flight, sent whole.
 
     Returns:
-        The notifications, in the order to send them; none for a blank message or a `task`
-        item.
+        The notifications, in sending order; none for a blank message.
+        An unmapped kind becomes an agent message naming its kind.
     """
     if item.kind == "done":
         summary = item.body.strip()
@@ -279,9 +342,14 @@ def updates_for(
     chunk = _CHUNK_KIND.get(item.kind)
     # A streamed delta keeps every byte; a whole message is stripped, and a blank one is none.
     body = item.body if streamed else item.body.strip()
-    if chunk is None or not body:
-        return []
-    return [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})]
+    if chunk is None:
+        detail = "\n".join(
+            part for part in (body, item.name, item.arg, item.detail, item.tail) if part
+        )
+        return [message_update(acp_session_id, f"{item.kind}: {detail}".rstrip())]
+    return (
+        [_update(acp_session_id, {"sessionUpdate": chunk, "content": _text(body)})] if body else []
+    )
 
 
 def status_line(item: transcript.TranscriptItem) -> str:

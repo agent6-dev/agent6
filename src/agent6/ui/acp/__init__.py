@@ -9,8 +9,7 @@ absolute and line numbers are 1-based, as the spec states.
 
 ACP's client-owned filesystem and terminal (`fs/*`, `terminal/*`) are not adopted:
 the agent owns a jail the operator configured, so an editor cannot be talked into
-doing the model's filesystem work. `session/load` is not implemented, and
-`initialize` reports it absent.
+doing the model's filesystem work.
 """
 
 from __future__ import annotations

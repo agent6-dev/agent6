@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Any
+from typing import Any, cast
 
 from agent6 import directive
 from agent6.ui.acp import updates as acp_updates
@@ -61,6 +61,19 @@ def test_the_operators_own_words_echo_back_as_theirs() -> None:
         transcript.TranscriptItem("operator", body="also add a flag"), acp_session_id="s"
     )
     assert _kinds(updates) == ["user_message_chunk"]
+
+
+def test_an_unmapped_item_names_its_kind_in_an_agent_message() -> None:
+    """A fold extension remains visible even before ACP gains a native mapping."""
+    (notification,) = acp_updates.updates_for(
+        transcript.TranscriptItem(
+            cast("transcript.ItemKind", "future_kind"), body="Recorded detail"
+        ),
+        acp_session_id="s",
+    )
+    update = notification["params"]["update"]
+    assert update["sessionUpdate"] == "agent_message_chunk"
+    assert update["content"]["text"] == "[agent6] future_kind: Recorded detail\n"
 
 
 def test_a_tool_is_a_call_and_then_an_outcome() -> None:

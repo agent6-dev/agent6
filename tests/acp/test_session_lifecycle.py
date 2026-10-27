@@ -19,6 +19,7 @@ from agent6 import paths
 from agent6.sessions import process
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
+from tests import review_helpers
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +88,7 @@ def test_the_handshake_advertises_the_session_lifecycle() -> None:
     )
     capabilities = reply["result"]["agentCapabilities"]
     assert capabilities["sessionCapabilities"] == {"list": {}, "resume": {}, "close": {}}
-    assert capabilities["loadSession"] is False
+    assert capabilities["loadSession"] is True
 
 
 def test_list_names_the_repositorys_resumable_runs_newest_first(tmp_path: pathlib.Path) -> None:
@@ -216,6 +217,147 @@ def test_resume_refuses_a_run_whose_worker_is_alive(tmp_path: pathlib.Path) -> N
     finally:
         process.clear_worker_pid(d)
     assert "is running; `agent6 attach busy-run-AAAAAA`" in reply["error"]["message"]
+
+
+def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathlib.Path) -> None:
+    """Loading keeps full prompts, tool outcomes and findings in journal order."""
+    cwd = _repo(tmp_path)
+    reviewed = review_helpers.reviewed_session(cwd)
+    panel = json.loads(reviewed.logs_path.read_text())
+    panel.pop("ts")
+    panel["findings"] = panel["findings"][:1]
+    panel["injected_finding_ids"] = ["f1"]
+    task = "Inspect the parser\n\n" + "Keep every detail. " * 20
+    d = _record(cwd, "quiet-run-AAAAAA", task, mtime=time.time())
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": task},
+        {"type": "role.thinking_delta", "text": "Check the empty input."},
+        {"type": "role.text_delta", "text": "I will "},
+        {"type": "role.text_delta", "text": "inspect it."},
+        {"type": "role.result", "role": "worker", "text": "I will inspect it."},
+        {"type": "tool.call", "call_id": 1, "name": "read_file", "args": {"path": "parser.py"}},
+        {
+            "type": "tool.result",
+            "call_id": 1,
+            "name": "read_file",
+            "ok": True,
+            "summary": "2 lines",
+            "head_tail": "def parse(text):\n    return text[0]",
+            "lines_total": 2,
+            "paths": ["parser.py"],
+        },
+        panel,
+        {"type": "diff.updated", "sha": "abc1234", "patch": "+guard"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    journal = "".join(json.dumps(row) + "\n" for row in rows)
+    (d / "logs.jsonl").write_text(journal, encoding="utf-8")
+    sessions = _sessions(None)
+    frames = _drive(
+        _msg(1, "session/load", cwd=str(cwd), sessionId=d.name, mcpServers=[]) + b"\n",
+        sessions,
+    )
+    assert frames[-1] == {"jsonrpc": "2.0", "id": 1, "result": {}}
+    assert all(frame["method"] == "session/update" for frame in frames[:-1])
+    assert all(frame["params"]["sessionId"] == d.name for frame in frames[:-1])
+    updates = [frame["params"]["update"] for frame in frames[:-1]]
+    assert [update["sessionUpdate"] for update in updates] == [
+        "user_message_chunk",
+        "agent_thought_chunk",
+        "agent_message_chunk",
+        "tool_call",
+        "tool_call_update",
+        "agent_message_chunk",
+        "agent_message_chunk",
+        "agent_message_chunk",
+        "agent_message_chunk",
+    ]
+    assert updates[0]["content"]["text"] == task.strip()
+    assert updates[1]["content"]["text"] == "Check the empty input."
+    assert updates[2]["content"]["text"] == "I will inspect it."
+    assert updates[3]["toolCallId"] == updates[4]["toolCallId"] == f"{d.name}:1:1"
+    assert updates[3]["title"] == "read_file parser.py"
+    assert updates[4]["status"] == "completed"
+    assert updates[4]["content"] == [
+        {
+            "type": "content",
+            "content": {
+                "type": "text",
+                "text": "2 lines\ndef parse(text):\n    return text[0]\n…(2 lines)",
+            },
+        }
+    ]
+    assert updates[4]["locations"] == [{"path": str(cwd / "parser.py")}]
+    assert updates[5]["content"]["text"].startswith("[agent6] Review panel: complete;")
+    assert updates[6]["content"]["text"] == (
+        "[agent6] Finding f1 · block · parser.py:3-4\nDefect f1\nReproduce with an empty input.\n"
+    )
+    assert updates[7]["content"]["text"] == "[agent6] committed abc1234 · 1 lines\n"
+    assert updates[8]["content"]["text"] == "[agent6] Session passed - 1 tool · 1 commit\n"
+    assert (d / "logs.jsonl").read_text(encoding="utf-8") == journal
+
+
+def test_load_rejects_an_unknown_run_with_the_resume_error(tmp_path: pathlib.Path) -> None:
+    """An unknown load id is invalid params, not an unsupported method or a new session."""
+    cwd = _repo(tmp_path)
+    (reply,) = _drive(
+        _msg(1, "session/load", cwd=str(cwd), sessionId="gone-run-ZZZZZZ", mcpServers=[]) + b"\n",
+        _sessions(None),
+    )
+    assert reply["error"] == {
+        "code": -32602,
+        "message": f"no recorded run 'gone-run-ZZZZZZ' in {cwd}",
+    }
+
+
+def test_loaded_executions_keep_distinct_tools_and_resume_the_same_run(
+    tmp_path: pathlib.Path,
+) -> None:
+    """Replayed call ids cannot collide across executions or with the next prompt's calls."""
+    cwd = _repo(tmp_path)
+    d = _record(cwd, "quiet-run-AAAAAA", "first", mtime=time.time())
+    call = {"type": "tool.call", "name": "run_command", "call_id": 1, "args": {"argv": ["pwd"]}}
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "first"},
+        call,
+        {"type": "loop.resume.start"},
+        {"type": "loop.steer.injected", "text": "carry on"},
+        call,
+    ]
+    (d / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    seen: list[tuple[str, str, int, str]] = []
+
+    def run(session: acp_session.Session, text: str) -> str:
+        seen.append((session.acp_id, session.session_id, session.execution, text))
+        return "end_turn"
+
+    sessions = _sessions(run)
+    frames = _drive(
+        _msg(1, "session/load", cwd=str(cwd), sessionId=d.name, mcpServers=[]) + b"\n",
+        sessions,
+    )
+    assert frames[-1] == {"jsonrpc": "2.0", "id": 1, "result": {}}
+    updates = [frame["params"]["update"] for frame in frames[:-1]]
+    assert [
+        update["content"]["text"]
+        for update in updates
+        if "content" in update and update["sessionUpdate"] == "user_message_chunk"
+    ] == ["first", "carry on"]
+    tools = [update for update in updates if "toolCallId" in update]
+    assert [(tool["toolCallId"], tool["status"]) for tool in tools] == [
+        (f"{d.name}:1:1", "in_progress"),
+        (f"{d.name}:1:1", "failed"),
+        (f"{d.name}:2:1", "in_progress"),
+        (f"{d.name}:2:1", "failed"),
+    ]
+    assert "no result (the run died)" in tools[-1]["content"][0]["content"]["text"]
+    (reply,) = _drive(
+        _msg(2, "session/prompt", sessionId=d.name, prompt=[{"type": "text", "text": "more"}])
+        + b"\n",
+        sessions,
+    )
+    assert reply["result"] == {"stopReason": "end_turn"}
+    assert seen == [(d.name, d.name, 2, "more")]
 
 
 def test_close_drops_an_idle_conversation_and_cancels_a_running_one(

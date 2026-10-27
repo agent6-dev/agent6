@@ -107,19 +107,24 @@ def test_the_recorded_run_produces_only_valid_session_updates() -> None:
         transcript.TranscriptItem(kind="commit", arg="abc1234", detail="+3 -1"),
         transcript.TranscriptItem(kind="thinking", body="hmm"),
         transcript.TranscriptItem(kind="operator", body="do the other thing"),
+        transcript.TranscriptItem(kind="task", body="the opening prompt"),
+        transcript.TranscriptItem(kind="text", body="the reply"),
+        transcript.TranscriptItem(kind="marker", body="a finding"),
     ],
 )
 def test_each_fold_item_projects_to_a_valid_update(item: transcript.TranscriptItem) -> None:
     """Item kinds the recorded run does not happen to contain."""
     validator = _validator("SessionNotification")
     paths = ("a.py",) if item.name == "apply_edit" else ()
-    for body in updates.updates_for(
+    notifications = updates.updates_for(
         item,
         acp_session_id="s",
         wire_id=updates.tool_call_id(item, "r", 1),
         cwd=pathlib.Path("/repo"),
         paths=paths,
-    ):
+    )
+    assert notifications, f"the {item.kind} item was dropped"
+    for body in notifications:
         assert not _errors(validator, body["params"]), json.dumps(body["params"])
 
 

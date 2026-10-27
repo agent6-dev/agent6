@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Serve the session lifecycle: new, list, resume, close, prompt and cancel.
+"""Serve the session lifecycle: new, list, load, resume, close, prompt and cancel.
 
 A prompt runs on a worker thread: a blocked read loop could not receive the
 `session/cancel` ACP requires to work during one. A conversation's id is the run id its
@@ -23,8 +23,8 @@ from agent6 import kinds
 from agent6.app import preflight, stop
 from agent6.sessions import id, ipc, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.acp import rpc
-from agent6.viewmodel import listing
+from agent6.ui.acp import rpc, updates
+from agent6.viewmodel import listing, tail
 
 # What a prompt answers; `cancelled` is the operator's act, not a failure.
 StopReason = str
@@ -211,6 +211,33 @@ class Sessions:
                 )
             return {}  # the conversation is open already; its counters carry on
         self._by_id[session_id] = Session(acp_id=session_id, cwd=cwd, session_id=session_id)
+        return {}
+
+    def load(
+        self, params: dict[str, Any], *, notify: Callable[[dict[str, Any]], None]
+    ) -> dict[str, Any]:
+        """Open a recorded run and replay its conversation before returning.
+
+        Args:
+            params: The run's `sessionId` and repository's absolute `cwd`.
+            notify: Sends each `session/update` notification.
+
+        Returns:
+            An empty reply after the replay.
+
+        Raises:
+            RpcError: The resume checks refuse the requested run or editor extras.
+        """
+        self.resume(params)
+        session = self.get(params)
+        saved = session.layout(self.state_dir_for(session.cwd))
+        execution = updates.replay(
+            tail.tail_events(saved.logs_path, follow=False),
+            acp_session_id=session.acp_id,
+            cwd=session.cwd,
+            notify=notify,
+        )
+        session.execution = max(session.execution, execution)
         return {}
 
     def close(self, params: dict[str, Any]) -> dict[str, Any]:

@@ -107,6 +107,7 @@ A session is one conversation in one directory.
   Without `cwd` it covers every repository the connection opened a session in.
 - `session/resume` opens a conversation on a recorded run by that id, so an editor reopens its thread after a restart.
   The next prompt resumes the run with its text as the steering instruction, as every follow-up prompt does; a plan, an ask, a run whose worker is alive, or a run `agent6 resume` would refuse is refused with the same words.
+- `session/load` opens the recorded run like `session/resume`, replays its journal as ordered `session/update` notifications, then returns.
 - `session/close` ends a conversation; a prompt in flight is cancelled first and answers `cancelled`.
 - `session/cancel` cuts a model call in flight and ends a running foreground command at once, without waiting for or signalling the worker (the ACP server itself).
   The prompt answers `cancelled` (ACP's word) and the run's record reads `stopped`, as every operator stop does; what it had not yet committed stays in the tree for the next prompt, which resumes it.
@@ -116,7 +117,6 @@ A session is one conversation in one directory.
 
 ## Not implemented
 
-- `session/load`, the history replay: `session/resume` reopens a recorded run without replaying it, and `initialize` reports `loadSession` absent.
 - `session/delete`: a run's record is the operator's to remove (`agent6 sessions rm`).
 - Mid-run steering: ACP has no message for a prompt while the previous prompt is running.
   A session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.

@@ -85,6 +85,7 @@ class ACPServer:
             "initialize": self._initialize,
             "session/new": self._session_new,
             "session/list": self._session_list,
+            "session/load": self._session_load,
             "session/resume": self._session_resume,
             "session/close": self._session_close,
             "session/prompt": self._session_prompt,
@@ -299,6 +300,10 @@ class ACPServer:
         """Return the reply to `session/list`: the recorded runs, newest first."""
         return self._sessions().list(params)
 
+    def _session_load(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
+        """Return the reply to `session/load` after replaying the run's conversation."""
+        return self._sessions().load(params, notify=self.notify_raw)
+
     def _session_resume(self, params: dict[str, Any], _req_id: object) -> dict[str, Any]:
         """Return the reply to `session/resume`: empty once the run's conversation is open."""
         return self._sessions().resume(params)
@@ -399,7 +404,7 @@ class ACPServer:
         return {
             "protocolVersion": PROTOCOL_VERSION,
             "agentCapabilities": {
-                "loadSession": False,
+                "loadSession": True,
                 # A resource block's uri is client-controlled; passing it through is path injection.
                 "promptCapabilities": {"embeddedContext": False},
                 # An editor lists recorded runs, reopens one after a restart and closes a thread.

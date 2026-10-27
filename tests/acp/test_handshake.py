@@ -37,10 +37,10 @@ def test_the_handshake_answers_with_what_agent6_can_do() -> None:
     assert result["agentInfo"]["name"] == "agent6"
 
 
-def test_session_load_is_reported_absent_rather_than_half_answered() -> None:
-    """Resume is where agent6 has the most of its own semantics, and ACP v2 reorganises it."""
+def test_session_load_is_advertised() -> None:
+    """An editor can request history when it reopens a recorded conversation."""
     (reply,) = _exchange(_init())
-    assert reply["result"]["agentCapabilities"]["loadSession"] is False
+    assert reply["result"]["agentCapabilities"]["loadSession"] is True
 
 
 def test_the_clients_capabilities_become_the_frontend_seam() -> None:
@@ -50,9 +50,9 @@ def test_the_clients_capabilities_become_the_frontend_seam() -> None:
 
 
 def test_an_unknown_method_is_an_error_not_a_crash() -> None:
-    (reply,) = _exchange({"jsonrpc": "2.0", "id": 7, "method": "session/load", "params": {}})
+    (reply,) = _exchange({"jsonrpc": "2.0", "id": 7, "method": "session/unknown", "params": {}})
     assert reply["error"]["code"] == rpc.METHOD_NOT_FOUND
-    assert "session/load" in reply["error"]["message"]
+    assert "session/unknown" in reply["error"]["message"]
 
 
 def test_a_notification_is_acted_on_and_not_answered() -> None:

@@ -2059,12 +2059,12 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
 def test_the_editors_own_prompt_is_not_echoed_back_as_a_user_message(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resumed run journals its prompt as steering; the editor already shows that prompt.
+    """The editor's task and follow-up prompts are not echoed as extra user messages.
 
-    Zed drew every later prompt twice, its own bubble and then the journal's echo. A steer
-    from another front-end is news to the editor and still arrives.
+    A steer from another front-end still arrives.
     """
     events = [
+        {"type": "session.start", "user_task": "Now reply PING.\n\nKeep this line too."},
         {"type": "loop.steer.injected", "text": "Now reply PING.", "chars": 15},
         {"type": "loop.steer.injected", "text": "keep the API", "chars": 12},
     ]
