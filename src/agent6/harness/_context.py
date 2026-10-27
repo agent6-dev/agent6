@@ -36,7 +36,7 @@ def ancestor_directories(root: pathlib.Path) -> tuple[pathlib.Path, tuple[pathli
 def review_rules(
     root: pathlib.Path, base_tree: str, hide: tuple[str, ...] = ()
 ) -> review_records.ReviewRules:
-    """Load whole AGENTS.md and REVIEW.md blobs from base, from the git root through cwd.
+    """Load each AGENTS.md blob whole from the base tree, git root through cwd.
 
     Args:
         root: The review's working directory.
@@ -57,20 +57,18 @@ def review_rules(
     name = "base tree"
     try:
         for directory in directories:
-            for filename in ("AGENTS.md", "REVIEW.md"):
-                name = (directory / filename).as_posix()
-                if workspace.is_denied(base / name) and git_read.tree_entry(base, base_tree, name):
-                    return review_records.ReviewRules(
-                        complete=False,
-                        reason=f"review rules incomplete: {name}: path is hidden",
-                    )
-                entry = review.rule_blob(base, base_tree, name, max_bytes=remaining)
-                if entry is None:
-                    continue
-                source, text = entry
-                sources.append(source)
-                texts.append(f"{name} (blob {source.blob_id}):\n{text}")
-                remaining -= source.supplied_bytes
+            name = (directory / "AGENTS.md").as_posix()
+            if workspace.is_denied(base / name) and git_read.tree_entry(base, base_tree, name):
+                return review_records.ReviewRules(
+                    complete=False, reason=f"review rules incomplete: {name}: path is hidden"
+                )
+            entry = review.rule_blob(base, base_tree, name, max_bytes=remaining)
+            if entry is None:
+                continue
+            source, text = entry
+            sources.append(source)
+            texts.append(f"{name} (blob {source.blob_id}):\n{text}")
+            remaining -= source.supplied_bytes
     except (errors.GitError, OSError, UnicodeError) as exc:
         reason = exc.safe_message if isinstance(exc, errors.GitError) else str(exc)
         return review_records.ReviewRules(

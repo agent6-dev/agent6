@@ -22,7 +22,7 @@ def start_event(**changes: Any) -> dict[str, Any]:
             review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions")
         ),
         "seats": [],
-        "rule_sources": [{"path": "REVIEW.md", "blob_id": "abc123", "supplied_bytes": 9}],
+        "rule_sources": [{"path": "AGENTS.md", "blob_id": "abc123", "supplied_bytes": 9}],
         "rules_complete": True,
         "rules_reason": None,
         **changes,
@@ -37,7 +37,7 @@ def test_rule_metadata_survives_start_completion_and_wire_round_trip() -> None:
     view = state.fold_session(rows).review
     assert view.completion == "complete"
     assert view.rules_complete is True
-    assert view.rule_sources == (review_records.RuleSource("REVIEW.md", "abc123", 9),)
+    assert view.rule_sources == (review_records.RuleSource("AGENTS.md", "abc123", 9),)
     wire = review.as_dict(view)
     assert wire["rule_sources"] == wire["panels"][0]["rule_sources"] == rows[0]["rule_sources"]
     assert wire["rules_complete"] is True
@@ -45,7 +45,7 @@ def test_rule_metadata_survives_start_completion_and_wire_round_trip() -> None:
 
 
 @pytest.mark.parametrize(
-    "complete,reason", [(True, None), (False, "REVIEW.md: unreadable blob"), (None, None)]
+    "complete,reason", [(True, None), (False, "AGENTS.md: unreadable blob"), (None, None)]
 )
 def test_absent_incomplete_and_legacy_rules_remain_distinct(
     complete: bool | None, reason: str | None
@@ -63,7 +63,7 @@ def test_cli_tui_and_acp_render_the_same_recorded_sources() -> None:
     items = transcript.fold_transcript([event])
     assert len(items) == 1
     item = items[0]
-    expected = "REVIEW.md: blob abc123, 9 bytes"
+    expected = "AGENTS.md: blob abc123, 9 bytes"
     assert expected in item.body and "rules complete" in item.body
     assert "base tree bt" in item.body
     output = io.StringIO()
@@ -81,17 +81,17 @@ def test_cli_tui_and_acp_render_the_same_recorded_sources() -> None:
 def test_incomplete_and_absent_notices_name_the_difference() -> None:
     absent = transcript.fold_transcript([start_event(rule_sources=[])])
     failed = transcript.fold_transcript(
-        [start_event(rule_sources=[], rules_complete=False, rules_reason="REVIEW.md: hidden")]
+        [start_event(rule_sources=[], rules_complete=False, rules_reason="AGENTS.md: hidden")]
     )
     assert absent and "No base rules exist." in absent[0].body
-    assert failed and "REVIEW.md: hidden" in failed[0].body
+    assert failed and "AGENTS.md: hidden" in failed[0].body
     assert "rules incomplete" in failed[0].body
 
 
 @pytest.mark.parametrize("field", ["source", "reason"])
 def test_rule_notices_escape_controls_without_losing_the_name(field: str) -> None:
     """Rule paths and refusal reasons must not become terminal commands on any text surface."""
-    name = "dir\x1b]52;c;c2VjcmV0\x07/REVIEW.md"
+    name = "dir\x1b]52;c;c2VjcmV0\x07/AGENTS.md"
     event = start_event(
         rule_sources=[{"path": name, "blob_id": "abc123", "supplied_bytes": 9}]
         if field == "source"
@@ -118,4 +118,4 @@ def test_rule_notices_escape_controls_without_losing_the_name(field: str) -> Non
         log_line.format_log_line(event),
     ):
         assert "\x1b" not in rendered and "\x07" not in rendered, repr(rendered)
-        assert r"dir\u001b]52;c;c2VjcmV0\u0007/REVIEW.md" in rendered
+        assert r"dir\u001b]52;c;c2VjcmV0\u0007/AGENTS.md" in rendered

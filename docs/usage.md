@@ -302,8 +302,8 @@ Review freshness is unknown until a reader supplies the requested base tree, hea
 
 ### Code-review rules
 
-Code reviews load `AGENTS.md` and `REVIEW.md` independently from the reviewed base tree, from the repository root through the working directory.
-Within each directory, `AGENTS.md` comes first.
+Write review rules in `AGENTS.md`.
+Code reviews read `AGENTS.md` from the reviewed base tree, from the repository root through the working directory.
 A head-side edit or deletion does not change the rules supplied to that review.
 Rule-file changes remain in the reviewed diff unless the selected paths exclude them.
 
@@ -317,7 +317,7 @@ The review journal records each supplied path, blob ID and byte count once at pa
 The CLI prints these sources and rule completeness; the conversation, TUI log and ACP messages show the same metadata.
 Web source links open the recorded base revision.
 Standalone `agent6 review` also records the base and head tree IDs it compared, without creating review refs or a checkout.
-`REVIEW.md` supplies guidance, not permissions: it grants no tools or network access and overrides neither operator settings nor aggregator severity restrictions.
+`AGENTS.md` supplies guidance, not permissions: it grants no tools or network access and overrides neither operator settings nor aggregator severity restrictions.
 These rules apply to the in-loop panel and `agent6 review`, not to `sessions review` or the worker's own `AGENTS.md` loading.
 
 ## Session findings

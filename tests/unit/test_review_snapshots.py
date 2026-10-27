@@ -72,7 +72,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
 def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Path) -> None:
     git = test_review_diff_collect._git
     git(tmp_path, "init", "-q")
-    (tmp_path / "REVIEW.md").write_text("head-only rule")
+    (tmp_path / "AGENTS.md").write_text("head-only rule")
     chain = _chain.RunChain(
         tmp_path, ref="refs/agent6/unborn/head", fallback_parent=None, base_sha=""
     )

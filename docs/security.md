@@ -268,12 +268,12 @@ Every path they take resolves through `Workspace`:
 - The existence probes (a root `verify.sh`, a manifest, loose `test_*.py` files) and the model call's top-level listing leave out a file under the hidden set, by its name or its link target.
   A link out of the root still counts as present.
 
-**Code-review rules.** The reviewer reads historical `AGENTS.md` and `REVIEW.md` blobs from the base tree, not the checkout.
+**Code-review rules.** The reviewer reads historical `AGENTS.md` blobs from the base tree, not the checkout.
 The workspace hidden-path policy applies before reading a rule blob.
 A checkout symlink cannot redirect a configured hidden path away from its historical name.
 Historical symlinks are refused, including ancestor symlinks; current checkout links do not redirect a historical read.
 A present file that cannot be read safely makes the review incomplete; missing optional files do not.
-`REVIEW.md` cannot grant tools, network access or operator permissions, and cannot alter the aggregator's severity restrictions.
+`AGENTS.md` cannot grant tools, network access or operator permissions, and cannot alter the aggregator's severity restrictions.
 Model obedience is not a security boundary.
 Review text notices escape control characters in rule paths and refusal reasons.
 See [Code-review rules](usage.md#code-review-rules) for discovery, limits and recorded sources.

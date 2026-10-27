@@ -63,7 +63,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         ).stdout.strip()
 
     git("init", "-qb", "main")
-    (cwd / "REVIEW.md").write_text("Keep the base rule. <b>literal</b>\n")
+    (cwd / "AGENTS.md").write_text("Keep the base rule. <b>literal</b>\n")
     (cwd / "old.txt").write_text("first\nsecond\nthird\nfourth\n")
     (cwd / "gone.txt").write_text("deleted\n")
     (cwd / "context.txt").write_text("unchanged context\n")
@@ -71,7 +71,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
     git("commit", "-qm", "base")
     base = git("rev-parse", "HEAD")
     git("mv", "old.txt", "new.txt")
-    git("rm", "gone.txt", "REVIEW.md")
+    git("rm", "gone.txt", "AGENTS.md")
     (cwd / "new.txt").write_text("first\nsecond\nthird\nfourth\nadded\n")
     git("add", ".")
     git("commit", "-qm", "head")
@@ -129,7 +129,7 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         rules_complete=True,
         rules_reason=None,
         rule_sources=[
-            dict(path="REVIEW.md", blob_id=git("rev-parse", base + ":REVIEW.md"), supplied_bytes=35)
+            dict(path="AGENTS.md", blob_id=git("rev-parse", base + ":AGENTS.md"), supplied_bytes=35)
         ],
     )
     sink.emit(

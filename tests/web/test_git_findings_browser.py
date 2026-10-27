@@ -170,7 +170,7 @@ def test_rule_link_opens_the_recorded_base_blob(
     rules = page.locator(".card-findings .review-rules")
     expect(rules).to_contain_text("Rules complete")
     expect(rules).to_contain_text("35 bytes")
-    rules.get_by_role("link", name="REVIEW.md", exact=True).click()
+    rules.get_by_role("link", name="AGENTS.md", exact=True).click()
     expect(page.locator(".files-text")).to_contain_text("Keep the base rule. <b>literal</b>")
     assert "side=base" in page.url
     page.reload()

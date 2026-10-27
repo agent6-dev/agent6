@@ -160,7 +160,7 @@ def test_selected_finding_shows_its_own_panels_rules(
             assert "Later rule set is hidden" not in detail
             if recorded:
                 assert "rules complete" in detail
-                assert f"REVIEW.md: blob {blob}, 35 bytes" in detail
+                assert f"AGENTS.md: blob {blob}, 35 bytes" in detail
             else:
                 assert "rule sources not recorded" in detail
                 assert "No base rules exist." not in detail

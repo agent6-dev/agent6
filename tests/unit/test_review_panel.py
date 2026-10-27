@@ -654,8 +654,8 @@ def test_the_panel_refuses_unreadable_base_rules(
     from tests.unit import test_review_saved
 
     test_review_saved._repo_with_a_change(tmp_path)
-    (tmp_path / "REVIEW.md").write_text("rule")
-    test_review_diff_collect._git(tmp_path, "add", "REVIEW.md")
+    (tmp_path / "AGENTS.md").write_text("rule")
+    test_review_diff_collect._git(tmp_path, "add", "AGENTS.md")
     test_review_diff_collect._git(tmp_path, "commit", "-qm", "rules")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
@@ -666,7 +666,7 @@ def test_the_panel_refuses_unreadable_base_rules(
     panel = mock.Mock()
     monkeypatch.setattr(review_cmds, "_run_review_panel", panel)
     assert review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=1) == 2
-    assert "REVIEW.md: unreadable object" in capsys.readouterr().err
+    assert "AGENTS.md: unreadable object" in capsys.readouterr().err
     panel.assert_not_called()
 
 
