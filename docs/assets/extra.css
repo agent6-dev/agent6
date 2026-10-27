@@ -96,6 +96,12 @@
   margin: 1.2rem 0;
 }
 
+.a6-grid video {
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  object-fit: cover;
+}
+
 /* The terminal demo video on the tour page. */
 .md-typeset video {
   width: 100%;

@@ -53,7 +53,7 @@ For a separate checkout, use `agent6 run --worktree "your task"`, which starts f
 ```sh
 cd your-repo
 agent6 check                # check configuration and sandbox support
-agent6 run "add a --json output mode to the CLI"
+agent6 run "your task here"
 ```
 
 Commands ask for approval by default.
@@ -103,9 +103,6 @@ MCP is off by default, and locally spawned servers use the command sandbox unles
 Under `full`, the default `sandbox.network = "auto"` gives a run's commands a private network; `partial` and `none` use the host network.
 The defaults are `sandbox.network = "auto"`, `sandbox.run_commands = "ask"` and `sandbox.protect_git = "auto"`.
 `agent6 check sandbox` shows the effective file and command boundaries, network and approval settings, and live probe results.
-
-## Development
-[Report bugs or confusing behavior](https://github.com/agent6-dev/agent6/issues), or [report vulnerabilities privately](https://github.com/agent6-dev/agent6/security/advisories/new).
 <!-- --8<-- [end:guide] -->
 
 [acp]: https://agent6.dev/acp/
