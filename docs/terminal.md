@@ -87,14 +87,14 @@ Values from lower layers may become visible.
 Skill states have individual rows, so Remove drops only the selected skill's state.
 **Unset** (`d`) still drops only the selected leaf.
 
-**Add reviewer…** (`v`) in the Edit menu, palette and footer appends to the ordered `review.reviewers` list.
-Its form takes `focus` (required), `provider`, `model`, `effort` and `temperature`, with the same save-target chooser.
-Set `provider` and `model` together, or leave both blank to inherit the reviewer role.
-Blank sampling fields inherit the route's settings.
-**Remove reviewer** (`Shift+X`) on the `review.reviewers` row opens a chooser by position and focus, then confirms removal from the roster's source layer (global or repo).
-Positions distinguish reviewers that share a focus.
-Both actions save the whole list; removing the last reviewer writes `[]` so a lower layer's roster stays hidden.
-The row's value column still shows the list.
+- **Add reviewer…** (`v`) in the Edit menu, palette and footer appends to the ordered `review.reviewers` list.
+    - Its form takes `focus` (required), `provider`, `model`, `effort` and `temperature`, with the same save-target chooser.
+    - Set `provider` and `model` together, or leave both blank to inherit the reviewer role.
+    - Blank sampling fields inherit the route's settings.
+- **Remove reviewer** (`Shift+X`) on the `review.reviewers` row opens a chooser by position and focus, then confirms removal from the roster's source layer (global or repo).
+    - Positions distinguish reviewers that share a focus.
+- Both actions save the whole list; removing the last reviewer writes `[]` so a lower layer's roster stays hidden.
+- The row's value column still shows the list.
 
 ![The config page](screenshots/out/03-config.png)
 

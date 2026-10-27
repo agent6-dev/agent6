@@ -167,19 +167,20 @@ A turn's tool calls and each result that returned are recorded in `turn_in_fligh
 A resume after a death there runs none of the turn's calls again: the model gets the results that returned, and one line for each other call saying it was interrupted and not re-run.
 
 **The harness runs the gate** (`[harness].verify_when`, default `finish`).
-When `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
-A denied approval withholds the gate for the rest of the run, and the run ends unverified.
-`turn` also runs it after every editing turn; `never` leaves every run to the model.
-A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run, or the model's own unless `verify_when = "never"`) re-runs scoped to the tests nearest the run's diff.
-It stays scoped until a full run of the gate passes.
-The notice lists the selected files, `session.end` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
-A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
-The settled stop ends a plain run after `harness.verify_settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or a gateless editing step.
-A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
-A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
-`0` disables the stop, but the nudge at three idle turns still fires without announcing a stop; over a red gate that is the model's to fix, the nudge is withheld while a finish would still go back.
-Over a green gate the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
-Over a red gate it returns under the same cap, counted apart from the model's own finishes.
+
+- When `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
+- A denied approval withholds the gate for the rest of the run, and the run ends unverified.
+- `turn` also runs it after every editing turn; `never` leaves every run to the model.
+- A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run, or the model's own unless `verify_when = "never"`) re-runs scoped to the tests nearest the run's diff.
+  It stays scoped until a full run of the gate passes.
+  The notice lists the selected files, `session.end` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
+- A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
+- The settled stop ends a plain run after `harness.verify_settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or a gateless editing step.
+- A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
+- A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
+- `0` disables the stop, but the nudge at three idle turns still fires without announcing a stop; over a red gate the model must fix, the nudge is withheld while a finish would still go back.
+- Over a green gate the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
+- Over a red gate it returns under the same cap, counted apart from the model's own finishes.
 
 **Per-turn commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 
@@ -468,20 +469,21 @@ Two shared layers sit under them.
 A run started from a hub, or detached mid-run with `/detach`, keeps going with no terminal on it (`ui/spawn.py`); `agent6 attach <id>` opens it again, tailing the same journal every other surface folds.
 
 **Stopping a run** is one function ([app/stop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/stop.py)) behind `agent6 stop`, the TUI's Run menu, `/stop` in every composer, the web stop route and an ACP cancel.
-It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which ends a running foreground command at once.
-Unless it is request-only, it waits for the run to end.
-The loop logs `operator stop during step N` and the `stopped` end block says `operator stopped the run during step N`; both add `running command was cut short` when the stop ended a running command, or `model call was cut short` when it cut the model call.
-A worker still alive after that wait (5 s for a run, 30 s for a fan-out draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
-A run's worker and a fan-out's coordinator take the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130).
-Every target is named by process identity (pid plus start time), so a recycled pid is never signalled.
-`--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
-While that marker is pending on a live run, every listing's status adds `stopping after this step` (`running · stopping after this step` on `sessions`, `sessions show`, `ps`, the TUI hub and the web list); a starting or waiting run keeps its own detail beside it.
-The end block then says `operator stopped the run after step N`.
-A fan-out stops its lanes with the `now` marker.
-An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
-An immediate stop ends a foreground `run_command` the launcher hands back.
-Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.
-A check-in with no immediate stop still returns a running command and its background id.
+
+- It writes an abort steer, which cuts a model call in flight, and the `stop.request` marker with its `now` urgency, which ends a running foreground command at once.
+  Unless it is request-only, it waits for the run to end.
+- The loop logs `operator stop during step N` and the `stopped` end block says `operator stopped the run during step N`; both add `running command was cut short` when the stop ended a running command, or `model call was cut short` when it cut the model call.
+- A worker still alive after that wait (5 s for a run, 30 s for a fan-out draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
+- A run's worker and a fan-out's coordinator take the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130).
+- Every target is named by process identity (pid plus start time), so a recycled pid is never signalled.
+- `--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
+- While that marker is pending on a live run, every listing's status adds `stopping after this step` (`running · stopping after this step` on `sessions`, `sessions show`, `ps`, the TUI hub and the web list); a starting or waiting run keeps its own detail beside it.
+- The end block then says `operator stopped the run after step N`.
+- A fan-out stops its lanes with the `now` marker.
+- An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
+- An immediate stop ends a foreground `run_command` the launcher hands back.
+  Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.
+- A check-in with no immediate stop still returns a running command and its background id.
 
 The journal is durable by contract.
 An append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`), and in-process listeners see an event only after its write landed.

@@ -390,7 +390,7 @@ agent6 as an MCP CLIENT; for the other direction (`agent6 mcp serve`, agent6 as 
 MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>` in run mode only (plan, ask, machine and agent sessions never offer them: agent6 cannot classify an external tool as read-only).
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
 The model chooses the arguments, so each call is approved like a command (`approve`); audit each server like a `run_command` allow-list.
-`agent6 mcp add` saves a spawned server unprobed with a warning when isolation resolves to `none`; otherwise it requires a successful probe before writing the entry.
+`agent6 mcp add` saves a spawned server unprobed with a warning when `sandbox.isolation` resolves to `none`; otherwise it requires a successful probe before writing the entry.
 During a run, a server that does not start is skipped with an `mcp.server_unavailable` journal event, never fatal.
 `agent6 check mcp` probes under the run's sandbox with the repository bound read-only and skips a server it cannot hold that way ([the rule](security.md#2-sandbox)).
 

@@ -30,7 +30,7 @@ agent6 model all openrouter/moonshotai/kimi-k2.6   # set every role at once
 
 ```sh
 cd your-repo
-agent6 run "add a --json output mode to the CLI"
+agent6 run "your task here"
 ```
 
 agent6 edits your working tree, commits each step to the run's own chain (an `agent6/<id>` branch by default), and certifies the finished tree with the verify command.
@@ -44,14 +44,15 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 - `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused
 
 The verify command is the success gate.
-Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
-A fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a finish that leaves the same red reads `finished · gate was already red` (`harness.verify_at_start = false` for a gate too slow to run twice).
-A red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
-The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, and a red base says it was already red.
-A fork starts its own log without the parent's baseline; its base is the commit it forked from.
-Only an unknown baseline prints the worktree recipe for checking the base; a timed-out gate instead names the timeout setting to raise.
-[`[harness]`](config.md#harness) has the inference order and `verify_when`.
-An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
+
+- Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
+- A fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a finish that leaves the same red reads `finished · gate was already red` (`harness.verify_at_start = false` for a gate too slow to run twice).
+- A red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
+- The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, and a red base says it was already red.
+- A fork starts its own log without the parent's baseline; its base is the commit it forked from.
+- Only an unknown baseline prints the worktree recipe for checking the base; a timed-out gate instead names the timeout setting to raise.
+- [`[harness]`](config.md#harness) has the inference order and `verify_when`.
+- An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
 
 The start banner's budget notices name each model once, with the roles that use it (`'m' (planner, worker)`).
 
@@ -61,7 +62,7 @@ The start banner's budget notices name each model once, with the roles that use 
 ### Go build cache
 
 Go's build cache lives under the jail's HOME, not your own.
-Under `full` isolation, the default `sandbox.home = "auto"` discards that HOME with the run, so a new run starts with a cold cache.
+Under `full` `sandbox.isolation`, the default `sandbox.home = "auto"` discards that HOME with the run, so a new run starts with a cold cache.
 To reuse compiled packages across runs in this repository:
 
 ```sh
@@ -72,9 +73,9 @@ agent6 exec --new -- go test ./...
 The first build fills the private cache; later runs reuse it.
 Dependencies must already be available offline, or the operator must populate the cache with a network policy that permits fetching them.
 `go test -count=1 ./...` reruns tests while still reusing compiled packages.
-Under `partial` or `none`, `auto` already uses the persistent HOME.
+Under `partial` or `none` `sandbox.isolation`, `auto` already uses the persistent HOME.
 Persistence also lets a poisoned cache or tool configuration reach later runs in this repository; see the [sandbox boundaries](security.md#threat-model).
-`auto` under `full` stays temporary even when a persistent cache exists: reusing earlier runs' files requires an explicit opt-in.
+`auto` under `full` `sandbox.isolation` stays temporary even when a persistent cache exists: reusing earlier runs' files requires an explicit opt-in.
 
 ## Follow and steer a run
 
@@ -340,7 +341,7 @@ agent6 skills install|update|list                    # skills from a repo, a dir
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove
 agent6 mcp add NAME [--url URL | -- COMMAND...]  # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
 agent6 machine ...                                   # state machines over runs (see state-machines.md)
-agent6 system apparmor install                       # the AppArmor profile that full isolation needs on some hosts; status, remove
+agent6 system apparmor install                       # the AppArmor profile that full sandbox.isolation needs on some hosts; status, remove
 agent6 completions bash|zsh|fish|xonsh [--print]
 agent6 config fill [--force]                         # write the defaults + global layers as one explicit global config
 ```

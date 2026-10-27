@@ -43,8 +43,9 @@ class SandboxConfig(pydantic.BaseModel):
         description=(
             "Which network jailed commands join. `session`: the run's private network (commands "
             "reach each other, nothing off the box, nothing outside reaches in), refused where it "
-            "cannot be enforced. `host`: the machine's network. `auto`: `session` under `full`, "
-            "degraded to the host's network with a warning under `partial` or `none`. A run's "
+            "cannot be enforced. `host`: the machine's network. `auto`: `session` under `full` "
+            "`sandbox.isolation`, degraded to the host's network with a warning under `partial` "
+            "or `none`. A run's "
             "commands share one launcher, so there is no per-command `none`; a machine state sets "
             "its own value in its `config` table, never wider than this one."
         ),
@@ -70,8 +71,8 @@ class SandboxConfig(pydantic.BaseModel):
             'operator is a no. Empty: every fetch prompts. `["*"]`: any host. A leading dot allows '
             "subdomains (`.readthedocs.io`). Each entry is a host, never a URL prefix; the rest of "
             "fetch is fixed (https only, 1 MiB cap, redirects returned, not followed). Hidden when "
-            'a jailed command already has the host network (`network = "host"`, or any isolation '
-            "but `full`); withheld from machine and agent states."
+            'a jailed command already has the host network (`network = "host"`, or any '
+            "`sandbox.isolation` but `full`); withheld from machine and agent states."
         ),
     )
     # A read-only bind-remount; the harness's own commits run outside the jail and are unaffected.
@@ -81,8 +82,9 @@ class SandboxConfig(pydantic.BaseModel):
             "Keep `.git/` unwritable by jailed commands, so a command cannot plant a git filter "
             "that agent6's host-side commits would execute. `on` requires `full` "
             "`sandbox.isolation` to bind-remount `.git` read-only and refuses to start elsewhere; "
-            'it is refused beside `git.control = "model"`. `auto`: the bind under `full`, a '
-            "warning below it, and off where the model controls git. `off`: writable. Under "
+            'it is refused beside `git.control = "model"`. `auto`: the bind under `full` '
+            "`sandbox.isolation`, a warning below it, and off where the model controls git. "
+            "`off`: writable. Under "
             "`on` and `auto` the in-process edit tools refuse `.git` writes at every level."
         ),
     )
@@ -217,9 +219,9 @@ class SandboxConfig(pydantic.BaseModel):
             "`$HOME` never exposes `secrets.toml` or run history (the data dir and cache stay "
             "readable: installed skills work). Enforced twice: the in-process tools refuse them at "
             "every isolation level, and jailed commands see them masked (a dir reads empty, a file "
-            "reads empty). Masking needs the mount namespace: under `partial` an entry it cannot "
-            "mask refuses the run, and a grant exposing the always-hidden dirs warns loudly "
-            "instead."
+            "reads empty). Masking needs the mount namespace: under `partial` `sandbox.isolation` "
+            "an entry it cannot mask refuses the run, and a grant exposing the always-hidden dirs "
+            "warns loudly instead."
         ),
     )
 

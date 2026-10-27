@@ -22,27 +22,27 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - `sandbox.extra_write_paths` widens it, visible in `agent6 config show`
     - the per-repo memory dir (file tools only) and the jail's persistent `HOME` (below) widen it, visible in `agent6 check sandbox`
 - No reads outside the workspace and a read-only system set for installed toolchains
-    - `full`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, plus a curated `/dev`
-    - `partial`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc` and the `/dev` nodes `null`, `zero`, `urandom`, `random` and `full`
-        - `/proc` and the host's `/dev/shm` are not granted: `ps` and Python `multiprocessing` fail there, and work under `full`
+    - `full` `sandbox.isolation`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, plus a curated `/dev`
+    - `partial` `sandbox.isolation`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc` and the `/dev` nodes `null`, `zero`, `urandom`, `random` and `full`
+        - `/proc` and the host's `/dev/shm` are not granted: `ps` and Python `multiprocessing` fail there, and work under `full` `sandbox.isolation`
     - `sandbox.extra_read_paths` adds more; `agent6 check sandbox` prints the resolved set
-    - a child on the host network (`network = "host"`, or any level but `full`) also reads what name resolution and TLS verification need, where the host has them: `/etc/resolv.conf` and the file it points to, `/etc/hosts`, `/etc/nsswitch.conf`, and the CA store (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`).
+    - a child on the host network (`network = "host"`, or any `sandbox.isolation` but `full`) also reads what name resolution and TLS verification need, where the host has them: `/etc/resolv.conf` and the file it points to, `/etc/hosts`, `/etc/nsswitch.conf`, and the CA store (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`).
       File permissions still apply: the root-only private keys beside the certificates stay unreadable to a run that is not root
 - `/tmp` is writable at every level
-    - `full`: a private tmpfs discarded with the run
-    - `partial`: the host's `/tmp`
+    - `full` `sandbox.isolation`: a private tmpfs discarded with the run
+    - `partial` `sandbox.isolation`: the host's `/tmp`
 - `HOME` is a directory of agent6's own, never the operator's
-    - `full`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
-    - `partial` and `none`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and, under `partial`, Landlock-granted read-write like the workspace; the rest of the operator's home and every other repository's directory stay ungranted
+    - `full` `sandbox.isolation`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
+    - `partial` and `none` `sandbox.isolation`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and, under `partial`, Landlock-granted read-write like the workspace; the rest of the operator's home and every other repository's directory stay ungranted
     - a linked worktree (`run --worktree`, a fork) gets its repository's directory, named by the git dir the session recorded and never by the worktree's own `.git` pointer; a lane's clone and a machine state's clone get it too, named by the first directory below the workspace base directory, the owning repository's id
     - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run.
       The mode is checked on every run (a jailed command can `chmod` its own HOME), and the refusal names `chmod 700`; nothing restores it silently
     - persistence is a cross-run channel inside the jail's world: a poisoned cache or a `~/.gitconfig` alias reaches the next jailed run in the same repository, never another repository's runs and never the operator's own tools
     - a `$XDG_CACHE_HOME/agent6/home` directory is the shared `HOME` of an earlier version: nothing reads or grants it, and it can be deleted
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
-    - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `full`, and push needs egress
+    - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `full` `sandbox.isolation`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary (one create path stays open, below)
-    - the exception is the jail's persistent `HOME` (`partial`, `none`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run in that repository, and stays executable.
+    - the exception is the jail's persistent `HOME` (`partial`, `none` `sandbox.isolation`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run in that repository, and stays executable.
       The operator's own shell, tools, and dotfiles never read it
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
     - so do the create paths that take a mode: `creat`, `mknod`/`mknodat`, and `open`/`openat` with `O_CREAT` or `O_TMPFILE`.
@@ -50,12 +50,12 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
       Every jail mount is `nosuid`, and the file is owned by the operator's own uid, so it grants nothing outside the jail either (`--allow-root` below is the exception)
     - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
     - `/tmp` allows exec (toolchain helpers)
-    - children write inside the jail's mount namespace (`full`) or the Landlock write grants (`partial`)
+    - children write inside the jail's mount namespace (`full` `sandbox.isolation`) or the Landlock write grants (`partial`)
     - a process a command leaves behind dies with the run at the latest
-        - `full`: the PID namespace takes the tree down at close.
+        - `full` `sandbox.isolation`: the PID namespace takes the tree down at close.
           Its launcher, the namespace's init, sweeps what a stopped background command left outside its process group (a `setsid` daemon reparented onto it).
           The sweep covers what appeared after the command started and before the next still-running one did
-        - `partial`: the agent process holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command
+        - `partial` `sandbox.isolation`: the agent process holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command
     - a survivor the sweep cannot kill fails the command, and a background `stop` answers with its pids
     - one still running when the run's jail session or a spawned MCP server closes is recorded as a `jail.degraded` event
 
@@ -68,7 +68,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - the environment carries no address for one.
       A jailed command gets `LANG`, `LC_ALL`, `TERM` and `CI` from the host, plus `HOME`, `PATH`, `PYTHONDONTWRITEBYTECODE` and `UV_NO_SYNC` set by agent6 (a machine tool also `AGENT6_MACHINE_DATA_DIR`), and the `[git.commit]` name and email as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` when the config sets them, so a `git commit` the model runs under `git.control = "model"` carries the operator's identity.
       A jailed MCP server's base drops `DISPLAY`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR` (`curated_env(desktop=False)`)
-    - `full` does not expose them
+    - `full` `sandbox.isolation` does not expose them
 
 ## Defense layers
 
@@ -76,7 +76,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 The `rw`, `ro` and `--` markers show access; `sys`, `net` and `tool` tags show purpose, and annotations combine discovery and configuration details.
 The Git row shows configured and effective protection, and each granted device has its own row.
 It also prints a line per MCP server, the network, the approval mode and the secrets posture, then runs the jail probes.
-The network probe reads `[SKIP]` under `partial` and `none`, which have no network namespace.
+The network probe reads `[SKIP]` under `partial` and `none` `sandbox.isolation`, which have no network namespace.
 
 ### 1. Trust boundary
 
@@ -132,7 +132,7 @@ A diagnostic hands a server the repository to read and writes nothing but the co
 | `none` | No confinement: no namespaces, Landlock or seccomp. The timeout and `memory_limit_mib` still apply |
 | `auto` *(default)* | The strongest of the three this host supports |
 
-Under `full` a kernel without Landlock skips that layer, warned once per run; under `partial` Landlock is the only filesystem boundary.
+Under `full` `sandbox.isolation` a kernel without Landlock skips that layer, warned once per run; under `partial` Landlock is the only filesystem boundary.
 
 **Resolution**
 
@@ -150,16 +150,16 @@ Probed per host: `unshare` for namespaces, the Landlock ABI syscall, the seccomp
 | `full`, `partial` | non-Linux, or no seccomp filter for the arch | refused |
 | `none` | any | `none`, warned |
 
-`--disable-sandbox` and `AGENT6_DISABLE_SANDBOX=1` force `none` for one invocation.
+`--disable-sandbox` and `AGENT6_DISABLE_SANDBOX=1` force `none` `sandbox.isolation` for one invocation.
 Config, flag, and env var are operator-only; the model reaches neither argv nor env.
 
 **Inside the jail**
 
-- Mounts (`full`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
+- Mounts (`full` `sandbox.isolation`): cwd and a private `/tmp` writable, system paths read-only, `extra_read_paths` / `extra_write_paths`, a persistent `HOME` under `[sandbox].home = "cache"`, and operator tool dirs at their real paths
     - every mount keeps the path it has outside
     - the workspace is mounted at its resolved path and the launcher starts the command there: under a workspace named through a symlink, `pwd` prints the resolved path
     - a grant is resolved once, when the run starts, and every jail launch of the run binds that resolved directory at the grant's configured path: `/opt/tool -> /opt/tool-1.2` shows the content of `/opt/tool-1.2` at `/opt/tool`, and a link re-pointed during the run changes nothing.
-      Under `partial` the Landlock rule goes on the resolved directory
+      Under `partial` `sandbox.isolation` the Landlock rule goes on the resolved directory
     - a grant that contains the workspace is mounted under it: the workspace stays writable under a read grant
     - a grant the launcher cannot bind fails the launch, and the error names the grant, the step and the OS error (`write grant /srv: remount of submount cache: EPERM`); a read-only mount inside a write grant is such a case
     - a grant on `/` or on `/dev` fails the launch by name: `/` would replace the jail's own root, and `/dev` would cover the jail's device nodes (name a device in `extra_device_paths`)
@@ -167,36 +167,36 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
       Where the earlier grant shows a symlink at that path, nothing is mounted through the link: a read grant leaves the link as it is, and a write grant fails the launch by name
     - a grant that is the home directory or a directory above it lets the run's commands and file tools reach the credentials other tools keep there (`~/.ssh`, `~/.aws`, another agent's login).
       agent6 warns about such a grant at run start and in `agent6 check sandbox`.
-      Under `full`, agent6 hides only its own config dir and state base, plus the paths in `sandbox.hide_paths`
+      Under `full` `sandbox.isolation`, agent6 hides only its own config dir and state base, plus the paths in `sandbox.hide_paths`
     - the paths kept read-only inside the workspace (`.git` under `protect_git`, a machine bundle) are bound after every grant: a grant that contains the workspace does not make them writable
     - a symlink into `<root>/bin` grants `<root>` read-only only if no jail PATH directory lies at or under `<root>`; other targets grant their directory.
       A refused root keeps the `bin` grant.
       Refused: a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it
-    - a fork's execution or a `run --worktree` run (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `full`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
-      The main checkout's `.git` is read-only only under `full` with `protect_git`, so a worktree's is the more confined of the two.
+    - a fork's execution or a `run --worktree` run (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `full` `sandbox.isolation`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
+      The main checkout's `.git` is read-only only under `full` `sandbox.isolation` with `protect_git`, so a worktree's is the more confined of the two.
       The model's prompt says so
     - the granted dir is the one agent6 recorded when it added the worktree (the manifest's `worktree_git_dir`, taken from the repository it ran in).
-      The worktree's own `.git` pointer is never the source: a jailed command can rewrite it under `partial`.
+      The worktree's own `.git` pointer is never the source: a jailed command can rewrite it under `partial` `sandbox.isolation`.
       The policy builder refuses when the pointer no longer resolves to the record.
       A linked worktree agent6 did not record gets no grant
-    - under `partial`, a `hide_paths` entry inside the recorded dir refuses like any other unmaskable entry
-- Masked last, after every bind (`full`): the config dir, the state base, `[sandbox].hide_paths`
+    - under `partial` `sandbox.isolation`, a `hide_paths` entry inside the recorded dir refuses like any other unmaskable entry
+- Masked last, after every bind (`full` `sandbox.isolation`): the config dir, the state base, `[sandbox].hide_paths`
     - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
     - a hidden path inside the tree a symlinked grant resolves to is masked under the grant's spelled name too, where the jail shows that tree
     - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
     - a grant at or inside a private dir is refused at config load
-    - `partial` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
+    - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork, a `run --worktree` run or a machine state works in
     - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
-- `/dev` (`full`): `/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/random`, `/dev/full`, a private `/dev/shm`; no `/dev/tty`
+- `/dev` (`full` `sandbox.isolation`): `/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/random`, `/dev/full`, a private `/dev/shm`; no `/dev/tty`
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute).
       Each must be a char/block device on the host, or the launch refuses.
-      On `partial` the same grant is a Landlock read+write rule on the node
+      On `partial` `sandbox.isolation` the same grant is a Landlock read+write rule on the node
     - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them nowhere, and seccomp `EPERM`s the `mknod` pair by device type (below).
-      `full` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
-    - under `partial` with `--allow-root`, Landlock, seccomp and the capability drop deny it
-- `/proc` (`full`): fresh and private, empty if that fails; Landlock grants it read without execute
+      `full` `sandbox.isolation` also has the user namespace (no `CAP_MKNOD` in the initial one) and `MS_NODEV` on the `/dev` binds
+    - under `partial` `sandbox.isolation` with `--allow-root`, Landlock, seccomp and the capability drop deny it
+- `/proc` (`full` `sandbox.isolation`): fresh and private, empty if that fails; Landlock grants it read without execute
     - the launcher, PID 1 there, hides its `/proc` entry from the command (dumpable 0, capabilities dropped) and runs with an empty environment
 - seccomp: a 36-syscall deny-list returning `EPERM`.
   It covers process inspection (`ptrace`, `pidfd_getfd`, `process_vm_readv`/`writev`, `kcmp`), `io_uring_setup`, `userfaultfd`, the whole mount family (`mount`, `umount2`, `pivot_root`, `mount_setattr`, `open_tree`, `move_mount`, `fsopen`, `fsconfig`, `fsmount`, `fspick`), `setns`, `unshare`, `kexec`, `bpf`, `perf_event_open`, the keyring calls (`keyctl`, `add_key`, `request_key`), module loading, `reboot`, swap, and the clock-setting family
@@ -206,7 +206,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 - Capabilities: cleared between fork and exec.
 - Timeout: the policy's `timeout_s` (verify and metric gates set it from `[harness].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124
     - a model's `run_command` is not wall-clock killed: at `[harness].command_checkin_s` it is handed back as a background job ([Commands and environment](#4-commands-and-environment))
-- One launcher per run at every isolation level; under `full` its commands share that netns, PID namespace, and private `/tmp`, and under `partial` the host's network and `/tmp`
+- One launcher per run at every isolation level; under `full` `sandbox.isolation` its commands share that netns, PID namespace, and private `/tmp`, and under `partial` the host's network and `/tmp`
     - closing the run's channel takes the PID namespace down
     - a launcher that cannot start leaves each command its own
 - The policy arrives as JSON on the launcher's stdin, validated against a strict schema; unknown fields are refused.
@@ -214,7 +214,7 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
 
 **Verify**
 
-`agent6 check sandbox` prints the isolation this host resolves to and the reason when it is not `full`.
+`agent6 check sandbox` prints the `sandbox.isolation` this host resolves to and the reason when it is not `full`.
 It also lists each directory the jail mounts read-only for operator tools, and why.
 It then runs live probes at that isolation.
 It exits 1 when a check fails, 0 otherwise.
@@ -223,7 +223,7 @@ It exits 1 when a check fails, 0 otherwise.
 |---|---|
 | `landlock_abi` | the kernel reports Landlock ABI >= 1 |
 | `jail_true` | `/usr/bin/true` runs in the jail, rc=0 |
-| `jail_blocks_network` | a jailed `getent hosts example.com` fails. n/a under `partial`, which has no network namespace |
+| `jail_blocks_network` | a jailed `getent hosts example.com` fails. n/a under `partial` `sandbox.isolation`, which has no network namespace |
 | `jail_blocks_etc_write` | a jailed write to `/etc/agent6-escape` leaves no file on the host |
 
 ### 3. File access
@@ -237,7 +237,7 @@ Every path they take resolves through `Workspace`:
       - agent6's own config dir and state base
 
 - The boundary comes from config values
-    - a degradation (`auto` falling back to `partial` or `none`, a host with no jail) leaves it unchanged; under `none` isolation it is the only boundary
+    - a degradation (`auto` falling back to `partial` or `none`, a host with no jail) leaves it unchanged; under `none` `sandbox.isolation` it is the only boundary
 - A grant is resolved once per run, and the file tools and every jail launch hold that resolved path
     - a grant spelled inside the workspace root or a write grant, or resolving into one, is dropped: a jailed command can re-point it there.
       The run names each dropped grant in one line at its start, and the region still covers what the grant held
@@ -256,7 +256,7 @@ Every path they take resolves through `Workspace`:
 - Rewriting an editable-install `.pth` corrupts a venv invisibly (venvs are gitignored), so those writes refuse
     - reads stay allowed; an editable install still imports itself inside the jail (the repo is bound at its real path)
 - Inside the per-repo state dir (`$XDG_STATE_HOME/agent6/<repo-id>/`), the edit tools may write `memory/` and nothing else; harness-written operator rulings live outside that grant in `decisions.md`.
-- Uncovered: with `isolation = "none"` and `run_commands = "allow"`, a command reads a denied path directly (`run_command` argv is not screened)
+- Uncovered: with `sandbox.isolation = "none"` and `run_commands = "allow"`, a command reads a denied path directly (`run_command` argv is not screened)
 
 **Prompt reads.** The agent process itself reads `AGENTS.md` and the manifests the verify inference uses (`pyproject.toml`, `package.json`, a Makefile and the like), and their text reaches the provider.
 
@@ -297,7 +297,7 @@ The agent works within the environment it is given and cannot expand it:
     - an AGENTS.md block is repository content, so a repository can state the command; it reaches what a command the model chose would reach
     - the files it leaves untracked stay out of the run's commits
     - under a sandbox with no route out (the default network), the command has to work offline
-    - the recipe measured under `full`, for a uv project:
+    - the recipe measured under `full` `sandbox.isolation`, for a uv project:
         1. `agent6 config set --repo sandbox.home cache`, so jailed commands in this repository share one persistent `HOME` and its tool cache
         2. warm that cache once with your own networked command, from the checkout: `agent6 --config net.toml exec --new -- uv sync --reinstall --link-mode=copy`, where `net.toml` sets `[sandbox] home = "cache"` and `network = "host"` (the host network brings the resolver and CA files with it)
            The reinstall fetches every locked package; a plain `uv sync` over a checkout whose `.venv` is complete fetches nothing, and step 3 then fails offline.
@@ -309,7 +309,7 @@ The agent works within the environment it is given and cannot expand it:
     - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace.
       That is local root for whoever runs it outside the jail
     - writes outside the workspace and routes off the box stay closed
-    - readable files include root-only ones (`/etc/shadow` under `partial`; `full`'s rootfs hides it)
+    - readable files include root-only ones (`/etc/shadow` under `partial` `sandbox.isolation`; `full`'s rootfs hides it)
 - Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
     - it does not drop privileges in-process; confinement comes from the jail
 
@@ -335,7 +335,7 @@ The agent process's own egress is unbounded.
 Everything below bounds a child of it.
 
 A `claude_code` provider's child dials `api.anthropic.com` and `claude.ai` (login refresh) from the agent process; telemetry, crash reporting, and update hosts are disabled by its environment.
-While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, reachable from a jailed command only under `partial`, whose `/tmp` is the host's.
+While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, reachable from a jailed command only under `partial` `sandbox.isolation`, whose `/tmp` is the host's.
 
 **`fetch`** is the model's only direct egress.
 
@@ -345,7 +345,7 @@ While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, re
 - Behind the gate the name resolves, and every address it yields must be global: loopback, the LAN, and `169.254.169.254` are refused, as is a URL naming one literally.
   The request dials the resolved address with the name in SNI and `Host`, so no second lookup can rebind it.
 - A `content-encoding` other than identity is refused: the cap counts bytes as they arrive, and a decoded stream would expand past it.
-- Hidden when a jailed command already has the host network: `network = "host"`, or any isolation but `full`.
+- Hidden when a jailed command already has the host network: `network = "host"`, or any `sandbox.isolation` but `full`.
 
 **Which network a jailed child joins.** `sandbox.network` is one of:
 
@@ -354,7 +354,7 @@ While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, re
   Its members reach each other and nothing off the box.
 - `host`: the machine's network, with the host's resolver settings and CA store readable ([Threat model](#threat-model)).
 
-A run's commands share one launcher, so there is no per-command `none`.
+A run's commands share one launcher, so there is no per-command `sandbox.network = "none"`.
 A machine state sets its own value in its `config` table, never wider than this one ([State machines](#11-state-machines)); an MCP server takes its own in its `[sandbox]` block.
 
 The run owns one session network.
@@ -362,7 +362,7 @@ A holder process creates it, the run keeps it alive with an open descriptor on `
 Entering a network namespace needs `CAP_SYS_ADMIN` in the user namespace that owns it, so a joiner enters that user namespace too.
 It still gets its own mount, PID, IPC, and UTS namespaces, so two members cannot see or signal each other.
 
-Under `full`, the only level with namespaces:
+Under `full` `sandbox.isolation`, the only level with namespaces:
 
 | jailed command | `auto` *(def)* | `session` | `host` |
 |---|---|---|---|
@@ -371,19 +371,19 @@ Under `full`, the only level with namespaces:
 
 The column is the value the command's config resolves to: your `sandbox.network`, narrowed by the machine's `[config]` or set by the state's own `config`.
 
-Below `full` there is no network namespace: `auto` degrades to the agent process's network with a warning (once per run under `partial`; under `none` the unsandboxed warning covers every `auto` knob), while `session` refuses.
+Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades to the agent process's network with a warning (once per run under `partial`; under `none` the unsandboxed warning covers every `auto` knob), while `session` refuses.
 
 **Refusals** (fail-closed)
 
 | Configuration | When |
 |---|---|
 | a machine overlay sets `network = host` under your `auto` or `session` | `machine check`, machine start |
-| explicit `network = session`, yours or a machine state's | run or machine start under `partial` or `none` |
+| explicit `network = session`, yours or a machine state's | run or machine start under `partial` or `none` `sandbox.isolation` |
 
 **MCP servers** take their own value per server (`[mcp.servers.<name>.sandbox].network`, default `auto`):
 
 - `auto`: a network of its own where the host can give one, degrading to the host's with a warning.
-- `none`: refuses instead of degrading.
+- `mcp.servers.<name>.sandbox.network = "none"`: refuses instead of degrading.
 - `session`: joins the run's network, so a browser server reaches the dev server a background command started.
 - `host`: the machine's network.
 - A server is spawned on stdio or dialled at an operator-set `url`, outbound either way.
@@ -423,7 +423,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
 - An "allow all" answer covers that server for the run, never the command tools or another server
 - A tool name matching no configured server is refused, not prompted.
 - The `fetch` off-list host prompt and the sandbox-off gate take no standing answer; both say so, and no front-end shows the button
-- `isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue?
+- `sandbox.isolation = "none"` with auto-approved `run_command` adds a one-time gate: `Continue?
   [y/N]` interactively, a warning in CI and `machine run`.
 - A prompt with no operator to answer it: a headless run refuses to start under `ask` unless `AGENT6_DETACHED_AWAY` is `deny` (auto-deny), `wait` (park it for a front-end) or `approve` (grant every scope).
   A question under `deny` or `approve` gets empty answers with a note to decide alone.
@@ -454,7 +454,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
     - a mount nested under `.git` stays visible and read-only
     - a rewrite fails; `push` has no egress
     - a grant that contains the workspace does not lift it ([Sandbox](#2-sandbox))
-- Under `partial`, `protect_git = "auto"` degrades with a warning and `"on"` refuses to run
+- Under `partial` `sandbox.isolation`, `protect_git = "auto"` degrades with a warning and `"on"` refuses to run
     - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_drivers` is set
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
 - `git.control = "agent6"` is enforced by the sandbox; without it the run warns that a commit the model runs lands on the checkout's branch.
@@ -476,7 +476,7 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
 - They are absent from transcripts, redacted in `config show`, and masked from the jail.
   The config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
 - `config show` and `config get` mask mapping values unless the config model marks the field display-safe (`skills.state`); other mappings expose only their keys, including in JSON output.
-- No child agent6 spawns carries one: a jailed command's environment is built from its policy, and the unconfined paths (`isolation = "none"`, git subprocesses, MCP servers) drop every configured `api_key_env` name.
+- No child agent6 spawns carries one: a jailed command's environment is built from its policy, and the unconfined paths (`sandbox.isolation = "none"`, git subprocesses, MCP servers) drop every configured `api_key_env` name.
     - an `[mcp.servers.*].pass_env` naming a provider's `api_key_env` refuses at config load, so the name cannot be handed over deliberately either
 - `agent6 connect` prompts locally (`getpass`) and writes config and secrets
     - one read-only `GET` of the provider's `/models` endpoint (OpenRouter's auth-gated `/key`) confirms auth (status only; `--no-verify` skips it)
@@ -489,8 +489,8 @@ Below `full` there is no network namespace: `auto` degrades to the agent process
       The backend may use rated turns for training, and that choice is never made on the operator's behalf
 - `agent6 connect claude` stores nothing: agent6 never reads or copies Claude Code's own login (`~/.claude/.credentials.json`, `~/.claude.json`)
     - no default mount or grant holds it.
-      A jailed command reads it when the workspace or a path grant (`sandbox.extra_read_paths`, `sandbox.extra_write_paths`) is the home directory or a directory above it, and under `isolation = "none"`
-    - a `sandbox.hide_paths` entry hides it from commands under `full`
+      A jailed command reads it when the workspace or a path grant (`sandbox.extra_read_paths`, `sandbox.extra_write_paths`) is the home directory or a directory above it, and under `sandbox.isolation = "none"`
+    - a `sandbox.hide_paths` entry hides it from commands under `full` `sandbox.isolation`
     - the child's environment carries no `ANTHROPIC_*` or `CLAUDE*` variable from the operator shell, so a shell API key cannot override the subscription login; `CLAUDE_CONFIG_DIR` is the one passthrough
     - `claude auth status --json` is parsed for `loggedIn` only; its body (email, org) is never printed or journaled
     - the binary's initialize handshake carries the account block.
@@ -534,11 +534,11 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 - The machine's `[config]` and each state's `config` may set `sandbox` keys, each bounded by your own layers alone ([the rule per key](state-machines.md#47-machine-config-overlay-config))
     - the ceiling is read from one load of your layers (defaults, global, repo, preset, `--config FILE`), never from a config the machine file has merged into
     - a path grant is at or below one of yours, compared by real path, so a symlink out of your tree is refused
-    - a state's grants are judged against every region the machine writes (your write grants, the workspace, `/tmp` off `full`), as one run's are against its own: a grant below such a region, or reached through a link inside one, refuses `machine check` and machine start, since a state writing the region can point it anywhere; the region itself may be granted
+    - a state's grants are judged against every region the machine writes (your write grants, the workspace, `/tmp` off `full` `sandbox.isolation`), as one run's are against its own: a grant below such a region, or reached through a link inside one, refuses `machine check` and machine start, since a state writing the region can point it anywhere; the region itself may be granted
     - a wider value refuses at `machine check` and at machine start, naming the state and the key
     - the other operator-only tables and leaves are rejected at load ([the list](state-machines.md#47-machine-config-overlay-config))
 - One resolved config per state feeds both enforcement sites: a `tool` state's jail, and an `agent` state's subprocess (its in-process file tools and its jailed commands)
-    - every startup check a plain run makes (the `hide_paths` check under `partial`, network support) runs per state and names the state
+    - every startup check a plain run makes (the `hide_paths` check under `partial` `sandbox.isolation`, network support) runs per state and names the state
     - a state the supervisor resolved no config for runs nothing
 - A `--config FILE` inside the workspace is read-only in every jail, like the bundle: a state cannot raise its own ceiling
 - A grant bounds what a state touches directly: a granted state can copy what it reads to the blackboard, the data dir, the jail's `HOME` or a commit, where a later state reads it
@@ -563,9 +563,9 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `vcs/_git_command.py`, `vcs/git_ops.py`, `vcs/git_read.py` and `vcs/git_history.py`: agent6's own git operations ([Git](#7-git)).
 - `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
-- `sandbox/jail.py`: the jail launcher, and the plain spawn under `isolation = "none"`.
-  An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` level.
-- `sandbox/jail_jobs.py`: detached jail commands and the plain background spawn under `isolation = "none"`.
+- `sandbox/jail.py`: the jail launcher, and the plain spawn under `sandbox.isolation = "none"`.
+  An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` `sandbox.isolation` level.
+- `sandbox/jail_jobs.py`: detached jail commands and the plain background spawn under `sandbox.isolation = "none"`.
 - `sandbox/jail_session.py`: persistent jail launcher sessions and their teardown.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
 - `providers/claude_code.py` and `providers/_claude_code_session.py`: the `api_format = "claude_code"` provider and its session lifecycle helpers run the Claude Code binary the operator connected with fixed argv from operator configuration, never model output (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
