@@ -25,7 +25,8 @@ from agent6.vcs import (
 # Diff grounding: the (path, line) citations this diff supports.
 # Both the old-side and new-side line numbers, so a deletion grounds against the pre-image path.
 _HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-_GIT_HDR_RE = re.compile(r"^diff --git a/(.*?) b/(.*)$")
+# Each side is `a/path` or git's C-quoted `"a/path"`; the prefix is stripped after unquoting.
+_GIT_HDR_RE = re.compile(r'^diff --git ("(?:[^"\\]|\\.)*"|a/.*?) ("(?:[^"\\]|\\.)*"|b/.*)$')
 
 
 _C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, '"': 34, "\\": 92}
@@ -125,8 +126,8 @@ def diff_hunks(diff: str) -> Hunks:
                 hunks.setdefault((oldpath, "base"), [])
             if newpath:
                 hunks.setdefault((newpath, "head"), [])
-            oldpath = unquote_git_path(g.group(1))
-            newpath = unquote_git_path(g.group(2))
+            oldpath = re.sub(r"^a/", "", unquote_git_path(g.group(1)))
+            newpath = re.sub(r"^b/", "", unquote_git_path(g.group(2)))
             continue
         if raw.startswith("new file mode "):
             oldpath = ""
@@ -536,18 +537,13 @@ def comparison(
         )
         hidden = tuple(name for name in names if workspace.is_denied(repo / name))
         selected = tuple(sorted(set(names).difference(hidden)))
-        if hidden and selected:
-            filtered = set(
-                _git_command.nul_fields(
-                    root, *coverage_listing, "--", *specs, *exclusions, env_extra=env
-                )
-            ) - {""}
-            if filtered != set(selected):
-                raise errors.GitError("Git pathspecs cannot enforce the review's hidden paths")
         if not head_commit and selected:
             dirty_submodules = _review_submodules.dirty_paths(repo, selected, workspace)
-            changed = set(
-                _git_command.nul_fields(
+            # agent6's own filter picks the staged names: `ls-files` given a file pathspec and an
+            # exclude element lists nothing (git 2.53), so the exclusions stay off its argv.
+            changed = {
+                name
+                for name in _git_command.nul_fields(
                     root,
                     "ls-files",
                     "-z",
@@ -557,10 +553,10 @@ def comparison(
                     "--exclude-standard",
                     "--",
                     *specs,
-                    *exclusions,
                     env_extra=env,
                 )
-            ) - {""}
+                if name and not workspace.is_denied(repo / name)
+            }
             _git_command.run(
                 repo,
                 "update-index",
@@ -622,4 +618,43 @@ def comparison(
         if selected
         else ""
     )
+    # Git's exclusions filtered the diff; its own name list, read raw, says whether a hidden
+    # name reached it anyway (a case fold git's `icase` does not make), which refuses the review.
+    if diff and any(
+        workspace.is_denied(repo / name) for name in _diff_names(root, target, specs, exclusions)
+    ):
+        raise errors.GitError("Git pathspecs cannot enforce the review's hidden paths")
     return Comparison(target, diff, hidden, dirty_submodules)
+
+
+def _diff_names(
+    root: pathlib.Path,
+    target: review_records.ReviewTarget,
+    specs: tuple[str, ...],
+    exclusions: list[str],
+) -> set[str]:
+    """Return every path the review diff names on either side, as git lists them."""
+    fields = _git_command.nul_fields(
+        root,
+        "diff",
+        *git_policy.DIFF_SAFETY_FLAGS,
+        "--no-relative",
+        "--name-status",
+        "-z",
+        target.base_tree,
+        target.head_tree,
+        "--",
+        *specs,
+        *exclusions,
+    )
+    names: set[str] = set()
+    index = 0
+    while index + 1 < len(fields):
+        status = fields[index]
+        names.add(fields[index + 1])
+        if status[:1] in ("R", "C"):
+            names.add(fields[index + 2])
+            index += 3
+        else:
+            index += 2
+    return names - {""}

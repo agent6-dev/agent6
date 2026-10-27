@@ -375,6 +375,33 @@ def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
     assert not harness__panel.is_grounded(cited[0].location, review.diff_hunks(SAMPLE_DIFF))
 
 
+def test_quoted_hunkless_entries_and_literal_quote_names_ground() -> None:
+    """A quoted header without hunks registered no path; a name holding quotes was unquoted away."""
+    from agent6.harness import _review_seat
+
+    diff = (
+        'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
+        "old mode 100644\nnew mode 100755\n"
+        'diff --git "a/\\"note.py\\"" "b/\\"note.py\\""\n'
+        '--- "a/\\"note.py\\""\n+++ "b/\\"note.py\\""\n'
+        "@@ -1,1 +1,2 @@\n keep\n+added\n"
+    )
+    hunks = review.diff_hunks(diff)
+    assert hunks[("café.py", "head")] == [] and ('"note.py"', "head") in hunks
+    cited = _review_seat.coerce_findings(
+        [
+            {
+                "category": "other",
+                "severity": "nit",
+                "title": "t",
+                "location": {"path": '"note.py"', "side": "head", "start_line": 2, "end_line": 2},
+            }
+        ]
+    )
+    assert cited[0].location.path == '"note.py"'
+    assert harness__panel.is_grounded(cited[0].location, hunks)
+
+
 def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
     # An added line whose CONTENT begins with "++ b/evil.py" renders as
     # "+++ b/evil.py"; it must not be mistaken for a +++ header (only a +++ that

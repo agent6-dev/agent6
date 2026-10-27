@@ -32,6 +32,18 @@ def _git(root: pathlib.Path, *args: str) -> str:
     return out.stdout
 
 
+def test_a_scoped_worktree_review_of_a_nested_file_has_its_diff(repo: pathlib.Path) -> None:
+    """`ls-files --modified` with a file pathspec and an exclude element lists nothing."""
+    for i in range(50):
+        (repo / f"dir{i % 40:03d}").mkdir(exist_ok=True)
+        (repo / f"dir{i % 40:03d}" / f"file{i:05d}.py").write_text("x\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "files")
+    (repo / "dir014" / "file00014.py").write_text("x\ny\n")
+    compared = review.comparison(repo, base="", head="HEAD", paths=("dir014/file00014.py",))
+    assert "+y" in compared.diff and compared.target.paths == ("dir014/file00014.py",)
+
+
 def test_pathspec_environment_does_not_empty_the_review(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

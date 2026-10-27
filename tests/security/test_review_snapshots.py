@@ -145,8 +145,30 @@ def test_staged_deletions_outside_the_selection_keep_the_base_entries(
     assert "+new" in compared.diff and "BASE-SECRET" not in compared.diff
 
 
-def test_hidden_names_git_cannot_fold_refuse_the_review(tmp_path: pathlib.Path) -> None:
-    """Python folds `Ü` onto `ü` and git's `icase` under `LC_ALL=C` does not; the review refuses."""
+def test_a_hidden_name_in_a_quoted_hunkless_entry_refuses_the_review(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A mode-only change to `ü.txt` has a quoted header and no hunk; its name reached the seat."""
+    _git(tmp_path, "init", "-q")
+    for name in ("a.py", "ü.txt"):
+        (tmp_path / name).write_text("old\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "base")
+    (tmp_path / "a.py").write_text("new\n")
+    (tmp_path / "ü.txt").chmod(0o755)
+    _git(tmp_path, "commit", "-qam", "head")
+    with pytest.raises(errors.GitError, match="cannot enforce"):
+        review.comparison(
+            tmp_path, base="HEAD~1", head="HEAD", paths=(), hide=(str(tmp_path / "Ü.txt"),)
+        )
+
+
+def test_hidden_names_git_cannot_fold_never_reach_the_diff(tmp_path: pathlib.Path) -> None:
+    """Python folds `Ü` onto `ü` and git's `icase` under `LC_ALL=C` does not.
+
+    A worktree review stages by agent6's own filter, so the hidden file stays at its base entry;
+    a revision review, whose diff git filters alone, refuses when a hidden name reaches it.
+    """
     _git(tmp_path, "init", "-q")
     for name in ("a.py", "ü.txt"):
         (tmp_path / name).write_text("old\n")
@@ -154,8 +176,15 @@ def test_hidden_names_git_cannot_fold_refuse_the_review(tmp_path: pathlib.Path) 
     _git(tmp_path, "commit", "-qm", "base")
     for name in ("a.py", "ü.txt"):
         (tmp_path / name).write_text("new\n")
+    hide = (str(tmp_path / "Ü.txt"),)
+    compared = review.comparison(tmp_path, base="", head="HEAD", paths=(), hide=hide)
+    assert "+new" in compared.diff and "ü.txt" not in compared.diff
+    assert _git(tmp_path, "ls-tree", compared.target.head_tree, "ü.txt") == _git(
+        tmp_path, "ls-tree", compared.target.base_tree, "ü.txt"
+    )
+    _git(tmp_path, "commit", "-qam", "head")
     with pytest.raises(errors.GitError, match="cannot enforce"):
-        review.comparison(tmp_path, base="", head="HEAD", paths=(), hide=(str(tmp_path / "Ü.txt"),))
+        review.comparison(tmp_path, base="HEAD~1", head="HEAD", paths=(), hide=hide)
 
 
 def test_top_level_exclusion_survives_review_from_an_empty_subdirectory(
