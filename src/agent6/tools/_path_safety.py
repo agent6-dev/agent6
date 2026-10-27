@@ -115,6 +115,9 @@ class Workspace:
 
     def _denying(self, abs_path: pathlib.Path) -> pathlib.Path | None:
         """Return the denied root covering the path, or None; the one owner of the verdict."""
+        for parent in (abs_path, *abs_path.parents):
+            if fold_name(parent.name) == ".agent6":
+                return parent
         if any(path_within(abs_path, e) for e in self.exempt):
             return None
         for d in self.denied:
@@ -186,7 +189,7 @@ class Workspace:
 
     def _refuse_denied(self, sp: SafePath, candidate: str) -> None:
         # Refused, not answered empty: a tool result can carry an error where a jail mask cannot.
-        d = self._denying(sp.abs_path)
+        d = self._denying(sp.abs_path) or self._denying(self.root / candidate)
         if d is not None:
             raise tools_errors.ToolError(
                 f"Path is absent (hidden from this run): {candidate!r} (under {d})"

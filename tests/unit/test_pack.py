@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import concurrent.futures
+import contextlib
 import errno
 import hashlib
 import json
@@ -7,10 +9,12 @@ import os
 import pathlib
 import shutil
 import socket
+import threading
 
 import pytest
 
-from agent6 import errors, pack, paths
+from agent6 import _pack_manifest, errors, pack, paths, portable, secret_store
+from agent6.config import write
 
 
 def _write(path: pathlib.Path, text: str = "payload", mode: int = 0o640) -> pathlib.Path:
@@ -26,7 +30,7 @@ def _digest(text: str) -> str:
 
 
 def test_pack_snapshot(tmp_path: pathlib.Path) -> None:
-    """A pack carries global settings, skills and all repo state except locks."""
+    """A pack carries global settings, skills and repo payload, not locks or transfer hashes."""
     root = tmp_path / "project"
     root.mkdir()
     cfg = paths.global_config_dir()
@@ -60,7 +64,6 @@ def test_pack_snapshot(tmp_path: pathlib.Path) -> None:
         "repo/sessions/runs/s1/journal.jsonl",
         "repo/memory/a.md",
         "repo/other",
-        "repo/pack-base.json",
     }
     for name, facts in manifest["files"].items():
         assert facts["sha256"] == hashlib.sha256((packed / name).read_bytes()).hexdigest()
@@ -117,9 +120,9 @@ def test_unpack_rekeys_and_moves(
     pack.pack(source)
     dest = tmp_path / "destination"
     dest.mkdir()
+    kept = _write(paths.state_dir(dest) / "unrelated", "keep")
     shutil.move(source / ".agent6", dest / ".agent6")
     paths.secrets_path().unlink()
-    kept = _write(paths.state_dir(dest) / "unrelated", "keep")
     if cross_device:
 
         def exdev(*args: object, **kwargs: object) -> None:
@@ -286,6 +289,106 @@ def test_special_inputs_refuse_before_open(
             pack.unpack(tmp_path)
         else:
             pack.pack(tmp_path)
+
+
+@pytest.mark.parametrize("kind", ["config", "secrets", "repo_config"])
+def test_unpack_serializes_a_writer_between_preflight_and_move(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """A config or connect write started after preflight must survive the import."""
+    other = tmp_path / "other"
+    other.mkdir()
+    root = tmp_path / "repo"
+    root.mkdir()
+    if kind == "secrets":
+        target = secret_store.save_secret("test", "packed")
+    elif kind == "config":
+        assert write.set_config_value(other, "context.summary_max_tokens", "1000") is None
+        target = paths.global_config_path()
+    else:
+        assert (
+            write.set_config_value(root, "context.summary_max_tokens", "1000", to_repo=True) is None
+        )
+        target = paths.repo_config_path(root)
+    pack.pack(root)
+    target.unlink()
+    attempted = threading.Event()
+    acquire = portable._acquire_lock  # pyright: ignore[reportPrivateUsage]
+
+    def signal_attempt(lock: pathlib.Path) -> int | None:
+        if threading.current_thread() is not threading.main_thread():
+            attempted.set()
+        return acquire(lock)
+
+    monkeypatch.setattr(portable, "_acquire_lock", signal_attempt)
+
+    def writer() -> None:
+        if kind == "secrets":
+            secret_store.save_secret("test", "concurrent")
+        elif kind == "config":
+            assert write.set_config_value(other, "context.summary_max_tokens", "2000") is None
+        else:
+            with write.writing_config(target):
+                portable.atomic_write(target, "[context]\nsummary_max_tokens = 2000\n")
+
+    preflight = pack._preflight  # pyright: ignore[reportPrivateUsage]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future: concurrent.futures.Future[None] | None = None
+
+        def race(
+            project: pathlib.Path, manifest: _pack_manifest.Manifest
+        ) -> tuple[pack.FileFacts, ...]:
+            nonlocal future
+            facts = preflight(project, manifest)
+            future = executor.submit(writer)
+            assert attempted.wait(timeout=5)
+            with contextlib.suppress(concurrent.futures.TimeoutError):
+                future.result(timeout=1)
+            return facts
+
+        monkeypatch.setattr(pack, "_preflight", race)
+        pack.unpack(root)
+        assert future is not None
+        future.result(timeout=5)
+    if kind == "secrets":
+        assert secret_store.load_secrets()["providers"]["test"]["api_key"] == "concurrent"
+    else:
+        assert "2000" in target.read_text()
+
+
+def test_unpack_refuses_when_a_writer_lock_cannot_be_taken(tmp_path: pathlib.Path) -> None:
+    """An unavailable writer lock must not turn unpack into an unserialized overwrite."""
+    target = _write(paths.global_config_path(), "packed")
+    pack.pack(tmp_path)
+    target.unlink()
+    target.with_name(target.name + ".lock").symlink_to(tmp_path / "missing")
+    with pytest.raises(errors.PackError, match="lock"):
+        pack.unpack(tmp_path)
+    assert not target.exists()
+    assert (tmp_path / ".agent6/config/config.toml").read_text() == "packed"
+
+
+def test_two_trip_round_trip_does_not_transfer_base_hashes(tmp_path: pathlib.Path) -> None:
+    """Unchanged payload crosses two trips without conflicting on transfer bookkeeping."""
+    source, dest = tmp_path / "source", tmp_path / "dest"
+    source.mkdir()
+    dest.mkdir()
+    source_state, dest_state = paths.state_dir(source), paths.state_dir(dest)
+    _write(source_state / "note", "payload")
+    for _ in range(2):
+        pack.pack(source)
+        shutil.copytree(source / ".agent6", dest / ".agent6")
+        assert pack.unpack(source).moved == ()
+        pack.unpack(dest)
+        pack.pack(dest)
+        shutil.copytree(dest / ".agent6", source / ".agent6")
+        assert pack.unpack(dest).moved == ()
+        assert pack.unpack(source).moved == ()
+    for state in (source_state, dest_state):
+        assert (state / "note").read_text() == "payload"
+        assert json.loads((state / "pack-base.json").read_text()) == {
+            "repo/note": _digest("payload")
+        }
 
 
 def test_pack_refuses_symlinks(tmp_path: pathlib.Path) -> None:

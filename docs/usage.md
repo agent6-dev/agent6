@@ -50,6 +50,7 @@ agent6 model all openrouter/moonshotai/kimi-k2.6   # set every role at once
 
 Run `agent6 pack` before syncing a checkout to a devcontainer, remote-ssh host or new location.
 It copies this home's state into `<project root>/.agent6/` and adds `.agent6/` to the project's `.gitignore` if that line is missing.
+Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not or if any `.agent6` path is tracked.
 Home keeps its copies.
 Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
 It deletes `.agent6/` after a successful import.
@@ -60,7 +61,7 @@ The pack contains:
 - `pack.json`: version 1, UTC pack time, origin host, home, repo id and workspace, and each file's SHA256, UTC mtime and last shared hash.
 - `config/`: global `config.toml`, `ui.toml` and `secrets.toml`.
 - `skills/`: installed skills from the data directory.
-- `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/`.
+- `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/` and `pack-base.json`.
 
 The cache, jail homes, parallel workspaces and completions do not travel.
 File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `0700` directory.
@@ -76,23 +77,26 @@ Symlinks and special files refuse rather than following a path outside the snaps
 - Otherwise: a conflict.
 
 Any conflict refuses the entire import with exit 2 before moving files.
+`unpack` holds the config and secrets writer locks across preflight and import.
 The command lists every conflict's home path and pack path with both mtimes.
 Hand-merge the files or delete the side to replace, then rerun `agent6 unpack`.
 Pack files edited by hand are hashed again; deleting a pack file leaves the home's copy untouched.
 Files at home that the pack does not carry stay untouched.
 The imported hashes are saved in `<state-dir>/pack-base.json` for the trip back.
 
-Commands that resolve the project root refuse with exit 2 if `.agent6/pack.json` names another host or home.
+Commands that resolve the project root refuse with exit 2 if `.agent6/pack.json` is present, even for a pack this home made.
 The message names the origin and pack time and says to run `agent6 unpack` or delete `.agent6/`.
-An own-home pack is allowed, and `unpack` is exempt.
+`pack` and `unpack` are exempt.
 
 For a devcontainer or remote-ssh round trip:
 
 1. Run `agent6 pack` here.
 2. Sync the workspace, including the hidden, gitignored `.agent6/` directory.
-3. Run `agent6 unpack` there and work.
-4. Run `agent6 pack` there and sync the workspace back.
-5. Run `agent6 unpack` here.
+3. After the sync, run `agent6 unpack` here as well, which removes your own pack.
+   If the home files are unchanged, every file is identical and nothing moves.
+4. Run `agent6 unpack` there and work.
+5. Run `agent6 pack` there and sync the workspace back, then run `agent6 unpack` there to remove its own pack.
+6. Run `agent6 unpack` here.
 
 Recorded absolute paths in journals and session manifests remain history.
 Ordinary sessions resolve against the current checkout.

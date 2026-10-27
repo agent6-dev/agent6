@@ -6,6 +6,7 @@ import pathlib
 
 from agent6 import errors, pack, paths
 from agent6.ui.cli import init
+from agent6.vcs import git_read
 
 
 def cmd_pack() -> int:
@@ -17,7 +18,7 @@ def cmd_pack() -> int:
     Raises:
         PackError: The pack or its gitignore entry cannot be written.
     """
-    root = paths.project_root(pathlib.Path.cwd())
+    root = paths.project_root(pathlib.Path.cwd(), allow_pack=True)
     try:
         ignore = root / ".gitignore"
         text = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
@@ -26,6 +27,8 @@ def cmd_pack() -> int:
             paths.chown_to_real_user(ignore)
     except (OSError, UnicodeDecodeError) as exc:
         raise errors.PackError(f"{root / '.gitignore'}: {exc}") from exc
+    if refusal := git_read.pack_exclusion_error(root):
+        raise errors.PackError(refusal)
     manifest = pack.pack(root)
     print(f"Packed {len(manifest.files)} files into {root / '.agent6'}; home copies kept.")
     return 0

@@ -25,6 +25,7 @@ depends_on = []
 path = "agent6.app"
 depends_on = [
   "agent6",
+  "agent6._pack_manifest",
   "agent6.budget",
   "agent6.child_env",
   "agent6.config",

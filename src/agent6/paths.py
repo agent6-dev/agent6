@@ -346,7 +346,7 @@ def project_root(start: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Pa
 
     Args:
         start: The path, such as the cwd.
-        allow_pack: Allow a foreign pack while importing it.
+        allow_pack: Allow a pack while importing or replacing it.
 
     Returns:
         The project root, resolved.
@@ -357,7 +357,7 @@ def project_root(start: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Pa
         if git_dir is not None and git_dir.name == ".git":
             root = git_dir.parent
     if not allow_pack:
-        _pack_manifest.check_origin(root, effective_user().home)
+        _pack_manifest.check_origin(root)
     return root
 
 

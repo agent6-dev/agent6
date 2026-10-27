@@ -136,23 +136,21 @@ def is_own(origin: Origin, home: pathlib.Path) -> bool:
     return origin.host == socket.gethostname() and origin.home == str(home)
 
 
-def check_origin(root: pathlib.Path, home: pathlib.Path) -> None:
-    """Refuse a foreign pack before a command reads this home's state.
+def check_origin(root: pathlib.Path) -> None:
+    """Refuse any pack before a command reads this home's state.
 
     Args:
         root: The resolved project root.
-        home: The effective user's home.
 
     Raises:
-        PackError: The pack is foreign or its manifest is invalid.
+        PackError: A pack is present or its manifest is invalid.
     """
     if not (root / ".agent6/pack.json").exists():
         return
     manifest = read(root)
-    if not is_own(manifest.origin, home):
-        origin = manifest.origin
-        time = manifest.model_dump(mode="json")["packed_at"]
-        raise errors.PackError(
-            f"{root / '.agent6'}: pack from {origin.host}:{origin.home}, packed at {time}. "
-            "Run agent6 unpack first or delete the directory."
-        )
+    origin = manifest.origin
+    time = manifest.model_dump(mode="json")["packed_at"]
+    raise errors.PackError(
+        f"{root / '.agent6'}: pack from {origin.host}:{origin.home}, packed at {time}. "
+        "Run agent6 unpack in that workspace or delete its .agent6/ directory."
+    )

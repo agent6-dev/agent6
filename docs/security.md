@@ -192,8 +192,10 @@ Config, flag, and env var are operator-only; the model reaches neither argv nor 
     - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
     - a grant at or inside a private dir is refused at config load
     - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
-    - a present `.agent6/` follows the implicit-private-path rule under `partial`: startup warns that commands can read its contents.
-      Set `sandbox.isolation = "full"` or unpack before starting work; explicitly listing it in `sandbox.hide_paths` refuses under `partial`
+    - a present `.agent6/pack.json` refuses startup at every isolation level, including `partial`.
+      Run `agent6 unpack` in that workspace or delete its `.agent6/` directory
+    - run preflight scans the project tree once for nested packs, without following symlinks or entering `.git`, and refuses with every pack's path.
+      Trees reached through `extra_read_paths` grants are not scanned: unpack or delete a pack before granting the tree that holds it
     - a `hide_paths` entry that is the workspace or a directory above it refuses at every level, before anything runs: drop the entry, or work in a directory outside it
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork, a `run --worktree` run or a machine state works in
     - a `hide_paths` entry inside the workspace stays out of every tree agent6 writes or compares (chain commits, review diffs, dirty checks, undo, resume) and out of the run's pre-run stash, whose change stays in place: no blob of it enters the object store through agent6
@@ -244,7 +246,7 @@ Every path they take resolves through `Workspace`:
       + [sandbox].extra_read_paths (read) / extra_write_paths (write)
       - [sandbox].hide_paths
       - agent6's own config dir and state base
-      - .agent6/ at the workspace and project roots
+      - any path with a .agent6 component
 
 - The boundary comes from config values
     - a degradation (`auto` falling back to `partial` or `none`, a host with no jail) leaves it unchanged; under `none` `sandbox.isolation` it is the only boundary
@@ -538,7 +540,9 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 ### 8. Secrets and `connect`
 
 `agent6 pack` deliberately copies credentials into the workspace at `.agent6/config/secrets.toml`.
-The directory is gitignored and hidden from file tools, symbol indexing, host-side tree reads and the `full` jail.
+A present pack stops every run until it is unpacked or deleted, even on its origin host and home.
+`pack` verifies git's ignore decision and refuses tracked `.agent6` paths before writing the snapshot.
+File tools, symbol indexing and host-side tree reads deny `.agent6` path components; the `full` jail also masks the workspace and project roots' `.agent6/` directories.
 The secrets copy is created through a `0600` descriptor in a `0700` directory, not a plain copy.
 A workspace sync can expose it to the sync service and the destination host; use only trusted destinations.
 A devcontainer that maps the user to another uid can leave a synced secrets file foreign-owned, which the secrets loader refuses.

@@ -107,6 +107,33 @@ def is_git_repo(path: pathlib.Path) -> bool:
     return res.ok and res.stdout.strip() == "true"
 
 
+def pack_exclusion_error(path: pathlib.Path) -> str | None:
+    """Check that a workspace pack is untracked and its manifest would be ignored.
+
+    Args:
+        path: The project root.
+
+    Returns:
+        The refusal with the gitignore or tracking correction, or None.
+
+    Raises:
+        GitError: Git cannot inspect the repository.
+    """
+    if _git_command.run(path, "ls-files", "-z", "--", ".agent6").stdout:
+        return f"{path / '.agent6'}: tracked paths must be removed from git's index before packing."
+    args = ("check-ignore", "-q", "--", ".agent6/pack.json")
+    result = _git_command.run(path, *args, check=False)
+    if result.returncode not in (0, 1):
+        error = _git_command.failure(args, result.returncode, result.stdout, result.stderr)
+        raise error
+    if not result.ok:
+        return (
+            f"{path / '.agent6/pack.json'} is not ignored. Fix the .agent6/ line in "
+            f"{path / '.gitignore'} so no later negation (such as !.agent6/) overrides it."
+        )
+    return None
+
+
 def toplevel(path: pathlib.Path) -> pathlib.Path | None:
     """Return the enclosing work tree's root, or None outside a repo or inside `.git`."""
     res = _git_command.run(path, "rev-parse", "--show-toplevel", check=False)

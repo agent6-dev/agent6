@@ -9,10 +9,11 @@ A half-measure reads as a guarantee it cannot keep, so these checks warn or refu
 
 from __future__ import annotations
 
+import os
 import pathlib
 from collections.abc import Callable
 
-from agent6 import kinds, paths
+from agent6 import _pack_manifest, errors, kinds, paths
 from agent6.app import _setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, MCPServerEntry
@@ -540,6 +541,33 @@ def check_mcp_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> s
     return None
 
 
+def check_workspace_packs(workspace: pathlib.Path) -> str | None:
+    """Refuse packs anywhere in the project tree before constructing a run's boundary.
+
+    Args:
+        workspace: The run's workspace.
+
+    Returns:
+        Every pack refusal or walk error, or None when no pack is present.
+    """
+    root = paths.project_root(workspace, allow_pack=True)
+    if not root.exists():
+        return None
+    refusals: list[str] = []
+    for directory, children, _files in os.walk(
+        root,
+        followlinks=False,
+        onerror=lambda exc: refusals.append(f"Cannot check workspace packs: {exc}"),
+    ):
+        if ".agent6" in children:
+            try:
+                _pack_manifest.check_origin(pathlib.Path(directory))
+            except errors.PackError as exc:
+                refusals.append(str(exc))
+        children[:] = sorted(name for name in children if name not in (".git", ".agent6"))
+    return "\n".join(refusals) or None
+
+
 def config_refusal(
     cfg: Config,
     isolation: kinds.IsolationLevel,
@@ -567,6 +595,7 @@ def config_refusal(
     checks: tuple[Callable[[], str | None], ...] = (
         # The HOME check first: `check_hide_paths_support` builds the policy, which creates HOME.
         lambda: check_jail_home(cfg, isolation, workspace, worktree_git_dir),
+        lambda: check_workspace_packs(workspace),
         lambda: check_mcp_network_support(cfg, isolation) if mcp_network else None,
         # Before `check_hide_paths_support`, so a workspace under an entry gets its own refusal.
         lambda: check_workspace_outside_hidden_paths(cfg, workspace),

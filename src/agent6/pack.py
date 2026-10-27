@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime
 import errno
@@ -72,7 +73,7 @@ def _files(root: pathlib.Path, *, exclude: tuple[str, ...] = ()) -> Iterator[pat
 
     Args:
         root: The resolved project root.
-        exclude: Top-level directory names to omit.
+        exclude: Top-level names to omit.
 
     Yields:
         Every regular file, in path order.
@@ -188,7 +189,9 @@ def pack(root: pathlib.Path) -> _pack_manifest.Manifest:
             sources.update(
                 {
                     f"{area}/{file.relative_to(source).as_posix()}": file
-                    for file in _files(source, exclude=("locks",) if area == "repo" else ())
+                    for file in _files(
+                        source, exclude=("locks", "pack-base.json") if area == "repo" else ()
+                    )
                 }
             )
         paths.mkdir_for_real_user(directory)
@@ -329,25 +332,40 @@ def unpack(root: pathlib.Path) -> ImportResult:
     root = root.resolve()
     manifest = _pack_manifest.read(root)
     try:
-        facts = _preflight(root, manifest)
-        for file in facts:
-            if file.outcome == "move":
-                _move(file)
-            elif file.name == "config/secrets.toml":
-                _copy(file.home, file.home, secret=True)
-        state = paths.state_dir(root, allow_pack=True)
-        paths.mkdir_for_real_user(state)
-        portable.atomic_write(
-            state / "pack-base.json",
-            json.dumps({f.name: f.sha256 for f in facts}, indent=2) + "\n",
-            mode=0o600,
-        )
-        paths.chown_to_real_user(state / "pack-base.json")
-        shutil.rmtree(root / ".agent6")
-        return ImportResult(
-            manifest.origin,
-            tuple(f.home for f in facts if f.outcome == "move"),
-            tuple(f.home for f in facts if f.outcome == "keep"),
-        )
+        with contextlib.ExitStack() as locks:
+            # Config and secrets writers use the same target-keyed lock.
+            for name in (
+                "config/config.toml",
+                "config/secrets.toml",
+                "config/ui.toml",
+                "repo/config.toml",
+            ):
+                if name not in manifest.files:
+                    continue
+                target = _home(root, name)
+                _pack_manifest.check_path(target)
+                paths.mkdir_for_real_user(target.parent)
+                if not locks.enter_context(portable.locked_file(target)):
+                    raise errors.PackError(f"{target}: cannot take writer lock; nothing moved")
+            facts = _preflight(root, manifest)
+            for file in facts:
+                if file.outcome == "move":
+                    _move(file)
+                elif file.name == "config/secrets.toml":
+                    _copy(file.home, file.home, secret=True)
+            state = paths.state_dir(root, allow_pack=True)
+            paths.mkdir_for_real_user(state)
+            portable.atomic_write(
+                state / "pack-base.json",
+                json.dumps({f.name: f.sha256 for f in facts}, indent=2) + "\n",
+                mode=0o600,
+            )
+            paths.chown_to_real_user(state / "pack-base.json")
+            shutil.rmtree(root / ".agent6")
+            return ImportResult(
+                manifest.origin,
+                tuple(f.home for f in facts if f.outcome == "move"),
+                tuple(f.home for f in facts if f.outcome == "keep"),
+            )
     except OSError as exc:
         raise errors.PackError(f"unpack {root / '.agent6'}: {exc}") from exc

@@ -42,7 +42,7 @@ By default, it switches off the repository's hooks, fsmonitor, external diff, te
 - per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, written `<state-dir>` below, keyed on the repository (a subdirectory reaches the same runs, memory and config, and so does a linked worktree, through its `.git` file)
 - `pack.py` copies and imports portable workspace state; `_pack_manifest.py` validates its trust boundary without importing path resolution.
   `ui/cli/pack_cmds.py` owns the two command surfaces and shares init's `.gitignore` writer.
-  `paths.project_root` refuses a foreign pack until `unpack` imports it.
+  `paths.project_root` refuses any pack until `unpack` imports it or the operator deletes it.
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
 
 Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `review`, the in-loop panel and the loop's side calls (the context summariser and gister, the prompt reviser).

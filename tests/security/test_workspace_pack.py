@@ -4,7 +4,7 @@ import pathlib
 
 import pytest
 
-from agent6 import kinds
+from agent6 import kinds, pack, paths
 from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import jail
@@ -25,18 +25,20 @@ def test_jail_hidden_set_contains_workspace_pack_even_when_absent(tmp_path: path
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial", "none"])
+@pytest.mark.parametrize("subdir", [".", "child"])
 def test_tools_hide_pack_at_every_isolation_level(
-    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, subdir: str
 ) -> None:
-    _secret(tmp_path)
+    root = tmp_path / subdir
+    _secret(root)
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation=isolation)
     try:
         with pytest.raises(errors.ToolError, match="absent"):
-            d.dispatch("read_file", {"path": ".agent6/config/secrets.toml"})
+            d.dispatch("read_file", {"path": f"{subdir}/.agent6/config/secrets.toml"})
         with pytest.raises(errors.ToolError, match="absent"):
-            d.dispatch("list_dir", {"path": ".agent6"})
-        assert ".agent6/" not in d.dispatch("list_dir", {}).to_wire()["entries"]
-        (tmp_path / ".agent6/secret.py").write_text("def secret_symbol():\n    pass\n")
+            d.dispatch("list_dir", {"path": f"{subdir}/.agent6"})
+        assert ".agent6/" not in d.dispatch("list_dir", {"path": subdir}).to_wire()["entries"]
+        (root / ".agent6/secret.py").write_text("def secret_symbol():\n    pass\n")
         assert (
             d.dispatch("find_definition", {"symbol": "secret_symbol"}).to_wire()["definitions"]
             == []
@@ -59,22 +61,57 @@ def test_bare_workspace_and_host_reads_hide_pack(tmp_path: pathlib.Path) -> None
     assert symbols._included_rel(public) == pathlib.Path("public.py")  # pyright: ignore[reportPrivateUsage]
 
 
-def test_present_pack_warns_under_partial_like_other_implicit_private_paths(
-    tmp_path: pathlib.Path,
+@pytest.mark.parametrize("isolation", ["full", "partial", "none"])
+def test_present_pack_refuses_before_exposure_warning(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    cfg = Config()
-    assert not any(
-        h == tmp_path / ".agent6"
-        for h, _, _ in confine.unmaskable_exposures(cfg, "partial", tmp_path)
-    )
-    _secret(tmp_path)
-    exposures = confine.unmaskable_exposures(cfg, "partial", tmp_path)
-    packed = [(h, r, s) for h, r, s in exposures if h == tmp_path / ".agent6"]
-    assert len(packed) == 1
-    assert "jailed commands can read" in confine.exposure_warning(*packed[0])
-    assert confine.check_hide_paths_support(cfg, "partial", tmp_path) is None
-    explicit = Config.model_validate({"sandbox": {"hide_paths": [str(tmp_path / ".agent6")]}})
-    assert confine.check_hide_paths_support(explicit, "partial", tmp_path) is not None
+    manifest = pack.pack(tmp_path)
+    refusal = confine.config_refusal(Config(), isolation, tmp_path)
+    assert refusal is not None
+    assert manifest.origin.host in refusal and manifest.origin.home in refusal
+    assert "agent6 unpack" in refusal and "delete" in refusal
+
+
+@pytest.mark.parametrize("isolation", ["full", "partial", "none"])
+def test_nested_packs_refuse_at_run_boundary(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
+    """Every nested checkout pack is named before a run can expose its secrets."""
+    (tmp_path / ".git").mkdir()
+    for name in ("child", "other/deeper"):
+        child = tmp_path / name
+        child.mkdir(parents=True)
+        (child / ".git").mkdir()
+        pack.pack(child)
+    refusal = confine.config_refusal(Config(), isolation, tmp_path)
+    assert refusal is not None
+    for name in ("child", "other/deeper"):
+        assert str(tmp_path / name / ".agent6") in refusal
+    assert "agent6 unpack" in refusal and "delete" in refusal
+
+
+def test_pack_scan_prunes_git_and_does_not_follow_symlinks(tmp_path: pathlib.Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / ".git").mkdir()
+    pack.pack(root / ".git")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    pack.pack(outside)
+    (root / "link").symlink_to(outside, target_is_directory=True)
+    assert confine.config_refusal(Config(), "full", root) is None
+
+
+def test_file_boundary_denies_pack_names_inside_grants(tmp_path: pathlib.Path) -> None:
+    """An extra grant or memory exemption cannot expose a nested pack to file tools."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    grant = paths.state_dir(root) / "memory"
+    secret = _secret(grant / "child")
+    ws = _path_safety.Workspace(root, read_roots=(grant,), exempt=(grant,))
+    assert ws.is_denied(secret)
+    with pytest.raises(errors.ToolError, match="absent"):
+        ws.resolve_read(str(secret))
 
 
 def test_pack_is_excluded_from_git_snapshots(tmp_path: pathlib.Path) -> None:
