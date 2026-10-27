@@ -623,3 +623,25 @@ agent6 also sets markers for its own children:
 
 Every public shape (config TOML, IPC frames, the on-disk graph, CLI flags, transcript layout) is liquid until 1.0; a change breaks the old shape and carries no shim.
 See [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
+
+
+## Media attachments
+
+`kinds.MediaAttachment` holds static image or PDF bytes in memory; `ToolResult.attachment` and `ToolResultItem.attachment` carry it beside unchanged text.
+`ReadMediaResult.to_wire()` contains metadata, not payload bytes.
+`Conversation.to_wire()` encodes retained attachments as text-plus-media arrays under their tool-result IDs.
+`read_file` remains text-only while provider adapters are incomplete.
+
+- Fixed image limits are 2 MiB each, 4 MiB total and four images per turn and request.
+- PDF limits are 10 MiB each and one document per turn and request, counted separately from images.
+- `AttachmentBudget` counts original bytes; Claude Code checks its complete encoded stdin line against the existing 8 MiB line cap.
+- `_media_files.inspect_media` checks bounded container bytes without decoding pixels; `_path_safety.read_bytes_contained` accepts `limit_bytes`.
+- Compaction elides delivered attachments without gisting their payloads; `MEDIA_CONTEXT_CHARS` reserves context independently of base64 length and needs live calibration, especially for PDFs.
+- The journal and shared renderers use metadata labels, not thumbnails.
+- `models.cache.cached_input_capabilities` reads explicit image and document facts from fresh listings, bound to the endpoint, provider entry and exact model.
+- Missing modality data means unknown; names never imply support.
+- `_provider_call.call_with_media_recovery` applies the calling role's facts to canonical tool results and retries one recognized `MediaInputError` without rerunning tools.
+- Delivery refusals emit `loop.media.refused` against each affected call ID and update the worker's latest snapshot before retrying.
+- Confirmed unsupported modalities stay unsupported for that route during the execution; malformed media and size rejections do not change capability facts.
+
+See [Media retention](security.md#media-retention) for persistence and visual-secret disclosure.

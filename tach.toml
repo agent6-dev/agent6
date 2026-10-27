@@ -41,6 +41,7 @@ depends_on = [
   "agent6.kinds",
   "agent6.machine",
   "agent6.machine.journal",
+  "agent6.media",
   "agent6.memory",
   "agent6.models.cache",
   "agent6.models.pricing",
@@ -157,6 +158,7 @@ depends_on = [
   "agent6.graph.models",
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
   "agent6.kinds",
+  "agent6.media",
   "agent6.memory",  # cross-run memories injected into the system prompt
   "agent6.paths",
   "agent6.portable",
@@ -204,6 +206,7 @@ depends_on = [
   "agent6.config._headers",  # the extra_headers grammar the adapters render
   "agent6.config._oauth",  # the configured issuer a stored grant is bound to
   "agent6.config._surfaces",  # is_loopback_host: no ambient proxy carries a loopback bearer off the host
+  "agent6.media",
   "agent6.paths",
   "agent6.portable",
   "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent
@@ -475,7 +478,7 @@ path = "agent6.tools"
 # The in-process handlers use graph intents, workspace grants and session records.
 # Dispatch and jailed command execution have separate entries below.
 # agent6 (root): the MCP handshake sends the canonical __version__.
-depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.evidence", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
+depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.evidence", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.media", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
 
 [[modules]]
 path = "agent6.terminal"
@@ -623,7 +626,7 @@ depends_on = ["agent6.config._base", "agent6.config._harness", "agent6.config._l
 
 [[modules]]
 path = "agent6.models.cache"
-depends_on = ["agent6.config", "agent6.models.pricing", "agent6.paths", "agent6.providers"]
+depends_on = ["agent6.config", "agent6.kinds", "agent6.media", "agent6.models.pricing", "agent6.paths", "agent6.providers"]
 
 [[modules]]
 # Curated model capabilities (context windows, compaction sizing, per-model
@@ -885,3 +888,7 @@ depends_on = ["agent6.errors", "agent6.vcs._git_command"]
 [[modules]]
 path = "agent6.viewmodel.receipt"
 depends_on = ["agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "agent6.vcs.commit_graph", "agent6.vcs.git_read", "agent6.viewmodel"]
+
+[[modules]]
+path = "agent6.media"
+depends_on = ["agent6.kinds"]

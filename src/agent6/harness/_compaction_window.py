@@ -9,6 +9,7 @@ import json
 import re
 from collections.abc import Sequence
 
+from agent6 import media
 from agent6.harness import _compaction_result, _conversation
 from agent6.providers import Provider, types
 
@@ -115,7 +116,9 @@ def message_chars(message: _conversation.Message) -> int:
             )
         return total
     return sum(
-        len(item.content if isinstance(item, _conversation.ToolResultItem) else item.text)
+        (len(item.content) + (media.MEDIA_CONTEXT_CHARS if item.attachment else 0))
+        if isinstance(item, _conversation.ToolResultItem)
+        else len(item.text)
         for item in message.items
     )
 

@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log
+from agent6 import event_log, kinds
 from agent6.config import Config
 from agent6.harness import (
     _advice,
@@ -9396,3 +9396,114 @@ def test_the_snapshot_carries_the_delivered_question_ids(tmp_path: pathlib.Path)
     _loop_resume.save_resume_snapshot(wf, state, [], next_turn=2)
     saved = _snapshot.load_session_snapshot(tmp_path / "loop_state.json")
     assert saved.delivered_questions == ("question-3", "question-4")
+
+
+def test_image_results_bypass_cap_and_repeat_stubbing() -> None:
+    """Each explicit image read retains its attachment and its full metadata."""
+    image = kinds.MediaAttachment(b"x" * 90000, "image/png", "x" * 70000 + ".png")
+    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher.dispatch.return_value = tools_results.ReadMediaResult(image)
+    wf = _wf(mode="run", dispatcher=dispatcher)
+    state = _state()
+    for number in (1, 2):
+        tu = _conversation.ToolUse(f"t{number}", "read_file", {"path": image.source_path})
+        turn = _turn(number=number, assistant=_conversation.AssistantMessage((), (tu,)))
+        wf._turn_dispatch_tools(state, turn, turn_context())  # pyright: ignore[reportPrivateUsage]
+        item = turn.tool_results[0]
+        assert item.attachment is image
+        assert json.loads(item.content) == tools_results.ReadMediaResult(image).to_wire()
+
+
+@pytest.mark.parametrize("modality", ["image", "document"])
+def test_media_recovery_updates_canonical_history_snapshot_and_execution_fact(
+    tmp_path: pathlib.Path, modality: Literal["image", "document"]
+) -> None:
+    """A recognized rejection retries once without tools and persists the canonical refusal."""
+    from agent6 import media
+    from agent6.providers import types as provider_types
+
+    conv = _conversation.Conversation()
+    conv.notice("look")
+
+    def add_media(tid: str) -> None:
+        assistant = conv.assistant(
+            [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "page.png"}}]
+        )
+        attachment = kinds.MediaAttachment(
+            b"private pixels",
+            "application/pdf" if modality == "document" else "image/png",
+            "page.png",
+        )
+        conv.results(
+            [
+                _conversation.ToolResultItem(
+                    tid, attachment.summary(), assistant.tool_uses[0], attachment
+                )
+            ]
+        )
+
+    add_media("t1")
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        provider_types.MediaInputError(modality=modality, reason="unsupported"),
+        _resp("seen"),
+        _resp("again"),
+    ]
+    events = _EventCapture()
+    dispatcher = mock.MagicMock(last_verification=None)
+    wf = _wf(
+        root=tmp_path,
+        provider=provider,
+        dispatcher=dispatcher,
+        events=events,
+        media_input=media.InputCapabilities(kinds.ModelRoute("p", "m")),
+        resume_state_path=tmp_path / "loop_state.json",
+    )
+    state = _state()
+    state.system = "s"
+    response = wf._turn_provider_call("s", conv, [], state, turn=1)  # pyright: ignore[reportPrivateUsage]
+    assert isinstance(response, ProviderResponse) and response.text == "seen"
+    assert provider.call.call_count == 2
+    assert "Cannot deliver" in conv.to_wire()[-1]["content"][0]["content"]
+    saved = json.loads((tmp_path / "loop_state.json").read_text())
+    assert saved["messages"] == conv.to_wire()
+    assert "cHJpdmF0ZSBwaXhlbHM=" not in json.dumps(saved)
+    assert any(e["type"] == "loop.media.refused" and e["call_id"] == "t1" for e in events.events)
+    add_media("t2")
+    wf._turn_provider_call("s", conv, [], state, turn=2)  # pyright: ignore[reportPrivateUsage]
+    assert provider.call.call_count == 3
+    assert (
+        "Cannot deliver" in provider.call.call_args.kwargs["messages"][-1]["content"][0]["content"]
+    )
+    dispatcher.dispatch.assert_not_called()
+
+
+def test_media_recovery_is_one_shot_and_only_caches_unsupported() -> None:
+    """Malformed media triggers one text retry without poisoning the route's capability."""
+    from agent6 import media
+    from agent6.providers import types as provider_types
+
+    conv = _conversation.Conversation()
+    assistant = conv.assistant(
+        [{"type": "tool_use", "id": "t", "name": "read_file", "input": {"path": "p.png"}}]
+    )
+    conv.results(
+        [
+            _conversation.ToolResultItem(
+                "t",
+                "image",
+                assistant.tool_uses[0],
+                kinds.MediaAttachment(b"x", "image/png", "p.png"),
+            )
+        ]
+    )
+    send = mock.Mock(
+        side_effect=[provider_types.MediaInputError(modality="image", reason="invalid")] * 2
+    )
+    recovery = _provider_call.MediaRecovery(media.InputCapabilities(kinds.ModelRoute("p", "m")))
+    with pytest.raises(provider_types.MediaInputError):
+        _provider_call.call_with_media_recovery(
+            send, conv, recovery, emit=lambda *a, **kw: None, changed=lambda: None
+        )
+    assert send.call_count == 2
+    assert not recovery.unsupported

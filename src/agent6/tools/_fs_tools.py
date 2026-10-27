@@ -81,6 +81,11 @@ def read_file(ws: _path_safety.Workspace, raw: dict[str, Any]) -> results.ReadFi
         full = _path_safety.read_contained(sp, limit_chars=MAX_READ_CHARS + 1)
     except UnicodeDecodeError as exc:
         raise errors.ToolError(f"File is not UTF-8 text: {args.path}") from exc
+    if full.startswith(("%PDF-", "GIF87a", "GIF89a")):
+        raise errors.ToolError(
+            f"Media delivery is disabled: {args.path}. "
+            "Convert or extract text with a jailed command."
+        )
     read_truncated = len(full) > MAX_READ_CHARS
     if read_truncated:
         full = full[:MAX_READ_CHARS]

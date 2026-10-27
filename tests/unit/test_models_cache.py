@@ -144,7 +144,9 @@ def test_model_listings_use_the_capped_request(
             )
             assert refused.value.status_code is None and not refused.value.fatal
         else:
-            assert models_cache._fetch("p", entry, "AT", 7.0) == (["m1"], {}, {})
+            assert models_cache._fetch("p", entry, "AT", 7.0) == models_cache.Listing(
+                ["m1"], {}, {}, {}
+            )
     request.assert_called_once()
     assert request.call_args.args == ("GET", url)
     assert request.call_args.kwargs["headers"]["authorization"] == "Bearer AT"
@@ -421,3 +423,92 @@ def test_chatgpt_listing_without_sign_in_fails_soft(
     monkeypatch.setattr(_transport, "http_request", _never)
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     assert models_cache.list_models("chatgpt", entry, None, ttl_s=0) == []
+
+
+def test_input_modalities_are_explicit_bound_and_fresh(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the exact endpoint, entry and model can consume a fresh listing's modalities."""
+    entry = OpenAIProviderEntry(api_format="openai", base_url="https://models.example/v1")
+    payload = {
+        "data": [
+            {"id": "vision", "architecture": {"input_modalities": ["text", "image", "file"]}},
+            {"id": "text", "architecture": {"input_modalities": ["text"]}},
+            {"id": "unknown-vision"},
+            {"id": "bad", "architecture": {"input_modalities": "image"}},
+        ]
+    }
+
+    def fake_get(*args: object, **kwargs: object) -> httpx2.Response:
+        return httpx2.Response(
+            200, json=payload, request=httpx2.Request("GET", "https://models.example/v1/models")
+        )
+
+    monkeypatch.setattr(_transport, "http_request", fake_get)
+    assert models_cache.fetch_models_live("p", entry, None)
+    fact = models_cache.cached_input_capabilities("p", entry, "vision")
+    assert (fact.image, fact.document) == ("supported", "supported")
+    assert fact.route.spec == "p/vision"
+    fact = models_cache.cached_input_capabilities("p", entry, "text")
+    assert (fact.image, fact.document) == ("unsupported", "unsupported")
+    for name in ("unknown-vision", "bad", "VISION", "provider/vision"):
+        assert models_cache.cached_input_capabilities("p", entry, name).image == "unknown"
+    assert models_cache.cached_input_capabilities("other", entry, "vision").image == "unknown"
+    for changed in (
+        entry.model_copy(update={"base_url": "https://elsewhere/v1"}),
+        entry.model_copy(update={"extra_body": {"route": "other"}}),
+    ):
+        assert models_cache.cached_input_capabilities("p", changed, "vision").image == "unknown"
+    monkeypatch.setattr(time, "time", lambda: (cache_home / "models/p.json").stat().st_mtime + 601)
+    assert models_cache.cached_input_capabilities("p", entry, "vision").image == "unknown"
+
+
+def test_legacy_listing_has_unknown_modalities(cache_home: pathlib.Path) -> None:
+    """A stale or unbound capability cache cannot turn an unknown route into unsupported."""
+    path = cache_home / "models/p.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"models": ["m"], "modalities": {"m": ["text"]}}))
+    entry = OpenAIProviderEntry(api_format="openai", base_url="https://models.example/v1")
+    fact = models_cache.cached_input_capabilities("p", entry, "m")
+    assert (fact.image, fact.document) == ("unknown", "unknown")
+
+
+def test_review_seats_resolve_their_own_modality_facts(
+    cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review seats receive their exact route's capability, not the worker's state."""
+    from agent6 import budget
+    from agent6.app import providers
+    from agent6.config import Config
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"api_format": "openai", "base_url": "https://models.example/v1"}},
+            "models": {"worker": {"provider": "p", "model": "text"}},
+            "review": {"reviewers": [{"focus": "ui", "provider": "p", "model": "vision"}]},
+        }
+    )
+    payload = {
+        "data": [
+            {"id": "vision", "architecture": {"input_modalities": ["image", "file"]}},
+            {"id": "text", "architecture": {"input_modalities": ["text"]}},
+        ]
+    }
+
+    def fake_get(*args: object, **kwargs: object) -> httpx2.Response:
+        return httpx2.Response(
+            200, json=payload, request=httpx2.Request("GET", "https://models.example/v1/models")
+        )
+
+    monkeypatch.setattr(_transport, "http_request", fake_get)
+    models_cache.fetch_models_live("p", cfg.providers["p"], None)
+    worker = providers.input_capabilities(cfg, cfg.models.resolve("worker"))
+    seats = providers.build_review_seats(
+        cfg,
+        transcript_sink=types.TranscriptSink(cache_home / "transcripts"),
+        budget=budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=10000, max_plan_points=0),
+        n=1,
+    )
+    assert worker.image == "unsupported"
+    assert seats[0].media_input.image == "supported"
+    assert seats[0].media_input.route.spec == "p/vision"

@@ -416,7 +416,7 @@ def read_workspace_text(root: pathlib.Path, name: str, hide: Iterable[str] = ())
         return ""
 
 
-def read_bytes_contained(sp: SafePath) -> bytes:
+def read_bytes_contained(sp: SafePath, *, limit_bytes: int | None = None) -> bytes:
     """Return the file's bytes, read through a descriptor walked from its base.
 
     For a reader that indexes by byte offset (tree-sitter), which a text read's newline
@@ -424,13 +424,14 @@ def read_bytes_contained(sp: SafePath) -> bytes:
 
     Args:
         sp: The contained path.
+        limit_bytes: The maximum bytes to read; None reads to EOF.
 
     Returns:
-        The whole file.
+        The file, or its bounded prefix.
     """
     fd = open_contained(sp, os.O_RDONLY)
     with os.fdopen(fd, "rb") as handle:
-        return handle.read()
+        return handle.read(limit_bytes)
 
 
 def list_contained(sp: SafePath) -> list[ContainedEntry]:

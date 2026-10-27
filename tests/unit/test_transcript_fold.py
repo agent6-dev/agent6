@@ -1086,3 +1086,32 @@ def test_a_queued_question_and_its_late_answer_read_as_markers() -> None:
     assert (settled.detail, settled.ok) == ("queued", True)  # the call never read as awaiting
     (answered,) = fold.feed(late)
     assert (answered.kind, answered.body) == ("marker", "question-1 answered: pg")
+
+
+def test_media_result_renders_metadata_on_shared_and_acp_surfaces() -> None:
+    """The journal carries metadata and every shared renderer shows the same media label."""
+    from agent6 import kinds
+    from agent6.tools import _result_format, results
+    from agent6.ui.acp import updates
+    from agent6.viewmodel import transcript_style
+
+    result = results.ReadMediaResult(kinds.MediaAttachment(b"x" * 2048, "image/png", "page.png"))
+    tails = _result_format.output_tails("read_file", result)
+    assert tails["attachment"] == result.attachment.metadata()
+    events = [
+        {"type": "tool.call", "name": "read_file", "args": {"path": "page.png"}},
+        {
+            "type": "tool.result",
+            "name": "read_file",
+            "ok": True,
+            "summary": result.summary(),
+            **tails,
+        },
+    ]
+    item = fold_transcript(events)[0]
+    assert item.tail == "image: page.png, 2 KiB"
+    rendered = "".join(
+        text for line in transcript_style.item_lines(item, detail="expanded") for text, _ in line
+    )
+    assert "image: page.png, 2 KiB" in rendered
+    assert "image: page.png, 2 KiB" in str(updates._tool_content(item))  # pyright: ignore[reportPrivateUsage]

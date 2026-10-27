@@ -187,8 +187,8 @@ The loop-owned conversation: typed messages over the provider wire.
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{_compaction, _compaction_window, _compactor, _loop_resume, _loop_state, _loop_steer, _operator, _parallel_dispatch, _snapshot, _standing, _verify_gate}
-- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (27 test files exercise it)
+- **Read by:** harness/{_compaction, _compaction_window, _compactor, _loop_resume, _loop_state, _loop_steer, _operator, _parallel_dispatch, _provider_call, _review_seat, _snapshot, _standing, _verify_gate}
+- **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (28 test files exercise it)
 
 ## SessionManifest
 
@@ -283,17 +283,17 @@ Hold a session's end and the snapshot a resume re-enters.
 
 ## ToolResult family
 
-[`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 24 frozen result types
+[`agent6.tools.results`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/results.py) &middot; abstract base + 25 frozen result types
 
 Typed tool-handler results.
 
 **ToolResult** &mdash; One tool handler's typed result.
 
-Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`, `FindingsResult`
+Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`, `FindingsResult`
 
 - **Written by:** tools/{_command_tools, _control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
 - **Read by:** app/review_actions, harness/{_guards, _memory_touch, _metric_sampler, _review_seat, _toolset, _verify_gate, loop}, tools/_result_format
-- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (31 test files exercise it)
+- **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (32 test files exercise it)
 
 ## Event union
 

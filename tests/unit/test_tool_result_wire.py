@@ -14,6 +14,7 @@ gives the model-facing bytes this file compares.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import pathlib
 from typing import Any
@@ -27,7 +28,7 @@ from agent6.graph import curator, models
 from agent6.harness import _compaction_result, _nudges
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
-from agent6.tools import _result_format, dispatch, errors, operator_prompts
+from agent6.tools import _result_format, dispatch, errors, operator_prompts, results
 
 _VALID_TOML = """
 [agent6]
@@ -554,3 +555,66 @@ def test_the_tool_error_log_line_names_the_tool_once() -> None:
         wf, state, "use_skill", {}, exc.value
     )
     wf.log.assert_called_with(f"  tool_error: use_skill: {exc.value}")
+
+
+def test_image_result_keeps_bytes_out_of_json_and_repr() -> None:
+    """Image results expose metadata without serializing their payload."""
+    image = kinds.MediaAttachment(b"private pixels", "image/png", "page.png")
+    result = results.ReadMediaResult(image)
+    assert result.attachment is image
+    assert image.byte_size == 14
+    assert image.sha256 == hashlib.sha256(b"private pixels").hexdigest()
+    assert "private pixels" not in repr(image)
+    assert result.to_wire() == {
+        "content": "image: page.png, 1 KiB",
+        "attachment": {
+            "source_path": "page.png",
+            "media_type": "image/png",
+            "byte_size": 14,
+            "sha256": image.sha256,
+            "payload_omitted": True,
+        },
+    }
+    assert "private pixels" not in json.dumps(result.to_wire())
+    assert results.RawResult({"content": "text"}).attachment is None
+
+
+@pytest.mark.parametrize("media_type", ["text/plain", "image/svg+xml", "image/PNG", ""])
+def test_image_attachment_rejects_other_media_types(media_type: str) -> None:
+    """The attachment accepts only the four supported image media types."""
+    with pytest.raises(ValueError, match="media type"):
+        kinds.MediaAttachment(b"pixels", media_type, "page.png")
+
+
+def test_pdf_uses_the_shared_attachment_shape() -> None:
+    """PDF is one more media type with the same metadata-only result contract."""
+    document = kinds.MediaAttachment(b"%PDF-1.7\nprivate", "application/pdf", "page.pdf")
+    result = results.ReadMediaResult(document)
+    assert result.attachment is document
+    assert result.summary() == "document: page.pdf, 1 KiB"
+    assert result.to_wire()["attachment"]["media_type"] == "application/pdf"
+    assert "private" not in json.dumps(result.to_wire())
+
+
+def test_media_limits_count_original_bytes_and_separate_documents() -> None:
+    """Image totals and document totals share one budget without spending each other's quota."""
+    from agent6 import media
+
+    budget = media.AttachmentBudget()
+    image = kinds.MediaAttachment(b"x" * (2 * 1024 * 1024), "image/png", "p")
+    document = kinds.MediaAttachment(b"x" * (10 * 1024 * 1024), "application/pdf", "d")
+    assert budget.refusal(image) == ""
+    assert budget.refusal(image) == ""
+    assert "4 MiB" in budget.refusal(image)
+    assert budget.refusal(document) == ""
+    assert "one document" in budget.refusal(document)
+    assert "2 MiB" in media.AttachmentBudget().refusal(
+        dataclasses.replace(image, data=image.data + b"x")
+    )
+    assert "10 MiB" in media.AttachmentBudget().refusal(
+        dataclasses.replace(document, data=document.data + b"x")
+    )
+    budget = media.AttachmentBudget()
+    for _ in range(4):
+        assert budget.refusal(dataclasses.replace(image, data=b"x")) == ""
+    assert "four images" in budget.refusal(dataclasses.replace(image, data=b"x"))

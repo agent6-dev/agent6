@@ -1494,3 +1494,11 @@ def test_two_text_blocks_in_a_round_stay_separated(tmp_path: pathlib.Path) -> No
     )
     resp = _provider(binary).call(system="s", messages=USER0, tools=None)
     assert resp.text == "First message.\n\nSecond message."
+
+
+def test_stdin_line_cap_counts_json_envelope_before_writing() -> None:
+    """An encoded MCP reply cannot exceed the stdout line cap once its envelope is included."""
+    session = mock.MagicMock()
+    with pytest.raises(ProviderError, match="8 MiB"):
+        _claude_code_session.write(session, {"payload": "x" * (8 * 1024 * 1024)})
+    session.proc.stdin.write.assert_not_called()

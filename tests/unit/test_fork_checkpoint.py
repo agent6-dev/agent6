@@ -28,7 +28,15 @@ from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
 from agent6.config import Config, RoleModel
 from agent6.graph import storage
-from agent6.harness import _chain, _loop_resume, _loop_state, _snapshot, _toolset, loop
+from agent6.harness import (
+    _chain,
+    _conversation,
+    _loop_resume,
+    _loop_state,
+    _snapshot,
+    _toolset,
+    loop,
+)
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
@@ -102,7 +110,8 @@ def _wf(
 # --- checkpoint store -------------------------------------------------------
 
 
-def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("with_image", [False, True])
+def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_image: bool) -> None:
     """`save_resume_snapshot` writes loop_state.json and a per-turn checkpoint with the sha."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
@@ -133,7 +142,18 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> Non
     state = _loop_state.LoopState(original_task="t", tool_calls=0)
 
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=3, write_checkpoint=True)
+    conversation = _conversation.Conversation()
+    if with_image:
+        assistant = conversation.assistant(
+            [{"type": "tool_use", "id": "i1", "name": "read_file", "input": {"path": "page.png"}}]
+        )
+        image = kinds.MediaAttachment(b"private pixels", "image/png", "page.png")
+        conversation.results(
+            [_conversation.ToolResultItem("i1", image.summary(), assistant.tool_uses[0], image)]
+        )
+    _loop_resume.save_resume_snapshot(
+        wf, state, conversation.to_wire(), next_turn=3, write_checkpoint=True
+    )
 
     # checkpoints live next to loop_state.json (the run dir).
     cp = session_dir / "checkpoints" / "0003.json"
@@ -141,6 +161,17 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path) -> Non
     assert cp.is_file(), "per-turn checkpoint must be written"
 
     loaded = _snapshot.load_session_snapshot(cp)
+    if with_image:
+        for path in (snap, cp):
+            text = path.read_text()
+            assert "cHJpdmF0ZSBwaXhlbHM=" not in text
+            assert "payload_omitted" in text and "page.png" in text
+        restored = _conversation.Conversation.from_wire(loaded.messages)
+        last = restored.messages[-1]
+        assert isinstance(last, _conversation.UserMessage)
+        assert isinstance(last.items[0], _conversation.ToolResultItem)
+        assert last.items[0].attachment is None
+        assert "read_file" in last.items[0].content
     assert loaded.next_turn == 3
     assert loaded.head_sha == head
     assert loaded.graph_version == 7

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import hashlib
 import json
 import pathlib
 import time
@@ -20,7 +21,7 @@ from urllib import parse
 
 import httpx2
 
-from agent6 import paths
+from agent6 import kinds, media, paths
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -69,25 +70,94 @@ def _read_cache(path: pathlib.Path | None) -> list[str] | None:
     return None
 
 
-def _write_cache(
-    path: pathlib.Path | None,
-    models: list[str],
-    pricing: dict[str, models_pricing.Price],
-    context: dict[str, int],
-) -> None:
-    """Write the listing, plus the pricing and context keys where the provider publishes them."""
+@dataclasses.dataclass(frozen=True, slots=True)
+class Listing:
+    """One model listing with its optional price, context and input modality facts."""
+
+    models: list[str]
+    pricing: dict[str, models_pricing.Price]
+    context: dict[str, int]
+    modalities: dict[str, list[str]]
+
+
+def _binding(entry: ProviderEntry) -> str:
+    return hashlib.sha256(
+        json.dumps(entry.model_dump(mode="json"), sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _write_cache(path: pathlib.Path | None, listing: Listing, entry: ProviderEntry) -> None:
+    """Write listing facts together, bound to the complete configured provider entry."""
     if path is None:
         return
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        body: dict[str, object] = {"models": models}
-        if pricing:
-            body["pricing"] = {m: p.as_list() for m, p in pricing.items()}
-        if context:
-            body["context"] = dict(context)
+        body: dict[str, object] = {"models": listing.models, "binding": _binding(entry)}
+        if listing.pricing:
+            body["pricing"] = {m: p.as_list() for m, p in listing.pricing.items()}
+        if listing.context:
+            body["context"] = listing.context
+        if listing.modalities:
+            body["modalities"] = listing.modalities
         path.write_text(json.dumps(body), encoding="utf-8")
     except OSError:
-        pass  # the cache is throwaway; a write failure must not break completion
+        pass  # The cache is throwaway; a write failure must not break completion.
+
+
+def _parse_modalities(payload: object) -> dict[str, list[str]]:
+    data = payload.get("data") if isinstance(payload, dict) else None
+    out: dict[str, list[str]] = {}
+    if not isinstance(data, list):
+        return out
+    for item in data:
+        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+            continue
+        architecture = item.get("architecture")
+        modalities = (
+            architecture.get("input_modalities") if isinstance(architecture, dict) else None
+        )
+        if isinstance(modalities, list) and all(isinstance(m, str) for m in modalities):
+            out[item["id"]] = modalities
+    return out
+
+
+def cached_input_capabilities(
+    provider_name: str, entry: ProviderEntry, model: str
+) -> media.InputCapabilities:
+    """Read fresh, bound input facts for this exact model without touching the network.
+
+    Args:
+        provider_name: The configured provider entry name.
+        entry: The current entry, including the endpoint.
+        model: The exact model ID, never normalized.
+
+    Returns:
+        Explicit supported or unsupported facts, unknown on any absent or unbound data.
+    """
+    unknown = media.InputCapabilities(kinds.ModelRoute(provider_name, model))
+    path = _cache_path(provider_name)
+    if path is None:
+        return unknown
+    try:
+        age = time.time() - path.stat().st_mtime
+        body = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return unknown
+    if (
+        not 0 <= age < _CACHE_TTL_S
+        or not isinstance(body, dict)
+        or body.get("binding") != _binding(entry)
+    ):
+        return unknown
+    modalities = body.get("modalities")
+    values = modalities.get(model) if isinstance(modalities, dict) else None
+    if not isinstance(values, list) or not all(isinstance(v, str) for v in values):
+        return unknown
+    return media.InputCapabilities(
+        unknown.route,
+        image="supported" if "image" in values else "unsupported",
+        document="supported" if "file" in values or "document" in values else "unsupported",
+    )
 
 
 def _parse_models(payload: object) -> list[str]:
@@ -292,7 +362,7 @@ def _chatgpt_listing(payload: object) -> tuple[list[str], dict[str, int]]:
 
 def _fetch(
     provider_name: str, entry: ProviderEntry, api_key: str | None, timeout_s: float
-) -> tuple[list[str], dict[str, models_pricing.Price], dict[str, int]]:
+) -> Listing:
     """Fetch the entry's listing; raises on any failure.
 
     Args:
@@ -305,20 +375,25 @@ def _fetch(
         The ids, the pricing and the context windows.
     """
     if isinstance(entry, ClaudeCodeProviderEntry):
-        return [], {}, {}  # no endpoint: the binary resolves model names itself
+        return Listing([], {}, {}, {})  # No endpoint: the binary resolves names itself.
     if isinstance(entry, ChatGPTProviderEntry):
         url, headers = _chatgpt_models_endpoint(provider_name, entry)
         resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
         resp.raise_for_status()
         ids, context = _chatgpt_listing(resp.json())
-        return ids, {}, context  # a subscription prices nothing
+        return Listing(ids, {}, context, {})  # A subscription prices nothing.
     if entry.oauth is not None:
         api_key = oauth.OAuthCredential(provider_name, entry).token()  # bound, refreshed
     url, headers = _models_endpoint(entry, api_key)
     resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
     payload = resp.json()
-    return _parse_models(payload), _parse_pricing(payload), _parse_context(payload)
+    return Listing(
+        _parse_models(payload),
+        _parse_pricing(payload),
+        _parse_context(payload),
+        _parse_modalities(payload),
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -447,13 +522,13 @@ def fetch_models_live(
         The ids, with the cache rewritten, or None on any failure or an empty listing.
     """
     try:
-        models, pricing, context = _fetch(provider_name, entry, api_key, timeout_s)
+        listing = _fetch(provider_name, entry, api_key, timeout_s)
     except (httpx2.HTTPError, ValueError, OSError, types.ProviderError):
         return None
-    if not models:
+    if not listing.models:
         return None
-    _write_cache(_cache_path(provider_name), models, pricing, context)
-    return models
+    _write_cache(_cache_path(provider_name), listing, entry)
+    return listing.models
 
 
 # The price source for bare `claude-*` ids: the public OpenRouter listing, fetched keyless.

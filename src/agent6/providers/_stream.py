@@ -29,6 +29,7 @@ from typing import Any
 import httpx2
 
 from agent6 import budget as agent6_budget
+from agent6 import media
 from agent6.providers import _transport, types
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
@@ -152,15 +153,24 @@ def sse_events(
             data.append(value)
 
 
-def _error_body_prefix(resp: httpx2.Response) -> str:
-    """Return the first 8 KiB of an error response's body as text."""
+# A clipped echo cannot be matched against the complete payload safely.
+_MEDIA_ERROR_OMITTED = "error body omitted: the 8 KiB excerpt may end inside a media payload"
+
+
+def _error_body_prefix(resp: httpx2.Response, request: dict[str, Any]) -> str:
+    """Return a bounded error excerpt, with media echoes omitted before clipping."""
     body = bytearray()
     for chunk in resp.iter_bytes():
         remaining = _ERROR_BODY_PREFIX_BYTES - len(body)
         body.extend(chunk[:remaining])
         if len(body) == _ERROR_BODY_PREFIX_BYTES:
             break
-    return body.decode("utf-8", errors="replace")
+    if len(body) == _ERROR_BODY_PREFIX_BYTES and media.input_modalities(request):
+        return _MEDIA_ERROR_OMITTED
+    clean = media.omit_payloads(
+        {"request": request, "error": body.decode("utf-8", errors="replace")}
+    )
+    return str(clean["error"])
 
 
 class StreamClock:
@@ -299,6 +309,12 @@ class SseCall:
     def record(self, *, status: int, response: dict[str, Any] | str) -> None:
         """Write one transcript entry for this request; nothing without a sink."""
         if self.transcript_sink is not None:
+            if (
+                isinstance(response, str)
+                and len(response) >= _ERROR_BODY_PREFIX_BYTES
+                and media.input_modalities(self.body)
+            ):
+                response = _MEDIA_ERROR_OMITTED
             self.transcript_sink.record(
                 url=self.url,
                 request_headers=self.headers,
@@ -393,7 +409,7 @@ class SseCall:
                 if self.response_headers is not None:
                     self.response_headers(resp.headers)
                 if not 200 <= resp.status_code < 300:
-                    error_body = _error_body_prefix(resp)
+                    error_body = _error_body_prefix(resp, self.body)
                     self.record(status=resp.status_code, response=error_body)
                     raise types.ProviderError(
                         f"{self.api_label} API error {resp.status_code}: "

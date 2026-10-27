@@ -432,6 +432,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             return steer_state.requested()
 
         wf = loop.Harness(
+            media_input=providers.input_capabilities(cfg, session.rm_role),
             chain=_chain.RunChain(
                 cwd,
                 # `git.control = "model"` suspends the chain: the model's commits are the record.

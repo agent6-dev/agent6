@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping
 from email import utils
 from typing import Any, Literal, Protocol
 
-from agent6 import paths, portable
+from agent6 import media, paths, portable
 
 
 class ProviderError(Exception):
@@ -53,6 +53,31 @@ class ProviderError(Exception):
         self.provider = provider
         self.fatal = fatal
         self.attempts = attempts
+
+
+class MediaInputError(ProviderError):
+    """A recognized image or document rejection, without upstream payload text.
+
+    Attributes:
+        modality: The rejected input modality.
+        reason: Unsupported input, malformed content or a size limit.
+        call_ids: Affected tool calls; empty means all attachments of this modality.
+    """
+
+    def __init__(
+        self,
+        *,
+        modality: Literal["image", "document"],
+        reason: Literal["unsupported", "invalid", "too_large"],
+        call_ids: tuple[str, ...] = (),
+        status_code: int = 400,
+    ) -> None:
+        super().__init__(
+            f"{modality} input rejected: {reason}", status_code=status_code, fatal=True
+        )
+        self.modality = modality
+        self.reason = reason
+        self.call_ids = call_ids
 
 
 class ProviderAborted(ProviderError):  # noqa: N818  # a signal, not an error
@@ -290,7 +315,9 @@ class TranscriptSink:
             },
         }
         # atomic_write's unpredictable O_EXCL temp name is not symlink-followable.
-        text = scrub_secret_values(json.dumps(payload, indent=2, sort_keys=True), request_headers)
+        text = scrub_secret_values(
+            json.dumps(media.omit_payloads(payload), indent=2, sort_keys=True), request_headers
+        )
         portable.atomic_write(path, text)
         return path
 

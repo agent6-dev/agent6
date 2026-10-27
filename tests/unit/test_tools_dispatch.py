@@ -2907,3 +2907,71 @@ def test_a_bare_dispatchers_tree_omits_hidden_paths(tmp_path: pathlib.Path) -> N
     )
     (tmp_path / "scratch.txt").write_text("written during a verify\n", encoding="utf-8")
     assert d._verification_tree() != before  # pyright: ignore[reportPrivateUsage]
+
+
+@pytest.mark.parametrize(
+    "data, expected",
+    [
+        (b"%PDF-1.7\n%%EOF", "application/pdf"),
+        (
+            bytes.fromhex(
+                "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c49444154789c63606060000000040001f61738550000000049454e44ae426082"
+            ),
+            "image/png",
+        ),
+        (bytes.fromhex("ffd8ffc0000b080001000101011100ffda0008010100003f003fffd9"), "image/jpeg"),
+        (
+            bytes.fromhex("47494638396101000100800000000000ffffff2c00000000010001000002024401003b"),
+            "image/gif",
+        ),
+        (
+            b"RIFF"
+            + (18).to_bytes(4, "little")
+            + b"WEBPVP8L"
+            + (5).to_bytes(4, "little")
+            + b"\x2f\x00\x00\x00\x00\x00",
+            "image/webp",
+        ),
+    ],
+)
+def test_media_inspection_uses_content_not_extension(data: bytes, expected: str) -> None:
+    """The bounded inspector recognizes static media regardless of its filename."""
+    from agent6.tools import _media_files
+
+    assert _media_files.inspect_media(data, "wrong.txt").media_type == expected
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        b"\x89PNG\r\n\x1a\n",
+        b"GIF89a",
+        b"\xff\xd8\xff",
+        b"RIFFxxxxWEBP",
+        b"\x00other binary",
+        bytes.fromhex(
+            "47494638396101000100800000000000ffffff2c00000000010001000002024401002c00000000010001000002024401003b"
+        ),
+    ],
+)
+def test_media_inspection_refuses_malformed_or_animated_files(data: bytes) -> None:
+    """Invalid containers and multiple GIF frames refuse instead of reaching an upstream decoder."""
+    from agent6.tools import _media_files
+
+    with pytest.raises(errors.ToolError, match="jailed command"):
+        _media_files.inspect_media(data, "page.png")
+
+
+def test_media_inspection_refuses_pagination_and_producer_remains_disabled(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A PDF header cannot pass through the text reader, even when every byte is ASCII."""
+    from agent6.tools import _media_files
+
+    data = b"%PDF-1.7\n%%EOF"
+    with pytest.raises(errors.ToolError, match="line range"):
+        _media_files.inspect_media(data, "p.pdf", start_line=2)
+    (tmp_path / "p.pdf").write_bytes(data)
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with pytest.raises(errors.ToolError, match="disabled"):
+        d.dispatch("read_file", {"path": "p.pdf"})

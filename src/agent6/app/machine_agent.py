@@ -457,6 +457,7 @@ def run_one(
     )
     cfg = providers.resolve_decompose(cfg, rm, log=reporter.err)
     wf = loop.Harness(
+        media_input=providers.input_capabilities(cfg, rm),
         # A run-mode state commits on its own chain, named by the instance dir.
         chain=_chain.RunChain(
             req.root,

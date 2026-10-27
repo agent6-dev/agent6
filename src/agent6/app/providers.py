@@ -10,7 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import event_log, secret_store
+from agent6 import event_log, media, secret_store
 from agent6.app import _conversations
 from agent6.config import (
     AnthropicProviderEntry,
@@ -24,6 +24,7 @@ from agent6.config import (
     RoleName,
 )
 from agent6.harness import _reviewer
+from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
 from agent6.providers import (
     AnthropicProvider,
@@ -118,6 +119,21 @@ def resolve_decompose(
     if on and log is not None and rm is not None:
         log(f"decompose: auto-enabled for {rm.model} (measured win, bench/coreagent)")
     return cfg.with_decompose("on" if on else "off")
+
+
+def input_capabilities(cfg: Config, rm: RoleModel | None) -> media.InputCapabilities:
+    """Resolve the calling role's media facts without mutating its dispatcher.
+
+    Args:
+        cfg: The effective configuration.
+        rm: The resolved worker, planner or reviewer seat.
+
+    Returns:
+        The route's cached facts, unknown when no route is configured.
+    """
+    if rm is None:
+        return media.InputCapabilities()
+    return models_cache.cached_input_capabilities(rm.provider, cfg.providers[rm.provider], rm.model)
 
 
 def build_role_provider(
@@ -659,6 +675,7 @@ def build_review_seats(
                 provider=provider,
                 scope=cfg.review.scope,
                 temperature=rm.temperature,
+                media_input=input_capabilities(cfg, rm),
             )
         )
     return seats

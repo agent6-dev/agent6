@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import pathlib
 from typing import Any
+from unittest import mock
 
 import pydantic
 import pytest
 
+from agent6 import kinds
 from agent6.harness import (
     _chain,
     _compaction,
@@ -917,3 +919,33 @@ def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: pathlib.Path) ->
     assert nodes[container.id].status != "passed"  # the container refusal stands
     assert nodes[done.id].status == "passed"
     assert "a newly discovered task" in {node.title for node in nodes.values()}
+
+
+@pytest.mark.parametrize("media_type", ["image/png", "application/pdf"])
+def test_compaction_elides_delivered_images_without_gisting_pixels(media_type: str) -> None:
+    """Image context is reserved separately, and only delivered images may be elided."""
+    conv = _conversation.Conversation()
+    image = kinds.MediaAttachment(b"pixels" * 20000, media_type, "page.png")
+    for tid in ("old", "fresh"):
+        assistant = conv.assistant(
+            [{"type": "tool_use", "id": tid, "name": "read_file", "input": {"path": "page.png"}}]
+        )
+        conv.results(
+            [_conversation.ToolResultItem(tid, image.summary(), assistant.tool_uses[0], image)]
+        )
+    text_size = sum(len(c) for c in _result_contents(conv))
+    assert _compaction_window.context_chars(conv) >= text_size + 2 * 6400
+    gister = mock.Mock()
+    stats = _compaction.compact_old_tool_results(
+        conv, max_total_bytes=100, keep_recent=0, gister=gister
+    )
+    assert len(stats.elided_calls) == 1
+    old, fresh = conv.messages[1], conv.messages[3]
+    assert isinstance(old, _conversation.UserMessage) and isinstance(
+        fresh, _conversation.UserMessage
+    )
+    assert isinstance(old.items[0], _conversation.ToolResultItem)
+    assert old.items[0].attachment is None and "page.png" in old.items[0].content
+    assert isinstance(fresh.items[0], _conversation.ToolResultItem)
+    assert fresh.items[0].attachment is image
+    gister.assert_not_called()

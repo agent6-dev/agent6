@@ -303,9 +303,14 @@ def write(s: Session, obj: dict[str, Any], *, log: bool = True) -> None:
         log: Whether the line joins the transcript's stdin log.
 
     Raises:
-        ProviderError: The child stopped reading.
+        ProviderError: The child stopped reading or the encoded line exceeds 8 MiB.
     """
     data = json.dumps(obj, separators=(",", ":")).encode() + b"\n"
+    if len(data) > _MAX_LINE_BYTES:
+        raise types.ProviderError(
+            "claude_code encoded request exceeds the 8 MiB line cap, including its envelope",
+            fatal=True,
+        )
     with s.stdin_lock:
         stdin = s.proc.stdin
         assert stdin is not None

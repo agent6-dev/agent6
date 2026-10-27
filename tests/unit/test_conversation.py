@@ -4,10 +4,12 @@
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import pytest
 
+from agent6 import kinds
 from agent6.harness import _conversation
 
 
@@ -458,3 +460,67 @@ def test_format_transcript_tail_renders_roles_and_strips_thinking() -> None:
     assert "doing it" in out
     assert "run_command" in out
     assert "output" in out
+
+
+@pytest.mark.parametrize("media_type", ["image/png", "application/pdf"])
+def test_image_result_round_trip_preserves_pairing_text_and_pixels(media_type: str) -> None:
+    """The wire carries one text block and one native image under its tool result."""
+    conv = _conversation.Conversation()
+    conv.notice("look", origin="operator")
+    assistant = conv.assistant([_tool_use_block("t1", path="page.png"), _tool_use_block("t2")])
+    image = kinds.MediaAttachment(b"pixels", media_type, "page.png")
+    conv.results(
+        [
+            _conversation.ToolResultItem(
+                "t1", "image: page.png, 1 KiB", assistant.tool_uses[0], image
+            ),
+            _conversation.ToolResultItem("t2", "text only", assistant.tool_uses[1]),
+        ]
+    )
+    conv.roll_cache_marks()
+    wire = conv.to_wire()
+    assert wire[-1]["content"][0] == {
+        "type": "tool_result",
+        "tool_use_id": "t1",
+        "content": [
+            {"type": "text", "text": "image: page.png, 1 KiB"},
+            {
+                "type": "document" if media_type == "application/pdf" else "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64.b64encode(b"pixels").decode(),
+                },
+            },
+        ],
+    }
+    assert wire[-1]["content"][1]["content"] == "text only"
+    restored = _conversation.Conversation.from_wire(wire)
+    assert restored.to_wire() == wire
+    last = restored.messages[-1]
+    assert isinstance(last, _conversation.UserMessage)
+    assert isinstance(last.items[0], _conversation.ToolResultItem)
+    assert last.items[0].attachment == image
+    assert restored.initiator == "agent"
+
+
+def test_request_limits_keep_newest_media_and_leave_call_ids_intact() -> None:
+    """Retained attachments count against the outbound budget alongside the latest reads."""
+    conv = _conversation.Conversation()
+    for i in range(6):
+        assistant = conv.assistant([_tool_use_block(str(i), path=f"{i}.png")])
+        image = kinds.MediaAttachment(b"x", "image/png", f"{i}.png")
+        conv.results(
+            [_conversation.ToolResultItem(str(i), image.summary(), assistant.tool_uses[0], image)]
+        )
+    refused = conv.limit_attachments()
+    assert {call_id for call_id, _ in refused} == {"0", "1"}
+    items = [
+        it
+        for msg in conv.messages
+        if isinstance(msg, _conversation.UserMessage)
+        for it in msg.items
+        if isinstance(it, _conversation.ToolResultItem)
+    ]
+    assert [it.tool_use_id for it in items] == list("012345")
+    assert [it.attachment is not None for it in items] == [False, False, True, True, True, True]

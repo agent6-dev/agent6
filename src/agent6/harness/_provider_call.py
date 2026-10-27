@@ -12,8 +12,10 @@ import dataclasses
 import random
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Literal
 
+from agent6 import kinds, media
+from agent6.harness import _conversation
 from agent6.providers import (
     Provider,
     ProviderAborted,
@@ -23,6 +25,7 @@ from agent6.providers import (
     ToolDefinition,
     _headers,
     output_cap_truncated,
+    types,
 )
 
 # A timeout (408), a conflict (409), too early (425), a rate limit (429) and every 5xx retry.
@@ -92,6 +95,128 @@ def reasoning_starvation(resp: ProviderResponse) -> int:
             if isinstance(block, dict) and block.get("type") == "thinking":
                 reasoning_chars += len(str(block.get("thinking") or ""))
     return reasoning_chars
+
+
+# The registry belongs to one execution, not a dispatcher or a process-global model cache.
+MediaRejections = dict[kinds.ModelRoute, set[Literal["image", "document"]]]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MediaRecovery:
+    """Bind listing facts and execution-local rejections to the calling route."""
+
+    capabilities: media.InputCapabilities
+    unsupported: set[Literal["image", "document"]] = dataclasses.field(default_factory=set)
+
+    def replace(
+        self,
+        conversation: _conversation.Conversation,
+        rejected: types.MediaInputError | None,
+        emit: Callable[..., None] | None,
+    ) -> bool:
+        """Replace affected canonical attachments and record their refusal by call ID.
+
+        Args:
+            conversation: The calling role's history.
+            rejected: The recognized rejection, or None to apply known capability facts.
+            emit: The journal emitter, when present.
+
+        Returns:
+            Whether any attachment was replaced.
+        """
+        changed = False
+        for mi, message in enumerate(conversation.messages):
+            if not isinstance(message, _conversation.UserMessage):
+                continue
+            for ii, item in enumerate(message.items):
+                if not isinstance(item, _conversation.ToolResultItem) or item.attachment is None:
+                    continue
+                attachment = item.attachment
+                modality = attachment.modality
+                if rejected is not None:
+                    if modality != rejected.modality or (
+                        rejected.call_ids and item.tool_use_id not in rejected.call_ids
+                    ):
+                        continue
+                    reason = rejected.reason
+                elif (
+                    modality in self.unsupported
+                    or getattr(self.capabilities, modality) == "unsupported"
+                ):
+                    reason = "unsupported"
+                else:
+                    continue
+                detail = {
+                    "unsupported": f"{modality} input is unsupported",
+                    "invalid": f"the provider rejected the {modality} as malformed",
+                    "too_large": f"the {modality} exceeds the provider's size limit",
+                }[reason]
+                suggestion = (
+                    "Extract the text with a jailed command."
+                    if modality == "document"
+                    else (
+                        "Describe the page through its DOM or accessibility tree, "
+                        "or read the test output."
+                    )
+                )
+                refusal = (
+                    f"Cannot deliver {modality} {attachment.source_path!r} to "
+                    f"{self.capabilities.route.spec}: {detail}. {suggestion}"
+                )
+                conversation.set_result_content(mi, ii, refusal, drop_attachment=True)
+                changed = True
+                if reason == "unsupported":
+                    self.unsupported.add(modality)
+                if emit is not None:
+                    emit(
+                        "loop.media.refused",
+                        call_id=item.tool_use_id,
+                        route=self.capabilities.route.spec,
+                        reason=reason,
+                        text=refusal,
+                        attachment=attachment.metadata(),
+                    )
+        return changed
+
+
+def call_with_media_recovery(
+    send: Callable[[list[dict[str, Any]]], ProviderResponse],
+    conversation: _conversation.Conversation,
+    recovery: MediaRecovery,
+    *,
+    emit: Callable[..., None] | None = None,
+    changed: Callable[[], None] | None = None,
+) -> ProviderResponse:
+    """Apply known refusals and retry one recognized rejection without rerunning tools.
+
+    Args:
+        send: The provider call, including its ordinary transient-error policy.
+        conversation: The canonical history, never a copy reconstructed from wire data.
+        recovery: Facts and rejections for this role's resolved route.
+        emit: The journal emitter, when present.
+        changed: Saves canonical history after a refusal, when present.
+
+    Returns:
+        The provider's response to the first request or its single media-free retry.
+
+    Raises:
+        ProviderError: An unrelated rejection or a failed retry.
+        MediaInputError: No affected attachment, or a rejected text-only retry.
+    """
+    limited = conversation.limit_attachments()
+    for call_id, reason in limited:
+        if emit is not None:
+            emit("loop.media.refused", call_id=call_id, reason=reason)
+    if (recovery.replace(conversation, None, emit) or limited) and changed is not None:
+        changed()
+    try:
+        return send(conversation.to_wire())
+    except types.MediaInputError as exc:
+        if not recovery.replace(conversation, exc, emit):
+            raise
+        if changed is not None:
+            changed()
+    return send(conversation.to_wire())
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -170,6 +295,7 @@ class ProviderCaller:
 
         Raises:
             ProviderError: A permanent error, or a transient one after the last attempt.
+            MediaInputError: A recognized rejection handled by the canonical-history recovery.
             ProviderAborted: An operator stop.
             ProviderInterrupted: An operator steer.
         """
@@ -187,7 +313,7 @@ class ProviderCaller:
                     should_interrupt=self.should_interrupt,
                     context=_headers.RequestContext.initiated_by(initiator),
                 )
-            except (ProviderAborted, ProviderInterrupted):
+            except (ProviderAborted, ProviderInterrupted, types.MediaInputError):
                 raise  # an operator stop or steer is handled, never retried
             except ProviderError as exc:
                 if exc.fatal or exc.status_code in NON_RETRYABLE_HTTP_STATUSES:

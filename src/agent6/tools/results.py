@@ -16,7 +16,7 @@ import dataclasses
 import shlex
 from typing import Any
 
-from agent6 import evidence
+from agent6 import evidence, kinds
 from agent6.tools import operator_prompts
 
 
@@ -24,6 +24,11 @@ class ToolResult(abc.ABC):
     """One tool handler's typed result."""
 
     __slots__ = ()
+
+    @property
+    def attachment(self) -> kinds.MediaAttachment | None:
+        """The in-memory attachment, absent for text results."""
+        return None
 
     @abc.abstractmethod
     def to_wire(self) -> dict[str, Any]:
@@ -113,6 +118,26 @@ class ReadFileResult(ToolResult):
     def summary(self) -> str:
         """Return the one-line summary."""
         return f"{self.size} bytes{' (truncated)' if self.truncated else ''}"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ReadMediaResult(ToolResult):
+    """A media result whose JSON contains metadata only."""
+
+    media: kinds.MediaAttachment
+
+    @property
+    def attachment(self) -> kinds.MediaAttachment:
+        """The attachment delivered separately from the text result."""
+        return self.media
+
+    def to_wire(self) -> dict[str, Any]:
+        """Return explanatory text and media metadata, never payload bytes."""
+        return {"content": self.summary(), "attachment": self.media.metadata()}
+
+    def summary(self) -> str:
+        """Return the shared media label."""
+        return self.media.summary()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

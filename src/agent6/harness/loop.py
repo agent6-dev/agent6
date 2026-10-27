@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, paths, skills, task_text
+from agent6 import errors, media, paths, skills, task_text
 from agent6 import memory as agent6_memory
 from agent6.config import Config
 from agent6.graph import curator as graph_curator
@@ -153,6 +153,10 @@ class Harness:
     revision: _prompt_revision.RevisionSettings = dataclasses.field(
         default_factory=_prompt_revision.RevisionSettings
     )
+    media_input: media.InputCapabilities = dataclasses.field(
+        default_factory=media.InputCapabilities
+    )
+    media_rejections: _provider_call.MediaRejections = dataclasses.field(default_factory=dict)
     initial_pins: Sequence[str] = ()
     resume_state_path: pathlib.Path | None = None
     standing_goal: str = ""
@@ -448,7 +452,6 @@ class Harness:
             got = self._turn_provider_call(
                 system,
                 conversation,
-                wire,
                 tools,
                 state,
                 turn=turn,
@@ -545,6 +548,8 @@ class Harness:
         if parked is not None:
             return parked
         self._turn_before_call(conversation, state, ctx)
+        for call_id, reason in conversation.limit_attachments():
+            self.emit("loop.media.refused", call_id=call_id, reason=reason)
         conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -677,7 +682,6 @@ class Harness:
         self,
         system: str,
         conversation: _conversation.Conversation,
-        wire: list[dict[str, Any]],
         tools: list[ToolDefinition],
         state: _loop_state.LoopState,
         *,
@@ -687,8 +691,7 @@ class Harness:
 
         Args:
             system: The system prompt.
-            conversation: The conversation; touched only on the steer path.
-            wire: The pre-call serialization, already snapshotted.
+            conversation: The canonical history, updated on a steer or a media refusal.
             tools: The tools offered this turn.
             state: The execution's state.
             turn: The current turn.
@@ -698,12 +701,26 @@ class Harness:
             steer discarded the turn.
         """
         try:
-            return self.caller.call(
-                system,
-                wire,
-                tools,
-                self._worker_max_tokens(state),
-                initiator=conversation.initiator,
+            return _provider_call.call_with_media_recovery(
+                lambda messages: self.caller.call(
+                    system,
+                    messages,
+                    tools,
+                    self._worker_max_tokens(state),
+                    initiator=conversation.initiator,
+                ),
+                conversation,
+                _provider_call.MediaRecovery(
+                    self.media_input,
+                    self.media_rejections.setdefault(self.media_input.route, set()),
+                ),
+                emit=self.emit,
+                changed=lambda: _loop_resume.save_resume_snapshot(
+                    self,
+                    state,
+                    conversation.to_wire(),
+                    next_turn=turn,
+                ),
             )
         except agent6_budget.BudgetExceededError as exc:
             self.log(f"LOOP: budget exhausted at turn {turn}")
@@ -789,9 +806,9 @@ class Harness:
         """  # noqa: DOC501  # the refusal's ToolError is caught below
         # A turn with tool calls refills the went-quiet nudge budget.
         state.quiet.went_quiet_nudges_used = 0
+        media_budget = media.AttachmentBudget()
         for tu in turn.assistant.tool_uses:
-            name = tu.name
-            tool_input = tu.input
+            name, tool_input = tu.name, tu.input
             if turn.finish is not None:
                 # The calls after a finish are not executed, as the finish tools state.
                 turn.tool_results.append(
@@ -814,6 +831,7 @@ class Harness:
             state.spiral.note_call(sig, polling=name == schema.ReadBackgroundInput.TOOL_NAME)
             self.emit("loop.tool.call", name=name, turn=turn.number)
             served = None
+            attachment = None
             try:
                 refusal = turn.resp.refused.get(tu.id)
                 if refusal is not None:
@@ -821,6 +839,11 @@ class Harness:
                     raise tool_errors.ToolError(refusal)
                 tree_before = self._tree_before_command(name)
                 result = self.dispatcher.dispatch(name, tool_input)
+                attachment = result.attachment
+                if attachment is not None and (reason := media_budget.refusal(attachment)):
+                    attachment = None
+                    self.emit("loop.media.refused", call_id=tu.id, reason=reason)
+                    raise tool_errors.ToolError(reason)
                 wire_result = result.to_wire()
                 if note := self._left_out_note(turn, name, result, tool_input):
                     wire_result["note"] = note
@@ -829,7 +852,9 @@ class Harness:
                     state, turn, name, result, tool_input, tree_before=tree_before
                 )
                 # A repeated call with an unchanged result serves a stub, so a re-read stays small.
-                if state.spiral.stub_repeat(content, min_chars=_DEDUPE_MIN_CHARS):
+                if attachment is None and state.spiral.stub_repeat(
+                    content, min_chars=_DEDUPE_MIN_CHARS
+                ):
                     served = json.dumps(
                         {
                             "repeated": (
@@ -858,12 +883,15 @@ class Harness:
             turn.tool_results.append(
                 _conversation.ToolResultItem(
                     tool_use_id=tu.id,
-                    content=_compaction_result.cap_tool_result(
+                    content=content
+                    if attachment is not None
+                    else _compaction_result.cap_tool_result(
                         served if served is not None else content,
                         tool_name=name,
                         cap=self.compaction.tool_result_cap_bytes,
                     ),
                     for_call=tu,
+                    attachment=attachment,
                 )
             )
             _loop_resume.mark_turn(self, turn)
@@ -2063,6 +2091,7 @@ class Harness:
         """Return the in-loop review panel."""
         return _reviewer.Reviewer(
             settings=self.review,
+            media_rejections=self.media_rejections,
             chain=self.chain,
             hide=self.config.sandbox.hide_paths,
             review_tools=lambda: _toolset.build_readonly_review_tools(self.dispatcher),

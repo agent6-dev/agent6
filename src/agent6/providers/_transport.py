@@ -20,8 +20,9 @@ from urllib import parse
 import httpx2
 
 from agent6 import budget as agent6_budget
+from agent6 import media
 from agent6.config import _surfaces
-from agent6.providers import _headers, types
+from agent6.providers import _headers, _media_errors, types
 
 # The handshake bound; only a blackholed connect takes longer, and the watchdog cannot cut one.
 CONNECT_TIMEOUT_S = 20.0
@@ -363,6 +364,8 @@ class ProviderCall:
                 except types.ProviderError as exc:
                     self._observe_recovery(recovery_pending, exc.status_code)
                     recovery_pending = False
+                    exc.args = (self._safe_text(str(exc), headers),)
+                    _media_errors.raise_rejection(exc.status_code, str(exc), self.body)
                     if attempt + 1 < max_attempts and self.adapt_400(
                         exc.status_code, str(exc), self.body
                     ):
@@ -398,7 +401,7 @@ class ProviderCall:
                 self.record(headers, 0, f"HTTPError: {exc}")
                 raise types.ProviderError(
                     f"HTTP error calling {self.url} ({self.api_format} format): "
-                    f"{types.scrub_secret_values(str(exc), headers)}"
+                    f"{self._safe_text(str(exc), headers)}"
                 ) from exc
             recorded = False
             if (
@@ -408,7 +411,7 @@ class ProviderCall:
                 and resp.status_code in (401, 403)
             ):
                 # The transcript contract is one file per round-trip, the refused one included.
-                self.record(headers, resp.status_code, resp.text[:8192])
+                self.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
                 recorded = True
                 if (
                     cred.invalidate(
@@ -432,19 +435,35 @@ class ProviderCall:
                 self._observe_recovery(recovery_pending, resp.status_code)
                 recovery_pending = False
                 if not recorded:
-                    self.record(headers, resp.status_code, resp.text[:8192])
+                    self.record(
+                        headers, resp.status_code, self._safe_text(resp.text, headers)[:8192]
+                    )
+                _media_errors.raise_rejection(resp.status_code, resp.text, self.body)
                 if attempt + 1 < max_attempts and self.adapt_400(
                     resp.status_code, resp.text, self.body
                 ):
                     continue
                 raise types.ProviderError(
                     f"{self.api_label} API error {resp.status_code}: "
-                    f"{types.scrub_secret_values(resp.text, headers)[:500]}",
+                    f"{self._safe_text(resp.text, headers)[:500]}",
                     status_code=resp.status_code,
                     retry_after_s=types.parse_retry_after(resp.headers),
                 )
             return self._decode_success(headers, resp, recovery_pending=recovery_pending)
         raise types.ProviderError(f"{self.api_label} auth retry exhausted")  # pragma: no cover
+
+    def _safe_text(self, text: str, headers: dict[str, str]) -> str:
+        """Scrub image echoes and credentials before an error is logged or clipped.
+
+        Args:
+            text: The upstream error text.
+            headers: The attempt's credential-bearing headers.
+
+        Returns:
+            The safe error text.
+        """
+        clean = media.omit_payloads({"request": self.body, "error": text})
+        return types.scrub_secret_values(str(clean["error"]), headers)
 
     def _decode_success(
         self,
@@ -472,19 +491,19 @@ class ProviderCall:
             data: Any = resp.json()
         except (json.JSONDecodeError, ValueError) as exc:
             # A gateway glitch; without a status the error is retryable.
-            self.record(headers, resp.status_code, resp.text[:8192])
+            self.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
             raise types.ProviderError(
                 f"non-JSON response from {self.api_label} "
                 f"(status {resp.status_code}): "
-                f"{types.scrub_secret_values(resp.text, headers)[:500]}"
+                f"{self._safe_text(resp.text, headers)[:500]}"
             ) from exc
         if not isinstance(data, dict):
-            self.record(headers, resp.status_code, resp.text[:8192])
+            self.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
             raise types.ProviderError(
                 f"{self.api_label} returned a non-object JSON body "
                 ""
                 f"(status {resp.status_code}): "
-                f"{types.scrub_secret_values(resp.text, headers)[:500]}"
+                f"{self._safe_text(resp.text, headers)[:500]}"
             )
         self.record(headers, resp.status_code, data)
         # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
@@ -493,7 +512,7 @@ class ProviderCall:
             self._observe_recovery(recovery_pending, envelope_status(err))
             raise types.ProviderError(
                 f"{self.api_label} error in 2xx body: "
-                f"{types.scrub_secret_values(_envelope_detail(err), headers)}",
+                f"{self._safe_text(_envelope_detail(err), headers)}",
                 status_code=envelope_status(err),
                 retry_after_s=types.parse_retry_after(resp.headers),
             )

@@ -108,6 +108,8 @@ def output_tails(name: str, result: results.ToolResult) -> dict[str, Any]:
         if isinstance(result, results.ExecResult) and result.stopped_by_operator:
             tails["stopped_by_operator"] = True
         return tails
+    if result.attachment is not None:
+        return {"attachment": result.attachment.metadata(), "head_tail": result.summary()}
     if isinstance(result, results.ReadFileResult):
         head = "\n".join(result.content.splitlines()[:_READ_HEAD_LINES])
         return {

@@ -12,6 +12,7 @@ from unittest import mock
 
 import pytest
 
+from agent6 import kinds
 from agent6.harness import _llm_json, _panel, _review_seat, _reviewer
 from agent6.providers import Provider, ProviderError
 from agent6.tools import results
@@ -773,3 +774,163 @@ def test_risk_cannot_discard_a_valid_block(risk: object) -> None:
     assert verdict.verdict == "block" and len(verdict.findings) == 1
     assert verdict.risk == (risk[:1000] if isinstance(risk, str) else "")
     assert getattr(verdict, "risk_truncated", False) is isinstance(risk, str)
+
+
+def test_repo_review_preserves_image_result() -> None:
+    """The repo seat retains image blocks instead of flattening or clipping them."""
+    tu = {"name": "read_file", "id": "t1", "input": {"path": "page.png"}}
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
+        _RepoResp(text=_BLOCK_JSON),
+    ]
+    image = kinds.MediaAttachment(b"x" * 90000, "image/png", "page.png")
+    verdict = _review_seat.repo_review(
+        provider,
+        _ctx(),
+        seat_index=0,
+        focus="ui",
+        model_route="p/m",
+        tools=[],
+        dispatch=lambda name, inp: results.ReadMediaResult(image),
+        max_turns=2,
+    )
+    assert verdict.error is None
+    reply = provider.call.call_args_list[1].kwargs["messages"][2]["content"][0]
+    assert reply["tool_use_id"] == "t1"
+    assert reply["content"][1]["source"]["data"] == "eHh4" * 30000
+
+
+def test_repo_review_uses_shared_media_recovery_without_rerunning_tools() -> None:
+    """The independent repo seat retries its delivery rather than repeating read_file."""
+    from agent6 import kinds, media
+    from agent6.harness import _provider_call
+    from agent6.providers import types
+    from agent6.tools import results
+
+    tu = {"name": "read_file", "id": "t1", "input": {"path": "page.png"}}
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
+        types.MediaInputError(modality="image", reason="unsupported"),
+        _RepoResp(text=_BLOCK_JSON),
+    ]
+    dispatch = mock.Mock(
+        return_value=results.ReadMediaResult(kinds.MediaAttachment(b"x", "image/png", "page.png"))
+    )
+    emit = mock.Mock()
+    verdict = _review_seat.repo_review(
+        provider,
+        _ctx(),
+        seat_index=0,
+        focus="ui",
+        model_route="p/m",
+        tools=[],
+        dispatch=dispatch,
+        max_turns=2,
+        recovery=_provider_call.MediaRecovery(media.InputCapabilities(kinds.ModelRoute("p", "m"))),
+        emit=emit,
+    )
+    assert verdict.error is None
+    assert provider.call.call_count == 3 and dispatch.call_count == 1
+    text = provider.call.call_args.kwargs["messages"][-1]["content"][0]["content"]
+    assert text == (
+        "Cannot deliver image 'page.png' to p/m: image input is unsupported. "
+        "Describe the page through its DOM or accessibility tree, or read the test output."
+    )
+    assert emit.call_args.kwargs["call_id"] == "t1"
+
+
+def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
+    """A text-only seat refuses locally while a vision seat receives the same tool result."""
+    from agent6 import kinds, media
+    from agent6.harness import _provider_call
+    from agent6.tools import results
+
+    tu = {"name": "read_file", "id": "t1", "input": {"path": "page.png"}}
+    seats: list[_reviewer.ReviewSeat] = []
+    providers: list[Any] = []
+    cases: tuple[tuple[str, media.Support], ...] = (
+        ("text", "unsupported"),
+        ("vision", "supported"),
+    )
+    for model, support in cases:
+        provider = mock.MagicMock()
+        provider.call.side_effect = [
+            _RepoResp(tool_uses=(tu,), raw={"content": [{"type": "tool_use", **tu}]}),
+            _RepoResp(text=_BLOCK_JSON),
+        ]
+        providers.append(provider)
+        seats.append(
+            _reviewer.ReviewSeat(
+                focus="ui",
+                model=f"p/{model}",
+                provider=provider,
+                scope="repo",
+                media_input=media.InputCapabilities(kinds.ModelRoute("p", model), image=support),
+            )
+        )
+    dispatch = mock.Mock(
+        return_value=results.ReadMediaResult(kinds.MediaAttachment(b"x", "image/png", "page.png"))
+    )
+    rejections: _provider_call.MediaRejections = {}
+    _reviewer.run_panel(
+        seats,
+        _ctx(),
+        block_on="none",
+        min_blocking_models=1,
+        panel_id="p",
+        repo_max_turns=2,
+        tools=[],
+        dispatch=dispatch,
+        media_rejections=rejections,
+    )
+    replies = [p.call.call_args.kwargs["messages"][-1]["content"][0]["content"] for p in providers]
+    assert replies[0].startswith("Cannot deliver image 'page.png' to p/text:")
+    assert replies[1][1]["type"] == "image"
+    assert rejections[kinds.ModelRoute("p", "text")] == {"image"}
+    assert rejections[kinds.ModelRoute("p", "vision")] == set()
+    assert dispatch.call_count == 2
+
+
+@pytest.mark.parametrize("cross_turn", [False, True])
+def test_repo_review_records_attachment_limit_refusals(cross_turn: bool) -> None:
+    """Turn and request limit refusals keep their tool-call identity in the journal."""
+    from agent6 import kinds, media
+    from agent6.tools import results
+
+    def request(*ids: str) -> _RepoResp:
+        calls = tuple(
+            {"id": tid, "name": "read_file", "input": {"path": tid + ".png"}} for tid in ids
+        )
+        return _RepoResp(
+            tool_uses=calls, raw={"content": [{"type": "tool_use", **c} for c in calls]}
+        )
+
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        request("one"),
+        *([request("two", "three")] if cross_turn else []),
+        _RepoResp(text=_BLOCK_JSON),
+    ]
+    data = b"x" * (media.IMAGE_MAX_BYTES + (not cross_turn))
+    dispatch = mock.Mock(
+        return_value=results.ReadMediaResult(kinds.MediaAttachment(data, "image/png", "page.png"))
+    )
+    emit = mock.Mock()
+    verdict = _review_seat.repo_review(
+        provider,
+        _ctx(),
+        seat_index=0,
+        focus="ui",
+        model_route="p/m",
+        tools=[],
+        dispatch=dispatch,
+        max_turns=3 if cross_turn else 2,
+        emit=emit,
+    )
+    assert verdict.error is None
+    emit.assert_called_once()
+    assert emit.call_args.args == ("loop.media.refused",)
+    assert emit.call_args.kwargs["call_id"] == "one"
+    assert ("4 MiB" if cross_turn else "2 MiB") in emit.call_args.kwargs["reason"]

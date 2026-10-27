@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import portable
+from agent6 import media, portable
 from agent6.harness import _conversation
 
 # Every way a session can end; `SessionResult` says what each means.
@@ -217,6 +217,18 @@ class SessionSnapshot(pydantic.BaseModel):
     """
 
     model_config = pydantic.ConfigDict(frozen=True, extra="forbid")
+
+    @pydantic.field_serializer("messages")
+    def persisted_messages(self, value: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Omit pixels from snapshots and checkpoints without reopening source paths.
+
+        Args:
+            value: The live conversation wire.
+
+        Returns:
+            Messages with image omission placeholders.
+        """
+        return media.omit_payloads(value)
 
     version: int = SNAPSHOT_VERSION
     system: str

@@ -234,6 +234,7 @@ def _run_review_panel(
             concurrency=len(seats),  # one-shot CLI: run all seats in parallel
             tools=tools,
             dispatch=dispatch,
+            emit=journal.emit,
         )
     except agent6_budget.BudgetExceededError as exc:
         journal.emit(

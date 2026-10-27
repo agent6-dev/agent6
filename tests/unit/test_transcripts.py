@@ -8,6 +8,9 @@ land on disk. The http_post seam is stubbed so no network call is made.
 
 from __future__ import annotations
 
+import base64
+import contextlib
+import hashlib
 import json
 import pathlib
 from typing import Any
@@ -213,3 +216,208 @@ def test_transcript_record_publishes_via_atomic_write(
     assert json.loads(body)["seq"] == 1
     assert "sk-secret" not in body  # redaction intact
     assert not list(tmp_path.glob("*.json.tmp"))
+
+
+@pytest.mark.parametrize("shape", ["native", "mcp", "chat", "responses"])
+def test_transcripts_omit_images_and_error_echoes(tmp_path: pathlib.Path, shape: str) -> None:
+    """Native, MCP and data URL images leave only metadata, including echoed payloads."""
+    data = b"private image pixels"
+    encoded = base64.b64encode(data).decode()
+    url = "data:image/png;base64," + encoded
+    blocks = {
+        "native": {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": encoded},
+        },
+        "mcp": {"type": "image", "mimeType": "image/png", "data": encoded},
+        "chat": {"type": "image_url", "image_url": {"url": url}},
+        "responses": {"type": "input_image", "image_url": url},
+    }
+    body = {
+        "stdin": [
+            {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps({"attachment": {"source_path": "page.png"}}),
+                    },
+                    blocks[shape],
+                ]
+            }
+        ]
+    }
+    original = json.dumps(body)
+    path = TranscriptSink(tmp_path).record(
+        request_headers={},
+        request_body=body,
+        response_status=400,
+        response_body=f"rejected {encoded}",
+    )
+    text = path.read_text()
+    assert encoded not in text
+    assert hashlib.sha256(data).hexdigest() in text
+    assert '"payload_omitted": true' in text
+    assert "page.png" in text
+    assert json.dumps(body) == original
+
+
+@pytest.mark.parametrize("streaming", ["off", "status", "frame"])
+@pytest.mark.parametrize("copies", [1, 10000])
+def test_image_error_echo_is_scrubbed_before_excerpting(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, streaming: str, copies: int
+) -> None:
+    """A long base64 echo cannot escape through the transport's short error excerpts."""
+    encoded = base64.b64encode(b"private pixels" * copies).decode()
+    provider = AnthropicProvider(api_key="key", model="m", transcript_sink=TranscriptSink(tmp_path))
+
+    def post(url: str, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(status_code=400, text="bad image: " + encoded)
+
+    def stream(*args: Any, **kwargs: Any) -> contextlib.AbstractContextManager[httpx2.Response]:
+        if streaming == "frame":
+            error = {
+                "type": "error",
+                "error": {"type": "invalid_request_error", "message": "bad image: " + encoded},
+            }
+            return contextlib.nullcontext(
+                httpx2.Response(200, text="event: error\ndata: " + json.dumps(error) + "\n\n")
+            )
+        return contextlib.nullcontext(httpx2.Response(400, text="bad image: " + encoded))
+
+    monkeypatch.setattr("agent6.providers._transport.http_post", post)
+    monkeypatch.setattr("agent6.providers._stream.http_stream", stream)
+    with pytest.raises(ProviderError) as error:
+        provider.call(
+            system="s",
+            text_delta_callback=(lambda _: None) if streaming != "off" else None,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": encoded,
+                            },
+                        }
+                    ],
+                }
+            ],
+        )
+    assert encoded[:40] not in str(error.value)
+    assert not _scan_for_secret(tmp_path, encoded[:40])
+
+
+@pytest.mark.parametrize("shape", ["native", "chat", "responses", "mcp"])
+def test_transcript_omits_native_document_payload(tmp_path: pathlib.Path, shape: str) -> None:
+    """A PDF attachment follows the same metadata-only retention rule as an image."""
+    data = b"%PDF-1.7\nprivate document"
+    encoded = base64.b64encode(data).decode()
+    url = "data:application/pdf;base64," + encoded
+    block = {
+        "native": {
+            "type": "document",
+            "source": {"type": "base64", "media_type": "application/pdf", "data": encoded},
+        },
+        "chat": {"type": "file", "file": {"filename": "page.pdf", "file_data": url}},
+        "responses": {"type": "input_file", "filename": "page.pdf", "file_data": url},
+        "mcp": {
+            "type": "resource",
+            "resource": {"uri": "file:///page.pdf", "mimeType": "application/pdf", "blob": encoded},
+        },
+    }[shape]
+    path = TranscriptSink(tmp_path).record(
+        request_headers={},
+        request_body={
+            "content": [
+                {"type": "text", "text": "document: page.pdf, 1 KiB"},
+                block,
+            ]
+        },
+        response_status=200,
+        response_body={},
+    )
+    text = path.read_text()
+    assert encoded not in text
+    assert hashlib.sha256(data).hexdigest() in text
+    assert "payload_omitted" in text and "page.pdf" in text
+
+
+@pytest.mark.parametrize(
+    "code, modality, reason",
+    [
+        ("image_input_not_supported", "image", "unsupported"),
+        ("invalid_image", "image", "invalid"),
+        ("image_too_large", "image", "too_large"),
+        ("document_input_not_supported", "document", "unsupported"),
+        ("invalid_file", "document", "invalid"),
+    ],
+)
+def test_media_specific_errors_are_typed(
+    monkeypatch: pytest.MonkeyPatch, code: str, modality: str, reason: str
+) -> None:
+    """Recognized media rejections carry a reason without echoing the provider body."""
+    body = {"error": {"code": code, "message": "private upstream detail"}}
+
+    def fake_post(*args: Any, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(status_code=400, text=json.dumps(body))
+
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    provider = AnthropicProvider(api_key="key", model="m")
+    mime = "application/pdf" if modality == "document" else "image/png"
+    with pytest.raises(types.MediaInputError) as caught:
+        provider.call(
+            system="s",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": modality,
+                            "source": {"type": "base64", "media_type": mime, "data": "eA=="},
+                        }
+                    ],
+                }
+            ],
+        )
+    assert caught.value.modality == modality and caught.value.reason == reason
+    assert "private upstream detail" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "status, message",
+    [
+        (401, "This model does not support images"),
+        (429, "image input is unsupported"),
+        (400, "quota exhausted for image request"),
+        (400, "invalid model"),
+    ],
+)
+def test_unrelated_errors_are_not_media_rejections(
+    monkeypatch: pytest.MonkeyPatch, status: int, message: str
+) -> None:
+    """Authentication, quota and unrelated client errors cannot mark a route unsupported."""
+
+    def fake_post(*args: Any, **kwargs: Any) -> _FakeResponse:
+        return _FakeResponse(status_code=status, text=json.dumps({"error": {"message": message}}))
+
+    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    provider = AnthropicProvider(api_key="key", model="m")
+    with pytest.raises(ProviderError) as caught:
+        provider.call(
+            system="s",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {"type": "base64", "media_type": "image/png", "data": "eA=="},
+                        }
+                    ],
+                }
+            ],
+        )
+    assert not isinstance(caught.value, types.MediaInputError)

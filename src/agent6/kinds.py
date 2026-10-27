@@ -9,6 +9,7 @@ The pydantic models sit at the trust boundaries instead: `config.model`,
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import pathlib
 from typing import Literal
 
@@ -21,6 +22,64 @@ RoleName = Literal["worker", "reviewer", "planner"]
 ResumableMode = Literal["run", "plan", "ask"]
 # What the REPL's after-commit hook tells the loop to do next; `exit` stops with no prompt.
 AutoCommitDirective = Literal["continue", "stop", "undo", "exit"]
+
+
+class MediaAttachmentError(ValueError):
+    """A media attachment has an invalid media type."""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class MediaAttachment:
+    """Hold media bytes in memory and derive their identifying metadata.
+
+    Attributes:
+        data: The original bytes, excluded from diagnostic representations.
+        media_type: One of the supported image or document media types.
+        source_path: The path requested by the tool call.
+    """
+
+    data: bytes = dataclasses.field(repr=False)
+    media_type: str
+    source_path: str
+
+    def __post_init__(self) -> None:
+        if self.media_type not in {
+            "image/png",
+            "image/jpeg",
+            "image/gif",
+            "image/webp",
+            "application/pdf",
+        }:
+            raise MediaAttachmentError(f"unsupported media type: {self.media_type!r}")
+
+    @property
+    def byte_size(self) -> int:
+        """The number of original bytes."""
+        return len(self.data)
+
+    @property
+    def sha256(self) -> str:
+        """The digest of the original bytes."""
+        return hashlib.sha256(self.data).hexdigest()
+
+    def metadata(self) -> dict[str, str | int | bool]:
+        """Return persistence-safe metadata with an explicit omission marker."""
+        return {
+            "source_path": self.source_path,
+            "media_type": self.media_type,
+            "byte_size": self.byte_size,
+            "sha256": self.sha256,
+            "payload_omitted": True,
+        }
+
+    @property
+    def modality(self) -> Literal["image", "document"]:
+        """The input modality described by this media type."""
+        return "document" if self.media_type == "application/pdf" else "image"
+
+    def summary(self) -> str:
+        """Return the shared text label without payload bytes."""
+        return f"{self.modality}: {self.source_path}, {(self.byte_size + 1023) // 1024} KiB"
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

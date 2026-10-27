@@ -10,8 +10,8 @@ from typing import Any
 
 import pydantic
 
-from agent6 import review_records
-from agent6.harness import _llm_json, _panel
+from agent6 import kinds, media, review_records
+from agent6.harness import _conversation, _llm_json, _panel, _provider_call
 from agent6.prompts import review
 from agent6.providers import (
     Provider,
@@ -219,6 +219,8 @@ def repo_review(
     max_turns: int,
     max_tokens: int = 2000,
     temperature: float | None = 0.0,
+    recovery: _provider_call.MediaRecovery | None = None,
+    emit: Callable[..., None] | None = None,
 ) -> review_records.ReviewVerdict:
     """Run one repo-scope seat with at most `max_turns` provider calls.
 
@@ -233,6 +235,8 @@ def repo_review(
         max_turns: The provider calls allowed.
         max_tokens: The output cap of each call.
         temperature: The sampling temperature on every call.
+        recovery: The seat's capability facts and execution-local rejections.
+        emit: The journal emitter for delivery refusals.
 
     Returns:
         The seat's verdict; a provider error or no valid verdict abstains with `error` set.
@@ -240,15 +244,25 @@ def repo_review(
     system = review.REPO_REVIEW_SYSTEM_PROMPT.format(
         focus=ctx.focus or "general correctness", max_turns=max_turns
     )
-    messages: list[dict[str, Any]] = [{"role": "user", "content": build_user_message(ctx)}]
+    conversation = _conversation.Conversation()
+    conversation.notice(build_user_message(ctx))
+    if recovery is None:
+        entry, sep, model = model_route.partition("/")
+        route = kinds.ModelRoute(entry if sep else "", model if sep else entry)
+        recovery = _provider_call.MediaRecovery(media.InputCapabilities(route))
     for i in range(max_turns):
         try:
-            resp = provider.call(
-                system=system,
-                messages=messages,
-                tools=tools,
-                max_tokens=max_tokens,
-                temperature=temperature,
+            resp = _provider_call.call_with_media_recovery(
+                lambda messages: provider.call(
+                    system=system,
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                ),
+                conversation,
+                recovery,
+                emit=emit,
             )
         except ProviderError as exc:
             return review_records.ReviewVerdict(
@@ -258,7 +272,7 @@ def repo_review(
                 verdict="abstain",
                 error=f"provider: {exc}",
             )
-        messages.append({"role": "assistant", "content": resp.raw.get("content") or []})
+        assistant = conversation.assistant(resp.raw.get("content") or [])
         if not resp.tool_uses:
             obj = _llm_json.extract_json(resp.text, prefer=("verdict", "findings"))
             if obj is None:
@@ -276,17 +290,26 @@ def repo_review(
             if obj is not None and ("verdict" in obj or "findings" in obj):
                 return verdict_from_obj(obj, seat_index, focus, model_route)
             break
-        tool_results: list[dict[str, Any]] = []
-        for tu in resp.tool_uses:
-            name = tu.get("name", "")
-            tu_id = tu.get("id", "")
+        tool_results: list[_conversation.ToolResultItem] = []
+        media_budget = media.AttachmentBudget()
+        for tu in assistant.tool_uses:
+            name = tu.name
+            attachment = None
             try:
-                out = dispatch(name, tu.get("input", {}) or {})
-                content = json.dumps(out.to_wire(), ensure_ascii=False)[:8000]
+                out = dispatch(name, tu.input or {})
+                attachment = out.attachment
+                content = json.dumps(out.to_wire(), ensure_ascii=False)
+                if attachment is not None and (reason := media_budget.refusal(attachment)):
+                    if emit is not None:
+                        emit("loop.media.refused", call_id=tu.id, reason=reason)
+                    attachment = None
+                    content = reason
+                if attachment is None:
+                    content = content[:8000]
             except Exception as exc:
                 content = f"error: {exc}"[:2000]
-            tool_results.append({"type": "tool_result", "tool_use_id": tu_id, "content": content})
-        messages.append({"role": "user", "content": tool_results})
+            tool_results.append(_conversation.ToolResultItem(tu.id, content, tu, attachment))
+        conversation.results(tool_results)
     return review_records.ReviewVerdict(
         seat_index=seat_index,
         focus=focus,

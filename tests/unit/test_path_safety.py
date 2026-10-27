@@ -303,3 +303,11 @@ def test_host_workspace_takes_a_looping_hidden_path(tmp_path: pathlib.Path) -> N
     (tmp_path / "loop").symlink_to("loop")
     ws = _path_safety.host_workspace(tmp_path, hide=(str(tmp_path / "loop"),))
     assert ws.is_denied(tmp_path / "loop")
+
+
+def test_bounded_byte_read_never_returns_more_than_the_limit(tmp_path: pathlib.Path) -> None:
+    """The byte reader can probe one byte past a media cap without reading the file to EOF."""
+    (tmp_path / "file").write_bytes(b"x" * 10000)
+    sp = _path_safety.Workspace(root=tmp_path).resolve_read("file")
+    assert _path_safety.read_bytes_contained(sp, limit_bytes=17) == b"x" * 17
+    assert _path_safety.read_bytes_contained(sp, limit_bytes=0) == b""

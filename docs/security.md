@@ -716,3 +716,16 @@ It catches prompt regressions; the structural defenses above confine a model tha
 - Side channels: no claim about timing, cache, or speculative side channels.
 - Supply chain: pin your install
     - runtime deps `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, `ruff`, `ty`; build dep `hatchling`; jail crates `nix`, `libc`, `landlock`, `seccompiler`, `serde`, `serde_json`
+
+
+## Media retention
+
+`read_file` refuses binary media; image and PDF delivery is disabled.
+The in-memory `MediaAttachment` carries bytes separately from tool-result text.
+Transcripts, snapshots and checkpoints omit recognized payloads and retain metadata (path, media type, SHA-256 and byte size).
+A resume or fork needs a fresh `read_file`; it never reopens a saved path automatically.
+Streaming error excerpts that reach 8 KiB on a media request are omitted because clipping can split an echoed payload.
+
+Metadata-only retention does not redact pixels or document contents sent upstream.
+A screenshot or PDF can contain credentials even when configuration directories are hidden.
+The adapter-enabling change requires a security review of binary egress, containment, retention and Claude Code's unjailed process.

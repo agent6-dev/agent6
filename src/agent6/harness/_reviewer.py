@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Literal
 
 import pydantic
 
-from agent6 import budget, errors, review_records, terminal
+from agent6 import budget, errors, media, review_records, terminal
 from agent6.config import ReviewScope
-from agent6.harness import _chain, _context, _panel, _review_history, _review_seat
+from agent6.harness import _chain, _context, _panel, _provider_call, _review_history, _review_seat
 from agent6.providers import Provider, ToolDefinition
 from agent6.vcs import git_read
 
@@ -55,6 +55,9 @@ class ReviewSeat:
     provider: Provider
     scope: ReviewScope = "diff"
     temperature: float | None = 0.0
+    media_input: media.InputCapabilities = dataclasses.field(
+        default_factory=media.InputCapabilities
+    )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -98,6 +101,8 @@ def run_panel(
     concurrency: int = 1,
     tools: list[ToolDefinition] | None = None,
     dispatch: _review_seat.ReviewDispatch | None = None,
+    media_rejections: _provider_call.MediaRejections | None = None,
+    emit: Callable[..., None] | None = None,
 ) -> _panel.PanelResult:
     """Run every seat over the same context and aggregate the verdicts in seat order.
 
@@ -111,10 +116,13 @@ def run_panel(
         concurrency: The seat calls run at once.
         tools: The read-only tools for repo seats.
         dispatch: The read-only dispatch for repo seats.
+        media_rejections: Execution-local unsupported facts, shared only by identical routes.
+        emit: The journal emitter for delivery refusals.
 
     Returns:
         The aggregated panel result.
     """
+    rejections = media_rejections if media_rejections is not None else {}
 
     def _run(i: int, s: ReviewSeat) -> review_records.ReviewVerdict:
         seat_ctx = dataclasses.replace(ctx, focus=s.focus)
@@ -129,6 +137,10 @@ def run_panel(
                 dispatch=dispatch,
                 max_turns=repo_max_turns,
                 temperature=s.temperature,
+                recovery=_provider_call.MediaRecovery(
+                    s.media_input, rejections.setdefault(s.media_input.route, set())
+                ),
+                emit=emit,
             )
         return _review_seat.structured_review(
             s.provider,
@@ -252,6 +264,7 @@ class Reviewer:
     budget_remaining: Callable[[], float | None]
     log: Callable[[str], None]
     emit: Callable[..., None]
+    media_rejections: _provider_call.MediaRejections = dataclasses.field(default_factory=dict)
 
     def triggers(self, state: _loop_state.LoopState, turn: _loop_state.TurnState) -> None:
         """Sit the observe-only panels after a verify failure or at the configured interval.
@@ -437,6 +450,8 @@ class Reviewer:
                 concurrency=self.settings.concurrency,
                 tools=tools,
                 dispatch=dispatch,
+                media_rejections=self.media_rejections,
+                emit=self.emit,
             )
         except budget.BudgetExceededError:
             self.emit("loop.review.skipped", **identity, reason="budget")

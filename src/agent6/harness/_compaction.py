@@ -18,6 +18,7 @@ import dataclasses
 import json
 import re
 
+from agent6 import media
 from agent6.harness import (
     _compaction_result,
     _conversation,
@@ -108,8 +109,9 @@ def _tool_result_pointers(
         for item_idx, item in enumerate(message.items):
             if not isinstance(item, _conversation.ToolResultItem):
                 continue
-            pointers.append((message_idx, item_idx, len(item.content)))
-            total += len(item.content)
+            size = len(item.content) + (media.MEDIA_CONTEXT_CHARS if item.attachment else 0)
+            pointers.append((message_idx, item_idx, size))
+            total += size
     return pointers, total
 
 
@@ -301,6 +303,7 @@ def _dedupe_identical_results(
             item.content.startswith(_compaction_result.ELISION_PREFIX)
             or len(item.content) < _DEDUP_MIN_CHARS
             or _is_operator_answer(item)
+            or item.attachment is not None
         ):
             continue
         call = item.for_call
@@ -397,7 +400,10 @@ class _Tier1Pass:
         """
         newest_by_path: dict[str, tuple[int, int, int]] = {}
         for message_idx, item_idx, size in self.victims:
-            call = self._item(message_idx, item_idx).for_call
+            item = self._item(message_idx, item_idx)
+            if item.attachment is not None:
+                continue
+            call = item.for_call
             if call.name != "read_file" or not isinstance(call.input, dict):
                 continue
             path = str(call.input.get("path", ""))
@@ -470,7 +476,9 @@ class _Tier1Pass:
             )
             if gist_placeholder is not None and isinstance(call.input, dict):
                 self.gist_paths.append(str(call.input.get("path", "")))
-            self.conversation.set_result_content(message_idx, item_idx, placeholder)
+            self.conversation.set_result_content(
+                message_idx, item_idx, placeholder, drop_attachment=True
+            )
             self.total -= size - len(placeholder)
             self.elided_calls.append(_compaction_result.call_label(call.name, call.input))
 

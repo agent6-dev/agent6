@@ -26,10 +26,14 @@ providers never forward the field.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import dataclasses
 import json
 from collections.abc import Callable, Sequence
 from typing import Any, Literal
+
+from agent6 import kinds, media
 
 _EPHEMERAL = {"type": "ephemeral"}
 
@@ -59,11 +63,13 @@ class ToolResultItem:
         content: The result text.
         for_call: The ToolUse it answers, paired at construction so compaction
             never rebuilds an id index; in-memory only.
+        attachment: The optional attachment, kept separately from the text.
     """
 
     tool_use_id: str
     content: str
     for_call: ToolUse
+    attachment: kinds.MediaAttachment | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -333,7 +339,9 @@ class Conversation:
         )
         return removed
 
-    def set_result_content(self, message_idx: int, item_idx: int, content: str) -> None:
+    def set_result_content(
+        self, message_idx: int, item_idx: int, content: str, *, drop_attachment: bool = False
+    ) -> None:
         """Rewrite one tool_result's content in place.
 
         The id and pairing are untouched, so the wire stays balanced.
@@ -342,6 +350,7 @@ class Conversation:
             message_idx: The user message's index.
             item_idx: The result's index in the message.
             content: The new content.
+            drop_attachment: Remove the image when replacing it with a placeholder or refusal.
 
         Raises:
             ValueError: The position is not a tool_result in a user message.
@@ -353,8 +362,33 @@ class Conversation:
         if not isinstance(item, ToolResultItem):
             raise ValueError("set_result_content targets a tool_result")
         items = list(message.items)
-        items[item_idx] = dataclasses.replace(item, content=content)
+        items[item_idx] = dataclasses.replace(
+            item, content=content, attachment=None if drop_attachment else item.attachment
+        )
         self._messages[message_idx] = UserMessage(items=tuple(items))
+
+    def limit_attachments(self) -> tuple[tuple[str, str], ...]:
+        """Keep the newest attachments inside the outbound request limits.
+
+        Returns:
+            The call IDs and refusal texts of attachments replaced in canonical history.
+        """
+        budget = media.AttachmentBudget()
+        refused: list[tuple[str, str]] = []
+        for mi in range(len(self._messages) - 1, -1, -1):
+            message = self._messages[mi]
+            if not isinstance(message, UserMessage):
+                continue
+            for ii in range(len(message.items) - 1, -1, -1):
+                item = message.items[ii]
+                if (
+                    isinstance(item, ToolResultItem)
+                    and item.attachment is not None
+                    and (reason := budget.refusal(item.attachment))
+                ):
+                    self.set_result_content(mi, ii, reason, drop_attachment=True)
+                    refused.append((item.tool_use_id, reason))
+        return tuple(refused)
 
     # ---- rolling cache breakpoints --------------------------------------
 
@@ -402,7 +436,23 @@ class Conversation:
                     block: dict[str, Any] = {
                         "type": "tool_result",
                         "tool_use_id": item.tool_use_id,
-                        "content": item.content,
+                        "content": (
+                            [
+                                {"type": "text", "text": item.content},
+                                {
+                                    "type": item.attachment.modality,
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": item.attachment.media_type,
+                                        "data": base64.b64encode(item.attachment.data).decode(
+                                            "ascii"
+                                        ),
+                                    },
+                                },
+                            ]
+                            if item.attachment is not None
+                            else item.content
+                        ),
                     }
                 else:
                     block = {"type": "text", "text": item.text}
@@ -510,7 +560,7 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
         if (
             keys != {"type", "tool_use_id", "content"}
             or not isinstance(block["tool_use_id"], str)
-            or not isinstance(block["content"], str)
+            or not isinstance(block["content"], (str, list))
         ):
             raise ValueError(f"malformed conversation: {where} is not a plain tool_result block")
         if not pending or pending[0].id != block["tool_use_id"]:
@@ -518,10 +568,57 @@ def _parse_user_block(block: Any, pending: list[ToolUse], *, where: str) -> Tool
                 f"malformed conversation: {where} answers tool_use"
                 f" {block['tool_use_id']!r} out of order"
             )
-        return ToolResultItem(
-            tool_use_id=block["tool_use_id"], content=block["content"], for_call=pending.pop(0)
-        )
+        call = pending.pop(0)
+        text, image = _parse_result_content(block["content"], call)
+        return ToolResultItem(block["tool_use_id"], text, call, image)
     raise ValueError(f"malformed conversation: {where} has unsupported type {block.get('type')!r}")
+
+
+def _parse_result_content(content: Any, call: ToolUse) -> tuple[str, kinds.MediaAttachment | None]:
+    """Parse text or a text-plus-media result at the wire boundary.
+
+    Args:
+        content: The result's wire content.
+        call: The answered tool call, carrying the source path.
+
+    Returns:
+        The text and optional image.
+
+    Raises:
+        ValueError: The content is not a supported result shape.
+    """
+    if isinstance(content, str):
+        return content, None
+    if (
+        not isinstance(content, list)
+        or len(content) != 2
+        or not isinstance(content[0], dict)
+        or set(content[0]) != {"type", "text"}
+        or content[0]["type"] != "text"
+        or not isinstance(content[0]["text"], str)
+        or not isinstance(content[1], dict)
+        or set(content[1]) != {"type", "source"}
+        or content[1]["type"] not in ("image", "document")
+    ):
+        raise ValueError("malformed conversation: not a text-plus-media tool_result")
+    source = content[1]["source"]
+    if (
+        not isinstance(source, dict)
+        or set(source) != {"type", "media_type", "data"}
+        or source["type"] != "base64"
+        or not isinstance(source["data"], str)
+        or not isinstance(source["media_type"], str)
+    ):
+        raise ValueError("malformed conversation: invalid image source")
+    try:
+        data = base64.b64decode(source["data"], validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("malformed conversation: invalid image base64") from exc
+    path = str(call.input.get("path", "")) if isinstance(call.input, dict) else ""
+    attachment = kinds.MediaAttachment(data, source["media_type"], path)
+    if attachment.modality != content[1]["type"]:
+        raise ValueError("malformed conversation: media type disagrees with block type")
+    return content[0]["text"], attachment
 
 
 def format_transcript_tail(
