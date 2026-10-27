@@ -187,6 +187,26 @@ def test_blame_and_the_other_diff_family_verbs_do_not_run_a_repo_textconv(
     assert not marker.exists(), "a repo-configured textconv ran as a host command"
 
 
+def test_blame_keeps_an_author_time_python_cannot_date(tmp_path: pathlib.Path) -> None:
+    """A commit dated past year 9999 raised `ValueError` out of blame; the row keeps the time."""
+    import os
+
+    from agent6.vcs import git_files
+
+    root = _repo(tmp_path / "r")
+    (root / "f.txt").write_text("v2\n", encoding="utf-8")
+    env = {**os.environ, "GIT_AUTHOR_DATE": "@100000000000000 +0000"}
+    subprocess.run(
+        ["git", "-c", "commit.gpgsign=false", "commit", "-qam", "future"],
+        cwd=root,
+        env=env,
+        check=True,
+    )
+    head = _git(root, "rev-parse", "HEAD").stdout.strip()
+    rows = git_files.blame_lines(root, head, "f.txt", b"v2\n", lines=1)
+    assert rows[0].sha == head and rows[0].date == "@100000000000000"
+
+
 def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path) -> None:
     """`agent6 review`'s working-tree diff carries the per-name driver overrides.
 

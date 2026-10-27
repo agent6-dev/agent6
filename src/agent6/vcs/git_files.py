@@ -189,6 +189,14 @@ def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path, hide: tuple[str,
     return ""
 
 
+def _author_date(seconds: str) -> str:
+    """Return an ISO author time, or the raw `@seconds` when Python cannot represent it."""
+    try:
+        return datetime.datetime.fromtimestamp(int(seconds), datetime.UTC).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return f"@{seconds}"
+
+
 def blame_lines(
     path: pathlib.Path,
     rev: str,
@@ -257,11 +265,7 @@ def blame_lines(
         if line.startswith("\t"):
             meta = metadata[sha]
             committed = bool(sha.strip("0"))
-            date = (
-                datetime.datetime.fromtimestamp(int(meta["author-time"]), datetime.UTC).isoformat()
-                if committed
-                else ""
-            )
+            date = _author_date(meta["author-time"]) if committed else ""
             rows.append(
                 BlameLine(
                     number,
