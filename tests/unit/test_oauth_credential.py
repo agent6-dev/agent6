@@ -79,6 +79,8 @@ def test_a_grant_round_trips_the_store_at_0600(gcfg: pathlib.Path) -> None:
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert secret_store.load_oauth_grant("work") == stored
     assert secret_store.load_oauth_tokens("work") is None  # the ChatGPT shape is another
+    _store(entry, refresh_token="RT-full")
+    assert secret_store.load_oauth_tokens("work") is None  # a refresh token changes nothing
     text = path.read_text(encoding="utf-8")
     assert "oauth_version" in text and "oauth_binding" in text
 

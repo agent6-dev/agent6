@@ -690,6 +690,12 @@ def _revoke(name: str, entry: ProviderEntry | None) -> None:
         assert isinstance(
             entry, (AnthropicProviderEntry, OpenAIProviderEntry, ResponsesProviderEntry)
         )
+        if grant.binding != oauth.binding_fingerprint(entry):
+            _common.warn(
+                f"the stored sign-in for {name!r} was made under other provider settings;"
+                f" not revoked at {where}, removed locally only."
+            )
+            return
         err = _oauth_protocol.revoke_tokens(
             where,
             issuer.client_id,

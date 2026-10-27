@@ -331,8 +331,8 @@ def load_oauth_tokens(
     data = secrets if secrets is not None else load_secrets(user)
     providers = data.get("providers")
     entry = providers.get(provider_name) if isinstance(providers, dict) else None
-    if not isinstance(entry, dict):
-        return None
+    if not isinstance(entry, dict) or "oauth_version" in entry or "oauth_binding" in entry:
+        return None  # a configured issuer's grant is bound to its entry, never ChatGPT's
     access = entry.get("oauth_access_token")
     refresh = entry.get("oauth_refresh_token")
     if not (isinstance(access, str) and access and isinstance(refresh, str) and refresh):

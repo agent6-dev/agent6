@@ -360,3 +360,32 @@ def test_model_set_names_the_missing_or_rebound_sign_in(
     )
     assert main(["model", "worker", "work/m1"]) == 0
     assert "WARNING" not in capsys.readouterr().err
+
+
+def test_logout_does_not_revoke_a_grant_made_under_other_settings(
+    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A rebound grant's token never goes to the current config's revocation endpoint."""
+    _write_config()
+    secret_store.save_oauth_grant(
+        "work",
+        secret_store.StoredGrant(
+            binding="made-elsewhere",
+            access_token="AT1",
+            refresh_token="RT1",
+            issued_at=1.0,
+            expires_at=None,
+            exchange_access_token="",
+            exchange_issued_at=0.0,
+            exchange_expires_at=None,
+        ),
+    )
+
+    def never(*_a: object, **_k: object) -> None:
+        raise AssertionError("no token may leave")
+
+    monkeypatch.setattr(httpx2, "post", never)
+    assert main(["connect", "work", "--logout"]) == 0
+    err = capsys.readouterr().err
+    assert "other provider settings" in err and "removed locally" in err
+    assert secret_store.load_oauth_grant("work") is None
