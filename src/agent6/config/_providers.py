@@ -10,7 +10,7 @@ from urllib import parse
 
 import pydantic
 
-from agent6.config import _base, _sandbox
+from agent6.config import _base, _oauth, _sandbox
 
 ApiFormat = Literal["anthropic", "openai", "chatgpt", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
@@ -218,6 +218,15 @@ class _ProviderBase(pydantic.BaseModel):
         default_factory=dict,
         description="Extra URL query parameters on every request (Azure's `api-version`).",
     )
+    oauth: _oauth.OAuthConfig | None = pydantic.Field(
+        default=None,
+        description=(
+            "a configured OAuth issuer and public-client registration: `agent6 connect <name>`"
+            " signs in there and stores the grant in `secrets.toml`; requires"
+            ' `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored'
+            " grant is bound to these settings and to `base_url`"
+        ),
+    )
     # The connect phase is bounded by providers._transport.CONNECT_TIMEOUT_S instead.
     http_timeout_s: float = pydantic.Field(
         gt=0.0,
@@ -312,6 +321,32 @@ class _ProviderBase(pydantic.BaseModel):
             raise ValueError(
                 f"auth_style = 'none' sends no auth header, so {named} would never"
                 " be used; drop one or the other"
+            )
+        return self
+
+    @pydantic.model_validator(mode="after")
+    def _oauth_is_the_one_credential_source(self) -> _ProviderBase:
+        """Refuse a key source or a non-bearer auth style beside a configured issuer.
+
+        Returns:
+            The model unchanged.
+
+        Raises:
+            ValueError: `oauth` is set with `api_key_env`, `token_command` or an `auth_style`
+                other than `bearer`.
+        """
+        if self.oauth is None:
+            return self
+        if self.api_key_env or self.token_command:
+            named = "api_key_env" if self.api_key_env else "token_command"
+            raise ValueError(
+                f"oauth signs in at its issuer and stores the grant, so {named} would never"
+                " be used; drop one or the other"
+            )
+        if self.auth_style != "bearer":
+            raise ValueError(
+                "oauth sends its grant as a bearer header (`Authorization: Bearer`); auth_style"
+                f" {self.auth_style!r} is not honoured, drop it"
             )
         return self
 
@@ -415,6 +450,11 @@ class ChatGPTProviderEntry(_ProviderBase):
         Raises:
             ValueError: `api_key_env` or `token_command` is set, or `auth_style` is not `bearer`.
         """
+        if self.oauth is not None:
+            raise ValueError(
+                "api_format 'chatgpt' signs in at its fixed issuer; a custom oauth table"
+                " belongs on an openai-format entry"
+            )
         if self.api_key_env or self.token_command:
             named = "api_key_env" if self.api_key_env else "token_command"
             raise ValueError(

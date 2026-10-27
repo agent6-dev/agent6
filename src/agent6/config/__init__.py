@@ -22,6 +22,7 @@ from agent6.config._harness import (  # noqa: ICN003  # re-export
     ReviewScope,
     RoleModel,
 )
+from agent6.config._oauth import OAuthConfig, OAuthExchangeConfig  # noqa: ICN003  # re-export
 from agent6.config._providers import (  # noqa: ICN003  # re-export
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -81,6 +82,8 @@ __all__ = [
     "MetricConfig",
     "ModelsConfig",
     "NotifyConfig",
+    "OAuthConfig",
+    "OAuthExchangeConfig",
     "OpenAIProviderEntry",
     "ParallelConfig",
     "PromptConfig",

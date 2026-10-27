@@ -204,6 +204,7 @@ banned-from = [
     "agent6.config._git",
     "agent6.config._harness",
     "agent6.config._layer_data",
+    "agent6.config._oauth",
     "agent6.config._presets",
     "agent6.config._providers",
     "agent6.config._sandbox",

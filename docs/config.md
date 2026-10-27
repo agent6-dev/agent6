@@ -85,6 +85,53 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `prompt_caching` | `true` | prompt caching for `api_format = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
 | `binary` | `"claude"` | executable for `api_format = "claude_code"` only; a name on PATH or an absolute path |
 
+### Configured OAuth
+
+`[providers.<name>.oauth]` names an issuer and the public-client registration the operator made there; `agent6 connect <name>` signs in with authorization code and PKCE (`authorization_endpoint`, a loopback redirect or a pasted callback) or the device grant (`device_authorization_endpoint`), and stores the grant in `secrets.toml`.
+Every endpoint is https, or plain http on `127.0.0.1` for a local service; nothing is discovered, no client secret exists, and no redirect is followed.
+A stored grant is bound to the issuer settings and the provider's `base_url`: change any of them and the next run refuses until `agent6 connect <name>` runs again.
+`[providers.<name>.oauth.exchange]` adds one second exchange when the model endpoint takes a token other than the issuer's: one `GET` or `POST` with the issuer's bearer, whose named top-level fields are the token and its expiry.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `issuer` | *(required)* | the issuer identifier, an https URL; names the sign-in and binds the stored grant; never fetched (no discovery) |
+| `client_id` | *(required)* | the public-client registration the operator made at the issuer |
+| `scopes` | `[]` | the scopes requested, joined with spaces; none are implied |
+| `authorization_endpoint` | none | enables authorization code with PKCE: the URL the browser opens |
+| `device_authorization_endpoint` | none | enables the device grant (RFC 8628): the URL that mints the user code |
+| `token_endpoint` | *(required)* | the URL for the code exchange, the device polling and the refresh |
+| `revocation_endpoint` | none | the URL `agent6 connect <name> --logout` revokes the grant at, when set |
+| `redirect_uri` | `"http://127.0.0.1:0/auth/callback"` | the loopback redirect the registration names; port 0 takes a free port before the authorization starts; `http://127.0.0.1` or `http://[::1]`, a path, no query |
+| `authorization_params` | `{}` | static, non-secret authorization parameters (an audience, a prompt); never `client_id`, `state`, `redirect_uri`, `response_type`, `scope` or a PKCE parameter |
+| `request_encoding` | `"form"` | how the device and token requests are encoded |
+| `refresh_skew_s` | `60.0` | seconds before an expiry the grant is refreshed, capped at half the issued lifetime |
+
+| Field | Default | Meaning |
+|---|---|---|
+| `endpoint` | *(required)* | the exact URL the issuer's bearer is sent to for the model endpoint's token |
+| `method` | `"POST"` | the request method; `GET` sends `parameters` as the query |
+| `request_encoding` | `"form"` | how a `POST` body is encoded |
+| `parameters` | `{}` | static, non-secret request parameters (query for `GET`, body for `POST`) |
+| `access_token_field` | `"access_token"` | the top-level JSON field holding the token the model endpoint takes |
+| `expires_field` | `"expires_in"` | the top-level JSON field holding that token's expiry; required in the answer |
+| `expires_format` | `"relative_seconds"` | whether `expires_field` is a lifetime in seconds or a Unix time |
+
+```toml
+[providers.work]
+api_format = "openai"
+base_url = "https://models.example/v1"
+
+[providers.work.oauth]
+issuer = "https://login.example"
+client_id = "operator-registered-public-client"
+scopes = ["model.invoke"]
+authorization_endpoint = "https://login.example/authorize"
+device_authorization_endpoint = "https://login.example/device"
+token_endpoint = "https://login.example/token"
+revocation_endpoint = "https://login.example/revoke"
+redirect_uri = "http://127.0.0.1:8765/auth/callback"
+```
+
 ### Deployments
 
 ```toml

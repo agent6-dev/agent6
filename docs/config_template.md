@@ -68,6 +68,33 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 <!-- config-table: providers.<name> -->
 
+### Configured OAuth
+
+`[providers.<name>.oauth]` names an issuer and the public-client registration the operator made there; `agent6 connect <name>` signs in with authorization code and PKCE (`authorization_endpoint`, a loopback redirect or a pasted callback) or the device grant (`device_authorization_endpoint`), and stores the grant in `secrets.toml`.
+Every endpoint is https, or plain http on `127.0.0.1` for a local service; nothing is discovered, no client secret exists, and no redirect is followed.
+A stored grant is bound to the issuer settings and the provider's `base_url`: change any of them and the next run refuses until `agent6 connect <name>` runs again.
+`[providers.<name>.oauth.exchange]` adds one second exchange when the model endpoint takes a token other than the issuer's: one `GET` or `POST` with the issuer's bearer, whose named top-level fields are the token and its expiry.
+
+<!-- config-table: providers.<name>.oauth -->
+
+<!-- config-table: providers.<name>.oauth.exchange -->
+
+```toml
+[providers.work]
+api_format = "openai"
+base_url = "https://models.example/v1"
+
+[providers.work.oauth]
+issuer = "https://login.example"
+client_id = "operator-registered-public-client"
+scopes = ["model.invoke"]
+authorization_endpoint = "https://login.example/authorize"
+device_authorization_endpoint = "https://login.example/device"
+token_endpoint = "https://login.example/token"
+revocation_endpoint = "https://login.example/revoke"
+redirect_uri = "http://127.0.0.1:8765/auth/callback"
+```
+
 ### Deployments
 
 ```toml
