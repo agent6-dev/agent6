@@ -296,6 +296,32 @@ The worker receives each finding once unless the feedback notice cut it.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
 `agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
 Review freshness is unknown until a reader supplies the requested base tree, head tree and path coverage.
+
+## Session findings
+
+```bash
+agent6 sessions findings <id>                    # open findings and review version
+agent6 sessions findings <id> --all --json        # include resolved findings and action history
+agent6 steer <id> --finding <finding-id>          # submit Fix to a live worker
+agent6 steer <id> --finding <finding-id> --resume # confirm Resume to fix for a stopped run
+agent6 sessions resolve <id> <finding-id> --as fixed --reason "Reproduced and corrected"
+agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
+```
+
+- Resolve accepts `fixed`, `false_positive`, `intentional`, `wont_fix`, `duplicate`, or `pre_existing`.
+  `duplicate` also requires `--duplicate-of <another-finding-id>` in the same session.
+- Resolve and Reopen require a nonblank reason of at most 2,000 characters.
+  `fixed` records the operator's conclusion, not a verification result.
+- Fix builds its instruction from the stored finding and reviewed target, and asks the worker to reproduce the report before changing code.
+  It leaves the finding open and refuses an occupied steer slot or an unknown delivery.
+- `--resume` confirms the background resume of the same session.
+  An unavailable resume reports its failure and does not create a new run.
+- Each action prints its request ID and resulting review version.
+  `--request-id <id>` retries that action without sending it twice; `--expected-version <n>` refuses a stale view instead of using the current version.
+- A live worker applies actions at its steer boundary.
+  An action still waiting after five seconds reports `action queued`; an approval or question wait must end before the boundary is reached.
+- `steer submitted` means the instruction entered the steer bridge, not that the finding was fixed.
+  A crash between the request and submission records reads as `delivery unknown`; retrying the request ID does not resend it.
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
 ## Run options

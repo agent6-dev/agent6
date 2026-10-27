@@ -867,7 +867,9 @@ def steer_interrupt_pending(session_dir: pathlib.Path) -> bool:
         return False
 
 
-def submit_steer(session_dir: pathlib.Path, text: str, *, now: bool = False) -> bool:
+def submit_steer(
+    session_dir: pathlib.Path, text: str, *, now: bool = False, only_if_empty: bool = False
+) -> bool:
     """Queue the session's next steer: the answer first, then the request marker.
 
     The loop finds the answer the moment it notices the request and never waits on a modal.
@@ -876,18 +878,81 @@ def submit_steer(session_dir: pathlib.Path, text: str, *, now: bool = False) -> 
         session_dir: The session directory.
         text: The instruction.
         now: Abort the in-flight model call to take it.
+        only_if_empty: Refuse an occupied slot instead of replacing its instruction.
 
     Returns:
         Whether both files landed; a failed marker removes its stranded answer.
     """
     try:
-        write_steer_answer(session_dir, text)
+        if only_if_empty:
+            if steer_request_pending(session_dir) or not _publish_answer(
+                session_dir / STEER_ANSWER_FILE, text
+            ):
+                return False
+        else:
+            write_steer_answer(session_dir, text)
     except OSError:
         return False
     if request_steer(session_dir, now=now):
         return True
     clear_steer_answer(session_dir)
     return False
+
+
+REVIEW_ACTIONS_DIR = "review-actions"
+
+
+def _review_path(session_dir: pathlib.Path, request_id: str, suffix: str) -> pathlib.Path:
+    return _contained(
+        session_dir / REVIEW_ACTIONS_DIR,
+        f"{request_id}.{suffix}",
+        untrusted=request_id,
+        what="review request id",
+    )
+
+
+def queue_review_action(session_dir: pathlib.Path, request_id: str, payload: str) -> None:
+    """Publish a whole action envelope for the session worker, keeping the first request.
+
+    Raises:
+        ValueError: The request ID escapes the bridge or names a different pending action.
+    """
+    target = _review_path(session_dir, request_id, "request")
+    paths.mkdir_for_real_user(target.parent)
+    if not _publish_answer(target, payload) and target.read_text(encoding="utf-8") != payload:
+        raise ValueError("request_id already has a different action envelope")
+
+
+def review_requests(session_dir: pathlib.Path) -> list[tuple[str, str]]:
+    """Read pending action envelopes without deleting evidence before the worker replies.
+
+    Returns:
+        Request IDs and their whole JSON envelopes.
+    """
+    directory = session_dir / REVIEW_ACTIONS_DIR
+    result: list[tuple[str, str]] = []
+    for path in sorted(directory.glob("*.request")):
+        target = _review_path(session_dir, path.stem, "request")
+        result.append((path.stem, target.read_text(encoding="utf-8")))
+    return result
+
+
+def reply_review_action(session_dir: pathlib.Path, request_id: str, payload: str) -> None:
+    """Publish the worker's reply before removing its request."""
+    _publish_answer(_review_path(session_dir, request_id, "reply"), payload)
+    _review_path(session_dir, request_id, "request").unlink(missing_ok=True)
+
+
+def read_review_reply(session_dir: pathlib.Path, request_id: str) -> str | None:
+    """Read an action reply without consuming it, so retries retain the same result.
+
+    Returns:
+        The JSON reply, or None while no reply is recorded.
+    """
+    try:
+        return _review_path(session_dir, request_id, "reply").read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
 
 
 def clear_steer_request(session_dir: pathlib.Path) -> None:

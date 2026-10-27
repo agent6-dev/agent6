@@ -18,6 +18,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "docs" / "architecture_template.md"
@@ -39,14 +40,16 @@ def _nid(name: str) -> str:
 def _tach_graph() -> str:
     """Return tach's module graph as mermaid text."""
     # From this interpreter, never `uv run`: a uv spawn re-syncs, uninstalling a tested wheel.
-    proc = subprocess.run(
-        [sys.executable, "-m", "tach", "show", "--mermaid", "-o", "/dev/stdout"],
-        capture_output=True,
-        text=True,
-        check=True,
-        cwd=_ROOT,
-    )
-    return proc.stdout
+    with tempfile.TemporaryDirectory(dir=_ROOT) as directory:
+        output = pathlib.Path(directory) / "modules.mmd"
+        subprocess.run(
+            [sys.executable, "-m", "tach", "show", "--mermaid", "-o", str(output)],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=_ROOT,
+        )
+        return output.read_text(encoding="utf-8")
 
 
 def _package_edges(mermaid_graph: str) -> tuple[set[tuple[str, str]], set[str]]:

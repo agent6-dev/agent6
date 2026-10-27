@@ -87,3 +87,22 @@ def test_the_names_a_run_really_uses_still_work(tmp_path: pathlib.Path) -> None:
         assert ipc.session_allow_set(tmp_path, scope)
     ipc.write_answer(tmp_path, "approval-3", "yes")
     assert ipc.read_answer(tmp_path, "approval-3") == "yes"
+
+
+@pytest.mark.parametrize("bad", ["../escape", "a/b", "/tmp/escape", "", "nul\x00"])
+def test_review_request_ids_stay_inside_the_bridge(tmp_path: pathlib.Path, bad: str) -> None:
+    with pytest.raises(ValueError, match="unsafe review request id"):
+        ipc.queue_review_action(tmp_path, bad, "{}")
+    assert not (tmp_path / ipc.REVIEW_ACTIONS_DIR).exists()
+
+
+def test_review_bridge_keeps_a_whole_request_and_reply(tmp_path: pathlib.Path) -> None:
+    ipc.queue_review_action(tmp_path, "request", '{"action":"resolve"}')
+    ipc.queue_review_action(tmp_path, "request", '{"action":"resolve"}')
+    with pytest.raises(ValueError, match="different action"):
+        ipc.queue_review_action(tmp_path, "request", '{"action":"reopen"}')
+    assert ipc.review_requests(tmp_path) == [("request", '{"action":"resolve"}')]
+    ipc.reply_review_action(tmp_path, "request", '{"result":"resolved"}')
+    assert ipc.review_requests(tmp_path) == []
+    assert ipc.read_review_reply(tmp_path, "request") == '{"result":"resolved"}'
+    assert ipc.read_review_reply(tmp_path, "request") == '{"result":"resolved"}'

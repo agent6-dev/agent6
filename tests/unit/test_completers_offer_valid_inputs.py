@@ -169,7 +169,8 @@ def test_live_only_verbs_offer_only_live_sessions(
             if a.dest == "target"
         )
         completer = getattr(target, "completer", None)
-        assert completer is completers._complete_live_session_ids, verb  # pyright: ignore[reportPrivateUsage]
+        assert callable(completer)
+        assert completer("") == offered, verb
     # `exec` takes a session first, and none after `--new`.
     exec_rest = completers._complete_exec_rest  # pyright: ignore[reportPrivateUsage]
     assert exec_rest("", parsed_args=argparse.Namespace(new=False)) == ["runny-one-AAAAAA"]
@@ -531,4 +532,25 @@ def test_machine_files_complete_relative_to_the_working_directory(
     ]
     assert completers._complete_machine_files(str(instance)) == [  # pyright: ignore[reportPrivateUsage]
         str(instance / "machine.asm.toml")
+    ]
+
+
+def test_finding_steer_completion_includes_stopped_resumable_sessions(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import argparse
+
+    from agent6.ui.cli import parser as cli_parser
+
+    monkeypatch.chdir(tmp_path)
+    _seed(tmp_path)
+    parser = cli_parser.build_parser()
+    subs = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction))
+    target = next(a for a in subs.choices["steer"]._actions if a.dest == "target")
+    complete = getattr(target, "completer", None)
+    assert callable(complete)
+    assert complete("", parsed_args=argparse.Namespace(finding="f1", resume=True)) == [
+        "asky-three-CCCCC",
+        "planny-two-BBBBB",
+        "runny-one-AAAAAA",
     ]

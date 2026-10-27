@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli import _common, completers
+from agent6.ui.cli import _common, completers, sessions_findings
 
 
 def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -25,6 +25,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_sub = sessions_p.add_subparsers(
         dest="sessions_command", required=True, metavar="<subcommand>"
     )
+
+    sessions_findings.add_parsers(sessions_sub)
 
     sessions_list = _common._sub(
         sessions_sub,

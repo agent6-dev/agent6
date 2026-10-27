@@ -12,8 +12,12 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import re
+import subprocess
 import sys
 import types
+from typing import Any
+
+import pytest
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -128,3 +132,16 @@ def test_architecture_page_is_not_stale() -> None:
     template = (_ROOT / "docs" / "architecture_template.md").read_text(encoding="utf-8")
     committed = (_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
     assert gen.render(template) == committed
+
+
+def test_tach_graph_uses_a_regular_output_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generate diagrams when reopening /dev/stdout is unavailable."""
+    gen = _load_generator()
+    run = subprocess.run
+
+    def regular_output(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        assert pathlib.Path(argv[-1]).is_relative_to(_ROOT)
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", regular_output)
+    assert "-->" in gen._tach_graph()

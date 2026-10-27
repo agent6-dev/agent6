@@ -487,8 +487,24 @@ def _dispatch_attach(args: argparse.Namespace) -> int:
 
 def _dispatch_steer(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 steer`."""
-    from agent6.ui.cli import steer_cmd
+    from agent6.ui.cli import sessions_findings, steer_cmd
 
+    if args.finding:
+        if args.now:
+            _common.error("--finding waits for a safe boundary; it cannot be used with --now")
+            return 2
+        return sessions_findings.cmd_action(
+            args.target,
+            args.finding,
+            "fix",
+            resume=args.resume,
+            request_id=args.request_id,
+            expected_version=args.expected_version,
+            config_paths=args.config,
+        )
+    if args.resume or args.request_id or args.expected_version is not None:
+        _common.error("--resume, --request-id and --expected-version require --finding")
+        return 2
     return steer_cmd._cmd_steer(args.target, args.text, now=args.now, config_paths=args.config)
 
 
@@ -602,18 +618,34 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
     return net_cmds.forward(layout, port, args.local_port)
 
 
-def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911
+def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912  # one branch per verb
     """Return the exit code of a `agent6 sessions` verb."""  # noqa: DOC501  # the last raise is unreachable
     from agent6.ui.cli import (
         history_cmds,
         sessions_cmds,
         sessions_compare,
+        sessions_findings,
         sessions_merge,
         sessions_show,
     )
 
     if args.sessions_command == "list":
         return sessions_cmds._cmd_list(as_json=args.list_json, lanes=args.list_lanes)
+    if args.sessions_command == "findings":
+        return sessions_findings.cmd_findings(
+            args.session_id, all_findings=args.all, as_json=args.json
+        )
+    if args.sessions_command in {"resolve", "reopen"}:
+        return sessions_findings.cmd_action(
+            args.session_id,
+            args.finding_id,
+            args.sessions_command,
+            reason=args.reason,
+            disposition=getattr(args, "disposition", ""),
+            duplicate_of=getattr(args, "duplicate_of", None),
+            request_id=args.request_id,
+            expected_version=args.expected_version,
+        )
     if args.sessions_command == "show":
         return sessions_show._cmd_status(args.session_id, as_json=args.json)
     if args.sessions_command == "diff":

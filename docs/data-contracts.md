@@ -31,7 +31,7 @@ Fold review evidence and operator history for every session reader.
 | `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | `'none'` |
 
 - **Written by:** viewmodel/{_session_log, state}
-- **Read by:** viewmodel/{_state_types, _state_view}
+- **Read by:** app/review_actions, ui/cli/sessions_findings, ui/web/review_routes, viewmodel/{_state_types, _state_view}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (1 test files exercise it)
 
 ## Review records
@@ -68,9 +68,9 @@ Define immutable review evidence and validate review boundary payloads.
 | `paths` | `tuple[str, ...]` | required |
 | `source` | `Literal['revisions', 'worktree']` | required |
 
-- **Written by:** harness/{_panel, _review_seat, _reviewer}
+- **Written by:** app/review_actions, harness/{_panel, _review_seat, _reviewer}, ui/cli/sessions_findings, ui/web/review_routes
 - **Read by:** harness/{_chain, _loop_state, _review_history}, viewmodel/review
-- **Guarded by:** [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py) (6 test files exercise it)
+- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (10 test files exercise it)
 
 ## Conversation
 
@@ -93,7 +93,7 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
 - **Written by:** app/stamps
-- **Read by:** app/{_execution, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{_session_status, _state_view, format, listing, policy, wire}
+- **Read by:** app/{_execution, _merge_message, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{_session_status, _state_view, format, listing, policy, wire}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (24 test files exercise it)
 
 ## SessionSnapshot

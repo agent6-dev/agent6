@@ -31,7 +31,7 @@ from agent6.config import is_loopback_host, write
 from agent6.machine import MachineError
 from agent6.sessions import process
 from agent6.ui import spawn
-from agent6.ui.web import _sse, actions, auth, git_model, model, page
+from agent6.ui.web import _sse, actions, auth, git_model, model, page, review_routes
 from agent6.viewmodel import (
     UnknownStepError,
     machine_snapshot,
@@ -500,6 +500,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             ok, msg = actions.spawn_machine_run(self.cwd, body.file, self.config_paths)
             self._ok_or_err(ok, {"message": msg}, msg)
             return
+        if len(parts) == 6 and parts[:2] == ["api", "session"] and parts[3] == "findings":
+            session_dir = model.session_dir_for(self.cwd, parts[2])
+            if session_dir is None:
+                self._post_not_found(f"no session {parts[2]!r}")
+                return
+            status, payload = review_routes.act(
+                self.cwd, session_dir, parts[4], parts[5], self._read_body(), self.config_paths
+            )
+            self._send_json(payload, status=status)
+            return
         if len(parts) == 4 and parts[0] == "api" and parts[1] == "session":
             self._route_session_post(parts[2], parts[3])
             return
@@ -896,6 +906,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json(session_snapshot(session_dir, repo=self.cwd, step=step))
             except UnknownStepError as e:
                 self._send_json({"error": str(e)}, status=422)
+        elif sub == "findings":
+            query = parse.parse_qs(parse.urlsplit(self.path).query)
+            status, payload = review_routes.findings(
+                session_dir, (query.get("status") or ["open"])[0]
+            )
+            self._send_json(payload, status=status)
         elif sub == "conversation":
             self._send_json(model.conversation_payload(session_dir))
         elif sub == "restate":

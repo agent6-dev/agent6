@@ -190,6 +190,27 @@ Heartbeats run every 15 seconds, including after the run ends.
 A run or draft `/diff` without `sha` returns its latest journaled commit, or 422 with `no commit yet`.
 With `cumulative=1`, the patch covers the chain through that commit.
 
+## Finding actions API
+
+`GET /api/session/<id>/findings` returns the shared review evidence and its `version`, with open finding rows.
+`?status=all` includes resolved rows.
+
+`POST /api/session/<id>/findings/<finding-id>/{fix,resolve,reopen}` calls the same application path as the [CLI finding actions](usage.md#session-findings).
+Every body includes `request_id` and `expected_version` from the read response.
+
+- Fix takes `{"request_id":"fix-1","expected_version":3}`.
+  `"resume":true` confirms **Resume to fix** for a stopped session.
+- Resolve adds `"resolution":{"disposition":"fixed","reason":"Reproduced and corrected"}`.
+  A duplicate resolution also names `duplicate_of` in that object.
+- Reopen adds `"reason":"Still reproducible"`.
+- A completed action returns its `status`, `message`, `request_id`, `finding_id`, and resulting `version`.
+  A queued live action returns 202; repeat its request ID to read the result without resending it.
+- Unknown records return 404, stale versions and conflicting actions return 409, and invalid action fields return 422.
+  Authentication and request body limits match the other session routes.
+
+These routes return JSON evidence, not HTML.
+The browser page has no finding action buttons.
+
 ## Remote access (Tailscale)
 
 The server binds `127.0.0.1` by default and speaks plain HTTP.

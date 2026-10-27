@@ -42,6 +42,7 @@ WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
     ),
     "session layout": lambda repo, state: layout.SessionLayout(state, "s1").ensure(),
     "approvals dir": lambda repo, state: ipc.approvals_dir(_session(state)),
+    "review action": lambda repo, state: ipc.queue_review_action(_session(state), "r1", "{}"),
     "questions dir": lambda repo, state: ipc.questions_dir(_session(state)),
     "session grant": lambda repo, state: ipc.set_session_allow(_session(state), "command"),
     "frontend claim": lambda repo, state: process.register_frontend(_session(state), os.getpid()),

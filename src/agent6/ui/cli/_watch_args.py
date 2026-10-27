@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 
-from agent6.ui.cli import _common, completers
+from agent6.ui.cli import _common, completers, sessions_findings
 
 
 def _add_attach_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -150,14 +150,22 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         ),
     )
     steer_target = steer_p.add_argument("target", help=f"{_common.SESSION_ID}.")
-    steer_target.completer = completers._complete_live_session_ids  # type: ignore[attr-defined]
-    steer_p.add_argument(
+    steer_target.completer = completers.complete_steer_ids  # type: ignore[attr-defined]
+    instruction = steer_p.add_mutually_exclusive_group(required=True)
+    instruction.add_argument(
         "text",
+        nargs="?",
         help=(
             "The instruction, or a composer directive (/pin, /compact, /task, /standing,"
             " /retire, /btw, /now)."
         ),
     )
+    finding = instruction.add_argument("--finding", help="Submit Fix for a stored finding ID.")
+    finding.completer = completers.complete_finding_ids  # type: ignore[attr-defined]
+    steer_p.add_argument(
+        "--resume", action="store_true", help="Confirm Resume to fix for a stopped run's finding."
+    )
+    sessions_findings.add_action_options(steer_p)
     steer_p.add_argument(
         "--now",
         action="store_true",

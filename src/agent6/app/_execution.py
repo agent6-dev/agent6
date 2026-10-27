@@ -19,7 +19,15 @@ from collections.abc import Callable, Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, event_log, kinds, paths
-from agent6.app import _session, _setup, finalize, providers, stamps, workspace_setup
+from agent6.app import (
+    _session,
+    _setup,
+    finalize,
+    providers,
+    review_actions,
+    stamps,
+    workspace_setup,
+)
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleName
@@ -399,6 +407,14 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             if inputs.interactive and mode == "run"
             else (lambda _i, _s: "continue")
         )
+
+        def _steer_requested() -> bool:
+            assert wf is not None
+            review_actions.drain(
+                events, execution_id=wf.execution_id, resume_steer=inputs.resume_steer
+            )
+            return steer_state.requested()
+
         wf = loop.Harness(
             chain=_chain.RunChain(
                 cwd,
@@ -429,7 +445,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             events=events,
             curator=curator,
             bridge=_operator.OperatorBridge(
-                steer_requested=steer_state.requested,
+                steer_requested=_steer_requested,
                 steer_clear=steer_state.clear,
                 steer_prompt=steer_state.prompt,
                 steer_reset=steer_state.reset_stage,

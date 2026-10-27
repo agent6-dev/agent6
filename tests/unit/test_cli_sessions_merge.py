@@ -1171,7 +1171,7 @@ def test_model_squash_uses_the_whole_run(
     oversized: bool,
 ) -> None:
     """A review execution must not replace the landed diff or the original finish context."""
-    from agent6.app import merge as merge_mod
+    from agent6.app import _merge_message
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -1220,7 +1220,7 @@ def test_model_squash_uses_the_whole_run(
         return object()
 
     monkeypatch.setattr(app_providers, "build_role_provider", provider)
-    monkeypatch.setattr(merge_mod, "call_for_text", draft)
+    monkeypatch.setattr(_merge_message, "call_for_text", draft)
     assert main(["sessions", "merge", session_id, "--method", "squash"]) == 0
     assert "+context_window = 200000" in seen["user"]
     assert "+Document the fallback." in seen["user"]
@@ -1302,7 +1302,7 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     from typing import Any
 
     from agent6 import budget as agent6_budget
-    from agent6.app import merge as merge_mod
+    from agent6.app import _merge_message
     from agent6.config import Config
     from agent6.providers import types
 
@@ -1338,7 +1338,7 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     monkeypatch.setattr(git_read, "range_name_status", _no_files)
     sink = _Sink()
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    msg = merge_mod._model_squash_message(  # pyright: ignore[reportPrivateUsage]
+    msg = _merge_message.model_squash_message(
         tmp_path,
         Config(),
         (),

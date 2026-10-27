@@ -20,6 +20,8 @@ depends_on = []
 # coordinator dispatch + candidate-ranking core. The front-end injects the
 # presentation, process-spawn, and run-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
+# _execution drains review_actions through sessions.ipc at the worker steer boundary.
+# merge calls _merge_message; its builders use _setup, providers, harness and viewmodel.
 path = "agent6.app"
 depends_on = [
   "agent6",
@@ -47,6 +49,7 @@ depends_on = [
   "agent6.paths",
   "agent6.portable",
   "agent6.providers",
+  "agent6.review_records",
   "agent6.sandbox",
   "agent6.sandbox.detect",
   "agent6.secret_store",
@@ -99,6 +102,7 @@ depends_on = [
   "agent6.paths",
   "agent6.portable",
   "agent6.providers",
+  "agent6.review_records",
   "agent6.sandbox",
   "agent6.sandbox.detect",
   "agent6.sandbox.landlock",
@@ -335,6 +339,7 @@ depends_on = [
   # completion read
   "agent6.models.choices",
   "agent6.paths",
+  "agent6.review_records",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   # run_plan reads the session's mode from its manifest before spawning.

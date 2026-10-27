@@ -416,6 +416,13 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - Request framing is bounded: 1 MiB body cap (413), chunked refused (411), and any unread-body refusal closes the connection.
 - The machine write surface (`POST /api/machine/<name>/{poke,stop,steer,approve,answer}`) uses the same guards.
   `poke` writes the instance's signal file (inert JSON the next `tool` reads) and `stop` its stop marker; `steer`, `approve` and `answer` write only the current agent state's per-state dir.
+- Finding actions use the same authenticated session lookup and body limits.
+  Fix constructs steering text from stored evidence, not a request-supplied instruction.
+  Resolve and Reopen validate reasons and duplicate references before writing.
+- A live worker is the only journal writer for finding actions.
+  `sessions.ipc` publishes whole request and reply files under the private session's `review-actions/`; request IDs cannot escape that directory.
+  Without a live worker, the action path acquires the existing `worker.lock` and rechecks liveness and the review version before appending.
+  This excludes a concurrent resume or offline disposition without a separate journal lock.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
   No telemetry, no auto-update, no remote control plane.
 

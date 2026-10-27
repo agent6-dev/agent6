@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import paths
+from agent6.app import review_actions
 from agent6.config import (
     Config,
     ConfigError,
@@ -22,9 +23,27 @@ from agent6.config import (
     write,
 )
 from agent6.models import choices as models_choices
-from agent6.sessions import process
+from agent6.sessions import id, process
 from agent6.ui.cli import _common
 from agent6.viewmodel import listing, machine_state
+
+
+def complete_finding_ids(prefix: str, **kw: Any) -> list[str]:
+    """Complete finding IDs from the selected session's saved evidence.
+
+    Returns:
+        Matching finding IDs, or an empty list without a readable session.
+    """
+    parsed = kw.get("parsed_args")
+    target = getattr(parsed, "session_id", "") or getattr(parsed, "target", "")
+    if not target:
+        return []
+    try:
+        saved = _common.resolve_session_layout(pathlib.Path.cwd(), target)
+        view = review_actions.read_review(saved.session_dir)
+    except (id.SessionIdError, OSError, review_actions.ReviewActionError):
+        return []
+    return sorted(f.finding_id for f in view.findings if f.finding_id.startswith(prefix))
 
 
 def _explicit_config(kw: dict[str, object]) -> tuple[pathlib.Path, ...]:
@@ -385,6 +404,14 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
         for d in _common.all_session_dirs(pathlib.Path.cwd())
         if d.name.startswith(prefix) and listing.session_is_live(d)
     )
+
+
+@_never_raises
+def complete_steer_ids(prefix: str, parsed_args: object = None, **_kw: object) -> list[str]:
+    """Return live sessions, or resumable sessions for a finding action."""
+    if getattr(parsed_args, "finding", None) or getattr(parsed_args, "resume", False):
+        return _complete_resumable_ids(prefix)
+    return _complete_live_session_ids(prefix)
 
 
 @_never_raises
