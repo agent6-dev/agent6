@@ -891,7 +891,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
         exchanges.append(data)
         return _TokenResp()
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_post)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
         "builtins.input",
         lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=STATE1",
@@ -1041,16 +1041,16 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    from agent6.providers import chatgpt_oauth
+    from agent6.providers import _oauth_protocol, chatgpt_oauth
 
     def fake_start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth:
         return chatgpt_oauth.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
 
     def fake_poll(
         issuer: str, client_id: str, device: chatgpt_oauth.DeviceAuth, *, provider: str
-    ) -> chatgpt_oauth.TokenGrant:
+    ) -> _oauth_protocol.TokenGrant:
         assert provider == "chatgpt"
-        return chatgpt_oauth.TokenGrant(_grant_jwt(), "RT9", 3600.0)
+        return _oauth_protocol.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", fake_start)
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.poll_device_auth", fake_poll)
@@ -1078,7 +1078,7 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    from agent6.providers import chatgpt_oauth
+    from agent6.providers import _oauth_protocol, chatgpt_oauth
 
     def fake_start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth:
         return chatgpt_oauth.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
@@ -1087,9 +1087,9 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
 
     def fake_poll(
         issuer: str, client_id: str, device: chatgpt_oauth.DeviceAuth, *, provider: str
-    ) -> chatgpt_oauth.TokenGrant:
+    ) -> _oauth_protocol.TokenGrant:
         told.append(provider)
-        return chatgpt_oauth.TokenGrant(_grant_jwt(), "RT9", 3600.0)
+        return _oauth_protocol.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", fake_start)
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.poll_device_auth", fake_poll)
@@ -1125,7 +1125,7 @@ def test_connect_chatgpt_device_flow_disabled_falls_back_to_paste(
     def fake_post(url: str, data: dict[str, str], timeout_s: float) -> _TokenResp:
         return _TokenResp()
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_post)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
         "builtins.input",
         lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=STATE1",

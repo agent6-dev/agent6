@@ -15,7 +15,7 @@ from urllib import parse
 import pytest
 
 from agent6 import secret_store
-from agent6.providers import chatgpt_oauth, types
+from agent6.providers import _oauth_protocol, chatgpt_oauth, types
 
 
 @pytest.fixture
@@ -47,12 +47,12 @@ _AUTH_CLAIM = "https://api.openai.com/auth"
 def test_pkce_challenge_matches_rfc7636_vector() -> None:
     """RFC 7636 appendix B: the S256 transform of the sample verifier."""
     assert (
-        chatgpt_oauth.pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
+        _oauth_protocol.pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")
         == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
     )
-    verifier, challenge = chatgpt_oauth.pkce_pair()
+    verifier, challenge = _oauth_protocol.pkce_pair()
     assert 43 <= len(verifier) <= 128 and "=" not in challenge
-    assert challenge == chatgpt_oauth.pkce_challenge(verifier)
+    assert challenge == _oauth_protocol.pkce_challenge(verifier)
 
 
 def test_authorize_url_carries_the_registered_params() -> None:
@@ -69,18 +69,18 @@ def test_authorize_url_carries_the_registered_params() -> None:
 
 def test_parse_callback_accepts_url_or_query_and_checks_state() -> None:
     assert (
-        chatgpt_oauth.parse_callback(f"{chatgpt_oauth.REDIRECT_URI}?code=abc&state=S", state="S")
+        _oauth_protocol.parse_callback(f"{chatgpt_oauth.REDIRECT_URI}?code=abc&state=S", state="S")
         == "abc"
     )
-    assert chatgpt_oauth.parse_callback("code=abc&state=S", state="S") == "abc"
+    assert _oauth_protocol.parse_callback("code=abc&state=S", state="S") == "abc"
     with pytest.raises(ValueError, match="state mismatch"):
-        chatgpt_oauth.parse_callback(
+        _oauth_protocol.parse_callback(
             f"{chatgpt_oauth.REDIRECT_URI}?code=abc&state=OTHER", state="S"
         )
     with pytest.raises(ValueError, match="no `code`"):
-        chatgpt_oauth.parse_callback(f"{chatgpt_oauth.REDIRECT_URI}?state=S", state="S")
+        _oauth_protocol.parse_callback(f"{chatgpt_oauth.REDIRECT_URI}?state=S", state="S")
     with pytest.raises(ValueError, match="access_denied"):
-        chatgpt_oauth.parse_callback(
+        _oauth_protocol.parse_callback(
             f"{chatgpt_oauth.REDIRECT_URI}?error=access_denied&state=S", state="S"
         )
 
@@ -91,24 +91,24 @@ def test_parse_callback_accepts_url_or_query_and_checks_state() -> None:
     ids=["non-ascii", "invalid-alphabet"],
 )
 def test_jwt_claims_rejects_malformed_base64(payload: str) -> None:
-    assert chatgpt_oauth.jwt_claims(f"h.{payload}.s") == {}
+    assert _oauth_protocol.jwt_claims(f"h.{payload}.s") == {}
 
 
 def test_account_id_prefers_access_token_claim() -> None:
     access = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-access"}})
     id_tok = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-id"}})
     assert (
-        chatgpt_oauth.account_id_of(chatgpt_oauth.TokenGrant(access, "r", 60.0, id_token=id_tok))
+        chatgpt_oauth.account_id_of(_oauth_protocol.TokenGrant(access, "r", 60.0, id_token=id_tok))
         == "acct-access"
     )
     assert (
         chatgpt_oauth.account_id_of(
-            chatgpt_oauth.TokenGrant("opaque-token", "r", 60.0, id_token=id_tok)
+            _oauth_protocol.TokenGrant("opaque-token", "r", 60.0, id_token=id_tok)
         )
         == "acct-id"
     )
-    assert chatgpt_oauth.account_id_of(chatgpt_oauth.TokenGrant("garbage", "r", 60.0)) == ""
-    assert chatgpt_oauth.jwt_claims("not-a-jwt") == {}
+    assert chatgpt_oauth.account_id_of(_oauth_protocol.TokenGrant("garbage", "r", 60.0)) == ""
+    assert _oauth_protocol.jwt_claims("not-a-jwt") == {}
 
 
 def test_exchange_and_refresh_post_the_right_grants(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,17 +121,23 @@ def test_exchange_and_refresh_post_the_right_grants(monkeypatch: pytest.MonkeyPa
             {"access_token": "AT", "refresh_token": "RT", "expires_in": 1200, "id_token": "IT"},
         )
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_post)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     grant = chatgpt_oauth.exchange_code(
         "https://auth.example", "app_X", code="C0", verifier="V0", provider="chatgpt"
     )
-    assert grant == chatgpt_oauth.TokenGrant("AT", "RT", 1200.0, id_token="IT")
+    assert grant == _oauth_protocol.TokenGrant("AT", "RT", 1200.0, id_token="IT")
     url, data = calls[0]
     assert url == "https://auth.example/oauth/token"
     assert data["grant_type"] == "authorization_code"
     assert data["code_verifier"] == "V0" and data["redirect_uri"] == chatgpt_oauth.REDIRECT_URI
 
-    chatgpt_oauth.refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
+    _oauth_protocol.refresh_grant(
+        chatgpt_oauth.token_endpoint("https://auth.example"),
+        "app_X",
+        "RT",
+        provider="chatgpt",
+        label="ChatGPT",
+    )
     _, data = calls[1]
     assert data == {"grant_type": "refresh_token", "refresh_token": "RT", "client_id": "app_X"}
 
@@ -142,7 +148,7 @@ def test_initial_exchange_requires_a_refresh_token(monkeypatch: pytest.MonkeyPat
     def incomplete(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(200, {"access_token": "AT", "expires_in": 3600})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", incomplete)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", incomplete)
     with pytest.raises(types.ProviderError, match="refresh_token"):
         chatgpt_oauth.exchange_code(
             "https://auth.example", "app_X", code="C", verifier="V", provider="chatgpt"
@@ -162,9 +168,15 @@ def test_grant_rejects_non_string_token_fields(
         body[field] = value
         return _Resp(200, body)
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", malformed)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", malformed)
     with pytest.raises(types.ProviderError, match=field):
-        chatgpt_oauth.refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
+        _oauth_protocol.refresh_grant(
+            chatgpt_oauth.token_endpoint("https://auth.example"),
+            "app_X",
+            "RT",
+            provider="chatgpt",
+            label="ChatGPT",
+        )
 
 
 def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -176,17 +188,29 @@ def test_dead_refresh_token_names_connect(monkeypatch: pytest.MonkeyPatch) -> No
     def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(400, {"error": {"code": "refresh_token_expired"}})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", dead)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", dead)
     with pytest.raises(types.ProviderError) as exc:
-        chatgpt_oauth.refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
+        _oauth_protocol.refresh_grant(
+            chatgpt_oauth.token_endpoint("https://auth.example"),
+            "app_X",
+            "RT",
+            provider="chatgpt",
+            label="ChatGPT",
+        )
     assert "agent6 connect chatgpt" in str(exc.value) and exc.value.status_code == 401
 
     def down(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(503, "upstream down")
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", down)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", down)
     with pytest.raises(types.ProviderError) as exc:
-        chatgpt_oauth.refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
+        _oauth_protocol.refresh_grant(
+            chatgpt_oauth.token_endpoint("https://auth.example"),
+            "app_X",
+            "RT",
+            provider="chatgpt",
+            label="ChatGPT",
+        )
     assert exc.value.status_code == 503
 
 
@@ -201,7 +225,7 @@ def test_every_remedy_names_the_provider_it_diagnosed(
     def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(400, {"error": {"code": "refresh_token_expired"}})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", dead)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", dead)
     cred = chatgpt_oauth.ChatGPTCredential(
         "codex", issuer="https://auth.example", client_id="app_X"
     )
@@ -218,15 +242,19 @@ def test_every_remedy_names_the_provider_it_diagnosed(
     with pytest.raises(types.ProviderError, match="agent6 connect codex"):
         cred.token()  # the stored sign-in moved to another account
     with pytest.raises(types.ProviderError, match="agent6 connect codex"):
-        chatgpt_oauth.refresh_grant(
-            "https://auth.example", "app_X", "RT", provider="codex"
+        _oauth_protocol.refresh_grant(
+            chatgpt_oauth.token_endpoint("https://auth.example"),
+            "app_X",
+            "RT",
+            provider="codex",
+            label="ChatGPT",
         )  # dead grant
 
 
 def test_tokens_from_grant_keeps_previous_on_partial_refresh() -> None:
     prev = secret_store.OAuthTokens("old-a", "old-r", 1.0, account_id="acct-1")
     fresh = chatgpt_oauth.tokens_from_grant(
-        chatgpt_oauth.TokenGrant("new-a", "", 600.0), previous=prev
+        _oauth_protocol.TokenGrant("new-a", "", 600.0), previous=prev
     )
     assert fresh.access_token == "new-a"
     assert fresh.refresh_token == "old-r" and fresh.account_id == "acct-1"
@@ -244,7 +272,7 @@ def test_credential_caches_refreshes_and_persists(
             200, {"access_token": f"AT{len(refreshes)}", "refresh_token": "RT2", "expires_in": 3600}
         )
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_post)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     cred = chatgpt_oauth.ChatGPTCredential(
         "chatgpt", issuer="https://auth.example", client_id="app_X"
     )
@@ -283,7 +311,7 @@ def test_credential_adopts_a_sibling_process_rotation(
     def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         pytest.fail("refresh must not run")
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", never)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", never)
     clock = {"now": 1000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
@@ -327,8 +355,8 @@ def test_device_auth_start_and_poll(monkeypatch: pytest.MonkeyPatch) -> None:
         exchanges.append(data)
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": 60})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_json", fake_json)
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_form)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_json", fake_json)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_form)
     naps: list[float] = []
 
     device = chatgpt_oauth.start_device_auth("https://auth.example", "app_X")
@@ -351,7 +379,7 @@ def test_device_auth_disabled_returns_none(monkeypatch: pytest.MonkeyPatch) -> N
     def gone(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(404, "not enabled")
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_json", gone)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_json", gone)
     assert chatgpt_oauth.start_device_auth("https://auth.example", "app_X") is None
 
 
@@ -365,9 +393,15 @@ def test_refresh_error_scrubs_an_echoed_refresh_token(monkeypatch: pytest.Monkey
     def echoing_post(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(500, {"error": "boom", "received": secret})
 
-    monkeypatch.setattr(chatgpt_oauth, "_post_form", echoing_post)
+    monkeypatch.setattr(_oauth_protocol, "post_form", echoing_post)
     with pytest.raises(types.ProviderError) as ei:
-        chatgpt_oauth.refresh_grant("https://auth.openai.com", "cid", secret, provider="chatgpt")
+        _oauth_protocol.refresh_grant(
+            chatgpt_oauth.token_endpoint("https://auth.openai.com"),
+            "cid",
+            secret,
+            provider="chatgpt",
+            label="ChatGPT",
+        )
     assert secret not in str(ei.value)
     assert "<REDACTED>" in str(ei.value)
 
@@ -382,7 +416,7 @@ def test_device_poll_failure_scrubs_a_device_id_split_across_the_clip(
     def fake_json(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(500, body)
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_json", fake_json)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_json", fake_json)
     device = chatgpt_oauth.DeviceAuth(device_auth_id=device_id, user_code="AB-12", interval_s=5.0)
     with pytest.raises(types.ProviderError) as ei:
         chatgpt_oauth.poll_device_auth("https://auth.example", "app_X", device, provider="chatgpt")
@@ -397,7 +431,9 @@ def test_revoke_warning_scrubs_the_token(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
     tokens = secret_store.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
-    warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
+    warn = _oauth_protocol.revoke_tokens(
+        chatgpt_oauth.revocation_endpoint("https://auth.openai.com"), "cid", tokens
+    )
     assert warn is not None and tok not in warn and "<REDACTED>" in warn
 
 
@@ -413,7 +449,9 @@ def test_revoke_warning_scrubs_a_token_split_across_the_clip(
 
     monkeypatch.setattr(chatgpt_oauth.httpx2, "post", echoing_post)
     tokens = secret_store.OAuthTokens(access_token=tok, refresh_token="", expires_at=0.0)
-    warn = chatgpt_oauth.revoke_tokens("https://auth.openai.com", "cid", tokens)
+    warn = _oauth_protocol.revoke_tokens(
+        chatgpt_oauth.revocation_endpoint("https://auth.openai.com"), "cid", tokens
+    )
     assert warn is not None
     assert tok[:10] not in warn
 
@@ -424,9 +462,11 @@ def test_account_id_never_guesses_from_user_id() -> None:
     An account-less grant demands a re-connect.
     """
     tok = _jwt({_AUTH_CLAIM: {"user_id": "user-123"}})
-    assert chatgpt_oauth.account_id_of(chatgpt_oauth.TokenGrant(tok, "", 100.0, tok)) == ""
+    assert chatgpt_oauth.account_id_of(_oauth_protocol.TokenGrant(tok, "", 100.0, tok)) == ""
     good = _jwt({_AUTH_CLAIM: {"chatgpt_account_id": "acct-9"}})
-    assert chatgpt_oauth.account_id_of(chatgpt_oauth.TokenGrant(good, "", 100.0, good)) == "acct-9"
+    assert (
+        chatgpt_oauth.account_id_of(_oauth_protocol.TokenGrant(good, "", 100.0, good)) == "acct-9"
+    )
 
 
 def test_credential_refuses_an_account_swap(
@@ -484,7 +524,7 @@ def test_post_401_recovery_adopts_a_sibling_grant_first(
     def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         pytest.fail("refresh must not run when a fresh sibling grant exists")
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", never)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", never)
     clock = {"now": 1000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
@@ -511,7 +551,7 @@ def test_403_does_not_arm_a_refresh(gcfg: pathlib.Path, monkeypatch: pytest.Monk
     def never(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         pytest.fail("a 403 must not trigger a refresh")
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", never)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", never)
     clock = {"now": 1000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
@@ -534,7 +574,7 @@ def test_invalid_grant_is_a_dead_signin(
     def dead(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(400, {"error": "invalid_grant"})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", dead)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", dead)
     clock = {"now": 6000.0}
     fake_time = type("T", (), {"time": staticmethod(lambda: clock["now"])})
     monkeypatch.setattr("agent6.providers.chatgpt_oauth.time", fake_time)
@@ -558,7 +598,7 @@ def test_reused_rotation_rereads_once(gcfg: pathlib.Path, monkeypatch: pytest.Mo
         )
         return _Resp(401, {"error": {"code": "refresh_token_reused"}})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", reused)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", reused)
 
     def no_sleep(_s: float) -> None:
         return None
@@ -590,7 +630,7 @@ def test_reused_rotation_does_not_adopt_an_expired_sibling(
         )
         return _Resp(401, {"error": {"code": "refresh_token_reused"}})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", reused)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", reused)
 
     def no_sleep(_s: float) -> None:
         return None
@@ -617,7 +657,7 @@ def test_callback_state_checked_before_the_error_param() -> None:
     A foreign request is not processed.
     """
     with pytest.raises(ValueError, match="state mismatch"):
-        chatgpt_oauth.parse_callback(
+        _oauth_protocol.parse_callback(
             "error=x&error_description=<script>alert(1)</script>", state="S"
         )
 
@@ -710,10 +750,16 @@ def test_an_unusable_expires_in_is_a_provider_error(
     def odd(url: str, data: dict[str, str], timeout_s: float) -> _Resp:
         return _Resp(200, {"access_token": "AT", "refresh_token": "RT", "expires_in": expires_in})
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", odd)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", odd)
     with pytest.raises(types.ProviderError, match="expires_in"):
         chatgpt_oauth.exchange_code(
             "https://auth.example", "app_X", code="C", verifier="V", provider="chatgpt"
         )
     with pytest.raises(types.ProviderError, match="expires_in"):
-        chatgpt_oauth.refresh_grant("https://auth.example", "app_X", "RT", provider="chatgpt")
+        _oauth_protocol.refresh_grant(
+            chatgpt_oauth.token_endpoint("https://auth.example"),
+            "app_X",
+            "RT",
+            provider="chatgpt",
+            label="ChatGPT",
+        )

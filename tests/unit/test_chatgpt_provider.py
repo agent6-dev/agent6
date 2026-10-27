@@ -450,7 +450,7 @@ def test_401_refreshes_the_credential_once_and_retries(
 
         return R()
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth._post_form", fake_refresh)
+    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_refresh)
     seen_auth: list[str] = []
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:

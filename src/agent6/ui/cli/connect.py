@@ -31,7 +31,7 @@ from agent6.config import (
     write,
 )
 from agent6.models import cache
-from agent6.providers import chatgpt_oauth, claude_code, types
+from agent6.providers import _oauth_protocol, chatgpt_oauth, claude_code, types
 from agent6.ui.cli import _common
 
 
@@ -318,7 +318,7 @@ class _CallbackServer:
                     self.send_error(404)
                     return
                 try:
-                    outer._code = chatgpt_oauth.parse_callback(parts.query, state=state)
+                    outer._code = _oauth_protocol.parse_callback(parts.query, state=state)
                     body = b"<html><body>Signed in. Return to the terminal.</body></html>"
                     status = 200
                 except ValueError as exc:
@@ -416,7 +416,7 @@ def _code_via_callback_server(url: str, state: str) -> str | None:
 
 def _grant_via_device_code(
     issuer: str, client_id: str, provider: str
-) -> chatgpt_oauth.TokenGrant | None:
+) -> _oauth_protocol.TokenGrant | None:
     """Show a short code and poll while the person enters it at the issuer's device page.
 
     The no-display path: nothing to forward over SSH.
@@ -465,12 +465,12 @@ def _chatgpt_sign_in(name: str) -> int:
         The exit code.
     """
     issuer, client_id = chatgpt_oauth.CHATGPT_ISSUER, chatgpt_oauth.CHATGPT_CLIENT_ID
-    verifier, challenge = chatgpt_oauth.pkce_pair()
+    verifier, challenge = _oauth_protocol.pkce_pair()
     state = secrets.token_urlsafe(24)
     url = chatgpt_oauth.authorize_url(issuer, client_id, challenge=challenge, state=state)
     print("Open this URL to sign in with your ChatGPT account:\n\n  " + url + "\n")
 
-    grant: chatgpt_oauth.TokenGrant | None = None
+    grant: _oauth_protocol.TokenGrant | None = None
     code: str | None = None
     if sys.stdin.isatty() and _gui_browser_available():
         code = _code_via_callback_server(url, state)
@@ -483,7 +483,7 @@ def _chatgpt_sign_in(name: str) -> int:
             _common.error("no callback input.")
             return 2
         try:
-            code = chatgpt_oauth.parse_callback(pasted, state=state)
+            code = _oauth_protocol.parse_callback(pasted, state=state)
         except ValueError as exc:
             _common.error(f"{exc}")
             return 2
@@ -594,8 +594,10 @@ def _cmd_logout(name: str, api_format: str) -> int:
         return 2
     tokens = secret_store.load_oauth_tokens(name)
     if tokens is not None:
-        err = chatgpt_oauth.revoke_tokens(
-            chatgpt_oauth.CHATGPT_ISSUER, chatgpt_oauth.CHATGPT_CLIENT_ID, tokens
+        err = _oauth_protocol.revoke_tokens(
+            chatgpt_oauth.revocation_endpoint(chatgpt_oauth.CHATGPT_ISSUER),
+            chatgpt_oauth.CHATGPT_CLIENT_ID,
+            tokens,
         )
         if err is None:
             print(f"Revoked the ChatGPT sign-in for {name!r} at {chatgpt_oauth.CHATGPT_ISSUER}.")
