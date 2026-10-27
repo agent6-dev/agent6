@@ -125,6 +125,31 @@ def test_pure_rename_preserves_an_exact_range(tmp_path: pathlib.Path) -> None:
     assert origin.commits == (base,)
 
 
+@pytest.mark.parametrize(
+    ("old_path", "quoted_path"),
+    [("old\x1b.py", '"old\\033.py"'), ("old\x07.py", '"old\\a.py"')],
+    ids=["escape", "bell"],
+)
+def test_historical_control_path_keeps_the_finding_with_a_safe_reason(
+    tmp_path: pathlib.Path, old_path: str, quoted_path: str
+) -> None:
+    """An unsupported historical path leaves a finding with explicit unknown attribution."""
+    _git(tmp_path, "init", "-q")
+    base = _commit(tmp_path, b"first\nsecond\nthird\nfourth\n", old_path)
+    _git(tmp_path, "mv", old_path, "code.py")
+    head = _commit(tmp_path, b"changed\nsecond\nthird\nfourth\n")
+    observation = _observe(tmp_path, _target(tmp_path, base, head), 2)
+    assert observation.finding.severity == "block"
+    assert observation.finding.location.path == "code.py"
+    origin = observation.line_origin
+    assert origin.kind == "unknown"
+    assert origin.base_location is None and not origin.commits
+    assert quoted_path in origin.reason
+    assert "base path" in origin.reason
+    assert origin.reason.isprintable()
+    assert review_records.LineOrigin.model_validate_json(origin.model_dump_json()) == origin
+
+
 @pytest.mark.parametrize("evidence", ["file-only", "binary", "symlink", "history", "tree", "range"])
 def test_unavailable_or_unsupported_evidence_is_unknown(
     tmp_path: pathlib.Path, evidence: str

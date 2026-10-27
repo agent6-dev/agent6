@@ -850,6 +850,31 @@ def test_timeout_keeps_a_preexisting_index_lock(tmp_path: pathlib.Path) -> None:
     assert lock.exists()  # never ours to delete
 
 
+@pytest.mark.parametrize("preexisting", [True, False], ids=["before-start", "during-command"])
+@pytest.mark.parametrize("inherited", [False, True], ids=["env-extra", "inherited"])
+def test_timeout_on_a_temporary_index_preserves_the_real_index_lock(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, preexisting: bool, inherited: bool
+) -> None:
+    """A killed temporary-index command cannot own a real-index lock created by another git."""
+    _init_repo(tmp_path)
+    lock = tmp_path / ".git" / "index.lock"
+    if preexisting:
+        lock.write_text("held by another git\n", encoding="utf-8")
+    fake = _HungGit(lock=None if preexisting else lock, ignores_term=True)
+    index = str(tmp_path / "review-index")
+    env_extra = {"GIT_INDEX_FILE": index}
+    if inherited:
+        monkeypatch.setenv("GIT_INDEX_FILE", index)
+        env_extra = None
+    with (
+        mock.patch.object(_git_command.subprocess, "Popen", _hang_the_op_only(fake)),
+        pytest.raises(errors.GitError, match="timed out"),
+    ):
+        _git_command.run(tmp_path, "add", "-N", ".", env_extra=env_extra)
+    assert lock.exists()
+    assert lock.read_text(encoding="utf-8") == ("held by another git\n" if preexisting else "")
+
+
 def test_timeout_clears_the_lock_its_own_child_created(tmp_path: pathlib.Path) -> None:
     """A child that ignores TERM is killed, and a lock that appeared under it is cleared."""
     _init_repo(tmp_path)
@@ -1747,6 +1772,30 @@ def test_diff_since_leaves_the_real_index_untouched(tmp_path: pathlib.Path) -> N
     porcelain = _run_git(tmp_path, "status", "--porcelain")
     assert "?? new-work.py" in porcelain
     assert "A  new-work.py" not in porcelain and " A new-work.py" not in porcelain
+
+
+def test_diff_since_in_a_linked_worktree_matches_the_main_checkout(tmp_path: pathlib.Path) -> None:
+    """A linked worktree keeps tracked ignored files in its diff and leaves its index untouched."""
+    main = _repo_with_ignored_tracked(tmp_path)
+    linked = tmp_path / "linked"
+    _run_git(main, "worktree", "add", "--detach", str(linked), "HEAD")
+    assert (linked / ".git").is_file()
+    diffs: list[str] = []
+    for repo in (main, linked):
+        (repo / "results.log").write_text("updated\n", encoding="utf-8")
+        (repo / "code.py").write_text("print('v2')\n", encoding="utf-8")
+        (repo / "new.txt").write_text("added\n", encoding="utf-8")
+        index = pathlib.Path(
+            _run_git(repo, "rev-parse", "--path-format=absolute", "--git-path", "index").rstrip(
+                "\n"
+            )
+        )
+        before = index.read_bytes()
+        diffs.append(git_read.diff_since(repo, "HEAD"))
+        assert index.read_bytes() == before
+    assert "+updated\n" in diffs[0]
+    assert "+added\n" in diffs[0]
+    assert diffs[1] == diffs[0]
 
 
 def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(

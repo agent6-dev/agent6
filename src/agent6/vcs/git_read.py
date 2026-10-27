@@ -839,7 +839,11 @@ def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = 
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="agent6-review-diff-"))
     try:
         index_copy = tmp / "index"
-        real_index = path / ".git" / "index"
+        real_index = pathlib.Path(
+            _git_command.run(
+                path, "rev-parse", "--path-format=absolute", "--git-path", "index"
+            ).stdout.rstrip("\n")
+        )
         # The copy keeps the index's mtime: git re-hashes an entry recorded in the index
         # file's own second, and a copy with a fresh mtime would trust it unchecked.
         if real_index.is_file():

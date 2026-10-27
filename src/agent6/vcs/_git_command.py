@@ -85,7 +85,7 @@ def spawn(
             # SIGKILL skips git's cleanup: clear the lock only when it appeared under this child.
             proc.kill()
             proc.communicate()
-            if not lock_preexisted:
+            if "GIT_INDEX_FILE" not in env and not lock_preexisted:
                 with contextlib.suppress(OSError):
                     index_lock.unlink(missing_ok=True)
         raise errors.GitError(

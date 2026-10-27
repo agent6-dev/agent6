@@ -339,7 +339,8 @@ It does not prove that the defect predates the change: a changed caller can brea
 The tag does not lower severity, close a finding, or exempt a block from the merge guard.
 `sessions findings` prints the mapped base range and attribution commits; `--json` includes each observation's `line_origin` and the latest evidence on each finding.
 Changed or mixed ranges have no badge.
-File-only citations, unsupported files, ambiguous mappings, unavailable history, and blobs or patches over 4 MiB have an unknown origin with a reason.
+File-only citations, unsupported files or base paths, ambiguous mappings, unavailable history, and blobs or patches over 4 MiB have an unknown origin with a reason.
+An unsupported base path is recorded with Git-style quoting in the reason; the finding keeps its severity.
 Historical observations without this evidence remain unknown.
 
 ```bash

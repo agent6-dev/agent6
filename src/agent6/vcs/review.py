@@ -11,6 +11,8 @@ import shutil
 import tempfile
 from typing import Literal
 
+import pydantic
+
 from agent6 import errors, review_records
 from agent6.tools import _path_safety
 from agent6.vcs import (
@@ -347,12 +349,27 @@ def _classify(
         row.sha for row in blamed
     ):
         raise LineOriginError("Blame did not attribute every cited base line.")
+    try:
+        base_location = review_records.ReviewLocation(
+            path=old_path, side="base", start_line=base_start, end_line=base_end
+        )
+    except pydantic.ValidationError as exc:
+        escapes = {value: f"\\{key}" for key, value in _C_ESCAPES.items()}
+        quoted = (
+            '"'
+            + "".join(
+                escapes.get(byte, chr(byte) if 32 <= byte < 127 else f"\\{byte:03o}")
+                for byte in os.fsencode(old_path)
+            )
+            + '"'
+        )
+        raise LineOriginError(
+            f"The base path {quoted} cannot be stored as a review location."
+        ) from exc
     return review_records.LineOrigin(
         kind="pre_existing",
         reason="The cited lines exist at the base. This does not date the defect.",
-        base_location=review_records.ReviewLocation(
-            path=old_path, side="base", start_line=base_start, end_line=base_end
-        ),
+        base_location=base_location,
         commits=tuple(sorted({row.sha for row in blamed})),
     )
 
