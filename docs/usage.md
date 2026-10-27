@@ -479,11 +479,13 @@ prometheus_file = "/var/lib/node_exporter/textfile/agent6.prom"
 ```
 
 ```sh
+agent6 config set --secret telemetry.headers.Authorization 'Bearer <token>'
 agent6 telemetry export                 # every session with a journal, once
 agent6 telemetry export <id> --follow   # one session, as its journal grows
 agent6 config show telemetry            # every key with its origin
 ```
 
+- With `telemetry.metrics = "prometheus"` and `web.metrics_route = "on"` (default: `off`), `agent6 web` serves fresh hub-session metrics at `/metrics` only with `Authorization: Bearer <web-secret>` (Prometheus `authorization.credentials`), never a cookie or browser sign-in token.
 - A cursor per endpoint and session keeps a re-run from re-sending delivered spans and log records; the metrics reading is always the whole cumulative snapshot, and the Prometheus file is rewritten whole.
 - The default `capture = "metadata"` exports outcomes, counts, timings and the journal's ids, never the task, arguments, outputs or diffs; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)).
 - `--follow` posts what it holds every five seconds while events arrive and once more on Ctrl-C; a live run's unfinished work is sent when the run finishes it, not at the export's end.

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Store provider API keys and OAuth tokens in `secrets.toml`.
+"""Store provider credentials and telemetry headers in `secrets.toml`.
 
 The file sits beside the config and is treated like an SSH private key: a
 regular file owned by the operator, `0600` or refused, written atomically at
@@ -11,6 +11,7 @@ Secrets never reach transcripts, `config show` or the jail.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import errno
 import os
@@ -18,7 +19,7 @@ import pathlib
 import re
 import stat
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Generator, Iterable
 from typing import Any
 
 from agent6 import paths, portable
@@ -193,27 +194,19 @@ def save_secret(
     return _save_provider_entry(provider_name, {"api_key": api_key, **(extra or {})}, user)
 
 
-def _save_provider_entry(
-    provider_name: str, entry: dict[str, str], user: paths.RealUser | None
-) -> pathlib.Path:
-    """Replace one provider's entry, rewriting the whole file under the lock.
-
-    Two concurrent writers (a `connect` beside a run refreshing tokens) would
-    otherwise read the same base file and the later publish drop the earlier
-    credential.
+@contextlib.contextmanager
+def _writing_secrets(user: paths.RealUser) -> Generator[dict[str, Any]]:
+    """Hold the secrets lock across a validated read, an edit and a private atomic write.
 
     Args:
-        provider_name: The provider's name under `[providers]`.
-        entry: The new entry.
-        user: The operator; None resolves the effective one.
+        user: The operator who owns the file.
 
-    Returns:
-        The secrets file's path.
+    Yields:
+        The secrets to edit; unchanged data causes no write.
 
     Raises:
-        SecretsError: The lock beside the file could not be taken, or the file refuses to be read.
+        SecretsError: The lock cannot be taken or the file refuses to be read.
     """
-    user = user or paths.effective_user()
     path = paths.secrets_path(user)
     # Created 0700 and handed back here, before the lock's parent walk creates it at the umask.
     paths.mkdir_for_real_user(path.parent, user)
@@ -222,21 +215,74 @@ def _save_provider_entry(
         if not held:
             raise SecretsError(_lock_refusal(path))
         try:
-            data: dict[str, Any] = _read_secrets_toml(path, user)
+            data = _read_secrets_toml(path, user)
         except FileNotFoundError:
             data = {}
+        before = _render_secrets_toml(data)
+        yield data
+        text = _render_secrets_toml(data)
+        if text != before:
+            # mkstemp opens an unpredictable name O_EXCL; the mode rides the atomic rename.
+            portable.atomic_write(path, text, mode=0o600)
+            paths.chown_to_real_user(path, user)
+    paths.chown_to_real_user(path.parent, user)
+
+
+def _save_provider_entry(
+    provider_name: str, entry: dict[str, str], user: paths.RealUser | None
+) -> pathlib.Path:
+    """Replace one provider's entry under the shared secrets lock.
+
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        entry: The replacement string fields.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The secrets file's path.
+    """
+    user = user or paths.effective_user()
+    with _writing_secrets(user) as data:
         providers = data.get("providers")
         if not isinstance(providers, dict):
             providers = {}
         providers[provider_name] = entry
         data["providers"] = providers
+    return paths.secrets_path(user)
 
-        text = _render_secrets_toml(data)
-        # mkstemp opens an unpredictable name O_EXCL, so a planted `.tmp` symlink cannot redirect.
-        portable.atomic_write(path, text)
-        path.chmod(0o600)
-    paths.chown_to_real_user(path.parent, user)
-    paths.chown_to_real_user(path, user)
+
+def write_telemetry_header(
+    name: str, value: str | None, *, user: paths.RealUser | None = None
+) -> pathlib.Path:
+    """Set a literal telemetry header value, or remove it when the value is None.
+
+    Args:
+        name: The header name validated against the telemetry config schema.
+        value: The literal value; None removes the entry.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The secrets file's path.
+
+    Raises:
+        SecretsError: The value is not a usable header, a table is malformed, or the file
+            or its lock refuses access.
+    """
+    if value is not None:
+        telemetry_headers((name,), secrets={"telemetry": {"headers": {name: value}}})
+    user = user or paths.effective_user()
+    path = paths.secrets_path(user)
+    if value is None and not path.exists():
+        return path
+    with _writing_secrets(user) as data:
+        telemetry = data.setdefault("telemetry", {})
+        headers = telemetry.setdefault("headers", {}) if isinstance(telemetry, dict) else None
+        if not isinstance(headers, dict):
+            raise SecretsError("[telemetry.headers] in secrets.toml must be a table")
+        if value is None:
+            headers.pop(name, None)
+        else:
+            headers[name] = value
     return path
 
 
@@ -257,20 +303,11 @@ def delete_provider_secrets(provider_name: str, *, user: paths.RealUser | None =
     path = paths.secrets_path(user)
     if not path.exists():
         return False  # before the lock, whose parent walk would create the config dir
-    with portable.locked_file(path) as held:
-        if not held:
-            raise SecretsError(_lock_refusal(path))
-        try:
-            data: dict[str, Any] = _read_secrets_toml(path, user)
-        except FileNotFoundError:
-            return False
+    with _writing_secrets(user) as data:
         providers = data.get("providers")
         if not isinstance(providers, dict) or provider_name not in providers:
             return False
         del providers[provider_name]
-        portable.atomic_write(path, _render_secrets_toml(data))
-        path.chmod(0o600)
-    paths.chown_to_real_user(path, user)
     return True
 
 
@@ -389,9 +426,9 @@ def load_oauth_grant(
 
 
 def _render_secrets_toml(data: dict[str, Any]) -> str:
-    """Return the secrets as TOML: a flat `[providers.<name>]` table of strings each."""
+    """Return provider entries and telemetry headers as TOML string tables."""
     lines = [
-        "# agent6 secrets. Written by `agent6 connect`.",
+        "# agent6 secrets. Written by `agent6 connect` and `agent6 config set --secret`.",
         "# Keep this file private: it is enforced 0600 and owner-only.",
         "",
     ]

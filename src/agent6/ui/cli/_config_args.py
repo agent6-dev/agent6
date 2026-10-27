@@ -13,7 +13,9 @@ from agent6.config import EffortLevel
 from agent6.ui.cli import _common, completers
 
 
-def _add_machine_file(parser: argparse.ArgumentParser, help_text: str) -> None:
+def _add_machine_file(
+    parser: argparse.ArgumentParser | argparse._MutuallyExclusiveGroup, help_text: str
+) -> None:
     """Add `--machine-file FILE`, redirecting the verb to a machine file's [config] overlay."""
     arg = parser.add_argument(
         "--machine-file",
@@ -125,16 +127,28 @@ def _add_config_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
                 help=(
                     f"Value to {action}. TOML booleans, numbers, quoted strings, lists, and inline"
                     " tables keep their types. Other text is treated as a string."
+                    + (" With --secret, the value is a literal string." if verb == "set" else "")
                 ),
             )
             val_arg.completer = completers._complete_config_values  # type: ignore[attr-defined]
-        p.add_argument(
+        target = p.add_mutually_exclusive_group()
+        target.add_argument(
             "--repo",
             action="store_true",
             help=_common.REPO_FLAG_HELP,
         )
+        if verb in ("set", "unset"):
+            target.add_argument(
+                "--secret",
+                action="store_true",
+                help=(
+                    "Write only telemetry.headers.<name> in the private global secrets.toml;"
+                    " never display its value. Values on the command line may remain in shell"
+                    " history and the process list."
+                ),
+            )
         _add_machine_file(
-            p,
+            target,
             (
                 "Save the change in FILE's [config] section. Settings that could access the"
                 " host, plus providers, presets, and MCP servers, are refused, and so is a"

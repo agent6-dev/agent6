@@ -177,6 +177,14 @@ class WebConfig(pydantic.BaseModel):
         ),
     )
 
+    metrics_route: Literal["off", "on"] = pydantic.Field(
+        default="off",
+        description=(
+            'Serve `/metrics` when `telemetry.metrics = "prometheus"`; requires the web secret '
+            "as `Authorization: Bearer <secret>`, never a cookie or browser sign-in token."
+        ),
+    )
+
     @pydantic.model_validator(mode="after")
     def _guard_non_loopback(self) -> WebConfig:
         """Refuse a non-loopback host without the opt-in.
@@ -229,7 +237,8 @@ class TelemetryConfig(pydantic.BaseModel):
         default="none",
         description=(
             "Where metrics go: `otlp` posts them to `endpoint`; `prometheus` writes "
-            "`prometheus_file` for node_exporter's textfile collector."
+            "`prometheus_file` for node_exporter's textfile collector and permits the web "
+            "scrape route when `web.metrics_route` is `on`."
         ),
     )
     logs: Literal["none", "otlp"] = pydantic.Field(
@@ -249,7 +258,8 @@ class TelemetryConfig(pydantic.BaseModel):
         default=(),
         description=(
             "Header names sent with every export; each value comes from `[telemetry.headers]` "
-            "in `secrets.toml`."
+            "in `secrets.toml`, written by `agent6 config set --secret telemetry.headers.<name> "
+            "<value>`."
         ),
     )
     capture: Literal["metadata", "content"] = pydantic.Field(

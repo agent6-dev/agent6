@@ -819,8 +819,12 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
 
 def _dispatch_config(args: argparse.Namespace) -> int:  # noqa: PLR0911
     """Return the exit code of a `agent6 config` verb."""  # noqa: DOC501  # the last raise is unreachable
-    from agent6.ui.cli import config_cmds
+    from agent6.ui.cli import config_cmds, config_secrets
 
+    if args.config_command in ("set", "unset") and args.secret:
+        return config_secrets.write_value(
+            args.key, args.value if args.config_command == "set" else None
+        )
     if args.config_command == "show":
         return config_cmds._cmd_config_show(
             args.config,

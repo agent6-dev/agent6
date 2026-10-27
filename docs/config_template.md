@@ -45,6 +45,9 @@ It can be empty or absent when the global config supplies a provider and model; 
   An invalid edit without the lock is reported as "kept as written", since rolling it back could erase another writer's update.
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - The [TUI config page](terminal.md#configuration) adds and removes named provider, MCP server and skill state entries through forms.
+- `agent6 config set --secret telemetry.headers.<name> <value>` saves a literal header value in the private global `secrets.toml`; `agent6 config unset --secret telemetry.headers.<name>` removes it.
+  This target accepts only telemetry header keys and cannot be combined with `--repo` or `--machine-file`.
+  Values are never printed by these commands or `config show`, but command-line values can remain in shell history and the process list ([secrets](security.md#8-secrets-and-connect)).
 - `config set`, `config unset`, and the web and TUI config editors name the preset or higher config layer that overrides a value they write or remove.
 - `agent6 config fill`: materialize defaults + global config into the global file; pass `--force` to replace an existing file.
   The repo layer and any selected preset are left as-is.
@@ -428,7 +431,7 @@ Runs after `run`/`resume` with the same minimal env plus `AGENT6_SESSION_ID/DIR/
 
 ## `[web]`
 
-Bind for `agent6 web` ([the web UI](web.md)).
+Bind and optional metrics route for `agent6 web` ([the web UI](web.md)).
 Loopback only by default; remote access is expected behind `tailscale serve`.
 Every browser [signs in](web.md#sign-in) with the server's secret.
 
@@ -437,9 +440,11 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 ## `[telemetry]`
 
 What `agent6 telemetry export` sends, and where ([Telemetry export](usage.md#telemetry-export)).
+The web scrape route requires `metrics = "prometheus"` and the [`web.metrics_route`](#web) opt-in.
 Off by default: no signal is selected, nothing is dialled, no socket is opened.
 The exporter is a separate process the operator starts; a run never exports its own events.
 Header values live in `secrets.toml` under `[telemetry.headers]`, never in config.
+The [`--secret` target](#creating-and-inspecting) writes and removes them; `[telemetry].headers` selects which names the exporter sends.
 
 <!-- config-table: telemetry -->
 

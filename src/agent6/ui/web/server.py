@@ -6,8 +6,8 @@ The GET endpoints return the wire form `agent6 attach --json` prints; the SSE st
 push a fresh snapshot on each change. The server binds loopback by default (a
 non-loopback bind is opt-in under `[web]`), renders folded read state, drives the
 `agent6.sessions.ipc` contracts, serves no secret and executes no arbitrary input.
-Every route but the page shell and the sign-in requires the sign-in token (`auth`), sent as
-a bearer header.
+State routes require the sign-in token (`auth`) as a bearer header. The opt-in `/metrics`
+route requires the secret itself as a bearer header.
 """
 
 from __future__ import annotations
@@ -27,10 +27,11 @@ from urllib import parse
 import pydantic
 
 from agent6 import __version__, errors, kinds
-from agent6.config import is_loopback_host, write
+from agent6.config import is_loopback_host, layer, write
 from agent6.machine import MachineError
 from agent6.sessions import process
 from agent6.ui import spawn
+from agent6.ui.telemetry import export
 from agent6.ui.web import _sse, actions, auth, git_model, model, page, review_routes
 from agent6.viewmodel import (
     UnknownStepError,
@@ -40,8 +41,7 @@ from agent6.viewmodel import (
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
 _MAX_BODY_BYTES = 1 << 20
-# Every other path needs the sign-in token. These hold no state: the page, the assets a
-# browser fetches to show it (the manifest without credentials), and the sign-in itself.
+# The public routes hold no state: the page shell, static assets and sign-in.
 PUBLIC_GET = frozenset({"/", "/favicon.svg", "/icon.svg", "/manifest.webmanifest", "/sw.js"})
 PUBLIC_POST = frozenset({"/api/login"})
 
@@ -366,11 +366,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self.close_connection = True
             self._send_json({"error": "a GET carries no body"}, status=400)
             return
-        if path not in PUBLIC_GET and not self._signed_in():
-            self._send_sign_in_required()
-            return
         try:
-            self._route(path)
+            if path == "/metrics":
+                self._send_metrics()
+            elif path not in PUBLIC_GET and not self._signed_in():
+                self._send_sign_in_required()
+            else:
+                self._route(path)
         except (BrokenPipeError, ConnectionResetError):
             pass  # client went away mid-response
         except Exception as exc:  # one bad request never takes the server down
@@ -413,6 +415,26 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             # The body may be unread; a keep-alive reuse would parse it as the next request.
             self.close_connection = True
             self._send_json({"error": str(exc)}, status=500)
+
+    def _send_metrics(self) -> None:
+        """Serve a fresh Prometheus reading only with both opt-ins and a bearer secret."""
+        config = layer.load_effective(self.cwd, self.config_paths).config
+        if config.web.metrics_route != "on" or config.telemetry.metrics != "prometheus":
+            self._send_json({"error": "not found: /metrics"}, status=404)
+            return
+        scheme, _, secret = (self.headers.get("Authorization") or "").strip().partition(" ")
+        if scheme.lower() != "bearer" or not auth.token_matches(
+            auth.session_token(secret), self.server.session_token
+        ):
+            self._send_json(
+                {"error": "metrics requires Authorization: Bearer <secret> with the web secret"},
+                status=401,
+            )
+            return
+        self._send_bytes(
+            export.prometheus_text(self.cwd).encode("utf-8"),
+            "text/plain; version=0.0.4; charset=utf-8",
+        )
 
     def _signed_in(self) -> bool:
         """Return whether the request carries the token a sign-in with the secret answered.

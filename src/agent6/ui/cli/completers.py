@@ -24,7 +24,7 @@ from agent6.config import (
 )
 from agent6.models import choices as models_choices
 from agent6.sessions import id, layout, process
-from agent6.ui.cli import _common
+from agent6.ui.cli import _common, config_secrets
 from agent6.viewmodel import _session_log, listing, machine_state
 
 
@@ -244,6 +244,8 @@ def _complete_config_keys(
     from agent6.viewmodel import config_view  # noqa: PLC0415
 
     explicit = _explicit_config(kw)
+    if getattr(kw.get("parsed_args"), "secret", False):
+        return [key for key in config_secrets.keys(explicit) if key.startswith(prefix)]
     try:
         keys = set(layer.leaf_keys(layer.load_effective(pathlib.Path.cwd(), explicit)))
         parents = {
@@ -311,6 +313,8 @@ def _complete_config_values(
         The key's enum or configured choices, a role's provider's model ids, or the
         extra_body recipes, those starting with prefix; none for a key the verb refuses.
     """
+    if getattr(parsed_args, "secret", False):
+        return []
     key = getattr(parsed_args, "key", "") or ""
     if isinstance(getattr(parsed_args, "machine_file", None), pathlib.Path):
         from agent6.machine import protected_overlay_key_error  # noqa: PLC0415

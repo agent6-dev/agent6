@@ -426,6 +426,25 @@ def _session_dirs(cwd: pathlib.Path, session_id: str) -> list[pathlib.Path]:
     )
 
 
+def prometheus_text(cwd: pathlib.Path) -> str:
+    """Return a fresh metrics reading of the repository's journals without exporting them.
+
+    Args:
+        cwd: The repository whose hub sessions and machine workers are folded.
+
+    Returns:
+        The same exposition the textfile exporter writes, without writes or network requests.
+    """
+    config = TelemetryConfig()
+    state_dir = paths.state_dir(cwd)
+    sessions = [_Session(d, config, None, state_dir, ()) for d in _session_dirs(cwd, "")]
+    for root in sessions:
+        for session in root.journals():
+            for _emitted in session.read(closing=True):
+                pass
+    return _prometheus.exposition(telemetry_metrics.merge_snapshots(s.metrics() for s in sessions))
+
+
 def export(
     cwd: pathlib.Path,
     config: TelemetryConfig,

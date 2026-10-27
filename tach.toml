@@ -383,6 +383,7 @@ depends_on = [
   "agent6.sessions.process",
   "agent6.ui.directives",
   "agent6.ui.spawn",
+  "agent6.ui.telemetry",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
   "agent6.vcs.git_files",
   "agent6.vcs.git_history",

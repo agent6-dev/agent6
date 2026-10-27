@@ -353,7 +353,7 @@ Everything below bounds a child of it.
 `agent6 telemetry export` is host egress too: it dials `[telemetry].endpoint` from the agent6 process with the header values `secrets.toml` holds, outside `sandbox.network`, and only when the operator selected a signal.
 The default capture carries outcomes, counts, timings and the journal's ids; `capture = "content"` adds the capped excerpts `telemetry.capture` lists ([config](config.md#telemetry)), which can hold anything a run saw.
 The export dials the endpoint directly: no proxy is taken from the environment, so a plaintext loopback endpoint stays on loopback.
-A plaintext endpoint is accepted on loopback only; the Prometheus textfile is written atomically to the operator's path, and nothing serves it.
+A plaintext endpoint is accepted on loopback only; the Prometheus textfile is written atomically to the operator's path.
 
 A `claude_code` provider's child dials `api.anthropic.com` and `claude.ai` (login refresh) from the agent process; telemetry, crash reporting, and update hosts are disabled by its environment.
 While it runs it listens on a same-uid session socket under `/tmp/cc-socks/`, reachable from a jailed command only under `partial` `sandbox.isolation`, whose `/tmp` is the host's.
@@ -425,6 +425,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
       The page keeps it in storage scoped to its origin (host and port) and sends it in a header, never a cookie: a browser sends a cookie to every port of the host, so a page a jailed command serves on a forwarded port would receive it on the first visit.
       Every response carries `Content-Security-Policy: frame-ancestors 'none'`, so such a page cannot frame the signed-in UI either.
       A browser that signed in before the token kept a cookie: the page's response expires it, and the token's derivation changed, so a stale cookie another local server collects opens nothing.
+- With `telemetry.metrics = "prometheus"` and `web.metrics_route = "on"` (default: `off`), `/metrics` uses the existing listener and requires `Authorization: Bearer <web-secret>`, never a cookie or browser sign-in token.
 - The server renders folded state and drives typed contracts.
   New-work spawns fixed argv with the task behind `--`, and machine-run is allow-listed to authored files.
   Answers write only the addressed run's answer files (session id, answer id, and machine target state dir each validated to one path component).
@@ -449,7 +450,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Paths and sides pass `ReviewLocation` validation; regular-file reads do not follow stored symlinks.
   Finding text and resolution reasons enter the browser as text, not HTML.
 - PWA assets are static and the service worker is a no-op passthrough (no Web Push, no VAPID).
-  No telemetry unless the operator runs `agent6 telemetry export` against a configured `[telemetry]` destination ([Telemetry export](usage.md#telemetry-export)); no auto-update, no remote control plane.
+  Telemetry requires an operator-started export or the opt-in scrape route ([Telemetry export](usage.md#telemetry-export)); no auto-update, no remote control plane.
 
 ### 6. Approvals
 
@@ -530,6 +531,9 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 ### 8. Secrets and `connect`
 
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned; opened without following a link and judged by the descriptor it opened; rewritten only under its sibling lock), or come from `[providers.<name>].api_key_env` (env wins).
+- `config set --secret telemetry.headers.<name> <value>` and `config unset --secret telemetry.headers.<name>` use the same locked, atomic secrets writer for `[telemetry.headers]`.
+  They accept no other keys or write targets and never print header values; `config show` lists only the configured names.
+  **Command-line exposure:** a value passed to `config set --secret` can remain in shell history and the process list.
 - Bound `StoredGrant` records may carry an `account_id`; records without it remain readable.
   Raw id tokens and plan labels are not stored.
 - ChatGPT grants are bound to their fixed sign-in profile and provider transport settings like configured grants.

@@ -402,6 +402,7 @@ banned-from = [
     "agent6.ui.cli.completers",
     "agent6.ui.cli.completions_cmd",
     "agent6.ui.cli.config_cmds",
+    "agent6.ui.cli.config_secrets",
     "agent6.ui.cli.connect",
     "agent6.ui.cli.entry",
     "agent6.ui.cli.exec_cmds",

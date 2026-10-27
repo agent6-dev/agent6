@@ -158,6 +158,60 @@ def _subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.Argument
     return {}
 
 
+@pytest.mark.parametrize("verb", ["set", "unset"])
+def test_config_secret_is_a_write_target_not_a_verb(verb: str) -> None:
+    """Secret writes keep the config verb set and the positional key and value shape."""
+    parser = cli_parser.build_parser()
+    args = [
+        "config",
+        verb,
+        "telemetry.headers.Authorization",
+        *(["Bearer value"] if verb == "set" else []),
+    ]
+    assert parser.parse_args([*args, "--secret"]).secret is True
+    assert parser.parse_args(args).secret is False
+    assert set(_subcommands(_subcommands(parser)["config"])) == {
+        "show",
+        "fill",
+        "fix",
+        "path",
+        "presets",
+        "get",
+        "set",
+        "unset",
+        "add",
+        "remove",
+    }
+
+
+@pytest.mark.parametrize("verb", ["set", "unset"])
+@pytest.mark.parametrize("target", [["--repo"], ["--machine-file", "m.toml"]])
+def test_secret_target_cannot_be_combined_with_another_target(
+    verb: str, target: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Conflicting targets fail at parse time instead of writing a secret into a config file."""
+    with pytest.raises(SystemExit) as exc:
+        cli_parser.build_parser().parse_args(
+            [
+                "config",
+                verb,
+                "--secret",
+                *target,
+                "telemetry.headers.Authorization",
+                *(["v"] if verb == "set" else []),
+            ]
+        )
+    assert exc.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("verb", ["add", "remove"])
+def test_list_config_verbs_do_not_advertise_the_secret_target(verb: str) -> None:
+    """A list editor's help offers no secret target that its parser rejects."""
+    config = _subcommands(cli_parser.build_parser())["config"]
+    assert "--secret" not in _subcommands(config)[verb].format_help()
+
+
 def test_default_verb_sets_are_the_parsers_real_subcommands() -> None:
     """Each default-verb group lists exactly the parser's real subcommands.
 
