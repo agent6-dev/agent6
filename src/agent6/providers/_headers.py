@@ -87,24 +87,29 @@ class RequestFacts:
             The text.
 
         Raises:
-            KeyError: This request class lacks the fact.
+            KeyError: This request class lacks the fact, or the call stands outside a
+                conversation and the fact is the conversation's.
         """
         if fact == "agent6_version":
             return __version__
         if fact == "request_id":
             return self.request_id
-        if self.context is None or self.target != "inference":
+        if self.target != "inference":
             raise KeyError(fact)
-        values = {
-            "has_images": _flag(self.has_images),
-            "has_tool_results": _flag(self.has_tool_results),
+        if fact in ("model", "has_images", "has_tool_results"):
+            return {
+                "has_images": _flag(self.has_images),
+                "has_tool_results": _flag(self.has_tool_results),
+                "model": self.model,
+            }[fact]
+        if self.context is None or (fact != "initiator" and not self.context.session_id):
+            raise KeyError(fact)  # the call stands outside a conversation
+        return {
             "initiator": self.context.initiator,
             "is_first_turn": _flag(self.context.is_first_turn),
             "is_subagent": _flag(self.context.is_subagent),
-            "model": self.model,
             "session_id": self.context.session_id,
-        }
-        return values[fact]
+        }[fact]
 
 
 def _flag(value: bool) -> str:

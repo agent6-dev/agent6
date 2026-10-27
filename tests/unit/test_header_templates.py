@@ -291,11 +291,33 @@ def test_the_instrumented_provider_fills_the_context_and_reports_each_attempt() 
     assert "x-" not in str(requests[0].kwargs)  # no header value rides the event
 
 
-def test_a_call_outside_a_conversation_sends_no_conversation_header() -> None:
-    entry = _entry({"x-sess": {"template": "{session_id}"}, "x-id": {"template": "{request_id}"}})
+def test_a_call_outside_a_conversation_keeps_its_model_and_body_facts() -> None:
+    entry = _entry(
+        {
+            "x-sess": {"template": "{session_id}"},
+            "x-first": {"template": "{is_first_turn}"},
+            "x-init": {"template": "{initiator}"},
+            "x-id": {"template": "{request_id}"},
+            "x-model": {"template": "{model}"},
+            "x-tools": {"template": "{has_tool_results}"},
+        }
+    )
     hs = _headers.HeaderSet.from_config(entry.extra_headers)
-    rendered = hs.render(_headers.call_facts("m", (False, False), None).attempt())
-    assert set(rendered) == {"x-id"}
+    rendered = hs.render(_headers.call_facts("m", (True, False), None).attempt())
+    assert set(rendered) == {"x-id", "x-model", "x-tools"}
+    assert (rendered["x-model"], rendered["x-tools"]) == ("m", "true")
+    # A partial context names the initiator only; the conversation facts stay out.
+    partial = _headers.RequestContext.initiated_by("user")
+    rendered = hs.render(_headers.call_facts("m", (False, False), partial).attempt())
+    assert set(rendered) == {"x-id", "x-model", "x-tools", "x-init"}
+    assert rendered["x-init"] == "user"
+
+
+def test_a_malformed_conversation_file_starts_empty(tmp_path: pathlib.Path) -> None:
+    path = tmp_path / _conversations.FILE_NAME
+    path.write_text('{"routes": {"worker@work": {"id": "abc", "completed": "x"}}}')
+    ctx = _conversations.Conversations(path=path).context("worker", "work", initiator="agent")
+    assert ctx.is_first_turn and ctx.session_id != "abc"
 
 
 def test_an_oauth_targeted_template_reaches_the_token_endpoint_and_a_literal_does_not(

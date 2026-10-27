@@ -47,8 +47,8 @@ def provider_error_hint(status_code: int | None, provider: str = "") -> str:
     """
     if status_code in (401, 403):
         return (
-            " Authentication failed: verify the provider key with `agent6 connect`"
-            f" or check [providers.{provider or '<name>'}].api_key_env."
+            f" Authentication failed: check [providers.{provider or '<name>'}]'s credential"
+            " (its key, token command or sign-in) with `agent6 connect`."
         )
     if status_code == 402:
         return " Insufficient credits/quota at the provider; top up or switch providers."
