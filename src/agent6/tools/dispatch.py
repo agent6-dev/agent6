@@ -912,7 +912,10 @@ class ToolDispatcher:
             raise tools_errors.ToolError(
                 "list_findings needs the session's journal; none was wired"
             )
-        listed = self._findings()
+        listed = dataclasses.replace(
+            self._findings(),
+            session_id=self._session_dir.name if self._session_dir is not None else "",
+        )
         if args.all:
             return listed
         return dataclasses.replace(

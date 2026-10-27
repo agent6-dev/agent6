@@ -731,16 +731,21 @@ class FindingsResult(ToolResult):
     Attributes:
         findings: The findings listed, in journal order.
         note: The journal's legacy notice, when its review counts predate structured findings.
+        session_id: The session the findings belong to, the id `agent6 steer` takes; "" when
+            the dispatcher has no session dir.
     """
 
     findings: tuple[FindingBrief, ...]
     note: str = ""
+    session_id: str = ""
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""
         wire: dict[str, Any] = {"findings": [f.to_wire() for f in self.findings]}
         if self.note:
             wire["note"] = self.note
+        if self.session_id:
+            wire["session_id"] = self.session_id
         return wire
 
     def summary(self) -> str:

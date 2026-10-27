@@ -125,3 +125,5 @@ def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathl
     listed = tools.dispatcher.dispatch("list_findings", {})
     assert isinstance(listed, results.FindingsResult)
     assert [f.id for f in listed.findings] == ["f1", "f2"]
+    assert listed.session_id == saved.session_id  # the id the steer command the model names takes
+    assert listed.to_wire()["session_id"] == saved.session_id

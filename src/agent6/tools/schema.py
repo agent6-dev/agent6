@@ -309,9 +309,10 @@ class ListFindingsInput(_ToolInput):
         "List this session's review findings: id, status, severity, category,"
         " location, title, detail, and a pre-existing tag when the cited lines"
         " exist at the reviewed base; `all` adds resolved findings with their"
-        " disposition. Read-only: the operator resolves, reopens or fixes a"
-        " finding with `agent6 sessions resolve`, `agent6 sessions reopen` and"
-        " `agent6 steer --finding`; propose what to do and name the command."
+        " disposition, and `session_id` names this session. Read-only: the operator"
+        " resolves, reopens or fixes a finding with `agent6 sessions resolve <session_id>"
+        " <id>`, `agent6 sessions reopen <session_id> <id>` and `agent6 steer"
+        " <session_id> --finding <id>`; propose what to do and name the command."
     )
 
     all: bool = False
