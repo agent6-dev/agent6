@@ -56,6 +56,8 @@ class _StubDispatcher:
     def command_policy(self) -> str:
         return "ask"
 
+    session_id = ""
+
     def tool_is_withheld(self, name: str) -> bool:
         """The "ask" policy withholds nothing: the operator is asked at call time."""
         return False

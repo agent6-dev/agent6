@@ -66,6 +66,8 @@ class _StubDispatcher:
     defaults filter no tools and withhold nothing.
     """
 
+    session_id = ""  # the tool set reads the run's id; a bare double has none
+
     operator_wait_s: float = 0.0  # the time waited on the operator, which the guards subtract
 
     dag_available = True
