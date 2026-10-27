@@ -78,7 +78,10 @@ def _read_secrets_toml(path: pathlib.Path, user: paths.RealUser) -> dict[str, An
                 " refusing to read secrets you do not own."
             )
         try:
-            text = os.read(fd, st.st_size + 1).decode("utf-8")
+            chunks: list[bytes] = []
+            while chunk := os.read(fd, 1 << 16):  # a network file may answer a short read
+                chunks.append(chunk)
+            text = b"".join(chunks).decode("utf-8")
         except (OSError, UnicodeDecodeError) as exc:
             raise SecretsError(f"could not read {path}: {exc}") from exc
     finally:
