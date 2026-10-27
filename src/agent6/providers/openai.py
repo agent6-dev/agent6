@@ -28,7 +28,6 @@ from agent6.providers import (
     _openai_parse,
     _stream,
     _transport,
-    token_command,
     types,
     wire,
 )
@@ -191,7 +190,7 @@ class OpenAIProvider:
     transcript_sink: types.TranscriptRecorder | None = None
     budget: agent6_budget.BudgetTracker | None = None
     reasoning_effort: str | None = None
-    credential: token_command.CommandToken | None = None
+    credential: types.BearerCredential | None = None
     # Latched on a parameter-rejection 400 (an Azure reasoning deployment has an arbitrary name)
     # so the rest of the run builds the right body first; lists, since the dataclass is frozen.
     _use_max_completion_tokens: list[bool] = dataclasses.field(default_factory=lambda: [False])

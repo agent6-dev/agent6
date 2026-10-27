@@ -29,7 +29,7 @@ from agent6.config import (
     ProviderEntry,
 )
 from agent6.models import pricing as models_pricing
-from agent6.providers import _transport, types, wire
+from agent6.providers import _transport, oauth, types, wire
 
 __all__ = ["cached_context_window", "list_models"]
 
@@ -314,6 +314,8 @@ def _fetch(
         resp.raise_for_status()
         ids, context = _chatgpt_listing(resp.json())
         return ids, {}, context  # a subscription prices nothing
+    if entry.oauth is not None:
+        api_key = oauth.listing_bearer(provider_name, entry)
     url, headers = _models_endpoint(entry, api_key)
     resp = httpx2.get(
         url,
@@ -361,6 +363,7 @@ def probe_provider_key(
     """
     if (
         isinstance(entry, (ChatGPTProviderEntry, ClaudeCodeProviderEntry))
+        or entry.oauth is not None
         or entry.deployment != "direct"
         or entry.auth_style == "none"
     ):
@@ -368,6 +371,8 @@ def probe_provider_key(
             detail = "ChatGPT signs in via OAuth, not a key"
         elif isinstance(entry, ClaudeCodeProviderEntry):
             detail = "Claude Code signs in with its own login, not a key"
+        elif entry.oauth is not None:
+            detail = "a configured issuer signs in via `agent6 connect`, not a key"
         elif entry.auth_style == "none":
             detail = "auth_style 'none' sends no key"
         else:

@@ -528,6 +528,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 
 - Provider keys live in `$XDG_CONFIG_HOME/agent6/secrets.toml`, `0600` and owner-only (refused if group- or other-readable, or foreign-owned; opened without following a link and judged by the descriptor it opened; rewritten only under its sibling lock), or come from `[providers.<name>].api_key_env` (env wins).
 - A configured issuer (`[providers.<name>].oauth`) names the only other hosts a sign-in dials: its endpoints are https, or plain http on a literal loopback address, carry no userinfo or fragment, and are never discovered; the stored grant is bound to those settings and to `base_url`.
+    - the grant is sent only while its binding matches the entry's transport and issuer settings; a mismatch refuses before any request, naming `agent6 connect <name>`
+    - a refresh or a second exchange runs under the secrets file's lock, follows no redirect, and scrubs the tokens it sent from any error; a 401 rotates once per call, a 403 never rotates
 - They are absent from transcripts, redacted in `config show`, and masked from the jail.
   The config dir stays masked even under an explicit grant, and a grant naming it directly is refused at config load.
 - `config show` and `config get` mask mapping values unless the config model marks the field display-safe (`skills.state`); other mappings expose only their keys, including in JSON output.

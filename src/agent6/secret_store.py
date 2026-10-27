@@ -349,6 +349,112 @@ def load_oauth_tokens(
     )
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class StoredGrant:
+    """One provider's configured-OAuth grant as stored, bound to its settings.
+
+    Attributes:
+        binding: The fingerprint of the settings the grant was made under.
+        access_token: The issuer's access token.
+        refresh_token: The refresh token; "" when the issuer gave none.
+        issued_at: When the issuer grant was issued, as Unix time.
+        expires_at: When it expires; None when the issuer named no expiry.
+        exchange_access_token: The second exchange's token; "" when none is configured or made.
+        exchange_issued_at: When that token was issued; 0.0 when none.
+        exchange_expires_at: When it expires; None when none.
+    """
+
+    binding: str
+    access_token: str
+    refresh_token: str
+    issued_at: float
+    expires_at: float | None
+    exchange_access_token: str
+    exchange_issued_at: float
+    exchange_expires_at: float | None
+
+
+GRANT_VERSION = "1"
+
+
+def save_oauth_grant(
+    provider_name: str, grant: StoredGrant, *, user: paths.RealUser | None = None
+) -> pathlib.Path:
+    """Write a provider's configured-OAuth grant, replacing its entry.
+
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        grant: The grant to store.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The secrets file's path.
+    """
+    entry = {
+        "oauth_version": GRANT_VERSION,
+        "oauth_binding": grant.binding,
+        "oauth_access_token": grant.access_token,
+        "oauth_issued_at": repr(grant.issued_at),
+    }
+    if grant.refresh_token:
+        entry["oauth_refresh_token"] = grant.refresh_token
+    if grant.expires_at is not None:
+        entry["oauth_expires_at"] = repr(grant.expires_at)
+    if grant.exchange_access_token:
+        entry["oauth_exchange_access_token"] = grant.exchange_access_token
+        entry["oauth_exchange_issued_at"] = repr(grant.exchange_issued_at)
+        if grant.exchange_expires_at is not None:
+            entry["oauth_exchange_expires_at"] = repr(grant.exchange_expires_at)
+    return _save_provider_entry(provider_name, entry, user)
+
+
+def _optional_time(entry: dict[str, Any], key: str) -> float | None:
+    """Return a stored Unix time field, None when absent."""
+    raw = entry.get(key)
+    return float(str(raw)) if raw not in (None, "") else None
+
+
+def load_oauth_grant(
+    provider_name: str,
+    *,
+    secrets: dict[str, Any] | None = None,
+    user: paths.RealUser | None = None,
+) -> StoredGrant | None:
+    """Return one provider's stored configured-OAuth grant, or None when absent or mangled.
+
+    Args:
+        provider_name: The provider's name under `[providers]`.
+        secrets: The loaded secrets; None loads the operator's.
+        user: The operator; None resolves the effective one.
+
+    Returns:
+        The grant; None when absent, of another version, or mangled, which
+        `agent6 connect` repairs.
+    """
+    data = secrets if secrets is not None else load_secrets(user)
+    providers = data.get("providers")
+    entry = providers.get(provider_name) if isinstance(providers, dict) else None
+    if not isinstance(entry, dict) or str(entry.get("oauth_version", "")) != GRANT_VERSION:
+        return None
+    access = entry.get("oauth_access_token")
+    binding = entry.get("oauth_binding")
+    if not (isinstance(access, str) and access and isinstance(binding, str) and binding):
+        return None
+    try:
+        return StoredGrant(
+            binding=binding,
+            access_token=access,
+            refresh_token=str(entry.get("oauth_refresh_token", "") or ""),
+            issued_at=float(str(entry.get("oauth_issued_at", "0"))),
+            expires_at=_optional_time(entry, "oauth_expires_at"),
+            exchange_access_token=str(entry.get("oauth_exchange_access_token", "") or ""),
+            exchange_issued_at=float(str(entry.get("oauth_exchange_issued_at", "0") or "0")),
+            exchange_expires_at=_optional_time(entry, "oauth_exchange_expires_at"),
+        )
+    except ValueError:
+        return None
+
+
 def _render_secrets_toml(data: dict[str, Any]) -> str:
     """Return the secrets as TOML: a flat `[providers.<name>]` table of strings each."""
     lines = [

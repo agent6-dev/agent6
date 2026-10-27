@@ -308,7 +308,7 @@ def tokens_from_grant(
     return secret_store.OAuthTokens(
         access_token=grant.access_token,
         refresh_token=refresh,
-        expires_at=time.time() + grant.expires_in,
+        expires_at=time.time() + (grant.expires_in if grant.expires_in is not None else 3600.0),
         account_id=account,
     )
 

@@ -15,6 +15,8 @@ import hashlib
 import json
 import math
 import secrets
+import time
+from collections.abc import Callable
 from typing import Any
 from urllib import parse
 
@@ -37,13 +39,13 @@ class TokenGrant:
     Attributes:
         access_token: The bearer.
         refresh_token: The rotating refresh token; "" when the response omitted it.
-        expires_in: The bearer's lifetime in seconds.
+        expires_in: The bearer's lifetime in seconds; None when the issuer named none.
         id_token: The identity JWT; "" when absent.
     """
 
     access_token: str
     refresh_token: str
-    expires_in: float
+    expires_in: float | None
     id_token: str = ""
 
 
@@ -178,15 +180,17 @@ def grant_from_response(resp: httpx2.Response, *, operation: str, label: str) ->
         raise types.ProviderError(
             f"{label} token {operation} response carried an unusable id_token"
         )
-    expires = data.get("expires_in", 3600.0)
-    try:
-        expires_in = float(expires)
-        if isinstance(expires, bool) or not math.isfinite(expires_in) or expires_in <= 0:
-            raise ValueError
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise types.ProviderError(
-            f"{label} token {operation} response carried an unusable expires_in"
-        ) from exc
+    expires = data.get("expires_in")
+    expires_in: float | None = None
+    if expires is not None:
+        try:
+            expires_in = float(expires)
+            if isinstance(expires, bool) or not math.isfinite(expires_in) or expires_in <= 0:
+                raise ValueError
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise types.ProviderError(
+                f"{label} token {operation} response carried an unusable expires_in"
+            ) from exc
     return TokenGrant(
         access_token=access,
         refresh_token=refresh,
@@ -404,6 +408,178 @@ def revoke_tokens(
     if resp.status_code >= 400:
         return f"HTTP {resp.status_code}: {scrub(resp.text, (token,))[:200]}"
     return None
+
+
+# A device grant waits this long at most, whatever expiry the issuer reports.
+DEVICE_CEILING_S = 15 * 60.0
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class DeviceGrant:
+    """A started device-authorization grant (RFC 8628).
+
+    Attributes:
+        device_code: The code the poll sends; never shown.
+        user_code: The code the person types at the verification URI.
+        verification_uri: Where the person types it.
+        verification_uri_complete: The same with the code filled in; "" when absent.
+        interval_s: The polling interval the issuer asked for.
+        expires_at: When the codes die, as a monotonic deadline.
+    """
+
+    device_code: str
+    user_code: str
+    verification_uri: str
+    verification_uri_complete: str
+    interval_s: float
+    expires_at: float
+
+
+def _post(url: str, data: dict[str, str], *, encoding: str, timeout_s: float) -> httpx2.Response:
+    """Send a device or token request in the configured encoding.
+
+    Args:
+        url: The endpoint.
+        data: The parameters.
+        encoding: "form" or "json".
+        timeout_s: The request timeout.
+
+    Returns:
+        The response.
+    """
+    return (
+        post_json(url, data, timeout_s) if encoding == "json" else post_form(url, data, timeout_s)
+    )
+
+
+def start_device_grant(
+    endpoint: str,
+    client_id: str,
+    *,
+    scopes: tuple[str, ...],
+    encoding: str,
+    label: str,
+    timeout_s: float = TOKEN_TIMEOUT_S,
+    now: Callable[[], float] = time.monotonic,
+) -> DeviceGrant:
+    """Begin the device grant: ask the issuer for a user code.
+
+    Args:
+        endpoint: The device authorization endpoint.
+        client_id: The client registration.
+        scopes: The scopes requested; empty sends no `scope`.
+        encoding: "form" or "json".
+        label: The sign-in the errors name.
+        timeout_s: The request timeout.
+        now: The monotonic clock.
+
+    Returns:
+        The started grant.
+
+    Raises:
+        ProviderError: The endpoint was unreachable, redirected, refused, or answered malformed.
+    """  # noqa: DOC501  # `redirect_refusal` builds the ProviderError named above
+    body = {"client_id": client_id}
+    if scopes:
+        body["scope"] = " ".join(scopes)
+    try:
+        resp = _post(endpoint, body, encoding=encoding, timeout_s=timeout_s)
+    except httpx2.HTTPError as exc:
+        raise types.ProviderError(f"could not reach {endpoint}: {exc}") from exc
+    if 300 <= resp.status_code < 400:
+        raise redirect_refusal(resp, operation="device start", label=label)
+    if resp.status_code >= 400:
+        raise types.ProviderError(
+            f"{label} device sign-in refused: HTTP {resp.status_code}: {resp.text[:200]}"
+        )
+    try:
+        data: Any = resp.json()
+        uri = str(data["verification_uri"])
+        complete = str(data.get("verification_uri_complete") or "")
+        if parse.urlsplit(complete).scheme != "https":
+            complete = ""
+        grant = DeviceGrant(
+            device_code=str(data["device_code"]),
+            user_code=str(data["user_code"]),
+            verification_uri=uri,
+            verification_uri_complete=complete,
+            interval_s=max(1.0, float(data.get("interval") or 5.0)),
+            expires_at=now() + min(float(data.get("expires_in") or 600.0), DEVICE_CEILING_S),
+        )
+    except (ValueError, KeyError, TypeError) as exc:
+        raise types.ProviderError(f"{label} device sign-in response was malformed") from exc
+    if parse.urlsplit(grant.verification_uri).scheme != "https":
+        raise types.ProviderError(f"{label} device sign-in named a verification URI off https")
+    if not grant.user_code.isprintable() or len(grant.user_code) > 64:
+        raise types.ProviderError(f"{label} device sign-in response carried an unusable user code")
+    return grant
+
+
+def poll_device_grant(
+    token_endpoint: str,
+    client_id: str,
+    grant: DeviceGrant,
+    *,
+    encoding: str,
+    label: str,
+    timeout_s: float = TOKEN_TIMEOUT_S,
+    sleep: Callable[[float], None] = time.sleep,
+    now: Callable[[], float] = time.monotonic,
+) -> TokenGrant:
+    """Poll the token endpoint until the person approves, refuses, or the codes expire.
+
+    `authorization_pending` waits the interval, `slow_down` adds five seconds to it; the
+    issuer may answer either as a 4xx or as a 200 whose body carries the error.
+
+    Args:
+        token_endpoint: The token endpoint.
+        client_id: The client registration.
+        grant: The started grant.
+        encoding: "form" or "json".
+        label: The sign-in the errors name.
+        timeout_s: The request timeout.
+        sleep: The wait between polls.
+        now: The monotonic clock.
+
+    Returns:
+        The token grant.
+
+    Raises:
+        ProviderError: The endpoint was unreachable or redirected, the person refused, the
+            codes expired, or the issuer answered an unknown error.
+    """  # noqa: DOC501  # `redirect_refusal` builds the ProviderError named above
+    interval = grant.interval_s
+    while now() < grant.expires_at:
+        body = {
+            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+            "device_code": grant.device_code,
+            "client_id": client_id,
+        }
+        try:
+            resp = _post(token_endpoint, body, encoding=encoding, timeout_s=timeout_s)
+        except httpx2.HTTPError as exc:
+            raise types.ProviderError(f"could not reach {token_endpoint}: {exc}") from exc
+        if 300 <= resp.status_code < 400:
+            raise redirect_refusal(resp, operation="device poll", label=label)
+        code = error_code_of(resp)
+        if resp.status_code < 400 and not code:
+            return grant_from_response(resp, operation="device", label=label)
+        if code == "authorization_pending":
+            sleep(interval)
+            continue
+        if code == "slow_down":
+            interval += 5.0
+            sleep(interval)
+            continue
+        if code == "access_denied":
+            raise types.ProviderError(f"{label} sign-in was refused at the issuer")
+        if code == "expired_token":
+            raise types.ProviderError(f"{label} device code expired before it was entered")
+        raise types.ProviderError(
+            f"{label} device sign-in failed: HTTP {resp.status_code}: "
+            f"{scrub(resp.text, (grant.device_code,))[:200]}"
+        )
+    raise types.ProviderError(f"{label} device code expired before it was entered")
 
 
 def error_code_of(resp: httpx2.Response) -> str:

@@ -13,15 +13,12 @@ import contextlib
 import dataclasses
 import json
 from collections.abc import Callable, Mapping
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6.providers import _stream, _transport, types, wire
-
-if TYPE_CHECKING:
-    from agent6.providers import token_command
 
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -315,7 +312,7 @@ class AnthropicProvider:
     extra_headers: tuple[tuple[str, str], ...] = ()
     extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
     extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
-    credential: token_command.CommandToken | None = None
+    credential: types.BearerCredential | None = None
     # Latched on a "temperature is deprecated" 400 so the rest of the run omits it; a list, since
     # the dataclass is frozen.
     _omit_temperature: list[bool] = dataclasses.field(default_factory=lambda: [False])

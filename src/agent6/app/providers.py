@@ -36,6 +36,8 @@ from agent6.providers import (
     ToolDefinition,
     TranscriptRecorder,
     TranscriptSink,
+    oauth,
+    types,
 )
 
 
@@ -227,11 +229,15 @@ def _provider_from_entry(
             reasoning_effort=effort,
         )
     key = secret_store.resolve_api_key(provider_name, entry.api_key_env)
-    credential = (
+    credential: types.BearerCredential | None = (
         CommandToken(entry.token_command, ttl_s=entry.token_command_ttl_s)
         if entry.token_command
         else None
     )
+    if entry.oauth is not None:
+        # A configured issuer is the one credential source: the stored, bound grant.
+        credential = oauth.OAuthCredential(provider_name, entry)
+        key = ""
     if isinstance(entry, AnthropicProviderEntry):
         # Anthropic needs a key, a token_command credential or `auth_style = "none"`.
         if not key and credential is None and entry.auth_style != "none":
