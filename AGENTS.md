@@ -25,6 +25,8 @@
 - **Explicit.** Defaults are real values `agent6 config show` prints with their origin; behaviour follows visible state; errors are loud.
 - **Surfaces tell the truth.** A failed run reads failed, a dead pane reads dead, a truncated answer reads truncated, an error keeps its reason.
   Every surface shows state the system actually holds; invented or hidden state is a bug.
+- **State, not opinion.** agent6 sets, enforces and shows the state of the world: who is attached, the away mode, what is pending, what a command returned.
+  Opinions come from the operator's instructions; the model chooses within what the operator set, and the harness never chooses for it.
 - **Fix the root cause.** Delete the wrong shape rather than guard it.
   A recurring problem has a systematic cause: correlate every occurrence before calling one transient, and say so plainly while the cause stays unfound.
 - **Evidence over churn.** Adopt what measurement shows is better and delete the old shape.
