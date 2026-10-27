@@ -7,7 +7,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, paths, review_records
+from agent6 import errors, event_log, paths, review_records
 from agent6.app import _setup, providers
 from agent6.config import layer
 from agent6.harness import _chain, _context, _loop_state, _reviewer, code_review
@@ -80,6 +80,82 @@ def test_review_never_writes_hidden_or_unselected_worktree_bytes(
     assert stored.stdout == ("old private content\n" if tracked else "")
     assert (tmp_path / ".git/index").read_bytes() == index
     assert ("hidden paths" in capsys.readouterr().err) == (policy != "unselected")
+
+
+@pytest.mark.parametrize("policy", ["hidden", "unselected"])
+def test_staged_edits_outside_the_selection_take_the_base_entries(
+    tmp_path: pathlib.Path, policy: str
+) -> None:
+    """A staged edit under a hidden or unselected path stayed in the recorded head tree."""
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "a.py").write_text("keep\nold\n")
+    private = tmp_path / "private"
+    private.mkdir()
+    secret = private / "secret.txt"
+    secret.write_text("base\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "base")
+    (tmp_path / "a.py").write_text("keep\nnew\n")
+    secret.write_text("STAGED-SECRET-4242\n")
+    _git(tmp_path, "add", "private/secret.txt")
+    hide = (str(private),) if policy == "hidden" else ()
+    compared = review.comparison(
+        tmp_path, base="", head="HEAD", paths=() if hide else ("a.py",), hide=hide
+    )
+    entry = "ls-tree", "-r", "{}", "private/secret.txt"
+    assert _git(tmp_path, *(a.format(compared.target.head_tree) for a in entry)) == _git(
+        tmp_path, *(a.format(compared.target.base_tree) for a in entry)
+    )
+    assert "+new" in compared.diff and "STAGED-SECRET" not in compared.diff
+    origin = review.classify_line_origin(
+        tmp_path,
+        compared.target,
+        review_records.ReviewLocation(path="a.py", side="head", start_line=1, end_line=1),
+        hide=hide,
+    )
+    assert origin.kind == "pre_existing", origin
+
+
+@pytest.mark.parametrize("policy", ["hidden", "unselected", "renamed"])
+def test_staged_deletions_outside_the_selection_keep_the_base_entries(
+    tmp_path: pathlib.Path, policy: str
+) -> None:
+    """A path removed from the index outside the selection had no entry to restore."""
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "a.py").write_text("keep\nold\n")
+    private = tmp_path / "private"
+    private.mkdir()
+    (private / "secret.txt").write_text("BASE-SECRET\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "base")
+    if policy == "renamed":
+        _git(tmp_path, "mv", "a.py", "b.py")
+        (tmp_path / "b.py").write_text("keep\nnew\n")
+        paths, hide, restored = ("b.py",), (), "a.py"
+    else:
+        (tmp_path / "a.py").write_text("keep\nnew\n")
+        _git(tmp_path, "rm", "-q", "--cached", "private/secret.txt")
+        hide = (str(private),) if policy == "hidden" else ()
+        paths, restored = (() if hide else ("a.py",)), "private/secret.txt"
+    compared = review.comparison(tmp_path, base="", head="HEAD", paths=paths, hide=hide)
+    entry = "ls-tree", "-r", "{}", restored
+    assert _git(tmp_path, *(a.format(compared.target.head_tree) for a in entry)) == _git(
+        tmp_path, *(a.format(compared.target.base_tree) for a in entry)
+    )
+    assert "+new" in compared.diff and "BASE-SECRET" not in compared.diff
+
+
+def test_hidden_names_git_cannot_fold_refuse_the_review(tmp_path: pathlib.Path) -> None:
+    """Python folds `Ü` onto `ü` and git's `icase` under `LC_ALL=C` does not; the review refuses."""
+    _git(tmp_path, "init", "-q")
+    for name in ("a.py", "ü.txt"):
+        (tmp_path / name).write_text("old\n")
+    _git(tmp_path, "add", ".")
+    _git(tmp_path, "commit", "-qm", "base")
+    for name in ("a.py", "ü.txt"):
+        (tmp_path / name).write_text("new\n")
+    with pytest.raises(errors.GitError, match="cannot enforce"):
+        review.comparison(tmp_path, base="", head="HEAD", paths=(), hide=(str(tmp_path / "Ü.txt"),))
 
 
 def test_top_level_exclusion_survives_review_from_an_empty_subdirectory(

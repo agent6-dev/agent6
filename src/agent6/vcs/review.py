@@ -572,21 +572,27 @@ def comparison(
                 stdin_text="".join(f"{name}\0" for name in sorted(changed)),
                 env_extra=env,
             )
-            unmerged = {
-                entry.partition("\t")[2]
-                for entry in _git_command.nul_fields(repo, "ls-files", "-u", "-z", env_extra=env)
-                if entry
-            }
-            if unmerged:
-                entries = (
-                    _git_command.nul_fields(repo, "ls-tree", "-r", "-z", base_tree)
-                    if base_commit
-                    else []
-                )
+            # The copied index holds every staged edit and removal: a path outside the selection
+            # (hidden, unselected, renamed away or left unmerged) takes the base tree's entry, or
+            # none.
+            entries = (
+                [e for e in _git_command.nul_fields(repo, "ls-tree", "-r", "-z", base_tree) if e]
+                if base_commit
+                else []
+            )
+            indexed = _git_command.nul_fields(
+                repo, "ls-files", "-z", "--full-name", "--cached", env_extra=env
+            )
+            outside = (
+                ({entry.partition("\t")[2] for entry in entries} | set(indexed))
+                - {""}
+                - set(selected)
+            )
+            if outside:
                 restored = "".join(
-                    f"0 {'0' * len(base_tree)}\t{name}\0" for name in sorted(unmerged)
+                    f"0 {'0' * len(base_tree)}\t{name}\0" for name in sorted(outside)
                 ) + "".join(
-                    f"{entry}\0" for entry in entries if entry.partition("\t")[2] in unmerged
+                    f"{entry}\0" for entry in entries if entry.partition("\t")[2] in outside
                 )
                 _git_command.run(
                     repo, "update-index", "-z", "--index-info", stdin_text=restored, env_extra=env
