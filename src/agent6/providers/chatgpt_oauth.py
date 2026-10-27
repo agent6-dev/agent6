@@ -23,7 +23,6 @@ import httpx2
 
 from agent6 import paths, portable, secret_store
 from agent6.providers import _oauth_protocol, types
-from agent6.providers._oauth_protocol import TokenGrant
 
 CHATGPT_ISSUER = "https://auth.openai.com"
 # The Codex CLI's public client registration; its redirect is pinned to localhost:1455.
@@ -96,7 +95,7 @@ def exchange_code(
     provider: str,
     redirect_uri: str = REDIRECT_URI,
     timeout_s: float = _oauth_protocol.TOKEN_TIMEOUT_S,
-) -> TokenGrant:
+) -> _oauth_protocol.TokenGrant:
     """Exchange an authorization code for a token grant.
 
     Args:
@@ -191,7 +190,7 @@ def poll_device_auth(
     provider: str,
     timeout_s: float = _DEVICE_TIMEOUT_S,
     sleep: Callable[[float], None] = time.sleep,
-) -> TokenGrant:
+) -> _oauth_protocol.TokenGrant:
     """Wait for the person to enter the code, then exchange the grant.
 
     The issuer answers pending as a 403, a 404 or `deviceauth_authorization_pending`
@@ -259,7 +258,7 @@ def poll_device_auth(
     )
 
 
-def account_id_of(grant: TokenGrant) -> str:
+def account_id_of(grant: _oauth_protocol.TokenGrant) -> str:
     """Return the account id a grant is bound to; "" when absent.
 
     The claim rides in the access token and, for a workspace account, the id_token.
@@ -280,7 +279,7 @@ def account_id_of(grant: TokenGrant) -> str:
     return ""
 
 
-def plan_type_of(grant: TokenGrant) -> str:
+def plan_type_of(grant: _oauth_protocol.TokenGrant) -> str:
     """Return the plan the grant reports ("plus", "pro"); "" when absent."""
     for token in (grant.id_token, grant.access_token):
         auth = _oauth_protocol.jwt_claims(token).get(_CLAIMS_KEY)
@@ -292,7 +291,7 @@ def plan_type_of(grant: TokenGrant) -> str:
 
 
 def tokens_from_grant(
-    grant: TokenGrant, *, previous: secret_store.OAuthTokens | None = None
+    grant: _oauth_protocol.TokenGrant, *, previous: secret_store.OAuthTokens | None = None
 ) -> secret_store.OAuthTokens:
     """Build the storable tokens for a grant.
 
@@ -374,7 +373,7 @@ class ChatGPTCredential:
                 status_code=401,
             )
         # A stored entry can hold a user id where the account id belongs; the repair is a reconnect.
-        claimed = account_id_of(TokenGrant(tokens.access_token, "", 0.0, ""))
+        claimed = account_id_of(_oauth_protocol.TokenGrant(tokens.access_token, "", 0.0, ""))
         if claimed and tokens.account_id and claimed != tokens.account_id:
             raise types.ProviderError(
                 f"The stored ChatGPT sign-in for {self._provider!r} carries an account id"
@@ -494,4 +493,4 @@ class ChatGPTCredential:
             self._tokens = tokens
         if tokens.account_id:
             return tokens.account_id
-        return account_id_of(TokenGrant(tokens.access_token, "", 0.0))
+        return account_id_of(_oauth_protocol.TokenGrant(tokens.access_token, "", 0.0))

@@ -4,19 +4,11 @@
 
 from __future__ import annotations
 
-import contextlib
 import dataclasses
 import getpass
-import html
-import http.server
-import os
 import pathlib
 import secrets
 import sys
-import threading
-import time
-import webbrowser
-from urllib import parse
 
 from agent6 import paths, secret_store
 from agent6.config import (
@@ -32,7 +24,7 @@ from agent6.config import (
 )
 from agent6.models import cache
 from agent6.providers import _oauth_protocol, chatgpt_oauth, claude_code, types
-from agent6.ui.cli import _common
+from agent6.ui.cli import _common, _oauth
 
 
 def _prompt_api_key(name: str) -> str:
@@ -295,125 +287,6 @@ def _verify_key(entry: ProviderEntry | None, api_key: str) -> None:
         )
 
 
-class _CallbackServer:
-    """A one-shot localhost receiver for the OAuth redirect.
-
-    Binds 127.0.0.1 on the port the client registration pins and serves until the
-    `/auth/callback` hit arrives; every other path 404s. The authorization code is held in
-    memory only, never logged.
-    """
-
-    def __init__(self, state: str, *, port: int = chatgpt_oauth.CALLBACK_PORT) -> None:
-        self._code: str | None = None
-        self._got = threading.Event()
-        outer = self
-
-        class Handler(http.server.BaseHTTPRequestHandler):
-            """The one request handler: the callback path, or 404."""
-
-            def do_GET(self) -> None:  # BaseHTTPRequestHandler API name
-                """Take the authorization code from the callback query, checking its state."""
-                parts = parse.urlsplit(self.path)
-                if parts.path != "/auth/callback":
-                    self.send_error(404)
-                    return
-                try:
-                    outer._code = _oauth_protocol.parse_callback(parts.query, state=state)
-                    body = b"<html><body>Signed in. Return to the terminal.</body></html>"
-                    status = 200
-                except ValueError as exc:
-                    # Escaped: a reflected error_description would run script on this origin.
-                    body = f"<html><body>{html.escape(str(exc))}</body></html>".encode()
-                    status = 400
-                self.send_response(status)
-                self.send_header("content-type", "text/html; charset=utf-8")
-                self.send_header("content-security-policy", "default-src 'none'")
-                self.send_header("x-content-type-options", "nosniff")
-                self.send_header("cache-control", "no-store")
-                self.send_header("content-length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                if status == 200:
-                    outer._got.set()
-
-            def log_message(self, format: str, *args: object) -> None:
-                """Log nothing: the code must not reach the terminal."""
-                del format, args  # silent: the code must not reach the terminal
-
-        self._server = http.server.HTTPServer(("127.0.0.1", port), Handler)
-        self._thread = threading.Thread(
-            target=self._server.serve_forever, name="agent6-oauth-callback", daemon=True
-        )
-        self._thread.start()
-
-    @property
-    def port(self) -> int:
-        """The bound port."""
-        return int(self._server.server_address[1])
-
-    def wait(self, timeout_s: float) -> str | None:
-        """Wait for the code, polling so Ctrl-C lands promptly.
-
-        Args:
-            timeout_s: The longest wait.
-
-        Returns:
-            The code, or None on timeout.
-        """
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
-            if self._got.wait(0.25):
-                return self._code
-        return None
-
-    def close(self) -> None:
-        """Stop serving and release the port."""
-        self._server.shutdown()
-        self._server.server_close()
-
-
-def _gui_browser_available() -> bool:
-    """Return whether a GUI browser can take the sign-in URL.
-
-    On a display-less Linux box `webbrowser.open` falls back to a console browser, which
-    takes over the terminal the sign-in prompt lives on; there the printed URL is the flow.
-
-    Returns:
-        True on macOS and Windows; elsewhere, when `DISPLAY` or `WAYLAND_DISPLAY` is set.
-    """
-    if sys.platform in ("darwin", "win32"):
-        return True
-    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
-
-
-def _code_via_callback_server(url: str, state: str) -> str | None:
-    """Open the browser and wait on localhost for the redirect: the GUI path.
-
-    Args:
-        url: The authorize URL the browser opens.
-        state: The state the callback must echo.
-
-    Returns:
-        The code, or None on timeout, Ctrl-C or an unbindable port; the caller falls back.
-    """
-    try:
-        server = _CallbackServer(state)
-    except OSError as exc:
-        print(f"(no local callback: port {chatgpt_oauth.CALLBACK_PORT} unavailable: {exc})")
-        return None
-    with contextlib.suppress(Exception):
-        webbrowser.open(url)
-    print(f"Waiting for the sign-in redirect on localhost:{chatgpt_oauth.CALLBACK_PORT}")
-    print("(Ctrl-C to paste the callback URL by hand instead)")
-    try:
-        return server.wait(timeout_s=300.0)
-    except KeyboardInterrupt:
-        print()
-        return None
-    finally:
-        server.close()
-
-
 def _grant_via_device_code(
     issuer: str, client_id: str, provider: str
 ) -> _oauth_protocol.TokenGrant | None:
@@ -472,20 +345,13 @@ def _chatgpt_sign_in(name: str) -> int:
 
     grant: _oauth_protocol.TokenGrant | None = None
     code: str | None = None
-    if sys.stdin.isatty() and _gui_browser_available():
-        code = _code_via_callback_server(url, state)
+    if sys.stdin.isatty() and _oauth.gui_browser_available():
+        code = _oauth.code_via_callback_server(url, state, port=chatgpt_oauth.CALLBACK_PORT)
     elif sys.stdin.isatty():
         grant = _grant_via_device_code(issuer, client_id, name)
     if grant is None and code is None:
-        try:
-            pasted = input("Paste the callback URL the browser landed on: ").strip()
-        except EOFError:
-            _common.error("no callback input.")
-            return 2
-        try:
-            code = _oauth_protocol.parse_callback(pasted, state=state)
-        except ValueError as exc:
-            _common.error(f"{exc}")
+        code = _oauth.paste_callback(state)
+        if code is None:
             return 2
 
     if grant is None:

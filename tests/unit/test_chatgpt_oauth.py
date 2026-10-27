@@ -667,9 +667,9 @@ def test_callback_error_page_escapes_the_description() -> None:
     import urllib.error
     import urllib.request
 
-    from agent6.ui.cli import connect  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import _oauth
 
-    srv = connect._CallbackServer("STATE", port=0)
+    srv = _oauth.CallbackServer("STATE", port=0)
     try:
         port = srv.port
         url = (

@@ -15,7 +15,7 @@ import pytest
 from agent6 import paths, secret_store
 from agent6.config import OpenAIProviderEntry
 from agent6.models import cache
-from agent6.ui.cli import _common, main
+from agent6.ui.cli import _common, _oauth, main
 from agent6.ui.cli import model as modelmod
 
 _REAL_PROBE = cache.probe_provider_key
@@ -979,9 +979,7 @@ def test_oauth_callback_server_round_trip() -> None:
     import urllib.error
     import urllib.request
 
-    from agent6.ui.cli import connect  # pyright: ignore[reportPrivateUsage]
-
-    srv = connect._CallbackServer("S1", port=0)
+    srv = _oauth.CallbackServer("S1", port=0)
     try:
         base = f"http://127.0.0.1:{srv.port}"
         with pytest.raises(urllib.error.HTTPError) as e404:

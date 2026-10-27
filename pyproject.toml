@@ -372,6 +372,7 @@ banned-from = [
     "agent6.ui.cli._machine_args",
     "agent6.ui.cli._mcp_args",
     "agent6.ui.cli._menu_input",
+    "agent6.ui.cli._oauth",
     "agent6.ui.cli._plan_args",
     "agent6.ui.cli._preflight",
     "agent6.ui.cli._repl",
