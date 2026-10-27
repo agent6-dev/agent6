@@ -185,7 +185,8 @@ function paintFindings(cards, state) {
       const card = findingCard(entry); list.appendChild(card);
       if (entry.finding.fix_state !== 'none') card.appendChild(el('span', 'muted', 'Fix: ' + entry.finding.fix_state.replaceAll('_', ' ')));
       for (const action of entry.finding.actions) card.appendChild(el('span', 'finding-history', action.type.split('.').at(-1)
-        + (action.resolution ? ' · ' + action.resolution.disposition : '') + ': ' + (action.reason || action.error || action.action || '')));
+        + (action.resolution ? ' · ' + action.resolution.disposition : '') + ': '
+        + (action.resolution ? action.resolution.reason : action.reason || action.error || action.action || '')));
       if (!cards._readOnly) findingActions(card, entry, cards, state);
     }
     if (!list.children.length) list.appendChild(el('div', 'muted', 'No findings in this filter.'));

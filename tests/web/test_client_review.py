@@ -137,8 +137,8 @@ def test_actions_keep_versions_confirmation_reasons_and_history() -> None:
 assert.equal(typeof paintFindings, 'function', 'Findings card is missing');
 const e = entry();
 e.finding.observations = [e.observation];
-e.finding.actions = [{type: 'loop.review.finding.resolved', reason: '<b>operator</b>',
-  resolution: {disposition: 'fixed'}}];
+e.finding.actions = [{type: 'loop.review.finding.resolved',
+  resolution: {disposition: 'fixed', reason: '<b>operator</b>'}}];
 const state = {finished: true, review: {panels: [e.panel], findings: [e.finding],
   version: 1, open_counts: {block: 1}, merge_guard: {open_block_ids: ['f1']}}};
 const cards = {_id: 'run', _base: '/api/session/run', findings: el('div')};

@@ -149,9 +149,11 @@ def test_findings_card_resolves_with_literal_reason_and_reopens(
     card.get_by_role("button", name="Reopen", exact=True).click()
     card.get_by_label("Reason").fill("Still reproducible")
     card.get_by_role("button", name="Submit reopen").click()
+    expect(card.locator(".finding-title")).to_contain_text("block · open")
     page.reload()
-    expect(card).to_contain_text("Still reproducible")
-    expect(card).to_contain_text("<b>operator conclusion</b>")
+    expect(card.locator(".finding-history")).to_contain_text(
+        ["<b>operator conclusion</b>", "Still reproducible"]
+    )
     assert card.locator("b").count() == 0
     assert not errors
 
