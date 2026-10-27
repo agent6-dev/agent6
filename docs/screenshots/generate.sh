@@ -20,7 +20,7 @@ mkdir -p "$OUT"
 # them. generate.sh fails if it does not produce every one.
 SHOTS=(01-hub 02-run-dashboard 03-config 04-config-search 05-transcript 08-help 09-logs)
 
-for bin in vhs ttyd ffmpeg agent6 python3; do
+for bin in vhs ttyd ffmpeg ffprobe agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "generate.sh: missing required tool: $bin" >&2; exit 1; }
 done
 
@@ -38,6 +38,7 @@ rm -f "$OUT"/*.png "$OUT"/tour.webm "$OUT"/_capture.webm
 
 echo "screenshots: capturing PNGs with vhs (tour.tape)"
 vhs docs/screenshots/tour.tape
+python3 docs/screenshots/webm.py "$OUT/_capture.webm"
 
 missing=0
 for s in "${SHOTS[@]}"; do
@@ -55,6 +56,7 @@ rm -f "$OUT"/_capture.webm  # the throwaway video from the screenshot pass
 echo "screenshots: recording reel.tape with vhs"
 rm -f "$OUT/tour-raw.webm"
 vhs docs/screenshots/reel.tape
+python3 docs/screenshots/webm.py "$OUT/tour-raw.webm"
 python3 docs/screenshots/keystroke_overlay.py \
   docs/screenshots/reel.tape "$OUT/tour-raw.webm" "$OUT/tour.webm"
 [ -s "$OUT/tour.webm" ] || { echo "generate.sh: failed to build tour.webm" >&2; exit 1; }

@@ -1,4 +1,4 @@
-"""Sync every VHS tape's theme with the TUI palette."""
+"""Sync every VHS tape's theme with the recording terminal palette."""
 
 from __future__ import annotations
 

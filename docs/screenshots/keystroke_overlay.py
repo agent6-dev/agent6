@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import argparse
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import webm
 
 KEY_LABELS: dict[str, str] = {
     "Enter": "Enter \u21b5",
@@ -232,7 +233,7 @@ def _build_slot_expr(transitions: list[tuple[float, int]]) -> str:
 def overlay(tape: Path, video: Path, out: Path, font: str | None = None) -> None:
     events, total_tape_show = parse_tape(tape)
     if not events:
-        shutil.copy2(video, out)
+        webm.encode(video, out)
         return
     actual = _ffprobe_duration(video)
     # Scale show-time onto recorded duration so the trailing Sleep is accounted for.
@@ -279,30 +280,7 @@ def overlay(tape: Path, video: Path, out: Path, font: str | None = None) -> None
             f"x='{x_expr}':y='{y_expr}':"
             f"enable='between(t,{s:.3f},{e:.3f})'"
         )
-    if not parts:
-        shutil.copy2(video, out)
-        return
-    vf = ",".join(parts)
-    subprocess.check_call(
-        [
-            "ffmpeg",
-            "-y",
-            "-loglevel",
-            "error",
-            "-i",
-            str(video),
-            "-vf",
-            vf,
-            "-c:v",
-            "libvpx-vp9",
-            "-b:v",
-            "0",
-            "-crf",
-            "32",
-            "-an",
-            str(out),
-        ]
-    )
+    webm.encode(video, out, filters=",".join(parts))
 
 
 def main() -> int:

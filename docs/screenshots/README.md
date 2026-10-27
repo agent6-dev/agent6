@@ -8,11 +8,14 @@ committed under `seed/`; vhs replays them through the TUI and captures the image
 We commit the **tape, scripts, and seed fixtures only**. Generated media
 (`out/`, `*.png`, `*.webm`) is gitignored and rebuilt on demand.
 
-Every tape sets the terminal to agent6's own `agent6-dark` palette (the same
-colours `src/agent6/ui/tui/theme.py` defines, generated as a vhs theme object),
-so the terminal frame and the TUI inside it share one background instead of
-framing the product in an unrelated theme's.
-Run `uv run python docs/screenshots/sync_theme.py` after editing the palette to update every tape's `Set Theme` line.
+Every tape uses the `VHS_THEME_DARK` terminal palette in `src/agent6/ui/tui/theme.py`.
+The terminal frame shares the TUI's `agent6-dark` background.
+The TUI's ANSI text colours use separate palettes.
+Run `uv run python docs/screenshots/sync_theme.py` after editing the terminal palette to update every tape's `Set Theme` line.
+
+The recording scripts convert WebM output to limited-range BT.709 and set its colour-space, primaries and transfer tags.
+Each WebM encode checks `color_space=bt709` with `ffprobe` and fails if it is missing.
+GIF encoding uses its own palette filter.
 
 ## Files
 
@@ -23,6 +26,8 @@ Run `uv run python docs/screenshots/sync_theme.py` after editing the palette to 
   with no `Screenshot` commands (they stall the video clock). Holds are paced by
   how dense each screen is. The bare recording is kept as `hero-tui.webm` (the
   hero's TUI segment); `tour.webm` is that recording plus keystroke toasts.
+- `webm.py`: converts VHS output in place and checks WebM colour-space tags.
+  The browser and keystroke overlay encoders share its conversion and check.
 - `keystroke_overlay.py`: overlays animated keystroke toasts on the recording,
   parsing the tape and scaling the keypress timeline to the actual duration.
 - `seed/`: committed, sanitized run fixtures (trimmed `logs.jsonl` + a few
@@ -97,7 +102,7 @@ screen. The PNGs are captured separately at 1920x1080.
 ## Run locally
 
 ```sh
-# needs vhs + ttyd + ffmpeg + agent6 on PATH
+# needs vhs + ttyd + ffmpeg + ffprobe + agent6 on PATH
 bash docs/screenshots/generate.sh        # -> 01-hub.png … tour.webm
 bash docs/screenshots/cli_demo.sh        # -> cli-demo.webm (replay, no key)
 bash docs/screenshots/machine_demo.sh    # -> machine-demo.webm (replay, no key)

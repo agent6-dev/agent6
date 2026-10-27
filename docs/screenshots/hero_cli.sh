@@ -26,7 +26,7 @@ export AGENT6_FORCE_STREAM=1
 # jail needs it too. The default Ubuntu 24.04 AppArmor policy blocks it.
 sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 >/dev/null 2>&1 || true
 
-for bin in vhs ttyd ffmpeg agent6 python3; do
+for bin in vhs ttyd ffmpeg ffprobe agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "hero_cli.sh: missing required tool: $bin" >&2; exit 1; }
 done
 [ -s "$CASSETTE" ] || { echo "hero_cli.sh: missing cassette $CASSETTE (run 'cli_demo.sh record' first)" >&2; exit 1; }
@@ -91,5 +91,6 @@ mkdir -p "$OUT"
 rm -f "$OUT/hero-src-cli.webm"
 echo "hero_cli: recording with vhs (hero_cli.tape)"
 vhs "$SS/hero_cli.tape"
+python3 "$SS/webm.py" "$OUT/hero-src-cli.webm"
 [ -s "$OUT/hero-src-cli.webm" ] || { echo "hero_cli.sh: failed to build hero-src-cli.webm" >&2; exit 1; }
 echo "hero_cli: done -> $OUT/hero-src-cli.webm"

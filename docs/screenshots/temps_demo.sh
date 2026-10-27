@@ -106,7 +106,7 @@ if [ "$MODE" = record ]; then
 fi
 
 # replay: no key needed; prove it by writing a dummy one.
-for bin in vhs ttyd ffmpeg agent6 python3; do
+for bin in vhs ttyd ffmpeg ffprobe agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "temps_demo.sh: missing required tool: $bin" >&2; exit 1; }
 done
 [ -s "$CASSETTE" ] || { echo "temps_demo.sh: missing cassette $CASSETTE (run 'temps_demo.sh record' first)" >&2; exit 1; }
@@ -124,5 +124,6 @@ rm -f "$OUT/temps-demo.webm"
 # keystroke-toast overlay pass (that is for the TUI tapes with M/r/q shortcuts).
 echo "temps demo: recording with vhs (temps_demo.tape)"
 vhs "$SS/temps_demo.tape"
+python3 "$SS/webm.py" "$OUT/temps-demo.webm"
 [ -s "$OUT/temps-demo.webm" ] || { echo "temps_demo.sh: failed to build temps-demo.webm" >&2; exit 1; }
 echo "temps demo: done -> $OUT/temps-demo.webm"

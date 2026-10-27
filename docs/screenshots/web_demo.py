@@ -22,16 +22,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
-import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-try:
-    from playwright.sync_api import Page, sync_playwright
-except ImportError:  # pragma: no cover - dev tool
-    sys.exit("web_demo.py needs playwright: pip install playwright && playwright install chromium")
+import webm
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 VIEWPORTS = {
     "desktop": {"width": 1280, "height": 800},
@@ -281,25 +280,20 @@ def drive_machine(page: Page, base: str, t0: float) -> float:
 
 
 def write_trimmed(raw: Path, out: Path, trim_s: float) -> None:
-    """Re-encode `raw` dropping the leading `trim_s` seconds so the first frame is
-    the loaded hub, not the SPA loading screen (the poster the browser shows
-    before play). Falls back to a plain move if the trim is negligible or ffmpeg
-    is unavailable (a standalone run without the pipeline's ffmpeg)."""
+    """Trim the loading screen and encode BT.709, including recordings with no trim."""
     out.parent.mkdir(parents=True, exist_ok=True)
-    if trim_s < 0.1 or shutil.which("ffmpeg") is None:
-        raw.replace(out)
-        return
-    # -ss after -i re-encodes from the seek point, so the first output frame is
-    # exactly at trim_s (frame-accurate); matches the overlay step's VP9 settings.
-    subprocess.run(
-        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(raw), "-ss", f"{trim_s:.3f}",
-         "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32", "-an", str(out)],
-        check=True,
-    )  # fmt: skip
+    webm.encode(raw, out, trim_s=trim_s)
     raw.unlink(missing_ok=True)
 
 
 def main() -> None:
+    try:
+        from playwright.sync_api import sync_playwright  # noqa: PLC0415 - only recording needs it
+    except ImportError:  # pragma: no cover - dev tool
+        sys.exit(
+            "web_demo.py needs playwright: pip install playwright && playwright install chromium"
+        )
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", required=True)
     ap.add_argument("--out", required=True, type=Path)

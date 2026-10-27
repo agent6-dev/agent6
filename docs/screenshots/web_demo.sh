@@ -23,7 +23,7 @@ PORT="${WEB_DEMO_PORT:-8987}"
 PW_PY="${WEB_DEMO_PY:-python3}"
 mkdir -p "$OUT"
 
-for bin in agent6 python3 ffmpeg; do
+for bin in agent6 python3 ffmpeg ffprobe; do
   command -v "$bin" >/dev/null 2>&1 || { echo "web_demo.sh: missing tool: $bin" >&2; exit 1; }
 done
 "$PW_PY" -c "from playwright.sync_api import sync_playwright" 2>/dev/null || {

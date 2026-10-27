@@ -96,7 +96,7 @@ if [ "$MODE" = record ]; then
 fi
 
 # replay: no key needed.
-for bin in vhs ttyd ffmpeg agent6 python3; do
+for bin in vhs ttyd ffmpeg ffprobe agent6 python3; do
   command -v "$bin" >/dev/null 2>&1 || { echo "machine_demo.sh: missing required tool: $bin" >&2; exit 1; }
 done
 [ -s "$CASSETTE" ] || { echo "machine_demo.sh: missing cassette $CASSETTE (run 'machine_demo.sh record' first)" >&2; exit 1; }
@@ -112,6 +112,7 @@ mkdir -p "$OUT"
 rm -f "$OUT/_machine-raw.webm" "$OUT/machine-demo.webm"
 echo "machine demo: recording with vhs (machine_demo.tape)"
 vhs "$SS/machine_demo.tape"
+python3 "$SS/webm.py" "$OUT/_machine-raw.webm"
 python3 "$SS/keystroke_overlay.py" "$SS/machine_demo.tape" "$OUT/_machine-raw.webm" "$OUT/machine-demo.webm"
 rm -f "$OUT/_machine-raw.webm"
 [ -s "$OUT/machine-demo.webm" ] || { echo "machine_demo.sh: failed to build machine-demo.webm" >&2; exit 1; }

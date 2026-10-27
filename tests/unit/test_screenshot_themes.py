@@ -13,8 +13,8 @@ _TAPES = sorted(_SCREENSHOTS.rglob("*.tape"))
 
 
 @pytest.mark.parametrize("tape", _TAPES, ids=lambda tape: tape.name)
-def test_tape_theme_matches_the_tui_palette(tape: pathlib.Path) -> None:
-    """Every VHS theme comes from the TUI palette, including readable bright black."""
+def test_tape_theme_matches_the_terminal_palette(tape: pathlib.Path) -> None:
+    """Every VHS theme comes from the recording terminal palette."""
     rendered = json.loads(theme.render_vhs_theme())
     lines = [
         line
@@ -26,6 +26,36 @@ def test_tape_theme_matches_the_tui_palette(tape: pathlib.Path) -> None:
         assert json.loads(line.removeprefix("Set Theme ")) == rendered, (
             f"{tape.name} is stale; run uv run python docs/screenshots/sync_theme.py"
         )
+
+
+def test_vhs_theme_is_independent_of_ansi_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Changing the TUI's ANSI text colours leaves the recording terminal unchanged."""
+    expected = {
+        "name": "agent6-dark",
+        "background": "#0f1414",
+        "foreground": "#c0caf5",
+        "cursor": "#06F5F3",
+        "selection": "#1e2626",
+        "black": "#161c1c",
+        "red": "#f7768e",
+        "green": "#9ece6a",
+        "yellow": "#e0af68",
+        "blue": "#7aa2f7",
+        "magenta": "#bb9af7",
+        "cyan": "#06f5f3",
+        "white": "#c0caf5",
+        "brightBlack": "#6e6e78",
+        "brightRed": "#ff8fa3",
+        "brightGreen": "#b4e07f",
+        "brightYellow": "#ffa62b",
+        "brightBlue": "#9cbcff",
+        "brightMagenta": "#d3b4ff",
+        "brightCyan": "#66fffd",
+        "brightWhite": "#f2f4ff",
+    }
+    assert json.loads(theme.render_vhs_theme()) == expected
+    monkeypatch.setattr(theme, "ANSI_THEME_DARK", theme.ANSI_THEME_LIGHT)
+    assert json.loads(theme.render_vhs_theme()) == expected
 
 
 def test_sync_rewrites_only_theme_lines_in_every_tape(tmp_path: pathlib.Path) -> None:

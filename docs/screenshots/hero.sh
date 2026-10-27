@@ -45,7 +45,9 @@ ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 cd "$ROOT"
 OUT="$ROOT/docs/screenshots/out"
 
-command -v ffmpeg >/dev/null 2>&1 || { echo "hero.sh: missing required tool: ffmpeg" >&2; exit 1; }
+for bin in ffmpeg ffprobe python3; do
+  command -v "$bin" >/dev/null 2>&1 || { echo "hero.sh: missing required tool: $bin" >&2; exit 1; }
+done
 
 BG="0x0f1414"   # agent6-dark's background; see src/agent6/ui/tui/theme.py
 WIDTH=1440
@@ -102,12 +104,14 @@ build() {
   done
 
   ffmpeg -v error -y "${inputs[@]}" \
-    -filter_complex "${chain}${labels}concat=n=${i}:v=1:a=0[out]" \
-    -map "[out]" -an -c:v libvpx-vp9 -crf 32 -b:v 0 "$OUT/hero-$name.webm"
+    -filter_complex "${chain}${labels}concat=n=${i}:v=1:a=0,scale=out_color_matrix=bt709:out_range=tv,setparams=color_primaries=bt709:color_trc=bt709[out]" \
+    -map "[out]" -an -c:v libvpx-vp9 -crf 32 -b:v 0 -pix_fmt yuv420p \
+    -colorspace bt709 -color_primaries bt709 -color_trc bt709 "$OUT/hero-$name.webm" || return 1
+  python3 docs/screenshots/webm.py --check "$OUT/hero-$name.webm" || return 1
 
   ffmpeg -v error -y -i "$OUT/hero-$name.webm" \
     -vf "fps=${GIF_FPS},split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
-    "$OUT/hero-$name.gif"
+    "$OUT/hero-$name.gif" || return 1
 
   printf 'hero-%s: %s (%ss), gif %s\n' "$name" \
     "$(du -h "$OUT/hero-$name.webm" | cut -f1)" \
@@ -122,7 +126,7 @@ build cli "${CLI_SEGMENTS[@]}" || fail=1
 build web "${WEB_SEGMENTS[@]}" || fail=1
 if [ "$fail" != 0 ]; then
   cat >&2 <<'EOF'
-hero.sh: record the missing sources first:
+hero.sh: a build failed; see the error above. To record missing sources:
   bash docs/screenshots/hero_run.sh                       # -> hero-src-tui.webm
   bash docs/screenshots/hero_cli.sh                       # -> hero-src-cli.webm
   WEB_DEMO_PY=… bash docs/screenshots/web_demo.sh hero    # -> hero-src-web.webm

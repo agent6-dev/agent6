@@ -205,49 +205,63 @@ ANSI_THEME_LIGHT = TerminalTheme(
 
 # Dark ANSI black is a background; text colours clear 4.5:1 on the background and surface.
 ANSI_THEME_DARK = TerminalTheme(
-    (15, 20, 20),
-    (192, 202, 245),
+    (12, 12, 12),
+    (217, 217, 217),
     [
-        (22, 28, 28),  # black
-        (247, 118, 142),  # red
-        (158, 206, 106),  # green
-        (224, 175, 104),  # yellow
-        (122, 162, 247),  # blue
-        (187, 154, 247),  # magenta
-        (6, 245, 243),  # cyan
-        (192, 202, 245),  # white
+        (26, 26, 26),  # black
+        (255, 55, 133),  # red
+        (152, 224, 36),  # green
+        (253, 151, 31),  # yellow
+        (157, 101, 255),  # blue
+        (255, 55, 133),  # magenta
+        (88, 209, 235),  # cyan
+        (196, 197, 181),  # white
     ],
     [
-        (130, 130, 140),  # bright black
-        (255, 143, 163),  # bright red
-        (180, 224, 127),  # bright green
-        (255, 166, 43),  # bright yellow
-        (156, 188, 255),  # bright blue
-        (211, 180, 255),  # bright magenta
-        (102, 255, 253),  # bright cyan
-        (242, 244, 255),  # bright white
+        (135, 131, 113),  # bright black, minimum equal-channel lift for 4.5:1 on the surface
+        (255, 55, 133),  # bright red
+        (152, 224, 36),  # bright green
+        (224, 213, 97),  # bright yellow
+        (157, 101, 255),  # bright blue
+        (255, 55, 133),  # bright magenta
+        (88, 209, 235),  # bright cyan
+        (246, 246, 239),  # bright white
     ],
 )
 
+# The recording terminal's colours are independent of the TUI's ANSI text colours.
+VHS_THEME_DARK = {
+    "name": "agent6-dark",
+    "background": "#0f1414",
+    "foreground": "#c0caf5",
+    "cursor": "#06F5F3",
+    "selection": "#1e2626",
+    "black": "#161c1c",
+    "red": "#f7768e",
+    "green": "#9ece6a",
+    "yellow": "#e0af68",
+    "blue": "#7aa2f7",
+    "magenta": "#bb9af7",
+    "cyan": "#06f5f3",
+    "white": "#c0caf5",
+    "brightBlack": "#6e6e78",
+    "brightRed": "#ff8fa3",
+    "brightGreen": "#b4e07f",
+    "brightYellow": "#ffa62b",
+    "brightBlue": "#9cbcff",
+    "brightMagenta": "#d3b4ff",
+    "brightCyan": "#66fffd",
+    "brightWhite": "#f2f4ff",
+}
+
 
 def render_vhs_theme() -> str:
-    """Render the agent6-dark palette as a VHS Set Theme JSON object.
+    """Render the recording terminal palette as a VHS Set Theme JSON object.
 
     Returns:
         The theme JSON, without the Set Theme prefix.
     """
-    names = ("black", "red", "green", "yellow", "blue", "magenta", "cyan", "white")
-    names += tuple(f"bright{name.title()}" for name in names)
-    return json.dumps(
-        {
-            "name": AGENT6_DARK.name,
-            "background": ANSI_THEME_DARK.background_color.hex,
-            "foreground": ANSI_THEME_DARK.foreground_color.hex,
-            "cursor": AGENT6_DARK.accent,
-            "selection": AGENT6_DARK.panel,
-        }
-        | {name: ANSI_THEME_DARK.ansi_colors[n].hex for n, name in enumerate(names)}
-    )
+    return json.dumps(VHS_THEME_DARK)
 
 
 # The command palette restyled as a dialog; added to an App's CSS, since the palette is pushed

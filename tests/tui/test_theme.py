@@ -8,7 +8,6 @@ import asyncio
 import pathlib
 
 import pytest
-from rich.terminal_theme import TerminalTheme
 from textual import app as textual_app
 from textual import color as textual_color
 from textual import theme as textual_theme
@@ -137,28 +136,39 @@ def test_an_agent6_theme_paints_its_text_at_4_5_to_1(cfg: pathlib.Path, name: st
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize(
-    ("ansi", "branded"),
-    [(theme.ANSI_THEME_DARK, theme.AGENT6_DARK), (theme.ANSI_THEME_LIGHT, theme.AGENT6_LIGHT)],
-    ids=["dark", "light"],
-)
-def test_ansi_colours_match_the_agent6_palette(
-    ansi: TerminalTheme, branded: textual_theme.Theme
-) -> None:
-    """Tool output uses the same background, foreground and status colours as the TUI."""
-    slots = [
-        (ansi.background_color, branded.background),
-        (ansi.foreground_color, branded.foreground),
-        (ansi.ansi_colors[1], branded.error),
-        (ansi.ansi_colors[2], branded.success),
-        (ansi.ansi_colors[3], branded.warning),
-        (ansi.ansi_colors[4], branded.primary),
-        (ansi.ansi_colors[6], branded.accent if branded.dark else branded.secondary),
-        (ansi.ansi_colors[7], branded.foreground),
-    ]
-    for rgb, value in slots:
-        assert value is not None
-        assert rgb == textual_color.Color.parse(value).rgb
+def test_dark_ansi_text_uses_its_own_palette(cfg: pathlib.Path) -> None:
+    """ANSI text keeps its colours independently of the terminal recording palette."""
+
+    async def scenario() -> None:
+        app = _Host()
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            ansi = app.ansi_theme
+            assert ansi.background_color == (12, 12, 12)
+            assert ansi.foreground_color == (217, 217, 217)
+            assert [ansi.ansi_colors[n] for n in range(16)] == [
+                (26, 26, 26),
+                (255, 55, 133),
+                (152, 224, 36),
+                (253, 151, 31),
+                (157, 101, 255),
+                (255, 55, 133),
+                (88, 209, 235),
+                (196, 197, 181),
+                (135, 131, 113),
+                (255, 55, 133),
+                (152, 224, 36),
+                (224, 213, 97),
+                (157, 101, 255),
+                (255, 55, 133),
+                (88, 209, 235),
+                (246, 246, 239),
+            ]
+            surface = textual_color.Color.parse(app.get_css_variables()["surface"]).rgb
+            assert _contrast((134, 130, 112), surface) < 4.5
+            assert _contrast(ansi.ansi_colors[8], surface) >= 4.5
+
+    asyncio.run(scenario())
 
 
 def test_setup_registers_applies_saved_and_persists(cfg: pathlib.Path) -> None:
