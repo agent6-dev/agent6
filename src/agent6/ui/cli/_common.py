@@ -5,15 +5,24 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import os
 import pathlib
 import shlex
 import sys
 
+try:
+    import termios
+    import tty
+except ImportError:
+    termios = None
+    tty = None
+
 from agent6 import paths
 from agent6.app import reporter
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
+from agent6.ui.cli import _terminal_guard
 from agent6.viewmodel import format
 
 
@@ -408,3 +417,55 @@ def home_contracted(path: str) -> str:
     """Return the path with `$HOME` shortened to `~`, only at a path boundary."""
     home = str(pathlib.Path.home())
     return "~" + path[len(home) :] if path == home or path.startswith(home + "/") else path
+
+
+def read_secret(prompt: str) -> str:
+    """Read one secret line: stars on a terminal, a plain line off one.
+
+    Args:
+        prompt: The text before the hidden input.
+
+    Returns:
+        The line as entered, without its newline.
+
+    Raises:
+        EOFError: The stream ended or Ctrl-D cancelled input.
+        KeyboardInterrupt: Ctrl-C cancelled input.
+    """
+    if not sys.stdin.isatty():
+        print(prompt, end="", file=sys.stderr, flush=True)
+        line = sys.stdin.readline()
+        if not line:
+            raise EOFError
+        return line.rstrip("\r\n")
+    if termios is None or tty is None:
+        return getpass.getpass(prompt)
+    try:
+        fd = sys.stdin.fileno()
+        saved = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+    except (OSError, ValueError, termios.error):
+        return getpass.getpass(prompt)
+    out = _terminal_guard.raw_stream(sys.stderr)
+    try:
+        print(prompt, end="", file=out, flush=True)
+        characters: list[str] = []
+        while True:
+            char = sys.stdin.read(1)
+            if char in ("", "\x04"):
+                raise EOFError
+            if char == "\x03":
+                raise KeyboardInterrupt
+            if char in ("\r", "\n"):
+                return "".join(characters)
+            if char in ("\b", "\x7f"):
+                if characters:
+                    characters.pop()
+                    out.write("\b \b")
+            else:
+                characters.append(char)
+                out.write("*")
+            out.flush()
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+        print(file=out, flush=True)

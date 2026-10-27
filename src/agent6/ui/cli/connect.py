@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import dataclasses
-import getpass
 import pathlib
 import sys
 import time
@@ -44,22 +43,11 @@ def _prompt_api_key(name: str) -> str:
         The key as entered.
     """
     prompt = f"API key for {name} (input hidden, blank for none): "
-    if not sys.stdin.isatty():
-        # Without a terminal getpass warns and falls back to an unmasked read; echo is moot anyway.
-        try:
-            return input(prompt).strip()
-        except EOFError:
-            return ""
-    masked = False
     try:
-        api_key = getpass.getpass(prompt, echo_char="*").strip()  # type: ignore[call-arg]
-        masked = True
-    except TypeError:
-        # Python < 3.14: no echo_char parameter.
-        api_key = getpass.getpass(prompt).strip()
+        api_key = _common.read_secret(prompt).strip()
     except EOFError:
         return ""
-    if api_key and not masked:
+    if api_key and not sys.stdin.isatty():
         print(f"Captured key: {len(api_key)} chars.")
     return api_key
 
@@ -665,7 +653,7 @@ def _cmd_connect(
         return _cmd_logout(
             name, _current_entry(name), current.effective.api_format or preset_format
         )
-    print("agent6 connect: set up a model provider.\n")
+    print("agent6 connect: set up a model provider.")
     api_format = _prompt_api_format(name, preset_format, current.effective.api_format)
     if api_format is None:
         return 2
@@ -676,7 +664,7 @@ def _cmd_connect(
         rc = _credential_step(name, api_format, flow or "auto", verify is not False)
     if rc == 0:
         print(
-            "\nNext: `agent6 model worker "
+            "Next: `agent6 model worker "
             f"{name} <model>` to route a role here, then `agent6 config show`."
         )
     return rc

@@ -143,8 +143,4 @@ def show(provider: str, config_paths: tuple[pathlib.Path, ...]) -> int:
                 f"{name:<{widths[0]}}  {api_format:<{widths[1]}}  {source:<{widths[2]}}"
                 f"  {state:<{widths[3]}}  {live}"
             )
-    print(
-        "live check: one free request per provider (a model listing or key probe);"
-        " nothing refreshed or spent"
-    )
     return 0

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import dataclasses
+import io
 import pathlib
 import stat
 import subprocess
@@ -44,7 +45,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
 def test_connect_stores_key_and_provider_and_never_execs(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-FAKE\n"))
     # Security: connect must NEVER run a subprocess (no remote-supplied command).
     calls: list[object] = []
 
@@ -81,7 +82,7 @@ def test_connect_preserves_hand_edited_provider_keys(
         'extra_body = { provider = { sort = "throughput" } }\n',
         encoding="utf-8",
     )
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-or-FAKE")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-or-FAKE\n"))
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept the preset base_url
     rc = main(["connect", "openrouter"])
     assert rc == 0
@@ -153,7 +154,7 @@ def test_enter_at_the_base_url_prompt_keeps_the_url_it_shows(
         gc.parent.mkdir(parents=True)
         gc.write_text(block, encoding="utf-8")
     prompts = _scripted_input(monkeypatch, "openai", "")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
     probed: list[str] = []
 
     def probe(entry: OpenAIProviderEntry, api_key: str) -> cache.KeyProbeResult:
@@ -182,7 +183,7 @@ def test_enter_at_the_api_format_prompt_keeps_an_existing_blocks_format(
     gc.parent.mkdir(parents=True)
     gc.write_text(_AZURE_BLOCK + ("[budget]\nbogus_key = 1\n" if broken else ""), encoding="utf-8")
     prompts = _scripted_input(monkeypatch, "", "")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
     rc = main(["connect", "az"])
     api_format = tomllib.loads(gc.read_text())["providers"]["az"]["api_format"]
     assert (rc, api_format, prompts[0]) == (
@@ -215,7 +216,7 @@ def test_connect_checks_effective_host_after_target_layer_edit(
             f'[providers.custom]\napi_format = "openai"\nbase_url = "https://{host}.example/v1"\n'
         )
     prompts = _scripted_input(monkeypatch, "", replacement)
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
     monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
     requested: list[str] = []
 
@@ -256,7 +257,7 @@ def test_connect_says_when_a_typed_url_is_kept_out_by_the_repo_layer(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(same)
     _scripted_input(monkeypatch, "", "https://typed.example/v1")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
     assert main(["connect", "custom"]) == 0
     out = capsys.readouterr().out
     assert (
@@ -275,7 +276,7 @@ def test_a_broken_config_still_offers_the_default_url_for_a_bare_openai_block(
     gc.parent.mkdir(parents=True)
     gc.write_text('[providers.az]\napi_format = "openai"\n[budget]\nbogus_key = 1\n')
     prompts = _scripted_input(monkeypatch, "", "")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
     assert main(["connect", "az"]) == 0
     assert prompts[-1] == "Base URL [https://api.openai.com/v1]: "
     saved = tomllib.loads(gc.read_text())["providers"]["az"]
@@ -292,7 +293,7 @@ def test_connect_writes_a_repo_only_providers_url_to_the_global_file(
         '[providers.custom]\napi_format = "openai"\nbase_url = "https://repo.example/v1"\n'
     )
     _scripted_input(monkeypatch, "", "")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
     assert main(["connect", "custom"]) == 0
     saved = tomllib.loads(paths.global_config_path().read_text())["providers"]["custom"]
     assert saved == {"api_format": "openai", "base_url": "https://repo.example/v1"}
@@ -306,7 +307,7 @@ def test_a_preset_name_keeps_an_existing_blocks_other_format(
     gc.parent.mkdir(parents=True)
     gc.write_text('[providers.claude]\napi_format = "anthropic"\n')
     prompts = _scripted_input(monkeypatch, "")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant\n"))
     assert main(["connect", "claude"]) == 0
     assert prompts == [
         "API format for 'claude' (anthropic/openai/chatgpt/responses/claude_code) [anthropic]: "
@@ -334,7 +335,7 @@ def test_connect_over_a_non_table_provider_entry_does_not_crash(
     gc.parent.mkdir(parents=True)
     gc.write_text('[providers]\naz = "bad"\n')
     _scripted_input(monkeypatch, "openai", "")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-az")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
     rc = main(["connect", "az"])
     err = capsys.readouterr().err
     assert rc == 2
@@ -349,7 +350,7 @@ def test_connect_auth_none_skips_key_check(
     gc.parent.mkdir(parents=True)
     gc.write_text('[providers.local]\napi_format = "openai"\nauth_style = "none"\n')
     _scripted_input(monkeypatch, "", "")
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-test")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
     monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
     requested: list[str] = []
 
@@ -368,7 +369,7 @@ def test_connect_auth_none_skips_key_check(
 def test_connect_validates_key_and_reports_ok(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-REAL\n"))
     rc = main(["connect", "anthropic"])  # iso stubs the probe -> ok
     assert rc == 0
     out = capsys.readouterr().out
@@ -379,7 +380,7 @@ def test_connect_validates_key_and_reports_ok(
 def test_connect_warns_when_provider_rejects_key(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-BAD")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-BAD\n"))
     monkeypatch.setattr(
         "agent6.models.cache.probe_provider_key",
         lambda *a, **k: cache.KeyProbeResult(ok=False, status="auth_failed", detail="HTTP 401"),  # type: ignore[misc]
@@ -396,7 +397,7 @@ def test_connect_warns_when_provider_rejects_key(
 def test_connect_no_verify_skips_the_probe(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-REAL")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-REAL\n"))
 
     def _boom(*_a: object, **_k: object) -> cache.KeyProbeResult:
         raise AssertionError("--no-verify must not probe the provider")
@@ -410,14 +411,12 @@ def test_connect_no_verify_skips_the_probe(
 def test_connect_non_tty_reads_plain_input_without_getpass(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    # With no controlling terminal the key is read with input(), never getpass.
-    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-
+    # With no controlling terminal the key is one line of stdin, never getpass.
     def _boom(*_a: object, **_k: object) -> str:
         raise AssertionError("getpass must not be called on the non-TTY path")
 
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _boom)
-    monkeypatch.setattr("builtins.input", lambda prompt="": "sk-ant-PIPED")
+    monkeypatch.setattr("getpass.getpass", _boom)
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-PIPED\n"))
 
     rc = main(["connect", "anthropic"])
     assert rc == 0
@@ -440,13 +439,8 @@ def test_connect_rejects_non_bare_key_provider_name(
 def test_connect_prints_post_entry_key_summary(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Python < 3.14 getpass has no echo_char: the helper prints a length and last-four summary.
-    def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
-        if "echo_char" in kwargs:
-            raise TypeError("echo_char unsupported")
-        return "sk-ant-0123456789wxyz"
-
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
+    # Off a terminal nothing shows while typing, so the helper prints the length captured.
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-0123456789wxyz\n"))
     rc = main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -459,12 +453,7 @@ def test_connect_prints_post_entry_key_summary(
 def test_connect_short_key_summary_omits_tail(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
-        if "echo_char" in kwargs:
-            raise TypeError("echo_char unsupported")
-        return "short"
-
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
+    monkeypatch.setattr("sys.stdin", io.StringIO("short\n"))
     rc = main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -475,11 +464,11 @@ def test_connect_short_key_summary_omits_tail(
 def test_connect_masked_echo_skips_summary(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Python 3.14+ getpass masks live, so no post-entry summary.
-    def _fake_getpass(prompt: str = "", **kwargs: object) -> str:
-        return "sk-ant-0123456789wxyz"
-
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", _fake_getpass)
+    # On a terminal the key shows as stars while typing, so no summary follows.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(
+        "agent6.ui.cli.connect._common.read_secret", lambda prompt="": "sk-ant-0123456789wxyz"
+    )
     rc = main(["connect", "anthropic"])
     assert rc == 0
     out = capsys.readouterr().out
@@ -489,7 +478,7 @@ def test_connect_masked_echo_skips_summary(
 def test_connect_local_endpoint_no_key(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "")
+    monkeypatch.setattr("sys.stdin", io.StringIO("\n"))
     monkeypatch.setattr("builtins.input", lambda prompt="": "")  # accept default base_url
     rc = main(["connect", "ollama"])
     assert rc == 0
@@ -538,7 +527,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # A role on an unconfigured provider refuses at rc 2 and leaves config.toml byte for byte.
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-FAKE\n"))
     assert main(["connect", "anthropic"]) == 0
     assert main(["model", "worker", "anthropic/good-x"]) == 0
     capsys.readouterr()
@@ -560,7 +549,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
 def test_connect_config_rollback_uses_the_shared_refusal_without_saving_the_key(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr("agent6.ui.cli.connect.getpass.getpass", lambda prompt="": "sk-ant-FAKE")
+    monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-FAKE\n"))
 
     def bad_combination(*_args: object, **_kwargs: object) -> str:
         return "bad combination"
@@ -930,11 +919,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
     assert main(["connect", "--status", *(["chatgpt"] if filtered else [])]) == 0
     captured = capsys.readouterr()
     lines = captured.out.splitlines()
-    assert lines[-1] == (
-        "live check: one free request per provider (a model listing or key probe);"
-        " nothing refreshed or spent"
-    )
-    rows = [line.split() for line in lines[1:-1] if line.strip()]
+    rows = [line.split() for line in lines[1:] if line.strip()]
     expected = [
         ["keyed", "anthropic", "CST_API_KEY", "ok"],
         ["chatgpt", "chatgpt", "ChatGPT", "sign-in", "ok", "acct-7", "expires", "in", "42", "min"],
@@ -1204,8 +1189,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
-        "agent6.ui.cli._oauth.getpass.getpass",
-        lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=STATE1",
+        "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=STATE1\n")
     )
     opened: list[str] = []
     monkeypatch.setattr("webbrowser.open", opened.append)
@@ -1274,8 +1258,7 @@ def test_connect_chatgpt_state_mismatch_refuses(
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
-        "agent6.ui.cli._oauth.getpass.getpass",
-        lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=EVIL",
+        "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=EVIL\n")
     )
     rc = main(["connect", "chatgpt"])
     assert rc == 2
@@ -1461,8 +1444,7 @@ def test_connect_chatgpt_device_failure_falls_back_to_paste(
 
     monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
-        "agent6.ui.cli._oauth.getpass.getpass",
-        lambda prompt="": "http://localhost:1455/auth/callback?code=C1&state=STATE1",
+        "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=STATE1\n")
     )
     rc = main(["connect", "chatgpt"])
     assert rc == 0

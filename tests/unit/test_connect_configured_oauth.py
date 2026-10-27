@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import dataclasses
+import io
 import pathlib
 import threading
 import urllib.request
@@ -126,10 +127,7 @@ def test_the_paste_flow_sends_the_fixed_redirect_and_exchanges_the_code(
 ) -> None:
     _write_config(_CONFIG.replace("http://127.0.0.1:0/auth/callback", "http://127.0.0.1:8765/cb"))
     monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
-    monkeypatch.setattr(
-        "agent6.ui.cli._oauth.getpass.getpass",
-        lambda prompt="": "http://127.0.0.1:8765/cb?code=C1&state=STATE1",
-    )
+    monkeypatch.setattr("sys.stdin", io.StringIO("http://127.0.0.1:8765/cb?code=C1&state=STATE1\n"))
     exchanges: list[dict[str, str]] = []
 
     def fake_post(
@@ -159,10 +157,7 @@ def test_a_pasted_callback_with_another_state_stores_nothing(
 ) -> None:
     _write_config(_CONFIG.replace("http://127.0.0.1:0/auth/callback", "http://127.0.0.1:8765/cb"))
     monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
-    monkeypatch.setattr(
-        "agent6.ui.cli._oauth.getpass.getpass",
-        lambda prompt="": "http://127.0.0.1:8765/cb?code=C1&state=EVIL",
-    )
+    monkeypatch.setattr("sys.stdin", io.StringIO("http://127.0.0.1:8765/cb?code=C1&state=EVIL\n"))
 
     def never(*_a: object, **_k: object) -> None:
         raise AssertionError("no token request may leave")

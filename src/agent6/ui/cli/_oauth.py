@@ -9,7 +9,6 @@ logs nothing and keeps the code in memory; nothing a remote returns is executed.
 
 from __future__ import annotations
 
-import getpass
 import html
 import http.server
 import os
@@ -24,14 +23,7 @@ from urllib import parse
 
 from agent6 import child_env
 from agent6.providers import _headers, _oauth_profile, _oauth_protocol, chatgpt_oauth, types
-from agent6.ui.cli import _common, _terminal_guard
-
-try:
-    import termios
-    import tty
-except ImportError:
-    termios = None
-    tty = None
+from agent6.ui.cli import _common
 
 CALLBACK_WAIT_S = 300.0
 # A client that connects and sends nothing is dropped after this long; others are served meanwhile.
@@ -234,52 +226,6 @@ def wait_for_redirect(server: CallbackServer, url: str) -> str | None:
     return code
 
 
-def _read_masked_callback(prompt: str) -> str:
-    """Read a callback with stars on a terminal, or with getpass elsewhere.
-
-    Args:
-        prompt: The text before the hidden input.
-
-    Returns:
-        The line as entered, without its newline.
-
-    Raises:
-        EOFError: The stream ended or Ctrl-D cancelled input.
-        KeyboardInterrupt: Ctrl-C cancelled input.
-    """
-    if not sys.stdin.isatty() or termios is None or tty is None:
-        return getpass.getpass(prompt)
-    try:
-        fd = sys.stdin.fileno()
-        saved = termios.tcgetattr(fd)
-        tty.setcbreak(fd)
-    except (OSError, ValueError, termios.error):
-        return getpass.getpass(prompt)
-    out = _terminal_guard.raw_stream(sys.stderr)
-    try:
-        print(prompt, end="", file=out, flush=True)
-        characters: list[str] = []
-        while True:
-            char = sys.stdin.read(1)
-            if char in ("", "\x04"):
-                raise EOFError
-            if char == "\x03":
-                raise KeyboardInterrupt
-            if char in ("\r", "\n"):
-                return "".join(characters)
-            if char in ("\b", "\x7f"):
-                if characters:
-                    characters.pop()
-                    out.write("\b \b")
-            else:
-                characters.append(char)
-                out.write("*")
-            out.flush()
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, saved)
-        print(file=out, flush=True)
-
-
 def paste_callback(state: str, *, redirect_uri: str = "") -> str | None:
     """Ask for the callback URL the browser landed on and read its code.
 
@@ -293,7 +239,7 @@ def paste_callback(state: str, *, redirect_uri: str = "") -> str | None:
         The code; None after printing why none was taken (no input, or a refused URL).
     """
     try:
-        pasted = _read_masked_callback(
+        pasted = _common.read_secret(
             "Paste the callback URL the browser landed on (hidden): "
         ).strip()
     except KeyboardInterrupt:

@@ -117,9 +117,7 @@ def test_the_pasted_callback_is_read_hidden(monkeypatch: pytest.MonkeyPatch) -> 
         raise AssertionError("input() would echo the callback")
 
     monkeypatch.setattr("builtins.input", no_echo)
-    monkeypatch.setattr(
-        "agent6.ui.cli._oauth.getpass.getpass", lambda prompt="": f"{REDIRECT}?code=C9&state=S"
-    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(f"{REDIRECT}?code=C9&state=S\n"))
     assert _oauth.paste_callback("S", redirect_uri=REDIRECT) == "C9"
 
 
@@ -197,7 +195,7 @@ def test_callback_paste_masks_edits_and_restores_the_terminal(finish: bytes) -> 
 def test_callback_paste_non_tty_reads_one_line_and_confirms_without_the_code(
     pasted: str, host: str
 ) -> None:
-    """The headless getpass fallback consumes one line and prints only its host and length."""
+    """Off a terminal the paste is one line of stdin, and the confirmation names no code."""
     script = (
         "import sys\n"
         "from agent6.ui.cli import _oauth\n"
@@ -219,14 +217,17 @@ def test_callback_paste_non_tty_reads_one_line_and_confirms_without_the_code(
     assert "private-code" not in output and "?code=" not in output
 
 
-def test_callback_paste_cancels_getpass_interrupt(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ctrl-C during the non-tty fallback cancels the sign-in instead of escaping the prompt."""
+def test_callback_paste_cancels_on_interrupt_off_a_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ctrl-C while reading the pasted line cancels the sign-in instead of escaping the prompt."""
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
 
-    def interrupt(prompt: str) -> str:
-        raise KeyboardInterrupt
+    class _Interrupting(io.StringIO):
+        def readline(self, size: int = -1) -> str:
+            raise KeyboardInterrupt
 
-    monkeypatch.setattr("getpass.getpass", interrupt)
+    monkeypatch.setattr("sys.stdin", _Interrupting())
     try:
         assert _oauth.paste_callback("S") is None
     except KeyboardInterrupt:
