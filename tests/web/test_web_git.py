@@ -22,7 +22,7 @@ import pytest
 
 from agent6.ui.web import git_model, page
 from agent6.ui.web import server as web_server
-from agent6.vcs import git_files, git_read
+from agent6.vcs import git_diff, git_files, git_read
 from tests.unit.test_git_history import (
     PNG_BLUE_2X2,
     PNG_RED_1X1,
@@ -328,47 +328,66 @@ def test_diff_digests_identify_each_side_including_absent_sides(
     assert deleted["head_digest"] is None
 
 
-def test_worktree_diff_uses_one_read_for_the_patch_and_digest(
+def test_a_worktree_diff_and_its_digest_describe_the_same_bytes(
     repo: tuple[pathlib.Path, dict[str, str]],
     port: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A write after the checked read cannot change the patch without changing its digest."""
+    """A file written between the first read and the diff is read again until the pair agrees."""
     path, _ = repo
-    before = b"one\ntwo\nthree\nfour\n"
-    (path / "b.txt").write_bytes(before)
+    (path / "b.txt").write_bytes(b"one\ntwo\nthree\nfour\n")
     read = git_files.worktree_blob
     calls: list[str] = []
 
     def changing_read(root: pathlib.Path, name: str, *, max_bytes: int) -> git_files.Blob | None:
         blob = read(root, name, max_bytes=max_bytes)
         calls.append(name)
-        (root / name).write_text("different bytes\n")
+        if len(calls) == 1:
+            (root / name).write_text("different bytes\n")
         return blob
 
     monkeypatch.setattr(git_files, "worktree_blob", changing_read)
     body = _ok(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b.txt&full_context=1")
-    assert calls == ["b.txt"]
-    assert "+four\n" in body["patch"] and "different bytes" not in body["patch"]
-    assert body["head_digest"] == hashlib.sha256(before).hexdigest()
+    assert calls == ["b.txt"] * 4
+    assert "+different bytes" in body["patch"] and "four" not in body["patch"]
+    assert body["head_digest"] == hashlib.sha256(b"different bytes\n").hexdigest()
     blame = _ok(port, "/api/git/blame?rev=WORKTREE&path=b.txt&whole=1")
-    assert blame["digest"] != body["head_digest"]
+    assert blame["digest"] == body["head_digest"]
 
 
-def test_worktree_snapshot_paths_do_not_rewrite_each_other(
+def test_a_worktree_file_that_keeps_changing_is_refused(
     repo: tuple[pathlib.Path, dict[str, str]],
     port: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A path containing the private copy's name stays literal in patch headers."""
+    """A file that differs at every read gets a refusal, never a patch with a digest it lacks."""
+    read = git_files.worktree_blob
+    calls: list[str] = []
+
+    def changing_read(root: pathlib.Path, name: str, *, max_bytes: int) -> git_files.Blob | None:
+        blob = read(root, name, max_bytes=max_bytes)
+        calls.append(name)
+        (root / name).write_text(f"write {len(calls)}\n")
+        return blob
+
+    monkeypatch.setattr(git_files, "worktree_blob", changing_read)
+    error = _refused(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b.txt")
+    assert "b.txt kept changing while its diff was read" in error
+    assert len(calls) == 2 * git_diff.WORKTREE_READS
+
+
+def test_a_worktree_diff_applies_the_repositorys_attributes(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A CRLF checkout under `eol=crlf` diffs by content, as git does, not line by line."""
     path, _ = repo
-    (path / "b").mkdir()
-    (path / "b/file").write_text("before\n")
-    _git(path, "add", "b/file")
-    _git(path, "commit", "-m", "nested file")
-    (path / "b/file").write_text("after\n")
-    body = _ok(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b/file")
-    assert "--- a/b/file\n" in body["patch"]
-    assert "+++ b/b/file\n" in body["patch"]
+    (path / ".gitattributes").write_text("*.txt text eol=crlf\n")
+    _git(path, "add", ".gitattributes")
+    _git(path, "commit", "-m", "attributes")
+    (path / "b.txt").write_bytes(b"one\r\ntwo\r\nthree\r\nfour\r\n")
+    body = _ok(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b.txt")
+    assert "+four" in body["patch"] and "-one" not in body["patch"]
+    assert body["head_digest"] == hashlib.sha256(b"one\r\ntwo\r\nthree\r\nfour\r\n").hexdigest()
 
 
 def test_worktree_lists_the_uncommitted_files_against_head(
