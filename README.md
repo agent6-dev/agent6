@@ -101,33 +101,27 @@ The worker, planner, and reviewer can use different models and reasoning effort;
 
 ## [Security][security]
 
-The sandbox confines model commands; the agent6 process remains trusted, holds provider credentials, and connects to your configured providers.
+A container or a VM confines the whole agent.
+agent6 confines only the model's commands, in a jail on your host; the agent6 process stays trusted, holds your provider credentials, and connects to your configured providers.
+The repository stays at its real path, and the jail sees your system toolchains and `~/.local/bin` read-only.
+
+`sandbox.isolation = "auto"` picks the strongest level the host allows and warns when it falls back:
+
+- `full`: commands cannot read your provider keys or the secrets file, `.git` is read-only to them (`sandbox.protect_git = "auto"`), and they get a private network (`sandbox.network = "auto"`).
+- `partial`: commands cannot read your keys or the secrets file, but they share agent6's network and can write `.git`.
+- `none`: no confinement.
+
+Commands ask for approval by default (`sandbox.run_commands = "ask"`).
 agent6's own git never pushes, rewrites history or runs `reset --hard`, and no config key turns that on.
 MCP is off by default, and locally spawned servers use the command sandbox unless explicitly configured otherwise.
-
-`sandbox.isolation = "auto"` selects the strongest available level (`full`, `partial`, or `none`) and warns when it falls back, including to no confinement.
-Under `full`, the default `sandbox.network = "auto"` gives a run's commands a private network; `partial` and `none` `sandbox.isolation` use the host network.
-The defaults are `sandbox.run_commands = "ask"` and `sandbox.protect_git = "auto"`.
 `agent6 check sandbox` shows the effective file and command boundaries, network and approval settings, and live probe results.
 
-## How it compares
-
-A container or a VM confines the whole agent.
-agent6 confines the model's commands in a jail on your host.
-The repository stays at its real path.
-The jail sees your system toolchains and `~/.local/bin` read-only.
-
-Under `full` or `partial` `sandbox.isolation`, the commands cannot read your provider keys or the secrets file.
-Under `full`, the default `sandbox.protect_git = "auto"` keeps `.git` read-only to the commands.
-
-Inside a container, the `sandbox.isolation` level depends on the runtime and its flags:
+### In a container
 
 - Docker gives `partial` by default and allows `full` with both `--security-opt seccomp=unconfined` and `--security-opt apparmor=unconfined`.
-- Rootless Podman allows `full` with no flags.
-- Rootful Podman on an AppArmor host gives `partial` by default and allows `full` with `--security-opt apparmor=unconfined`.
+- Podman, rootless by default, allows `full` with no flags.
 
-On Ubuntu 24.04+, `full` under Docker or rootful Podman also needs the host to allow unprivileged user namespaces ([Installation][installation]).
-Under `partial`, the commands share the container's network and can write `.git`.
+On Ubuntu, `full` under Docker also needs the host to allow unprivileged user namespaces ([Installation][installation]).
 
 [acp]: https://agent6.dev/acp/
 [budgets]: https://agent6.dev/config/#budget
