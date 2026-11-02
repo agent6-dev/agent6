@@ -729,7 +729,7 @@ def test_stagnation_ignores_the_finish_gates_time(
     gates: list[int] = []
 
     def run_verify(**_kw: object) -> results.ExecResult:
-        clock[0] += 1.0  # the gate alone outlasts the knob
+        clock[0] += 12.3  # the gate alone outlasts the knob
         gates.append(1)
         return results.ExecResult(
             returncode=1,

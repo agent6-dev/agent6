@@ -49,6 +49,7 @@ def test_agent6_style_is_the_default_and_unchanged(tmp_path: pathlib.Path) -> No
 
 
 def test_conventional_style_derives_from_the_chain(tmp_path: pathlib.Path) -> None:
+    """The conventional subject's type and scope come from the chain's own delta."""
     wf = _wf(tmp_path, "conventional")
     target = tmp_path / "src/agent6/config/write.py"
     target.parent.mkdir(parents=True)
