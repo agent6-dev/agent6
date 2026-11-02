@@ -93,7 +93,8 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         require_browser()
     if marker := item.get_closest_marker("collector"):
         require_collector(marker.kwargs.get("binary", "otelcol-contrib"))
-    if item.get_closest_marker("needs_pty") is not None:
+    needs_dev_tty = item.get_closest_marker("needs_dev_tty") is not None
+    if needs_dev_tty or item.get_closest_marker("needs_pty") is not None:
         try:
             master, slave = os.openpty()
         except OSError as exc:
@@ -101,6 +102,8 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         else:
             os.close(master)
             os.close(slave)
+    if needs_dev_tty and not pathlib.Path("/dev/tty").exists():
+        pytest.skip("no /dev/tty node here: a prompt on the controlling terminal cannot run")
     if marker := item.get_closest_marker("needs_grammar"):
         language = marker.kwargs["language"]
         cache = item.config.stash[_SESSION_GRAMMAR_CACHE]

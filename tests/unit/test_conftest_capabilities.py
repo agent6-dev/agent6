@@ -106,3 +106,21 @@ def test_the_grammar_marker_checks_the_requested_language_without_downloading(
             pytest.skip.Exception, match="tree-sitter grammar 'python' is not cached"
         ):
             conftest.pytest_runtest_setup(request.node)
+
+
+def test_the_dev_tty_marker_skips_without_the_node(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A test needing /dev/tty skips by name where the node is absent, as inside the jail."""
+    import pathlib
+
+    real_exists = pathlib.Path.exists
+
+    def exists(self: pathlib.Path) -> bool:
+        return False if str(self) == "/dev/tty" else real_exists(self)
+
+    monkeypatch.setattr(pathlib.Path, "exists", exists)
+    request.node.add_marker(pytest.mark.needs_dev_tty)
+    assert isinstance(request.node, pytest.Item)
+    with pytest.raises(pytest.skip.Exception, match=r"no /dev/tty node here"):
+        conftest.pytest_runtest_setup(request.node)

@@ -120,7 +120,7 @@ def reap(pid: int) -> int:
 
 
 @pytest.mark.parametrize(("typed", "deleted"), [(b"n\n", False), (b"\n", False), (b"y\n", True)])
-@pytest.mark.needs_pty
+@pytest.mark.needs_dev_tty
 def test_a_bare_remove_on_a_terminal_names_the_session_and_asks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, typed: bytes, deleted: bool
 ) -> None:
@@ -149,7 +149,7 @@ def test_a_bare_remove_on_a_terminal_names_the_session_and_asks(
 
 
 @pytest.mark.parametrize("flag", ["--yes", "-y"])
-@pytest.mark.needs_pty
+@pytest.mark.needs_dev_tty
 def test_remove_yes_deletes_on_a_terminal_without_asking(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, flag: str
 ) -> None:
@@ -167,7 +167,7 @@ def test_remove_yes_deletes_on_a_terminal_without_asking(
     assert not layout.session_dir.exists()
 
 
-@pytest.mark.needs_pty
+@pytest.mark.needs_dev_tty
 def test_remove_asks_on_a_terminal_before_clearing_the_asks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -188,7 +188,7 @@ def test_remove_asks_on_a_terminal_before_clearing_the_asks(
     assert asks.is_dir()
 
 
-@pytest.mark.needs_pty
+@pytest.mark.needs_dev_tty
 def test_a_redirected_stdout_does_not_skip_the_question(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
