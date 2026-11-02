@@ -6,9 +6,30 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from agent6.config import Config
 from agent6.harness import run_chain
 from agent6.vcs import commit_message
+
+
+@pytest.mark.parametrize(
+    ("changes", "prefix"),
+    [
+        ([("R100", "new.py")], "refactor:"),
+        ([("R090", "new.py")], "fix:"),
+        ([("R", "new.py")], "fix:"),
+        ([("D", "old.py"), ("A", "new.py")], "feat:"),
+        ([("R100", "new.py"), ("M", "other.py")], "fix:"),
+    ],
+)
+def test_only_proven_pure_renames_are_refactors(
+    changes: list[tuple[str, str]], prefix: str
+) -> None:
+    """A delete and add, unknown similarity or changed content never proves a pure rename."""
+    assert commit_message.conventional_commit_subject(changes, summary="Move code").startswith(
+        prefix
+    )
 
 
 def test_empty_text_falls_back() -> None:

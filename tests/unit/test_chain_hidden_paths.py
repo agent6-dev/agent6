@@ -38,6 +38,7 @@ def test_the_chain_keeps_hidden_paths_out_of_its_commits_diffs_and_dirty_checks(
     (repo / "secrets" / "deep" / "key.txt").write_text("hunter2\n", encoding="utf-8")
     (repo / ".env").write_text("TOKEN=abc\n", encoding="utf-8")
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
+    assert chain.name_status() == (("M", "a.py"),)
     sha = chain.commit("turn 1")
     assert sha
     assert _git(repo, "ls-tree", "-r", "--name-only", sha).splitlines() == ["a.py"]
@@ -47,7 +48,7 @@ def test_the_chain_keeps_hidden_paths_out_of_its_commits_diffs_and_dirty_checks(
         assert missing.returncode != 0, f"{rel} reached the object store"
     assert chain.is_dirty() is False
     assert chain.dirty_note() == ""
-    assert chain.name_status() == (("M", "a.py"),)
+    assert chain.name_status() == ()
     diff = chain.diff_since_base()
     assert "x = 2" in diff
     assert "hunter2" not in diff and "TOKEN" not in diff

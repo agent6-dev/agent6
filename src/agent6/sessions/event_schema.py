@@ -1342,6 +1342,8 @@ EVENTS: tuple[EventSpec, ...] = (
         "verify.start",
         "A verification attempt started.",
         (
+            FieldSpec("approval_required", "bool", False, "Whether the attempt needs approval."),
+            FieldSpec("call_id", "int", False, "The model tool call, absent for a harness gate."),
             FieldSpec("verify_id", "str", False, "Verification attempt identifier."),
             FieldSpec("execution_id", "str", False, "Execution identifier."),
             FieldSpec(

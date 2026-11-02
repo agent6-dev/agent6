@@ -231,12 +231,17 @@ class RunChain:
             return ""
 
     def name_status(self) -> tuple[tuple[str, str], ...]:
-        """Return (status, path) for every pending change, the operator's untracked files excluded.
+        """Return the changes the next checkpoint records against the chain tip.
 
         Returns:
-            The pairs in `git status` order.
+            Status and destination path pairs, with rename scores; empty without a chain.
         """
-        return git_read.worktree_name_status(self.root, exclude=self.excluded)
+        if self.ref is None:
+            return ()
+        parent = git_read.chain_tip(self.root, self.ref) or self.fallback_parent
+        old_tree = git_read.tree_sha(self.root, parent) if parent else git_read.EMPTY_TREE
+        new_tree = git_read.worktree_tree(self.root, parent, self.excluded)
+        return git_read.tree_name_status(self.root, old_tree, new_tree)
 
     def diff_since_base(self) -> str:
         """Return the run's cumulative change: the base commit against the working tree.

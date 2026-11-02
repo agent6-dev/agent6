@@ -87,12 +87,12 @@ from agent6.viewmodel.state_view import (  # noqa: ICN003  # re-export
 from agent6.viewmodel.tail import LogTail, tail_events  # noqa: ICN003  # re-export
 from agent6.viewmodel.transcript import (  # noqa: ICN003  # re-export
     TranscriptFold,
-    TranscriptItem,
     fold_transcript,
     operator_inputs,
     restate,
     worker_models,
 )
+from agent6.viewmodel.transcript_items import TranscriptItem  # noqa: ICN003  # re-export
 from agent6.viewmodel.wire import (  # noqa: ICN003  # re-export
     UnknownStepError,
     existing_run_branch,

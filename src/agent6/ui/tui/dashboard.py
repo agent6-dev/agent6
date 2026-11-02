@@ -273,7 +273,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         self._render_approval()
 
     def _render_approval(self) -> None:
-        """Dock the open approval's row, carrying the command since no transcript does."""
+        """Dock the open approval's command and answer controls."""
         tui = self._tui
         self.sync_approval(self.open_approval(tui.state) if tui.session_controllable() else None)
 
@@ -491,6 +491,12 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                 st.append(s.end_summary, style="dim")
             if plan := tui.plan_md():
                 st.append("\n\n" + plan)
+        elif (
+            tui.session_controllable()
+            and tui.verification_item is not None
+            and (not active or tui.verification_item.ok is None)
+        ):
+            st.append(tui.verification_item.body)
         elif streaming:
             assert role is not None
             if role.streamed_thinking:

@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import dataclasses
 
-from agent6.viewmodel import transcript, transcript_style
+from agent6.viewmodel import transcript_items, transcript_style
 
 
 def test_failed_tool_detail_is_a_neutral_span_not_the_fail_colour() -> None:
-    item = transcript.TranscriptItem(
+    item = transcript_items.TranscriptItem(
         "tool", name="apply_edit", arg="x.py", ok=False, detail="err " * 100
     )
     result = transcript_style.item_lines(item, detail="collapsed")[1]
@@ -23,7 +23,7 @@ def test_multiline_marker_renders_a_headline_plus_indented_detail() -> None:
     # A parallel dispatch/join marker carries detail lines under the divider
     # headline; the renderer keeps the first line as the ── … ── divider and
     # indents the rest (one place, so cli/tui/web all show it the same).
-    item = transcript.TranscriptItem(
+    item = transcript_items.TranscriptItem(
         "marker", body="joined group p1: 2 lane(s)\njoined  l1\nconflict  l2"
     )
     lines = transcript_style.item_lines(item, detail="collapsed")
@@ -34,7 +34,7 @@ def test_multiline_marker_renders_a_headline_plus_indented_detail() -> None:
 
 def test_long_multiline_detail_clips_to_reason_plus_more_note_when_collapsed() -> None:
     detail = "old_string not found\n" + "\n".join(f"line {i}" for i in range(50))
-    item = transcript.TranscriptItem("tool", name="apply_edit", ok=False, detail=detail)
+    item = transcript_items.TranscriptItem("tool", name="apply_edit", ok=False, detail=detail)
     result = transcript_style.item_lines(item, detail="collapsed")[1]
     assert result[1] == ("old_string not found", "detail")  # first line only, neutral
     assert result[2][1] == "more" and "50 more lines" in result[2][0]
@@ -42,7 +42,7 @@ def test_long_multiline_detail_clips_to_reason_plus_more_note_when_collapsed() -
 
 def test_expanded_shows_the_full_tool_detail() -> None:
     detail = "old_string not found\n" + "\n".join(f"line {i}" for i in range(50))
-    item = transcript.TranscriptItem("tool", name="apply_edit", ok=False, detail=detail)
+    item = transcript_items.TranscriptItem("tool", name="apply_edit", ok=False, detail=detail)
     lines = transcript_style.item_lines(item, detail="expanded")
     assert lines[1] == [("  arguments: (none)", "arg")]
     assert lines[2] == [("  └ ", "fail"), ("old_string not found", "detail")]
@@ -51,14 +51,14 @@ def test_expanded_shows_the_full_tool_detail() -> None:
 
 
 def test_short_single_line_detail_is_not_clipped_and_has_no_more_note() -> None:
-    item = transcript.TranscriptItem("tool", name="read_file", ok=True, detail="2440 bytes")
+    item = transcript_items.TranscriptItem("tool", name="read_file", ok=True, detail="2440 bytes")
     result = transcript_style.item_lines(item, detail="collapsed")[1]
     assert result[1] == ("2440 bytes", "detail")
     assert len(result) == 2  # no "more" span
 
 
 def test_tool_tail_clipped_to_one_length_and_neutral() -> None:
-    item = transcript.TranscriptItem(
+    item = transcript_items.TranscriptItem(
         "tool", name="run_command", ok=False, detail="d", tail="x" * 500
     )
     tail = transcript_style.item_lines(item, detail="collapsed")[-1]
@@ -72,7 +72,9 @@ def test_tool_tail_expands_to_full_lines() -> None:
     # Expanded shows the WHOLE captured output line-by-line; without this the
     # detail toggle was a no-op exactly where users want more (command output).
     out = "\n".join(f"line {i}" for i in range(6)) + "\n" + "y" * 300
-    item = transcript.TranscriptItem("tool", name="run_command", ok=True, detail="d", tail=out)
+    item = transcript_items.TranscriptItem(
+        "tool", name="run_command", ok=True, detail="d", tail=out
+    )
     collapsed = transcript_style.item_lines(item, detail="collapsed")
     expanded = transcript_style.item_lines(item, detail="expanded")
     assert expanded != collapsed
@@ -81,7 +83,7 @@ def test_tool_tail_expands_to_full_lines() -> None:
 
 
 def test_thinking_detail_levels() -> None:
-    item = transcript.TranscriptItem("thinking", body="plan the fix\nb\nc")
+    item = transcript_items.TranscriptItem("thinking", body="plan the fix\nb\nc")
     assert transcript_style.item_lines(item, detail="hidden") == []  # omitted entirely
     collapsed = transcript_style.item_lines(item, detail="collapsed")
     # Collapsed = the marker (its own accent span) + the FIRST LINE of the
@@ -93,11 +95,11 @@ def test_thinking_detail_levels() -> None:
     assert collapsed[0][2][1] == "more" and "+2 more lines" in collapsed[0][2][0]
     # A single-line thought has no more-count; a long first line is clipped.
     single = transcript_style.item_lines(
-        transcript.TranscriptItem("thinking", body="only line"), detail="collapsed"
+        transcript_items.TranscriptItem("thinking", body="only line"), detail="collapsed"
     )
     assert len(single[0]) == 2 and "only line" in single[0][1][0]
     long = transcript_style.item_lines(
-        transcript.TranscriptItem("thinking", body="x" * 400), detail="collapsed"
+        transcript_items.TranscriptItem("thinking", body="x" * 400), detail="collapsed"
     )
     assert long[0][1][0].endswith("…") and len(long[0][1][0]) < 200
     expanded = transcript_style.item_lines(item, detail="expanded")
@@ -107,7 +109,9 @@ def test_thinking_detail_levels() -> None:
 
 
 def test_tool_head_is_one_call_span_plus_arg() -> None:
-    item = transcript.TranscriptItem("tool", name="read_file", arg="a.py", ok=True, detail="ok")
+    item = transcript_items.TranscriptItem(
+        "tool", name="read_file", arg="a.py", ok=True, detail="ok"
+    )
     head = transcript_style.item_lines(item, detail="collapsed")[0]
     assert head[0][1] == "call" and "read_file" in head[0][0]
     assert head[1][1] == "arg" and "a.py" in head[1][0]
@@ -120,8 +124,8 @@ def test_every_line_is_a_single_line() -> None:
     """
     multi = "first thought\nsecond thought\nthird"
     for item in (
-        transcript.TranscriptItem("thinking", body=multi),
-        transcript.TranscriptItem(
+        transcript_items.TranscriptItem("thinking", body=multi),
+        transcript_items.TranscriptItem(
             "done", ok=True, body="all good\non two lines", detail="finish_session"
         ),
     ):
@@ -134,7 +138,7 @@ def test_every_line_is_a_single_line() -> None:
 def test_expanded_thinking_renders_every_body_line() -> None:
     body = "alpha\nbeta\ngamma"
     lines = transcript_style.item_lines(
-        transcript.TranscriptItem("thinking", body=body), detail="expanded"
+        transcript_items.TranscriptItem("thinking", body=body), detail="expanded"
     )
     text = ["".join(c for c, _s in line) for line in lines]
     assert any("alpha" in t for t in text)
@@ -149,7 +153,7 @@ def test_hidden_omits_tool_items_and_cycling_back_restores_them() -> None:
     The item itself survives (rendering is a pure function of the fold), so cycling back restores
     it; nothing is lost.
     """
-    tool = transcript.TranscriptItem(
+    tool = transcript_items.TranscriptItem(
         "tool", name="read_file", arg="a.py", ok=True, detail="12 bytes"
     )
     assert transcript_style.item_lines(tool, detail="hidden") == []
@@ -157,26 +161,28 @@ def test_hidden_omits_tool_items_and_cycling_back_restores_them() -> None:
     assert transcript_style.item_lines(tool, detail="expanded")
     # The dialogue kinds stay at every level.
     assert transcript_style.item_lines(
-        transcript.TranscriptItem("text", body="hello"), detail="hidden"
+        transcript_items.TranscriptItem("text", body="hello"), detail="hidden"
     )
     assert transcript_style.item_lines(
-        transcript.TranscriptItem("operator", body="go on"), detail="hidden"
+        transcript_items.TranscriptItem("operator", body="go on"), detail="hidden"
     )
 
 
 def test_verify_head_has_its_own_style() -> None:
     """run_verify_command's call head styles as "verify", everything else as "call"."""
-    verify = transcript.TranscriptItem(
+    verify = transcript_items.TranscriptItem(
         "tool", name="run_verify_command", ok=True, detail="✓ pass · 0.2s"
     )
     assert transcript_style.item_lines(verify, detail="collapsed")[0][0][1] == "verify"
-    other = transcript.TranscriptItem("tool", name="read_file", arg="a.py", ok=True, detail="ok")
+    other = transcript_items.TranscriptItem(
+        "tool", name="read_file", arg="a.py", ok=True, detail="ok"
+    )
     assert transcript_style.item_lines(other, detail="collapsed")[0][0][1] == "call"
 
 
 def test_an_in_flight_tool_is_one_running_line() -> None:
     """A call with no result yet renders as its head marked running, never the fail glyph."""
-    item = transcript.TranscriptItem(
+    item = transcript_items.TranscriptItem(
         "tool", name="run_command", arg="sleep 60", ok=None, call_id="7"
     )
     (line,) = transcript_style.item_lines(item, detail="collapsed")
@@ -201,7 +207,7 @@ def test_the_done_badge_keeps_the_gates_tri_state() -> None:
     """
 
     def badge(ok: bool | None, name: str) -> tuple[str, str]:
-        item = transcript.TranscriptItem("done", ok=ok, name=name, detail="1 tool")
+        item = transcript_items.TranscriptItem("done", ok=ok, name=name, detail="1 tool")
         return transcript_style.item_lines(item, detail="collapsed")[1][0]
 
     assert badge(True, "finished") == ("● finished", "done-ok")

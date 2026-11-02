@@ -118,7 +118,7 @@ def test_tool_only_turn_has_no_empty_text_item() -> None:
     assert (tool.name, tool.arg, tool.ok, tool.detail) == ("read_file", "a.py", True, "12 bytes")
 
 
-def test_verify_badge_folds_into_the_tool_item() -> None:
+def test_verify_badge_replaces_the_tool_item() -> None:
     events = [
         {"type": "tool.call", "name": "run_verify_command", "args": {}},
         {"type": "verify.start", "cmd": ["pytest"]},
@@ -126,8 +126,8 @@ def test_verify_badge_folds_into_the_tool_item() -> None:
         {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit=0"},
     ]
     (item,) = fold_transcript(events)
-    assert item.kind == "tool" and item.ok is True
-    assert item.detail == "✓ pass · 0.2s"  # the verify badge, not the raw summary
+    assert item.kind == "verify" and item.ok is True
+    assert item.body == "verify: ✓ pass · 0.2s"
 
 
 def test_finish_tool_becomes_the_verdict_not_a_step() -> None:

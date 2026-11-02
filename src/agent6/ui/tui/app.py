@@ -54,6 +54,8 @@ from agent6.viewmodel import (
     state,
     status_facts,
     tail,
+    transcript,
+    transcript_items,
 )
 
 # An answer submitted after the worker died: the next resume re-asks the prompt.
@@ -128,6 +130,8 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.from_hub = from_hub
         self.logs_path = session_dir / layout.LOGS_NAME
         self.state: SessionState = state.initial_state()
+        self._transcript = transcript.TranscriptFold()
+        self.verification_item: transcript_items.TranscriptItem | None = None
         self._prompts = prompts.PromptDispatcher(
             self, answerable=self.session_controllable, lost=_ANSWER_LOST
         )
@@ -262,12 +266,11 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             position = end
 
         with contextlib.suppress(OSError):
-            seeded = state.fold_session(
-                tail.tail_events(self.logs_path, follow=False, on_position=heard)
-            )
-            self.state = seeded
-            self._seen_steer = seeded.steer_requests
-            self._seed_log_count = seeded.log_count
+            for event in tail.tail_events(self.logs_path, follow=False, on_position=heard):
+                self.state = state.apply_event(self.state, event)
+                self._track_verification(event)
+            self._seen_steer = self.state.steer_requests
+            self._seed_log_count = self.state.log_count
             self._reader_start_at = position
             self._refresh_dir_status()
 
@@ -306,6 +309,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     def _handle_event(self, event: dict[str, object]) -> None:
         """Fold one event and mark what the next tick repaints."""
         self.state = state.apply_event(self.state, event)
+        self._track_verification(event)
         self.last_event_at = time.monotonic()
         if event.get("type") == "session.undone" and self.state.undone_to:
             # The fork is the continuation. The operator can resend the message taken back.
@@ -330,6 +334,14 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self._light_dirty = True
         else:
             self._dirty = True
+
+    def _track_verification(self, event: dict[str, object]) -> None:
+        """Keep the dashboard's latest verification item from the shared transcript fold."""
+        for item in self._transcript.feed(event):
+            if item.kind == "verify":
+                self.verification_item = item
+        if event.get("type") in events.SESSION_START_EVENTS:
+            self.verification_item = None
 
     @property
     def worker_lost(self) -> bool:

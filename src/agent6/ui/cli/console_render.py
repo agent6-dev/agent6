@@ -20,7 +20,7 @@ from typing import Any, TextIO
 
 from agent6 import terminal
 from agent6.ui.cli import task_tree, terminal_guard
-from agent6.viewmodel import events, format, transcript, transcript_style
+from agent6.viewmodel import events, format, transcript, transcript_items, transcript_style
 
 _ANSI = {
     "dim": "\033[2m",
@@ -212,7 +212,7 @@ class ConsoleView:
         qid = str(event.get("id", ""))
         run = self._session_id or "<run>"
         return (
-            self._c("dim", f"[agent6] {transcript.queued_question_line(event)}")
+            self._c("dim", f"[agent6] {transcript_items.queued_question_line(event)}")
             + "\n"
             + self._c(
                 "dim",
@@ -268,7 +268,7 @@ class ConsoleView:
         for line in lines:
             self._line(self._c("dim", "  " + line) + "\n")
 
-    def _render(self, item: transcript.TranscriptItem) -> None:
+    def _render(self, item: transcript_items.TranscriptItem) -> None:
         """Print a fold item's lines in ANSI behind a two-space gutter.
 
         An in-flight tool call prints nothing; the settled item prints the call whole.

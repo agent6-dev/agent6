@@ -1351,6 +1351,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `approval_required` | `bool, optional` | Whether the attempt needs approval. |
+| `call_id` | `int, optional` | The model tool call, absent for a harness gate. |
 | `verify_id` | `str, optional` | Verification attempt identifier. |
 | `execution_id` | `str, optional` | Execution identifier. |
 | `tree_before` | `str, optional` | Content identifier observed before verification. |
@@ -1432,7 +1434,7 @@ Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Print a one-shot liveness and progress summary for a run.
 
-Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/sessions_show.py#L294).
+Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/sessions_show.py#L295).
 
 | Field | Type | Meaning |
 | --- | --- | --- |

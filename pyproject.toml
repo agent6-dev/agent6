@@ -528,6 +528,7 @@ banned-from = [
     "agent6.viewmodel.telemetry_metrics",
     "agent6.viewmodel.telemetry_records",
     "agent6.viewmodel.transcript",
+    "agent6.viewmodel.transcript_items",
     "agent6.viewmodel.transcript_render",
     "agent6.viewmodel.transcript_style",
     "agent6.viewmodel.transcript_text",

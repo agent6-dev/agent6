@@ -24,7 +24,7 @@ import jsonschema
 import pytest
 
 from agent6.ui.acp import updates
-from agent6.viewmodel import transcript
+from agent6.viewmodel import transcript, transcript_items
 
 _SCHEMA = json.loads(
     (pathlib.Path(__file__).parent / "data" / "acp-schema.json").read_text(encoding="utf-8")
@@ -95,24 +95,24 @@ def test_the_recorded_run_produces_only_valid_session_updates() -> None:
 @pytest.mark.parametrize(
     "item",
     [
-        transcript.TranscriptItem(
+        transcript_items.TranscriptItem(
             kind="tool", name="run_verify", arg="", ok=False, detail="exit 1"
         ),
-        transcript.TranscriptItem(kind="tool", name="grep", arg="x", ok=None),
-        transcript.TranscriptItem(
+        transcript_items.TranscriptItem(kind="tool", name="grep", arg="x", ok=None),
+        transcript_items.TranscriptItem(
             kind="tool", name="read_file", arg="a.py", ok=True, tail="4 lines"
         ),
-        transcript.TranscriptItem(kind="tool", name="apply_edit", arg="a.py", ok=True),
-        transcript.TranscriptItem(kind="done", ok=False, name="budget", detail="stopped"),
-        transcript.TranscriptItem(kind="commit", arg="abc1234", detail="+3 -1"),
-        transcript.TranscriptItem(kind="thinking", body="hmm"),
-        transcript.TranscriptItem(kind="operator", body="do the other thing"),
-        transcript.TranscriptItem(kind="task", body="the opening prompt"),
-        transcript.TranscriptItem(kind="text", body="the reply"),
-        transcript.TranscriptItem(kind="marker", body="a finding"),
+        transcript_items.TranscriptItem(kind="tool", name="apply_edit", arg="a.py", ok=True),
+        transcript_items.TranscriptItem(kind="done", ok=False, name="budget", detail="stopped"),
+        transcript_items.TranscriptItem(kind="commit", arg="abc1234", detail="+3 -1"),
+        transcript_items.TranscriptItem(kind="thinking", body="hmm"),
+        transcript_items.TranscriptItem(kind="operator", body="do the other thing"),
+        transcript_items.TranscriptItem(kind="task", body="the opening prompt"),
+        transcript_items.TranscriptItem(kind="text", body="the reply"),
+        transcript_items.TranscriptItem(kind="marker", body="a finding"),
     ],
 )
-def test_each_fold_item_projects_to_a_valid_update(item: transcript.TranscriptItem) -> None:
+def test_each_fold_item_projects_to_a_valid_update(item: transcript_items.TranscriptItem) -> None:
     """Item kinds the recorded run does not happen to contain."""
     validator = _validator("SessionNotification")
     paths = ("a.py",) if item.name == "apply_edit" else ()

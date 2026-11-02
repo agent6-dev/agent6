@@ -49,17 +49,22 @@ class Checkpoints:
 
         Args:
             turn: The turn whose response text names the step.
-            fallback: The subject when the response holds no prose.
+            fallback: The subject when the response holds no prose and no paths changed.
 
         Returns:
             The subject line.
         """
         text = turn.resp.text or ""
+        changes = self.chain.name_status()
+        if len(changes) == 1:
+            path = changes[0][1]
+            fallback = f"update {path if path.isprintable() else repr(path)}"
+        elif changes:
+            fallback = f"update {len(changes)} files"
         default = commit_message.agent6_subject(text, turn.number, fallback=fallback)
         if self.style == "agent6":
             return default
         summary = commit_message.first_prose_line(text, fallback=fallback)
-        changes = self.chain.name_status()
         if self.style == "conventional":
             return commit_message.conventional_commit_subject(changes, summary=summary)
         try:

@@ -43,6 +43,25 @@ def _make_run(
     return d
 
 
+def test_sessions_show_uses_the_verification_marker(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Sessions show reads the same waiting, running and result lines as the transcript."""
+    from tests.unit import test_transcript_verify
+
+    rows = test_transcript_verify.attempt()
+    run = _make_run(tmp_path, monkeypatch, [])
+    process.write_worker_pid(run, os.getpid())
+    for length, text in [
+        (2, "verify: waiting for approval"),
+        (3, "verify: running `pytest -q`"),
+        (4, "verify: ✓ pass · 0.2s"),
+    ]:
+        (run / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows[:length]))
+        assert sessions_show._cmd_status(run.name) == 0
+        assert capsys.readouterr().out.count(text) == 1
+
+
 def test_status_running_with_live_pid(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

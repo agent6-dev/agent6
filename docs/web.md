@@ -66,6 +66,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
 - **Machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
     - each task and steer expands to its full recorded text; every tool item expands to all arguments without a length cap
+    - each verification attempt has one marker: `verify: waiting for approval`, then `verify: running <command>`, then its result
     - a resizable drawer holds the run's context: overview, plan.md, run review, findings, task graph, budget, tool calls, background shells, latest commit diff, event log
     - the Latest commit widget selects any per-step commit (cumulative toggle) and the budget and task graph follow it; a run under `git.control = "model"` has no chain and says so
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages

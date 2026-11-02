@@ -171,8 +171,8 @@ def _conventional_scope(paths: Sequence[str]) -> str:
 def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: str) -> str:
     """Derive a Conventional Commits subject from status and path pairs, with no model call.
 
-    All tests is `test`, all docs is `docs`, any added file is `feat`, else `fix`;
-    `chore` when nothing changed.
+    Pure renames are `refactor`, all tests is `test`, all docs is `docs`, any added
+    file is `feat`, else `fix`; `chore` when nothing changed.
 
     Args:
         changes: The (status, path) pairs.
@@ -184,6 +184,8 @@ def conventional_commit_subject(changes: Sequence[tuple[str, str]], *, summary: 
     paths = [p for _, p in changes]
     if not paths:
         ctype = "chore"
+    elif all(status == "R100" for status, _ in changes):
+        ctype = "refactor"
     elif all(_is_testish(p) for p in paths):
         ctype = "test"
     elif all(_is_docish(p) for p in paths):

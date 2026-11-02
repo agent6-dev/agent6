@@ -603,6 +603,42 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: pa
     asyncio.run(scenario())
 
 
+def test_verification_updates_one_item_in_both_tui_views(tmp_path: pathlib.Path) -> None:
+    """Baseline approval, execution and result share one visible marker in both TUI views."""
+    from tests.unit import test_transcript_verify
+
+    rows = test_transcript_verify.attempt()
+    run = tmp_path / "run"
+
+    async def scenario() -> None:
+        app = _hosted(run, [_EVENTS[0], *rows[:2]], live=True)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            conv = app._conv
+            live = conv.query_one("#conv-live", widgets.Static)
+            for row, expected in [
+                (None, "verify: waiting for approval"),
+                (rows[2], "verify: running `pytest -q`"),
+                (rows[3], "verify: ✓ pass · 0.2s"),
+            ]:
+                if row is not None:
+                    with (run / "logs.jsonl").open("a") as stream:
+                        stream.write(json.dumps(row) + "\n")
+                await waits.wait_for(
+                    pilot,
+                    lambda expected=expected: (
+                        expected in _body_text(app) + (str(live.render()) if live.display else "")
+                        and expected in app._dash._stream_story(app.state, active=False).plain
+                    ),
+                    expected,
+                )
+                shown = _body_text(app) + (str(live.render()) if live.display else "")
+                assert shown.count("verify:") == 1
+                assert expected in app._dash._stream_story(app.state, active=False).plain
+
+    asyncio.run(scenario())
+
+
 def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: pathlib.Path) -> None:
     """A call in flight while its approval prompt is open reads as waiting, never running.
 

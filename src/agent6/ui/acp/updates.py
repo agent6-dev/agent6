@@ -14,7 +14,14 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent6 import directive, evidence
-from agent6.viewmodel import events, receipt, session_status, state_view, transcript
+from agent6.viewmodel import (
+    events,
+    receipt,
+    session_status,
+    state_view,
+    transcript,
+    transcript_items,
+)
 
 # The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {
@@ -238,7 +245,7 @@ def replay(
     execution = 0
     announced: set[str] = set()
 
-    def send(item: transcript.TranscriptItem, paths: tuple[str, ...] = ()) -> None:
+    def send(item: transcript_items.TranscriptItem, paths: tuple[str, ...] = ()) -> None:
         wire_id = tool_call_id(item, acp_session_id, max(1, execution))
         for body in updates_for(
             item,
@@ -249,7 +256,7 @@ def replay(
             paths=paths,
         ):
             notify(body)
-        if item.kind == "tool":
+        if item.kind in ("tool", "verify"):
             announced.add(wire_id)
 
     for event in journal:
@@ -279,7 +286,7 @@ def result_paths(event: dict[str, Any]) -> tuple[str, ...]:
 
 
 def updates_for(
-    item: transcript.TranscriptItem,
+    item: transcript_items.TranscriptItem,
     *,
     acp_session_id: str,
     wire_id: str = "",
@@ -324,7 +331,7 @@ def updates_for(
     if item.kind == "commit":
         text = " ".join(part for part in ("committed", item.arg, item.detail) if part)
         return [message_update(acp_session_id, text)]
-    if item.kind == "tool":
+    if item.kind in ("tool", "verify"):
         wire_id = wire_id or _execution_call_id(item)
         if item.ok is None and not announced:
             update = {"sessionUpdate": "tool_call", **_tool_call(item, wire_id)}
@@ -354,7 +361,7 @@ def updates_for(
     )
 
 
-def status_line(item: transcript.TranscriptItem) -> str:
+def status_line(item: transcript_items.TranscriptItem) -> str:
     """Return the run status without the model's summary.
 
     Args:
@@ -418,14 +425,14 @@ def _text(text: str) -> dict[str, Any]:
     return {"type": "text", "text": printable(text)}
 
 
-def _tool_status(item: transcript.TranscriptItem) -> str:
+def _tool_status(item: transcript_items.TranscriptItem) -> str:
     """Return ACP's status for the item; a call waiting on an answer is `pending`."""
     if item.ok is None:
         return "pending" if item.detail else "in_progress"
     return "completed" if item.ok else "failed"
 
 
-def _tool_content(item: transcript.TranscriptItem) -> list[dict[str, Any]]:
+def _tool_content(item: transcript_items.TranscriptItem) -> list[dict[str, Any]]:
     """Return what the tool produced, in ACP's tagged shape.
 
     A bare content-block array makes a strict client reject the notification, and
@@ -462,17 +469,17 @@ def wire_call_id(session_id: str, execution: int, within_execution: str) -> str:
     return f"{session_id}:{execution}:{within_execution}" if session_id else within_execution
 
 
-def _execution_call_id(item: transcript.TranscriptItem) -> str:
+def _execution_call_id(item: transcript_items.TranscriptItem) -> str:
     """Return the item's stamped call id, or its name and arg for an event with no stamp."""
     return item.call_id or (f"{item.name}:{item.arg}" if item.arg else item.name)
 
 
-def tool_call_id(item: transcript.TranscriptItem, session_id: str, execution: int) -> str:
+def tool_call_id(item: transcript_items.TranscriptItem, session_id: str, execution: int) -> str:
     """Return the wire id for a fold item."""
     return wire_call_id(session_id, execution, _execution_call_id(item))
 
 
-def _tool_call(item: transcript.TranscriptItem, wire_id: str) -> dict[str, Any]:
+def _tool_call(item: transcript_items.TranscriptItem, wire_id: str) -> dict[str, Any]:
     """Return the `tool_call` announcement's fields; the model wrote the arg, so it is scrubbed."""
     title = printable(f"{item.name} {item.arg}".strip())
     return {

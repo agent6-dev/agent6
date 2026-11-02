@@ -83,7 +83,7 @@ Public fields: [Formats](formats.md#web-api).
 
 - **Written by:** ui/web/server
 - **Read by:** ui/cli/web_cmds, ui/web/{actions, sse}
-- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (6 test files exercise it)
+- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (7 test files exercise it)
 
 ## Review read model
 
@@ -234,7 +234,7 @@ Public fields: [Formats](formats.md#journal).
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionStranded`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** harness/review_session, ui/acp/updates, ui/cli/{console_render, machine_cmds, plan_watch, repl}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, log_line, review, session_log, state, state_view, transcript, transcript_text}
+- **Read by:** harness/review_session, ui/acp/updates, ui/cli/{console_render, machine_cmds, plan_watch, repl}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, log_line, review, session_log, state, state_view, transcript, transcript_items, transcript_text}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (8 test files exercise it)
 
 ## MachineSpec

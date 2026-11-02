@@ -9,11 +9,26 @@ import shlex
 from collections.abc import Callable
 from typing import Any
 
-from agent6 import budget
+from agent6 import budget, evidence, terminal
 from agent6.viewmodel import events as viewmodel_events
 from agent6.viewmodel import format, review
 
 PRIMARY_ARGS = ("path", "file", "pattern", "query", "command", "cmd", "url", "title", "summary")
+
+
+def verify_body(command: str, detail: str = "") -> str:
+    """Return a verification marker naming what it waits on or its result."""
+    return f"verify: {detail or f'running `{command}`'}"
+
+
+def verify_result(event: dict[str, Any]) -> str:
+    """Return the verification result's badge, reason and duration."""
+    label = evidence.result_label(
+        event.get("exit_code"), evidence.outcome(event), str(event.get("reason") or "")
+    )
+    badge = "✓ pass" if event.get("exit_code") == 0 else f"✗ {label}"
+    duration = float(event.get("duration_s", 0) or 0)
+    return terminal.scrub_terminal_controls(f"{badge} · {duration:.1f}s")
 
 
 def clip(text: str, n: int = 60) -> str:

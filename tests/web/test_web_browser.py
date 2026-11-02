@@ -139,6 +139,45 @@ def test_expanded_task_keeps_the_full_operator_words(
     assert not errors
 
 
+def test_verification_waits_runs_and_finishes_in_one_transcript_item(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """A live run blocked on baseline approval shows its verification before any model call."""
+    import os
+
+    from playwright.sync_api import expect
+
+    from agent6.sessions import process
+    from tests.unit import test_transcript_verify
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "verify-wait-AAA111"
+    session.mkdir(parents=True)
+    process.write_worker_pid(session, os.getpid())
+    rows = test_transcript_verify.attempt()
+    log = session / "logs.jsonl"
+    log.write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "Check the baseline"})
+        + "\n"
+        + "".join(json.dumps(row) + "\n" for row in rows[:2])
+    )
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    item = page.locator(".ci").filter(has_text="verify:")
+    expect(item).to_have_count(1)
+    expect(item).to_contain_text("verify: waiting for approval")
+    for row, text in [
+        (rows[2], "verify: running `pytest -q`"),
+        (rows[3], "verify: ✓ pass · 0.2s"),
+    ]:
+        with log.open("a") as stream:
+            stream.write(json.dumps(row) + "\n")
+        expect(item).to_have_count(1)
+        expect(item).to_contain_text(text)
+    assert not errors
+
+
 @pytest.mark.parametrize("expanded", [False, True])
 def test_every_tool_expands_to_whole_arguments(
     port: int,

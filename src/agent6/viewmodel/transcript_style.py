@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from agent6.viewmodel import session_status, transcript
+from agent6.viewmodel import session_status, transcript, transcript_items
 
 StyleName = Literal[
     "thinking",
@@ -45,7 +45,7 @@ TAIL_CLIP = 120
 DETAIL_CLIP = 120
 
 
-def _tool_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[Line]:
+def _tool_lines(item: transcript_items.TranscriptItem, *, expanded: bool) -> list[Line]:
     """Render a tool call: the head, then the result under it.
 
     The result glyph carries the pass or fail colour; the detail is its own neutral
@@ -95,7 +95,7 @@ def _tool_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[Line
     return lines
 
 
-def _thinking_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[Line]:
+def _thinking_lines(item: transcript_items.TranscriptItem, *, expanded: bool) -> list[Line]:
     """Render a reasoning block.
 
     Args:
@@ -121,7 +121,7 @@ def _thinking_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[
     return [line]
 
 
-def item_lines(item: transcript.TranscriptItem, *, detail: DetailLevel) -> list[Line]:
+def item_lines(item: transcript_items.TranscriptItem, *, detail: DetailLevel) -> list[Line]:
     """Render one folded conversation item as styled lines.
 
     Args:
@@ -159,6 +159,10 @@ def item_lines(item: transcript.TranscriptItem, *, detail: DetailLevel) -> list[
         lines.extend([(f"  {ln}", "operator")] for ln in body_lines[1:])
     elif item.kind == "commit":
         lines.append([(f"{transcript.COMMIT} commit  {item.detail}", "commit")])
+    elif item.kind == "verify":
+        lines.append([(item.body, "verify")])
+        if detail == "expanded" and item.tail:
+            lines.extend([(f"  {line}", "tail")] for line in item.tail.split("\n"))
     elif item.kind == "marker":
         body_lines = item.body.split("\n")
         lines.append([(f"── {body_lines[0]} ──", "marker")])

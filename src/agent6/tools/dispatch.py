@@ -626,6 +626,8 @@ class ToolDispatcher:
         )
         self._emit(
             "verify.start",
+            approval_required=self.command_policy() == "ask",
+            call_id=self._gating_call_id(),
             verify_id=record.verify_id,
             execution_id=record.execution_id,
             tree_before=record.tree_before,

@@ -70,6 +70,34 @@ def test_attempt_records_tree_id_scope_and_output_caps(
     assert result.to_wire()["stdout_truncated"] is True
 
 
+@pytest.mark.parametrize("model", [False, True])
+@pytest.mark.parametrize("policy", ["allow", "ask"])
+def test_verify_start_states_its_approval_wait_and_tool_identity(
+    tmp_path: pathlib.Path, model: bool, policy: str
+) -> None:
+    """The start marker knows whether approval is required before the prompt is emitted."""
+    journal = tmp_path / "logs.jsonl"
+    dispatcher = _dispatcher(tmp_path, journal, policy)
+    with (
+        mock.patch.object(dispatcher, "_approve", return_value=True),
+        mock.patch.object(
+            command_tools,
+            "run_argv_in_jail",
+            return_value=results.ExecResult(
+                returncode=0, stdout="", stderr="", duration_s=0.2, exec_failed=False
+            ),
+        ),
+    ):
+        if model:
+            dispatcher.dispatch("run_verify_command", {})
+        else:
+            dispatcher.run_verify()
+    rows = _events(journal)
+    start = next(row for row in rows if row["type"] == "verify.start")
+    assert start["approval_required"] is (policy == "ask")
+    assert start.get("call_id") == (rows[0]["call_id"] if model else None)
+
+
 @pytest.mark.parametrize("policy", ["deny", "ask"])
 def test_denial_is_an_attempt_without_a_verdict(tmp_path: pathlib.Path, policy: str) -> None:
     """Both denial paths record missing verification rather than empty success."""

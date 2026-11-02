@@ -789,8 +789,6 @@ def worktree_name_status(
 ) -> tuple[tuple[str, str], ...]:
     """Return the status letter and path of every pending change, untracked reported as `A`.
 
-    The conventional-subject deriver's input at checkpoint time.
-
     Args:
         path: The repository.
         exclude: Repo-relative paths left out, each with everything under it: the run's
@@ -809,6 +807,35 @@ def worktree_name_status(
             continue
         code = line[:2].strip() or "M"
         pairs.append(("A" if code in ("??", "A", "AM") else code[:1], rel))
+    return tuple(pairs)
+
+
+def tree_name_status(
+    path: pathlib.Path, old_tree: str, new_tree: str
+) -> tuple[tuple[str, str], ...]:
+    """Return the status and destination path of each change between two trees.
+
+    Args:
+        path: The repository.
+        old_tree: The preceding tree.
+        new_tree: The tree to commit.
+
+    Returns:
+        The pairs in git's order, with rename similarity scores and unquoted paths.
+    """
+    fields = iter(
+        git_command.nul_fields(
+            path, "diff-tree", "-r", "--name-status", "-M", "-z", old_tree, new_tree
+        )
+    )
+    pairs: list[tuple[str, str]] = []
+    for status in fields:
+        if not status:
+            continue
+        name = next(fields)
+        if status.startswith(("R", "C")):
+            name = next(fields)
+        pairs.append((status, name))
     return tuple(pairs)
 
 

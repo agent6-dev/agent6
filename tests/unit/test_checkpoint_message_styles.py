@@ -13,15 +13,20 @@ import pytest
 from agent6.config import Config
 from agent6.harness import loop, loop_state, run_chain
 from agent6.tools import dispatch
-from agent6.vcs import git_read
+from agent6.vcs import git_ops, git_read
 
 
 def _wf(
     tmp_path: pathlib.Path, style: str, provider: Any = None, logger: Any = print
 ) -> loop.Harness:
     cfg = Config.model_validate({"git": {"commit": {"checkpoint": {"message": style}}}})
+    git_ops.init_repo(tmp_path)
     return loop.Harness(
-        chain=run_chain.RunChain(tmp_path),
+        chain=run_chain.RunChain(
+            tmp_path,
+            ref="refs/agent6/test/head",
+            identity=git_read.CommitIdentity(name="Test", email="test@example.com"),
+        ),
         config=cfg,
         provider=provider or mock.MagicMock(),
         dispatcher=dispatch.ToolDispatcher(root=tmp_path, config=cfg),
@@ -43,25 +48,16 @@ def test_agent6_style_is_the_default_and_unchanged(tmp_path: pathlib.Path) -> No
     assert got == "agent6 turn 3: Add the unified write path."
 
 
-def test_conventional_style_derives_from_the_worktree(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def _one_added(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
-        return (("A", "src/agent6/config/write.py"),)
-
-    monkeypatch.setattr(git_read, "worktree_name_status", _one_added)
+def test_conventional_style_derives_from_the_chain(tmp_path: pathlib.Path) -> None:
     wf = _wf(tmp_path, "conventional")
+    target = tmp_path / "src/agent6/config/write.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("x = 1\n")
     got = wf.checkpoints.subject(_turn("Add the unified write path."), fallback="verify passed")
     assert got == "feat(config): add the unified write path"
 
 
-def test_model_style_uses_the_provider_text(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def _one_modified(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
-        return (("M", "a.py"),)
-
-    monkeypatch.setattr(git_read, "worktree_name_status", _one_modified)
+def test_model_style_uses_the_provider_text(tmp_path: pathlib.Path) -> None:
     provider = mock.MagicMock()
     provider.call.return_value = mock.MagicMock(text=" fix: tighten the resolver \n")
     wf = _wf(tmp_path, "model", provider=provider)
@@ -69,13 +65,7 @@ def test_model_style_uses_the_provider_text(
     assert got == "fix: tighten the resolver"
 
 
-def test_model_style_degrades_to_agent6_with_a_warning(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def _one_modified(_p: pathlib.Path, *, exclude: object = ()) -> tuple[tuple[str, str], ...]:
-        return (("M", "a.py"),)
-
-    monkeypatch.setattr(git_read, "worktree_name_status", _one_modified)
+def test_model_style_degrades_to_agent6_with_a_warning(tmp_path: pathlib.Path) -> None:
     provider = mock.MagicMock()
     provider.call.side_effect = RuntimeError("no endpoint")
     logged: list[str] = []
@@ -83,3 +73,51 @@ def test_model_style_degrades_to_agent6_with_a_warning(
     got = wf.checkpoints.subject(_turn("Fix the thing."), fallback="verify passed")
     assert got == "agent6 turn 3: Fix the thing."
     assert any("model commit message failed (RuntimeError: no endpoint)" in m for m in logged)
+
+
+@pytest.mark.parametrize("style", ["agent6", "conventional"])
+def test_each_checkpoint_subject_names_only_its_delta(tmp_path: pathlib.Path, style: str) -> None:
+    """The second checkpoint names its one new file, not the run's cumulative changes."""
+    wf = _wf(tmp_path, style)
+    (tmp_path / "first.py").write_text("first = 1\n")
+    first_subject = wf.checkpoints.subject(_turn(""), fallback="checkpoint")
+    first = wf.checkpoints.commit(first_subject, turn=3)
+    assert first
+    (tmp_path / "second.py").write_text("second = 2\n")
+    second_subject = wf.checkpoints.subject(
+        _turn("<thinking>done</thinking>"), fallback="checkpoint"
+    )
+    second = wf.checkpoints.commit(second_subject, turn=4)
+    assert second
+    row = git_read.list_run_commits(tmp_path, first, second)[0]
+    assert "second.py" in row.subject
+    assert "first.py" not in row.subject and "2 files" not in row.subject
+
+
+@pytest.mark.parametrize("style", ["agent6", "conventional"])
+def test_empty_prose_names_the_number_of_changed_files(tmp_path: pathlib.Path, style: str) -> None:
+    """A tool-only checkpoint still says how much it changes."""
+    wf = _wf(tmp_path, style)
+    (tmp_path / "one.py").write_text("one = 1\n")
+    (tmp_path / "two.py").write_text("two = 2\n")
+    assert "2 files" in wf.checkpoints.subject(_turn(""), fallback="checkpoint")
+
+
+def test_a_pure_rename_is_a_refactor(tmp_path: pathlib.Path) -> None:
+    """An identical blob at a new path is a rename, not a feature or fix."""
+    wf = _wf(tmp_path, "conventional")
+    (tmp_path / "old.py").write_text("value = 1\n")
+    assert wf.chain.commit("base")
+    (tmp_path / "old.py").rename(tmp_path / "new.py")
+    assert wf.chain.name_status() == (("R100", "new.py"),)
+    assert wf.checkpoints.subject(_turn("Rename the module."), fallback="checkpoint") == (
+        "refactor: rename the module"
+    )
+
+
+@pytest.mark.parametrize("name", ["with\ttab.py", "with\nnewline.py"])
+def test_checkpoint_paths_keep_filename_separators(tmp_path: pathlib.Path, name: str) -> None:
+    """Tabs and newlines inside a filename do not split or quote the chain's path."""
+    wf = _wf(tmp_path, "conventional")
+    (tmp_path / name).write_text("value = 1\n")
+    assert wf.chain.name_status() == (("A", name),)

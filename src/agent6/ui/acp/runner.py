@@ -33,7 +33,7 @@ from agent6.ui.acp import frontend as acp_frontend
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from agent6.ui.acp import updates
-from agent6.viewmodel import session_log, transcript
+from agent6.viewmodel import session_log, transcript, transcript_items
 from agent6.viewmodel import tail as viewmodel_tail
 
 # Bounds the join on a tail wedged on a filesystem; `_stop` ends it one read pass after the run.
@@ -665,7 +665,7 @@ class RunBridge:
                         spoken.append(str(event.get("text", "")))
                     streamed.add(kind)
                     for body in updates.updates_for(
-                        transcript.TranscriptItem(kind, body=str(event.get("text", ""))),
+                        transcript_items.TranscriptItem(kind, body=str(event.get("text", ""))),
                         acp_session_id=session.acp_id,
                         streamed=True,
                     ):
@@ -695,7 +695,7 @@ class RunBridge:
     def _send_item(
         self,
         session: acp_session.Session,
-        item: transcript.TranscriptItem,
+        item: transcript_items.TranscriptItem,
         announced: Announced,
         paths: tuple[str, ...],
         spoken: str,
@@ -717,7 +717,7 @@ class RunBridge:
             return
         wire_id = (
             updates.tool_call_id(item, session.session_id, announced.execution)
-            if item.kind == "tool"
+            if item.kind in ("tool", "verify")
             else ""
         )
         wire_item = item
@@ -726,7 +726,7 @@ class RunBridge:
             trailing = len(spoken) - len(spoken.rstrip("\n"))
             if pad := "\n" * max(0, 2 - trailing):
                 for body in updates.updates_for(
-                    transcript.TranscriptItem("text", body=pad),
+                    transcript_items.TranscriptItem("text", body=pad),
                     acp_session_id=session.acp_id,
                     streamed=True,
                 ):
@@ -740,7 +740,7 @@ class RunBridge:
             paths=paths,
         ):
             self.server.notify_raw(body)
-        if item.kind == "tool":
+        if item.kind in ("tool", "verify"):
             announced.add(wire_id)
         elif item.kind == "done":
             _stderr(

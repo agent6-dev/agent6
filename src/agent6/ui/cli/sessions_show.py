@@ -30,6 +30,7 @@ from agent6.viewmodel import (
     scan_session_log,
     summarize_session_dir,
     tail,
+    transcript,
 )
 
 
@@ -366,8 +367,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     manifest = loaded or sessions_manifest.SessionManifest()
     mode_display = loaded.mode if loaded is not None else None
 
-    logs = target / sessions_layout.LOGS_NAME
-    scan = scan_session_log(logs) if logs.is_file() else LogScan()
+    scan = scan_session_log(layout.logs_path) if layout.logs_path.is_file() else LogScan()
 
     pid = process.read_worker_pid(target)
     alive = process.worker_is_alive(target)
@@ -504,6 +504,11 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(f"{'pins:' if i == 0 else '':<12}{pin}")
     _print_listening_ports(target)
     _print_task_tree(target)
+    for item in transcript.fold_transcript(
+        list(tail.tail_events(layout.logs_path, follow=False)), worker_dead=not alive
+    ):
+        if item.kind == "verify":
+            print(item.body)
     return 0
 
 

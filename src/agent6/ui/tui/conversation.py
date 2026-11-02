@@ -33,6 +33,7 @@ from agent6.viewmodel import (
     format,
     policy,
     transcript,
+    transcript_items,
     transcript_style,
 )
 from agent6.viewmodel import tail as viewmodel_tail
@@ -92,7 +93,7 @@ def _rich_line(line: transcript_style.Line) -> rich_text.Text:
 
 
 def _item_renderables(
-    item: transcript.TranscriptItem, *, detail: transcript_style.DetailLevel
+    item: transcript_items.TranscriptItem, *, detail: transcript_style.DetailLevel
 ) -> list[rich_text.Text]:
     """Return an item's lines as Rich Texts, with a blank line after the item."""
     lines = transcript_style.item_lines(item, detail=detail)
@@ -264,7 +265,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         self._tail_text = rich_text.Text()
         self._tail_lines = 0
         # Tool calls in flight by call_id; the live pane shows them until the settled item lands.
-        self._pending: dict[str, transcript.TranscriptItem] = {}
+        self._pending: dict[str, transcript_items.TranscriptItem] = {}
         self._approval: tuple[str, str, bool] | None = None  # (id, prompt, standing)
         self._approval_done: str | None = None
         self._live_think: list[str] = []
@@ -333,7 +334,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         """Return the transcript's scroll container."""
         return self.query_one("#conv-scroll", containers.VerticalScroll)
 
-    def _append(self, item: transcript.TranscriptItem) -> bool:
+    def _append(self, item: transcript_items.TranscriptItem) -> bool:
         """Append a settled item to the transcript and the tail; a call in flight waits.
 
         Args:
@@ -342,7 +343,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         Returns:
             Whether any line was written.
         """
-        if item.kind == "tool":
+        if item.kind in ("tool", "verify"):
             if item.ok is None:
                 self._pending[item.call_id] = item
                 return False
@@ -477,7 +478,9 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
             live.display = False
             self._settle_dead()
             return
-        if self._host_waiting():
+        if self._host_waiting() and not any(
+            item.kind == "verify" for item in self._pending.values()
+        ):
             # Blocked on the operator: a thinking pulse would lie under the very prompt asking.
             live.display = True
             # A span: textual parses a base style's "yellow" as #ffff00 instead of ANSI yellow.

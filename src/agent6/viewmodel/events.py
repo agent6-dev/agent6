@@ -222,7 +222,7 @@ class ToolResult:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class VerifyStart:
-    """verify.start: the verify gate began running its command."""
+    """verify.start: a verification attempt began, before any required approval."""
 
     cmd: tuple[str, ...]
 
