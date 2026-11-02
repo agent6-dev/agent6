@@ -1135,14 +1135,20 @@ def test_annotations_wrap_without_overflow_or_shortening_paths(
 def test_check_sandbox_reports_a_jail_whose_proc_mount_was_refused(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A launcher that could not mount /proc fails the probe, and the /proc row says so."""
+    """A /proc the jail cannot read fails its probe with what was seen, and the row says so."""
     _force_profile(monkeypatch, "full")
     monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 8)
     monkeypatch.setattr(tool_paths, "operator_tool_mounts", lambda: _MOUNTS)
 
     def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         if "/proc/self/status" in " ".join(policy.argv):
-            return _fake_result(policy.argv, 1)
+            return kinds.CommandResult(
+                argv=policy.argv,
+                returncode=1,
+                stdout="",
+                stderr="cat: /proc/self/status: No such file or directory",
+                duration_s=0.0,
+            )
         quiet = policy.argv == ("/usr/bin/true",)
         return kinds.CommandResult(
             argv=policy.argv,
@@ -1157,5 +1163,5 @@ def test_check_sandbox_reports_a_jail_whose_proc_mount_was_refused(
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "FAIL", out
     assert "the launcher reported: agent6-jail: mount /proc: EPERM; continuing" in out
-    assert "its procfs mount was refused" in out
-    assert any("its procfs mount is refused here" in line for line in _commands_block(out)), out
+    assert "did not answer: cat /proc/self/status exited 1 (cat: /proc/self/status: No such" in out
+    assert any("did not answer the probe here" in line for line in _commands_block(out)), out

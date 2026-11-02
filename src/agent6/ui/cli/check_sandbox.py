@@ -224,6 +224,7 @@ def _probe(
 
     try:
         res = _jail("/bin/sh", "-c", "cat /proc/self/status >/dev/null")
+        seen = " ".join(res.stderr.split())
         reports.append(
             kinds.SandboxReport(
                 name="jail_proc",
@@ -231,9 +232,9 @@ def _probe(
                 detail=(
                     "the jail's /proc answers (cat /proc/self/status)"
                     if res.ok
-                    else f"the jail's /proc is empty (cat /proc/self/status exited"
-                    f" {res.returncode}): its procfs mount was refused, as a container runtime"
-                    " can; ps and every tool reading /proc fail in the run's commands"
+                    else f"the jail's /proc did not answer: cat /proc/self/status exited"
+                    f" {res.returncode}" + (f" ({seen})" if seen else "") + "; ps and every tool"
+                    " reading /proc fail the same way in the run's commands"
                 ),
             )
         )

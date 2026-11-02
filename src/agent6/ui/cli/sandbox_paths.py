@@ -288,7 +288,7 @@ def _system_rows(
                     else "private process filesystem"
                 )
                 if proc_ok
-                else "its procfs mount is refused here: commands see an empty /proc",
+                else "did not answer the probe here: commands have no working /proc",
                 warning=not proc_ok,
             ),
         ]
@@ -333,7 +333,7 @@ def command_rows(
         selected: The resolved isolation level.
         git_grant: A fork's read grant on its repository git dir, when there is one.
         abi: The Landlock ABI.
-        proc_ok: Whether the jail's /proc answered its probe.
+        proc_ok: Whether the jail's /proc answered its probe (`cat /proc/self/status`).
 
     Returns:
         The rows.
