@@ -128,17 +128,20 @@ def await_lanes(
     *,
     already_interrupted: bool = False,
     should_stop: Callable[[], bool] | None = None,
+    stop_is_now: Callable[[], bool] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> bool:
     """Poll every started lane's real run dir until it is terminal, printing status changes.
 
-    An interrupt requests a clean stop on each running lane and waits a bounded grace for
-    their in-flight steps, so the caller imports what landed.
+    A stop reaches every running lane with the coordinator's own urgency: an interrupt or a
+    `now` request hands their running commands back and waits a bounded grace, a plain request
+    lets each lane finish its turn and waits for that, escalating when a `now` arrives.
 
     Args:
         started: The started lanes.
         already_interrupted: A Ctrl+C landed before the await began; go straight to the stop.
         should_stop: The coordinator's own stop request, read between polls.
+        stop_is_now: Whether that request carries the `now` urgency; None reads as `now`.
         reporter: Where the status lines go.
 
     Returns:
@@ -161,32 +164,45 @@ def await_lanes(
             if lane_terminal(res.session_dir, summary.status, process.worker_is_alive):
                 pending.pop(rid)
 
-    def stop_and_drain() -> None:
-        reporter.err("\n[agent6] interrupted; stopping lanes...")
+    def escalates() -> bool:
+        return stop_is_now is None or stop_is_now()
+
+    def stop_and_drain(*, immediate: bool) -> None:
+        reporter.err(
+            "\n[agent6] interrupted; stopping lanes..."
+            if immediate
+            else "\n[agent6] stopping lanes after their current turns..."
+        )
         for res in pending.values():
-            if not ipc.request_stop(res.session_dir, now=True):
+            if not ipc.request_stop(res.session_dir, now=immediate):
                 reporter.err(f"[agent6] could not write the stop request for {res.spec.session_id}")
-        deadline = time.monotonic() + STOP_GRACE_S
-        with contextlib.suppress(KeyboardInterrupt):
-            while pending and time.monotonic() < deadline:
+        deadline = time.monotonic() + STOP_GRACE_S if immediate else None
+        try:
+            while pending and (deadline is None or time.monotonic() < deadline):
                 poll_once()
+                if pending and deadline is None and escalates():
+                    stop_and_drain(immediate=True)
+                    return
                 if pending:
                     time.sleep(POLL_INTERVAL_S)
+        except KeyboardInterrupt:
+            if deadline is None:
+                stop_and_drain(immediate=True)
 
     if already_interrupted:
-        stop_and_drain()
+        stop_and_drain(immediate=True)
         return True
     try:
         while pending:
             poll_once()
             if pending and should_stop is not None and should_stop():
-                stop_and_drain()
+                stop_and_drain(immediate=escalates())
                 return True
             if pending:
                 time.sleep(POLL_INTERVAL_S)
         return False
     except KeyboardInterrupt:
-        stop_and_drain()
+        stop_and_drain(immediate=True)
         return True
 
 

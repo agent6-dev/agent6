@@ -523,7 +523,7 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 - A run's worker and a fan-out's coordinator take the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130).
 - Every target is named by process identity (pid plus start time), so a pid recycled before the identity check is never signalled.
 - `--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
-- A fan-out stops its lanes with the `now` marker.
+- A fan-out passes its stop's urgency to its lanes: a plain marker lets each lane finish its turn, a `now` marker ends their running commands at once.
 - An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
 - An immediate stop ends a foreground `run_command` the launcher hands back.
   Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.

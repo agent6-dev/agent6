@@ -3348,6 +3348,76 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     assert "interrupted; stopping lanes" in capsys.readouterr().err
 
 
+def test_a_plain_stop_on_the_coordinator_lets_the_lanes_finish_their_turns(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`stop --after-turn` on a fan-out reached its lanes as `now`, cutting their running commands.
+
+    The coordinator passes its own stop's urgency on: a plain marker asks each lane to finish
+    its turn, and the drain waits for them without a kill deadline.
+    """
+    lane = tmp_path / "lane"
+    _write_fake_run(lane, "t", status="running", cost=0.0)
+    spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
+    res = subrun.LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
+
+    def _no_sleep(*_args: object) -> None:
+        return None
+
+    def _ends_its_turn(session_dir: pathlib.Path, status: str, alive: object) -> bool:
+        del status, alive
+        return ipc.stop_request_pending(session_dir)  # the lane ends once asked
+
+    monkeypatch.setattr(lane_watch.time, "sleep", _no_sleep)
+    monkeypatch.setattr(lane_watch, "lane_terminal", _ends_its_turn)
+
+    assert lane_watch.await_lanes([res], should_stop=lambda: True, stop_is_now=lambda: False)
+    assert ipc.stop_request_pending(lane) and not ipc.stop_request_is_now(lane)
+    assert "stopping lanes after their current turns" in capsys.readouterr().err
+
+
+def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: app_lanes.LaneRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The in-run coordinator lets a lane finish its turn; a second stop hands its command back."""
+    import os
+
+    lane_dir = tmp_path / "lane-run" / "sub"
+    _write_fake_run(lane_dir, "t", status="running", cost=0.0)
+    process.write_worker_pid(lane_dir, os.getpid())  # live forever from the test's view
+    spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
+    asked: list[bool] = []
+    real_request = ipc.request_stop
+
+    def recording_request(session_dir: pathlib.Path, *, now: bool = False) -> bool:
+        asked.append(now)
+        return real_request(session_dir, now=now)
+
+    monkeypatch.setattr(ipc, "request_stop", recording_request)
+    monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.0)
+    res = app_lanes.run_lane_to_completion(
+        spec,
+        "do it",
+        explicit_leaves=frozenset(),
+        cfg=Config(),
+        origin=origin,
+        origin_state=tmp_path / "ostate",
+        group="p1",
+        coordinator="co",
+        runtime=runtime,
+        spawner=lambda spec, task: subrun.LaneResult(spec, lane_dir, "agent6/x", True, ""),
+        poll_interval_s=0.01,
+        should_stop=lambda: True,
+        stop_is_now=lambda: bool(asked),  # the second stop arrives after the first was written
+    )
+    assert asked == [False, True]
+    assert res.ok is False and "interrupted" in res.error
+    assert ipc.stop_request_is_now(lane_dir)
+
+
 def test_a_stop_during_spawn_prevents_more_lanes(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:

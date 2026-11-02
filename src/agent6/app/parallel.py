@@ -265,6 +265,7 @@ def _drive_fanout(
             [r for r in results if r.ok],
             already_interrupted=ipc.stop_request_pending(coordinator_dir),
             should_stop=lambda: ipc.stop_request_pending(coordinator_dir),
+            stop_is_now=lambda: ipc.stop_request_is_now(coordinator_dir),
             reporter=reporter,
         )
     except KeyboardInterrupt:

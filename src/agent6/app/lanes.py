@@ -246,6 +246,7 @@ def run_lane_to_completion(
     poll_interval_s: float = lane_watch.POLL_INTERVAL_S,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     should_stop: Callable[[], bool] | None = None,
+    stop_is_now: Callable[[], bool] | None = None,
     hard_stop: threading.Event | None = None,
 ) -> subrun.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
@@ -277,7 +278,10 @@ def run_lane_to_completion(
         poll_interval_s: How often the await polls.
         reporter: Receives the notes.
         should_stop: Polled to interrupt the await; the lane then gets a stop request
-            and a bounded grace.
+            with the coordinator's urgency.
+        stop_is_now: Whether that request carries the `now` urgency; None reads as `now`. A
+            plain request lets the lane finish its turn and waits for it, escalating to
+            `now` when one arrives; `now` hands its command back and waits a bounded grace.
         hard_stop: Set to skip the grace.
 
     Returns:
@@ -305,8 +309,23 @@ def run_lane_to_completion(
     # The live symlink lets a hub answer the lane's prompts while it runs.
     lane_watch.symlink_lane(origin_state, res)
     if not lane_watch.await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
-        asked = ipc.request_stop(res.session_dir, now=True)
-        if not lane_watch.drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
+        immediate = stop_is_now is None or stop_is_now()
+        asked = ipc.request_stop(res.session_dir, now=immediate)
+        if not immediate:
+
+            def escalate() -> bool:
+                # The lane finishes its turn; a later `now` or a teardown escalates.
+                torn_down = hard_stop is not None and hard_stop.is_set()
+                return torn_down or (stop_is_now is not None and stop_is_now())
+
+            if lane_watch.await_lane(res, poll_interval_s=poll_interval_s, should_stop=escalate):
+                asked = True
+            else:
+                asked = ipc.request_stop(res.session_dir, now=True)
+                immediate = True
+        if immediate and not lane_watch.drain_lane(
+            res, poll_interval_s=poll_interval_s, hard_stop=hard_stop
+        ):
             # Still running: the clone and symlink hold the only copy of its branch.
             return subrun.LaneResult(
                 spec=spec,
@@ -431,6 +450,13 @@ def build_lane_spawner(
                 or ipc.stop_request_pending(coord_dir)
             )
 
+        def stop_is_now() -> bool:
+            return (
+                hard_stop.is_set()
+                or ipc.steer_answer_is_abort(coord_dir)
+                or ipc.stop_request_is_now(coord_dir)
+            )
+
         # The coordinator's manifest pins the gate the lanes' config carries.
         verify_origin = ""
         if cfg.harness.verify_command:
@@ -460,6 +486,7 @@ def build_lane_spawner(
                 import_lock=import_lock,
                 reporter=reporter,
                 should_stop=should_stop,
+                stop_is_now=stop_is_now,
                 hard_stop=hard_stop,
             )
 
