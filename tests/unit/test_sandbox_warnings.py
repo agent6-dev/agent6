@@ -9,6 +9,7 @@ unconfined.
 from __future__ import annotations
 
 import pathlib
+from typing import Literal
 
 import pytest
 
@@ -401,7 +402,7 @@ def test_unscoped_abstract_sockets_are_warned_where_the_host_network_is_shared(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     isolation: kinds.IsolationLevel,
-    network: kinds.NetworkMode,
+    network: Literal["session", "host"],
     abi: int,
     reachable: bool,
 ) -> None:
