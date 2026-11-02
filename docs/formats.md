@@ -39,7 +39,7 @@ Integer values also satisfy the registry's `float` kind, but booleans do not.
 
 **Support: public.** Append one event under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
 
-Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/event_log.py#L71).
+Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/event_log.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1384,7 +1384,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 **Support: public.** Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
 
-Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py#L378).
+Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1421,7 +1421,7 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Return a listing row and its nested lanes as JSON.
 
-Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py#L349).
+Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1434,7 +1434,7 @@ Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Print a one-shot liveness and progress summary for a run.
 
-Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/sessions_show.py#L295).
+Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/sessions_show.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1566,7 +1566,7 @@ Sources: [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/mas
 
 **Support: public.** Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
-Source: [`viewmodel.state_view.session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py#L89).
+Source: [`viewmodel.state_view.session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1617,7 +1617,7 @@ Git blob responses carry bytes rather than JSON.
 
 **Support: public.** Send a session snapshot when its state changes.
 
-Source: [`ui.web.sse.stream_session.send_frame`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py#L114).
+Source: [`ui.web.sse.stream_session.send_frame`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1628,7 +1628,7 @@ Source: [`ui.web.sse.stream_session.send_frame`](https://github.com/agent6-dev/a
 
 **Support: public.** Stream one machine until it ends or the client leaves.
 
-Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py#L205).
+Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1639,7 +1639,7 @@ Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/
 
 **Support: public.** Stream one machine until it ends or the client leaves.
 
-Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py#L205).
+Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1652,7 +1652,7 @@ Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/
 
 **Support: public.** Fill the reasoning fold's idle age in from its epoch.
 
-Source: [`ui.web.sse._with_idle_age`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py#L58).
+Source: [`ui.web.sse._with_idle_age`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/sse.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1662,7 +1662,7 @@ Source: [`ui.web.sse._with_idle_age`](https://github.com/agent6-dev/agent6/blob/
 
 **Support: public.** Dispatch a GET by path.
 
-Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py#L815).
+Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1674,7 +1674,7 @@ Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Dispatch a GET by path.
 
-Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py#L815).
+Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1692,7 +1692,7 @@ Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Dispatch a GET by path.
 
-Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py#L815).
+Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1702,7 +1702,7 @@ Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Answer a sign-in: the token for the server's secret, 403 for any other.
 
-Source: [`ui.web.server._Handler._login`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py#L681).
+Source: [`ui.web.server._Handler._login`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1714,7 +1714,7 @@ Source: [`ui.web.server._Handler._login`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Send 401; `login` tells the page to show its sign-in form.
 
-Source: [`ui.web.server._Handler._send_sign_in_required`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py#L534).
+Source: [`ui.web.server._Handler._send_sign_in_required`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1725,7 +1725,7 @@ Source: [`ui.web.server._Handler._send_sign_in_required`](https://github.com/age
 
 **Support: public.** Send the payload under `ok`, or the error as 422.
 
-Source: [`ui.web.server._Handler._ok_or_err`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py#L785).
+Source: [`ui.web.server._Handler._ok_or_err`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1736,7 +1736,7 @@ Source: [`ui.web.server._Handler._ok_or_err`](https://github.com/agent6-dev/agen
 
 **Support: public.** Dispatch a POST by path.
 
-Source: [`ui.web.server._Handler._route_post`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py#L562).
+Source: [`ui.web.server._Handler._route_post`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1748,7 +1748,7 @@ Source: [`ui.web.server._Handler._route_post`](https://github.com/agent6-dev/age
 
 **Support: public.** Fork a run at its latest checkpoint into a new, unstarted run.
 
-Source: [`ui.web.actions.fork_run`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py#L203).
+Source: [`ui.web.actions.fork_run`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1758,7 +1758,7 @@ Source: [`ui.web.actions.fork_run`](https://github.com/agent6-dev/agent6/blob/ma
 
 **Support: public.** Fork a finished run at the state before its last operator message, unstarted.
 
-Source: [`ui.web.actions.undo_session`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py#L230).
+Source: [`ui.web.actions.undo_session`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1770,7 +1770,7 @@ Source: [`ui.web.actions.undo_session`](https://github.com/agent6-dev/agent6/blo
 
 **Support: public.** Execute a finished plan by spawning `agent6 run --from <id>` detached.
 
-Source: [`ui.web.actions.run_plan`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py#L307).
+Source: [`ui.web.actions.run_plan`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1780,7 +1780,7 @@ Source: [`ui.web.actions.run_plan`](https://github.com/agent6-dev/agent6/blob/ma
 
 **Support: public.** Review a finished run's record through `agent6 sessions review`, a call of minutes.
 
-Source: [`ui.web.actions.review_run`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py#L596).
+Source: [`ui.web.actions.review_run`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/actions.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1790,7 +1790,7 @@ Source: [`ui.web.actions.review_run`](https://github.com/agent6-dev/agent6/blob/
 
 **Support: public.** Return the hub: sessions in the given order, machines, drafts, machine files, presets.
 
-Source: [`ui.web.model.hub_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L312).
+Source: [`ui.web.model.hub_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1805,7 +1805,7 @@ Source: [`ui.web.model.hub_payload`](https://github.com/agent6-dev/agent6/blob/m
 
 **Support: public.** Return one machine-instance row for the hub.
 
-Source: [`ui.web.model._machine_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L193).
+Source: [`ui.web.model._machine_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1822,7 +1822,7 @@ Source: [`ui.web.model._machine_row`](https://github.com/agent6-dev/agent6/blob/
 
 **Support: public.** Return the hub's machine-file rows.
 
-Source: [`ui.web.model.list_machine_files`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L240).
+Source: [`ui.web.model.list_machine_files`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1833,7 +1833,7 @@ Source: [`ui.web.model.list_machine_files`](https://github.com/agent6-dev/agent6
 
 **Support: public.** Return the new-work composer's model picker.
 
-Source: [`ui.web.model.routes_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L258).
+Source: [`ui.web.model.routes_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1844,7 +1844,7 @@ Source: [`ui.web.model.routes_payload`](https://github.com/agent6-dev/agent6/blo
 
 **Support: public.** Return the resume row's no-flag preset and model labels under a picked preset.
 
-Source: [`ui.web.model.resume_defaults_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L284).
+Source: [`ui.web.model.resume_defaults_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1855,7 +1855,7 @@ Source: [`ui.web.model.resume_defaults_payload`](https://github.com/agent6-dev/a
 
 **Support: public.** Return a run's conversation and the operator's past inputs, from one read of the log.
 
-Source: [`ui.web.model.conversation_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L380).
+Source: [`ui.web.model.conversation_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1866,7 +1866,7 @@ Source: [`ui.web.model.conversation_payload`](https://github.com/agent6-dev/agen
 
 **Support: public.** Fold events into rendered conversation items.
 
-Source: [`ui.web.model.conversation_items`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L349).
+Source: [`ui.web.model.conversation_items`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1878,7 +1878,7 @@ Source: [`ui.web.model.conversation_items`](https://github.com/agent6-dev/agent6
 
 **Support: public.** Return `/restate` for the web composer, over the session's whole journal.
 
-Source: [`ui.web.model.restate_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L400).
+Source: [`ui.web.model.restate_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1888,7 +1888,7 @@ Source: [`ui.web.model.restate_payload`](https://github.com/agent6-dev/agent6/bl
 
 **Support: public.** Return the conversation of the machine's newest agent-state execution, or no items.
 
-Source: [`ui.web.model.machine_conversation_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L416).
+Source: [`ui.web.model.machine_conversation_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1898,7 +1898,7 @@ Source: [`ui.web.model.machine_conversation_payload`](https://github.com/agent6-
 
 **Support: public.** Return the session state of the machine's newest agent-state execution.
 
-Source: [`ui.web.model.machine_reasoning_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L440).
+Source: [`ui.web.model.machine_reasoning_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1909,7 +1909,7 @@ Source: [`ui.web.model.machine_reasoning_snapshot`](https://github.com/agent6-de
 
 **Support: public.** Return one step's patch, or the chain `base..sha` when cumulative and a base is known.
 
-Source: [`ui.web.model._diff_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L149).
+Source: [`ui.web.model._diff_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1920,7 +1920,7 @@ Source: [`ui.web.model._diff_payload`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Return one leaf's JSON view, shared by the full dump and the single-key path.
 
-Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/config_view.py#L396).
+Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/config_view.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1940,7 +1940,7 @@ Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent
 
 **Support: public.** Return the effective config per leaf, keyed by dotted key.
 
-Source: [`ui.web.model.config_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py#L477).
+Source: [`ui.web.model.config_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1954,7 +1954,7 @@ Source: [`ui.web.model.config_payload`](https://github.com/agent6-dev/agent6/blo
 
 **Support: public.** Return one Git ref for the picker.
 
-Source: [`ui.web.git_model._ref_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L173).
+Source: [`ui.web.git_model._ref_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1968,7 +1968,7 @@ Source: [`ui.web.git_model._ref_row`](https://github.com/agent6-dev/agent6/blob/
 
 **Support: public.** Return one changed file.
 
-Source: [`ui.web.git_model._file_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L192).
+Source: [`ui.web.git_model._file_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1983,7 +1983,7 @@ Source: [`ui.web.git_model._file_row`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Return one commit graph row.
 
-Source: [`ui.web.git_model._log_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L228).
+Source: [`ui.web.git_model._log_row`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2000,7 +2000,7 @@ Source: [`ui.web.git_model._log_row`](https://github.com/agent6-dev/agent6/blob/
 
 **Support: public.** Return the refs at each sha, in listing order.
 
-Source: [`ui.web.git_model._decorations`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L153).
+Source: [`ui.web.git_model._decorations`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2012,7 +2012,7 @@ Source: [`ui.web.git_model._decorations`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Return one side of a compare: the rev as sent, the sha it names, and its subject.
 
-Source: [`ui.web.git_model._endpoint`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L437).
+Source: [`ui.web.git_model._endpoint`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2025,7 +2025,7 @@ Source: [`ui.web.git_model._endpoint`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Return every ref with its kind and tip, and HEAD's sha and branch.
 
-Source: [`ui.web.git_model.refs_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L259).
+Source: [`ui.web.git_model.refs_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2038,7 +2038,7 @@ Source: [`ui.web.git_model.refs_payload`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Return one page of the commit graph.
 
-Source: [`ui.web.git_model.graph_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L290).
+Source: [`ui.web.git_model.graph_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2053,7 +2053,7 @@ Source: [`ui.web.git_model.graph_payload`](https://github.com/agent6-dev/agent6/
 
 **Support: public.** Return a commit's header, message, refs and the files it changed from its first parent.
 
-Source: [`ui.web.git_model.commit_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L355).
+Source: [`ui.web.git_model.commit_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2080,7 +2080,7 @@ Source: [`ui.web.git_model.commit_payload`](https://github.com/agent6-dev/agent6
 
 **Support: public.** Return the files that differ between two revisions, as `git diff base head` lists them.
 
-Source: [`ui.web.git_model.compare_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L464).
+Source: [`ui.web.git_model.compare_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2093,7 +2093,7 @@ Source: [`ui.web.git_model.compare_payload`](https://github.com/agent6-dev/agent
 
 **Support: public.** Return the working tree's uncommitted files, tracked changes first.
 
-Source: [`ui.web.git_model.worktree_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L416).
+Source: [`ui.web.git_model.worktree_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2105,7 +2105,7 @@ Source: [`ui.web.git_model.worktree_payload`](https://github.com/agent6-dev/agen
 
 **Support: public.** Return one file's unified diff between two revisions.
 
-Source: [`ui.web.git_model.diff_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L497).
+Source: [`ui.web.git_model.diff_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2126,7 +2126,7 @@ Source: [`ui.web.git_model.diff_payload`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Return the refs whose name contains the text and the commits whose message or sha does.
 
-Source: [`ui.web.git_model.search_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L589).
+Source: [`ui.web.git_model.search_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2138,7 +2138,7 @@ Source: [`ui.web.git_model.search_payload`](https://github.com/agent6-dev/agent6
 
 **Support: public.** Return the files at a revision or in the working tree.
 
-Source: [`ui.web.git_model.tree_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L785).
+Source: [`ui.web.git_model.tree_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2150,7 +2150,7 @@ Source: [`ui.web.git_model.tree_payload`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Return a file's text at a revision or in the working tree, with its highlight spans.
 
-Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L734).
+Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2169,7 +2169,7 @@ Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Return per-line attribution with the text route's caps, refusals and digest.
 
-Source: [`ui.web.git_model.blame_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py#L695).
+Source: [`ui.web.git_model.blame_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2185,7 +2185,7 @@ Source: [`ui.web.git_model.blame_payload`](https://github.com/agent6-dev/agent6/
 
 **Support: public.** Return findings with exact comparison matches and links to their recorded targets.
 
-Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py#L52).
+Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2196,7 +2196,7 @@ Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6
 
 **Support: public.** Return findings with exact comparison matches and links to their recorded targets.
 
-Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py#L52).
+Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2211,7 +2211,7 @@ Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6
 
 **Support: public.** Read a recorded comparison or file without consulting a mutable checkout.
 
-Source: [`ui.web.review_routes.panel`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py#L227).
+Source: [`ui.web.review_routes.panel`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2226,7 +2226,7 @@ Source: [`ui.web.review_routes.panel`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Return a file diff from the recorded review trees.
 
-Source: [`ui.web.review_routes._diff`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py#L163).
+Source: [`ui.web.review_routes._diff`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2246,7 +2246,7 @@ Source: [`ui.web.review_routes._diff`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Return a file from one recorded review tree.
 
-Source: [`ui.web.review_routes._file`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py#L105).
+Source: [`ui.web.review_routes._file`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/review_routes.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2266,7 +2266,7 @@ Source: [`ui.web.review_routes._file`](https://github.com/agent6-dev/agent6/blob
 
 **Support: public.** Return JSON-ready evidence, including nested boundary models and merge facts.
 
-Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review.py#L537).
+Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2278,7 +2278,7 @@ Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/m
 
 **Support: public.** Return JSON-ready evidence, including nested boundary models and merge facts.
 
-Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review.py#L537).
+Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2288,7 +2288,7 @@ Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/m
 
 **Support: public.** Return the JSON-safe receipt fields.
 
-Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/receipt.py#L192).
+Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/receipt.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -2709,7 +2709,7 @@ Source: [`agent6.sessions.manifest.PolicyStamp`](https://github.com/agent6-dev/a
 
 ### BudgetStamp
 
-**Support: public.** The caps the budget flags set; a resume without the flag runs under the recorded cap.
+**Support: public.** The caps the budget flags set; a resume without a flag runs under the recorded caps.
 
 Source: [`agent6.sessions.manifest.BudgetStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 

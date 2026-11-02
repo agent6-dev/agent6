@@ -295,7 +295,7 @@ class Producer:
             + (f" ({self.variable})" if self.variable else "")
             + (f" ({self.branch})" if self.branch else "")
             + f"\n\n**Support: public.** {meaning}\n\n"
-            + f"Source: [`{self.module}.{self.symbol}`]({_BLOB}{source}#L{node.lineno}).\n\n"
+            + f"Source: [`{self.module}.{self.symbol}`]({_BLOB}{source}).\n\n"
             + _table(fields)
         )
 
