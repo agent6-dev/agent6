@@ -107,7 +107,7 @@ MCP is off by default, and locally spawned servers use the command sandbox unles
 
 `sandbox.isolation = "auto"` selects the strongest available level (`full`, `partial`, or `none`) and warns when it falls back, including to no confinement.
 Under `full`, the default `sandbox.network = "auto"` gives a run's commands a private network; `partial` and `none` `sandbox.isolation` use the host network.
-The defaults are `sandbox.network = "auto"`, `sandbox.run_commands = "ask"` and `sandbox.protect_git = "auto"`.
+The defaults are `sandbox.run_commands = "ask"` and `sandbox.protect_git = "auto"`.
 `agent6 check sandbox` shows the effective file and command boundaries, network and approval settings, and live probe results.
 
 ## How it compares
