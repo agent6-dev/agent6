@@ -14,7 +14,7 @@ It changes neither the security model nor the tool surface [AGENTS.md](https://g
 `run` and `review` are single-shot.
 A machine expresses the long-running shape: timed polling, branches on agent output, side-effecting steps, and terminal states.
 The operator authors the flow as a static graph, and the LLM works inside one state at a time.
-The same inputs take the same path, and a crash loses no state.
+The same inputs take the same path, and a crash loses no journaled state.
 
 ---
 
@@ -176,7 +176,7 @@ An `agent` state spins up a normal agent6 run: its own transcript, budget slice,
 `mode` chooses the tool surface.
 
 - `"agent"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`
-- `"run"`: real coding work (edit + verify tools and the auto-commit), as `agent6 run` has
+- `"run"`: coding work (edit + verify tools and the auto-commit), as `agent6 run` has
 
 Where a run state's work lands:
 
@@ -270,7 +270,7 @@ network = "host"
 
 # the machine file
 [config.sandbox]
-network = "session"                 # every state offline
+network = "session"                 # each state's commands offline unless overridden
 
 [states.fetch.config.sandbox]
 network = "host"                    # except this reviewed tool
@@ -418,7 +418,7 @@ There are two filters, both zero-argument:
 
 - a `command` element that is exactly `"{{ listvar }}"` (lone list reference, no filter, no surrounding text) expands to one argv element per item
 - an empty list contributes no argument, so the command runs one element shorter: guard it with a `branch` on `len(x)` where that changes the command's meaning
-- injection-safe (each element stays a distinct argument, never shell-re-parsed)
+- each element stays a distinct argument, never shell-re-parsed
 - filter and reference grammar are validated at `machine check`
 
 ### 4.5 Names, references, and namespaces
@@ -465,7 +465,9 @@ A `capture` has two forms of target:
 For both forms:
 
 - what a capture may write is the ownership wall: `tool` -> `[vars.code]` only, `agent` -> `[vars.agent]` only; a `[vars.operator]` or undeclared target is a load error
-- the captured value's runtime type must match the target's declared type, or a `tool` state halts the machine loudly and an `agent` state's `finish_session` is refused in-run ([Idempotency and crash recovery](#54-idempotency-and-crash-recovery))
+- the captured value's runtime type must match the target's declared type ([Idempotency and crash recovery](#54-idempotency-and-crash-recovery))
+- an `output_schema` mismatch halts a `tool` state but refuses an `agent` state's `finish_session` in-run
+- a capture template that cannot render halts the machine for either state kind
 
 **State-name namespace.**
 
@@ -678,9 +680,9 @@ Moving the directory preserves its journal and recorded bundle, but does not rem
 | `agent6 machine run <file> [--exit-on-wait] [--auto-approve\|--no-commands] [--disable-sandbox]` | machine start or resume; lock acquired, loop driven; `--exit-on-wait`: next wake persisted, exit 0 (status `waiting`) at the first not-ready `wait`, resume by an external scheduler (systemd timer / cron); approval and sandbox flags: same purpose and refusals as the run flags |
 | `agent6 machine status <id>`              | current state, blackboard, spend, next wake; read-only |
 | `agent6 machine` (`machine list`)         | repo's machines: each instance's status and current state joined with its authored `.asm.toml`, then authored files with no instance run; spec validity per file; read-only |
-| `agent6 attach <id>`                       | live instance watcher, same command as for a run; state overview and current state, transitions as they land, active agent state's reasoning from its per-state `logs.jsonl`; read-only, Ctrl-C to stop; `agent6 attach --tui <id>`: machine screen, steer (`s`) for a running agent state as on the web machine page |
+| `agent6 attach <id>`                       | live instance watcher, same command as for a run; state overview and current state, transitions as they land, active agent state's reasoning from its per-state `logs.jsonl`; read-only, Ctrl-C to stop; `agent6 attach --tui <id>`: watch screen, steer (`s`) for a running agent state as on the web machine page |
 | `agent6 machine poke <id> [--data <json>\|--message <text>]` | wake signal for a waiting instance's next check; optional payload for the next `tool` at `$AGENT6_MACHINE_DATA_DIR/poke.json`; journaled, replay-safe |
-| `agent6 machine stop <id>`                | park at the next transition boundary through a durable marker; in-flight state completed, fact journaled; sleeping `wait` woken but left armed; no `MachineEnd` journaled, resume with `machine run`; ended/not-running: note and exit 0, no marker; unreadable journal refused; same answers on the web machine page and TUI machine screen (`x`) |
+| `agent6 machine stop <id>`                | park at the next transition boundary through a durable marker; in-flight state completed, fact journaled; sleeping `wait` woken but left armed; no `MachineEnd` journaled, resume with `machine run`; ended/not-running: note and exit 0, no marker; unreadable journal refused; same answers on the web machine page and TUI watch screen (`x`) |
 | `agent6 machine replay <id>`              | deterministic journal replay, no world I/O |
 | `agent6 config show/get/set/unset/add/remove/fix --machine-file FILE` | reads and writes of the machine's own `[config]` overlay through the config surfaces; same refusals as hand-edits |
 

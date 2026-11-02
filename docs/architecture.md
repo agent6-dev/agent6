@@ -510,7 +510,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, all kept, carrying the run's chain tip (`head_sha`) and the curator `graph_version` |
 | `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
 | `plan.md` | the plan itself, in plan sessions |
-| `transcripts/` | redacted provider request and response pairs for replay |
+| `transcripts/` | provider request and response pairs for replay, with credential headers redacted, echoed credential values of at least eight characters scrubbed, and [media payloads omitted](security.md#media-retention) |
 | `worker.pid` | the live worker's pid and start time; every surface reads liveness here |
 | `approvals/`, `questions/` | one `<id>.answer` file per prompt, whichever front-end answers; `approvals/` also holds the session-wide allow and deny marker per scope |
 | `frontends/` | one file per front-end registered to answer this run, named for its pid |
@@ -750,14 +750,15 @@ Historical reads remain tolerant through `parse_event` and `RawEvent`.
 | `verify.start` | A verification attempt started. | `verify_id` (str, optional), `execution_id` (str, optional), `tree_before` (str, optional), `cmd` (list), `scoped` (bool), `selected_paths` (list), `timeout_s` (float) |
 | `workspace.setup` | The workspace setup command finished. | `cmd` (list), `exit_code` (int, optional), `duration_s` (float), `exec_failed` (bool), `stdout_tail` (str), `stderr_tail` (str) |
 
-Every approval publishes as `approval.prompt`; one a standing answer covers journals only its `approval.answer`, with source `session`.
+An approval covered by a standing answer journals only `approval.answer`, with source `session`.
+Every other approval publishes as `approval.prompt` before its answer.
 
 - one gate (`tools/operator_prompts.py`, held by the dispatcher) mints the ids and journals every prompt/answer pair, whichever front-end answers; a front-end's approver and questioner only answer and name their source
 - the TUI's Allow/Deny writes the literal choice to `approvals/<id>.answer`; the gate clears that slot before journaling the prompt, and the approver reads it before the gate records `approval.answer`
 - the transcript fold marks the call a prompt's `call_id` names as awaiting (`sessions show`, the web and TUI conversation, ACP's `pending`)
 - the asking side decides what a choice grants: each prompt names its "allow all" scope (`command`, or one MCP server), and standing answers record per scope
 - a no-standing gate sets `standing: false`, and no front-end shows the button
-- the answer poll falls back headless ([approvals](security.md#6-approvals)) only after the front-end stays dead 30 consecutive seconds
+- after the front-end stays dead 30 consecutive seconds, the answer poll follows the [away mode](security.md#6-approvals) or falls back to stdin in an interactive terminal run
     - a page reload or a locked phone never converts a pending approval into a deny
 - a watching browser registers as the run's answer front-end; prompts bridge to the page
 - the task DAG rides as `graph.update` once per turn that mutated the DAG, plus the root seed, a surfaced task, an operator request (`/task`, `/standing`, `/retire`), the finish auto-pass, the compaction check-off and each parallel stamp; every mutation is curator-owned in `graph.jsonl`, read via `sessions graph`

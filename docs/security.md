@@ -61,7 +61,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 
 **Does not hold**
 
-- Under `none` `sandbox.isolation`, a command runs with the operator's own access: the filesystem and persistence bounds above do not apply ([Sandbox](#2-sandbox))
+- Under `none` `sandbox.isolation`, a command runs with the operator's own access: the filesystem and persistence bounds above do not apply, though agent6 still sets `HOME` to its own directory ([Sandbox](#2-sandbox))
 - The agent process's own egress is unbounded
     - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus the fixed ChatGPT OAuth authority and each `[providers.*].oauth` issuer for token grants); nothing stops the process reaching elsewhere
     - a jailed command's egress is bounded under `full` `sandbox.isolation` unless `sandbox.network = "host"` ([Network](#5-network))
@@ -232,7 +232,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
 - Timeout: the policy's `timeout_s` (verify and metric gates set it from `[harness].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124 and `timed_out=true`.
   A command's own exit 124 is a nonzero failure, not a timeout.
     - a model's `run_command` in a run is not wall-clock killed: at `[harness].command_checkin_s` it is handed back as a background job ([config](config.md#harness)).
-      Under `agent6 plan` and `agent6 ask`, in a machine state, or with `command_checkin_s = 0`, it is killed after 600 s
+      Under `agent6 plan` and `agent6 ask`, in a machine state, without a jail session, or with `command_checkin_s = 0`, it is killed after 600 s
 - One launcher per run at every isolation level; under `full` `sandbox.isolation` its commands share that netns, PID namespace, and private `/tmp`, and under `partial` the host's network and `/tmp`
     - closing the run's channel takes the PID namespace down
     - a launcher that cannot start leaves each command its own
@@ -345,7 +345,7 @@ The agent works within the environment it is given:
     - jailed children run as real root (uid 0), even under `full` `sandbox.isolation`: the uid is no boundary, and the level's layers (the table in [Sandbox](#2-sandbox)) are the whole confinement
     - a setuid bit planted through `openat2` (the one create path seccomp cannot filter) then lands on a root-owned file in the workspace.
       That is local root for whoever runs it outside the jail
-    - under `full` or `partial` `sandbox.isolation`, root opens no writes outside the workspace and no routes off the box
+    - under `full` or `partial` `sandbox.isolation`, running as root adds no write grants or network routes
     - readable files include root-only ones (`/etc/shadow` under `partial` `sandbox.isolation`; `full`'s rootfs hides it)
 - Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
     - it does not drop privileges in-process; confinement comes from the jail
@@ -445,7 +445,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - The login has no lockout and no rate limit; the secret's length carries it.
     - The token is an HMAC-SHA256 keyed by the secret, never the secret.
       The page keeps it in storage scoped to its origin (host and port) and sends it in a header, never a cookie: a browser sends a cookie to every port of the host, so a page a jailed command serves on a forwarded port would receive it on the first visit.
-      The page shell carries `Content-Security-Policy: frame-ancestors 'none'`, so such a page cannot frame the signed-in UI either.
+      The page shell, assets and JSON responses carry `Content-Security-Policy: frame-ancestors 'none'`, so such a page cannot frame the signed-in UI either.
       A browser that signed in before the token kept a cookie: the page's response expires it, and the token's derivation changed, so a stale cookie another local server collects opens nothing.
 - With `telemetry.metrics = "prometheus"` and `web.metrics_route = "on"` (default: `off`), `/metrics` uses the existing listener and requires `Authorization: Bearer <web-secret>`, never a cookie or browser sign-in token.
 - The server renders folded state and drives typed contracts.
@@ -519,14 +519,14 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
-- `protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only; `auto` (the default) binds under `full` and keeps the edit tools' refusal at every level, unless `git.control = "model"`
+- `protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only; unless `git.control = "model"`, `auto` (the default) binds under `full` and keeps the edit tools' refusal at every level
     - a mount nested under `.git` stays visible and read-only
     - a rewrite fails; `push` has no egress unless `sandbox.network = "host"`
     - a grant that contains the workspace does not lift it ([Sandbox](#2-sandbox))
 - Under `partial` `sandbox.isolation`, `protect_git = "auto"` degrades with a warning and `"on"` refuses to run
     - a jailed command there can plant a `filter.<n>.clean` plus a `.gitattributes`; agent6's own auto-commit (a temp-index `git add -A` on the host) blanks every driver the repo defines unless `git.run_repo_drivers` is set
     - Landlock cannot express the exclusion: a directory grant is recursive and stacked rulesets intersect, so denying `.git` means not granting the workspace root either
-- `git.control = "agent6"` is enforced where `.git` is read-only to jailed commands; without the sandbox the run warns that a commit the model runs lands on the checkout's branch.
+- `git.control = "agent6"` is enforced where `.git` is read-only to jailed commands; under `sandbox.isolation = "none"` the run warns that a commit the model runs lands on the checkout's branch.
 - The protected scope is the project's own `.git` at every isolation level (the in-process edit tools refuse writes under it; [File access](#3-file-access))
     - a nested `.git` (a vendored repo's, a submodule's) is workspace content, writable like any other file
 
@@ -575,13 +575,15 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - `agent6 connect <name>` signs in only at those endpoints: the browser opens `authorization_endpoint`, the code returns on the configured loopback redirect (or is pasted, state-checked either way), tokens come from `token_endpoint`; `--logout` revokes at `revocation_endpoint` when set and removes the grant regardless
 - `[providers.<name>].extra_headers` is the one header surface: a literal string rides every API request; a template table renders from a fixed fact vocabulary ([the list](config.md#request-headers)) for the request classes it names, and only a template addressed to `oauth` or `exchange` reaches a credential endpoint.
     - no fact carries a token, a path, a host, a user, an environment value or prompt text; `session_id` is an opaque id minted per role and provider in the session's `conversations.json`, kept across a resume and new on a fork; sending it or `request_id` is a correlation the operator opts into
-    - the transport owns `authorization`, `proxy-authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; an override, a control character, a case-folded duplicate or a template its target cannot render refuses at config load, and a rendered value is checked before it is sent
+    - [request-header restrictions](config.md#request-headers) apply at config load, and a rendered value is checked before it is sent
     - `provider.request` events carry an attempt's request id and class, never a header value
 - Secrets are absent from transcripts, redacted in `config show`, and masked from the jail under `full` `sandbox.isolation` ([Sandbox](#2-sandbox)).
 - `config show` and `config get` mask mapping values unless the config model marks the field display-safe (`skills.state`, `review.reviewers`); other mappings expose only their keys, including in JSON output.
-- No command, git subprocess, MCP server or token command carries a provider key: a jailed command's environment is built from its policy, and the unconfined paths (`sandbox.isolation = "none"`, git subprocesses, MCP servers, token commands) drop every configured `api_key_env` name.
+- Child processes inherit no provider keys.
+    - a jailed command's environment is built from its policy
+    - unconfined paths (`sandbox.isolation = "none"`, git subprocesses, MCP servers, token commands) drop every configured `api_key_env` name
     - an `[mcp.servers.*].pass_env` naming a provider's `api_key_env` refuses at config load, so the name cannot be handed over deliberately either
-- `agent6 connect` prompts locally (key input masked) and writes config and secrets
+- `agent6 connect` prompts locally (key input masked on Python 3.14+, hidden on 3.12 and 3.13) and writes config and secrets
     - one read-only `GET` of the provider's `/models` endpoint (OpenRouter's auth-gated `/key`) confirms auth (status only; `--no-verify` skips it)
     - it executes nothing a remote returns
 - `agent6 connect chatgpt` is a PKCE OAuth sign-in
@@ -610,7 +612,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
       A base an older release created at `755` keeps that mode
 - The config write lock serializes read-modify-write cycles and enforces nothing
     - publishes are atomic: a torn config is impossible with or without it
-    - it fails open (`O_NOFOLLOW` refuses a planted symlink; a stale root-owned lock is ignored); an invalid write proceeding without it is kept, reported "kept as written" ([config](config.md#creating-and-inspecting))
+    - it fails open (`O_NOFOLLOW` refuses a planted symlink; a stale root-owned lock is ignored): see [config write behavior](config.md#creating-and-inspecting)
 
 ### 10. Parallel lanes
 
@@ -676,7 +678,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.
   Unjailed: it needs the operator's login under `$HOME` and its own egress, at the agent process's trust tier.
   Tool-result text and notices stay under Claude Code's 50,000-byte persistence threshold.
-  The loop caps tool-result text at 34,000 bytes for this provider, keeping 16,000 for the turn's notices; a wider payload is refused.
+  The loop clips tool-result text at 34,000 bytes for this provider, keeping 16,000 for the turn's notices.
+  A tool result with its notices above 50,000 bytes is refused.
   `claude auth status --json` runs the same way for the sign-in preflight.
 - `sessions/process.py`: `ps -p <pid> -o lstart=` and `ps -p <pid> -o stat=` on hosts without `/proc` (macOS), for process start-time identity and zombie checks, over a pid agent6 recorded.
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer).

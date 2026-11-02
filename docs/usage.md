@@ -6,7 +6,7 @@ Assumes agent6 is installed (see [installation](installation.md)).
 
 ```sh
 agent6 connect                       # pick a provider, paste an API key
-agent6 check                         # every key a role uses resolves; model listings refresh
+agent6 check                         # every key a role or review seat uses resolves; model listings refresh
 agent6 model                         # the role assignments
 ```
 
@@ -38,7 +38,7 @@ agent6 routes three model roles; `reviewer` and `planner` fall back to `worker` 
 
 | Role       | Set with            | Used by                                                                                              |
 | ---------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `worker`   | `[models.worker]`   | `agent6 run`, `agent6 ask` and their resumes                                                         |
+| `worker`   | `[models.worker]`   | `agent6 run`, `agent6 ask`, their resumes, and machine agent states without a pinned model |
 | `reviewer` | `[models.reviewer]` | `agent6 review`, the in-loop review panel, the context summariser, the gister and the prompt reviser |
 | `planner`  | `[models.planner]`  | `agent6 plan`                                                                                        |
 
@@ -80,6 +80,7 @@ A command already running in this checkout's sandbox can read the pack.
 - Otherwise: a conflict.
 
 Any conflict refuses the entire import with exit 2 before moving files.
+`unpack` holds the writer locks for the packed config and secrets files across preflight and import.
 The command lists every conflict's home path and pack path with both mtimes.
 Hand-merge the files or delete the side to replace, then rerun `agent6 unpack`.
 Pack files edited by hand are hashed again; deleting a pack file leaves the home's copy untouched.
@@ -114,6 +115,7 @@ agent6 run "your task here"
 
 agent6 edits your working tree, commits each step to the run's own chain (an `agent6/<id>` branch by default), and certifies the finished tree with the verify command.
 Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#git) lands the work; `sessions merge` lands it by hand.
+Startup budget notices list each model once per notice, with the roles or review seats that use it.
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
 - without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it, or an away-mode decides it; a run whose commands are unsettled refuses to start and names the choices (`--auto-approve`, `--no-commands`, `AGENT6_DETACHED_AWAY`), see [approvals](security.md#6-approvals)
@@ -237,7 +239,13 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
 - `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` fans out lanes ([parallel](config.md#parallel))
-- `/undo` takes back the last message: the tree is committed on the run's chain, every tracked path the run changed since the checkpoint before that message is put back (one changed since the run ended stays, named in the notice), the run ends `undone` and an unstarted fork in the same checkout continues it (`agent6 resume <fork> --steer "<the message, edited>"`); `resume` and `sessions merge` refuse the undone run and name the fork; refused while another live run drives the checkout; `agent6 steer` refuses it: type it in the TUI or the web, at a `run -i` prompt, or in a live run's pause menu (Ctrl-C)
+- `/undo` is available in the TUI, web, a `run -i` prompt, or a live run's pause menu (Ctrl-C), so `agent6 steer` refuses it:
+  - it takes back the last message
+  - the tree is committed on the run's chain
+  - every tracked path the run changed since the checkpoint before that message is put back (one changed since the run ended stays, named in the notice)
+  - the run ends `undone` and an unstarted fork in the same checkout continues it (`agent6 resume <fork> --steer "<the message, edited>"`)
+  - `resume` and `sessions merge` refuse the undone run and name the fork
+  - it is refused while another live run drives the checkout
 
 ### Parallel directive
 
@@ -362,7 +370,9 @@ A run whose worker exited without recording an end reads `stale`, for example af
 - `finish_session` reads `passed` over a green gate and a bare `finished` with no gate
 - `silent_finish` means the model stopped calling tools without calling `finish_session`, and the harness took its last answer as the end
 - `metric_plateau` means the configured metric stopped improving and the harness ended the run
-- a `finish_session` end whose edits sit uncommitted exits `5` in place of `0`, and reads `passed · not committed` (`finished · not committed` with no gate) in the end block and every listing
+- a completed run whose edits sit uncommitted with no commit landed exits `5` in place of `0` (automatic commits under `git.control = "agent6"`)
+  - `finish_session` reads `passed · not committed` over a green gate and `finished · not committed` with no gate
+  - `silent_finish`, `metric_plateau`, `verify_settled` and `settled` also add `· not committed` to their status
 - `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it
 
 ## Plan, review, and ask
@@ -597,7 +607,7 @@ agent6 config fill [--force]                         # write the defaults + glob
 `agent6 init` detects Go (`go.mod`), Node, Python and Rust manifests for its AGENTS.md advice and build-artifact ignores.
 `--ecosystem go|node|py|rust` overrides that choice, not verify inference.
 
-Memory (`<state_dir>/memory/`) holds facts the model may correct; a rule goes in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md` ([repo memory](security.md#3-file-access)).
+See [repo memory](security.md#3-file-access) for the distinction between facts and rules.
 
 ## Configuration
 

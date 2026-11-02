@@ -40,7 +40,8 @@ Three more updates ride the journal.
 - `session_info_update`: the task's headline as the session title, the line `agent6 sessions list` shows
 - `available_commands_update`: `/pin <text>` and the [review commands](#review-findings).
   `/pin` reaches the run as steering text; review commands are handled by the front end, not the model.
-  The composer's other directives (`/compact`, `/btw`, `/task`, ...) are refused, except `/parallel` and `/undo`; `/parallel` starts no lanes through ACP.
+  The composer's other directives (`/compact`, `/btw`, `/task`, ...) are refused, except `/parallel` and `/undo`.
+  `/parallel` starts no lanes through ACP.
   `abort`, `exit`, `detach` and `/undo` are task text over ACP, not terminal commands.
   The editor cancels through `session/cancel`.
 - `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
@@ -110,7 +111,9 @@ A session is one conversation in one directory.
   A run `agent6 resume` would refuse (a fan-out coordinator, a lane, a run whose worktree is gone, a run with no checkpoint) is left out.
   Without `cwd` it covers every repository the connection has a session open in.
 - `session/resume` opens a conversation on a recorded run by that id, so an editor reopens its thread after a restart.
-  The next prompt resumes the run with its text as the steering instruction, as every follow-up prompt does; a plan, an ask, a run whose worker is alive, or a run `agent6 resume` would refuse is refused.
+  The next prompt resumes the run with its text as the steering instruction, as every follow-up prompt does.
+  `session/resume` refuses a plan, an ask, a run whose worker is alive, or a run `agent6 resume` would refuse.
+  It also refuses a run this connection has open for another directory or with a prompt in flight.
 - `session/load` opens the recorded run like `session/resume`, replays its journal as ordered `session/update` notifications, then returns.
 - `session/close` ends a conversation; a prompt in flight is cancelled first and answers `cancelled`.
 - `session/cancel` cuts a model call in flight and ends a running foreground command at once, without waiting for or signalling the worker (the ACP server itself).

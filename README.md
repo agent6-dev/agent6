@@ -101,13 +101,12 @@ The worker, planner, and reviewer can use different models and reasoning effort;
 
 ## [Security][security]
 
-A container or a VM confines the whole agent.
 agent6 confines only the model's commands, in a jail on your host; the agent6 process stays trusted, holds your provider credentials, and connects to your configured providers.
 The repository stays at its real path, and the jail sees your system toolchains and `~/.local/bin` read-only.
 
 `sandbox.isolation = "auto"` picks the strongest level the host allows and warns when it falls back:
 
-- `full`: commands cannot read your provider keys or the secrets file, `.git` is read-only to them (`sandbox.protect_git = "auto"`), and they get a private network (`sandbox.network = "auto"`).
+- `full`: commands cannot read your provider keys or the secrets file, `.git` is read-only to them (`sandbox.protect_git = "auto"`, `git.control = "agent6"`), and they get a private network (`sandbox.network = "auto"`).
 - `partial`: commands cannot read your keys or the secrets file, but they share agent6's network and can write `.git`.
 - `none`: no confinement.
 
@@ -119,9 +118,9 @@ MCP is off by default, and locally spawned servers use the command sandbox unles
 ### In a container
 
 - Docker gives `partial` by default and allows `full` with both `--security-opt seccomp=unconfined` and `--security-opt apparmor=unconfined`.
-- Podman, rootless by default, allows `full` with no flags.
+- Rootless Podman allows `full` with no flags ([rootful Podman][security]).
 
-On Ubuntu, `full` under Docker also needs the host to allow unprivileged user namespaces ([Installation][installation]).
+On Ubuntu, `full` under Docker also needs the host to allow the jail launcher to use unprivileged user namespaces ([Installation][installation]).
 
 [acp]: https://agent6.dev/acp/
 [budgets]: https://agent6.dev/config/#budget

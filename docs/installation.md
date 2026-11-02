@@ -74,8 +74,8 @@ The jail uses Landlock, seccomp, and user namespaces.
 
 - On other architectures and on macOS, `sandbox.isolation = "auto"` resolves to `none`: commands run as ordinary subprocesses behind a startup warning, and an explicit `full` or `partial` refuses.
 - On Windows, use WSL.
-- Unprivileged user namespaces are on by default on Debian and most cloud images
-- On Ubuntu, AppArmor blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (`agent6 system apparmor remove` reverts it)
+- Unprivileged user namespaces are on by default on Debian
+- On Ubuntu, AppArmor blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (`agent6 system apparmor remove` removes the profile, not the sysctl setting)
 - Without user namespaces `sandbox.isolation = "auto"` falls back to `partial`, and to `none` on a kernel with no Landlock.
 
 The [security model](security.md) describes what each isolation level enforces.

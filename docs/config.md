@@ -55,7 +55,8 @@ It can be empty or absent when the global config supplies a provider and model.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from the global and repo configs and their presets, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
-  `config show` prints what an `auto` `sandbox.isolation` or `sandbox.network` resolved to on this host, tagged `(adaptive)`; `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
+  `config show` tags resolved values `(adaptive)`: `auto` settings for `sandbox.isolation`, `sandbox.network` and `prompt.decompose`, each role's unset effort, and adaptive compaction thresholds.
+  `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
 
 ---
 
@@ -295,7 +296,8 @@ Watch `cache_r` in the cost summary to confirm caching engages.
 ### Short-lived bearer tokens (`token_command`)
 
 For endpoints authenticated by a refreshed bearer rather than a static key (Vertex OAuth, OIDC/STS gateways): point `token_command` at anything that prints a current token, e.g. `["gcloud", "auth", "print-access-token"]` or `["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"]`.
-It runs outside the jail with your environment (operator-only); non-zero exit, timeout, or empty output surfaces as a provider error.
+It runs outside the jail with your environment minus registered provider-key variables and `AGENT6_WEB_SECRET` (operator-only).
+Non-zero exit, timeout, or empty output surfaces as a provider error.
 
 ## `[models.<role>]`
 
@@ -355,7 +357,7 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 `agent6 sessions merge --method <method>` overrides `git.merge_method` for that merge.
 
-`git.control = "agent6"` is enforced by `sandbox.protect_git`; without the sandbox, the run warns that a commit the model runs lands on the checkout's branch.
+See [Git](security.md#7-git) for where `sandbox.protect_git` enforces `git.control = "agent6"` and which settings warn.
 
 ### `[git.commit]`
 
@@ -666,7 +668,7 @@ A spawned server's `[sandbox]` block names what it needs on top of the sandbox a
 command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/home/you/notes"]
 
 [mcp.servers.notes.sandbox]
-extra_read_paths  = ["~/notes"]   # additive; the system and tool dirs are already there
+extra_write_paths = ["~/notes"]   # additive; includes read access
 ```
 
 A confined spawn also loses the desktop-session addresses (`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `DISPLAY`, `WAYLAND_DISPLAY`): Landlock does not gate unix-socket `connect()`, and an unconfined session daemon would act on the server's behalf.
