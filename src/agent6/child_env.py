@@ -34,16 +34,16 @@ _DESKTOP = (
 )
 
 
-# The `api_key_env` names this run resolves keys from; no child needs one. Mutated, never rebound.
+# The `api_key_env` names every config this process loaded resolves keys from; no child needs
+# one. Mutated, never rebound: each `Config` adds its own at construction.
 _provider_key_env: set[str] = set()
 
 # The variable holding the operator's own `agent6 web` secret; no child needs it either.
 WEB_SECRET_ENV = "AGENT6_WEB_SECRET"  # noqa: S105  # the variable's name
 
 
-def set_provider_key_env(names: Iterable[str]) -> None:
-    """Register the provider-key variable names agent6 keeps out of every child."""
-    _provider_key_env.clear()
+def register_provider_keys(names: Iterable[str]) -> None:
+    """Add provider-key variable names agent6 keeps out of every child."""
     _provider_key_env.update(n for n in names if n)
 
 

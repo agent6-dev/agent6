@@ -12,11 +12,11 @@ from __future__ import annotations
 import pathlib
 import tomllib
 from collections.abc import Callable
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import pydantic
 
-from agent6 import kinds
+from agent6 import child_env, kinds
 from agent6.config import (
     git_config,
     harness_config,
@@ -220,6 +220,29 @@ class Config(pydantic.BaseModel):
                 raise ValueError(refusal)
         return entries
 
+    def model_post_init(self, context: Any, /) -> None:
+        """Register this config's provider-key variable names with `child_env`.
+
+        A child spawned outside the jail never inherits one, whichever entry point built the
+        config.
+
+        Args:
+            context: Pydantic's validation context, unused.
+        """
+        child_env.register_provider_keys(self.provider_key_env_names())
+
+    def provider_key_env_names(self) -> frozenset[str]:
+        """Return the `api_key_env` names the configured providers resolve keys from.
+
+        Returns:
+            The names; a Claude Code entry holds no key.
+        """
+        return frozenset(
+            e.api_key_env
+            for e in self.providers.values()
+            if not isinstance(e, provider_config.ClaudeCodeProviderEntry) and e.api_key_env
+        )
+
     @pydantic.model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:
         """Refuse a configured role naming a provider absent from a non-empty `[providers]`.
@@ -278,11 +301,7 @@ class Config(pydantic.BaseModel):
         Raises:
             ValueError: An MCP server's or the machine's `pass_env` names a provider key.
         """
-        keys = {
-            e.api_key_env
-            for e in self.providers.values()
-            if not isinstance(e, provider_config.ClaudeCodeProviderEntry) and e.api_key_env
-        }
+        keys = self.provider_key_env_names()
         lists = [
             (f"[mcp.servers.{name}].pass_env", srv.pass_env, "an MCP server")
             for name, srv in self.mcp.servers.items()

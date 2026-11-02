@@ -18,9 +18,8 @@ from agent6.vcs import git_command, git_policy, git_read
 
 
 @pytest.fixture(autouse=True)
-def _reset_policy() -> object:  # pyright: ignore[reportUnusedFunction]
-    yield
-    child_env.set_provider_key_env([])  # module-level state; do not leak across tests
+def _reset_policy(monkeypatch: pytest.MonkeyPatch) -> None:  # pyright: ignore[reportUnusedFunction]
+    monkeypatch.setattr(child_env, "_provider_key_env", set())  # module-level state
 
 
 def _captured_git_envs(
@@ -174,3 +173,16 @@ def test_explicit_git_environment_overrides_still_reach_the_child(
     assert index.is_file()
     assert not (tmp_path / "shell-index").exists()
     assert not (tmp_path / ".git/index").exists()
+
+
+def test_a_loaded_config_keeps_its_provider_key_out_of_git_without_the_git_ops_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """`sessions diff` and `skills install` spawn git and never call `apply_git_ops_policy`."""
+    monkeypatch.setenv("PROBE_PROVIDER_KEY", "sk-secret")
+    Config.model_validate(
+        {"providers": {"probe": {"api_format": "anthropic", "api_key_env": "PROBE_PROVIDER_KEY"}}}
+    )
+    for env in _captured_git_envs(monkeypatch, tmp_path):
+        assert "PROBE_PROVIDER_KEY" not in env, "a provider key reached git's environment"
+

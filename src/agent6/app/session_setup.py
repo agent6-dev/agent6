@@ -237,22 +237,17 @@ class SandboxOverrides:
 
 
 def apply_git_ops_policy(cfg: Config) -> None:
-    """Set how agent6's own git ops treat repo-controlled host code and provider secrets.
+    """Set how agent6's own git ops treat repo-controlled host code.
 
     One call per entry point, so git_ops itself stays config-free. Repo hooks and content
-    drivers are repo-controlled host code, off by default; the provider-key env vars are
-    stripped from git's environment, since a credential helper must not inherit one.
+    drivers are repo-controlled host code, off by default. The provider keys stay out of git's
+    environment by construction: every `Config` registers its names with `child_env`.
 
     Args:
         cfg: The resolved config.
     """
     git_policy.set_repo_hook_policy(cfg.git.run_repo_hooks)
     git_policy.set_repo_driver_policy(cfg.git.run_repo_drivers)
-    child_env.set_provider_key_env(
-        p.api_key_env
-        for p in cfg.providers.values()
-        if not isinstance(p, ClaudeCodeProviderEntry) and p.api_key_env
-    )
 
 
 def session_config(cfg: Config, mode: str, overrides: SandboxOverrides | None = None) -> Config:

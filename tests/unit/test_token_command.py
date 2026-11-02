@@ -34,7 +34,7 @@ def test_token_command_filters_secrets_but_keeps_operator_environment(
 ) -> None:
     """Exclude registered provider keys and the web secret without losing cloud CLI settings."""
     monkeypatch.setattr(child_env, "_provider_key_env", set())
-    child_env.set_provider_key_env(["CUSTOM_PROVIDER_KEY"])
+    child_env.register_provider_keys(["CUSTOM_PROVIDER_KEY"])
     monkeypatch.setenv("CUSTOM_PROVIDER_KEY", "provider-secret")
     monkeypatch.setenv("AGENT6_WEB_SECRET", "web-secret")
     monkeypatch.setenv("CLOUDSDK_CONFIG", "/operator/cloud-config")

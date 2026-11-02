@@ -585,6 +585,7 @@ path = "agent6.config.model"
 # RoleName and the session-mode vocabulary: shared value types, so they live
 # at the leaf rather than in whichever model declared one first.
 depends_on = [
+  "agent6.child_env",
   "agent6.config.git_config",
   "agent6.config.harness_config",
   "agent6.config.io",

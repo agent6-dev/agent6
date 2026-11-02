@@ -32,9 +32,8 @@ _CFG = {
 
 
 @pytest.fixture(autouse=True)
-def _reset_registry() -> object:  # pyright: ignore[reportUnusedFunction]
-    yield
-    child_env.set_provider_key_env([])  # module-level state; do not leak across tests
+def _reset_registry(monkeypatch: pytest.MonkeyPatch) -> None:  # pyright: ignore[reportUnusedFunction]
+    monkeypatch.setattr(child_env, "_provider_key_env", set())  # module-level state
 
 
 def test_an_unconfined_command_does_not_see_the_provider_key(
