@@ -265,6 +265,8 @@ def model_fields(cls: type[Any]) -> tuple[Field, ...]:
 def _type_text(value: Any) -> str:
     text = str(value).replace("typing.", "")
     text = re.sub(r"<class '([^']+)'>", r"\1", text)
+    # Python 3.13 prints `pathlib._local.Path`; 3.12 and 3.14 print `pathlib.Path`.
+    text = re.sub(r"\b(\w+)\._local\.", r"\1.", text)
     text = re.sub(r"agent6\.[\w.]+\.([A-Z]\w*)", r"\1", text)
     return _optional_as_union(text).replace("|", "\\|")
 

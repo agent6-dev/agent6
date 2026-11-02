@@ -43,6 +43,11 @@ def test_source_links_name_the_tree_not_the_import_location(
     assert links and all(link.startswith("src/agent6/") for link in links)
 
 
+def test_type_text_spells_a_private_module_by_its_public_name() -> None:
+    """Python 3.13 prints `pathlib._local.Path`; the page spells `pathlib.Path` on every Python."""
+    assert _generator()._type_text("pathlib._local.Path | None") == "pathlib.Path \\| None"
+
+
 def test_event_meanings_come_from_registry(monkeypatch: pytest.MonkeyPatch) -> None:
     """Event field meanings and optionality survive generation."""
     from agent6.sessions import event_schema
