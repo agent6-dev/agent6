@@ -186,3 +186,21 @@ def test_a_loaded_config_keeps_its_provider_key_out_of_git_without_the_git_ops_p
     for env in _captured_git_envs(monkeypatch, tmp_path):
         assert "PROBE_PROVIDER_KEY" not in env, "a provider key reached git's environment"
 
+
+@pytest.mark.parametrize(
+    ("shell", "want"),
+    [
+        ({"GIT_PAGER": "my-git-pager", "PAGER": "my-pager"}, "my-git-pager"),
+        ({"PAGER": "my-pager"}, "my-pager"),
+        ({}, "less"),
+    ],
+)
+def test_gits_pager_is_the_operators_never_the_repositorys(
+    monkeypatch: pytest.MonkeyPatch, shell: dict[str, str], want: str
+) -> None:
+    """`GIT_PAGER` outranks `core.pager` and `pager.<cmd>`, which a jailed command can write."""
+    for name in ("GIT_PAGER", "PAGER"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in shell.items():
+        monkeypatch.setenv(name, value)
+    assert git_policy.git_environment()["GIT_PAGER"] == want

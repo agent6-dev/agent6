@@ -527,6 +527,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 **Repo-controlled host code in a poisoned `.git/config`**
 
 - `core.fsmonitor`, `diff.external` and `diff.<d>.textconv` are always off.
+- `core.pager` and `pager.<cmd>` never run: every agent6 git call carries `GIT_PAGER`, set to your `GIT_PAGER`, else your `PAGER`, else `less`.
 - `blame.ignoreRevsFile` is honoured for a repository-relative regular file, which blame reads as a private copy in a private work tree, since git opens the configured path itself after any check; the Files view's blame refuses any other value, since git would open the file on the host and quote its first unparsable line.
     - Finding line-origin classification uses the same bounded blame reader and records an unknown reason on refusal.
     - Review refuses a `blame.ignoreRevsFile` hidden by `sandbox.hide_paths` before opening it.

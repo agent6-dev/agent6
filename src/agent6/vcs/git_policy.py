@@ -209,7 +209,8 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
         extra: Explicit agent6 settings, including temporary index paths.
 
     Returns:
-        The inherited environment with Git overrides and provider keys removed.
+        The inherited environment with Git overrides and provider keys removed, and the
+        operator's pager set.
     """
     # Inherit only GIT_{ASKPASS,AUTHOR_*,COMMITTER_*,EDITOR,SSH,SSH_COMMAND,SSH_VARIANT,TRACE*}.
     allowed = {"GIT_ASKPASS", "GIT_EDITOR", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_SSH_VARIANT"}
@@ -220,7 +221,16 @@ def git_environment(extra: dict[str, str] | None = None) -> dict[str, str]:
         or name in allowed
         or name.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_", "GIT_TRACE"))
     }
+    # The operator's pager, never the repository's: GIT_PAGER outranks `core.pager` and
+    # `pager.<cmd>`, which a jailed command can write into .git/config under `partial`.
+    pager = os.environ.get("GIT_PAGER") or os.environ.get("PAGER") or "less"
     # Disable terminal credential prompts; stable Git prose keeps the stash rescue parseable.
     return child_env.without_provider_keys(
-        {**inherited, "GIT_TERMINAL_PROMPT": "0", "LC_ALL": "C", **(extra or {})}
+        {
+            **inherited,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_PAGER": pager,
+            "LC_ALL": "C",
+            **(extra or {}),
+        }
     )
