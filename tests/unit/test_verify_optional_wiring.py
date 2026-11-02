@@ -89,10 +89,10 @@ def test_system_prompt_switches_verify_block(tmp_path: pathlib.Path) -> None:
     assert "commits each editing turn" in gateless  # the gate-aware commit rule
     assert "run project tests only through" not in gateless.lower()
     assert "stale_gate" in with_verify and "commits each editing turn" in with_verify
-    # The per-step commit rule belongs to a gate that judges each step.
-    never = Config.model_validate({"harness": {"verify_command": ["true"], "verify_when": "never"}})
-    assert "pending changes automatically after each passing" in prompt_blocks.build_system_prompt(
-        config=never, repo=repo, mode="run", skills=None
+    # One commit rule whatever the gate policy: every editing turn is checkpointed.
+    turn = Config.model_validate({"harness": {"verify_command": ["true"], "verify_when": "turn"}})
+    assert "commits each editing turn" in prompt_blocks.build_system_prompt(
+        config=turn, repo=repo, mode="run", skills=None
     )
 
 

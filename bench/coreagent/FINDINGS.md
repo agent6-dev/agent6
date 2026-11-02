@@ -175,6 +175,7 @@ gpt-6.1-sol, the same six tasks, the key off against on, n=2 per task and arm (2
 - With the key on no fix run verified red itself before editing, so the advisory, which waits for a red of the run's own, fired in none.
 - Adopted: `harness.verify_at_start`, default on.
   A slow gate was not measured; the key turns the start gate off.
+- Since 2026-11-01 the shipped default is off, with `harness.verify_when` defaulting to `never` (a product decision on cost and prior art, G12 in DECISIONS.md); the measurement above stands for a fast gate beside a red suite, the case the key is for.
 
 ## A notice for an edit the run's commits leave out
 

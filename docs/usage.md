@@ -126,8 +126,9 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 The verify command is the success gate.
 
 - Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
-- A fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a red finish over a red base reads `finished · gate red at base`, which says red at the start and red at the finish, the failures not compared (`harness.verify_at_start = false` for a gate too slow to run twice).
-- A red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
+- By default the model runs it (`run_verify_command`) and the harness never does: an end that no run of the gate covers reads `unverified`. `harness.verify_when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
+- With `harness.verify_at_start = true`, a fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a red finish over a red base reads `finished · gate red at base`, which says red at the start and red at the finish, the failures not compared (`harness.verify_at_start = false` for a gate too slow to run twice).
+- Under `finish` or `turn`, a red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
 - The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, a red base says the gate was red there too, and a gate that changed on resume says that nothing is known about this gate at the base.
 - A fork starts its own log without the parent's baseline; its base is the commit it forked from.
 - Only an unknown baseline prints the worktree recipe for checking the base; a timed-out gate instead names the timeout setting to raise.

@@ -6988,7 +6988,8 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     dispatcher = DispatcherStub()
     wf = _wf(
         root=tmp_path,
-        config=Config(),  # real config: verify_command defaults empty (gateless)
+        # A real config, gateless; `finish` so the settled end runs the gate it adopts.
+        config=Config.model_validate({"harness": {"verify_when": "finish"}}),
         mode="run",
         provider=provider,
         dispatcher=dispatcher,

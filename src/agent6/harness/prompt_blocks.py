@@ -209,16 +209,15 @@ def _plan_budget_line(config: Config) -> str:
     return loop.PLAN_BUDGET_LINE.format(percent_cap=cap)
 
 
-def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> str:
+def _commit_rule(config: Config, *, commands_allowed: bool) -> str:
     """Return the commit fact the run prompt states.
 
     Under `[git].control = "model"` nothing commits automatically; with `commit_per_turn` off
-    nothing commits at all. Under agent6 control the chain commits each passing verify when a
-    gate judges each step, else each editing step.
+    nothing commits at all. Under agent6 control the chain commits each editing turn, as a
+    verified step after a passing verify with no edit after it, else as a checkpoint.
 
     Args:
         config: The run's config.
-        has_gate: Whether the run has a verify command.
         commands_allowed: Whether the model may run commands.
 
     Returns:
@@ -228,9 +227,7 @@ def _commit_rule(config: Config, *, has_gate: bool, commands_allowed: bool) -> s
         return loop.MODEL_GIT_RULE if commands_allowed else loop.MODEL_GIT_RULE_NO_COMMANDS
     if not config.git.commit_per_turn:
         return loop.NO_AUTO_COMMIT_RULE
-    if has_gate and config.harness.verify_when != "finish":
-        return loop.AUTO_COMMIT_RULE
-    return loop.AUTO_COMMIT_RULE_GATELESS
+    return loop.AUTO_COMMIT_RULE
 
 
 def build_system_prompt(
@@ -316,7 +313,7 @@ def build_system_prompt(
     )
     base = base.replace(
         "__AUTO_COMMIT_RULE__",
-        _commit_rule(config, has_gate=has_gate, commands_allowed=allowed),
+        _commit_rule(config, commands_allowed=allowed),
     )
     parts = [base]
 

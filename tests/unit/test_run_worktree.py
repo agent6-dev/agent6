@@ -825,6 +825,8 @@ def test_a_worktree_the_cleanup_cannot_remove_is_named(
 
 
 _COMMANDS = _CONFIG.replace('run_commands = "deny"', 'run_commands = "allow"')
+# The harness runs the gate at the finish, as the gate-carrying tests below need.
+_FINISH_GATE = _COMMANDS + '\n[harness]\nverify_when = "finish"\n'
 
 
 def _with_setup(repo: pathlib.Path, argv: str) -> None:
@@ -1143,7 +1145,7 @@ def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Inferred in the worktree, where `.venv` is absent, the gate became `python3 -m pytest`."""
-    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    repo = _repo(tmp_path, monkeypatch, config=_FINISH_GATE)
     (repo / "pyproject.toml").write_text('[project]\nname = "p"\nversion = "0"\n', encoding="utf-8")
     _git(repo, "add", "pyproject.toml")
     _git(repo, "commit", "-q", "-m", "manifest")
@@ -1165,9 +1167,7 @@ def test_a_lane_stamps_the_gate_origin_its_coordinator_resolved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The lane's config carries the gate the coordinator inferred; `(configured)` was a lie."""
-    repo = _repo(
-        tmp_path, monkeypatch, config=_COMMANDS + '\n[harness]\nverify_command = ["true"]\n'
-    )
+    repo = _repo(tmp_path, monkeypatch, config=_FINISH_GATE + 'verify_command = ["true"]\n')
     _git(repo, "commit", "-qam", "the operator's edit")
     _script(monkeypatch)
     monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
@@ -1202,7 +1202,7 @@ def test_a_fork_whose_gate_is_on_an_untracked_path_refuses_before_its_worktree_e
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The fork was created, and its first execution ended `verify command unexecutable`."""
-    in_checkout = _COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]')
+    in_checkout = _FINISH_GATE.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]')
     repo = _repo(tmp_path, monkeypatch, config=in_checkout)
     _untracked_venv(repo)
     _pin_gate(repo)

@@ -67,9 +67,10 @@ def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
     assert _green(wf, last_ok=True, edited_since=True) is False
 
 
-def test_the_harness_gate_defaults_to_finish_with_two_returns() -> None:
+def test_the_harness_gate_defaults_to_never_with_two_returns_when_on() -> None:
+    """The harness runs no gate of its own by default; `finish` and `turn` are opt-in."""
     wf = Config().harness
-    assert (wf.verify_when, wf.verify_retries) == ("finish", 2)
+    assert (wf.verify_when, wf.verify_at_start, wf.verify_retries) == ("never", False, 2)
 
 
 def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> None:
@@ -582,10 +583,10 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
     assert "The harness never runs it; only your run_verify_command calls do." in block("never")
     # plan and ask never run the gate, whatever the knob says
     assert "The harness never runs it" in block("finish", mode="plan")
-    # the commit fact follows: a finish-certified run commits each editing turn
+    # the commit fact is the same whatever the policy: every editing turn is checkpointed
     assert "commits each editing turn automatically" in block("finish")
-    assert "commits pending changes automatically after each passing" in block("never")
-    assert "a passing run auto-commits the step" not in block("never")
+    assert "commits each editing turn automatically" in block("never")
+    assert "after each passing" not in block("never")
 
 
 def test_a_verify_followed_by_an_edit_in_one_turn_is_judged_again() -> None:

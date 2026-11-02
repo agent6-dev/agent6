@@ -40,7 +40,6 @@ _PROMPT_CONSTANTS = (
     prompts.PLAN_VERIFY_RULE,
     prompts.READONLY_COMMAND_RULE,
     prompts.AUTO_COMMIT_RULE,
-    prompts.AUTO_COMMIT_RULE_GATELESS,
     prompts.MODEL_GIT_RULE,
     prompts.MODEL_GIT_RULE_NO_COMMANDS,
     prompts.CREATE_HINT,

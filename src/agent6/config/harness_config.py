@@ -313,25 +313,27 @@ class HarnessConfig(pydantic.BaseModel):
         ),
     )
     verify_when: Literal["finish", "turn", "never"] = pydantic.Field(
-        default="finish",
+        default="never",
         description=(
-            'automatic `harness.verify_command` timing; `harness.verify_when = "finish"`: '
-            "`finish_session` after a tree change since the last green run; "
-            '`harness.verify_when = "turn"`: also after each editing turn; `harness.verify_when '
-            '= "never"`: only the model\'s own `run_verify_command` calls; tool available in '
-            "every mode; no gate without a verify command"
+            "when the harness runs `harness.verify_command` itself; `harness.verify_when = "
+            '"never"`: only the model\'s own `run_verify_command` calls, and the end reads '
+            "`unverified` when no run of the gate covers the final tree; `harness.verify_when = "
+            '"finish"`: `finish_session` over a tree no verdict covers, a red result returned '
+            'to the model `harness.verify_retries` times; `harness.verify_when = "turn"`: also '
+            "after each editing turn; the tool is available in every mode; no gate without a "
+            "verify command"
         ),
     )
     verify_at_start: bool = pydantic.Field(
-        default=True,
+        default=False,
         description=(
             "one `harness.verify_command` call before a fresh run's first turn to record "
             "pre-existing gate failure; red output in the first request; a red finish over a "
             "red base: `finished · gate red at base` (red at the start and at the finish, the "
-            "failures not compared); cost: one gate call per fresh run; "
-            "`harness.verify_at_start = false`: skip for a gate too slow to run twice; no start "
-            'gate with `harness.verify_when = "never"` or `sandbox.run_commands = "deny"`; '
-            "recorded baseline kept on resume"
+            "failures not compared); cost: one gate call per fresh run, worth it for a fast gate "
+            'beside a suite that is already red; needs `harness.verify_when = "finish"` or '
+            '`"turn"` and `sandbox.run_commands` other than `"deny"`; recorded baseline kept '
+            "on resume"
         ),
     )
     verify_retries: int = pydantic.Field(

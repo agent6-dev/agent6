@@ -203,12 +203,12 @@ With the per-call transcripts, an interrupted run replays deterministically up t
 A turn's tool calls and each result that returned are recorded in `turn_in_flight.json` while they dispatch.
 A resume after a death there runs none of the turn's calls again: the model gets the results that returned, and one line for each other call saying it was interrupted and not re-run.
 
-**The harness runs the gate** (`[harness].verify_when`, default `finish`).
+**The harness runs the gate only when asked** (`[harness].verify_when`, default `never`: the model's own `run_verify_command` calls are the verification, and an end no run of the gate covers reads `unverified`).
 
-- When `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
+- Under `finish`, when `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
 - A denied approval withholds the gate for the rest of the execution, and the execution ends unverified.
-- `turn` also runs it after every editing turn; `never` leaves every run to the model.
-- A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run, or the model's own unless `verify_when = "never"`) re-runs scoped to the tests nearest the run's diff.
+- `turn` also runs it after every editing turn.
+- A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff.
   It stays scoped until a full run of the gate passes.
   The notice lists the selected files, `session.end` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
 - A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
@@ -221,7 +221,7 @@ A resume after a death there runs none of the turn's calls again: the model gets
 
 **Per-turn commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
 
-- a turn no gate judged commits as a checkpoint: a gateless run, a gate nobody may run (under `run_commands = "deny"`, or after a denial), or `verify_when = "finish"` between the model's own gate runs
+- every other editing turn commits as a checkpoint, whatever the gate policy: a gateless run, a gate nobody may run (under `run_commands = "deny"`, or after a denial), a turn the model did not verify, a turn the gate judged red
 - `branch_per_run` also advances a visible `agent6/<id>` branch
 - HEAD never moves; when the run's own branch is the checked-out one, the index and the working tree are brought forward for the paths the commit changed, each only where it still matches the old tip
 - consolidation is chosen at `sessions merge` time (`git.merge_method`: `squash`, `merge`, `ff_only`)

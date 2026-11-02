@@ -54,14 +54,9 @@ READONLY_COMMAND_RULE = (
 )
 
 # Fills __AUTO_COMMIT_RULE__ by `[git].control` and gate presence; a wrong rule misdirects.
-AUTO_COMMIT_RULE = """- The harness commits pending changes automatically after each passing
-  verify, and each editing turn once no gate can run (a verify the operator
-  denied). Manual git commit is optional.
-"""
-
-AUTO_COMMIT_RULE_GATELESS = """- The harness commits each editing turn automatically; a turn that
-  ran verify commits only on a pass with no edit after it. Manual git
-  commit is optional.
+AUTO_COMMIT_RULE = """- The harness commits each editing turn automatically: a verified step
+  when a verify passed with no edit after it, a checkpoint otherwise.
+  Manual git commit is optional.
 """
 
 NO_AUTO_COMMIT_RULE = """- Nothing commits automatically in this run (`[git].commit_per_turn` is
