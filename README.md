@@ -31,7 +31,7 @@ Also available as a [streaming CLI][cli-demo] and through [ACP editor integratio
 
 Sandboxing supports **Linux on x86_64 and aarch64**; macOS runs without it, and Windows users should use WSL.
 
-Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx/), then connect a provider and select a model:
+Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [pipx](https://pipx.pypa.io/stable/how-to/install-pipx.html), then connect a provider and select a model:
 
 ```sh
 uv tool install agent6      # or pipx install agent6
