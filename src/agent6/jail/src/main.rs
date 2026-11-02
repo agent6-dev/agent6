@@ -1115,10 +1115,10 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
     .map_err(io_err)?;
     // nosuid/nodev on the workspace, the same unconditional floor the protect
     // and RO binds carry. A bind mount cannot set these in one step, so this is
-    // a second remount. Under `sudo agent6 --allow-root` the uid_map makes the
-    // jailed child real root and chmod is not seccomp-denied, so without nosuid
-    // it could leave a setuid-root binary on the HOST inode -- surviving the run
-    // and handing local root to anyone who runs it.
+    // a second remount. nosuid makes the jail ignore a setid bit it finds here;
+    // keeping the bit off the HOST inode is the seccomp mode rule's job (see
+    // apply_seccomp), and docs/security.md names the openat2 create path it
+    // cannot filter.
     mount(
         None::<&Path>,
         &cwd_in,
