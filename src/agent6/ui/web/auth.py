@@ -18,8 +18,7 @@ import re
 import secrets
 from typing import Literal
 
-from agent6 import child_env
-from agent6._data import words
+from agent6 import child_env, words
 
 SECRET_ENV = child_env.WEB_SECRET_ENV
 MIN_SECRET_CHARS = 12

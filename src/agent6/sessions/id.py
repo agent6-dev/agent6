@@ -13,7 +13,7 @@ import os
 import pathlib
 from collections.abc import Sequence
 
-from agent6._data import words
+from agent6 import words
 from agent6.graph import ulid
 from agent6.sessions import layout
 from agent6.vcs import git_read

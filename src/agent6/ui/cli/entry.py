@@ -1078,7 +1078,7 @@ def _dispatch_system(args: argparse.Namespace) -> int:
     raise AssertionError("unreachable")  # pragma: no cover -- system subparser is required
 
 
-# One handler per top-level command, mirroring the `_*_args.py` parser grouping.
+# One handler per top-level command, mirroring the `*_args.py` parser grouping.
 _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "run": _dispatch_run,
     "plan": _dispatch_plan,

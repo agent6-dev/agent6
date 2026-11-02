@@ -23,7 +23,7 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, pack, paths
-from agent6.app import execution, session_parts, session_setup
+from agent6.app import execution, session_runtime, session_setup
 from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
 from agent6.config import Config, RoleModel
@@ -1413,7 +1413,7 @@ def test_a_forks_findings_description_names_the_child_session(
     assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     child = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(child.manifest_path.read_text(encoding="utf-8"))
-    tools = session_parts.build_session_tools(
+    tools = session_runtime.build_session_tools(
         Config(),
         cwd=pathlib.Path(manifest["worktree"]),
         state_dir=state,
@@ -1500,7 +1500,7 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
 
     monkeypatch.setattr(execution, "run_execution", _fake_execution)
     monkeypatch.setattr(session_setup, "check_provider_keys", _no_missing)
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
     rc = resume_mod.resume_task(
         (), "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
@@ -1635,7 +1635,7 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     def _finished_execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
         return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(session_parts, "select_isolation", _unconfined)
+    monkeypatch.setattr(session_runtime, "select_isolation", _unconfined)
     monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)
     monkeypatch.setattr(execution, "run_execution", _finished_execution)
 

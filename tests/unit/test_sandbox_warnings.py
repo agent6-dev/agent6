@@ -584,7 +584,7 @@ def test_a_run_start_prints_the_home_grant_warning(
 ) -> None:
     """A run, a resume and a fork started under a `$HOME` grant without a word about it."""
     from agent6.app import reporter as app_reporter
-    from agent6.app import session_parts, session_setup
+    from agent6.app import session_runtime, session_setup
 
     def _detected() -> detect.Environment:
         return _env(4)
@@ -598,7 +598,7 @@ def test_a_run_start_prints_the_home_grant_warning(
     workspace.mkdir()
     said: list[str] = []
     cfg = Config(sandbox=SandboxConfig(isolation="full", extra_read_paths=(str(tmp_path),)))
-    session_parts.select_isolation(
+    session_runtime.select_isolation(
         cfg,
         cwd=workspace,
         confirm_unconfined=_confirmed,

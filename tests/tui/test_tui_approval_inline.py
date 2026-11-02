@@ -22,15 +22,7 @@ from textual import screen, widgets
 
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer
-from tests.tui._waits import (
-    TIMEOUT_S,
-    answer_written,
-    answerable,
-    focus_answers,
-    painted,
-    row_gone,
-    wait_for,
-)
+from tests.tui import waits
 
 
 def _live_run(d: pathlib.Path) -> None:
@@ -87,7 +79,7 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: pathlib.Path) ->
             assert item.display
             text = str(item.render())
             assert "approval needed" in text and "pytest -q tests/unit/test_x.py" in text
-            mark, head, command = await painted(
+            mark, head, command = await waits.painted(
                 pilot,
                 item,
                 "?",
@@ -99,16 +91,16 @@ def test_an_approval_is_an_inline_item_with_a_key_row(tmp_path: pathlib.Path) ->
             assert head.color == command.color != mark.color
             # The composer keeps focus: an empty one lets the row's keys answer.
             assert app.focused is app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
-            await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
+            await waits.focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")
-            assert await answer_written(run, pilot) == "yes"
+            assert await waits.answer_written(run, pilot) == "yes"
             _append(run, {"type": "approval.answer", "id": "ap1", "approved": True})
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.pause(0.3)
             app._tick()  # pyright: ignore[reportPrivateUsage]
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
-            assert await row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
+            assert await waits.row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             assert "allowed" in str(item.render())
 
     asyncio.run(scenario())
@@ -120,8 +112,8 @@ async def _row_shown(app: tui_app.Agent6TUI, pilot: Any) -> bool:
     The host folds the journal in its own thread, so the row follows within a few ticks rather than
     one pause.
     """
-    deadline = time.monotonic() + TIMEOUT_S
-    while not answerable(app._conv):  # pyright: ignore[reportPrivateUsage]
+    deadline = time.monotonic() + waits.TIMEOUT_S
+    while not waits.answerable(app._conv):  # pyright: ignore[reportPrivateUsage]
         if time.monotonic() >= deadline:
             return False
         app._conv._poll()  # pyright: ignore[reportPrivateUsage]
@@ -154,7 +146,7 @@ def test_the_waiting_line_under_an_approval_paints_ansi_yellow(tmp_path: pathlib
             await _open_approval(app, pilot, run)
             conv = app._conv  # pyright: ignore[reportPrivateUsage]
             live = conv.query_one("#conv-live", widgets.Static)
-            (label,) = await painted(
+            (label,) = await waits.painted(
                 pilot,
                 live,
                 "waiting · needs answer",
@@ -190,7 +182,7 @@ def test_the_answers_paint_ansi_green_and_red(tmp_path: pathlib.Path, theme: str
                 ("session-deny", "[d] deny all"),
             ):
                 label = row.query_one(f".answer-{answer}", widgets.Static)
-                (style,) = await painted(pilot, label, text)
+                (style,) = await waits.painted(pilot, label, text)
                 assert label.styles.color.ansi is not None
                 assert bool(style.bold) is (answer in ("yes", "no"))
                 colours[answer] = style.color
@@ -222,7 +214,7 @@ def test_focused_answer_paints_readable_theme_text(
             label.focus()
             await pilot.pause()
             assert app.focused is label
-            (style,) = await painted(pilot, label, str(label.render()))
+            (style,) = await waits.painted(pilot, label, str(label.render()))
             variables = app.get_css_variables()
             foreground = label.rich_style.color
             background = textual_color.Color.parse(variables["primary"])
@@ -289,7 +281,7 @@ def test_a_resumed_execution_drops_the_previous_executions_approval(tmp_path: pa
             _append(run, boundary)
             # The withdrawal is an async DOM prune after the boundary; the poll feeds the fold.
             conv = app._conv  # pyright: ignore[reportPrivateUsage]
-            assert await row_gone(conv, pilot, conv._poll)  # pyright: ignore[reportPrivateUsage]
+            assert await waits.row_gone(conv, pilot, conv._poll)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
@@ -303,9 +295,9 @@ def test_an_answered_approval_stays_closed_on_reload(tmp_path: pathlib.Path) -> 
         app = tui_app.Agent6TUI(run)
         async with app.run_test(size=(120, 40)) as pilot:
             await _open_approval(app, pilot, run)
-            await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
+            await waits.focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")
-            assert await row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
+            assert await waits.row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             app._conv.action_reload()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             assert not app._conv.query(composer.ApprovalRow)  # pyright: ignore[reportPrivateUsage]
@@ -323,9 +315,9 @@ def test_a_click_on_a_row_label_answers(tmp_path: pathlib.Path) -> None:
             await _open_approval(app, pilot, run)
             label = app._conv.query_one(".answer-yes", widgets.Static)  # pyright: ignore[reportPrivateUsage]
             # A click needs the label laid out, which is past mounted.
-            await wait_for(pilot, lambda: label.region.width > 0, "the answer label laid out")
+            await waits.wait_for(pilot, lambda: label.region.width > 0, "the answer label laid out")
             await pilot.click(label)
-            assert await answer_written(run, pilot) == "yes"
+            assert await waits.answer_written(run, pilot) == "yes"
 
     asyncio.run(scenario())
 
@@ -350,7 +342,7 @@ def test_a_click_after_another_surface_answered_is_refused(tmp_path: pathlib.Pat
             # The row settles as an answer does: nothing left to click.
             assert app._conv._approval is None  # pyright: ignore[reportPrivateUsage]
             assert str(app._conv._approval_done).startswith("answered elsewhere")  # pyright: ignore[reportPrivateUsage]
-            assert await row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
+            assert await waits.row_gone(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
@@ -441,7 +433,7 @@ def test_a_key_answers_from_the_transcript(tmp_path: pathlib.Path) -> None:
             app._conv.query_one("#conv-scroll").focus()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.press("y")
-            assert await answer_written(run, pilot) == "yes"
+            assert await waits.answer_written(run, pilot) == "yes"
             bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
             assert bar.text == ""  # the transcript types nothing
 
@@ -484,7 +476,7 @@ def test_tab_reaches_the_answers_and_enter_answers(tmp_path: pathlib.Path) -> No
                     break
             assert app.focused is not None and "answer-yes" in app.focused.classes
             await pilot.press("enter")
-            assert await answer_written(run, pilot) == "yes"
+            assert await waits.answer_written(run, pilot) == "yes"
 
     asyncio.run(scenario())
 
@@ -511,9 +503,9 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(
             _append(
                 run, {"type": "approval.prompt", "id": "ap1", "prompt": "Allow run_command: ls"}
             )
-            await wait_for(
+            await waits.wait_for(
                 pilot,
-                lambda: answerable(app._dash),  # pyright: ignore[reportPrivateUsage]
+                lambda: waits.answerable(app._dash),  # pyright: ignore[reportPrivateUsage]
                 "the dashboard row",
                 pump=app._tick,  # pyright: ignore[reportPrivateUsage]
             )
@@ -522,20 +514,20 @@ def test_the_dashboard_answers_inline_and_keeps_the_focus_on_the_answers(
             assert app.focused is bar  # the row took nothing
             shown = str(row.query_one(widgets.Static).render())
             assert "Allow run_command" in shown and "ls" in shown
-            await focus_answers(app._dash, pilot)  # pyright: ignore[reportPrivateUsage]
+            await waits.focus_answers(app._dash, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("y")
-            assert await answer_written(run, pilot) == "yes"
+            assert await waits.answer_written(run, pilot) == "yes"
             _append(run, {"type": "approval.answer", "id": "ap1", "approved": True})
             _append(
                 run, {"type": "approval.prompt", "id": "ap2", "prompt": "Allow run_command: rm"}
             )
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: app.focused is not None and "answer-yes" in app.focused.classes,
                 "the next approval's answers to keep the focus",
                 pump=app._tick,  # pyright: ignore[reportPrivateUsage]
             )
             await pilot.press("n")
-            assert await answer_written(run, pilot, "ap2") == "no"
+            assert await waits.answer_written(run, pilot, "ap2") == "no"
 
     asyncio.run(scenario())

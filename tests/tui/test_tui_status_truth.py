@@ -33,7 +33,7 @@ from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer, dashboard_header
 from agent6.viewmodel import status_facts, tail
-from tests.tui._waits import answerable, focus_answers, wait_for
+from tests.tui import waits
 
 
 def _mk_parked(d: pathlib.Path) -> None:
@@ -78,9 +78,9 @@ def _screen_is(app: tui_app.Agent6TUI, name: str) -> bool:
 
 
 async def _open_dash(app: tui_app.Agent6TUI, pilot: Any) -> None:
-    await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+    await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
-    await wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
+    await waits.wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
     app._heartbeat_at = 0.0  # age the throttle so the dir-status probe fires
     app._tick()
     await pilot.pause()
@@ -400,9 +400,9 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
 
         monkeypatch.setattr(app, "notify", spy)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
-            await wait_for(pilot, lambda: row.display, "the resume row")
+            await waits.wait_for(pilot, lambda: row.display, "the resume row")
             preset_options = row.query_one("#resume-preset", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
             assert [value for _label, value in preset_options] == ["", "no_review", "review"]
             model_options = row.query_one("#resume-model", widgets.Select)._options  # pyright: ignore[reportPrivateUsage]
@@ -428,7 +428,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
             # The dashboard's pickers show the same choices.
             await _open_dash(app, pilot)
             dash_row = app._dash.query_one("#dash-resume", composer.ResumeOptions)
-            await wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
+            await waits.wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
             preset = dash_row.query_one("#resume-preset", widgets.Select)
             model = dash_row.query_one("#resume-model", widgets.Select)
             assert preset.value == "no_review"
@@ -480,9 +480,9 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path / "parked3")
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
-            await wait_for(pilot, lambda: row.display, "the resume row")
+            await waits.wait_for(pilot, lambda: row.display, "the resume row")
             await pilot.pause()
             assert labels(row) == ("fast (as recorded)", "o/a (config default)")
             preset = row.query_one("#resume-preset", widgets.Select)
@@ -496,7 +496,7 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
             assert row.query_one("#resume-model", widgets.Select).value == "o/b"
             await _open_dash(app, pilot)
             dash_row = app._dash.query_one("#dash-resume", composer.ResumeOptions)
-            await wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
+            await waits.wait_for(pilot, lambda: dash_row.display, "the dashboard's row")
             await pilot.pause()
             assert labels(dash_row) == ("fast (as recorded)", "o/no_review (config default)")
             assert dash_row.query_one("#resume-model", widgets.Select).value == "o/b"
@@ -512,7 +512,7 @@ def test_dead_worker_leads_with_the_hub_word_stale(tmp_path: pathlib.Path) -> No
         app = tui_app.Agent6TUI(tmp_path / "crashed1")
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render())
@@ -540,8 +540,8 @@ def test_dead_worker_stream_pane_drops_stale_partial_text(tmp_path: pathlib.Path
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
-            await wait_for(
+            await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await waits.wait_for(
                 pilot,
                 lambda: app.state.last_role is not None and bool(app.state.last_role.streamed_text),
                 "the partial response",
@@ -567,13 +567,15 @@ def test_crash_then_resume_recovers_liveness(tmp_path: pathlib.Path) -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             # The operator resumes: a new execution appends to the log with a live worker pid.
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "loop.resume.start", "turn": 2}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-            await wait_for(pilot, lambda: not app.worker_lost, "liveness to recover after resume")
+            await waits.wait_for(
+                pilot, lambda: not app.worker_lost, "liveness to recover after resume"
+            )
             assert app.session_controllable() is True
             app._heartbeat_at = 0.0
             app._tick()
@@ -602,10 +604,10 @@ def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: pathlib.
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
             app._tick()
-            await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
@@ -630,10 +632,10 @@ def test_a_dead_workers_open_call_settles_into_the_scrollback(tmp_path: pathlib.
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
             app._tick()
-            await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             body = "\n".join(
@@ -669,7 +671,7 @@ def test_conversation_composer_routes_through_the_host_parser(tmp_path: pathlib.
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
@@ -708,8 +710,10 @@ def test_dead_run_pops_no_approval_modal(tmp_path: pathlib.Path) -> None:
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
-            await wait_for(pilot, lambda: bool(app.state.pending_approvals), "the prompt to fold")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(
+                pilot, lambda: bool(app.state.pending_approvals), "the prompt to fold"
+            )
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
@@ -724,7 +728,7 @@ def _approval_ready(app: tui_app.Agent6TUI) -> bool:
     bar = app._conv.query_one("#conv-input", composer.SteerInput)  # pyright: ignore[reportPrivateUsage]
     return (
         _screen_is(app, "_conv")
-        and answerable(app._conv)  # pyright: ignore[reportPrivateUsage]
+        and waits.answerable(app._conv)  # pyright: ignore[reportPrivateUsage]
         and app.focused is bar
     )
 
@@ -747,7 +751,7 @@ def test_live_run_still_gets_the_inline_approval(tmp_path: pathlib.Path) -> None
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _approval_ready(app), "the approval row")
+            await waits.wait_for(pilot, lambda: _approval_ready(app), "the approval row")
 
     asyncio.run(scenario())
 
@@ -760,11 +764,11 @@ def test_answer_after_death_reports_instead_of_writing(tmp_path: pathlib.Path) -
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _approval_ready(app), "the approval row")
+            await waits.wait_for(pilot, lambda: _approval_ready(app), "the approval row")
             (d / "worker.pid").write_text("999999999", encoding="utf-8")
             app._heartbeat_at = 0.0
             app._tick()
-            await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             await pilot.pause()
             await pilot.press("a")  # the row is gone: the key answers nothing
@@ -785,7 +789,7 @@ def test_exit_on_end_holds_over_a_ghost_prompt_and_ctrl_q_leaves(tmp_path: pathl
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d, exit_on_end=True)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: app._end_hold, "the end hold")
+            await waits.wait_for(pilot, lambda: app._end_hold, "the end hold")
             assert "Ctrl+Q to leave" in app.sub_title
             assert app.is_running
             await pilot.press("ctrl+q")
@@ -824,7 +828,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: pathli
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d, exit_on_end=True)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: app._end_hold, "the end hold")
+            await waits.wait_for(pilot, lambda: app._end_hold, "the end hold")
             assert app.is_running
             # The hold leads with the hub's own status word ("passed" here).
             assert "passed" in app.sub_title and "Ctrl+Q to leave" in app.sub_title
@@ -954,7 +958,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
 
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             append({"type": "loop.resume.start", "turn": 2, "mode": "run"})
-            await wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
+            await waits.wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render())
@@ -968,7 +972,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
                 {"type": "role.result", "role": "worker", "ok": True, "text": "stopping"},
                 {"type": "session.end", "reason": "steer_abort", "all_passed": None},
             )
-            await wait_for(pilot, lambda: app.state.finished, "the resumed execution's end")
+            await waits.wait_for(pilot, lambda: app.state.finished, "the resumed execution's end")
             app._tick()
             await pilot.pause()
             top = str(app._dash.query_one("#top", widgets.Static).render())
@@ -989,7 +993,7 @@ def test_dead_pane_hints_point_at_controls_that_exist(tmp_path: pathlib.Path) ->
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await _open_dash(app, pilot)
-            await wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
+            await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             app._tick()
             await pilot.pause()
             body = str(app._dash.query_one("#stream-body", widgets.Static).render())
@@ -1032,10 +1036,10 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             conv_live = app._conv.query_one("#conv-live", widgets.Static)
             conv_bar = app._conv.query_one("#conv-input", composer.SteerInput)
-            await wait_for(pilot, lambda: conv_bar.mode == "steer", "the starting steer bar")
+            await waits.wait_for(pilot, lambda: conv_bar.mode == "steer", "the starting steer bar")
             app._conv._poll()  # pyright: ignore[reportPrivateUsage]
             assert not conv_live.display
             conv_spin = app._conv._spin  # pyright: ignore[reportPrivateUsage]
@@ -1050,7 +1054,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
                 {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
                 {"type": "role.call", "role": "worker", "model": "m", "provider": "p"},
             )
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: app.state.last_role is not None and app.state.last_role.in_flight,
                 "the model call",
@@ -1064,7 +1068,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
             assert app._conv._spin == conv_spin + 1  # pyright: ignore[reportPrivateUsage]
 
             append({"type": "role.result", "role": "worker", "ok": True, "text": "done"})
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: app.state.last_role is not None and not app.state.last_role.in_flight,
                 "the model result",
@@ -1085,7 +1089,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
                     "all_passed": True,
                 }
             )
-            await wait_for(pilot, lambda: app.state.finished, "the session end")
+            await waits.wait_for(pilot, lambda: app.state.finished, "the session end")
             assert conv_bar.mode == "resume"
             await _open_dash(app, pilot)
             assert app._dash.query_one("#dash-input", composer.SteerInput).mode == "resume"
@@ -1102,18 +1106,20 @@ def test_waiting_run_pane_says_waiting_not_working(tmp_path: pathlib.Path) -> No
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             # Deny writes only the bridge file; no answer event lands, so the run stays waiting.
-            await wait_for(pilot, lambda: _approval_ready(app), "the approval row")
-            await focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
+            await waits.wait_for(pilot, lambda: _approval_ready(app), "the approval row")
+            await waits.focus_answers(app._conv, pilot)  # pyright: ignore[reportPrivateUsage]
             await pilot.press("d")
             await _open_dash(app, pilot)
-            await wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
+            await waits.wait_for(pilot, lambda: app.dir_status[0] == "waiting", "the waiting word")
 
             def pane() -> str:
                 # The fold lands in the reader thread, so the pane follows a tick later.
                 app._tick()  # pyright: ignore[reportPrivateUsage]
                 return str(app._dash.query_one("#stream-body", widgets.Static).render())  # pyright: ignore[reportPrivateUsage]
 
-            await wait_for(pilot, lambda: "waiting · needs answer" in pane(), "the waiting pane")
+            await waits.wait_for(
+                pilot, lambda: "waiting · needs answer" in pane(), "the waiting pane"
+            )
             assert "working…" not in pane()
 
     asyncio.run(scenario())
@@ -1212,7 +1218,7 @@ def test_dashboard_header_says_where_the_changes_are(
                 [*git, "commit", "-q", "--allow-empty", "-m", "past the stamp"], check=True, env=env
             )
             subprocess.run([*git, "checkout", "-q", "main"], check=True)
-            await wait_for(pilot, lambda: not app.state.finished, "the resume to fold")
+            await waits.wait_for(pilot, lambda: not app.state.finished, "the resume to fold")
             app._dash.render_heartbeat()
             await pilot.pause()
             return before, after, str(app._dash.query_one("#top", widgets.Static).render())

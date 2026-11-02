@@ -44,3 +44,18 @@ def test_function_only_module_has_no_class_kind() -> None:
     assert not facts.class_fields
     assert "session_state_as_dict" in facts.class_docs
     assert generator._kind(facts, "session_state_as_dict") == ""
+
+
+def test_function_only_card_has_no_kind_separator() -> None:
+    """A function-only card's module link has no empty kind or trailing whitespace."""
+    generated: str = _load_generator().build_markdown()
+    link = next(
+        line
+        for line in generated.splitlines()
+        if line.startswith("[`agent6.viewmodel.state_view`]")
+    )
+    assert link == (
+        "[`agent6.viewmodel.state_view`](https://github.com/agent6-dev/agent6/"
+        "blob/master/src/agent6/viewmodel/state_view.py)"
+    )
+    assert all(line == line.rstrip() for line in generated.splitlines())

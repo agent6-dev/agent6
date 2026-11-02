@@ -21,7 +21,7 @@ from unittest import mock
 import pytest
 
 from agent6 import errors, paths
-from agent6.app import execution, session_parts, session_setup, stamps
+from agent6.app import execution, session_runtime, session_setup, stamps
 from agent6.app import run as app_run
 from agent6.config import Config
 from agent6.models import validate
@@ -591,7 +591,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
         return execution.ExecutionEnd(0)
 
     monkeypatch.setattr(session_setup, "check_provider_keys", _none)
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
     monkeypatch.setattr(execution, "run_execution", _execution)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("resume teardown raise")

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `git.auto_merge` (ui/cli/_finalize.py finalize_auto_merge)."""
+"""Tests for `git.auto_merge` (app/finalize.py finalize_auto_merge)."""
 
 from __future__ import annotations
 

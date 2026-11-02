@@ -21,6 +21,8 @@ depends_on = []
 # presentation, process-spawn, and run-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
 # execution drains review_actions through sessions.ipc at the worker steer boundary.
+# run and resume share session_runtime; execution, session_runtime and role_providers
+# use conversation_state for persisted conversation ids and completed-call counts.
 # merge calls merge_message; its builders use session_setup, providers, harness and viewmodel.
 path = "agent6.app"
 depends_on = [
@@ -75,6 +77,7 @@ depends_on = [
 ]
 
 [[modules]]
+# prompt_cmds reads harness.prompt_preview for the first exchange.
 path = "agent6.ui.cli"
 depends_on = [
   "agent6",
@@ -148,6 +151,8 @@ depends_on = [
 # compaction_driver and compaction_rules use compaction_elision and compaction_window.
 # compaction_window uses loop_conversation and compaction_elision; the result cap
 # reads review_panel and verify_gate notice sizes within this harness boundary.
+# The package re-exports prompt_preview; it uses dag_focus, prompt_blocks,
+# repo_context and toolset within this boundary.
 path = "agent6.harness"
 depends_on = [
   "agent6.budget",  # loop harness needs BudgetExceededError
@@ -358,8 +363,6 @@ depends_on = [
 path = "agent6.ui.web"
 depends_on = [
   "agent6",
-  # The sign-in secret is minted from the session-id wordlist.
-  "agent6._data",
   # /undo forks in-process (app.fork), the same direction ui.acp already uses.
   "agent6.app",
   # The variable naming the operator's own secret, kept out of every child.
@@ -395,6 +398,8 @@ depends_on = [
   "agent6.vcs.git_read",
   "agent6.viewmodel",
   "agent6.viewmodel.receipt",
+  # The sign-in secret is minted from the session-id wordlist.
+  "agent6.words",
 ]
 
 [[modules]]
@@ -746,10 +751,10 @@ path = "agent6.sessions.id"
 # so the generator and the guard sit together rather than each caller spelling
 # the path out. git_read: an explicit --session-id must be a valid git branch
 # name (it becomes agent6/<id> and refs/agent6/<id>/head) before state creation.
-depends_on = ["agent6._data", "agent6.graph.ulid", "agent6.sessions.layout", "agent6.vcs.git_read"]
+depends_on = ["agent6.graph.ulid", "agent6.sessions.layout", "agent6.vcs.git_read", "agent6.words"]
 
 [[modules]]
-path = "agent6._data"
+path = "agent6.words"
 depends_on = []
 
 [[modules]]

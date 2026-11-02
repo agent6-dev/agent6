@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Assemble the session pieces `run_task` and `resume_task` share.
+"""Build the isolation, providers, dispatcher and tools a run and a resume share.
 
-The isolation preflight and the provider, dispatcher and tools build. The lifecycles keep
-their own workspace steps and their Harness wiring.
+The lifecycles keep their own workspace steps and Harness wiring.
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from agent6 import budget as agent6_budget
 from agent6 import kinds
 from agent6.app import (
     confine,
-    conversation_ids,
+    conversation_state,
     frontend,
     preflight,
     review_actions,
@@ -199,7 +198,7 @@ def build_session_providers(
     transcript_sink: TranscriptSink,
     stream_text: bool,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-    conversations: conversation_ids.Conversations | None = None,
+    conversations: conversation_state.Conversations | None = None,
 ) -> SessionProviders:
     """Build the driving role's provider and the summariser and review seats.
 
@@ -215,7 +214,7 @@ def build_session_providers(
     Returns:
         The providers, metering into one tracker.
     """
-    conversations = conversations or conversation_ids.Conversations()
+    conversations = conversations or conversation_state.Conversations()
     budget = session_setup.budget_tracker(cfg)
     inner = role_providers.build_role_provider(
         cfg, role, transcript_sink=transcript_sink, budget=budget, events=events

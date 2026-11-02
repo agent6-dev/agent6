@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The Harness-free lane bookkeeping behind `/parallel` dispatch (`harness/_parallel_dispatch`)."""
+"""The Harness-free lane bookkeeping behind `/parallel` dispatch (`harness/parallel_dispatch`)."""
 
 from __future__ import annotations
 

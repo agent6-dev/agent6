@@ -16,8 +16,7 @@ from http import client
 
 import pytest
 
-from agent6 import paths
-from agent6._data import words
+from agent6 import paths, words
 from agent6.ui.cli import main
 from agent6.ui.web import auth, page
 from agent6.ui.web import server as web_server

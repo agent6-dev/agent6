@@ -29,7 +29,7 @@ from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer, dashboard_header, modals, prompts
 from agent6.viewmodel import Question, QuestionPrompt, state
-from tests.tui._waits import answer_written, focus_answers, wait_for
+from tests.tui import waits
 
 
 def _ev(**fields: Any) -> dict[str, object]:
@@ -51,14 +51,14 @@ async def _show_dashboard(pilot: Any) -> None:
     Startup pushes the screens asynchronously; a Ctrl+D fired early types into the wrong screen.
     """
     app = pilot.app
-    await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+    await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
     await pilot.press("ctrl+d")
-    await wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
+    await waits.wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
 
 
 async def _settle_focus(pilot: Any, widget: Any) -> None:
     """Wait for a deferred focus() (Widget.focus defers via call_later) to land."""
-    await wait_for(pilot, lambda: pilot.app.focused is widget, f"focus on {widget}")
+    await waits.wait_for(pilot, lambda: pilot.app.focused is widget, f"focus on {widget}")
 
 
 class _ModalHost(textual_app.App[None]):
@@ -365,17 +365,17 @@ def test_render_and_modals(tmp_path: pathlib.Path) -> None:
             app._tick()
             await pilot.pause()
             assert not isinstance(app.screen, textual_screen.ModalScreen)
-            await focus_answers(app._dash, pilot)
+            await waits.focus_answers(app._dash, pilot)
             await pilot.press("y")
-            assert await answer_written(tmp_path, pilot) == "yes"
+            assert await waits.answer_written(tmp_path, pilot) == "yes"
 
             app._handle_event(_ev(type="approval.answer", id="ap1", approved=True))
             app._handle_event(_ev(type="approval.prompt", id="ap2", prompt="rm -rf"))
             app._tick()
             await pilot.pause()
-            await focus_answers(app._dash, pilot)
+            await waits.focus_answers(app._dash, pilot)
             await pilot.press("n")
-            assert await answer_written(tmp_path, pilot, "ap2") == "no"
+            assert await waits.answer_written(tmp_path, pilot, "ap2") == "no"
 
             # An external steer request routes to the docked bar, which takes focus.
 
@@ -463,7 +463,7 @@ def test_start_question_before_session_start_is_answerable(tmp_path: pathlib.Pat
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: (
                     isinstance(app.screen, modals.QuestionModal)
@@ -518,7 +518,7 @@ def test_a_question_answered_from_another_front_end_closes_the_modal(
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(120, 40)) as pilot:
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: (
                     isinstance(app.screen, modals.QuestionModal)
@@ -530,7 +530,7 @@ def test_a_question_answered_from_another_front_end_closes_the_modal(
             assert "Which name?" in app.export_screenshot().replace("&#160;", " ")
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(answer) + "\n")
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: not isinstance(app.screen, modals.QuestionModal),
                 "the modal to close",
@@ -751,11 +751,11 @@ def test_conversation_and_dashboard_footers_match(tmp_path: pathlib.Path) -> Non
                 # The footer adds the palette itself; compare only the keys the screen offers.
                 return bool(shown) and [k for k in keys if k in shown] == shown
 
-            await wait_for(pilot, settled, what)
+            await waits.wait_for(pilot, settled, what)
             return [(fk.key_display, fk.description) for fk in app.screen.query(FooterKey)]
 
         async with app.run_test(size=(120, 30)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             conv = await footer_keys(pilot, "the conversation footer")
             await _show_dashboard(pilot)
             dash = await footer_keys(pilot, "the dashboard footer")
@@ -838,9 +838,9 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: pathlib.Pa
             app._conv._poll()
             await pilot.pause()
             assert app._conv.query(composer.ApprovalRow)
-            await focus_answers(app._conv, pilot)
+            await waits.focus_answers(app._conv, pilot)
             await pilot.press("y")
-            assert await answer_written(tmp_path, pilot, "approval-1") == "yes"
+            assert await waits.answer_written(tmp_path, pilot, "approval-1") == "yes"
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
             # A resumed execution emits only loop.resume.start, never a second session.start.
             app._handle_event(_ev(type="loop.resume.start", turn=2, messages=4))
@@ -851,9 +851,9 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: pathlib.Pa
             app._conv._poll()
             await pilot.pause()
             assert app._conv.query(composer.ApprovalRow)  # re-shown, not swallowed
-            await focus_answers(app._conv, pilot)
+            await waits.focus_answers(app._conv, pilot)
             await pilot.press("n")
-            assert await answer_written(tmp_path, pilot, "approval-1") == "no"
+            assert await waits.answer_written(tmp_path, pilot, "approval-1") == "no"
 
     asyncio.run(scenario())
 
@@ -978,14 +978,14 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path, exit_on_end=True)
         async with app.run_test(size=(120, 40)) as pilot:
-            await wait_for(pilot, lambda: app._end_hold, "the end hold")
+            await waits.wait_for(pilot, lambda: app._end_hold, "the end hold")
             conv_row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
             assert conv_row.display
             app._conv.query_one("#conv-input", composer.SteerInput).post_message(
                 composer.SteerInput.Submitted("also add tests")
             )
             await app.workers.wait_for_complete()
-            await wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
+            await waits.wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
             assert spawned == [(tmp_path.name, "also add tests")]
             assert app.dir_status[0] == "running"
             assert not app._end_hold
@@ -1630,7 +1630,7 @@ def test_dashboard_heartbeat_ticks_while_active(tmp_path: pathlib.Path) -> None:
                 )
 
             # The heartbeat needs real wall time (at least 1s since the last event), so poll for it.
-            await wait_for(pilot, advanced, "the working… heartbeat to advance", timeout=15.0)
+            await waits.wait_for(pilot, advanced, "the working… heartbeat to advance", timeout=15.0)
             return str(app._dash.query_one("#stream-body", widgets.Static).render())
 
     text = asyncio.run(scenario())
@@ -1690,7 +1690,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: pathlib.Path) -> 
                 return app._dash.query_one("#tools", widgets.DataTable).row_count
 
             # Wait through the reader thread's initial fold, not a fixed budget.
-            await wait_for(pilot, lambda: rows() >= 1, "the attach-time fold", timeout=15.0)
+            await waits.wait_for(pilot, lambda: rows() >= 1, "the attach-time fold", timeout=15.0)
             before = app._dash.query_one("#tools", widgets.DataTable).row_count
             # The background process appends a new turn AFTER we attached.
             append(
@@ -1699,7 +1699,7 @@ def test_dashboard_follows_live_appends_after_attach(tmp_path: pathlib.Path) -> 
                     {"type": "tool.result", "name": "apply_edit", "ok": True, "summary": "applied"},
                 ]
             )
-            await wait_for(pilot, lambda: rows() > before, "the appended turn", timeout=15.0)
+            await waits.wait_for(pilot, lambda: rows() > before, "the appended turn", timeout=15.0)
             return app._dash.query_one("#tools", widgets.DataTable).row_count
 
     assert asyncio.run(scenario()) == 2
@@ -1855,7 +1855,7 @@ def test_dashboard_names_the_manifests_driver_before_the_first_call(tmp_path: pa
                     json.dumps(_ev(type="role.call", role="planner", model="m1", provider="p"))
                     + "\n"
                 )
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: app.state.last_role is not None and app.state.last_role.in_flight,
                 "the first model call",
@@ -1957,10 +1957,10 @@ def test_a_short_terminal_dashboard_shows_one_pane_row_at_a_time(tmp_path: pathl
             assert "1 tool call · last read_file" in summary
             tools.focus()
             # The fold follows the focus through a relayout, a frame or more away under load.
-            await wait_for(pilot, lambda: tools.region.height > 3, "the tools pane unfolded")
+            await waits.wait_for(pilot, lambda: tools.region.height > 3, "the tools pane unfolded")
             assert dash.query_one("#body").region.height == 0
             await pilot.resize_terminal(120, 40)
-            await wait_for(pilot, lambda: not dash.has_class("-compact"), "the wide layout")
+            await waits.wait_for(pilot, lambda: not dash.has_class("-compact"), "the wide layout")
             assert dash.query_one("#log").region.height > 3
 
     asyncio.run(scenario())
@@ -1990,14 +1990,14 @@ def test_the_compact_summary_counts_the_runs_tool_calls_not_the_window(
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)
         async with app.run_test(size=(80, 24)) as pilot:
-            await wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
             await pilot.pause()
             body = "\n".join(
                 str(w.content) for w in app._conv.query(".conv-chunk").results(widgets.Static)
             )
             assert "60 tools" in body
             await pilot.press("ctrl+d")
-            await wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_dash"), "the dashboard screen")
             app._tick()
             await pilot.pause()
             dash = app._dash

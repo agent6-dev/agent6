@@ -6,14 +6,6 @@
 SSE endpoints over the same folds (`agent6.viewmodel`), spawn (`agent6.ui.spawn`)
 and answer files (`agent6.sessions.ipc`) every other front-end uses.
 
-Layout:
-    model.py   the JSON payload builders (hub, run, machine, conversation, config).
-    actions.py the write side: answers, steers, spawns, the fixed-argv CLI bridge.
-    server.py  the threading server, routing and POST bodies (`run_web`).
-    auth.py    the sign-in secret and the token every `/api` route requires.
-    _sse.py    the run and machine server-sent-event streams.
-    page.py    the HTML, CSS and JS single-page app.
-
 The server binds loopback; a non-loopback bind is opt-in under `[web]`, with remote
 access expected behind `tailscale serve`. No secret is ever served.
 """

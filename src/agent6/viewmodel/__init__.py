@@ -6,25 +6,6 @@ The CLI, the TUI, the web UI and ACP read the same `<run-dir>/logs.jsonl`, fold 
 through the same pure functions here, and differ only in how they paint the result.
 The folds do no I/O and hold no async: frozen dataclasses and pure functions, so a
 viewer in any language mirrors `SessionState` and `MachineState` field for field.
-
-Modules:
-    events.py            typed read model of the event families the fold consumes.
-    _state_types.py      frozen session view records.
-    _state_view.py       session status, context usage and wire rendering.
-    state.py             event fold: list[event] -> SessionState.
-    machine_state.py     journal fold: machine journal -> MachineState, plus the watch cursor.
-    tail.py              stdlib JSONL file tailer, the event source.
-    transcript.py        event fold: logs.jsonl -> live conversation TranscriptItems.
-    transcript_style.py  one styled-line renderer for a folded TranscriptItem.
-    transcript_render.py fold and Markdown render of the per-call provider transcripts.
-    _session_log.py      tolerant session journal scan.
-    _session_status.py   shared session labels and status decisions.
-    listing.py           run-dir scan -> SessionSummary rows for listings and pickers.
-    log_line.py          one-line renderings of an event for the log views.
-    wire.py              the one-object wire snapshots of a session and of a machine.
-    policy.py            a session's policy facts, folded from its dir.
-    format.py            shared glyphs and cost/status formatting.
-    config_view.py       effective-config tree -> the `config show` view.
 """
 
 from __future__ import annotations

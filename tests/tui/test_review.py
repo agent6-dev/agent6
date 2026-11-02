@@ -16,7 +16,7 @@ from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import home, modals
 from tests import review_helpers
-from tests.tui import _waits
+from tests.tui import waits
 
 
 def _shown(widget: widgets.Static) -> str:
@@ -338,7 +338,7 @@ def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
                 == "Ask a run to revert"
             )
             app.screen.query_one("#receipt-revert", widgets.Button).press()
-            await _waits.wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: (
                     bool(app.screen.query("#draft-input"))

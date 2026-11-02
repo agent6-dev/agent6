@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The opaque conversation ids and turn state a session's model calls carry.
+"""Hold conversation ids and the completed-call counts that decide `is_first_turn`.
 
-Each role's calls to one provider form a conversation. Its id is minted here, never
-derived from a path, a name or a host, and lives in `conversations.json` beside the
-session: a resume continues the same conversations; a fork, which copies none of this,
-starts new ones.
+Each role's calls to one provider form a conversation.
+Its id is minted here, never derived from a path, a name or a host.
+The ids and counts persist in `conversations.json` beside the session.
+A resume continues the same conversations; a fork starts new ones.
 """
 
 from __future__ import annotations

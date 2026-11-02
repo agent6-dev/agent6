@@ -10,7 +10,7 @@ from typing import Literal
 
 from agent6 import paths
 from agent6.config import layer
-from agent6.harness import ModelExchange, model_exchange_for
+from agent6.harness import prompt_preview
 from agent6.tools import verify_infer
 
 
@@ -44,12 +44,12 @@ def _cmd_prompt_show(
         )
         if inferred.argv:
             cfg = cfg.with_verify_command(inferred.argv)
-    exchange = model_exchange_for(cfg, cwd, mode, state_dir=paths.state_dir(cwd))
+    exchange = prompt_preview.model_exchange_for(cfg, cwd, mode, state_dir=paths.state_dir(cwd))
     print(_as_json(exchange) if as_json else _as_text(exchange))
     return 0
 
 
-def _as_json(x: ModelExchange) -> str:
+def _as_json(x: prompt_preview.ModelExchange) -> str:
     """Return the exchange as one indented JSON object."""
     return json.dumps(
         {
@@ -66,7 +66,7 @@ def _as_json(x: ModelExchange) -> str:
     )
 
 
-def _as_text(x: ModelExchange) -> str:
+def _as_text(x: prompt_preview.ModelExchange) -> str:
     """Return the exchange as sectioned text."""
     out = [
         f"=== system prompt ({x.mode} mode, {len(x.system):,} chars) ===",

@@ -23,7 +23,7 @@ from agent6.app import (
     resume_questions,
     resume_tree,
     run,
-    session_parts,
+    session_runtime,
     session_setup,
     stamps,
     workspace_setup,
@@ -498,7 +498,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             return 2
 
         try:
-            isolation = session_parts.select_isolation(
+            isolation = session_runtime.select_isolation(
                 cfg,
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
@@ -532,7 +532,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             ),
         )
 
-        session_parts.warn_install_inside_workspace(cwd, reporter=reporter)
+        session_runtime.warn_install_inside_workspace(cwd, reporter=reporter)
         for line in repo_context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
             reporter.note(line)
 
@@ -609,7 +609,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         def _undo_forker() -> tuple[str, str] | None:
             # Lazy: app.fork imports this module.
-            from agent6.app import undo  # noqa: PLC0415  # noqa: PLC0415
+            from agent6.app import undo  # noqa: PLC0415
 
             return undo.undo_fork(config_paths, session_id, cwd=repo, reporter=reporter)
 

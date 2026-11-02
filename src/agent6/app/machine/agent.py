@@ -32,7 +32,7 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, paths
-from agent6.app import confine, role_providers, session_parts, session_setup, workspace_setup
+from agent6.app import confine, role_providers, session_runtime, session_setup, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import compaction_window, loop, operator_bridge, run_chain, subrun
@@ -486,7 +486,7 @@ def run_one(
         compaction=compaction_window.CompactionSettings(
             drop_at_chars=compact_drop,
             summarise_at_chars=compact_summarise,
-            tool_result_cap_bytes=session_parts.tool_result_cap_bytes(cfg, "worker"),
+            tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, "worker"),
             keep_recent_chars=keep_recent,
             keep_thinking_turns=cfg.context.keep_thinking_turns,
             elision_gists=cfg.context.elision_gists,

@@ -78,7 +78,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
 
     A 0644 or wrong-architecture AGENT6_JAIL_BIN is not "userns supported: False".
     """
-    from agent6.app import preflight, session_parts
+    from agent6.app import preflight, session_runtime
     from agent6.app import reporter as app_reporter
     from agent6.config import Config
     from agent6.sandbox import jail
@@ -94,7 +94,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
         said: list[str] = []
         reporter = app_reporter.Reporter(out=said.append, err=said.append)
         with pytest.raises(preflight.SessionRefusedError):
-            session_parts.select_isolation(
+            session_runtime.select_isolation(
                 Config(),
                 cwd=tmp_path,
                 confirm_unconfined=lambda _level, _cfg: True,

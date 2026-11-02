@@ -7,7 +7,7 @@ A prefix pair completes ambiguously in an id.
 
 from __future__ import annotations
 
-from agent6._data import words
+from agent6 import words
 
 
 def test_curation_rules_hold() -> None:

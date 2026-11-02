@@ -11,7 +11,7 @@ from typing import Any
 
 from agent6 import budget as agent6_budget
 from agent6 import media
-from agent6.app import conversation_ids
+from agent6.app import conversation_state
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -373,8 +373,8 @@ class InstrumentedProvider:
     budget: agent6_budget.BudgetTracker
     stream_text: bool = False
     seat_index: int | None = None
-    conversations: conversation_ids.Conversations = dataclasses.field(
-        default_factory=conversation_ids.Conversations
+    conversations: conversation_state.Conversations = dataclasses.field(
+        default_factory=conversation_state.Conversations
     )
 
     def call(
@@ -566,7 +566,7 @@ def reviewer_seat_provider(
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink | None,
-    conversations: conversation_ids.Conversations | None = None,
+    conversations: conversation_state.Conversations | None = None,
 ) -> Provider:
     """Build the reviewer route under a seat's label, instrumented.
 
@@ -593,7 +593,7 @@ def reviewer_seat_provider(
         provider_name=rm.provider,
         events=events,
         budget=budget,
-        conversations=conversations or conversation_ids.Conversations(),
+        conversations=conversations or conversation_state.Conversations(),
     )
 
 
@@ -609,7 +609,7 @@ def build_review_seats(
     n: int,
     focus: tuple[str, ...] = (),
     events: event_log.EventSink | None = None,
-    conversations: conversation_ids.Conversations | None = None,
+    conversations: conversation_state.Conversations | None = None,
 ) -> list[review_gate.ReviewSeat]:
     """Build the review-panel seats, one per roster entry.
 
@@ -669,7 +669,7 @@ def build_review_seats(
                 events=events,
                 budget=budget,
                 seat_index=seat_index,
-                conversations=conversations or conversation_ids.Conversations(),
+                conversations=conversations or conversation_state.Conversations(),
             )
         seats.append(
             review_gate.ReviewSeat(
@@ -690,7 +690,7 @@ def build_prompt_reviser_provider(
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
     events: event_log.EventSink,
-    conversations: conversation_ids.Conversations | None = None,
+    conversations: conversation_state.Conversations | None = None,
 ) -> Provider | None:
     """Route the reviewer role as a one-shot prompt reviser.
 

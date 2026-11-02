@@ -20,7 +20,7 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6.app import execution, finalize, reporter, role_providers, session_parts, session_setup
+from agent6.app import execution, finalize, reporter, role_providers, session_runtime, session_setup
 from agent6.app import frontend as app_frontend
 from agent6.config import Config
 from agent6.harness import loop as harness_loop
@@ -74,7 +74,7 @@ def test_provider_setup_failure_journals_session_end(
     def _fail(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("provider setup failed")
 
-    monkeypatch.setattr(session_parts, "build_session_providers", _fail)
+    monkeypatch.setattr(session_runtime, "build_session_providers", _fail)
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     inputs = execution.ExecutionInputs(
@@ -139,7 +139,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
     def _fail_gate(_cfg: Config, _budget: object) -> Config:
         raise RuntimeError("gate setup failed")
 
-    monkeypatch.setattr(session_parts, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(reviser))
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
@@ -209,7 +209,7 @@ def test_mcp_setup_failure_journals_session_end(
             reset_stage=lambda: None,
         )
 
-    monkeypatch.setattr(session_parts, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _fail)
@@ -319,9 +319,9 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
             reset_stage=lambda: None,
         )
 
-    monkeypatch.setattr(session_parts, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(reviser))
-    monkeypatch.setattr(session_parts, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(mcp))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(harness_loop, "Harness", _Workflow)
@@ -448,9 +448,9 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         keep_recent_chars=1,
         cfg=Config(),
     )
-    monkeypatch.setattr(session_parts, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(session_parts, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(paths, "chown_to_real_user", _returning(None))
@@ -521,9 +521,9 @@ def _wired_frontend(
         keep_recent_chars=1,
         cfg=cfg,
     )
-    monkeypatch.setattr(session_parts, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(session_parts, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
 
@@ -975,7 +975,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
             )
 
     frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
-    stubbed_build = session_parts.build_session_tools
+    stubbed_build = session_runtime.build_session_tools
 
     def _boom() -> None:
         raise KeyboardInterrupt
@@ -985,7 +985,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         tools.dispatcher.settle_background = _boom
         return tools
 
-    monkeypatch.setattr(session_parts, "build_session_tools", _tools)
+    monkeypatch.setattr(session_runtime, "build_session_tools", _tools)
     said: list[str] = []
     end = execution.run_execution(
         Config(),
@@ -1208,7 +1208,7 @@ def test_an_escape_before_the_harness_exists_records_the_tree_too(
     def _fail(*_args: object, **_kwargs: object) -> object:
         raise RuntimeError("provider setup failed")
 
-    monkeypatch.setattr(session_parts, "build_session_providers", _fail)
+    monkeypatch.setattr(session_runtime, "build_session_providers", _fail)
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     inputs = execution.ExecutionInputs(

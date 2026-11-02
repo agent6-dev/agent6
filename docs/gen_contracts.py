@@ -191,7 +191,7 @@ CONTRACTS: tuple[Contract, ...] = (
 
 # The module graph's column families, leftmost first: a tach module lands in the
 # column naming its top-level package under agent6 (unplaced ones, including
-# `agent6` itself and `_data`, sit with the leaves). A declared input like
+# `agent6` itself and `words`, sit with the leaves). A declared input like
 # CONTRACTS; the nodes, edges, and row ordering are derived from tach.toml.
 COLS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("leaves", ("types", "portable", "paths", "directive", "prompts", "secrets", "events",
@@ -570,7 +570,8 @@ def _md_card(card: Card) -> str:
     lines = [
         f"## {card.title}",
         "",
-        f"[`{card.module}`]({_module_href(card.module)}) &middot; {card.kind}",
+        f"[`{card.module}`]({_module_href(card.module)})"
+        + (f" &middot; {card.kind}" if card.kind else ""),
         "",
         card.invariant,
     ]

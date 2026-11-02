@@ -22,7 +22,7 @@ from agent6.app import (
     finalize,
     fork_worktrees,
     preflight,
-    session_parts,
+    session_runtime,
     session_setup,
     stamps,
     workdirs,
@@ -172,7 +172,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     isolation: kinds.IsolationLevel | None = None
     if not worktree:
         try:
-            isolation = session_parts.select_isolation(
+            isolation = session_runtime.select_isolation(
                 cfg,
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
@@ -286,7 +286,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     worker_lock_fd: int | None = None
     try:
         if checkout is not None:
-            isolation = session_parts.select_isolation(
+            isolation = session_runtime.select_isolation(
                 cfg,
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
@@ -321,7 +321,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
     def _undo_forker() -> tuple[str, str] | None:
         # Lazy: app.fork imports app.resume, which imports this module.
-        from agent6.app import undo  # noqa: PLC0415  # noqa: PLC0415
+        from agent6.app import undo  # noqa: PLC0415
 
         return undo.undo_fork(config_paths, effective_session_id, cwd=repo, reporter=reporter)
 
@@ -372,7 +372,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             session_dir=layout.session_dir,
         )
 
-        session_parts.warn_install_inside_workspace(cwd, reporter=reporter)
+        session_runtime.warn_install_inside_workspace(cwd, reporter=reporter)
         for line in repo_context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
             reporter.note(line)
 

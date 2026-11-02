@@ -48,7 +48,7 @@ class SessionFacts:
 class SteerHooks(Protocol):
     """Declare what the lifecycle needs of the front-end's steer state.
 
-    `ui/cli/_steer.SteerState` satisfies it structurally.
+    `ui/steer.SteerState` satisfies it structurally.
     """
 
     requested: Callable[[], bool]

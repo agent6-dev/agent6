@@ -27,7 +27,7 @@ from agent6.app import (
     parallel,
     preflight,
     role_providers,
-    session_parts,
+    session_runtime,
     workspace_setup,
 )
 from agent6.app import lanes as app_lanes
@@ -183,7 +183,10 @@ def test_the_run_works_in_its_own_worktree_and_the_checkout_stays_as_it_was(
     repo = _repo(tmp_path, monkeypatch)
     before = _checkout_facts(repo)
     seen: dict[str, Any] = {}
-    real_isolation, real_tools = session_parts.select_isolation, session_parts.build_session_tools
+    real_isolation, real_tools = (
+        session_runtime.select_isolation,
+        session_runtime.build_session_tools,
+    )
 
     def _isolation(cfg: Any, **kw: Any) -> Any:
         seen["isolation"] = (kw["cwd"], kw["worktree_git_dir"])
@@ -193,8 +196,8 @@ def test_the_run_works_in_its_own_worktree_and_the_checkout_stays_as_it_was(
         seen["tools"] = (kw["cwd"], kw["worktree_git_dir"])
         return real_tools(cfg, **kw)
 
-    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
-    monkeypatch.setattr(session_parts, "build_session_tools", _tools)
+    monkeypatch.setattr(session_runtime, "select_isolation", _isolation)
+    monkeypatch.setattr(session_runtime, "build_session_tools", _tools)
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-AAAA01", "add new.txt"]) == 0
@@ -646,7 +649,7 @@ def test_a_refusal_after_the_worktree_was_added_removes_it(
         assert (kw["cwd"] / ".git").is_file(), "the preflight sees the real worktree"
         raise preflight.SessionRefusedError(2)
 
-    monkeypatch.setattr(session_parts, "select_isolation", _refuse)
+    monkeypatch.setattr(session_runtime, "select_isolation", _refuse)
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-REFU01", "task"]) == 2
     assert "working in the worktree" not in capsys.readouterr().err
@@ -663,7 +666,7 @@ def test_an_interrupt_at_the_isolation_question_removes_the_worktree(
     def _interrupt(_cfg: Any, **_kw: Any) -> Any:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(session_parts, "select_isolation", _interrupt)
+    monkeypatch.setattr(session_runtime, "select_isolation", _interrupt)
 
     with pytest.raises(KeyboardInterrupt):
         run_lifecycle.run_task(
@@ -812,7 +815,7 @@ def test_a_worktree_the_cleanup_cannot_remove_is_named(
         (kw["cwd"] / "junk.txt").write_text("left by a probe\n", encoding="utf-8")
         raise preflight.SessionRefusedError(2)
 
-    monkeypatch.setattr(session_parts, "select_isolation", _refuse)
+    monkeypatch.setattr(session_runtime, "select_isolation", _refuse)
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-KEPT01", "task"]) == 2
     err = capsys.readouterr().err

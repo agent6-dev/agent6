@@ -20,11 +20,11 @@ from collections.abc import Callable, Sequence
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, paths
 from agent6.app import (
-    conversation_ids,
+    conversation_state,
     finalize,
     review_actions,
     role_providers,
-    session_parts,
+    session_runtime,
     session_setup,
     stamps,
     workspace_setup,
@@ -282,7 +282,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     """
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
-    session: session_parts.SessionProviders | None = None
+    session: session_runtime.SessionProviders | None = None
     prompt_reviser_provider: Provider | None = None
     hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
     try:
@@ -300,11 +300,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
-        conversations = conversation_ids.Conversations(
-            path=layout.session_dir / conversation_ids.FILE_NAME,
+        conversations = conversation_state.Conversations(
+            path=layout.session_dir / conversation_state.FILE_NAME,
             is_subagent=stamps.parallel_lineage() is not None,
         )
-        session = session_parts.build_session_providers(
+        session = session_runtime.build_session_providers(
             cfg,
             role=role,
             events=events,
@@ -326,7 +326,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         steer_state = frontend.make_steer_state(
             events,
             layout.session_dir,
-            session_parts.session_facts_provider(
+            session_runtime.session_facts_provider(
                 budget,
                 session.rm_role.model,
                 cfg.sandbox.run_commands,
@@ -370,7 +370,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         )
 
         loop_log = frontend.loop_logger(mode)
-        tools = session_parts.build_session_tools(
+        tools = session_runtime.build_session_tools(
             cfg,
             cwd=cwd,
             state_dir=state_dir,
@@ -524,7 +524,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             compaction=compaction_window.CompactionSettings(
                 drop_at_chars=tools.compact_drop_at_chars,
                 summarise_at_chars=tools.compact_summarise_at_chars,
-                tool_result_cap_bytes=session_parts.tool_result_cap_bytes(cfg, role),
+                tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, role),
                 keep_recent_chars=tools.keep_recent_chars,
                 keep_thinking_turns=cfg.context.keep_thinking_turns,
                 elision_gists=cfg.context.elision_gists,

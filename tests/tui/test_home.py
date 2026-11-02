@@ -20,7 +20,7 @@ from agent6.models import choices
 from agent6.sessions import ipc, process
 from agent6.ui import spawn
 from agent6.viewmodel import session_dirs, session_mtime
-from tests.tui._waits import painted, wait_for
+from tests.tui import waits
 
 # textual paints a span's colour as the ANSI colour a theme maps, and a base style's as CSS.
 _ANSI_RED = rich_color.Color.parse("color(1)")
@@ -291,7 +291,7 @@ def test_the_model_hint_dims_its_label_not_the_model_ids(tmp_path: pathlib.Path)
                 # A widget shown this frame has no size, so no lines, until the next layout.
                 return [seg for y in range(hint.size.height) for seg in hint.render_line(y)]
 
-            await wait_for(
+            await waits.wait_for(
                 pilot, lambda: any("o/alpha" in seg.text for seg in segments()), "the model hint"
             )
             label = next(seg.style for seg in segments() if "models:" in seg.text)
@@ -299,11 +299,11 @@ def test_the_model_hint_dims_its_label_not_the_model_ids(tmp_path: pathlib.Path)
             assert label is not None and label.dim
             assert ids is not None and not ids.dim
             await pilot.press(*"/alpha, ")
-            await wait_for(
+            await waits.wait_for(
                 pilot, lambda: any("o/beta" in seg.text for seg in segments()), "the next model"
             )
             await pilot.press(*"o/beta -- ")
-            await wait_for(pilot, lambda: not hint.display, "the task has no model hint")
+            await waits.wait_for(pilot, lambda: not hint.display, "the task has no model hint")
 
     asyncio.run(scenario())
 
@@ -566,11 +566,11 @@ def test_the_starting_notice_paints_ansi_cyan(
             await pilot.press("f", "i", "x", "enter")
             notice = app.screen.query_one("#draft-notice", widgets.Static)
             try:
-                (style,) = await painted(pilot, notice, "starting the run…")
+                (style,) = await waits.painted(pilot, notice, "starting the run…")
             finally:
                 gate.set()
             assert style.bold and style.color == _ANSI_CYAN
-            await wait_for(pilot, lambda: app.return_value is not None, "the start to finish")
+            await waits.wait_for(pilot, lambda: app.return_value is not None, "the start to finish")
 
     asyncio.run(scenario())
 
@@ -611,7 +611,7 @@ def test_the_refusal_notice_paints_ansi_red(
             await pilot.pause()
             await pilot.press("f", "i", "x", "enter")
             notice = app.screen.query_one("#draft-notice", widgets.Static)
-            (style,) = await painted(pilot, notice, "REFUSING: the tree is dirty")
+            (style,) = await waits.painted(pilot, notice, "REFUSING: the tree is dirty")
             assert style.bold and style.color == _ANSI_RED
 
     asyncio.run(scenario())
@@ -819,10 +819,10 @@ def test_hub_repaints_a_dying_run_without_a_keypress(
                     return ""
                 return str(table.get_row_at(0)[1])
 
-            await wait_for(pilot, lambda: "running" in status_cell(), "the running row")
+            await waits.wait_for(pilot, lambda: "running" in status_cell(), "the running row")
             (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # dies
             # No keypress, no screen change: the poll alone must repaint.
-            await wait_for(pilot, lambda: "stale" in status_cell(), "the stale repaint")
+            await waits.wait_for(pilot, lambda: "stale" in status_cell(), "the stale repaint")
 
     asyncio.run(scenario())
 
@@ -849,7 +849,7 @@ def test_hub_refresh_keeps_the_selected_run_as_rows_reorder(
             def table() -> widgets.DataTable[Any]:  # newest first: r3, r2, r1
                 return app.screen.query_one("#sessions", widgets.DataTable)
 
-            await wait_for(pilot, lambda: table().row_count == 3, "the three rows")
+            await waits.wait_for(pilot, lambda: table().row_count == 3, "the three rows")
             await pilot.press("down")  # cursor onto r2
             scr = app.screen
             assert isinstance(scr, tui_home.HomeScreen)
@@ -1431,14 +1431,16 @@ def test_the_task_column_fits_the_terminal_instead_of_scrolling(tmp_path: pathli
         app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(100, 30)) as pilot:
             table = app.screen.query_one("#sessions", widgets.DataTable)
-            await wait_for(pilot, lambda: table.row_count == 1, "the row")
+            await waits.wait_for(pilot, lambda: table.row_count == 1, "the row")
             await pilot.pause()
             assert table.virtual_size.width <= table.scrollable_content_region.width
             task = [str(c.label) for c in table.columns.values()].index("task")
             narrow = str(table.get_row_at(0)[task])
             assert narrow.endswith("…") and len(narrow) < 60
             await pilot.resize_terminal(160, 30)
-            await wait_for(pilot, lambda: len(str(table.get_row_at(0)[-1])) > len(narrow), "wider")
+            await waits.wait_for(
+                pilot, lambda: len(str(table.get_row_at(0)[-1])) > len(narrow), "wider"
+            )
             assert table.virtual_size.width <= table.scrollable_content_region.width
 
     asyncio.run(scenario())
@@ -1465,7 +1467,7 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: pathlib.Path
         app = tui_home.Agent6HomeApp(a6, tmp_path)
         async with app.run_test(size=(80, 24)) as pilot:
             table = app.screen.query_one("#sessions", widgets.DataTable)
-            await wait_for(pilot, lambda: table.row_count == 1, "the row")
+            await waits.wait_for(pilot, lambda: table.row_count == 1, "the row")
             await pilot.pause()
             assert [str(c.label) for c in table.columns.values()] == [
                 "updated",
@@ -1478,7 +1480,7 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: pathlib.Path
             row = [str(cell) for cell in table.get_row_at(0)]
             assert row[1] == "failed" and len(row[0]) == 5 and len(row[4]) >= 24
             await pilot.resize_terminal(79, 24)
-            await wait_for(pilot, lambda: len(table.columns) == 4, "cost hidden")
+            await waits.wait_for(pilot, lambda: len(table.columns) == 4, "cost hidden")
             assert table.virtual_size.width <= table.scrollable_content_region.width
 
     asyncio.run(scenario())

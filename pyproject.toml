@@ -157,11 +157,10 @@ max-complexity = 20
 # (textual, importlib, unittest) is not listed: `from textual import widgets`
 # is the module style, and the rule would refuse it.
 banned-from = [
-    "agent6._data.words",
     "agent6.app.btw",
     "agent6.app.compare",
     "agent6.app.confine",
-    "agent6.app.conversation_ids",
+    "agent6.app.conversation_state",
     "agent6.app.execution",
     "agent6.app.finalize",
     "agent6.app.fork",
@@ -192,7 +191,7 @@ banned-from = [
     "agent6.app.review_actions",
     "agent6.app.role_providers",
     "agent6.app.run",
-    "agent6.app.session_parts",
+    "agent6.app.session_runtime",
     "agent6.app.session_setup",
     "agent6.app.stamps",
     "agent6.app.stop",
@@ -252,6 +251,7 @@ banned-from = [
     "agent6.harness.operator_tasks",
     "agent6.harness.parallel_dispatch",
     "agent6.harness.prompt_blocks",
+    "agent6.harness.prompt_preview",
     "agent6.harness.prompt_revision",
     "agent6.harness.provider_call",
     "agent6.harness.quiet_turns",
@@ -526,6 +526,7 @@ banned-from = [
     "agent6.viewmodel.transcript_style",
     "agent6.viewmodel.transcript_text",
     "agent6.viewmodel.wire",
+    "agent6.words",
     "argcomplete.shell_integration",
     "argparse",
     "collections",

@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from agent6.app import execution, frontend, reporter, role_providers, session_parts, session_setup
+from agent6.app import execution, frontend, reporter, role_providers, session_runtime, session_setup
 from agent6.config import Config
 from agent6.harness import loop as harness_loop
 from agent6.harness import loop_snapshot
@@ -236,13 +236,13 @@ def _stub_execution_internals(
         keep_recent_chars=1,
         cfg=Config(),
     )
-    monkeypatch.setattr(session_parts, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
-    monkeypatch.setattr(session_parts, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(harness_loop, "Harness", _Workflow)
-    monkeypatch.setattr(session_parts, "session_facts_provider", _returning(lambda: None))
+    monkeypatch.setattr(session_runtime, "session_facts_provider", _returning(lambda: None))
 
 
 def test_a_loop_crash_prints_the_end_that_it_journals(

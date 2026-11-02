@@ -519,8 +519,8 @@ def _print_listening_ports(session_dir: pathlib.Path) -> None:
 
 def _print_task_tree(session_dir: pathlib.Path) -> None:
     """Print the run's task tree when it decomposed into subtasks; a single root is skipped."""
-    from agent6.graph import storage  # noqa: PLC0415  # noqa: PLC0415
-    from agent6.ui.cli import task_tree  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.graph import storage  # noqa: PLC0415
+    from agent6.ui.cli import task_tree  # noqa: PLC0415
 
     layout = sessions_layout.layout_of(session_dir)
     nodes = storage.load_graph(layout)

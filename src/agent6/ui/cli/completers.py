@@ -86,8 +86,8 @@ def _never_raises(fn: Callable[..., list[str]]) -> Callable[..., list[str]]:
 @_never_raises
 def _complete_providers(prefix: str, **kw: object) -> list[str]:
     """Return the connected provider names and the known presets."""
-    from agent6.config import write  # noqa: PLC0415  # noqa: PLC0415
-    from agent6.ui.cli import model  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.config import write  # noqa: PLC0415
+    from agent6.ui.cli import model  # noqa: PLC0415
 
     names = set(model._connected_providers(_explicit_config(kw))) | set(write.PROVIDER_DEFAULTS)
     return sorted(n for n in names if n.startswith(prefix))
@@ -103,7 +103,7 @@ def _complete_presets(prefix: str, **kw: object) -> list[str]:
 @_never_raises
 def _complete_skills(prefix: str, **_kw: object) -> list[str]:
     """Return the installed and extra-dir skill names."""
-    from agent6.ui.cli import skills_cmds  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import skills_cmds  # noqa: PLC0415
 
     return [
         n
@@ -117,7 +117,7 @@ def _complete_mcp_servers(prefix: str, **kw: object) -> list[str]:
     """Return the configured MCP server names."""
     effective = layer.load_effective(pathlib.Path.cwd(), _explicit_config(kw))
     target = "repo" if getattr(kw.get("parsed_args"), "to_repo", False) else "global"
-    from agent6.ui.cli import mcp_add  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import mcp_add  # noqa: PLC0415
 
     return sorted(
         name
@@ -157,7 +157,7 @@ def _config_enum_choices(
     Returns:
         The values, keyed by the leaf's dotted key.
     """
-    from agent6.viewmodel import config_view  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.viewmodel import config_view  # noqa: PLC0415
 
     try:
         view = config_view.build_config_view(layer.load_effective(pathlib.Path.cwd(), config_paths))
@@ -186,7 +186,7 @@ def _config_enum_choices(
 
 def _config_list_keys(config_paths: tuple[pathlib.Path, ...] = ()) -> set[str]:
     """Return the list leaves `config add` and `config remove` accept."""
-    from agent6.viewmodel import config_view  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.viewmodel import config_view  # noqa: PLC0415
 
     effective = layer.load_effective(pathlib.Path.cwd(), config_paths)
     return {
@@ -354,7 +354,7 @@ def _complete_model_verb_values(
     role = getattr(parsed_args, "role", None)
     if role not in ("planner", "worker", "reviewer", "all"):
         return []
-    from agent6.ui.cli import model  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import model  # noqa: PLC0415
 
     providers = [
         name
@@ -389,7 +389,7 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
 def _complete_resumable_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the ids `resume` and `fork` pick up: every resumable bucket, not a machine draft."""
     out: list[str] = []
-    from agent6.app import resume  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.app import resume  # noqa: PLC0415
 
     for bucket in resume.resumable_bucket_dirs(paths.state_dir(pathlib.Path.cwd())):
         if not bucket.is_dir():
@@ -448,7 +448,7 @@ def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
 
 def _machine_instance_dirs(prefix: str) -> list[pathlib.Path]:
     """Return the machine instance dirs matching the prefix."""
-    from agent6.sessions import layout as sessions_layout  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.sessions import layout as sessions_layout  # noqa: PLC0415
 
     base = sessions_layout.machines_root(paths.state_dir(pathlib.Path.cwd()))
     if not base.is_dir():
@@ -492,7 +492,7 @@ def _complete_watch_targets(prefix: str, **_kw: object) -> list[str]:
 @_never_raises
 def _complete_machine_files(prefix: str, **_kw: object) -> list[str]:
     """Return the `*.asm.toml` files under cwd, spelled as the prefix is, and the machines dir's."""
-    from agent6.sessions import layout as sessions_layout  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.sessions import layout as sessions_layout  # noqa: PLC0415
 
     cwd = pathlib.Path.cwd()
     absolute = prefix.startswith("/")

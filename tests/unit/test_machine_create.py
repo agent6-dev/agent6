@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import session_parts, session_setup
+from agent6.app import session_runtime, session_setup
 from agent6.app.machine import agent
 from agent6.app.machine import create as _create
 from agent6.config import Config, layer, layer_data
@@ -169,7 +169,7 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(session_parts, "select_isolation", _no_preflight)
+    monkeypatch.setattr(session_runtime, "select_isolation", _no_preflight)
 
 
 def _stub_runner(

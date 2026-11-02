@@ -1367,7 +1367,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     Room is left for the notices the same turn folds into the payload, whatever the characters
     weigh.
     """
-    from agent6.app import session_parts
+    from agent6.app import session_runtime
     from agent6.harness import nudges, review_panel, verify_gate
     from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
     from agent6.tools import results
@@ -1378,14 +1378,14 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
             "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
         }
     )
-    cap = session_parts.tool_result_cap_bytes(cc, "worker")
+    cap = session_runtime.tool_result_cap_bytes(cc, "worker")
     assert (
         cap
         == compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES
         < compaction_elision.TOOL_RESULT_CAP_BYTES
     )
     assert (
-        session_parts.tool_result_cap_bytes(Config(), "worker")
+        session_runtime.tool_result_cap_bytes(Config(), "worker")
         == compaction_elision.TOOL_RESULT_CAP_BYTES
     )
     assert compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
@@ -1418,7 +1418,7 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
 
 def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     """The result cap follows the role that drives the session, the planner's on a plan."""
-    from agent6.app import session_parts
+    from agent6.app import session_runtime
     from agent6.config import Config
 
     cfg = Config.model_validate(
@@ -1434,11 +1434,11 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
         }
     )
     assert (
-        session_parts.tool_result_cap_bytes(cfg, "planner")
+        session_runtime.tool_result_cap_bytes(cfg, "planner")
         == compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES
     )
     assert (
-        session_parts.tool_result_cap_bytes(cfg, "worker")
+        session_runtime.tool_result_cap_bytes(cfg, "worker")
         == compaction_elision.TOOL_RESULT_CAP_BYTES
     )
 

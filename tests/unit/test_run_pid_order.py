@@ -19,7 +19,7 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6.app import execution, session_parts
+from agent6.app import execution, session_runtime
 from agent6.app import run as run_mod
 from agent6.config import Config
 from agent6.sessions import process
@@ -52,7 +52,7 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
         return "none"
 
     monkeypatch.setattr(process, "write_worker_pid", _pid)
-    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
+    monkeypatch.setattr(session_runtime, "select_isolation", _isolation)
 
     def _execution(*_a: object, **_k: object) -> object:
         order.append("execution")
@@ -100,7 +100,7 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
     def _isolation(*_a: object, **_k: object) -> str:
         return "none"
 
-    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
+    monkeypatch.setattr(session_runtime, "select_isolation", _isolation)
 
     def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         return operator_prompts.QuestionAnswer(("cancel",), "stdin")
@@ -148,7 +148,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     def _finished(*_args: object, **_kwargs: object) -> execution.ExecutionEnd:
         return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
     monkeypatch.setattr(execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
@@ -189,7 +189,7 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     def _finished(*_args: object, **_kwargs: object) -> execution.ExecutionEnd:
         return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
     monkeypatch.setattr(execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import role_providers, session_parts
+from agent6.app import role_providers, session_runtime
 from agent6.providers import ProviderResponse
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
@@ -109,7 +109,7 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     _git(repo, "add", "a.py", "b.py")
     _git(repo, "commit", "-q", "-m", "seed")
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(session_parts, "select_isolation", _none_isolation)
+    monkeypatch.setattr(session_runtime, "select_isolation", _none_isolation)
     return repo
 
 

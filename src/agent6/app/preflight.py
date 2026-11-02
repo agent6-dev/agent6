@@ -3,7 +3,7 @@
 """Pre-loop guards shared by `agent6 run` and `resume`.
 
 Refusals, startup warnings, branch-base resolution and per-run verify-command
-resolution. The interactive confirm prompts live in `ui/cli/_preflight` and are
+resolution. The interactive confirm prompts live in `ui/cli/preflight_prompts` and are
 injected by the front-end.
 """
 

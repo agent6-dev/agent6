@@ -14,7 +14,7 @@ import pathlib
 import shutil
 
 from agent6 import budget, errors, kinds, paths, portable
-from agent6.app import preflight, session_parts, session_setup, workdirs
+from agent6.app import preflight, session_runtime, session_setup, workdirs
 from agent6.app import reporter as app_reporter
 from agent6.app.machine import agent, bundle, scriptcheck
 from agent6.config import ConfigError, layer
@@ -197,7 +197,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         return 2
     try:
         # A create session withholds the command tools: an unconfined autorun needs no confirmation.
-        isolation = session_parts.select_isolation(
+        isolation = session_runtime.select_isolation(
             cfg,
             cwd=cwd,
             confirm_unconfined=lambda _isolation, _cfg: True,

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The in-process tools' path containment (`tools/_path_safety`)."""
+"""The in-process tools' path containment (`tools/path_safety`)."""
 
 from __future__ import annotations
 
@@ -280,11 +280,12 @@ def test_a_repointed_grant_never_reaches_the_jail_launcher(
     (repo / "out").rmdir()
     (repo / "out").symlink_to(outside, target_is_directory=True)
     grants = {
+        "isolation": "full",
         "extra_read_paths": [str(shared / "inbox")],
         "extra_write_paths": [str(shared), str(repo / "out")],
     }
     config = Config.model_validate({"sandbox": grants})
-    jail = policy.jail_policy(repo, config, "partial", ("true",))
+    jail = policy.jail_policy(repo, config, "full", ("true",))
     assert shared / "inbox" not in jail.extra_ro_paths
     assert shared in jail.extra_rw_paths and repo / "out" not in jail.extra_rw_paths
 

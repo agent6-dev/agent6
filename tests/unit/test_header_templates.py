@@ -14,7 +14,7 @@ import pytest
 
 from agent6 import __version__
 from agent6 import budget as agent6_budget
-from agent6.app import conversation_ids, role_providers
+from agent6.app import conversation_state, role_providers
 from agent6.config import Config, OpenAIProviderEntry, secret_store
 from agent6.models import cache
 from agent6.providers import (
@@ -299,20 +299,20 @@ def _resp() -> ProviderResponse:
 def test_a_conversation_persists_across_a_resume_and_starts_new_on_a_fork(
     tmp_path: pathlib.Path,
 ) -> None:
-    path = tmp_path / "s1" / conversation_ids.FILE_NAME
+    path = tmp_path / "s1" / conversation_state.FILE_NAME
     path.parent.mkdir()
-    first = conversation_ids.Conversations(path=path)
+    first = conversation_state.Conversations(path=path)
     ctx = first.context("worker", "work", initiator="user")
     assert ctx.is_first_turn and not ctx.is_subagent and len(ctx.session_id) == 32
     first.completed("worker", "work")
-    resumed = conversation_ids.Conversations(path=path)
+    resumed = conversation_state.Conversations(path=path)
     again = resumed.context("worker", "work", initiator="agent")
     assert again.session_id == ctx.session_id and again.is_first_turn is False
     other = resumed.context("review:security", "work", initiator="agent")
     assert other.session_id != ctx.session_id and other.is_first_turn
-    forked = conversation_ids.Conversations(path=tmp_path / "s2" / conversation_ids.FILE_NAME)
+    forked = conversation_state.Conversations(path=tmp_path / "s2" / conversation_state.FILE_NAME)
     assert forked.context("worker", "work", initiator="user").session_id != ctx.session_id
-    lane = conversation_ids.Conversations(is_subagent=True)
+    lane = conversation_state.Conversations(is_subagent=True)
     assert lane.context("worker", "work", initiator="user").is_subagent
     assert lane.path is None  # a path-less state writes nothing
 
@@ -392,9 +392,9 @@ def test_a_call_outside_a_conversation_keeps_its_model_and_body_facts() -> None:
 
 
 def test_a_malformed_conversation_file_starts_empty(tmp_path: pathlib.Path) -> None:
-    path = tmp_path / conversation_ids.FILE_NAME
+    path = tmp_path / conversation_state.FILE_NAME
     path.write_text('{"routes": {"worker@work": {"id": "abc", "completed": "x"}}}')
-    ctx = conversation_ids.Conversations(path=path).context("worker", "work", initiator="agent")
+    ctx = conversation_state.Conversations(path=path).context("worker", "work", initiator="agent")
     assert ctx.is_first_turn and ctx.session_id != "abc"
 
 

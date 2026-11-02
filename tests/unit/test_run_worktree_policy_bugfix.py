@@ -20,7 +20,7 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.app import session_parts, session_setup
+from agent6.app import session_runtime, session_setup
 from agent6.config import (
     Config,
     GitConfig,
@@ -104,7 +104,7 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
     if stop_after_policy:
         # The first step after the tree policy and the untracked snapshot: the
         # execution body's provider session.
-        monkeypatch.setattr(session_parts, "build_session_providers", _stop)
+        monkeypatch.setattr(session_runtime, "build_session_providers", _stop)
 
 
 def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[schema.UserQuestion]:

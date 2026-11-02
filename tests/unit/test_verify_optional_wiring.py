@@ -20,7 +20,7 @@ from agent6.app import (
     execution,
     preflight,
     role_providers,
-    session_parts,
+    session_runtime,
     session_setup,
     stamps,
 )
@@ -356,7 +356,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         return None
 
     monkeypatch.setattr(layer, "load_effective", _effective)
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
     monkeypatch.setattr(session_setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_read, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
@@ -903,7 +903,7 @@ def test_a_resumes_key_check_precedes_isolation(
 
     monkeypatch.setattr(layer, "load_effective", _effective)
     monkeypatch.setattr(preflight, "route_preflight", _route)
-    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
+    monkeypatch.setattr(session_runtime, "select_isolation", _isolation)
     with pytest.raises(_Stop):
         resume.resume_task(
             (), "order-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
@@ -973,7 +973,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
         return None
 
     monkeypatch.setattr(layer, "load_effective", _effective)
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
     monkeypatch.setattr(session_setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_read, "verify_git_identity", _none)
 

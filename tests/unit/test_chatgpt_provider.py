@@ -17,7 +17,7 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6.app import conversation_ids
+from agent6.app import conversation_state
 from agent6.config import ChatGPTProviderEntry, secret_store
 from agent6.providers import (
     ProviderError,
@@ -246,15 +246,15 @@ def test_resumed_conversation_keeps_both_wire_ids(
     signed_in: oauth.OAuthCredential, tmp_path: pathlib.Path
 ) -> None:
     """A fresh adapter sends the persisted conversation id in both wire fields."""
-    path = tmp_path / conversation_ids.FILE_NAME
-    conversations = conversation_ids.Conversations(path=path)
+    path = tmp_path / conversation_state.FILE_NAME
+    conversations = conversation_state.Conversations(path=path)
     context = conversations.context("worker", "chatgpt", initiator="user")
     with mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())) as stream:
         _provider(signed_in).call(
             system="s", messages=[{"role": "user", "content": "x"}], context=context
         )
         conversations.completed("worker", "chatgpt")
-        resumed = conversation_ids.Conversations(path=path)
+        resumed = conversation_state.Conversations(path=path)
         _provider(signed_in).call(
             system="s",
             messages=[{"role": "user", "content": "continue"}],

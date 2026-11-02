@@ -10,7 +10,7 @@ import pathlib
 import pytest
 
 from agent6 import paths, review_records
-from agent6.app import review_actions, session_parts
+from agent6.app import review_actions, session_runtime
 from agent6.config import Config, RoleModel
 from agent6.harness import toolset
 from agent6.sessions import event_log
@@ -110,7 +110,7 @@ def test_a_pre_existing_line_is_tagged_without_lowering_severity(tmp_path: pathl
 def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathlib.Path) -> None:
     """A run's findings and command descriptions name its session, without changing bare tools."""
     saved = review_helpers.reviewed_session(tmp_path)
-    tools = session_parts.build_session_tools(
+    tools = session_runtime.build_session_tools(
         Config(),
         cwd=tmp_path,
         state_dir=paths.state_dir(tmp_path),

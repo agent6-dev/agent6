@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import role_providers, session_parts
+from agent6.app import role_providers, session_runtime
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import listing
@@ -106,7 +106,7 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     subprocess.run(["git", "-C", str(repo), "add", "a.py"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "seed"], check=True)
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(session_parts, "select_isolation", _none_isolation)
+    monkeypatch.setattr(session_runtime, "select_isolation", _none_isolation)
     return repo
 
 

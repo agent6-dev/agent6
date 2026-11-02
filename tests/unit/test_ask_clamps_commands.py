@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.app import session_parts
+from agent6.app import session_runtime
 from agent6.config import Config
 
 
@@ -57,7 +57,7 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
         seen.append(cfg.sandbox.run_commands)
         raise preflight.SessionRefusedError(2)
 
-    monkeypatch.setattr(session_parts, "select_isolation", capture)
+    monkeypatch.setattr(session_runtime, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)
     modes: tuple[tuple[Literal["run", "plan", "ask"], str], ...] = (
         ("ask", "ask"),
@@ -106,7 +106,7 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
         seen.append(cfg.sandbox.run_commands)
         raise preflight.SessionRefusedError(2)
 
-    monkeypatch.setattr(session_parts, "select_isolation", capture)
+    monkeypatch.setattr(session_runtime, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)
     run_mod.run_task(
         _cfg("ask"),

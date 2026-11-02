@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        from agent6.ui.tui import app  # noqa: PLC0415  # textual is optional  # noqa: PLC0415  # textual is optional
+        from agent6.ui.tui import app  # noqa: PLC0415  # textual is optional
     except ImportError as e:
         print(f"agent6 tui: {e}", file=sys.stderr)
         return 3

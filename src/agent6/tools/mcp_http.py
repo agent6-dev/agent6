@@ -33,10 +33,10 @@ _MAX_ERROR_DETAIL_CHARS = 2048
 def _clean_session_id(value: str) -> str:
     """Return a server-assigned session id the transport can echo in a header, or "".
 
-    The value crosses the wire, so it is untrusted like the token in `_auth`: a non-ASCII byte
-    makes the HTTP layer raise on the next send with the value in its message (which reaches
-    stderr, the launch log and the model's context), and a control character rides into the
-    outgoing header.
+    The value crosses the wire, so it is untrusted like the token in `providers.wire`.
+    A non-ASCII byte makes the HTTP layer raise on the next send with the value in its message
+    (which reaches stderr, the launch log and the model's context).
+    A control character rides into the outgoing header.
 
     Args:
         value: The response's `mcp-session-id` header, "" when absent.

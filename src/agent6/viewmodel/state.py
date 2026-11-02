@@ -532,7 +532,7 @@ def open_approval_of(
 
 def open_approval(session_dir: pathlib.Path) -> state_types.ApprovalPrompt | None:
     """Return the run's open approval from its journal, or None when none is open."""
-    from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time  # noqa: PLC0415  # cycle at import time
+    from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time
 
     return open_approval_of(
         fold_session(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))

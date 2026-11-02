@@ -15,7 +15,7 @@ from textual import containers, widgets
 
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer, conversation
-from tests.tui._waits import wait_for
+from tests.tui import waits
 
 
 def _following(scroll: containers.VerticalScroll) -> bool:
@@ -156,8 +156,10 @@ def test_harness_end_labels_reach_the_conversation_and_dashboard(
         _write(run / "logs.jsonl", events)
         app = tui_app.Agent6TUI(run, exit_on_end=True)
         async with app.run_test(size=(140, 40)) as pilot:
-            await wait_for(pilot, lambda: label in _body_text(app), "the harness end's done line")
-            await wait_for(pilot, lambda: label in app.run_title(), "the end-hold title")
+            await waits.wait_for(
+                pilot, lambda: label in _body_text(app), "the harness end's done line"
+            )
+            await waits.wait_for(pilot, lambda: label in app.run_title(), "the end-hold title")
             assert label in app.run_title()
             await pilot.press("ctrl+d")
             await pilot.pause()
@@ -180,7 +182,7 @@ def test_conversation_screen_follows_live(tmp_path: pathlib.Path) -> None:
             with logs.open("a", encoding="utf-8") as fh:
                 for event in _EVENTS:
                     fh.write(json.dumps(event) + "\n")
-            await wait_for(pilot, lambda: _nlines(app) > before, "the appended turns")
+            await waits.wait_for(pilot, lambda: _nlines(app) > before, "the appended turns")
 
     asyncio.run(scenario())
 
@@ -239,7 +241,9 @@ def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: pathlib.
                 fh.write(json.dumps({"type": "loop.resume.start", "turn": 1}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker"}) + "\n")
             (run / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-            await wait_for(pilot, app.session_controllable, "the resumed execution to read live")
+            await waits.wait_for(
+                pilot, app.session_controllable, "the resumed execution to read live"
+            )
             bar = screen.query_one("#conv-input", composer.SteerInput)
             bar.post_message(composer.SteerInput.Submitted("also update docs"))
             await pilot.pause()
@@ -301,11 +305,11 @@ def test_follow_survives_the_live_pane_growing(tmp_path: pathlib.Path) -> None:
                 fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
                 fh.write(json.dumps({"type": "role.thinking_delta", "text": "x " * 300}) + "\n")
             # The growing live pane shrinks the viewport, so the overflow grows.
-            await wait_for(
+            await waits.wait_for(
                 pilot, lambda: scroll.max_scroll_y > overflow_before, "the live pane to grow"
             )
             # Follow re-pins on the next tick; a real follow break never re-pins.
-            await wait_for(pilot, lambda: _following(scroll), "follow to re-pin after growth")
+            await waits.wait_for(pilot, lambda: _following(scroll), "follow to re-pin after growth")
 
     asyncio.run(scenario())
 
@@ -369,7 +373,7 @@ def test_conversation_live_pane_shows_the_in_progress_turn(tmp_path: pathlib.Pat
             # A completed turn hands its prose to the scrollback; no next call is implied.
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "role.result", "role": "worker"}) + "\n")
-            await wait_for(pilot, lambda: not live.display, "the live pane handoff")
+            await waits.wait_for(pilot, lambda: not live.display, "the live pane handoff")
 
     asyncio.run(scenario())
 
@@ -526,7 +530,7 @@ def test_live_pane_moves_only_while_a_model_call_is_in_flight(tmp_path: pathlib.
                     )
                     + "\n"
                 )
-            await wait_for(
+            await waits.wait_for(
                 pilot,
                 lambda: app.state.last_role is not None and app.state.last_role.in_flight,
                 "the next model call",
@@ -556,14 +560,16 @@ def test_an_in_flight_tool_call_shows_in_the_live_pane_then_settles(tmp_path: pa
         async with app.run_test() as pilot:
             await pilot.pause()
             live = app.screen.query_one("#conv-live", widgets.Static)
-            await wait_for(pilot, lambda: "running" in str(live.render()), "the call in the pane")
+            await waits.wait_for(
+                pilot, lambda: "running" in str(live.render()), "the call in the pane"
+            )
             pane = str(live.render())
             assert "→ run_command" in pane and "sleep 60" in pane
             assert "run_command" not in _body_text(app)
             result = {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"}
             with logs.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({**result, "call_id": 1}) + "\n")
-            await wait_for(pilot, lambda: "exit 0" in _body_text(app), "the settled call")
+            await waits.wait_for(pilot, lambda: "exit 0" in _body_text(app), "the settled call")
             assert not live.display
             assert _body_text(app).count("→ run_command") == 1
 
@@ -587,7 +593,7 @@ def test_the_live_pane_says_awaiting_approval_under_an_open_prompt(tmp_path: pat
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, conversation.ConversationScreen)
-            await wait_for(
+            await waits.wait_for(
                 pilot, lambda: bool(screen.query(composer.ApprovalRow)), "the approval row"
             )
             live = screen.query_one("#conv-live", widgets.Static)

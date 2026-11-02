@@ -10,7 +10,7 @@ import time
 import pytest
 
 from agent6.app import preflight as app_preflight
-from agent6.app import session_parts, session_setup
+from agent6.app import session_runtime, session_setup
 from agent6.config import Config
 
 
@@ -235,7 +235,7 @@ def test_the_route_preflight_precedes_isolation(
         raise _Stop
 
     monkeypatch.setattr(app_preflight, "route_preflight", _route)
-    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
+    monkeypatch.setattr(session_runtime, "select_isolation", _isolation)
     monkeypatch.chdir(tmp_path)
     front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,

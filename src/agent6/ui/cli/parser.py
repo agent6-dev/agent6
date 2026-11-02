@@ -105,7 +105,7 @@ def _shell_default_help() -> str:
     Returns:
         The help naming the detected shell; an unknown shell keeps the generic wording.
     """
-    from agent6.ui.cli import completions_cmd  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import completions_cmd  # noqa: PLC0415
 
     detected = completions_cmd.detect_shell()
     if detected in ("bash", "zsh", "fish", "xonsh"):

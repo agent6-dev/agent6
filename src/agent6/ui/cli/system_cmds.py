@@ -154,7 +154,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
         return 1
 
     # install
-    from agent6.sandbox import jail  # noqa: PLC0415  # an import cycle  # noqa: PLC0415  # an import cycle
+    from agent6.sandbox import jail  # noqa: PLC0415  # an import cycle
 
     jail_bin = jail.locate_jail_binary()
     if jail_bin is not None and "/agent6/sandbox/_bin/agent6-jail" not in str(jail_bin):

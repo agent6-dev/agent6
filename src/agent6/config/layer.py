@@ -336,7 +336,7 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
             continue
         for name, body in presets.items():
             if not isinstance(body, dict):
-                if layer.path is None:  # _layer_data.discover_layers always attaches file paths
+                if layer.path is None:  # layer_data.discover_layers always attaches file paths
                     continue
                 return ConfigDiagnosis(
                     (

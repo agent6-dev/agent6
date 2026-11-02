@@ -105,7 +105,7 @@ def test_a_malformed_session_id_is_dropped_not_echoed(server: _Server) -> None:
     """A server-assigned id with a control or non-ASCII byte is untrusted.
 
     It is dropped (treated as stateless), never echoed into a header, so it cannot crash a later
-    send or smuggle a header. Mirrors the token guard in _auth.
+    send or smuggle a header. Mirrors the token guard in `providers.wire`.
     """
     server.issue_session = "abc\x9f\r\nX-Evil: 1"  # non-ASCII + a CRLF payload
     t = _transport(server)

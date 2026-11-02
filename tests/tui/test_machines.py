@@ -18,7 +18,7 @@ from agent6.ui import notify, spawn
 from agent6.ui.tui import composer, modals
 from agent6.ui.tui import machines as machmod
 from agent6.viewmodel import machine_files, machine_logs, machine_state
-from tests.tui._waits import answerable, focus_answers, wait_for
+from tests.tui import waits
 
 # A no-I/O machine that reaches a terminal at once, so `machine run` finishes with no model or jail.
 TINY = """
@@ -883,7 +883,7 @@ def test_watch_screen_docks_the_approval_on_a_live_machine(tmp_path: pathlib.Pat
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            await wait_for(pilot, lambda: answerable(screen), "the approval row")
+            await waits.wait_for(pilot, lambda: waits.answerable(screen), "the approval row")
 
     asyncio.run(scenario())
 
@@ -1341,8 +1341,8 @@ def test_an_answer_submitted_after_the_worker_died_writes_nothing(tmp_path: path
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, machmod.MachineWatchScreen)
-            await wait_for(pilot, lambda: answerable(screen), "the approval row")
-            await focus_answers(screen, pilot)
+            await waits.wait_for(pilot, lambda: waits.answerable(screen), "the approval row")
+            await waits.focus_answers(screen, pilot)
             # The next poll would withdraw the dead machine's row; the answer lands first.
             screen._poll_timer.pause()  # pyright: ignore[reportPrivateUsage]
             (instance / "worker.pid").write_text("999999999", encoding="utf-8")  # dies

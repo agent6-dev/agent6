@@ -166,7 +166,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
     import tempfile
 
     from agent6.config import Config
-    from agent6.harness import model_exchange_for, toolset
+    from agent6.harness import prompt_preview, toolset
     from agent6.tools import dispatch
 
     withheld = Config.model_validate(
@@ -178,7 +178,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
             },
         }
     )
-    exchange = model_exchange_for(withheld, tmp_path, "run", state_dir=tmp_path)
+    exchange = prompt_preview.model_exchange_for(withheld, tmp_path, "run", state_dir=tmp_path)
     assert "<verify-command>" not in exchange.system
     assert "<metric-command>" not in exchange.system
     assert "<no-verify-command>" in exchange.system
@@ -196,13 +196,15 @@ def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: pathlib.Path
     "`run_verify_command` is not available", forty lines apart.
     """
     from agent6.config import Config
-    from agent6.harness import model_exchange_for
+    from agent6.harness import prompt_preview
 
-    gateless = model_exchange_for(Config(), tmp_path, "plan", state_dir=tmp_path).system
+    gateless = prompt_preview.model_exchange_for(
+        Config(), tmp_path, "plan", state_dir=tmp_path
+    ).system
     assert "<no-verify-command>" in gateless
     assert "run_verify_command runs the operator's gate" not in gateless
 
-    gated = model_exchange_for(
+    gated = prompt_preview.model_exchange_for(
         Config.model_validate({"harness": {"verify_command": ["pytest", "-q"]}}),
         tmp_path,
         "plan",

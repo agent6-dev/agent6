@@ -187,7 +187,7 @@ def _cmd_watch(
     if not tui:
         return _cmd_watch_plain(target, since=since) if raw else _watch_transcript(target)
     try:
-        from agent6.ui.tui import app  # noqa: PLC0415  # textual is optional  # noqa: PLC0415  # textual is optional
+        from agent6.ui.tui import app  # noqa: PLC0415  # textual is optional
     except ImportError as e:
         common.error(f"{e}")
         print(

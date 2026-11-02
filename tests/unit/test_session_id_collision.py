@@ -20,7 +20,7 @@ import pytest
 
 from agent6 import paths
 from agent6.app import preflight as app_preflight
-from agent6.app import session_parts, session_setup
+from agent6.app import session_runtime, session_setup
 from agent6.config import Config
 
 
@@ -100,7 +100,7 @@ def test_run_refuses_an_invalid_id_before_sandbox_and_git_preflight(
     def _must_not_preflight(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("environment preflight ran for an invalid id")
 
-    monkeypatch.setattr(session_parts, "select_isolation", _must_not_preflight)
+    monkeypatch.setattr(session_runtime, "select_isolation", _must_not_preflight)
     monkeypatch.setattr(app_preflight, "git_preflight", _must_not_preflight)
 
     rc = run_mod.run_task(
@@ -132,7 +132,7 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
         json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
 
     rc = run_mod.run_task(
         _load_cfg(),
@@ -156,7 +156,7 @@ def test_a_damaged_existing_id_does_not_name_an_unusable_resume_command(
     session = paths.state_dir(repo) / "sessions" / "runs" / "damaged-run"
     session.mkdir(parents=True)
     (session / "manifest.json").write_text("{not json\n", encoding="utf-8")
-    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
 
     rc = run_mod.run_task(
         _load_cfg(),
