@@ -510,7 +510,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, all kept, carrying the run's chain tip (`head_sha`) and the curator `graph_version` |
 | `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
 | `plan.md` | the plan itself, in plan sessions |
-| `transcripts/` | provider request and response pairs for replay, with credential headers redacted, echoed credential values of at least eight characters scrubbed, and [media payloads omitted](security.md#media-retention) |
+| `transcripts/<timestamp>-<seq>.json` | provider request and response pairs kept for diagnosis and replay |
 | `worker.pid` | the live worker's pid and start time; every surface reads liveness here |
 | `approvals/`, `questions/` | one `<id>.answer` file per prompt, whichever front-end answers; `approvals/` also holds the session-wide allow and deny marker per scope |
 | `frontends/` | one file per front-end registered to answer this run, named for its pid |
@@ -519,6 +519,12 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `shells/` | the roster of background commands the run started |
 | `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its turn boundary |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
+
+**Provider transcripts** contain one JSON record per round-trip.
+The UTC timestamp uses `YYYYMMDDTHHMMSSffffffZ`; `seq` starts at 1, is padded to six digits in the filename, and continues across resumes.
+Each record holds `ts`, `seq`, `seat`, `request` (`url`, `headers`, `body`), and `response` (`status`, `body`).
+Secret-bearing request headers are redacted, and their credential values of at least eight characters are scrubbed wherever they appear in the record.
+[Attachment payloads are omitted](security.md#media-retention) and replaced with metadata, so these files cannot replay the attachment bytes.
 
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.
 The planner re-reads it before every turn and is shown it whenever it differs from what it last saw.
@@ -808,8 +814,7 @@ agent6 also sets markers for its own children:
 
 ## Pre-1.0 stability
 
-Every public shape (config TOML, IPC frames, the on-disk graph, CLI flags, transcript layout) is liquid until 1.0; a change breaks the old shape and carries no shim.
-See [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md).
+See [Support levels](data-contracts.md#support-levels) for format compatibility before and from 1.0.
 
 ## Media attachments
 

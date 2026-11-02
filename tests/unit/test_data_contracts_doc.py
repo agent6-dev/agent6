@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import pathlib
+import re
 import sys
 import types
 
@@ -35,6 +36,21 @@ def test_data_contracts_page_is_not_stale() -> None:
     assert generated == committed, (
         "docs/data-contracts.md is stale; regenerate it with: uv run python docs/gen_contracts.py"
     )
+
+
+def test_every_contract_has_one_support_level() -> None:
+    """Every contract card is classified once in the support policy."""
+    generator = _load_generator()
+    generated: str = generator.build_markdown()
+    assert "## Support levels\n\n" in generated
+    support = generated.split("## Support levels\n\n", 1)[1].split("\n## ", 1)[0]
+    assert re.findall(r"^- \*\*([^*]+):\*\*", support, re.MULTILINE) == [
+        "Public",
+        "Durable but private",
+        "Disposable",
+    ]
+    classified = re.findall(r"\[([^]]+)\]\(#[^)]+\)", support)
+    assert sorted(classified) == sorted(contract.title for contract in generator.CONTRACTS)
 
 
 def test_function_only_module_has_no_class_kind() -> None:
