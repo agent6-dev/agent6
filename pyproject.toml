@@ -630,10 +630,10 @@ addopts = "-ra --strict-markers --strict-config -n auto"
 markers = [
     "browser: drives Playwright's Chromium; skipped when it is not installed (uv run playwright install chromium)",
     "collector: checks telemetry with otelcol-contrib or promtool; skipped when the required binary is not installed",
+    "needs_dev_tty: requires a pseudo-terminal and the /dev/tty node, which the jail omits",
     "needs_grammar: requires a cached tree-sitter grammar, selected by language",
     "needs_landlock_tcp: requires Linux >=6.7 (Landlock ABI v4)",
     "needs_namespaces: requires unprivileged user namespaces (skipped in restrictive sandboxes)",
     "needs_network: requires real Anthropic API key in ANTHROPIC_API_KEY",
-    "needs_dev_tty: requires a pseudo-terminal and the /dev/tty node, which the jail omits",
     "needs_pty: requires allocating a pseudo-terminal",
 ]

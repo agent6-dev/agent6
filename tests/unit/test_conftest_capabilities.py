@@ -112,8 +112,8 @@ def test_the_dev_tty_marker_skips_without_the_node(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A test needing /dev/tty skips by name where the node is absent, as inside the jail."""
-    import pathlib
-
+    descriptors = os.pipe()
+    monkeypatch.setattr(os, "openpty", lambda: descriptors)
     real_exists = pathlib.Path.exists
 
     def exists(self: pathlib.Path) -> bool:
