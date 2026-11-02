@@ -39,7 +39,7 @@
 #
 # Writes .webm (the site) and .gif (GitHub, which animates a GIF through its
 # image proxy but will not play a webm from another host; the proxy refuses
-# anything over 5 MB -- holds compress to almost nothing, so full width fits).
+# anything over 5 MiB, and the build fails on a gif above GIF_CAP).
 set -euo pipefail
 
 ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
@@ -54,8 +54,9 @@ BG="0x0f1414"   # agent6-dark's background; see src/agent6/ui/tui/theme.py
 WIDTH=1440
 HEIGHT=810
 FPS=24
-GIF_FPS=12      # every frame of a scrolling transcript is a full redraw, so the
-                # gif's size scales with fps; 12 keeps the 10s cuts under the 5 MB cap
+GIF_FPS=10      # every frame of a scrolling transcript is a full redraw, so the
+                # gif's size scales with fps; 10 keeps the web hero at 4.7 MB (12 gave 5.3 MB)
+GIF_CAP=5242880 # bytes; GitHub's image proxy answers 404 for anything larger
 
 # Segment spec: src : cut-in : window length : target length : hold.
 TUI_SEGMENTS=(
@@ -116,6 +117,12 @@ build() {
   ffmpeg -v error -y -i "$OUT/hero-$name.webm" \
     -vf "fps=${GIF_FPS},split[a][b];[a]palettegen=max_colors=96[p];[b][p]paletteuse=dither=bayer:bayer_scale=5" \
     "$OUT/hero-$name.gif" || return 1
+  local gif_bytes
+  gif_bytes=$(stat -c %s "$OUT/hero-$name.gif")
+  if [ "$gif_bytes" -gt "$GIF_CAP" ]; then
+    echo "hero.sh: hero-$name.gif is $gif_bytes bytes; GitHub's image proxy serves at most $GIF_CAP" >&2
+    return 1
+  fi
 
   printf 'hero-%s: %s (%ss), gif %s\n' "$name" \
     "$(du -h "$OUT/hero-$name.webm" | cut -f1)" \

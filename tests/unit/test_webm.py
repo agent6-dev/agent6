@@ -134,9 +134,10 @@ def _pixel(video: pathlib.Path) -> bytes:
     )
 
 
-@pytest.mark.parametrize("space", ["bt709", "unknown"])
-def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, space: str) -> None:
-    """A failed colour-space check fails the hero build and prevents its GIF encode."""
+def _run_hero(
+    tmp_path: pathlib.Path, space: str, gif_bytes: int = 7
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+    """Run hero.sh over stub tools; ffprobe reports `space`, ffmpeg writes `gif_bytes` per gif."""
     screenshots = tmp_path / "docs" / "screenshots"
     out = screenshots / "out"
     out.mkdir(parents=True)
@@ -155,7 +156,8 @@ def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, sp
             f"#!{sys.executable}\nimport json, pathlib, sys\n"
             f"with open({str(tmp_path / 'encodes.jsonl')!r}, 'a') as log:\n"
             "    log.write(json.dumps(sys.argv[1:]) + '\\n')\n"
-            "pathlib.Path(sys.argv[-1]).write_text('encoded')\n"
+            f"size = {gif_bytes} if sys.argv[-1].endswith('.gif') else 7\n"
+            "pathlib.Path(sys.argv[-1]).write_bytes(b'x' * size)\n"
         ),
     }
     for name, text in tools.items():
@@ -170,6 +172,13 @@ def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, sp
         check=False,
     )
     encodes = [json.loads(line) for line in (tmp_path / "encodes.jsonl").read_text().splitlines()]
+    return result, encodes
+
+
+@pytest.mark.parametrize("space", ["bt709", "unknown"])
+def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, space: str) -> None:
+    """A failed colour-space check fails the hero build and prevents its GIF encode."""
+    result, encodes = _run_hero(tmp_path, space)
     if space == "unknown":
         assert result.returncode != 0
         assert "expected color_space=bt709" in result.stderr
@@ -180,7 +189,7 @@ def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, sp
     for args in encodes:
         if args[-1].endswith(".gif"):
             assert args[args.index("-vf") + 1] == (
-                "fps=12,split[a][b];[a]palettegen=max_colors=96[p];"
+                "fps=10,split[a][b];[a]palettegen=max_colors=96[p];"
                 "[b][p]paletteuse=dither=bayer:bayer_scale=5"
             )
             assert "-colorspace" not in args
@@ -191,3 +200,11 @@ def test_hero_checks_each_encode_before_building_gifs(tmp_path: pathlib.Path, sp
                 "scale=out_color_matrix=bt709:out_range=tv"
                 in args[args.index("-filter_complex") + 1]
             )
+
+
+def test_hero_refuses_a_gif_over_the_image_proxy_cap(tmp_path: pathlib.Path) -> None:
+    """A gif over 5 MiB fails the build: GitHub's image proxy would answer 404 for it."""
+    result, encodes = _run_hero(tmp_path, "bt709", gif_bytes=5 * 1024 * 1024 + 1)
+    assert result.returncode != 0
+    assert "image proxy serves at most 5242880" in result.stderr
+    assert len(encodes) == 6
