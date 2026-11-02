@@ -160,7 +160,7 @@ Measured 2026-10-27 on an Ubuntu 26.04 host in `mcr.microsoft.com/devcontainers/
 - `full` under rootless Podman 5.7.0
 - `partial` under rootful Podman 5.7.0, and `full` with `--security-opt apparmor=unconfined`
 
-On Ubuntu 24.04+ (`kernel.apparmor_restrict_unprivileged_userns = 1`), `full` under Docker or rootful Podman also needs `agent6 system apparmor install` on the host or that sysctl at 0; rootless Podman does not.
+On Ubuntu (`kernel.apparmor_restrict_unprivileged_userns = 1`), `full` under Docker or rootful Podman also needs `agent6 system apparmor install` on the host or that sysctl at 0; rootless Podman does not.
 Each `--security-opt` flag on this page turns off a protection of the container itself (its seccomp filter, AppArmor profile or `/proc` masks) for every process in it.
 `agent6 check sandbox` names the level and what blocks a stronger one.
 
@@ -717,7 +717,7 @@ The structural defenses above confine a model that follows an injection.
 ## Known limitations
 
 - `full` `sandbox.isolation` requires user namespaces and refuses on distros that disable them.
-- AppArmor on Ubuntu 24.04+ blocks unprivileged user namespaces without a profile
+- AppArmor on Ubuntu blocks unprivileged user namespaces without a profile
     - `agent6 system apparmor install` adds the profile that `full` `sandbox.isolation` needs, scoped to the launcher
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
 - Devcontainers under Docker, or rootful Podman on an AppArmor host, get `partial` `sandbox.isolation` by default.

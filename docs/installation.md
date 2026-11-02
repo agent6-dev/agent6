@@ -63,8 +63,9 @@ For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolcha
 
 - Python 3.12 or newer
 - A C compiler on Python 3.15 (`tree-sitter` ships no wheel for it)
-- git 2.40 or newer (`merge-tree --merge-base`)
+- git 2.47 or newer
 - One provider: Anthropic, any OpenAI-compatible endpoint (a local one needs no key), a ChatGPT subscription, or a Claude Code login (`agent6 connect claude`)
+- A Linux release as recent as Debian 13 or Ubuntu 26.04 LTS; older ones are not supported
 - Linux on x86_64 or aarch64 for the sandbox
 - Unprivileged user namespaces for `full` `sandbox.isolation`
 - A Rust toolchain to build from source (the PyPI wheels bundle `agent6-jail`)
@@ -73,8 +74,8 @@ The jail uses Landlock, seccomp, and user namespaces.
 
 - On other architectures and on macOS, `sandbox.isolation = "auto"` resolves to `none`: commands run as ordinary subprocesses behind a startup warning, and an explicit `full` or `partial` refuses.
 - On Windows, use WSL.
-- Unprivileged user namespaces are on by default on Ubuntu, Debian, and most cloud images
-    - Ubuntu 24.04+ blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (`agent6 system apparmor remove` reverts it)
+- Unprivileged user namespaces are on by default on Debian and most cloud images
+- On Ubuntu, AppArmor blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (`agent6 system apparmor remove` reverts it)
 - Without user namespaces `sandbox.isolation = "auto"` falls back to `partial`, and to `none` on a kernel with no Landlock.
 
 The [security model](security.md) describes what each isolation level enforces.
