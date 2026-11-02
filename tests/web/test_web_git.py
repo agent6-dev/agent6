@@ -22,7 +22,7 @@ import pytest
 
 from agent6.ui.web import git_model, page
 from agent6.ui.web import server as web_server
-from agent6.vcs import git_diff, git_files, git_read
+from agent6.vcs import git_diff, git_files, git_history, git_read
 from tests.unit.test_git_history import (
     PNG_BLUE_2X2,
     PNG_RED_1X1,
@@ -374,6 +374,28 @@ def test_a_worktree_file_that_keeps_changing_is_refused(
     error = _refused(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b.txt")
     assert "b.txt kept changing while its diff was read" in error
     assert len(calls) == 2 * git_diff.WORKTREE_READS
+
+
+def test_a_write_undone_before_the_second_read_is_still_caught(
+    repo: tuple[pathlib.Path, dict[str, str]],
+    port: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A to B to A around git's read moves the change time, so the pair is read again."""
+    path, _ = repo
+    original = (path / "b.txt").read_bytes()
+    real_patch = git_history.worktree_patch
+
+    def swapping_patch(*args: object, **kwargs: object) -> tuple[str, bool]:
+        (path / "b.txt").write_bytes(b"B while git reads\n")
+        try:
+            return real_patch(*args, **kwargs)  # type: ignore[arg-type]
+        finally:
+            (path / "b.txt").write_bytes(original)
+
+    monkeypatch.setattr(git_history, "worktree_patch", swapping_patch)
+    error = _refused(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b.txt")
+    assert "b.txt kept changing while its diff was read" in error
 
 
 def test_a_worktree_diff_applies_the_repositorys_attributes(

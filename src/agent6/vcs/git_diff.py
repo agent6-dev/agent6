@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import hashlib
+import os
 import pathlib
 
 from agent6 import errors
@@ -48,8 +49,10 @@ def read(
     """Return a patch and the bytes that ground its attribution.
 
     A working-tree patch is git's own, run in the repository, so its attributes (line-ending
-    conversion, diff drivers, filters) apply; the head bytes are read before and after it and
-    must agree, or the pair is read again.
+    conversion, diff drivers, filters) apply; the head bytes, and the file's identity (inode,
+    size, change and modification times), are read before and after it and must agree, or
+    the pair is read again: a write that is undone before the second read still moves the
+    change time.
 
     Args:
         repo: The repository.
@@ -79,6 +82,7 @@ def read(
         return FileDiff(patch, truncated, before, new.data if new else None)
     untracked = git_history.worktree_entry(repo, name) == "untracked"
     for _attempt in range(WORKTREE_READS):
+        stat_before = _stat_identity(repo / name)
         first = git_files.worktree_blob(repo, name, max_bytes=blob_max_bytes)
         patch, truncated = git_history.worktree_patch(
             repo,
@@ -90,10 +94,19 @@ def read(
             full_context=full_context,
         )
         again = git_files.worktree_blob(repo, name, max_bytes=blob_max_bytes)
-        if _identity(first) == _identity(again):
+        if _identity(first) == _identity(again) and stat_before == _stat_identity(repo / name):
             return FileDiff(patch, truncated, before, first.data if first else None)
     raise errors.GitError(f"{name} kept changing while its diff was read")
 
 
 def _identity(blob: git_files.Blob | None) -> tuple[int, bytes | None] | None:
     return (blob.size, blob.data) if blob else None
+
+
+def _stat_identity(path: pathlib.Path) -> tuple[int, int, int, int] | None:
+    """Return what every write to the file moves: inode, size, change and modification times."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return None
+    return (st.st_ino, st.st_size, st.st_ctime_ns, st.st_mtime_ns)
