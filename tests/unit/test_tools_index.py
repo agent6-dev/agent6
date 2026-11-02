@@ -430,6 +430,7 @@ def test_symbol_is_frozen_dataclass() -> None:
         s.name = "y"  # type: ignore[misc]
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_outline_names_why_it_has_no_symbols(tmp_path: pathlib.Path) -> None:
     """A file no grammar covers, or outside the indexed workspace, is refused with its cause.
 
