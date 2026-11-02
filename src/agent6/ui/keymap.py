@@ -107,6 +107,9 @@ REVIEW_TEXT = {
     "result": "{message} (request {request_id})",
     "preview": "Reviewed diff: {location}",
     "missing": "No recorded review target.",
+    "trees_missing": (
+        "The reviewed trees are not in this repository: the review ran on another checkout."
+    ),
     "no_hunk": "No cited hunk is available in this preview.",
     "truncated": "\n… (truncated)",
     "panel": "Panel {panel_id}: block_on={block_on}, rejected={blocked}, disarmed={disarmed}",

@@ -580,6 +580,19 @@ def chain_tip(path: pathlib.Path, ref: str) -> str | None:
     return sha if res.returncode == 0 and sha else None
 
 
+def object_exists(path: pathlib.Path, sha: str) -> bool:
+    """Return whether the repository holds the object (a commit, tree or blob id).
+
+    Args:
+        path: The repository.
+        sha: The object id.
+
+    Returns:
+        True when `git cat-file -e` finds it.
+    """
+    return git_command.run(path, "cat-file", "-e", sha, check=False).returncode == 0
+
+
 def commit_is_reachable(path: pathlib.Path, sha: str) -> bool:
     """Return whether any ref reaches the commit.
 

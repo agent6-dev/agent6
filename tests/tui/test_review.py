@@ -396,3 +396,30 @@ def test_receipt_is_a_keymap_menu_and_footer_action(tmp_path: pathlib.Path) -> N
             assert isinstance(app.screen, review.FindingsScreen)
 
     asyncio.run(scenario())
+
+
+def test_preview_names_trees_another_checkout_holds(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A review recorded on another checkout says so instead of printing git's bad-object line."""
+    monkeypatch.chdir(tmp_path)
+    subprocess.check_output(["git", "init", "-q"], cwd=tmp_path)
+    saved = review_helpers.reviewed_session(tmp_path)
+    panel = json.loads(saved.logs_path.read_text())
+    panel["target"].update(base_tree="a" * 40, head_tree="b" * 40)
+    saved.logs_path.write_text(json.dumps(panel) + "\n")
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(saved.session_dir)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("ctrl+d")
+            await pilot.press("ctrl+f")
+            await pilot.pause()
+            await pilot.press("down")
+            await pilot.pause()
+            body = _shown(app.screen.query_one("#diff-body", widgets.Static))
+            assert "not in this repository" in body, body
+            assert "bad object" not in body
+
+    asyncio.run(scenario())

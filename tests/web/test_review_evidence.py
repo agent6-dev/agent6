@@ -99,3 +99,27 @@ def test_panel_rules_link_reads_the_base_blob_after_head_deletion(
     assert code == 200 and file["text"] == "Keep the base rule. <b>literal</b>\n"
     assert source["supplied_bytes"] == len(file["text"].encode("utf-8")) == 35
     assert _get(port, "/api/reviews/panel/file?side=head&path=AGENTS.md")[0] == 404
+
+
+def test_a_tree_another_checkout_holds_is_named(tmp_path: pathlib.Path) -> None:
+    """A recorded tree this repository lacks reads as another checkout's, not as a bad object."""
+    from tests.web import signin
+
+    saved = review_helpers.reviewed_repo(tmp_path)
+    target = review_actions.read_review(saved.session_dir).panels[0].target
+    assert target is not None
+    log = saved.logs_path.read_text()
+    saved.logs_path.write_text(
+        log.replace(target.base_tree, "a" * 40).replace(target.head_tree, "b" * 40)
+    )
+    srv = server.WebServer(("127.0.0.1", 0), tmp_path, "", secret=signin.SECRET)
+    thread = threading.Thread(target=srv.serve_forever, daemon=True)
+    thread.start()
+    try:
+        code, body = _get(srv.server_address[1], "/api/reviews/panel/file?side=base&path=old.txt")
+    finally:
+        srv.shutdown()
+        srv.server_close()
+        thread.join()
+    assert code == 422, body
+    assert "not in this repository" in body["error"] and "bad object" not in body["error"]

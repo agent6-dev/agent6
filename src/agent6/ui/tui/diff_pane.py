@@ -170,6 +170,10 @@ class DiffPane(forms.ScrollPane):
         body = text.Text(keymap.REVIEW_TEXT["preview"].format(location=location) + "\n")
         if target is None:
             body.append(keymap.REVIEW_TEXT["missing"])
+        elif not all(
+            git_read.object_exists(cwd, tree) for tree in (target.base_tree, target.head_tree)
+        ):
+            body.append(keymap.REVIEW_TEXT["trees_missing"])
         else:
             try:
                 files = git_history.changed_files(cwd, target.base_tree, target.head_tree)
