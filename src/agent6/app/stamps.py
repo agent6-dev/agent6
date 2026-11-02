@@ -405,6 +405,10 @@ def stamp_continuation(session_dir: pathlib.Path, steer: str) -> None:
 
     An empty steer clears it, as the journal's label clears its own on an unsteered resume.
     An unreadable manifest is left alone rather than failing the resume.
+
+    Args:
+        session_dir: The run's session directory.
+        steer: The resume's steer, "" for an unsteered resume.
     """
     with contextlib.suppress(manifest.ManifestError, OSError):
         m = manifest.read_manifest(session_dir)
