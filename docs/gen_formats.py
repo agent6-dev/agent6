@@ -261,10 +261,27 @@ def _type_text(value: Any) -> str:
     text = str(value).replace("typing.", "")
     text = re.sub(r"<class '([^']+)'>", r"\1", text)
     text = re.sub(r"agent6\.[\w.]+\.([A-Z]\w*)", r"\1", text)
-    # Python 3.14 spells `Optional[X]` as `X | None`; the page reads the same on every version.
-    if text.startswith("Optional[") and text.endswith("]"):
-        text = f"{text[len('Optional[') : -1]} | None"
-    return text.replace("|", "\\|")
+    return _optional_as_union(text).replace("|", "\\|")
+
+
+def _optional_as_union(text: str) -> str:
+    """Spell every `Optional[X]` as `X | None`, nested ones included, as Python 3.14 prints it.
+
+    Args:
+        text: A type's text.
+
+    Returns:
+        The text with no `Optional[` left.
+    """
+    while (start := text.find("Optional[")) >= 0:
+        depth, end = 0, start + len("Optional[")
+        for end in range(start + len("Optional["), len(text)):
+            depth += {"[": 1, "]": -1}.get(text[end], 0)
+            if depth < 0:
+                break
+        inner = text[start + len("Optional[") : end]
+        text = f"{text[:start]}{inner} | None{text[end + 1 :]}"
+    return text
 
 
 def _table(fields: Iterable[Field]) -> str:
