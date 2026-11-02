@@ -896,6 +896,97 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
     assert "waiting on a question (answer via agent6 attach" in capsys.readouterr().err
 
 
+def _always_alive(_session_dir: pathlib.Path) -> bool:
+    return True
+
+
+def _never_written(_session_dir: pathlib.Path, *, now: bool = False) -> bool:
+    return False
+
+
+def test_a_stop_that_cannot_be_written_ends_the_wait_after_the_grace(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A lane whose plain stop marker fails to land is waited on for the grace, not forever."""
+    from agent6.viewmodel import SessionSummary
+
+    lane = tmp_path / "lane"
+    _lane_logs(lane, {"type": "session.start", "mode": "run", "user_task": "t"})
+    spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
+    res = subrun.LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
+    polls = 0
+
+    def fake_summary(rd: pathlib.Path) -> SessionSummary:
+        return SessionSummary(
+            session_id=rd.name, mode="run", task_label=session_status.TaskLabel("t"),
+            status="running",
+            reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
+        )  # fmt: skip
+
+    def fake_sleep(*_args: object) -> None:
+        nonlocal polls
+        polls += 1
+        if polls > 20:
+            raise RuntimeError("the wait did not end")
+
+    monkeypatch.setattr(lane_watch, "summarize_session_dir", fake_summary)
+    monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.0)
+    monkeypatch.setattr(lane_watch.time, "sleep", fake_sleep)
+    monkeypatch.setattr(process, "worker_is_alive", _always_alive)
+    monkeypatch.setattr(ipc, "request_stop", _never_written)
+
+    assert lane_watch.await_lanes([res], should_stop=lambda: True, stop_is_now=lambda: False)
+    assert "could not write the stop request for fan-l1" in capsys.readouterr().err
+
+
+def test_a_stop_pending_at_the_await_keeps_its_urgency(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    runtime: app_lanes.LaneRuntime,
+) -> None:
+    """A plain stop that lands while the lanes start lets them finish their turns."""
+    origin_state = paths.state_dir(origin)
+    cfg = Config()
+    lanes = _specs(tmp_path, cfg, "fan", "2")
+    coordinator_dir = origin_state / "sessions" / "runs" / "fan"
+    inner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
+    awaited: list[dict[str, Any]] = []
+
+    def spawner(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
+        result = inner(spec, task)
+        if spec.lane == len(lanes):
+            assert ipc.request_stop(coordinator_dir)
+        return result
+
+    def recording_await(started: list[subrun.LaneResult], **kwargs: Any) -> bool:
+        awaited.append(
+            {
+                "already_interrupted": kwargs.get("already_interrupted", False),
+                "pending": kwargs["should_stop"](),
+                "now": kwargs["stop_is_now"](),
+            }
+        )
+        return False
+
+    monkeypatch.setattr(lane_watch, "await_lanes", recording_await)
+    parallel.run_parallel(
+        "t",
+        lanes,
+        explicit_leaves=frozenset(),
+        cfg=cfg,
+        origin=origin,
+        origin_state=origin_state,
+        runtime=runtime,
+        spawner=spawner,
+        fanout_id="fan",
+    )
+
+    assert awaited == [{"already_interrupted": False, "pending": True, "now": False}]
+
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------

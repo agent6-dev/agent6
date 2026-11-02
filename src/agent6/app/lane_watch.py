@@ -173,10 +173,13 @@ def await_lanes(
             if immediate
             else "\n[agent6] stopping lanes after their current turns..."
         )
+        delivered = True
         for res in pending.values():
             if not ipc.request_stop(res.session_dir, now=immediate):
+                delivered = False
                 reporter.err(f"[agent6] could not write the stop request for {res.spec.session_id}")
-        deadline = time.monotonic() + STOP_GRACE_S if immediate else None
+        # A lane that never got its marker ends on its own terms: the wait is the grace, not open.
+        deadline = time.monotonic() + STOP_GRACE_S if immediate or not delivered else None
         try:
             while pending and (deadline is None or time.monotonic() < deadline):
                 poll_once()
@@ -193,14 +196,16 @@ def await_lanes(
         stop_and_drain(immediate=True)
         return True
     try:
-        while pending:
+        while True:
             poll_once()
-            if pending and should_stop is not None and should_stop():
-                stop_and_drain(immediate=escalates())
+            # A request that landed while the lanes started still ends the fan-out as a stop.
+            if should_stop is not None and should_stop():
+                if pending:
+                    stop_and_drain(immediate=escalates())
                 return True
-            if pending:
-                time.sleep(POLL_INTERVAL_S)
-        return False
+            if not pending:
+                return False
+            time.sleep(POLL_INTERVAL_S)
     except KeyboardInterrupt:
         stop_and_drain(immediate=True)
         return True
