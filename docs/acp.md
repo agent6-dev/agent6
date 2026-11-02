@@ -41,6 +41,8 @@ Three more updates ride the journal.
 - `available_commands_update`: `/pin <text>` and the [review commands](#review-findings).
   `/pin` reaches the run as steering text; review commands are handled by the front end, not the model.
   The composer's other directives (`/compact`, `/btw`, `/task`, ...) are refused, except `/parallel` and `/undo`; `/parallel` starts no lanes through ACP.
+  `abort`, `exit`, `detach` and `/undo` are task text over ACP, not terminal commands.
+  The editor cancels through `session/cancel`.
 - `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
 
 Everything agent6 says carries `[agent6]`, the model's final summary arrives bare, and the cost receipt goes to stderr.
@@ -102,6 +104,7 @@ A session is one conversation in one directory.
 
 - `session/new` carries an absolute `cwd`, a git repository, whose own layered config applies
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (an execution that died before its first checkpoint leaves nothing to resume: the next prompt starts a new run, and the editor is told)
+  After an undo on another surface, the next prompt follows the run's continuation.
 - a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session queues and says for which session it waits
 - `session/list` (`cwd` optional, absolute) names the repository's resumable runs, newest first: agent6's run id as `sessionId`, the task as `title`, the last activity as `updatedAt`; one page, no cursor.
   A run `agent6 resume` would refuse (a fan-out coordinator, a lane, a run whose worktree is gone, a run with no checkpoint) is left out.

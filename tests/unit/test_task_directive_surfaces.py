@@ -255,3 +255,24 @@ def test_a_composer_command_cannot_be_a_fresh_runs_task(
 
     assert rc == 2
     assert "composer command" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("followup", [False, True])
+def test_cli_composer_refusal_keeps_its_remedy(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], followup: bool
+) -> None:
+    """The CLI owns composer advice and the resume flag prefix, not the shared lifecycle."""
+    from agent6.app import session_setup
+    from agent6.ui.cli import resume, run
+    from tests.acp import test_runner
+
+    monkeypatch.setattr(session_setup, "load_session_config", test_runner._loaded)
+    if followup:
+        rc = resume._cmd_resume((), "run-AAAAAA", force=False, steer="/compact")
+    else:
+        rc = run._cmd_run((), "/compact", mode="ask")
+    assert rc == 2
+    expected = "ERROR: " + ("--steer: " if followup else "")
+    expected += "/compact is a composer command, not an instruction;"
+    expected += " start this execution, then type it in the composer"
+    assert expected in capsys.readouterr().err

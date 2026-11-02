@@ -82,3 +82,86 @@ def test_non_loopback_flag_refusal_uses_the_shared_diagnostic(
         == 2
     )
     assert capsys.readouterr().err.startswith("REFUSING:")
+
+
+@pytest.mark.parametrize("bucket", ["asks", "machines", "plans", "runs"])
+def test_web_resolves_session_and_draft_prefixes(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, bucket: str
+) -> None:
+    """The CLI passes the server a full id, so its exact-id deep link opens the requested page."""
+    from unittest import mock
+
+    from agent6 import paths
+    from agent6.ui.cli import web_cmds
+
+    monkeypatch.chdir(tmp_path)
+    saved = paths.state_dir(tmp_path) / "sessions" / bucket / "quiet-run-AAAAAA"
+    saved.mkdir(parents=True)
+    (saved / "logs.jsonl").write_text('{"type": "session.start"}\n')
+    with mock.patch.object(web_cmds, "run_web", return_value=0) as serve:
+        assert (
+            web_cmds._cmd_web(
+                "quiet",
+                config_paths=(),
+                host=None,
+                port=None,
+                allow_non_loopback=False,
+                secret=None,
+            )
+            == 0
+        )
+    assert serve.call_args.args[0] == saved.name
+
+
+@pytest.mark.parametrize("target", ["unknown", "quiet"])
+def test_web_refuses_unknown_and_ambiguous_targets_before_starting_the_server(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+) -> None:
+    """A bad target is not silently accepted as a hub link."""
+    from unittest import mock
+
+    from agent6 import paths
+    from agent6.sessions import layout
+    from agent6.ui.cli import web_cmds
+
+    monkeypatch.chdir(tmp_path)
+    state = paths.state_dir(tmp_path)
+    for name in ["quiet-run-AAAAAA", "quiet-run-BBBBBB"]:
+        saved = state / "sessions" / "runs" / name
+        saved.mkdir(parents=True)
+        (saved / "logs.jsonl").write_text('{"type": "session.start"}\n')
+    (layout.machines_root(state) / "quiet").mkdir(parents=True)
+    with mock.patch.object(web_cmds, "run_web", return_value=0) as serve:
+        assert (
+            web_cmds._cmd_web(
+                target, config_paths=(), host=None, port=None, allow_non_loopback=False, secret=None
+            )
+            == 2
+        )
+    serve.assert_not_called()
+    assert ("ambiguous" if target == "quiet" else "no session matches") in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("target", ["", "pipeline"])
+def test_web_keeps_the_hub_and_exact_machine_targets(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    from unittest import mock
+
+    from agent6 import paths
+    from agent6.sessions import layout
+    from agent6.ui.cli import web_cmds
+
+    monkeypatch.chdir(tmp_path)
+    (layout.machines_root(paths.state_dir(tmp_path)) / "pipeline").mkdir(parents=True)
+    with mock.patch.object(web_cmds, "run_web", return_value=0) as serve:
+        assert (
+            web_cmds._cmd_web(
+                target, config_paths=(), host=None, port=None, allow_non_loopback=False, secret=None
+            )
+            == 0
+        )
+    assert serve.call_args.args[0] == target

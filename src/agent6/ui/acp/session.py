@@ -40,8 +40,8 @@ class Session:
         acp_id: ACP's id for the conversation: the run id `session/new` reserved for its
             first prompt, or the recorded run `session/resume` reopened.
         cwd: The working directory.
-        session_id: agent6's run id; "" until the first prompt mints it, then every
-            later prompt resumes the same run.
+        session_id: agent6's run id; "" until the first prompt mints it. Later prompts
+            resume it, following an undo to its continuation.
         execution: The execution in progress, 1-based: the first prompt starts the run and
             each later prompt resumes it.
         thread: The execution's worker.
@@ -117,7 +117,7 @@ class Sessions:
 
         Args:
             params: An optional absolute `cwd` to list; without it, every repository this
-                connection opened a session in.
+                connection has a session open in.
 
         Returns:
             The reply: `sessions`, each with agent6's run id as its `sessionId`, its `cwd`,
@@ -188,8 +188,9 @@ class Sessions:
             raise rpc.RpcError(rpc.INVALID_PARAMS, f"no recorded run {session_id!r} in {cwd}")
         bucket = saved.session_dir.parent.name
         if bucket != kinds.session_bucket(ACP_MODE):
+            mode = "an ask" if bucket == "asks" else f"a {bucket[:-1]}"
             raise rpc.RpcError(
-                rpc.INVALID_PARAMS, f"{session_id} is a {bucket[:-1]}; an editor resumes runs"
+                rpc.INVALID_PARAMS, f"{session_id} is {mode}; an editor resumes runs"
             )
         if process.worker_is_alive(saved.session_dir):
             raise rpc.RpcError(
@@ -210,7 +211,14 @@ class Sessions:
                     rpc.INVALID_PARAMS, "that session already has a prompt in flight"
                 )
             return {}  # the conversation is open already; its counters carry on
-        self._by_id[session_id] = Session(acp_id=session_id, cwd=cwd, session_id=session_id)
+        execution = updates.replay(
+            tail.tail_events(saved.logs_path, follow=False),
+            acp_session_id=session_id,
+            cwd=cwd,
+        )
+        self._by_id[session_id] = Session(
+            acp_id=session_id, cwd=cwd, session_id=session_id, execution=execution
+        )
         return {}
 
     def load(

@@ -2057,7 +2057,7 @@ def test_a_queued_question_pops_no_modal_until_asked_for(tmp_path: pathlib.Path)
             await pilot.pause()
             await pilot.press("ctrl+s")
             await pilot.pause()
-            assert any("question-2 answered" in n for n in app.notices)
+            assert "question-2 answer saved; the resume delivers it" in app.notices
             # The answer file is on disk until the run reads it: the question is not offered again.
             assert app.dispatcher.open_queued(tmp_path, folded) is False
             assert ipc.read_question_answers(tmp_path, "question-2", timeout_s=1.0) == ("pg",)

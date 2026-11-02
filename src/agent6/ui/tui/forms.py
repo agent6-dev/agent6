@@ -12,15 +12,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, Literal
 
-try:
-    from rich import text as rich_text
-    from rich.color import Color
-    from rich.console import RenderableType
-    from textual import containers, events, geometry, message, widgets
-    from textual.widget import Widget
-    from textual.widgets._select import SelectCurrent, SelectOverlay
-except ImportError as e:  # pragma: no cover
-    raise SystemExit("The TUI widgets need textual: pip install 'agent6[tui]'") from e
+from rich import text as rich_text
+from rich.color import Color
+from rich.console import RenderableType
+from textual import containers, events, geometry, message, widgets
+from textual.widget import Widget
+from textual.widgets._select import SelectCurrent, SelectOverlay
 
 
 def _scroll_row_into_view(widget: Widget, row: int) -> None:

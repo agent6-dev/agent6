@@ -271,6 +271,7 @@ def jail_degraded_body(event: dict[str, Any]) -> str:
 
 # Events that render as a marker between turns; a builder returning None renders nothing.
 MARKER_BODIES: dict[str, Callable[[dict[str, Any]], str | None]] = {
+    "loop.skills.warning": lambda event: f"skills: WARNING: {event.get('warning', '')}",
     "loop.review.start": review.rules_notice,
     "mcp.server_unavailable": mcp_unavailable_body,
     "jail.degraded": jail_degraded_body,

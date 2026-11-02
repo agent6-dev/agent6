@@ -93,7 +93,7 @@ class PromptDispatcher:
             if ipc.question_answers_written(session_dir, qp.id):
                 continue  # answered here already; the run reads the file at its next turn
             modal = modals.QuestionModal(
-                qp.id, qp.questions, from_harness=qp.from_harness, queued=True
+                qp.id, qp.questions, from_harness=qp.from_harness, queued=True, live=live
             )
             self._open[key] = modal
             self._app.push_screen(modal, self._on_question(session_dir, qp.id, queued=True))
@@ -139,6 +139,10 @@ class PromptDispatcher:
                 self._app.notify(ipc.ANSWERED_ELSEWHERE, severity="warning", timeout=6.0)
                 return
             if queued:
-                self._app.notify(f"{prompt_id} answered; the run reads it at its next turn")
+                self._app.notify(
+                    f"{prompt_id} answered; the run reads it at its next turn"
+                    if self._answerable()
+                    else f"{prompt_id} answer saved; the resume delivers it"
+                )
 
         return cb

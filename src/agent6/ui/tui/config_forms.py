@@ -7,14 +7,11 @@ from __future__ import annotations
 import pathlib
 from typing import ClassVar
 
-try:
-    import textual
-    from rich import text
-    from textual import app, binding, containers, events
-    from textual import screen as textual_screen
-    from textual import widgets as textual_widgets
-except ImportError as e:  # pragma: no cover - clear runtime message
-    raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
+import textual
+from rich import text
+from textual import app, binding, containers, events
+from textual import screen as textual_screen
+from textual import widgets as textual_widgets
 
 from agent6 import errors
 from agent6.config import io, notices, write

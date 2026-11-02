@@ -373,9 +373,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
     def _tick(self) -> None:
         """Dispatch prompts, route steer requests, beat the heartbeat and repaint once."""
-        # Prompts only while the run can consume an answer: the fold keeps an unanswered prompt
-        # across a worker death. Skipped ids are not marked seen, so they pop on a later tick.
-        if self.session_controllable() and self._screen_or_none() is not None:
+        if self._screen_or_none() is not None:
             self._prompts.dispatch(self.session_dir, self.state)
         # An external steer request goes to the composer bar once (steer_requests is monotonic).
         if self.state.steer_requests > self._seen_steer:
@@ -593,9 +591,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self.push_screen(
             modals.ConfirmModal(
                 "Stop this session now?",
-                "Its model call is cut and a running command is ended; the run ends "
-                "at once and can be resumed later with `agent6 resume`. A worker that does "
-                "not answer within 5 s is killed.",
+                "Its model call is cut and a running command is ended. "
+                "A worker still live after 5 s (30 s for a fan-out) is killed with its commands. "
+                "A run `agent6 resume` accepts stays resumable.",
                 confirm_label="Stop now",
             ),
             _confirmed,
@@ -615,7 +613,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             modals.ConfirmModal(
                 "Stop after this turn?",
                 "The current turn finishes (its tool results and auto-commit land), "
-                "then the run stops. Resume later with `agent6 resume`.",
+                "then the run stops. A run `agent6 resume` accepts stays resumable.",
                 confirm_label="Stop",
             ),
             _confirmed,

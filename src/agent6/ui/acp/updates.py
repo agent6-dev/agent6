@@ -219,7 +219,7 @@ def replay(
     *,
     acp_session_id: str,
     cwd: pathlib.Path,
-    notify: Callable[[dict[str, Any]], None],
+    notify: Callable[[dict[str, Any]], None] | None = None,
 ) -> int:
     """Replay a recorded run through the shared fold and ACP projection.
 
@@ -227,11 +227,13 @@ def replay(
         journal: The run's events in emission order.
         acp_session_id: The conversation id, also the recorded run's id.
         cwd: The working directory for tool locations.
-        notify: Sends each notification before the load request returns.
+        notify: Sends each notification before load returns; None only counts executions.
 
     Returns:
         The number of recorded executions, for the next prompt's tool call ids.
     """
+    if notify is None:
+        return sum(event.get("type") in events.SESSION_START_EVENTS for event in journal)
     fold = transcript.TranscriptFold()
     execution = 0
     announced: set[str] = set()

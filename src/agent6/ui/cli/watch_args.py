@@ -184,8 +184,8 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         "stop",
         help=(
             "Stop a live session now: cut its model call and end its running commands."
-            " The run ends as stopped. A worker still live after 5 s is killed with its"
-            " commands. The session stays resumable (`agent6 resume ID`)."
+            " The run ends as stopped. A worker still live after 5 s (30 s for a fan-out)"
+            " is killed with its commands. A run `agent6 resume` accepts stays resumable."
             " Default: the newest live session (a fan-out's lanes stop with their coordinator)."
         ),
     )

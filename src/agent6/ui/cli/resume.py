@@ -11,7 +11,7 @@ import pathlib
 import time
 
 from agent6.app import resume, session_setup
-from agent6.ui.cli import run
+from agent6.ui.cli import common, run
 
 
 def _cmd_resume(
@@ -44,6 +44,9 @@ def _cmd_resume(
     Returns:
         The exit code from `app.resume.resume_task`.
     """
+    if (problem := common.steer_problem(steer)) is not None:
+        common.error(f"--steer: {problem}")
+        return 2
     return resume.resume_task(
         config_paths,
         session_id,

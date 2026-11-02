@@ -18,7 +18,7 @@ except ImportError:
     termios = None
     tty = None
 
-from agent6 import paths
+from agent6 import directive, paths
 from agent6.app import reporter
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
@@ -179,6 +179,14 @@ def safe_input(prompt: str) -> str | None:
         return input(prompt).strip()
     except (EOFError, OSError):
         return None
+
+
+def steer_problem(text: str) -> str | None:
+    """Return a steer refusal with the terminal's remedy, or None for valid text."""
+    problem = directive.steer_problem(text)
+    if problem is not None and "composer command" in problem:
+        return f"{problem}; start this execution, then type it in the composer"
+    return problem
 
 
 def editor_argv() -> list[str] | None:

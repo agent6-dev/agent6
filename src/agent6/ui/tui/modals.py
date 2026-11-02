@@ -434,6 +434,7 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
         *,
         from_harness: bool = False,
         queued: bool = False,
+        live: bool = True,
     ) -> None:
         """Create the prompt for a question id and its questions.
 
@@ -441,13 +442,15 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
             question_id: The prompt's id.
             questions: The questions.
             from_harness: Whether agent6 itself asked.
-            queued: Whether the run went on without the answer; Esc then leaves it pending.
+            queued: Whether the answer waits for a turn or a resume; Esc leaves it pending.
+            live: Whether the run can read the answer without a resume.
         """
         super().__init__()
         self.question_id = question_id
         self.questions = questions
         self.from_harness = from_harness
         self.queued = queued
+        self.live = live
         self._answered_elsewhere = False
 
     def close_answered_elsewhere(self, *, on_top: bool) -> None:
@@ -482,7 +485,11 @@ class QuestionModal(screen.ModalScreen["tuple[str, ...] | None"]):
                 "agent6 is asking" if self.from_harness else "The agent is asking", style="bold"
             )
             if self.queued:
-                head.append(" (queued: the run went on; it reads the answer at its next turn)")
+                head.append(
+                    " (queued: the run went on; it reads the answer at its next turn)"
+                    if self.live
+                    else " (answer saved on Submit; the resume delivers it)"
+                )
             head.append(". Answer, then Submit (ctrl+s):" if multi else ":")
             yield widgets.Static(head)
             with containers.VerticalScroll(id="question-list"):

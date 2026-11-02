@@ -255,7 +255,7 @@ def _compose_task(
     return ComposedTask(f"{seed.text}\n\n{task}" if task else seed.text, seed.source_session_id)
 
 
-def _cmd_run(
+def _cmd_run(  # noqa: PLR0911
     config_paths: tuple[pathlib.Path, ...],
     task: str,
     *,
@@ -331,6 +331,9 @@ def _cmd_run(
 
     # `@path` references inline the files verbatim before the harness sees the task.
     task = task_refs.expand_task_file_refs(task, pathlib.Path.cwd())
+    if (problem := common.steer_problem(task)) is not None:
+        common.error(problem)
+        return 2
 
     # `--parallel` routes after the config walls and before the single-run preflight; run mode only.
     if parallel_spec and mode == "run":

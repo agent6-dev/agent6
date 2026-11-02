@@ -15,8 +15,9 @@ import pathlib
 import pydantic
 
 from agent6.config import WebConfig, is_loopback_host, layer
+from agent6.sessions import id
 from agent6.ui.cli import common
-from agent6.ui.web import auth, run_web
+from agent6.ui.web import auth, model, run_web
 
 
 def _cmd_web(
@@ -35,7 +36,7 @@ def _cmd_web(
     `[web].allow_non_loopback = true`. Prefer `tailscale serve` in front of a loopback bind.
 
     Args:
-        target: The session or machine to open first.
+        target: The session id or prefix, or machine name to open first.
         config_paths: The `--config` files in command-line order, if any.
         host: The `--host` override.
         port: The `--port` override.
@@ -43,9 +44,17 @@ def _cmd_web(
         secret: The `--secret` value; None reads `AGENT6_WEB_SECRET`, else mints one.
 
     Returns:
-        The exit code; 2 for a bad port, an unapproved non-loopback host or a short secret.
+        The exit code; 2 for a bad target, port, unapproved non-loopback host or short secret.
     """
-    eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
+    cwd = pathlib.Path.cwd()
+    if target:
+        try:
+            target = common.resolve_session_layout(cwd, target).session_id
+        except id.SessionIdError as exc:
+            if not exc.no_match or model.machine_dir_for(cwd, target) is None:
+                common.error(str(exc))
+                return 2
+    eff = layer.load_effective(cwd, config_paths)
     web = eff.config.web
     eff_host = host if host is not None else web.host
     eff_port = port if port is not None else web.port

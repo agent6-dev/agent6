@@ -11,14 +11,11 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-try:
-    import textual
-    from rich import text
-    from textual import app as textual_app
-    from textual import binding, containers, events, screen
-    from textual import widgets as textual_widgets
-except ImportError as e:  # pragma: no cover
-    raise SystemExit("The TUI needs textual: pip install 'agent6[tui]'") from e
+import textual
+from rich import text
+from textual import app as textual_app
+from textual import binding, containers, events, screen
+from textual import widgets as textual_widgets
 
 from agent6.ui.tui import clipboard, forms, settings
 

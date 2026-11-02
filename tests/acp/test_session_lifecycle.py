@@ -410,3 +410,47 @@ def test_close_drops_an_idle_conversation_and_cancels_a_running_one(
     assert "no session" in replies[7]["error"]["message"]
     with pytest.raises(acp_server.rpc.RpcError, match="no session"):
         busy.get({"sessionId": acp_id})
+
+
+@pytest.mark.parametrize("method", ["session/load", "session/resume"])
+def test_reopened_thread_seeds_execution_without_replaying_on_resume(
+    tmp_path: pathlib.Path, method: str
+) -> None:
+    """Resume keeps tool ids distinct without sending the history the editor already holds."""
+    cwd = _repo(tmp_path)
+    saved = _record(cwd, "run-AAAAAA", "task", mtime=1)
+    with (saved / "logs.jsonl").open("a") as log:
+        log.write('{"type": "loop.resume.start"}\n')
+    sessions = _sessions(None)
+    frames = _drive(_msg(1, method, cwd=str(cwd), sessionId=saved.name) + b"\n", sessions)
+    assert frames[-1]["result"] == {}
+    assert sessions.get({"sessionId": saved.name}).execution == 2
+    if method == "session/resume":
+        assert len(frames) == 1
+
+
+@pytest.mark.parametrize(
+    "bucket, article", [("asks", "an ask"), ("machines", "a machine"), ("plans", "a plan")]
+)
+def test_resume_refusal_uses_the_modes_article(
+    tmp_path: pathlib.Path, bucket: str, article: str
+) -> None:
+    """An ask is refused with its article, as a plan is."""
+    cwd = _repo(tmp_path)
+    saved = _record(cwd, "session-AAAAAA", "task", bucket=bucket, mtime=1)
+    (reply,) = _drive(
+        _msg(1, "session/resume", cwd=str(cwd), sessionId=saved.name) + b"\n", _sessions(None)
+    )
+    assert reply["error"]["message"] == f"{saved.name} is {article}; an editor resumes runs"
+
+
+def test_list_without_cwd_only_includes_open_repositories(tmp_path: pathlib.Path) -> None:
+    """Closing the last conversation removes its repository from the implicit listing."""
+    cwd = _repo(tmp_path)
+    saved = _record(cwd, "run-AAAAAA", "task", mtime=1)
+    sessions = _sessions(None)
+    opened = sessions.new({"cwd": str(cwd)})
+    assert [r["sessionId"] for r in sessions.list({})["sessions"]] == [saved.name]
+    sessions.close(opened)
+    assert sessions.list({}) == {"sessions": []}
+    assert "has a session open in" in (acp_session.Sessions.list.__doc__ or "")

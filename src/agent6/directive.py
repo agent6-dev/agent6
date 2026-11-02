@@ -244,10 +244,7 @@ def steer_problem(text: str) -> str | None:
         The refusal, or None for ordinary text and a well-formed directive.
     """
     if (m := _FRONT_END_TOKEN.match(text)) is not None:
-        return (
-            f"{m.group(1)} is a composer command, not an instruction;"
-            " start this execution, then type it in the composer"
-        )
+        return f"{m.group(1)} is a composer command, not an instruction"
     try:
         parse_pin(text)
         parse_directive(text)

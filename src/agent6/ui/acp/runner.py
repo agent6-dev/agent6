@@ -377,11 +377,33 @@ class RunBridge:
         )
 
     def _resumable(self, session: acp_session.Session) -> bool:
-        """Return whether the prior turn left a resume snapshot for this prompt to continue."""
-        if not session.session_id:
-            return False
-        layout = session.layout(agent6_paths.state_dir(session.cwd))
-        return (layout.session_dir / "loop_state.json").is_file()
+        """Follow undo continuations and return whether the run has a resume snapshot.
+
+        Args:
+            session: The thread whose next execution resumes the run.
+
+        Returns:
+            Whether the current run has a snapshot.
+
+        Raises:
+            OperatorError: Undo continuations cycle or have no resume point.
+        """
+        seen: set[str] = set()
+        while session.session_id:
+            if session.session_id in seen:
+                raise errors.OperatorError("the undo continuations form a cycle")
+            seen.add(session.session_id)
+            layout = session.layout(agent6_paths.state_dir(session.cwd))
+            scan = session_log.scan_session_log(layout.logs_path)
+            if not (scan.finished and scan.end_reason == "undone" and scan.undone_to):
+                resuming = (layout.session_dir / "loop_state.json").is_file()
+                if len(seen) > 1 and not resuming:
+                    raise errors.OperatorError(
+                        f"undo continuation {session.session_id} has no resume point"
+                    )
+                return resuming
+            session.session_id = scan.undone_to
+        return False
 
     def _recorded(self, session: acp_session.Session) -> bool:
         """Return whether the session's run id names a recorded run, which starts nothing again."""
@@ -469,6 +491,9 @@ class RunBridge:
             if session.cancelled:
                 return self._cancelled_unstarted(session)
             try:
+                # Terminal verbs have no ACP meaning; only session/cancel stops the execution.
+                if resuming and text.strip().lower() in ("abort", "exit", "detach", "/undo"):
+                    text = f"Task: {text}"
                 return self._run(session, text, resuming=resuming, started_at=started_at)
             except Exception as exc:
                 self._could_not_finish(session, exc)

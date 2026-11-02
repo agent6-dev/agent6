@@ -371,3 +371,26 @@ def test_answer_writes_the_pending_questions_file_and_never_reaches_the_model(
     errors = [m for m in _messages(out) if "error" in m]
     assert errors and "no pending question 'question-9'" in errors[0]["error"]["message"]
     assert not ran
+
+
+def test_review_queue_names_the_answer_command(tmp_path: pathlib.Path) -> None:
+    """The queue lists the command for a needs-answer row as its Returns section promises."""
+    from agent6.ui.acp import review
+
+    saved = review_helpers.reviewed_session(tmp_path)
+    with saved.logs_path.open("a") as log:
+        log.write(json.dumps({"type": "session.start", "mode": "run", "user_task": "task"}) + "\n")
+        log.write(
+            json.dumps(
+                {
+                    "type": "question.prompt",
+                    "id": "question-1",
+                    "questions": [{"question": "Which DB?"}],
+                    "wait": False,
+                }
+            )
+            + "\n"
+        )
+    text = review.review_queue_text(tmp_path)
+    assert "Needs answer:" in text and f"agent6 answer {saved.session_id}" in text
+    assert "needs-answer" in (review.review_queue_text.__doc__ or "")

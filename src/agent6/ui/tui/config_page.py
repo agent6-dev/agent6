@@ -15,21 +15,16 @@ import re
 from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
-from agent6.config import layer_data
-
-try:
-    import textual
-    from rich import markup, text
-    from textual import app, containers, events, geometry
-    from textual import screen as textual_screen
-    from textual import widgets as textual_widgets
-    from textual.widget import Widget
-except ImportError as e:  # pragma: no cover - clear runtime message
-    raise SystemExit("The config page needs textual: pip install 'agent6[tui]'") from e
+import textual
+from rich import markup, text
+from textual import app, containers, events, geometry
+from textual import screen as textual_screen
+from textual import widgets as textual_widgets
+from textual.widget import Widget
 
 from agent6 import errors
 from agent6.app import confine
-from agent6.config import ConfigError, io, layer, notices, write
+from agent6.config import ConfigError, io, layer, layer_data, notices, write
 from agent6.ui.tui import config_forms, config_model, menubar, modals, screen_chrome
 from agent6.viewmodel import config_view
 
@@ -68,7 +63,7 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
     ),
     Action("remove_reviewer", "Remove reviewer", "Choose a reviewer by position and remove it"),
     # The labels match the home and run footers.
-    Action("reset", "Unset", "Unset the selected setting in its source config layer"),
+    Action("reset", "Unset override", "Unset the selected setting in its source config layer"),
     Action("reload", "Refresh", "Re-read config from disk"),
     # Menu and palette only; the built-in "Theme" is filtered out app-wide.
     Action("choose_theme", "Theme…", "Choose a colour theme"),

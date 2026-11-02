@@ -15,6 +15,7 @@ import bisect
 import contextlib
 import os
 import pathlib
+import shlex
 import subprocess
 from collections.abc import Callable
 from typing import TYPE_CHECKING, ClassVar, cast
@@ -734,7 +735,17 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         """Open the text in $PAGER."""
         text, _ = self._selected_or_all()
         pager = os.environ.get("PAGER") or "less"
-        cmd = [pager, "-R"] if pathlib.Path(pager).name.startswith("less") else [pager]
+        try:
+            cmd = shlex.split(pager) or ["less"]
+        except ValueError as exc:
+            self.notify(f"$PAGER {pager!r} is not a valid command: {exc}", severity="error")
+            return
+        if pathlib.Path(cmd[0]).name == "less" and not any(
+            arg == "--RAW-CONTROL-CHARS"
+            or (arg.startswith("-") and not arg.startswith("--") and "R" in arg)
+            for arg in cmd[1:]
+        ):
+            cmd.append("-R")
         with self.app.suspend():
             try:
                 subprocess.run(cmd, input=text, text=True, check=False)

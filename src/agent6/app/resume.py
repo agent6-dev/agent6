@@ -247,7 +247,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     repo = pathlib.Path.cwd()
     state = agent6_paths.state_dir(repo)
     if steer.strip() and (problem := directive.steer_problem(steer)) is not None:
-        reporter.error(f"--steer: {problem}")
+        reporter.error(problem)
         return 2
     # One resolver across buckets: a runs/-only fallback would pick a run over an ask.
     try:

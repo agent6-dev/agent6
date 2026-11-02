@@ -81,3 +81,24 @@ def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) 
     log = live.loop_logger("run", console_render.ConsoleView(out, color=False))
     log("compaction thresholds: drop at 1 chars, summarise at 2 [fixed]")
     assert "compaction thresholds" in out.getvalue()
+
+
+def test_skill_warning_reaches_the_shared_fold_and_live_console(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dropping loop narration must not hide skill-discovery warnings from an attached CLI."""
+    from agent6.viewmodel import transcript
+
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    warning = "skill 'x' SKILL.md is under a hidden path; not loaded"
+    event = {"type": "loop.skills.warning", "warning": warning}
+    out = io.StringIO()
+    view = console_render.ConsoleView(out, color=False)
+    log = live.loop_logger("run", view)
+    log(f"LOOP: skills: WARNING: {warning}")
+    view.feed({"type": "session.start", "user_task": "t", "mode": "run"})
+    view.feed(event)
+    view.close()
+    assert out.getvalue().count(warning) == 1
+    (item,) = transcript.TranscriptFold().feed(event)
+    assert item.kind == "marker" and warning in item.body

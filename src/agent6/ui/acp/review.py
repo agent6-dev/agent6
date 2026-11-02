@@ -141,8 +141,8 @@ def review_queue_text(cwd: pathlib.Path) -> str:
         cwd: The repository.
 
     Returns:
-        One line per session under its group heading, a blocked, unverified or awaiting-merge
-        row with the CLI command that acts on it; a note when nothing is recorded.
+        One line per session under its group heading, a needs-answer, blocked, unverified
+        or awaiting-merge row with the CLI command that acts on it; a note when nothing is recorded.
     """
     rows, _winners = listing.rows_for(cwd, sort="review")
     if not rows:

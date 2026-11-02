@@ -1955,3 +1955,9 @@ def test_the_setting_column_fits_the_longest_key(repo: pathlib.Path) -> None:
             assert header.ordered_columns[0].width >= longest
 
     asyncio.run(scenario())
+
+
+def test_reset_action_label_matches_the_menu() -> None:
+    """The reset action has the same name in its registry and the menu."""
+    action = next(action for action in config_page.CONFIG_ACTIONS if action.id == "reset")
+    assert action.label == "Unset override"

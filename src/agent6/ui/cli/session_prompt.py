@@ -9,10 +9,9 @@ import pathlib
 import sys
 from collections.abc import Callable
 
-from agent6 import directive
 from agent6.app import session_setup
 from agent6.sessions import layout
-from agent6.ui.cli import resume
+from agent6.ui.cli import common, resume
 from agent6.viewmodel import session_log
 
 # Free text is the next execution's operator instruction, as `--steer` carries it.
@@ -93,7 +92,7 @@ def end_of_session_prompt(
             return rc
         if not answer:
             continue
-        if (problem := directive.steer_problem(answer)) is not None:
+        if (problem := common.steer_problem(answer)) is not None:
             print(f"[agent6] {problem}", file=sys.stderr)
             continue
         if answer.startswith("/") and len(answer.split()) == 1 and answer != "/undo":

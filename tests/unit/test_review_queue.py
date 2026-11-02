@@ -536,3 +536,32 @@ def test_a_saved_answer_leaves_the_needs_answer_group(tmp_path: pathlib.Path) ->
     both = review_queue.classify(scan, _facts(saved_answers=2))
     assert both.group != "needs_answer"
     assert both.reason.endswith("2 answers saved; the resume delivers them")
+
+
+@pytest.mark.parametrize("alive", [False, True])
+@pytest.mark.parametrize("count", [1, 2])
+def test_saved_answer_delivery_note_uses_worker_liveness(
+    tmp_path: pathlib.Path, alive: bool, count: int
+) -> None:
+    """A live run reads saved answers next turn, without requiring a resume."""
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        *[
+            {
+                "type": "question.prompt",
+                "id": f"question-{i}",
+                "questions": [{"question": "a?"}],
+                "wait": False,
+            }
+            for i in range(count)
+        ],
+    ]
+    entry = review_queue.classify(
+        _scan(rows, tmp_path),
+        _facts(status="running" if alive else "stale", alive=alive, saved_answers=count),
+    )
+    pronoun = "it" if count == 1 else "them"
+    expected = (
+        f"the run reads {pronoun} at its next turn" if alive else f"the resume delivers {pronoun}"
+    )
+    assert entry.reason.endswith(f"{count} answer{'s' if count != 1 else ''} saved; {expected}")
