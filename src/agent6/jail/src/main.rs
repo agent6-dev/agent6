@@ -1602,7 +1602,10 @@ fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
     // is reachable: the host's /dev/pts is not mounted in the jail.
     if let Ok(fd) = PathFd::new("/dev/pts") {
         ruleset = ruleset
-            .add_rule(PathBeneath::new(fd, AccessFs::ReadFile | AccessFs::WriteFile))
+            .add_rule(PathBeneath::new(
+                fd,
+                AccessFs::ReadFile | AccessFs::WriteFile,
+            ))
             .map_err(|e| io::Error::other(format!("rule /dev/pts: {e}")))?;
     }
     // Operator tool dirs (mounted at real locations in setup_rootfs): read+exec.
