@@ -6,7 +6,7 @@ Assumes agent6 is installed (see [installation](installation.md)).
 
 ```sh
 agent6 connect                       # pick a provider, paste an API key
-agent6 check                         # every key resolves; model listings refresh
+agent6 check                         # every key a role uses resolves; model listings refresh
 agent6 model                         # the role assignments
 ```
 
@@ -26,10 +26,11 @@ The live column starts with `verified`, `refused`, `unreachable` or `skipped`.
 
 A provider whose sign-in is not built in takes a hand-written [`[providers.<name>].oauth`](config.md#configured-oauth) table; `agent6 connect <name>` then signs in at that issuer and stores the grant, bound to the entry's settings.
 `--flow browser|device|paste` picks the way in (default `auto`), including for `agent6 connect chatgpt`.
-ChatGPT grants are also bound to the provider settings; an older unbound sign-in needs `agent6 connect <name>` again.
 Connect reports the saved grant separately from any live check.
-`--logout` attempts revocation only for a bound grant at its profile's revocation endpoint and removes it locally either way.
+
+`--logout` attempts revocation only for a bound grant at its issuer's revocation endpoint and removes it locally either way.
 Legacy or rebound grants are removed locally only; the provider configuration stays.
+
 `agent6 check config` reports local credential refusals and exits 1; a passing local check does not verify remote authentication.
 `agent6 model` keeps its assignments and catalog visible and warns with the same sign-in cause and reconnect command.
 
@@ -37,7 +38,7 @@ agent6 routes three model roles; `reviewer` and `planner` fall back to `worker` 
 
 | Role       | Set with            | Used by                                                                                              |
 | ---------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `worker`   | `[models.worker]`   | `agent6 run` and `agent6 resume`                                                                     |
+| `worker`   | `[models.worker]`   | `agent6 run`, `agent6 ask` and their resumes                                                         |
 | `reviewer` | `[models.reviewer]` | `agent6 review`, the in-loop review panel, the context summariser, the gister and the prompt reviser |
 | `planner`  | `[models.planner]`  | `agent6 plan`                                                                                        |
 
@@ -67,6 +68,8 @@ The cache, jail homes, parallel workspaces and completions do not travel.
 File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `0700` directory.
 Symlinks and special files refuse rather than following a path outside the snapshot.
 **The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
+A command already running in this checkout's sandbox can read the pack.
+Run `agent6 pack` while no run or `agent6 exec` of this checkout is live.
 
 `unpack` uses a three-way rule per file: P is the pack's current hash, B is its recorded base hash (possibly null), and H is the home's hash (possibly absent).
 
@@ -77,7 +80,6 @@ Symlinks and special files refuse rather than following a path outside the snaps
 - Otherwise: a conflict.
 
 Any conflict refuses the entire import with exit 2 before moving files.
-`unpack` holds the config and secrets writer locks across preflight and import.
 The command lists every conflict's home path and pack path with both mtimes.
 Hand-merge the files or delete the side to replace, then rerun `agent6 unpack`.
 Pack files edited by hand are hashed again; deleting a pack file leaves the home's copy untouched.
@@ -118,23 +120,22 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 - the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, turns) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
 - without a terminal a finished run prints its merge and inspect commands, and an unfinished run its resume command
-- `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused; an answer saved for one of its questions (`agent6 answer`) is new work, so a bare resume delivers it
+- `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused
+    - an answer saved for one of its questions (`agent6 answer`) is new work, so a bare resume delivers it
 
 The verify command is the success gate.
 
 - Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
 - A fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a finish that leaves the same red reads `finished · gate was already red` (`harness.verify_at_start = false` for a gate too slow to run twice).
 - A red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
-- The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, and a red base says it was already red.
+- The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits unless the gate changed on resume, and a red base says it was already red.
 - A fork starts its own log without the parent's baseline; its base is the commit it forked from.
 - Only an unknown baseline prints the worktree recipe for checking the base; a timed-out gate instead names the timeout setting to raise.
 - [`[harness]`](config.md#harness) has the inference order and `verify_when`.
 - An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
 
-The start banner's budget notices name each model once, with the roles that use it (`'m' (planner, worker)`).
-
 `agent6 run` streams in your terminal; `--tui` opens the full-screen view ([terminal UI](terminal.md)) and `-i` pauses for input after each automatic commit.
-`--tui` requires a terminal; `-i` requires a foreground terminal and cannot be combined with `--tui`.
+`--tui` without a terminal continues in CLI mode; `-i` requires a foreground terminal and cannot be combined with `--tui`.
 
 ### Go build cache
 
@@ -152,7 +153,6 @@ Dependencies must already be available offline, or the operator must populate th
 `go test -count=1 ./...` reruns tests while still reusing compiled packages.
 Under `partial` or `none` `sandbox.isolation`, `auto` already uses the persistent HOME.
 Persistence also lets a poisoned cache or tool configuration reach later runs in this repository; see the [sandbox boundaries](security.md#threat-model).
-`auto` under `full` `sandbox.isolation` stays temporary even when a persistent cache exists: reusing earlier runs' files requires an explicit opt-in.
 
 ## Tools
 
@@ -168,14 +168,14 @@ A media read ignores `limit` and refuses a `start_line` other than 1.
 
 The views show a path and size, not a thumbnail.
 Saved sessions retain metadata, not pixels or PDF payloads; resume and fork need a fresh `read_file` to see them again.
-**Attachments can disclose credentials in screenshots or documents.**
+Attachments can disclose credentials in screenshots or documents.
 See [Media retention](security.md#media-retention) for containment and the upstream boundary.
 
 ## Follow and steer a run
 
 `agent6 attach [<id>]` follows a run's conversation, or a machine's state, live.
 Ids are exact or an unambiguous prefix and default to the most recent run.
-A prefix selects the single matching session whose full id prefixes every other match, provided all matches are in the same bucket (for example, a parallel coordinator and its lanes).
+A prefix selects the single matching session whose full id prefixes every other match, provided all matches have the same mode (for example, a parallel coordinator and its lanes).
 Lanes remain reachable by their own ids.
 
 ```sh
@@ -210,25 +210,24 @@ A starting or waiting run keeps that status and adds `stopping after this step` 
 It does not report `no matches` when the search is incomplete.
 
 A session's cost covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.
-A fan-out's report ends with the plan's latest reading among its lanes, naming the binding window and reset time (for example, `plan usage (<entry>): N% of the 7-day window (resets in 100h)`); the fan-out itself reads `finished · lanes ranked`, and each lane carries its own gate verdict.
-The end block's plan line reports `window moved ~N points during this run`, with the `max_plan_points` cap when set; the run reads the plan once more at its end, so its last calls count.
+A fan-out's report ends with the plan's latest reading among its lanes, naming the binding window and reset time (for example, `plan usage (<entry>): N% of the 7-day window (resets in 100h)`).
+The end block's plan line reports `window moved ~N points during this run`, with the `max_plan_points` cap when set.
 These points measure account-wide window movement between readings, accumulated across resets, not the run's own spend; other consumers sharing the plan contribute too.
-A window counts as reset when its reported reset time moves later by more than a minute; a lower reading whose reset time has not moved is out of order and counts nothing.
+
 The tokens and the points against `max_plan_points` on `sessions show` are the latest execution's.
 `elapsed` on a resumed run is the wall time from its first start to its last event, the time between executions included.
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
 
-`sessions show` and the conversation's last line print the sentence the run ended on; `--json` keeps the `end_reason` word for scripts.
+`sessions show` and the conversation's last line print the sentence the run ended on.
 `sessions show --json` and `sessions list --json` return the original label clipped to 200 characters in `task_clipped`, the latest resume steer (also clipped to 200 characters) in `continued_task`, and their display text in `task_line`, including a newline followed by `continued: <steer>` when the run has a continuation.
 An unsteered resume clears `continued_task`.
-A `steer` reaches the model at its next step, and `steer --now` interrupts the call in flight; every surface acknowledges it in those words.
 
 `agent6 exec` runs your own command on your own stdio.
 
 - with stdin and stdout on a terminal the command gets a terminal of its own, with job control; otherwise stdin, stdout and stderr pass through, so pipes and redirects work
-- Ctrl-Z stops a job of the shell you opened; a command you run directly keeps running, since no shell could resume it
+- Ctrl-Z stops a job of the shell you opened; a command you run directly keeps running
 - under `full` `sandbox.isolation`, the jail has no `/dev/pts` or `/dev/tty`, so `tty` prints "not a tty" and a program that opens `/dev/tty` fails
-- a command a signal ended reports 128 plus the signal, on every level
+- a command a signal ended reports 128 plus the signal, at every `sandbox.isolation` level
 - `agent6 exec ID -- COMMAND...` works in the run's workspace: a file your command writes there is in the run's tree, and the run's next commit holds it
 
 The steer directives work from every composer, the pause menu, and `agent6 steer ID "/task ..."` from a script.
@@ -237,7 +236,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
 - `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` fans out lanes ([parallel](config.md#parallel))
-- `/undo` takes back the last message: the tree is committed on the run's chain, every tracked path the turn changed is put back (one changed since the run ended stays, named in the notice), the run ends `undone` and an unstarted fork in the same checkout continues it (`agent6 resume <fork> --steer "<the message, edited>"`); `resume` and `sessions merge` refuse the undone run and name the fork; refused while another live run drives the checkout; it acts on a view of the run, so `agent6 steer` refuses it: type it in the TUI or the web, at a `run -i` prompt, or in a live run's pause menu (Ctrl-C)
+- `/undo` takes back the last message: the tree is committed on the run's chain, every tracked path the run changed since the checkpoint before that message is put back (one changed since the run ended stays, named in the notice), the run ends `undone` and an unstarted fork in the same checkout continues it (`agent6 resume <fork> --steer "<the message, edited>"`); `resume` and `sessions merge` refuse the undone run and name the fork; refused while another live run drives the checkout; `agent6 steer` refuses it: type it in the TUI or the web, at a `run -i` prompt, or in a live run's pause menu (Ctrl-C)
 
 ### Parallel directive
 
@@ -263,11 +262,11 @@ Task text keeps its internal whitespace and newlines, including later `--` token
 Every front-end answers a prompt by writing one file in the session directory, and so can a script.
 
 - a run with no terminal prints one line on stderr when it parks (`[agent6] waiting on approval-2 (run_command); answer it with: agent6 attach <id>`) and one when the prompt is answered:
-  - `[agent6] approval-2 approved (frontend)` when an already-attached front-end answers
-  - `[agent6] approval-2 approved (await-frontend)` when the run waits for a front-end reply
+    - `[agent6] approval-2 approved (frontend)` when an already-attached front-end answers
+    - `[agent6] approval-2 approved (await-frontend)` when the run waits for a front-end reply
 - `agent6 answer <id>` lists the pending questions; `agent6 answer [--question QID] <id> TEXT...` answers one set, one TEXT per question; a queued question's answer reaches the run at its next turn, an ended run's at its resume
-  - `finish_session` polls for queued answers before ending and defers to another model turn if one arrived.
-  - An answer arriving after that poll waits for resume.
+    - `finish_session` polls for queued answers before ending and defers to another model turn if one arrived.
+    - An answer arriving after that poll waits for resume.
 - a question is pending from its prompt until its answer; a waiting one pauses the run while the execution that asked it lives, a queued one or one an earlier execution asked pauses nothing; every surface words it the same way (waiting, queued, asked by an earlier execution, answer saved)
 - a prompt `agent6 attach` is showing closes once another front-end answers it: attach prints `already answered from another surface`, writes no answer and keeps following; the TUI's question modal closes the same way, with the same notice
 - an approval reads `<session dir>/approvals/<id>.answer`: `yes`, `no`, `session` or `session-deny` (anything else denies; `session` approves this call, and `session` and `session-deny` also apply to later calls only where the prompt's event says `standing: true`)
@@ -299,9 +298,9 @@ State is snapshotted before each model call and checkpointed per turn.
 - a run merged `--into` a branch other than the one it started on keeps its base, and merges into that branch again from its landed tip
 - `sessions merge` over a file you edited leaves your copy alone and prints two commands that merge your edit with what landed
 - a commit you made on the run's `agent6/<id>` branch refuses the resume, which names it: `agent6 sessions merge <id>` lands it with the run, or `resume --force` continues without it
-- files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` lets the run's next commit take them ([Config](config.md))
+- files you changed between executions follow `[git].dirty_tree` on resume, as uncommitted changes do at a run's start: `ask` asks, `stash` sets them aside (a change under `[sandbox].hide_paths` stays in place), `include` lets the run's next commit take them ([Config](config.md#git))
 - when `stash` refuses over a file the run also changed, its printed `git restore --source ...` command discards only your edit and keeps the run's last tree; plain `git restore FILE` returns to HEAD, which can remove the run's work
-- a new untracked file is left out of the run's commits as yours, unless the last execution died mid-turn (a kill, a crash): a command of that turn may have written it, so the run keeps it, and the resume names each file either way
+- a new untracked file is left out of the run's commits as yours, unless the last execution died mid-turn (a kill, a crash): a command of that turn may have written it, so the run keeps it, and the resume names up to four files either way
 
 Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scripts to branch on:
 
@@ -313,7 +312,7 @@ Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scr
 | `3` | budget exhausted, including a `run --parallel` fan-out whose every lane stopped at its cap |
 | `4` | finished over a red, timed-out or never-run verify gate; a review panel's BLOCK |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
-| `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask, plan or fan-out (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop` (a run that has not ended 5 s after the request gets SIGTERM, then SIGKILL 3 s later), abort or exit at the pause menu, stop after a commit |
+| `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask, plan or fan-out (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
 
 `passed` means the model called `finish_session` and the gate was green; it does not certify the task.
@@ -362,8 +361,7 @@ A run whose worker exited without recording an end reads `stale`, for example af
 - `finish_session` reads `passed` over a green gate and a bare `finished` with no gate
 - `silent_finish` means the model stopped calling tools without calling `finish_session`, and the harness took its last answer as the end
 - `metric_plateau` means the configured metric stopped improving and the harness ended the run
-- over a red, timed-out or unverified gate, these finishes name the gate state in the headline
-- a finished run whose edits sit uncommitted exits `5` in place of `0`, and reads `passed · not committed` (`finished · not committed` with no gate) in the end block and every listing
+- a `finish_session` end whose edits sit uncommitted exits `5` in place of `0`, and reads `passed · not committed` (`finished · not committed` with no gate) in the end block and every listing
 - `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it
 
 ## Plan, review, and ask
@@ -385,8 +383,9 @@ agent6 ask "how does the task-graph curator work?"
 - `review --reviewers 3 --scope repo`: let the panel read the checkout through read-only tools instead of making one call over the diff (`--scope diff`).
   Each repo seat makes at most `review.repo_max_turns` provider calls (default 20) and abstains if it has no verdict after them.
   `review.block_on` sets when grounded findings block; `model_quorum` counts each distinct provider/model route once.
-- `sessions review` reports how the run ended, what went wrong, what you corrected, the questions nobody answered, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
+- `sessions review` reports how the run ended, what went wrong, what you corrected, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
 - every review is saved under `<state-dir>/reviews/`; the path prints on stderr
+- `ask` runs in any directory; `run` and `plan` need a git repository
 
 Working-tree reviews name selected, non-hidden dirty submodules on stderr because their contents are not reviewed.
 Run `agent6 review` inside a submodule to review its changes.
@@ -396,7 +395,6 @@ An exact repeat on the same cited blob keeps its finding ID across rounds and re
 The worker receives each finding once unless the feedback notice cut it.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
 `agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
-Review freshness is unknown until a reader supplies the requested base tree, head tree and path coverage.
 
 ### Code-review rules
 
@@ -407,15 +405,13 @@ Rule-file changes remain in the reviewed diff unless the selected paths exclude 
 
 Missing files are optional.
 An unborn repository has no base rules.
-A present rule file that is hidden, unreadable, a symlink, non-text, or not a regular file makes the review incomplete with a named reason.
+A present rule file that is hidden, unreadable, non-text, or not a regular file makes the review incomplete with a named reason.
 The combined rule text must fit within 64 KiB of UTF-8 bytes; an oversized set refuses the review rather than supplying a prefix.
 Reduce the base-tree rule files to proceed.
 
 The review journal records each supplied path, blob ID and byte count once at panel start.
-The CLI prints these sources and rule completeness; the conversation, TUI log and ACP messages show the same metadata.
-Web source links open the recorded base revision.
+The CLI prints these sources and rule completeness.
 Standalone `agent6 review` also records the base and head tree IDs it compared, without creating review refs or a checkout.
-`AGENTS.md` supplies guidance, not permissions: it grants no tools or network access and overrides neither operator settings nor aggregator severity restrictions.
 These rules apply to the in-loop panel and `agent6 review`, not to `sessions review` or the worker's own `AGENTS.md` loading.
 
 ## Session findings
@@ -433,7 +429,6 @@ The tag does not lower severity, close a finding, or exempt a block from the mer
 `sessions findings` prints the mapped base range and attribution commits; `--json` includes each observation's `line_origin` and the latest evidence on each finding.
 Changed or mixed ranges have no badge.
 File-only citations, unsupported files or base paths, ambiguous mappings, unavailable history, and blobs or patches over 4 MiB have an unknown origin with a reason.
-An unsupported base path is recorded with Git-style quoting in the reason; the finding keeps its severity.
 Historical observations without this evidence remain unknown.
 
 ```bash
@@ -459,14 +454,13 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
   An action still waiting after five seconds reports `action queued`; an approval or question wait must end before the boundary is reached.
 - `steer submitted` means the instruction entered the steer bridge, not that the finding was fixed.
   A crash between the request and submission records reads as `delivery unknown`; retrying the request ID does not resend it.
-- `ask` runs in any directory; `run` and `plan` need a git repository
 
 ## The review queue
 
 Every listing places each session in a review queue, derived from its journal on each read and never stored.
 The groups, in order:
 
-- **needs answer**: questions the model asked during an execution that nobody has answered, on a running run or an ended one; the row counts the question sets and dates from the oldest; `agent6 answer <id>` answers them, and a set whose answer is saved on disk waits for the resume instead
+- **needs answer**: questions the model asked during an execution that nobody has answered, on a running run or an ended one; the row counts the question sets and dates from the oldest; `agent6 answer <id>` answers them, and a set whose answer is saved on disk waits for the run's next turn or its resume instead
 - **blocked**: open `block` findings; the row names their count and dates from the oldest one's first panel
 - **unverified**: an ended run whose final tree the gate did not certify whole (no verify, a red or timed-out gate, a pass over selected paths only, a pass with no verification evidence, edits after the last green)
 - **awaiting merge**: a clean run waiting for a merge: no open findings, a complete and current panel with no abstained seat, a whole-tree pass whose evidence certifies the end tree, unmerged work with its chain and branch at the recorded checkpoint, no live worker, not stranded or undone
@@ -505,9 +499,8 @@ The short end summary names this inspection command.
   “No merge recorded” does not claim that no merge occurred if recording failed.
 
 Git commands in a receipt are explanations only.
-**Ask a run to revert** in the web or TUI opens the existing new-work composer with a proposed task; inspect it before submitting.
+**Ask a run to revert** in the web or TUI opens the new-work composer with a proposed task; inspect it before submitting.
 You can also copy the recorded landing facts into a steer request to prepare the reversal.
-Neither action executes the displayed commands directly.
 The reversal needs its own checks; the original receipt does not certify a merge against a moved target or the later reversal.
 
 ## Run options
@@ -515,10 +508,13 @@ The reversal needs its own checks; the original receipt does not certify a merge
 - `--preset <name>`: a strategy preset (`no_review`, `review`, `deep_review`, or your own; `none` selects no preset), fixed for the execution; `resume --preset` switches ([presets](config.md#presets))
 - `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded pick unless it sets its own
 - `--parallel 3` (or `provider/model-a,model-b`): isolated lanes, auto-compared into a ranked report; the fan-out is a session of its own that `attach`, `stop` and `sessions show` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#parallel))
-- `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[workspace].base_dir`; your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([isolated workspaces](#isolated-workspaces)), so you can keep working there or start more runs; `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits; `agent6 sessions` marks the run `(worktree)`, and `sessions show` and `ps` print the worktree's path
+- `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[workspace].base_dir`
+    - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([isolated workspaces](#isolated-workspaces)), so you can keep working there or start more runs
+    - `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits
+    - `agent6 sessions` marks the run `(worktree)`, and `sessions show` and `ps` print the worktree's path
 - `--standing "<goal>"`: a fallback goal the run returns to whenever its queue drains; only the operator retires it, and ceilings still end the run (`harness.standing_patience`)
 - `--pin "<text>"`: an instruction re-shown after every compaction
-- `--from <id>`: seed from another session's task, outcome, diff and plan; a plan id runs that plan, and `sessions show` prints `seeded from`
+- `--from <id>`: seed from another session's task, outcome, diff and plan; a plan id alone runs that plan, and `sessions show` prints `seeded from`
     - a plan whose open questions have blank `**A:**` lines still runs, after one warning that names them; `agent6 plan edit <id>` answers them first
 - `--decompose`: a task graph up front; `--skill NAME`: a skill in the prompt (a skill whose text waits on a person stalls an unattended run in `ask_user`; `agent6 skills disable NAME` keeps it out)
 - `--session-id ID`: name the session yourself
@@ -539,17 +535,16 @@ The reversal needs its own checks; the original receipt does not certify a merge
     - an AGENTS.md that is a symlink is not read there: set `workspace.setup_command`
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
 - Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
-- For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any model call (exit `1`).
-  No turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
+- For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
+  For a run or lane, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
 - A fan-out prints each lane's setup line when it imports the lane, and a failed lane's output in the failed lanes block; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the workspace is gone.
 - The files it leaves untracked stay out of the run's commits.
-- It runs once per workspace: `resume` does not run it again, and a fork's new worktree runs it at the fork's first execution.
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
 - A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.
 
 ## Telemetry export
 
-`agent6 telemetry export` reads this repository's run and machine journals and delivers what `[telemetry]` selects: spans for each execution, turn, model call, tool call, verification, review panel, operator wait and completed machine state; cumulative metrics (tokens, cost, plan points, tool calls, verification outcomes and durations, findings, approvals, waits); and log records for the significant events.
+`agent6 telemetry export` reads this repository's session and machine journals and delivers what `[telemetry]` selects: spans for each execution, turn, model call, tool call, verification, review panel, operator wait and completed machine state; cumulative metrics (tokens, cost, plan points, tool calls, verification outcomes and durations, findings, approvals, waits); and log records for the significant events.
 Machine worker executions are children of their state spans, and machine waits produce log records.
 Nothing is exported until a signal is selected; a run never exports its own events.
 
@@ -578,13 +573,6 @@ agent6 config show telemetry            # every key with its origin
 - A request the collector answers with 429, 502, 503 or 504 is tried three times with backoff; any other refusal turns the endpoint off for that export, and the command exits 1 naming it.
 - `agent6_plan_observed_points_total` counts the plan-window movement a run observed, which is the account's whole window; it is not this run's billing.
 
-The collector acceptance tests check the golden journals' OTLP export with a real collector and the Prometheus textfile with `promtool`.
-Run `uv run pytest -m collector` with `otelcol-contrib` and `promtool` on PATH; each check skips when its binary is absent.
-
-## ACP
-
-ACP's [`session/load`](acp.md#sessions) replays a recorded conversation before the next prompt resumes the same run.
-
 ## Other commands
 
 ```sh
@@ -597,23 +585,18 @@ agent6 memory add|list|show|rm                       # the index renders each fa
 agent6 memory decisions                              # the operator rulings the harness recorded
 agent6 skills install|update|list                    # skills from a repo, a directory or a SKILL.md URL
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove
-agent6 mcp add NAME [--url URL | -- COMMAND...]  # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
+agent6 mcp add NAME [--url URL | -- COMMAND...]      # an MCP server; --pass-env VAR passes an environment variable to a local server; list, remove, serve
 agent6 machine ...                                   # state machines over runs (see state-machines.md)
 agent6 system apparmor install                       # the AppArmor profile that full sandbox.isolation needs on some hosts; status, remove
-agent6 completions bash|zsh|fish|xonsh [--print]
+agent6 completions [bash|zsh|fish|xonsh] [--print]
 agent6 config fill [--force]                         # write the defaults + global layers as one explicit global config
 ```
 
 `agent6 init` detects Go (`go.mod`), Node, Python and Rust manifests for its AGENTS.md advice and build-artifact ignores.
 `--ecosystem go|node|py|rust` overrides that choice, not verify inference.
 
-Memory (`<state_dir>/memory/`) holds facts the model may correct; a rule goes in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md`, which the harness appends to, the operator edits with any editor, and the model sees only as read-only text injected into its prompt.
+Memory (`<state_dir>/memory/`) holds facts the model may correct; a rule goes in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md` ([repo memory](security.md#3-file-access)).
 
 ## Configuration
 
-Config is layered, lowest first: built-in defaults, `~/.config/agent6/config.toml`, the per-repo config, `--config FILE`, a machine's `[config]` overlay.
-A preset is one more layer, above the config that selected it.
-Every field has a default and the security-sensitive ones default safe, so a repo can be zero-config.
 `agent6 config show` prints every effective value with the layer that set it; the [configuration reference](config.md) documents each field.
-`agent6 config get KEY` and `agent6 config show KEY` print values without table-width truncation; the unfiltered table abbreviates long values.
-Mapping fields show [per-entry values and origins](config.md#creating-and-inspecting), with values masked unless the config model marks the field display-safe (`skills.state`).
