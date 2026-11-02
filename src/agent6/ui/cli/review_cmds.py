@@ -19,22 +19,30 @@ import uuid
 import pydantic
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, event_log, review_records, terminal
+from agent6 import errors, review_records, terminal
 from agent6 import paths as agent6_paths
-from agent6.app import _setup, finalize, providers
+from agent6.app import finalize, role_providers, session_setup
 from agent6.config import (
     Config,
     ConfigError,
     ReviewScope,
     layer,
 )
-from agent6.harness import _context, _panel, _review_history, _reviewer, _toolset, code_review
+from agent6.harness import (
+    repo_context,
+    review_diff,
+    review_gate,
+    review_history,
+    review_panel,
+    toolset,
+)
 from agent6.providers import (
     ProviderError,
     TranscriptSink,
 )
+from agent6.sessions import event_log
 from agent6.tools import dispatch as tools_dispatch
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.vcs import git_policy, git_read, review
 from agent6.viewmodel import review as viewmodel_review
 
@@ -186,7 +194,7 @@ def _run_review_panel(
     """
     focus_tuple = tuple(f.strip() for f in focus.split(",") if f.strip())
     try:
-        seats = providers.build_review_seats(
+        seats = role_providers.build_review_seats(
             cfg,
             transcript_sink=transcript_sink,
             budget=budget,
@@ -194,20 +202,20 @@ def _run_review_panel(
             focus=focus_tuple,
         )
     except ProviderError as exc:
-        _common.error(f"provider init failed: {exc}")
+        common.error(f"provider init failed: {exc}")
         return 2
-    err = _setup.check_provider_keys(cfg)
+    err = session_setup.check_provider_keys(cfg)
     if err is not None:
-        _common.error(f"{err}")
+        common.error(f"{err}")
         return 2
-    ctx = _panel.ReviewContext(task=f"code review: {label}\n{notes}", rules=rules, diff=diff)
+    ctx = review_panel.ReviewContext(task=f"code review: {label}\n{notes}", rules=rules, diff=diff)
     # repo-scope seats need a read-only tool surface over the repo.
     tools = None
     dispatch = None
     if any(s.scope == "repo" for s in seats):
         reviewed = _reviewed_head(base, head)
         if base and not _is_checked_out(git, root, reviewed):
-            _common.error(
+            common.error(
                 "review.scope = 'repo' reads the checkout, but the checkout is not the"
                 f" reviewed head {reviewed!r} (another commit, or uncommitted changes on top):"
                 " a seat's read_file would answer from a tree the diff does not describe."
@@ -215,7 +223,7 @@ def _run_review_panel(
             )
             return 2
         disp = tools_dispatch.ToolDispatcher(root=root, config=cfg)
-        tools, dispatch = _toolset.build_readonly_review_tools(disp)
+        tools, dispatch = toolset.build_readonly_review_tools(disp)
     print(
         f"[agent6] review panel: {len(seats)} seats"
         f" ({', '.join(s.focus for s in seats)}) | block_on={cfg.review.block_on}"
@@ -224,7 +232,7 @@ def _run_review_panel(
     )
     _start_review(journal, panel_id, target, rules, seats)
     try:
-        result = _reviewer.run_panel(
+        result = review_gate.run_panel(
             seats,
             ctx,
             block_on=cfg.review.block_on,
@@ -257,7 +265,7 @@ def _run_review_panel(
         turn=0,
         trigger="standalone",
         target=target,
-        findings=_review_history.observations(
+        findings=review_history.observations(
             panel_id,
             result.per_seat,
             {},
@@ -272,20 +280,20 @@ def _run_review_panel(
         disarmed=False,
         n_block=result.n_block,
         n_abstain=result.n_abstain,
-        completion="inconclusive" if _panel.panel_is_inconclusive(result) else "complete",
+        completion="inconclusive" if review_panel.panel_is_inconclusive(result) else "complete",
     )
     journal.emit("loop.review.panel", **record.model_dump(mode="json"))
     # One all-abstain owner, shared with the in-loop panel: nothing reviewed is never a pass.
-    inconclusive = _panel.panel_is_inconclusive(result)
+    inconclusive = review_panel.panel_is_inconclusive(result)
     if inconclusive:
-        verdict, rc = f"INCONCLUSIVE ({_panel.inconclusive_note(result)})", 1
+        verdict, rc = f"INCONCLUSIVE ({review_panel.inconclusive_note(result)})", 1
     elif result.blocked:
         verdict, rc = "BLOCK", finalize.EXIT_VERIFY_FAILED
     elif result.merged_findings:
         verdict, rc = "PASS (with findings)", 0
     else:
         verdict, rc = "PASS", 0
-    body = _panel.render_findings(result.merged_findings)
+    body = review_panel.render_findings(result.merged_findings)
     stdout = f"VERDICT: {verdict}\n" + (f"{body}\n" if body else "")
     if notes:
         stdout += f"\n{notes}\n"
@@ -332,7 +340,7 @@ def _reviewed_diff(
     root = pathlib.Path.cwd()
     git = shutil.which("git")
     if git is None:
-        _common.error("git not found on PATH.")
+        common.error("git not found on PATH.")
         return 2
     rev = _review_range(base, head)
     label = ("working tree vs HEAD" if not base else rev) + (
@@ -341,7 +349,7 @@ def _reviewed_diff(
     try:
         compared = review.comparison(root, base=base, head=head, paths=paths, hide=hide)
     except (errors.GitError, OSError) as exc:
-        _common.error(f"git diff failed: {terminal.printable_name(str(exc))}")
+        common.error(f"git diff failed: {terminal.printable_name(str(exc))}")
         return 2
     if compared.target.hidden_paths:
         print("note: review excludes hidden paths (sandbox.hide_paths).", file=sys.stderr)
@@ -368,7 +376,7 @@ def _start_review(
     panel_id: str,
     target: review_records.ReviewTarget,
     rules: review_records.ReviewRules,
-    seats: list[_reviewer.ReviewSeat],
+    seats: list[review_gate.ReviewSeat],
 ) -> None:
     fields = dict(
         panel_id=panel_id,
@@ -451,10 +459,10 @@ def _cmd_review(  # noqa: PLR0911
         The exit code: 0 reviewed or PASS, 2 refused, 3 budget, and the panel's 1 or 4.
     """
     if ".." in head:
-        _common.error("--head must be a ref; use --base a..b for an explicit range.")
+        common.error("--head must be a ref; use --base a..b for an explicit range.")
         return 2
     if not base and head not in ("", "HEAD"):
-        _common.error(
+        common.error(
             "--head requires --base; without --base, review uses the working tree vs HEAD."
         )
         return 2
@@ -466,7 +474,7 @@ def _cmd_review(  # noqa: PLR0911
     try:
         cfg = _reviewer_config(config_paths, model, scope)
     except ConfigError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     if focus.strip() and reviewers >= 1 and cfg.review.reviewers:
         print("note: --focus ignored ([review].reviewers names the roster).", file=sys.stderr)
@@ -478,9 +486,9 @@ def _cmd_review(  # noqa: PLR0911
 
     if reviewers < 1:
         cfg.require_runnable("reviewer")
-        err = _setup.check_provider_keys(cfg)
+        err = session_setup.check_provider_keys(cfg)
         if err is not None:
-            _common.error(f"{err}")
+            common.error(f"{err}")
             return 2
 
     log_proc = subprocess.run(
@@ -503,10 +511,10 @@ def _cmd_review(  # noqa: PLR0911
     )
     recent_log = log_proc.stdout if log_proc.returncode == 0 else ""
 
-    rules = _context.review_rules(root, target.base_tree, cfg.sandbox.hide_paths)
+    rules = repo_context.review_rules(root, target.base_tree, cfg.sandbox.hide_paths)
 
     # The reviewer route; the budget is per invocation, a one-shot.
-    budget = _setup.budget_tracker(cfg)
+    budget = session_setup.budget_tracker(cfg)
     layout_root = agent6_paths.state_dir(root) / "reviews"
     transcript_sink = TranscriptSink(layout_root)
     panel_id = uuid.uuid4().hex
@@ -516,7 +524,7 @@ def _cmd_review(  # noqa: PLR0911
         journal.emit(
             "loop.review.skipped", panel_id=panel_id, execution_id=panel_id, reason=rules.reason
         )
-        _common.error(terminal.printable_name(rules.reason or "review rules incomplete"))
+        common.error(terminal.printable_name(rules.reason or "review rules incomplete"))
         return 2
 
     print(f"[agent6] reviewing: {label}", file=sys.stderr)
@@ -592,7 +600,7 @@ def _freeform_review(
         Zero on success, 2 on refusal, or 3 when the budget is spent.
     """
     try:
-        reviewer = providers.build_role_provider(
+        reviewer = role_providers.build_role_provider(
             cfg,
             "reviewer",
             transcript_sink=transcript_sink,
@@ -600,19 +608,19 @@ def _freeform_review(
             events=journal,
         )
     except ProviderError as exc:
-        _common.error(f"provider init failed: {exc}")
+        common.error(f"provider init failed: {exc}")
         return 2
 
     _start_review(journal, panel_id, target, rules, [])
     try:
-        text = code_review.review_diff(
+        text = review_diff.review_diff(
             reviewer,
             diff=diff,
             rules=rules,
             recent_log=recent_log,
             extra_context=notes,
         )
-    except code_review.CodeReviewError as exc:
+    except review_diff.CodeReviewError as exc:
         journal.emit(
             "loop.review.skipped", panel_id=panel_id, execution_id=panel_id, reason=str(exc)
         )

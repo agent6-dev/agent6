@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import _common, history_cmds
+from agent6.ui.cli import common, history_cmds
 
 
 @pytest.mark.parametrize("query", ["NEEDLE", "absent"])
@@ -40,14 +40,14 @@ def test_search_read_error_keeps_hits_and_reports_incomplete(
     )
     vanished = runs / "vanished-record"
     vanished.mkdir()
-    discover = _common.all_session_dirs
+    discover = common.all_session_dirs
 
     def discover_then_remove(cwd: pathlib.Path) -> list[pathlib.Path]:
         targets = discover(cwd)
         vanished.rmdir()
         return targets
 
-    monkeypatch.setattr(_common, "all_session_dirs", discover_then_remove)
+    monkeypatch.setattr(common, "all_session_dirs", discover_then_remove)
     assert history_cmds._cmd_history_search(query, fixed=True, session_id="") == 2
     output = capsys.readouterr()
     if query == "NEEDLE":
@@ -440,7 +440,8 @@ def test_an_unscoped_no_match_names_the_sessions_root_it_read(
     """A bare `history search` reads `<state>/sessions`, and an empty result names that."""
     import shutil
 
-    from agent6 import memory, paths
+    from agent6 import paths
+    from agent6.context import memory
     from agent6.sessions import layout
     from agent6.ui.cli import main
 

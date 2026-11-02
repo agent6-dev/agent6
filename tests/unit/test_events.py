@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for `agent6.event_log.EventSink`."""
+"""Tests for `agent6.sessions.event_log.EventSink`."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ import pathlib
 
 import pytest
 
-from agent6 import event_log
 from agent6 import paths as agent6_paths
+from agent6.sessions import event_log
 
 
 def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:

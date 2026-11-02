@@ -19,7 +19,7 @@ import pathlib
 import pwd
 from collections.abc import Iterable
 
-from agent6 import _pack_manifest
+from agent6 import pack_manifest
 
 _ALLOW_ROOT_ENV = "AGENT6_ALLOW_ROOT"
 
@@ -357,7 +357,7 @@ def project_root(start: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Pa
         if git_dir is not None and git_dir.name == ".git":
             root = git_dir.parent
     if not allow_pack:
-        _pack_manifest.check_origin(root)
+        pack_manifest.check_origin(root)
     return root
 
 

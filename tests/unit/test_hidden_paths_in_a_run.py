@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from agent6.app import _session, providers
+from agent6.app import role_providers, session_parts
 from agent6.ui.cli import cli_main
 from tests.unit import test_queued_question_lifecycle as lifecycle
 
@@ -92,13 +92,13 @@ def _setup(
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "seed")
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(_session, "select_isolation", lifecycle._none_isolation)  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(session_parts, "select_isolation", lifecycle._none_isolation)  # pyright: ignore[reportPrivateUsage]
     return repo
 
 
 def _run(monkeypatch: pytest.MonkeyPatch, session_id: str, steps: list[Any]) -> int:
     monkeypatch.setattr(
-        providers, "build_role_provider", lifecycle._use(lifecycle._Scripted(steps))
+        role_providers, "build_role_provider", lifecycle._use(lifecycle._Scripted(steps))
     )  # pyright: ignore[reportPrivateUsage]
     return cli_main(["run", "--session-id", session_id, "task"])
 

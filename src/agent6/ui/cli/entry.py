@@ -21,11 +21,11 @@ from collections.abc import Callable
 
 import argcomplete
 
-from agent6 import errors, event_log, paths
-from agent6.sessions import process
-from agent6.ui.cli import _common, _terminal_guard
+from agent6 import errors, paths
+from agent6.sessions import event_log, process
+from agent6.ui.cli import common, terminal_guard
 from agent6.ui.cli import parser as cli_parser
-from agent6.viewmodel import _session_status
+from agent6.viewmodel import session_status
 
 
 def _plan_title(plan_md: str) -> str:
@@ -38,7 +38,7 @@ def _plan_title(plan_md: str) -> str:
             break
     if title.lower().startswith("plan:"):
         title = title[len("plan:") :].strip() or title
-    return _session_status.task_snippet(title, max_chars=80)
+    return session_status.task_snippet(title, max_chars=80)
 
 
 def _from_plan_task(plan_md: str, session_id: str) -> str:
@@ -93,7 +93,7 @@ def _warn_unanswered_questions(plan_md: str, session_id: str) -> None:
     named = "; ".join(f'"{q[:120]}"' for q in questions)
     print(
         f"[agent6] WARNING: plan {session_id} has"
-        f" {_common.plural(len(questions), 'unanswered open question')}: {named}. The run decides"
+        f" {common.plural(len(questions), 'unanswered open question')}: {named}. The run decides"
         f" {'it' if len(questions) == 1 else 'them'} itself; to answer first, stop the run,"
         f" fill the blank **A:** lines with `agent6 plan edit {session_id}`, and run the plan"
         " again.",
@@ -106,14 +106,14 @@ def _plan_text_for_run(plan_path: pathlib.Path, session_id: str) -> str | None:
     if not plan_path.is_file():
         from agent6.ui.cli import plan_watch  # the dispatcher's lazy import
 
-        _common.error(
+        common.error(
             f"plan {session_id!r} has not written its plan.md yet;"
             f" {plan_watch._plan_next(session_id)}"
         )
         return None
     plan_md = errors.read_operator_file(plan_path)
     if not plan_md.strip():
-        _common.error(f"plan {session_id!r} has an empty plan.md")
+        common.error(f"plan {session_id!r} has an empty plan.md")
         return None
     return plan_md
 
@@ -132,7 +132,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     Returns:
         The exit code.
     """
-    with _terminal_guard.guarded_terminal():
+    with terminal_guard.guarded_terminal():
         try:
             try:
                 return main(argv)
@@ -144,7 +144,7 @@ def cli_main(argv: list[str] | None = None) -> int:
             print("\nagent6: interrupted.", file=sys.stderr)
             return 130
         except errors.OperatorError as exc:
-            _common.error(f"{exc}")
+            common.error(f"{exc}")
             return 2
         except BrokenPipeError:
             # The interpreter flushes both streams at exit, and a failed flush turns the exit
@@ -156,7 +156,7 @@ def cli_main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # the last resort; re-raised under AGENT6_DEBUG
             if os.environ.get("AGENT6_DEBUG") == "1":
                 raise
-            _common.error(f"unexpected {type(exc).__name__}: {exc}")
+            common.error(f"unexpected {type(exc).__name__}: {exc}")
             try:
                 fd, path = tempfile.mkstemp(prefix="agent6-crash-", suffix=".log")
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
@@ -174,36 +174,30 @@ def cli_main(argv: list[str] | None = None) -> int:
 
 def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     """Return the exit code of `agent6 run`: the task, a plan to execute, or the REPL."""
-    from agent6.app import _setup
-    from agent6.ui.cli import (
-        _session_prompt,
-        plan_watch,
-        run,
-    )
+    from agent6.app import session_setup
+    from agent6.ui.cli import plan_watch, run, session_prompt
 
     if args.interactive and args.tui:
-        _common.error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
+        common.error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
         return 2
-    if args.interactive and not _session_prompt.prompting_is_possible():
+    if args.interactive and not session_prompt.prompting_is_possible():
         # Without a terminal the REPL's first read would end the run mid-task.
-        _common.error("-i needs a TTY in the foreground process group; drop -i for a headless run.")
+        common.error("-i needs a TTY in the foreground process group; drop -i for a headless run.")
         return 2
     parallel = getattr(args, "parallel", "")
     if parallel and (args.interactive or args.tui):
-        _common.error(
+        common.error(
             "--parallel cannot combine with -i or --tui (each lane runs headless and detached)."
         )
         return 2
     if parallel and args.session_id:
-        _common.error("--parallel cannot combine with --session-id (each lane mints its own id).")
+        common.error("--parallel cannot combine with --session-id (each lane mints its own id).")
         return 2
     if parallel and args.standing:
-        _common.error(
-            "--parallel cannot combine with --standing (the lanes take no standing goal)."
-        )
+        common.error("--parallel cannot combine with --standing (the lanes take no standing goal).")
         return 2
     if parallel and getattr(args, "worktree", False):
-        _common.refuse(
+        common.refuse(
             "--parallel cannot combine with --worktree (each lane already works in its own"
             " clone); drop one of the two."
         )
@@ -216,10 +210,10 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         try:
             layout = id.resolve_session(paths.state_dir(pathlib.Path.cwd()), seed_from)
         except id.SessionIdError as exc:
-            _common.error(f"{exc}")
+            common.error(f"{exc}")
             return 2
         if layout.subdir != "plans":
-            _common.error(
+            common.error(
                 "'run' needs a task; --from <id> seeds one, and a plan id alone runs that plan."
             )
             return 2
@@ -231,28 +225,28 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         seed_from = ""
     elif not args.task:
         # No task: the most recent plan, confirmed at a TTY, refused in a script.
-        last_plan = plan_watch._most_recent_plan_session_id(_common._plans_dir(pathlib.Path.cwd()))
+        last_plan = plan_watch._most_recent_plan_session_id(common._plans_dir(pathlib.Path.cwd()))
         if last_plan is None:
-            _common.error(
+            common.error(
                 "'run' needs a task and there is no saved plan. Start with"
                 ' `agent6 run "TASK"`, or create one with `agent6 plan "TASK"`.'
             )
             return 2
         plan_md = _plan_text_for_run(
-            _common._plans_dir(pathlib.Path.cwd()) / last_plan / "plan.md", last_plan
+            common._plans_dir(pathlib.Path.cwd()) / last_plan / "plan.md", last_plan
         )
         if plan_md is None:
             return 2
         title = _plan_title(plan_md)
         if not sys.stdin.isatty():
-            _common.error(
+            common.error(
                 f"'run' needs a task. Most recent plan is {last_plan}"
                 f" ({title}); execute it with: agent6 run --from {last_plan}"
             )
             return 2
         print(f"[agent6] No task given. Most recent plan: {last_plan}  ({title})")
         _warn_unanswered_questions(plan_md, last_plan)
-        ans = _common.safe_input("Execute it now? [Y/n]: ")
+        ans = common.safe_input("Execute it now? [Y/n]: ")
         if ans is None or ans.lower() in ("n", "no"):
             print(f"Aborted. Run it later: agent6 run --from {last_plan}")
             return 0
@@ -270,8 +264,8 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         seed_from=seed_from,
         source_session_id=source_session_id,
         skills=tuple(args.skill),
-        budget_overrides=_setup.BudgetOverrides.from_args(args),
-        sandbox_overrides=_setup.SandboxOverrides.from_args(args),
+        budget_overrides=session_setup.BudgetOverrides.from_args(args),
+        sandbox_overrides=session_setup.SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
         parallel_spec=getattr(args, "parallel", ""),
         worktree=getattr(args, "worktree", False),
@@ -325,15 +319,15 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
     if rc == 2:
         return rc
 
-    from agent6.app import _setup
+    from agent6.app import session_setup
     from agent6.sessions import id
     from agent6.sessions import manifest as sessions_manifest
-    from agent6.ui.cli import _session_prompt
+    from agent6.ui.cli import session_prompt
 
-    if not _session_prompt.prompting_is_possible():
+    if not session_prompt.prompting_is_possible():
         return rc
     try:
-        layout = _common.resolve_or_newest_layout(pathlib.Path.cwd(), session_id)
+        layout = common.resolve_or_newest_layout(pathlib.Path.cwd(), session_id)
     except id.SessionIdError:
         # A refused run discarded its husk, so there is no session to continue.
         return rc
@@ -344,16 +338,16 @@ def _prompt_for_the_next_input(  # noqa: PLR0911
         manifest = sessions_manifest.read_manifest(layout.session_dir)
         if manifest.parked_task or manifest.mode == "ask":
             return rc
-    if not _session_prompt.follow_up_on_offer(layout.session_dir):
+    if not session_prompt.follow_up_on_offer(layout.session_dir):
         return rc
-    return _session_prompt.end_of_session_prompt(
+    return session_prompt.end_of_session_prompt(
         rc=rc,
         session_id=layout.session_id,
         session_dir=layout.session_dir,
         ask=input,
         config_paths=args.config,
-        budget_overrides=_setup.BudgetOverrides.from_args(args),
-        sandbox_overrides=_setup.SandboxOverrides.from_args(args),
+        budget_overrides=session_setup.BudgetOverrides.from_args(args),
+        sandbox_overrides=session_setup.SandboxOverrides.from_args(args),
         model=getattr(args, "model", ""),
     )
 
@@ -384,7 +378,7 @@ def _names_an_existing_plan(cwd: pathlib.Path, task: str) -> bool:
 
 def _dispatch_plan(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 plan` or its show and edit verbs."""
-    from agent6.app import _setup
+    from agent6.app import session_setup
     from agent6.ui.cli import (
         plan_watch,
         run,
@@ -395,11 +389,11 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
     if args.plan_command == "edit":
         return plan_watch._cmd_plan_edit(args.session_id)
     if not args.task:
-        _common.error("'plan' needs a task argument (or `plan show/edit <id>`).")
+        common.error("'plan' needs a task argument (or `plan show/edit <id>`).")
         return 2
     if _names_an_existing_plan(pathlib.Path.cwd(), args.task.strip()):
         # `plan run <id>` reads as "run this plan"; the verb for that is `run --from`.
-        _common.error(
+        common.error(
             f"{args.task.strip()!r} names an existing plan. Execute it with:\n"
             f"    agent6 run --from {args.task.strip()}"
         )
@@ -411,8 +405,8 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
         session_id=session_id,
         mode="plan",
         tui=args.tui,
-        budget_overrides=_setup.BudgetOverrides.from_args(args),
-        sandbox_overrides=_setup.SandboxOverrides.from_args(args),
+        budget_overrides=session_setup.BudgetOverrides.from_args(args),
+        sandbox_overrides=session_setup.SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
         model=getattr(args, "model", ""),
     )
@@ -424,20 +418,16 @@ def _dispatch_plan(args: argparse.Namespace) -> int:
 
 def _dispatch_ask(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 ask`, one-shot or as a REPL."""
-    from agent6.app import _setup
-    from agent6.ui.cli import (
-        _ask,
-        _session_prompt,
-        run,
-    )
+    from agent6.app import session_setup
+    from agent6.ui.cli import ask, run, session_prompt
 
-    if args.interactive and not _session_prompt.prompting_is_possible():
-        _common.error("-i needs a TTY in the foreground process group; drop -i for a one-shot ask.")
+    if args.interactive and not session_prompt.prompting_is_possible():
+        common.error("-i needs a TTY in the foreground process group; drop -i for a one-shot ask.")
         return 2
     # A REPL with -i, or with no question at an interactive foreground stdin.
-    repl = args.interactive or (not args.task and _session_prompt.prompting_is_possible())
+    repl = args.interactive or (not args.task and session_prompt.prompting_is_possible())
     if not args.task and not repl:
-        _common.error(
+        common.error(
             "'ask' needs a question (in quotes), or -i for the REPL on a foreground terminal."
         )
         return 2
@@ -445,7 +435,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
     prefix: list[str] = []
     source_session_id = ""
     if args.ask_session_latest or args.ask_session:
-        seed = _ask.build_session_seed(
+        seed = ask.build_session_seed(
             pathlib.Path.cwd(), args.ask_session, latest=args.ask_session_latest
         )
         if seed is None:
@@ -453,7 +443,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         prefix.append(seed.text)
         source_session_id = seed.source_session_id
     if args.ask_files:
-        seeds = _ask.seed_files(pathlib.Path.cwd(), args.ask_files)
+        seeds = ask.seed_files(pathlib.Path.cwd(), args.ask_files)
         if seeds:
             prefix.append(seeds)
     if prefix:
@@ -464,8 +454,8 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         mode="ask",
         interactive=repl,
         source_session_id=source_session_id,
-        budget_overrides=_setup.BudgetOverrides.from_args(args),
-        sandbox_overrides=_setup.SandboxOverrides.from_args(args),
+        budget_overrides=session_setup.BudgetOverrides.from_args(args),
+        sandbox_overrides=session_setup.SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
         model=getattr(args, "model", ""),
     )
@@ -491,7 +481,7 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
 
     if args.finding:
         if args.now:
-            _common.error("--finding waits for a safe boundary; it cannot be used with --now")
+            common.error("--finding waits for a safe boundary; it cannot be used with --now")
             return 2
         return sessions_findings.cmd_action(
             args.target,
@@ -503,7 +493,7 @@ def _dispatch_steer(args: argparse.Namespace) -> int:
             config_paths=args.config,
         )
     if args.resume or args.request_id or args.expected_version is not None:
-        _common.error("--resume, --request-id and --expected-version require --finding")
+        common.error("--resume, --request-id and --expected-version require --finding")
         return 2
     return steer_cmd._cmd_steer(args.target, args.text, now=args.now, config_paths=args.config)
 
@@ -532,7 +522,7 @@ def _dispatch_exec_new(args: argparse.Namespace) -> int:
 
     rest: list[str] = list(args.rest)
     if len(rest) > 1 and rest[0] != "--" and rest[1] == "--":
-        _common.error(
+        common.error(
             f"`--new` takes no session, and {rest[0]!r} before `--` reads as one: run the"
             " command as `agent6 exec --new -- CMD...`, or in a session as"
             " `agent6 exec SESSION -- CMD...`."
@@ -541,7 +531,7 @@ def _dispatch_exec_new(args: argparse.Namespace) -> int:
     try:
         eff = layer.load_effective(pathlib.Path.cwd(), args.config)
     except ConfigError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     argv = tuple(rest[1:] if rest[:1] == ["--"] else rest)
     return exec_cmds.exec_new(eff.config, pathlib.Path.cwd(), argv)
@@ -571,22 +561,22 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
         split = rest.index("--")
         before, argv = rest[:split], tuple(rest[split + 1 :])
         if len(before) > 1:
-            _common.error(f"at most one session id before `--`, got {' '.join(before)!r}.")
+            common.error(f"at most one session id before `--`, got {' '.join(before)!r}.")
             return 2
         target = before[0] if before else ""
     else:
         argv = tuple(rest)
     if not argv:
-        _common.error("give a command (after `--` when naming a session).")
+        common.error("give a command (after `--` when naming a session).")
         return 2
 
-    layout = _common.resolve_target(target)
+    layout = common.resolve_target(target)
     if layout is None:
         return 2
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), args.config).config
     except ConfigError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     return net_cmds.exec_in_session(layout, cfg, pathlib.Path.cwd(), argv)
 
@@ -600,7 +590,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
         # A bare number is a port of the newest session; a numeric session id needs both args.
         target, port = "", int(target)
 
-    layout = _common.resolve_target(target)
+    layout = common.resolve_target(target)
     if layout is None:
         return 2
     if port is None:
@@ -611,7 +601,7 @@ def _dispatch_forward(args: argparse.Namespace) -> int:
                 if process.read_session_netns_pid(layout.session_dir) is not None
                 else net_cmds.no_session_network_reason(layout)
             )
-            _common.refuse(f"{reason}")
+            common.refuse(f"{reason}")
             return 2
         print(f"{layout.session_id} is listening on: {', '.join(str(p) for p in ports)}")
         return 0
@@ -749,20 +739,17 @@ def _dispatch_prompt(args: argparse.Namespace) -> int:
 
 def _dispatch_resume(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 resume`, on the named session or the newest resumable one."""
-    from agent6.app import (
-        _setup,
-        resume,
-    )
+    from agent6.app import resume, session_setup
     from agent6.sessions import id
-    from agent6.ui.cli import _session_prompt
     from agent6.ui.cli import resume as cli_resume
+    from agent6.ui.cli import session_prompt
     from agent6.viewmodel import newest_session_dir
 
     if getattr(args, "interactive", False) and args.tui:
-        _common.error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
+        common.error("-i cannot combine with --tui (the REPL and the TUI both want the terminal).")
         return 2
-    if getattr(args, "interactive", False) and not _session_prompt.prompting_is_possible():
-        _common.error(
+    if getattr(args, "interactive", False) and not session_prompt.prompting_is_possible():
+        common.error(
             "-i needs a TTY in the foreground process group; drop -i for a headless resume."
         )
         return 2
@@ -782,14 +769,14 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
             )
             return 2
         session_id = latest.name
-        _common.note(f"resuming most recent session: {session_id}")
+        common.note(f"resuming most recent session: {session_id}")
     rc = cli_resume._cmd_resume(
         args.config,
         session_id,
         force=args.force,
         tui=args.tui,
-        budget_overrides=_setup.BudgetOverrides.from_args(args),
-        sandbox_overrides=_setup.SandboxOverrides.from_args(args),
+        budget_overrides=session_setup.BudgetOverrides.from_args(args),
+        sandbox_overrides=session_setup.SandboxOverrides.from_args(args),
         preset=getattr(args, "preset", ""),
         steer=args.steer,
         interactive=getattr(args, "interactive", False),
@@ -801,7 +788,7 @@ def _dispatch_resume(args: argparse.Namespace) -> int:
 
 def _dispatch_fork(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 fork`."""
-    from agent6.app import _setup
+    from agent6.app import session_setup
     from agent6.ui.cli import fork
 
     return fork._cmd_fork(
@@ -811,8 +798,8 @@ def _dispatch_fork(args: argparse.Namespace) -> int:
         new_session_id=args.new_session_id,
         no_run=args.no_run,
         tui=args.tui,
-        budget_overrides=_setup.BudgetOverrides.from_args(args),
-        sandbox_overrides=_setup.SandboxOverrides.from_args(args),
+        budget_overrides=session_setup.BudgetOverrides.from_args(args),
+        sandbox_overrides=session_setup.SandboxOverrides.from_args(args),
         steer=args.steer,
     )
 
@@ -960,7 +947,7 @@ def _dispatch_history(args: argparse.Namespace) -> int:
 
     if args.history_command == "search":
         if not args.query:
-            _common.error("'history' needs a query, the pattern to search for.")
+            common.error("'history' needs a query, the pattern to search for.")
             return 2
         return history_cmds._cmd_history_search(
             args.query, fixed=not args.regex, session_id=args.session
@@ -1017,8 +1004,8 @@ def _dispatch_mcp(args: argparse.Namespace) -> int:
 
 def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
     """Return the exit code of a `agent6 machine` verb."""  # noqa: DOC501  # the last raise is unreachable
-    from agent6.app import _setup
     from agent6.app import reporter as app_reporter
+    from agent6.app import session_setup
     from agent6.app.machine import create
     from agent6.app.machine import run as machine_run
     from agent6.ui.cli import (
@@ -1063,7 +1050,7 @@ def _dispatch_machine(args: argparse.Namespace) -> int:  # noqa: PLR0911
             output=args.output,
             max_attempts=args.max_attempts,
             config_paths=args.config,
-            budget_overrides=_setup.BudgetOverrides.from_args(args),
+            budget_overrides=session_setup.BudgetOverrides.from_args(args),
         )
     raise AssertionError("unreachable")  # pragma: no cover -- machine subparser is required
 
@@ -1142,7 +1129,7 @@ def main(argv: list[str] | None = None) -> int:
     args.config = cli_parser.config_files(args)
     # `system` is host setup that runs as root and runs no LLM, so the root gate exempts it.
     if args.command != "system":
-        root_rc = _common._enforce_root_policy(getattr(args, "allow_root", False))
+        root_rc = common._enforce_root_policy(getattr(args, "allow_root", False))
         if root_rc is not None:
             return root_rc
     handler = _DISPATCH.get(args.command)
@@ -1152,5 +1139,5 @@ def main(argv: list[str] | None = None) -> int:
         return handler(args)
     except event_log.EventWriteError as exc:
         # The run journal could not be appended; the lifecycle's finally already cleaned up.
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 1

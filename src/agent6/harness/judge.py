@@ -14,7 +14,7 @@ from typing import Any
 import pydantic
 
 from agent6 import budget
-from agent6.harness import _llm_json
+from agent6.harness import llm_json
 from agent6.prompts import judge
 from agent6.providers import Provider, ProviderError
 
@@ -116,7 +116,7 @@ def compare(
             # A spent budget is a judge failure like any other: the caller degrades to mechanical.
             last_err = f"judge budget exhausted ({model}): {exc}"
             continue
-        obj = _llm_json.extract_json(resp.text, prefer=("ranking",))
+        obj = llm_json.extract_json(resp.text, prefer=("ranking",))
         if obj is None:
             last_err = f"unparseable judge output ({model})"
             continue

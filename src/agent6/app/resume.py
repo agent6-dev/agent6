@@ -13,18 +13,18 @@ import json
 import os
 import pathlib
 
-from agent6 import budget, directive, errors, event_log, kinds, terminal
+from agent6 import budget, directive, errors, kinds, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import (
-    _carried_questions,
-    _execution,
-    _resume_chain,
-    _resume_tree,
-    _session,
-    _setup,
+    execution,
     finalize,
     preflight,
+    resume_chain,
+    resume_questions,
+    resume_tree,
     run,
+    session_parts,
+    session_setup,
     stamps,
     workspace_setup,
 )
@@ -34,16 +34,16 @@ from agent6.config import (
     Config,
     ConfigError,
 )
-from agent6.harness import _context, _snapshot
+from agent6.harness import loop_snapshot, repo_context
 from agent6.providers import (
     TranscriptSink,
 )
-from agent6.sessions import id, ipc, lock, process
+from agent6.sessions import event_log, id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
 from agent6.vcs import git_read
-from agent6.viewmodel import _session_log, listing
+from agent6.viewmodel import listing, session_log
 
 
 def resumable_bucket_dirs(state_dir: pathlib.Path) -> list[pathlib.Path]:
@@ -212,8 +212,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     force: bool,
     started_at: float,
     tui: bool = False,
-    budget_overrides: _setup.BudgetOverrides | None = None,
-    sandbox_overrides: _setup.SandboxOverrides | None = None,
+    budget_overrides: session_setup.BudgetOverrides | None = None,
+    sandbox_overrides: session_setup.SandboxOverrides | None = None,
     preset: str = "",
     steer: str = "",
     interactive: bool = False,
@@ -266,7 +266,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         )
         mode = manifest.session_mode()
         # A `--max-*` set on the run replays the same way, field by field.
-        budget_overrides = (budget_overrides or _setup.BudgetOverrides()).over(manifest.budget)
+        budget_overrides = (budget_overrides or session_setup.BudgetOverrides()).over(
+            manifest.budget
+        )
     except sessions_manifest.ManifestError as exc:
         reporter.error(f"cannot resume {session_id}: {exc}")
         return 2
@@ -294,7 +296,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.err(lock.SINGLE_WRITER_BUSY.format(rid=session_id))
         return 2
     # A finished run has nothing to continue without --steer; every other ending resumes.
-    scan = _session_log.scan_session_log(layout.logs_path)
+    scan = session_log.scan_session_log(layout.logs_path)
     new_work = listing.needs_new_work(
         finished=scan.finished,
         end_reason=scan.end_reason,
@@ -310,7 +312,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.refuse(listing.needs_new_work_refusal(session_id))
         lock.release_single_writer(worker_lock_fd)
         return 2
-    carried = _carried_questions.carried_questions(layout.logs_path)
+    carried = resume_questions.carried_questions(layout.logs_path)
     # Approval ids reset on resume, so their stale answers go; a pending question's stays.
     ipc.clear_pending_answers(
         layout.session_dir,
@@ -324,7 +326,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         return 2
 
     detach_requested = False
-    stashed = _resume_tree.Settled()  # the outside edits this execution set aside
+    stashed = resume_tree.Settled()  # the outside edits this execution set aside
     untracked_at_start: frozenset[str] = frozenset()
     handed_to_run_task = False  # a parked submission: run_task owns its lifecycle
     cfg: Config | None = None  # the finally reads it for a detach
@@ -337,7 +339,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             # locks itself, so ours is released first.
             try:
                 # replay_preset: a config-selected preset re-resolves rather than ranking as a flag.
-                effective = _setup.load_session_config(
+                effective = session_setup.load_session_config(
                     repo,
                     config_paths,
                     mode=mode,
@@ -410,7 +412,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         # An unreadable or outdated snapshot refuses here, before anything is touched.
         try:
-            snapshot = _snapshot.load_session_snapshot(snapshot_path)
+            snapshot = loop_snapshot.load_session_snapshot(snapshot_path)
         except (ValueError, OSError) as exc:
             reporter.error(str(exc))
             return 1
@@ -437,11 +439,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 
         # A run whose work landed continues from HEAD; any other run's next commits would
         # leave behind a commit the operator made on its branch.
-        landed: _resume_chain.LandedStart | None = None
+        landed: resume_chain.LandedStart | None = None
         if mode == "run":
             try:
-                landed = _resume_chain.landed_start(cwd, manifest)
-                off = None if landed else _resume_chain.branch_off_the_chain(cwd, manifest)
+                landed = resume_chain.landed_start(cwd, manifest)
+                off = None if landed else resume_chain.branch_off_the_chain(cwd, manifest)
             except errors.GitError as exc:
                 reporter.error(str(exc))
                 return 2
@@ -449,7 +451,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 branch, branch_tip, ahead = off
                 if not force:
                     reporter.refuse(
-                        _resume_chain.off_chain_refusal(session_id, branch, branch_tip, ahead=ahead)
+                        resume_chain.off_chain_refusal(session_id, branch, branch_tip, ahead=ahead)
                     )
                     return 2
                 reporter.note(
@@ -457,7 +459,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 )
 
         try:
-            effective = _setup.load_session_config(
+            effective = session_setup.load_session_config(
                 repo,
                 config_paths,
                 mode=mode,
@@ -491,12 +493,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         )
 
         if not preflight.route_preflight(
-            cfg, role, reporter=reporter, model_flag=_setup.route_text(route)
+            cfg, role, reporter=reporter, model_flag=session_setup.route_text(route)
         ):
             return 2
 
         try:
-            isolation = _session.select_isolation(
+            isolation = session_parts.select_isolation(
                 cfg,
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
@@ -530,8 +532,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             ),
         )
 
-        _session.warn_install_inside_workspace(cwd, reporter=reporter)
-        for line in _context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
+        session_parts.warn_install_inside_workspace(cwd, reporter=reporter)
+        for line in repo_context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
             reporter.note(line)
 
         tui_enabled = frontend.should_spawn_tui(tui, interactive, mode)
@@ -622,8 +624,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             # this decides what the run may commit. After a death mid-turn a call of that turn
             # may have written it with no result to say so, and it stays the run's.
             try:
-                flight = _snapshot.read_turn_marker(
-                    layout.session_dir / _snapshot.TURN_IN_FLIGHT_NAME
+                flight = loop_snapshot.read_turn_marker(
+                    layout.session_dir / loop_snapshot.TURN_IN_FLIGHT_NAME
                 )
             except ValueError:
                 flight = None  # the loop names and drops it when it resumes
@@ -661,10 +663,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 # Tracked content that changed since the last end is the operator's too; a
                 # file taken as the run's above stays its own.
                 runs_own = written | arrived if died_in_turn else written
-                outside = _resume_tree.outside_edits(
+                outside = resume_tree.outside_edits(
                     cwd, end_tree, seed, untracked_at_start | hidden, written=runs_own
                 )
-                unsettled = _resume_tree.refusal(
+                unsettled = resume_tree.refusal(
                     cwd,
                     policy=cfg.git.dirty_tree,
                     outside=outside,
@@ -683,7 +685,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         # Written once the preflight passed: a refused resume never had a live worker, and the
         # question below reaches `agent6 answer`.
         process.write_worker_pid(layout.session_dir, os.getpid())
-        settled = _resume_tree.settle(
+        settled = resume_tree.settle(
             cwd,
             policy=cfg.git.dirty_tree,
             outside=outside,
@@ -699,7 +701,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         stashed = settled
         if landed is not None:
             try:
-                resume_base_sha = _resume_chain.continue_from_head(cwd, landed, manifest, identity)
+                resume_base_sha = resume_chain.continue_from_head(cwd, landed, manifest, identity)
             except errors.GitError as exc:
                 reporter.error(f"cannot continue this run from HEAD: {exc}")
                 return 2
@@ -708,7 +710,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 f"this run's earlier work landed on {landed.into}; continuing from HEAD"
                 f" ({landed.head[:12]})"
             )
-        elif mode == "run" and (moved := _resume_chain.unlanded_base(cwd, layout, manifest)):
+        elif mode == "run" and (moved := resume_chain.unlanded_base(cwd, layout, manifest)):
             resume_base_sha = moved
             stamps.stamp_base(layout.session_dir, moved)
             reporter.note(
@@ -718,7 +720,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         # Every preflight passed: the operator's new choices are recorded from here.
         if preset:
             stamps.stamp_preset(layout.session_dir, preset)
-        if (flagged := _setup.flag_route(cfg, mode, model)) is not None:
+        if (flagged := session_setup.flag_route(cfg, mode, model)) is not None:
             stamps.stamp_model(layout.session_dir, flagged)
         if budget_overrides.stamp() != manifest.budget:
             stamps.stamp_budget(layout.session_dir, budget_overrides.stamp())
@@ -755,10 +757,10 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                         f"the tree holds changes no commit has ({named});"
                         " this execution's next commit takes them"
                     )
-        end = _execution.run_execution(
+        end = execution.run_execution(
             cfg,
             layout,
-            _execution.ExecutionInputs(
+            execution.ExecutionInputs(
                 session_id=session_id,
                 mode=mode,
                 role=role,
@@ -818,13 +820,13 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             lock.release_single_writer(repo_lock_fd)
             lock.release_single_writer(worker_lock_fd)
         if detach_requested and cfg is not None:
-            _execution.detach_to_background(
+            execution.detach_to_background(
                 frontend=frontend,
                 cfg=cfg,
                 layout=layout,
                 cwd=repo,
-                flags=_setup.override_flags(
-                    budget_overrides, sandbox_overrides, _setup.flag_route(cfg, mode, route)
+                flags=session_setup.override_flags(
+                    budget_overrides, sandbox_overrides, session_setup.flag_route(cfg, mode, route)
                 ),
                 reporter=reporter,
             )

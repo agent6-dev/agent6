@@ -6,8 +6,8 @@ import subprocess
 
 import pydantic
 
-from agent6 import event_log, paths, review_records
-from agent6.sessions import layout
+from agent6 import paths, review_records
+from agent6.sessions import event_log, layout
 from agent6.vcs import review
 
 

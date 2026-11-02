@@ -10,8 +10,8 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.app import _setup
-from agent6.config import Config, _layer_data, layer
+from agent6.app import session_setup
+from agent6.config import Config, layer, layer_data
 from agent6.models import registry
 from agent6.ui.cli import main
 from agent6.viewmodel import config_view
@@ -110,14 +110,14 @@ def test_mapping_setting_prints_its_contents(
 
 def test_descriptions_mode_prints_the_meaning_under_each_row() -> None:
     """`--descriptions` adds each leaf's meaning; the default stays values-only."""
-    eff = _layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    eff = layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
     assert "cap on the metered spend" not in config_view.render_show(eff)
     assert "cap on the metered spend" in config_view.render_show(eff, descriptions=True)
 
 
 def test_key_detail_always_carries_the_meaning() -> None:
     """`config show <key>` carries the meaning with no flag."""
-    eff = _layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    eff = layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
     detail = config_view.render_key_detail(eff, ["budget.max_usd"])
     assert "meaning: cap on the metered spend" in detail
 
@@ -129,7 +129,7 @@ def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
 
     A section prefix expands to its leaves; a leaf named twice prints once.
     """
-    eff = _layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    eff = layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
     detail = config_view.render_key_detail(eff, ["sandbox.network", "budget", "sandbox.network"])
     heads = [line.strip() for line in detail.splitlines() if not line.startswith("    ")]
     assert heads[0] == "sandbox.network"
@@ -142,7 +142,7 @@ def test_key_detail_takes_several_keys_in_the_order_asked() -> None:
     assert list(as_json) == ["sandbox.network"]
 
 
-def _effort_config(tmp_path: pathlib.Path, body: str) -> _layer_data.EffectiveConfig:
+def _effort_config(tmp_path: pathlib.Path, body: str) -> layer_data.EffectiveConfig:
     cfg = tmp_path / "config.toml"
     cfg.write_text(body, encoding="utf-8")
     return layer.load_effective(tmp_path, (cfg,))
@@ -272,7 +272,7 @@ def test_the_resolved_values_leave_the_sandbox_leaves_auto_without_a_jail_binary
     def no_binary() -> NoReturn:
         raise jail.JailBinaryError("agent6-jail binary not found")
 
-    monkeypatch.setattr(_setup, "detect_env", no_binary)
+    monkeypatch.setattr(session_setup, "detect_env", no_binary)
     cfg = Config()
     assert (cfg.sandbox.isolation, cfg.sandbox.network) == ("auto", "auto")
     resolved = confine.resolved_config_values(cfg)
@@ -346,7 +346,7 @@ def test_empty_mapping_keeps_its_field_row(tmp_path: pathlib.Path) -> None:
 def test_long_mapping_entry_keeps_table_width() -> None:
     """The unfiltered table truncates long mapping keys instead of widening the key column."""
     cfg = Config.model_validate({"skills": {"state": {"x" * 200: "disabled"}}})
-    eff = _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+    eff = layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
     row = next(line for line in config_view.render_show(eff).splitlines() if "skills.state" in line)
     assert "…" in row
     assert "x" * 200 not in row

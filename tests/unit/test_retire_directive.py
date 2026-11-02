@@ -18,7 +18,7 @@ from agent6.graph import models
 from agent6.harness import loop
 from agent6.sessions import ipc
 from agent6.sessions import layout as sessions_layout
-from agent6.ui import directives
+from agent6.ui import directive_actions
 from agent6.viewmodel import format
 from tests.unit.test_task_queue_drain import (
     _workflow,  # pyright: ignore[reportPrivateUsage]
@@ -47,7 +47,7 @@ def _graph(
         ).id
         for title, by in actors
     ]
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     sink = event_log.EventSink(layout.session_dir / "logs.jsonl")
     return curator, layout.session_dir, root, kids, _workflow(curator, sink)
@@ -67,7 +67,7 @@ def test_it_is_offered_only_on_a_live_run() -> None:
 def test_a_full_id_retires_at_the_next_turn(tmp_path: pathlib.Path) -> None:
     curator, session_dir, root, kids, wf = _graph(tmp_path)
 
-    did, said = directives.act_on_directive(session_dir, f"/retire {kids[0]}") or (False, "")
+    did, said = directive_actions.act_on_directive(session_dir, f"/retire {kids[0]}") or (False, "")
 
     assert did and "the model's own" in said
     assert [r.text for r in ipc.drain_requests(session_dir)] == [kids[0]]
@@ -84,7 +84,7 @@ def test_the_id_is_the_runs_own_count(tmp_path: pathlib.Path) -> None:
     assert [root, *kids] == ["0001", "0002", "0003"]
     assert [format.short_task_id(nid) for nid in kids] == ["2", "3"]
 
-    did, said = directives.act_on_directive(session_dir, "/retire 2") or (False, "")
+    did, said = directive_actions.act_on_directive(session_dir, "/retire 2") or (False, "")
 
     assert did and "the model's own" in said
     assert [r.text for r in ipc.drain_requests(session_dir)] == [kids[0]]
@@ -94,7 +94,10 @@ def test_the_padded_id_works_too(tmp_path: pathlib.Path) -> None:
     """Whichever form a listing or a log showed."""
     _curator, session_dir, _root, kids, _wf = _graph(tmp_path)
 
-    did, _said = directives.act_on_directive(session_dir, f"/retire {kids[1]}") or (False, "")
+    did, _said = directive_actions.act_on_directive(session_dir, f"/retire {kids[1]}") or (
+        False,
+        "",
+    )
 
     assert did and [r.text for r in ipc.drain_requests(session_dir)] == [kids[1]]
 
@@ -102,7 +105,7 @@ def test_the_padded_id_works_too(tmp_path: pathlib.Path) -> None:
 def test_an_unknown_id_is_refused_with_the_ones_that_exist(tmp_path: pathlib.Path) -> None:
     _curator, session_dir, _root, _kids, _wf = _graph(tmp_path)
 
-    did, said = directives.act_on_directive(session_dir, "/retire 9") or (True, "")
+    did, said = directive_actions.act_on_directive(session_dir, "/retire 9") or (True, "")
 
     assert not did
     assert "no task '9' here" in said
@@ -113,7 +116,7 @@ def test_an_unknown_id_is_refused_with_the_ones_that_exist(tmp_path: pathlib.Pat
 def test_a_bare_directive_retires_nothing(tmp_path: pathlib.Path) -> None:
     _curator, session_dir, _root, _kids, _wf = _graph(tmp_path)
 
-    did, said = directives.act_on_directive(session_dir, "/retire") or (True, "")
+    did, said = directive_actions.act_on_directive(session_dir, "/retire") or (True, "")
 
     assert not did and "/retire needs the task" in said
 
@@ -125,7 +128,7 @@ def test_the_loop_retires_what_the_operator_named(tmp_path: pathlib.Path) -> Non
     """
     curator, session_dir, root, kids, wf = _graph(tmp_path)
     for task_id in kids:
-        directives.act_on_directive(session_dir, f"/retire {task_id}")
+        directive_actions.act_on_directive(session_dir, f"/retire {task_id}")
 
     wf.operator_tasks.take(root)
 

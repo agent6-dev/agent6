@@ -28,10 +28,10 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 
 from agent6.ui import keymap
 from agent6.ui.tui import (
-    _dashboard_header,
-    _diff_pane,
     clipboard,
     composer,
+    dashboard_header,
+    diff_pane,
     forms,
     logview,
     menubar,
@@ -167,11 +167,11 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
     ]
 
     @property
-    def diff(self) -> _diff_pane.DiffPane:
+    def diff(self) -> diff_pane.DiffPane:
         """The diff pane."""
-        return self.query_one("#diff", _diff_pane.DiffPane)
+        return self.query_one("#diff", diff_pane.DiffPane)
 
-    def on_diff_pane_step_changed(self, _event: _diff_pane.DiffPane.StepChanged) -> None:
+    def on_diff_pane_step_changed(self, _event: diff_pane.DiffPane.StepChanged) -> None:
         """Repaint for the newly selected step."""
         self.render_state()
 
@@ -225,7 +225,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
     def compose(self) -> app.ComposeResult:
         """Yield the menu bar, the header, the three pane rows, the composer and the footer."""
         yield menubar.MenuBar(self.MENUS)
-        yield _dashboard_header.RunHeader()
+        yield dashboard_header.RunHeader()
         yield textual_widgets.Static("", id="summary")  # compact only: the folded rows in one line
         with containers.Horizontal(id="head"):
             yield textual_widgets.Tree("tasks", id="plan")
@@ -243,7 +243,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                 auto_scroll=False,
                 max_lines=state.MAX_LOG_TAIL,
             )
-            yield _diff_pane.DiffPane(self._tui.session_dir, id="diff")
+            yield diff_pane.DiffPane(self._tui.session_dir, id="diff")
         yield composer.SteerSuggest(id="dash-suggest")  # command hints while typing `/…`
         yield composer.ResumeOptions(
             self._presets, self._routes, id="dash-resume"
@@ -444,7 +444,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         self._render_approval()
         active = tui.model_call_in_flight()
         ds, as_of = self._details_state(s)
-        self.query_one("#top", _dashboard_header.RunHeader).refresh_lines(
+        self.query_one("#top", dashboard_header.RunHeader).refresh_lines(
             s, ds, as_of, active=active
         )
         if self.has_class("-compact"):
@@ -454,7 +454,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
                 ok = "…" if last.ok is None else ("✓" if last.ok else "✗")
                 calls += f" · last {last.name} {ok}"
             folded = rich_text.Text(f"{calls} · Tab unfolds a pane")
-            width = self.query_one("#top", _dashboard_header.RunHeader).content_size.width
+            width = self.query_one("#top", dashboard_header.RunHeader).content_size.width
             folded.truncate(width or 200, overflow="ellipsis")
             self.query_one("#summary", textual_widgets.Static).update(folded)
 

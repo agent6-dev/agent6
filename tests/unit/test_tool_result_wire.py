@@ -25,10 +25,10 @@ import pytest
 from agent6 import kinds
 from agent6.config import Config, load_config
 from agent6.graph import curator, models
-from agent6.harness import _compaction_result, _nudges
+from agent6.harness import compaction_elision, nudges
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
-from agent6.tools import _result_format, dispatch, errors, operator_prompts, results
+from agent6.tools import dispatch, operator_prompts, result_format, results, tool_errors
 
 _VALID_TOML = """
 [agent6]
@@ -260,21 +260,21 @@ def _cmd_result(**kw: Any):
 )
 def test_exec_result_drops_terminal_escapes(text: str) -> None:
     """Terminal escape sequences in either captured stream do not reach the model."""
-    result = _result_format.exec_result(_cmd_result(stdout=text, stderr=text)).to_wire()
+    result = result_format.exec_result(_cmd_result(stdout=text, stderr=text)).to_wire()
     assert result["stdout"] == result["stderr"] == "."
 
 
 def test_exec_result_preserves_non_escape_characters() -> None:
     """Scrubbing command output preserves CRLF, progress frames and non-escape characters."""
     text = "first\rsecond\r\n\tthird\n\x07\x08"
-    result = _result_format.exec_result(_cmd_result(stdout=text, stderr=text)).to_wire()
+    result = result_format.exec_result(_cmd_result(stdout=text, stderr=text)).to_wire()
     assert result["stdout"] == result["stderr"] == text
 
 
 def test_clip_tail_counts_text_after_the_scrub() -> None:
     """Escape bytes do not consume the command tail's character budget."""
-    assert _result_format.clip_tail("\x1b[32m" + "." * 20_000 + "\x1b[0m") == "." * 20_000
-    assert _result_format.clip_tail("\x1b[32m" + "." * 20_003 + "\x1b[0m") == (
+    assert result_format.clip_tail("\x1b[32m" + "." * 20_000 + "\x1b[0m") == "." * 20_000
+    assert result_format.clip_tail("\x1b[32m" + "." * 20_003 + "\x1b[0m") == (
         "... 3 earlier chars clipped ...\n" + "." * 20_000
     )
 
@@ -282,26 +282,26 @@ def test_clip_tail_counts_text_after_the_scrub() -> None:
 def test_command_escape_bytes_do_not_consume_the_wire_cap() -> None:
     """The harness's byte cap sees command text without the escape bytes."""
     text = "\x1b[32m.\x1b[0m" * 1000
-    payload = _dumps(_result_format.exec_result(_cmd_result(stdout=text)))
-    capped = _compaction_result.cap_tool_result(payload, tool_name="run_command", cap=2000)
+    payload = _dumps(result_format.exec_result(_cmd_result(stdout=text)))
+    capped = compaction_elision.cap_tool_result(payload, tool_name="run_command", cap=2000)
     assert json.loads(capped)["stdout"] == "." * 1000
 
 
 def test_a_coloured_failure_has_the_plain_failure_signature() -> None:
     """Colour changes do not make the same verify failure read as a different failure."""
-    plain = _result_format.exec_result(_cmd_result(returncode=1, stderr="AssertionError: want 3"))
-    coloured = _result_format.exec_result(
+    plain = result_format.exec_result(_cmd_result(returncode=1, stderr="AssertionError: want 3"))
+    coloured = result_format.exec_result(
         _cmd_result(returncode=1, stderr="\x1b[31mAssertionError:\x1b[0m want 3")
     )
-    assert _nudges.verify_failure_signature(coloured.stdout, coloured.stderr) == (
-        _nudges.verify_failure_signature(plain.stdout, plain.stderr)
+    assert nudges.verify_failure_signature(coloured.stdout, coloured.stderr) == (
+        nudges.verify_failure_signature(plain.stdout, plain.stderr)
     )
 
 
 @pytest.mark.parametrize("name", ["run_command", "run_verify_command", "run_metric_command"])
 def test_command_results_and_log_tails_are_scrubbed(tmp_path: pathlib.Path, name: str) -> None:
     """Every execution handler gives the model and the journal escape-free output."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     toml = _VALID_TOML + (
         '\n[harness.metric]\ncommand = ["true"]\npattern = "score: ([0-9.]+)"\ngoal = "maximize"\n'
@@ -519,14 +519,14 @@ def test_wire_tool_error_shape(tmp_path: pathlib.Path) -> None:
 
     Rebuilding it here pinned the test's own literal and left the producer unpinned.
     """
-    from agent6.harness import _loop_state, loop
+    from agent6.harness import loop, loop_state
 
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    with pytest.raises(errors.ToolError) as exc:
+    with pytest.raises(tool_errors.ToolError) as exc:
         d.dispatch("no_such_tool", {})
 
     wf = mock.MagicMock()
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     content = loop.Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "no_such_tool", {}, exc.value
     )
@@ -535,22 +535,19 @@ def test_wire_tool_error_shape(tmp_path: pathlib.Path) -> None:
 
 def test_the_tool_error_log_line_names_the_tool_once() -> None:
     """A tool raises the bare message; the logger prefixes the tool's name."""
-    from agent6 import skills
-    from agent6.harness import _loop_state, loop
-    from agent6.tools import (
-        _path_safety,  # pyright: ignore[reportPrivateUsage]
-        _skill_tools,  # pyright: ignore[reportPrivateUsage]
-    )
+    from agent6.context import skills
+    from agent6.harness import loop, loop_state
+    from agent6.tools import path_safety, skill_tools
 
-    with pytest.raises(errors.ToolError) as exc:
-        _skill_tools.use_skill(
-            _path_safety.Workspace(root=pathlib.Path("/nonexistent")),
+    with pytest.raises(tool_errors.ToolError) as exc:
+        skill_tools.use_skill(
+            path_safety.Workspace(root=pathlib.Path("/nonexistent")),
             lambda: skills.ResolvedSkills(enabled=(), always=(), warnings=()),
             {"name": "x"},
         )
     assert str(exc.value).startswith("unknown or disabled skill 'x'")
     wf = mock.MagicMock()
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     loop.Harness._note_tool_error(  # pyright: ignore[reportPrivateUsage]
         wf, state, "use_skill", {}, exc.value
     )

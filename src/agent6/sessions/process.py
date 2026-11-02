@@ -11,7 +11,8 @@ import subprocess
 import uuid
 from typing import Any
 
-from agent6 import event_log, paths, portable
+from agent6 import paths, portable
+from agent6.sessions import event_log
 
 FRONTENDS_DIR = "frontends"
 WORKER_PID_FILE = "worker.pid"

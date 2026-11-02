@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6.app import providers
+from agent6.app import role_providers
 from agent6.config import Config
 from agent6.models import registry as models_registry
 
@@ -64,7 +64,7 @@ def test_claude_minor_versions_size_compaction_from_family(
     )
     logs: list[str] = []
     assert models_registry.context_window("claude", model + suffix) == 1_000_000
-    drop, summarise, _ = providers.resolve_compaction_thresholds(
+    drop, summarise, _ = role_providers.resolve_compaction_thresholds(
         cfg, cfg.models.resolve("worker"), log=logs.append
     )
     assert (drop, summarise) == (1_800_000, 3_934_464)
@@ -136,7 +136,7 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     monkeypatch.setattr(models_registry, "context_window", _window(32_768))
     logs: list[str] = []
 
-    drop, summarise, keep = providers.resolve_compaction_thresholds(
+    drop, summarise, keep = role_providers.resolve_compaction_thresholds(
         Config(), RoleModel(provider="p", model="m"), log=logs.append
     )
 
@@ -147,7 +147,9 @@ def test_a_small_window_clamps_the_verbatim_tail_and_says_so(
     # A window the default already fits inside keeps the operator's number.
     monkeypatch.setattr(models_registry, "context_window", _window(262_144))
     assert (
-        providers.resolve_compaction_thresholds(Config(), RoleModel(provider="p", model="m"))[2]
+        role_providers.resolve_compaction_thresholds(Config(), RoleModel(provider="p", model="m"))[
+            2
+        ]
         == 80_000
     )
 
@@ -176,22 +178,27 @@ def test_decompose_default_measured_families_only() -> None:
 
 def test_resolve_decompose_pins_auto_from_registry() -> None:
     win = _cfg("mistralai/mistral-small-3.2-24b-instruct")
-    assert providers.resolve_decompose(win, win.models.resolve("worker")).prompt.decompose == "on"
+    assert (
+        role_providers.resolve_decompose(win, win.models.resolve("worker")).prompt.decompose == "on"
+    )
     ceiling = _cfg("claude-haiku-4-5")
     assert (
-        providers.resolve_decompose(ceiling, ceiling.models.resolve("worker")).prompt.decompose
+        role_providers.resolve_decompose(ceiling, ceiling.models.resolve("worker")).prompt.decompose
         == "off"
     )
     # Unresolvable model pins off (never leaves "auto" for the engine).
-    assert providers.resolve_decompose(_cfg("x"), None).prompt.decompose == "off"
+    assert role_providers.resolve_decompose(_cfg("x"), None).prompt.decompose == "off"
 
 
 def test_resolve_decompose_explicit_setting_passes_through() -> None:
     forced_on = _cfg("claude-haiku-4-5", decompose="on")
-    assert providers.resolve_decompose(forced_on, forced_on.models.resolve("worker")) is forced_on
+    assert (
+        role_providers.resolve_decompose(forced_on, forced_on.models.resolve("worker")) is forced_on
+    )
     forced_off = _cfg("mistralai/mistral-small-3.2-24b-instruct", decompose="off")
     assert (
-        providers.resolve_decompose(forced_off, forced_off.models.resolve("worker")) is forced_off
+        role_providers.resolve_decompose(forced_off, forced_off.models.resolve("worker"))
+        is forced_off
     )
 
 

@@ -15,11 +15,12 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import event_log, paths, secret_store
-from agent6.app import _setup, preflight
-from agent6.config import ChatGPTProviderEntry, Config, load_config
-from agent6.providers import _oauth_protocol, _transport, oauth, types
+from agent6 import paths
+from agent6.app import preflight, session_setup
+from agent6.config import ChatGPTProviderEntry, Config, load_config, secret_store
+from agent6.providers import oauth, oauth_protocol, provider_types, transport
 from agent6.sandbox import detect
+from agent6.sessions import event_log
 from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import main
 from agent6.vcs import git_policy
@@ -58,7 +59,7 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
         )
     elif state != "missing":
         grant = oauth.stored_grant_for(
-            _oauth_protocol.TokenGrant(access, "refresh-secret", 3600), entry, now=time.time()
+            oauth_protocol.TokenGrant(access, "refresh-secret", 3600), entry, now=time.time()
         )
         secret_store.save_oauth_grant(
             name,
@@ -68,7 +69,7 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
                 account_id="contradicting" if state == "contradiction" else "claim",
             ),
         )
-    with pytest.raises(types.ProviderError) as refused:
+    with pytest.raises(provider_types.ProviderError) as refused:
         oauth.OAuthCredential(name, entry).token()
     cause = str(refused.value)
     assert f"agent6 connect {name}`" in cause
@@ -78,8 +79,8 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
         "rebound": "other provider settings",
         "contradiction": "does not match its own token",
     }[state] in cause
-    assert _setup.check_provider_keys(load_config(config)) == cause
-    with mock.patch.object(_transport, "http_request") as request:
+    assert session_setup.check_provider_keys(load_config(config)) == cause
+    with mock.patch.object(transport, "http_request") as request:
         assert main(["check", "config"]) == 1
         checked = capsys.readouterr()
         assert f"[FAIL] config.provider_keys: {cause}" in checked.out
@@ -107,12 +108,14 @@ def test_healthy_local_sign_in_check_does_not_claim_remote_acceptance(
         '[models.worker]\nprovider = "chatgpt"\nmodel = "m1"\n'
     )
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant("AT", "RT", 3600),
+        oauth_protocol.TokenGrant("AT", "RT", 3600),
         ChatGPTProviderEntry(api_format="chatgpt"),
         now=time.time(),
     )
     secret_store.save_oauth_grant("chatgpt", dataclasses.replace(grant, account_id="account"))
-    with mock.patch.object(_transport, "http_request", side_effect=types.ProviderError("offline")):
+    with mock.patch.object(
+        transport, "http_request", side_effect=provider_types.ProviderError("offline")
+    ):
         assert main(["check", "config"]) == 0
     out = capsys.readouterr().out
     assert "[PASS] config.provider_keys" in out
@@ -330,13 +333,13 @@ def test_sandbox_reports_spawned_mcp_as_unconfined_without_a_jail(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An isolation-none policy does not enforce the path grants printed for a jailed server."""
-    from agent6.ui.cli import _check_sandbox
+    from agent6.ui.cli import check_sandbox
 
     cfg = Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"notes": {"command": ["notes-mcp"]}}}}
     )
 
-    _check_sandbox._mcp_lines(cfg, tmp_path, "none")  # pyright: ignore[reportPrivateUsage]
+    check_sandbox._mcp_lines(cfg, tmp_path, "none")  # pyright: ignore[reportPrivateUsage]
 
     out = capsys.readouterr().out
     assert "notes: spawned UNCONFINED" in out
@@ -358,9 +361,9 @@ _ENV = detect.Environment(
 def _stub_probes(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
     """Pin the host at one level and make the jail probes pass without a launcher."""
     from agent6 import kinds
-    from agent6.ui.cli import _check_sandbox
+    from agent6.ui.cli import check_sandbox
 
-    monkeypatch.setattr(_setup, "detect_env", lambda: _ENV)
+    monkeypatch.setattr(session_setup, "detect_env", lambda: _ENV)
 
     def _select(_requested: str, _env: object) -> str:
         return isolation
@@ -376,8 +379,8 @@ def _stub_probes(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
 
     monkeypatch.setattr(detect, "resolve_isolation", _select)
     monkeypatch.setattr(detect, "degrade_reason", _no_degradation)
-    monkeypatch.setattr(_check_sandbox, "landlock_abi", lambda: 5)
-    monkeypatch.setattr(_check_sandbox, "run_in_jail", _run)
+    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(check_sandbox, "run_in_jail", _run)
 
 
 def test_sandbox_fails_when_a_run_would_refuse_the_config(

@@ -19,7 +19,7 @@ import tempfile
 from collections.abc import Collection, Sequence
 
 from agent6 import errors
-from agent6.vcs import _git_command, git_policy, git_read
+from agent6.vcs import git_command, git_policy, git_read
 
 
 def stash_tracked_changes(path: pathlib.Path, message: str, paths: Collection[str] = ()) -> None:
@@ -31,12 +31,12 @@ def stash_tracked_changes(path: pathlib.Path, message: str, paths: Collection[st
         paths: The repo-relative paths to stash; empty stashes every tracked change.
     """
     if not paths:
-        _git_command.run(path, "stash", "push", "--message", message)
+        git_command.run(path, "stash", "push", "--message", message)
         return
     tracked = git_read.tree_paths(path, "HEAD") | set(git_read.tracked_files(path))
     # Select the root and exclude other tracked paths: stash's add rejects a staged deletion.
     specs = [":/", *(f":(top,exclude,literal){rel}" for rel in sorted(tracked - set(paths)))]
-    _git_command.run(
+    git_command.run(
         path,
         "stash",
         "push",
@@ -73,7 +73,7 @@ def restore_stash(path: pathlib.Path, stash: git_read.StashEntry) -> bool:
         GitError: A raced drop took a concurrent stash and putting it back failed; the
             apply has landed and the message carries the recovery command.
     """
-    if not _git_command.run(path, "stash", "apply", stash.sha, check=False).ok:
+    if not git_command.run(path, "stash", "apply", stash.sha, check=False).ok:
         return False
     _drop_by_sha(path, stash.sha)
     return True
@@ -94,7 +94,7 @@ def _drop_by_sha(path: pathlib.Path, sha: str) -> None:
     Raises:
         GitError: The bystander could not be stored back.
     """
-    listed = _git_command.run(path, "stash", "list", "--format=%gd%x09%H", check=False)
+    listed = git_command.run(path, "stash", "list", "--format=%gd%x09%H", check=False)
     ref = ""
     for line in listed.stdout.splitlines():
         entry_ref, _, entry_sha = line.partition("\t")
@@ -104,7 +104,7 @@ def _drop_by_sha(path: pathlib.Path, sha: str) -> None:
     if not ref:
         return
     dropped = _DROPPED_SHA_RE.search(
-        _git_command.run(path, "stash", "drop", ref, check=False).stdout
+        git_command.run(path, "stash", "drop", ref, check=False).stdout
     )
     if dropped is None:
         return
@@ -113,9 +113,9 @@ def _drop_by_sha(path: pathlib.Path, sha: str) -> None:
     if sha.startswith(taken) or taken.startswith(sha):
         return
     # The stash commit's subject is the reflog's "On <branch>: <message>".
-    subject = _git_command.run(path, "log", "-1", "--format=%s", taken, check=False).stdout.strip()
+    subject = git_command.run(path, "log", "-1", "--format=%s", taken, check=False).stdout.strip()
     subject = subject or "restored by agent6"
-    store = _git_command.run(path, "stash", "store", "-m", subject, taken, check=False)
+    store = git_command.run(path, "stash", "store", "-m", subject, taken, check=False)
     if not store.ok:
         # The commit still exists under `taken`, so the message carries the recovery.
         detail = store.stderr.strip() or store.stdout.strip() or f"exit {store.returncode}"
@@ -136,7 +136,7 @@ def delete_branch_if_merged(path: pathlib.Path, branch: str) -> bool:
     Returns:
         True when deleted; False when git refused, a squash-merged or unmerged branch.
     """
-    return _git_command.run(path, "branch", "-d", branch, check=False).ok
+    return git_command.run(path, "branch", "-d", branch, check=False).ok
 
 
 def force_delete_squash_merged_branch(path: pathlib.Path, branch: str) -> bool:
@@ -153,7 +153,7 @@ def force_delete_squash_merged_branch(path: pathlib.Path, branch: str) -> bool:
     Returns:
         True when deleted.
     """
-    return _git_command.run(path, "branch", "-D", branch, check=False).ok
+    return git_command.run(path, "branch", "-D", branch, check=False).ok
 
 
 def create_branch(path: pathlib.Path, name: str, *, start_point: str | None = None) -> None:
@@ -166,28 +166,28 @@ def create_branch(path: pathlib.Path, name: str, *, start_point: str | None = No
         name: The branch.
         start_point: Where a new branch is cut from; None is HEAD.
     """
-    existing = _git_command.run(path, "branch", "--list", name, check=False)
+    existing = git_command.run(path, "branch", "--list", name, check=False)
     if existing.ok and existing.stdout.strip():
-        _git_command.run(path, "checkout", name)
+        git_command.run(path, "checkout", name)
     elif start_point:
-        _git_command.run(path, "checkout", "-b", name, start_point)
+        git_command.run(path, "checkout", "-b", name, start_point)
     else:
-        _git_command.run(path, "checkout", "-b", name)
+        git_command.run(path, "checkout", "-b", name)
 
 
 def set_ref(path: pathlib.Path, ref: str, sha: str) -> None:
     """Point one of agent6's own refs at a sha with no checkout; branches use `create_branch_at`."""
-    _git_command.run(path, "update-ref", ref, sha)
+    git_command.run(path, "update-ref", ref, sha)
 
 
 def delete_ref(path: pathlib.Path, ref: str) -> None:
     """Delete the ref; a missing one is a no-op."""
-    _git_command.run(path, "update-ref", "-d", ref, check=False)
+    git_command.run(path, "update-ref", "-d", ref, check=False)
 
 
 def checkout_detached(path: pathlib.Path, rev: str) -> None:
     """Check out the rev detached, in an agent6-owned clone, never the operator's checkout."""
-    _git_command.run(path, "checkout", "-q", "--detach", rev)
+    git_command.run(path, "checkout", "-q", "--detach", rev)
 
 
 def add_worktree(path: pathlib.Path, dest: pathlib.Path, sha: str) -> None:
@@ -202,7 +202,7 @@ def add_worktree(path: pathlib.Path, dest: pathlib.Path, sha: str) -> None:
         sha: The commit to check out.
     """
     dest.parent.mkdir(parents=True, exist_ok=True)
-    _git_command.run(path, "worktree", "add", "--detach", str(dest.absolute()), sha)
+    git_command.run(path, "worktree", "add", "--detach", str(dest.absolute()), sha)
 
 
 def remove_worktree(path: pathlib.Path, dest: pathlib.Path) -> bool:
@@ -253,7 +253,7 @@ def create_branch_at(path: pathlib.Path, name: str, sha: str) -> None:
     Raises:
         GitError: The branch exists pointing elsewhere; a branch is never moved.
     """
-    existing = _git_command.run(
+    existing = git_command.run(
         path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False
     )
     if existing.ok and existing.stdout.strip():
@@ -263,12 +263,12 @@ def create_branch_at(path: pathlib.Path, name: str, sha: str) -> None:
             f"branch {name!r} already exists at {existing.stdout.strip()[:12]}, not {sha[:12]}; "
             "refusing to move it"
         )
-    _git_command.run(path, "branch", name, sha)
+    git_command.run(path, "branch", name, sha)
 
 
 def init_repo(path: pathlib.Path) -> None:
     """Initialize a repository at the path."""
-    _git_command.run(path, "init")
+    git_command.run(path, "init")
 
 
 def clone_repo(origin: pathlib.Path, dest: pathlib.Path) -> None:
@@ -281,7 +281,7 @@ def clone_repo(origin: pathlib.Path, dest: pathlib.Path) -> None:
         origin: The repository to clone.
         dest: Where the clone goes.
     """
-    _git_command.run(pathlib.Path("/"), "clone", str(origin.absolute()), str(dest.absolute()))
+    git_command.run(pathlib.Path("/"), "clone", str(origin.absolute()), str(dest.absolute()))
 
 
 def commit_all(
@@ -303,7 +303,7 @@ def commit_all(
     Returns:
         The new HEAD sha.
     """
-    _git_command.run(path, "add", "-A")
+    git_command.run(path, "add", "-A")
     return _commit(path, message, trailers=trailers, identity=identity)
 
 
@@ -335,7 +335,7 @@ def commit_paths(
     """
     if not paths:
         raise errors.GitError("commit_paths requires at least one path")
-    _git_command.run(path, "add", "--", *paths, env_extra=git_read.LITERAL_PATHSPECS)
+    git_command.run(path, "add", "--", *paths, env_extra=git_read.LITERAL_PATHSPECS)
     return _commit(path, message, trailers=trailers, identity=identity, only_paths=paths)
 
 
@@ -405,7 +405,7 @@ def chain_commit(
         if git_read.tree_sha(path, parent) == tree:
             return None
         parent_args = ["-p", parent]
-    sha = _git_command.run(
+    sha = git_command.run(
         path,
         "commit-tree",
         tree,
@@ -414,7 +414,7 @@ def chain_commit(
         _full_message(message, trailers, identity),
         env_extra=_identity_env(identity),
     ).stdout.strip()
-    _git_command.run(path, "update-ref", ref, sha)
+    git_command.run(path, "update-ref", ref, sha)
     _advance_run_branch(path, also_branch, sha, expected=parent)
     return sha
 
@@ -439,10 +439,10 @@ def _advance_run_branch(
     ref = f"refs/heads/{branch}"
     current = git_read.chain_tip(path, ref)
     if current is None:
-        _git_command.run(path, "update-ref", ref, sha)  # the run's first commit creates it
+        git_command.run(path, "update-ref", ref, sha)  # the run's first commit creates it
         return
     if expected is not None and current == expected:
-        _git_command.run(path, "update-ref", ref, sha, expected)
+        git_command.run(path, "update-ref", ref, sha, expected)
         _bring_index_forward(path, branch, expected, sha)
 
 
@@ -479,7 +479,7 @@ def chain_merge(
     ours = git_read.chain_tip(path, ref) or fallback_parent
     if ours is None:
         raise errors.GitError(f"chain ref {ref} does not exist and no fallback parent was given")
-    theirs = _git_command.run(
+    theirs = git_command.run(
         path, "rev-parse", "--verify", f"{merge_rev}^{{commit}}"
     ).stdout.strip()
     if git_read.is_ancestor(path, theirs, ours):
@@ -487,11 +487,11 @@ def chain_merge(
     if git_read.is_ancestor(path, ours, theirs):
         sha = theirs
     else:
-        res = _git_command.run(path, "merge-tree", "--write-tree", ours, theirs, check=False)
+        res = git_command.run(path, "merge-tree", "--write-tree", ours, theirs, check=False)
         if res.returncode != 0:
             return None
         tree = res.stdout.strip().splitlines()[0]
-        sha = _git_command.run(
+        sha = git_command.run(
             path,
             "commit-tree",
             tree,
@@ -503,7 +503,7 @@ def chain_merge(
             _full_message(message, None, identity),
             env_extra=_identity_env(identity),
         ).stdout.strip()
-    _git_command.run(path, "update-ref", ref, sha)
+    git_command.run(path, "update-ref", ref, sha)
     sync_worktree(path, ours, sha)
     _advance_run_branch(path, also_branch, sha, expected=ours)
     return sha
@@ -542,7 +542,7 @@ def chain_continue_from(
     elif git_read.is_ancestor(path, tip, head):
         sha = head
     else:
-        sha = _git_command.run(
+        sha = git_command.run(
             path,
             "commit-tree",
             f"{head}^{{tree}}",
@@ -554,7 +554,7 @@ def chain_continue_from(
             _full_message(message, None, identity),
             env_extra=_identity_env(identity),
         ).stdout.strip()
-    _git_command.run(path, "update-ref", ref, sha)
+    git_command.run(path, "update-ref", ref, sha)
     _advance_run_branch(path, also_branch, sha, expected=tip)
     return sha
 
@@ -575,9 +575,9 @@ def sync_worktree(path: pathlib.Path, from_rev: str, to_rev: str) -> None:
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="agent6-chain-"))
     env = {"GIT_INDEX_FILE": str(tmp / "index")}
     try:
-        _git_command.run(path, "read-tree", from_rev, env_extra=env)
-        _git_command.run(path, "update-index", "--refresh", env_extra=env, check=False)
-        _git_command.run(path, "read-tree", "-m", "-u", from_rev, to_rev, env_extra=env)
+        git_command.run(path, "read-tree", from_rev, env_extra=env)
+        git_command.run(path, "update-index", "--refresh", env_extra=env, check=False)
+        git_command.run(path, "read-tree", "-m", "-u", from_rev, to_rev, env_extra=env)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -600,13 +600,13 @@ def tree_with_paths_from(path: pathlib.Path, tree: str, rev: str, paths: Sequenc
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="agent6-tree-"))
     env = {"GIT_INDEX_FILE": str(tmp / "index")}
     try:
-        _git_command.run(path, "read-tree", tree, env_extra=env)
+        git_command.run(path, "read-tree", tree, env_extra=env)
         if paths:
             specs = (f":(top,literal){p}" for p in paths)
-            _git_command.run(
+            git_command.run(
                 path, "restore", "--staged", f"--source={rev}", "--", *specs, env_extra=env
             )
-        return _git_command.run(path, "write-tree", env_extra=env).stdout.strip()
+        return git_command.run(path, "write-tree", env_extra=env).stdout.strip()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -636,8 +636,8 @@ def _commit(
     argv = ["commit", "-m", full_message]
     if only_paths is not None:
         argv.extend(["--", *only_paths])
-    _git_command.run(path, *argv, env_extra=env_extra)
-    return _git_command.run(path, "rev-parse", "HEAD").stdout.strip()
+    git_command.run(path, *argv, env_extra=env_extra)
+    return git_command.run(path, "rev-parse", "HEAD").stdout.strip()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -660,7 +660,7 @@ class MergeResult:
 
 def fetch_branch(path: pathlib.Path, remote_path: pathlib.Path, refspec: str) -> None:
     """Fetch a refspec from another repository's path, without adding a remote."""
-    _git_command.run(path, "fetch", str(remote_path), refspec)
+    git_command.run(path, "fetch", str(remote_path), refspec)
 
 
 def _merge_tree(
@@ -682,7 +682,7 @@ def _merge_tree(
     """
     base = [f"--merge-base={merge_base}"] if merge_base else []
     args = ("merge-tree", "--write-tree", "--name-only", *base, ours, theirs)
-    res = _git_command.run(path, *args, check=False)
+    res = git_command.run(path, *args, check=False)
     lines = res.stdout.splitlines()
     if res.returncode == 1:
         # The tree oid, the conflicted paths, a blank line, then git's messages.
@@ -693,7 +693,7 @@ def _merge_tree(
             paths.append(line)
         return "", tuple(paths)
     if res.returncode != 0 or not lines:
-        error = _git_command.failure(args, res.returncode, res.stdout, res.stderr)
+        error = git_command.failure(args, res.returncode, res.stdout, res.stderr)
         raise error
     return lines[0].strip(), ()
 
@@ -733,8 +733,8 @@ def plumb_merge(
         GitError: The "ff_only" method cannot fast-forward, or the target moved concurrently.
     """
     ref = f"refs/heads/{target}"
-    ours = _git_command.run(path, "rev-parse", "--verify", f"{ref}^{{commit}}").stdout.strip()
-    theirs = _git_command.run(
+    ours = git_command.run(path, "rev-parse", "--verify", f"{ref}^{{commit}}").stdout.strip()
+    theirs = git_command.run(
         path, "rev-parse", "--verify", f"{merge_rev}^{{commit}}"
     ).stdout.strip()
     if git_read.is_ancestor(path, theirs, ours):
@@ -760,7 +760,7 @@ def plumb_merge(
         if trailer and trailer not in text:
             text = f"{text}\n\n{trailer}"
         parent_args = ["-p", ours] if method == "squash" else ["-p", ours, "-p", theirs]
-        sha = _git_command.run(
+        sha = git_command.run(
             path,
             "commit-tree",
             tree,
@@ -770,7 +770,7 @@ def plumb_merge(
             env_extra=_identity_env(identity),
         ).stdout.strip()
     # Compare-and-swap: refuses when the target moved concurrently.
-    _git_command.run(path, "update-ref", ref, sha, ours)
+    git_command.run(path, "update-ref", ref, sha, ours)
     return MergeResult(sha, False, (), _bring_index_forward(path, target, ours, sha))
 
 
@@ -798,12 +798,12 @@ def _bring_index_forward(
     if checkout is None or not checkout.is_dir():
         return ()
     path = checkout
-    records = _git_command.nul_fields(
+    records = git_command.nul_fields(
         path, "diff-tree", "-r", "--no-renames", "-z", old_tip, new_tip
     )
     staged = {
         entry.split("\t", 1)[1]: entry.split("\t", 1)[0].split()
-        for entry in _git_command.nul_fields(path, "ls-files", "--stage", "-z")
+        for entry in git_command.nul_fields(path, "ls-files", "--stage", "-z")
         if "\t" in entry
     }  # path -> [mode, sha, stage]
     updates: list[str] = []
@@ -824,7 +824,7 @@ def _bring_index_forward(
         if not _bring_worktree_file_forward(path, rel, old_mode, old_sha, new_mode, new_sha):
             left.append(rel)
     if updates:
-        _git_command.run(
+        git_command.run(
             path, "update-index", "-z", "--index-info", stdin_text="\x00".join(updates) + "\x00"
         )
     return tuple(left)
@@ -856,7 +856,7 @@ def _bring_worktree_file_forward(
         current = (
             ""
             if not file.is_file() or file.is_symlink()
-            else _git_command.run(path, "hash-object", "--", rel, check=False).stdout.strip()
+            else git_command.run(path, "hash-object", "--", rel, check=False).stdout.strip()
         )
         matches_old = not file.exists() if old_mode == "000000" else current == old_sha
         if not matches_old:
@@ -880,7 +880,7 @@ def _bring_worktree_file_forward(
                 stdout=out,
                 stderr=subprocess.DEVNULL,
                 check=True,
-                timeout=_git_command.GIT_TIMEOUT_S,
+                timeout=git_command.GIT_TIMEOUT_S,
                 env=git_policy.git_environment(),
             )
         if new_mode == "100755":

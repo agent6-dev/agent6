@@ -15,9 +15,9 @@ import pydantic
 import pytest
 
 from agent6 import paths
-from agent6.app import providers
-from agent6.config import Config, ReviewConfig, _layer_data, io
-from agent6.harness import _panel, _reviewer
+from agent6.app import role_providers
+from agent6.config import Config, ReviewConfig, io, layer_data
+from agent6.harness import review_gate, review_panel
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import config_view
 from tests.unit import test_run_lifecycle_bugfix
@@ -25,7 +25,7 @@ from tests.unit import test_run_lifecycle_bugfix
 
 def test_repo_max_turns_defaults_to_twenty_in_config_surfaces() -> None:
     """An unset repo seat budget is visible as 20 provider calls."""
-    assert _layer_data.config_leaves(Config())["review.repo_max_turns"] == 20
+    assert layer_data.config_leaves(Config())["review.repo_max_turns"] == 20
 
 
 @pytest.mark.parametrize("value", [0, -1])
@@ -60,15 +60,17 @@ def test_configured_repo_call_budget_reaches_the_seat(
     seat = test_run_lifecycle_bugfix._Scripted([("", (tool,))] * 3)
     seat_call = mock.Mock(wraps=seat.call)
     monkeypatch.setattr(seat, "call", seat_call)
-    monkeypatch.setattr(providers, "_provider_from_entry", test_run_lifecycle_bugfix._use(seat))
-    aggregate = mock.Mock(wraps=_panel.aggregate_verdicts)
-    monkeypatch.setattr(_panel, "aggregate_verdicts", aggregate)
+    monkeypatch.setattr(
+        role_providers, "_provider_from_entry", test_run_lifecycle_bugfix._use(seat)
+    )
+    aggregate = mock.Mock(wraps=review_panel.aggregate_verdicts)
+    monkeypatch.setattr(review_panel, "aggregate_verdicts", aggregate)
     if command == "run":
         worker = test_run_lifecycle_bugfix._Scripted(
             [test_run_lifecycle_bugfix._edit("a.py", "x = 2\n")]
         )
         monkeypatch.setattr(
-            providers, "build_role_provider", test_run_lifecycle_bugfix._use(worker)
+            role_providers, "build_role_provider", test_run_lifecycle_bugfix._use(worker)
         )
         argv = ["run", "--session-id", "review-TURNS1", "Update x"]
     else:
@@ -209,13 +211,13 @@ def test_reviewer_sampling_reaches_provider_call(
             },
         )
 
-    seats = providers.build_review_seats(
+    seats = role_providers.build_review_seats(
         cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock(), n=1
     )
-    with mock.patch("agent6.providers._transport.http_post", side_effect=post):
-        result = _reviewer.run_panel(
+    with mock.patch("agent6.providers.transport.http_post", side_effect=post):
+        result = review_gate.run_panel(
             seats,
-            _panel.ReviewContext(task="review", diff=""),
+            review_panel.ReviewContext(task="review", diff=""),
             block_on="none",
             min_blocking_models=2,
             panel_id="test",
@@ -235,13 +237,13 @@ def test_reviewer_sampling_reaches_provider_call(
 def test_reviewers_are_one_serializable_config_leaf() -> None:
     """Config surfaces can render the roster as TOML and JSON without losing explicit off."""
     cfg = Config.model_validate({"review": {"reviewers": [{"focus": "security", "effort": "off"}]}})
-    roster = _layer_data.config_leaves(cfg)["review.reviewers"]
+    roster = layer_data.config_leaves(cfg)["review.reviewers"]
     assert json.loads(json.dumps(roster)) == [{"focus": "security", "effort": "off"}]
     assert tomllib.loads("reviewers = " + io.format_toml_value(roster)) == {
         "reviewers": [{"focus": "security", "effort": "off"}]
     }
     view = config_view.build_config_view(
-        _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+        layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
     )
     setting = next(s for s in view.settings if s.key == "review.reviewers")
     assert config_view.display_value(setting) == '[{"focus": "security", "effort": "off"}]'
@@ -258,7 +260,7 @@ def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
             "review": {"trigger": "before_finish"},
         }
     )
-    seats = providers.build_review_seats(
+    seats = role_providers.build_review_seats(
         cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock(), n=1
     )
     assert len(seats) == 1

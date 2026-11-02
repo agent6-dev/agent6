@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.harness import _advice, _loop_state
+from agent6.harness import advice, loop_state
 
 
-def _never_rejected(_turn: _loop_state.TurnState, _ending: str) -> bool:
+def _never_rejected(_turn: loop_state.TurnState, _ending: str) -> bool:
     return False
 
 
@@ -17,7 +17,7 @@ def _no_standing_task(_reason: str, _turn: int) -> None:
     return None
 
 
-def turn_context(**overrides: Any) -> _advice.TurnContext:
+def turn_context(**overrides: Any) -> advice.TurnContext:
     facts: dict[str, Any] = {
         "mode": "run",
         "turn": 1,
@@ -42,4 +42,4 @@ def turn_context(**overrides: Any) -> _advice.TurnContext:
         "standing_absorb": _no_standing_task,
     }
     facts.update(overrides)
-    return _advice.TurnContext(**facts)
+    return advice.TurnContext(**facts)

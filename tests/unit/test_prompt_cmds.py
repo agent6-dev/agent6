@@ -92,7 +92,7 @@ def test_prompt_show_includes_recorded_memories(
     injects; an operator checking whether a recorded memory would reach future runs must not see
     '(none recorded yet)' while the real prompt carries it.
     """
-    from agent6 import memory
+    from agent6.context import memory
 
     repo = _git_repo(tmp_path)
     _isolate(tmp_path, monkeypatch, repo)
@@ -166,10 +166,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
     import tempfile
 
     from agent6.config import Config
-    from agent6.harness import (
-        _toolset,  # pyright: ignore[reportPrivateUsage]
-        model_exchange_for,
-    )
+    from agent6.harness import model_exchange_for, toolset
     from agent6.tools import dispatch
 
     withheld = Config.model_validate(
@@ -188,7 +185,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
 
     with tempfile.TemporaryDirectory() as td:
         plain = dispatch.ToolDispatcher(root=pathlib.Path(td), config=Config())
-        names = [t.name for t in _toolset.tool_definitions(plain, mode="run")]
+        names = [t.name for t in toolset.tool_definitions(plain, mode="run")]
     assert "run_metric_command" not in names, "offered with no [harness.metric]"
 
 

@@ -11,9 +11,9 @@ from __future__ import annotations
 import pathlib
 
 from agent6.graph import curator, models
-from agent6.harness import _dag_focus, _guards
+from agent6.harness import dag_focus, guards
 from agent6.sessions import layout
-from agent6.tools import _dag_tools
+from agent6.tools import dag_tools
 
 
 def _graph(tmp_path: pathlib.Path) -> tuple[curator.GraphCurator, str, list[str]]:
@@ -39,7 +39,7 @@ def _graph(tmp_path: pathlib.Path) -> tuple[curator.GraphCurator, str, list[str]
 def test_the_frontier_picks_in_tree_order_when_nothing_claims(tmp_path: pathlib.Path) -> None:
     c, _root, kids = _graph(tmp_path)
 
-    assert _dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[0]
+    assert dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[0]
 
 
 def test_marking_a_task_in_progress_claims_it(tmp_path: pathlib.Path) -> None:
@@ -48,7 +48,7 @@ def test_marking_a_task_in_progress_claims_it(tmp_path: pathlib.Path) -> None:
     c.update_status(models.UpdateStatusIntent(id=kids[2], new_status="in_progress"))
 
     assert c.cursor() == kids[2]
-    assert _dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[2]
+    assert dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[2]
 
 
 def test_a_claim_the_frontier_cannot_honour_says_so(tmp_path: pathlib.Path) -> None:
@@ -60,18 +60,18 @@ def test_a_claim_the_frontier_cannot_honour_says_so(tmp_path: pathlib.Path) -> N
         )
     )
 
-    result = _dag_tools.update_task(c, {"id": kids[1], "status": "in_progress"})
+    result = dag_tools.update_task(c, {"id": kids[1], "status": "in_progress"})
 
     assert "not workable yet" in result.to_wire()["note"]
     # A decomposed parent is not a unit of work, so the frontier's own pick
     # (the first ready subtask in tree order) stands.
-    assert _dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[0]
+    assert dag_focus.current_task_id(c.nodes(), c.cursor()) == kids[0]
 
 
 def test_a_claim_that_took_says_so(tmp_path: pathlib.Path) -> None:
     c, _root, kids = _graph(tmp_path)
 
-    result = _dag_tools.update_task(c, {"id": kids[1], "status": "in_progress"})
+    result = dag_tools.update_task(c, {"id": kids[1], "status": "in_progress"})
 
     assert result.to_wire()["note"] == "claimed: this is the task the harness works next"
 
@@ -79,12 +79,12 @@ def test_a_claim_that_took_says_so(tmp_path: pathlib.Path) -> None:
 def test_an_ordinary_status_carries_no_note(tmp_path: pathlib.Path) -> None:
     c, _root, kids = _graph(tmp_path)
 
-    assert "note" not in _dag_tools.update_task(c, {"id": kids[0], "status": "passed"}).to_wire()
+    assert "note" not in dag_tools.update_task(c, {"id": kids[0], "status": "passed"}).to_wire()
 
 
 def test_claiming_around_the_graph_still_trips_the_anti_grind_nudge() -> None:
     """The anti-grind counter resets on progress only, not on every focus change."""
-    guard = _guards.FocusGuard()
+    guard = guards.FocusGuard()
     fired = [
         guard.note(f"task-{i % 3}", standing=False, progressed=False)
         for i in range(60)  # switching between three open tasks, finishing none
@@ -94,7 +94,7 @@ def test_claiming_around_the_graph_still_trips_the_anti_grind_nudge() -> None:
 
 
 def test_finishing_a_task_still_resets_the_counter() -> None:
-    guard = _guards.FocusGuard()
+    guard = guards.FocusGuard()
     for _ in range(19):
         guard.note("task-a", standing=False)
 

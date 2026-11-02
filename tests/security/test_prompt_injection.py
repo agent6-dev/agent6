@@ -16,7 +16,7 @@ import pathlib
 import pytest
 
 from agent6.config import Config, load_config
-from agent6.tools import _path_safety, dispatch, errors
+from agent6.tools import dispatch, path_safety, tool_errors
 
 _VALID_TOML = """
 [agent6]
@@ -73,14 +73,14 @@ def test_read_file_rejects_traversal(tmp_path: pathlib.Path, evil_path: str) -> 
     # match= the containment message: a bare ToolError also covers "Not a file",
     # which a corpus path under a nonexistent parent raises even with the `..`
     # guard removed.
-    with pytest.raises(errors.ToolError, match=r"(contains '\.\.'|[Aa]bsolute|outside)"):
+    with pytest.raises(tool_errors.ToolError, match=r"(contains '\.\.'|[Aa]bsolute|outside)"):
         d.dispatch("read_file", {"path": evil_path})
 
 
 @pytest.mark.parametrize("evil_path", _PATH_TRAVERSAL_CORPUS)
 def test_apply_edit_rejects_traversal(tmp_path: pathlib.Path, evil_path: str) -> None:
     d = _dispatcher(tmp_path)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch(
             "apply_edit",
             {
@@ -106,14 +106,14 @@ _ABSOLUTE_CORPUS = [
 @pytest.mark.parametrize("abs_path", _ABSOLUTE_CORPUS)
 def test_read_file_rejects_absolute(tmp_path: pathlib.Path, abs_path: str) -> None:
     d = _dispatcher(tmp_path)
-    with pytest.raises(errors.ToolError, match="Absolute"):
+    with pytest.raises(tool_errors.ToolError, match="Absolute"):
         d.dispatch("read_file", {"path": abs_path})
 
 
 @pytest.mark.parametrize("abs_path", _ABSOLUTE_CORPUS)
 def test_apply_edit_rejects_absolute(tmp_path: pathlib.Path, abs_path: str) -> None:
     d = _dispatcher(tmp_path)
-    with pytest.raises(errors.ToolError, match="Absolute"):
+    with pytest.raises(tool_errors.ToolError, match="Absolute"):
         d.dispatch(
             "apply_edit",
             {
@@ -134,7 +134,7 @@ def test_read_file_follows_symlink_but_rejects_escape(tmp_path: pathlib.Path) ->
         link = tmp_path / "innocent.txt"
         link.symlink_to(outside)
         d = _dispatcher(tmp_path)
-        with pytest.raises(errors.ToolError, match="escapes repo root"):
+        with pytest.raises(tool_errors.ToolError, match="escapes repo root"):
             d.dispatch("read_file", {"path": "innocent.txt"})
     finally:
         outside.unlink(missing_ok=True)
@@ -150,20 +150,20 @@ def test_a_path_swapped_after_the_check_cannot_be_written_through(tmp_path: path
     a few attempts. Simulated deterministically here: the swap has already happened, so the
     checked path is a symlink by the time the write opens it.
     """
-    from agent6.tools import _path_safety
+    from agent6.tools import path_safety
 
     outside = tmp_path.parent / "agent6_race_target.txt"
     outside.write_text("HOST-CONTENT", encoding="utf-8")
     try:
         (tmp_path / "x.txt").symlink_to(outside)
 
-        with pytest.raises(errors.ToolError, match="became a symlink"):
-            _path_safety.write_contained(_path_safety.contain(tmp_path, "x.txt"), "PWNED")
+        with pytest.raises(tool_errors.ToolError, match="became a symlink"):
+            path_safety.write_contained(path_safety.contain(tmp_path, "x.txt"), "PWNED")
         assert outside.read_text(encoding="utf-8") == "HOST-CONTENT"
 
         # The read side is the same window, and leaks rather than writes.
-        with pytest.raises(errors.ToolError, match="became a symlink"):
-            _path_safety.read_contained(_path_safety.contain(tmp_path, "x.txt"))
+        with pytest.raises(tool_errors.ToolError, match="became a symlink"):
+            path_safety.read_contained(path_safety.contain(tmp_path, "x.txt"))
     finally:
         outside.unlink(missing_ok=True)
 
@@ -187,28 +187,28 @@ def test_a_parent_swapped_after_the_check_creates_nothing_outside(
     directories and a file among them before the containment check ran. The swap is injected
     into the window it needs: between the containment check and the write.
     """
-    from agent6.tools import _fs_tools
+    from agent6.tools import fs_tools
 
     root = tmp_path / "ws"
     (root / "sub").mkdir(parents=True)
     outside = tmp_path / "outside"
     outside.mkdir()
 
-    real_guard = _fs_tools.refuse_protected_writes
+    real_guard = fs_tools.refuse_protected_writes
 
     def swap_after_the_check(
         path: str,
         config: Config,
         extra_protect_paths: tuple[pathlib.Path, ...],
-        resolved: _path_safety.SafePath | None = None,
+        resolved: path_safety.SafePath | None = None,
     ) -> None:
         real_guard(path, config, extra_protect_paths, resolved)
         if resolved is not None:
             _swap_parent_for_a_link_out(root, outside)
 
-    monkeypatch.setattr(_fs_tools, "refuse_protected_writes", swap_after_the_check)
+    monkeypatch.setattr(fs_tools, "refuse_protected_writes", swap_after_the_check)
     d = _dispatcher(root)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch(
             "apply_edit",
             {
@@ -238,16 +238,16 @@ def test_a_parent_swapped_before_the_write_truncates_no_host_file(
     outside.mkdir()
     (outside / "keep.txt").write_text("HOST-CONTENT", encoding="utf-8")
 
-    real_read = _path_safety.read_contained
+    real_read = path_safety.read_contained
 
     def swap_after_the_read(*args: object, **kwargs: object) -> str:
         text = real_read(*args, **kwargs)  # pyright: ignore[reportCallIssue,reportArgumentType]
         _swap_parent_for_a_link_out(root, outside)
         return text
 
-    monkeypatch.setattr(_path_safety, "read_contained", swap_after_the_read)
+    monkeypatch.setattr(path_safety, "read_contained", swap_after_the_read)
     d = _dispatcher(root)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch(
             "apply_edit",
             {
@@ -266,16 +266,16 @@ def _swap_after_resolve(
 
     Right after the containment check returns, before the tool looks the path up again.
     """
-    from agent6.tools import _path_safety
+    from agent6.tools import path_safety
 
-    real_resolve = _path_safety.Workspace.resolve_read
+    real_resolve = path_safety.Workspace.resolve_read
 
-    def swap_after_the_check(self: _path_safety.Workspace, candidate: str) -> _path_safety.SafePath:
+    def swap_after_the_check(self: path_safety.Workspace, candidate: str) -> path_safety.SafePath:
         sp = real_resolve(self, candidate)
         _swap_parent_for_a_link_out(root, outside)
         return sp
 
-    monkeypatch.setattr(_path_safety.Workspace, "resolve_read", swap_after_the_check)
+    monkeypatch.setattr(path_safety.Workspace, "resolve_read", swap_after_the_check)
 
 
 def test_a_directory_swapped_after_the_check_is_not_listed(
@@ -297,7 +297,7 @@ def test_a_directory_swapped_after_the_check_is_not_listed(
 
     _swap_after_resolve(root, outside, monkeypatch)
     d = _dispatcher(root)
-    with pytest.raises(errors.ToolError, match="became a symlink"):
+    with pytest.raises(tool_errors.ToolError, match="became a symlink"):
         d.dispatch("list_dir", {"path": "sub"})
     assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
 
@@ -333,7 +333,7 @@ def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
     monkeypatch.setattr(index.SymbolIndex, "_parser_for", swap_after_the_check)
 
     d = _dispatcher(root)
-    with pytest.raises(errors.ToolError, match="became a symlink"):
+    with pytest.raises(tool_errors.ToolError, match="became a symlink"):
         d.dispatch("find_definition", {"symbol": "host_only_symbol"})
     assert (root / "mod.py").is_symlink(), "the swap never happened; the test proves nothing"
 
@@ -360,15 +360,15 @@ def test_an_ordinary_in_repo_file_still_reads_and_writes(tmp_path: pathlib.Path)
     The converse of the guard above: a resolved path has no symlink leaf, and the write
     resolves to its real target before the open.
     """
-    from agent6.tools import _path_safety
+    from agent6.tools import path_safety
 
     real = tmp_path / "real.txt"
     real.write_text("before", encoding="utf-8")
     (tmp_path / "link.txt").symlink_to(real)
 
-    sp = _path_safety.resolve_in_root(tmp_path, "link.txt")
-    _path_safety.write_contained(sp, "after")
-    assert _path_safety.read_contained(sp) == "after"
+    sp = path_safety.resolve_in_root(tmp_path, "link.txt")
+    path_safety.write_contained(sp, "after")
+    assert path_safety.read_contained(sp) == "after"
     assert real.read_text(encoding="utf-8") == "after", "the in-repo symlink stopped working"
 
 
@@ -391,7 +391,7 @@ _FAKE_TOOLS = [
 @pytest.mark.parametrize("fake", _FAKE_TOOLS)
 def test_unknown_tool_rejected(tmp_path: pathlib.Path, fake: str) -> None:
     d = _dispatcher(tmp_path)
-    with pytest.raises(errors.ToolError, match="Unknown tool"):
+    with pytest.raises(tool_errors.ToolError, match="Unknown tool"):
         d.dispatch(fake, {})
 
 
@@ -400,7 +400,7 @@ def test_unknown_tool_rejected(tmp_path: pathlib.Path, fake: str) -> None:
 
 def test_run_command_disabled_by_config(tmp_path: pathlib.Path) -> None:
     d = _dispatcher(tmp_path)  # run_commands = "deny" in _VALID_TOML
-    with pytest.raises(errors.ToolError, match="not available"):
+    with pytest.raises(tool_errors.ToolError, match="not available"):
         d.dispatch("run_command", {"argv": ["/bin/echo", "hi"]})
 
 
@@ -414,13 +414,13 @@ def test_run_command_not_in_available_tools(tmp_path: pathlib.Path) -> None:
 
 def test_read_file_rejects_missing_path(tmp_path: pathlib.Path) -> None:
     d = _dispatcher(tmp_path)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch("read_file", {})
 
 
 def test_apply_edit_rejects_unknown_kind(tmp_path: pathlib.Path) -> None:
     d = _dispatcher(tmp_path)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch(
             "apply_edit",
             {
@@ -433,7 +433,7 @@ def test_apply_edit_rejects_unknown_kind(tmp_path: pathlib.Path) -> None:
 def test_apply_edit_rejects_extra_fields(tmp_path: pathlib.Path) -> None:
     """Pydantic at trust boundary: a hijacked LLM cannot smuggle hidden args."""
     d = _dispatcher(tmp_path)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch(
             "apply_edit",
             {
@@ -479,7 +479,7 @@ def test_a_swapped_parent_is_named_as_a_symlink_not_a_missing_directory(
     would hide the one fact an operator acts on. One lstat, on the error path only, names it;
     an honest non-directory component keeps the plain message.
     """
-    from agent6.tools import _path_safety
+    from agent6.tools import path_safety
 
     root = tmp_path / "ws"
     (root / "sub").mkdir(parents=True)
@@ -488,9 +488,9 @@ def test_a_swapped_parent_is_named_as_a_symlink_not_a_missing_directory(
     (outside / "f.txt").write_text("HOST", encoding="utf-8")
     _swap_parent_for_a_link_out(root, outside)
 
-    with pytest.raises(errors.ToolError, match="became a symlink"):
-        _path_safety.read_contained(_path_safety.contain(root, "sub/f.txt"))
+    with pytest.raises(tool_errors.ToolError, match="became a symlink"):
+        path_safety.read_contained(path_safety.contain(root, "sub/f.txt"))
 
     (root / "plain").write_text("file", encoding="utf-8")
-    with pytest.raises(errors.ToolError, match="not a directory"):
-        _path_safety.read_contained(_path_safety.contain(root, "plain/f.txt"))
+    with pytest.raises(tool_errors.ToolError, match="not a directory"):
+        path_safety.read_contained(path_safety.contain(root, "plain/f.txt"))

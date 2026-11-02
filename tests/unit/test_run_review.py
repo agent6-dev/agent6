@@ -17,15 +17,16 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds, memory, paths
-from agent6.app import _setup, providers
+from agent6 import kinds, paths
+from agent6.app import role_providers, session_setup
 from agent6.config import Config
-from agent6.harness import run_review
+from agent6.context import memory
+from agent6.harness import review_session
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import main
-from agent6.viewmodel import _session_log
+from agent6.viewmodel import session_log
 
 _EVENTS: list[dict[str, Any]] = [
     {
@@ -104,7 +105,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     memory.record_use(layout.state_dir, session="run-other", wrote=("other",), read={})
     memory.add(layout.state_dir, "money-rounding", "Money rounds half-up on the cent.")
 
-    d = run_review.run_digest(layout)
+    d = review_session.run_digest(layout)
 
     assert (d.session_id, d.mode, d.task) == ("run-AAAA11", "run", "fix the parser")
     assert (d.end_reason, d.verify, d.turns) == ("finish_session", "passed", 6)
@@ -142,7 +143,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
 
 def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
     """The questions nobody could answer are listed by text, across executions."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
     from agent6.tools import operator_prompts, schema
 
     layout = _write_session(repo, events=[])
@@ -161,7 +162,7 @@ def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
 
     prompts = operator_prompts.OperatorPrompts(questioner=seen, journal=sink.emit)
     prompts.ask((schema.UserQuestion(question="a question the operator saw"),))
-    text = run_review.run_digest(layout).render()
+    text = review_session.run_digest(layout).render()
     assert "questions nobody answered (2):" in text
     assert "keep the public API?" in text and "allow the migration?" in text
     assert "a question the operator saw" not in text
@@ -182,7 +183,7 @@ def test_verify_tail_keeps_the_last_complete_lines(repo: pathlib.Path, field: st
             }
         ],
     )
-    (verify,) = run_review.run_digest(layout).verify_runs
+    (verify,) = review_session.run_digest(layout).verify_runs
     assert len(verify.tail) <= 400
     assert verify.tail.startswith("…\n")
     assert verify.tail.endswith("2 failed, 100 passed")
@@ -199,7 +200,7 @@ def test_every_writer_of_a_fact_is_credited_not_only_the_first_and_last(repo: pa
     memory.record_use(layout.state_dir, session="run-A", wrote=("fact",), read={})
     memory.record_use(layout.state_dir, session="run-AAAA11", wrote=("fact",), read={})
     memory.record_use(layout.state_dir, session="run-C", wrote=("fact",), read={})
-    assert run_review.run_digest(layout).memory_wrote == ("fact",)
+    assert review_session.run_digest(layout).memory_wrote == ("fact",)
 
 
 def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: pathlib.Path) -> None:
@@ -210,11 +211,11 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: pathlib.Path) -> 
     ]
     red.append({"type": "session.end", "reason": "no_progress", "turns": 9, "all_passed": False})
     layout = _write_session(repo, events=red)
-    d = run_review.run_digest(layout)
+    d = review_session.run_digest(layout)
     assert (d.end_reason, d.verify) == ("no_progress", "failed")
 
     empty = _write_session(repo, session_id="run-BBBB22", events=[])
-    d = run_review.run_digest(empty)
+    d = review_session.run_digest(empty)
     # Nothing observed the tree: "unverified", never a word that claims a gate
     # was absent or green.
     assert (d.end_reason, d.verify, d.tool_calls, d.steers) == ("", "unverified", 0, ())
@@ -237,7 +238,7 @@ def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: pathlib.Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    d = run_review.run_digest(layout)
+    d = review_session.run_digest(layout)
     assert (d.mode, d.verify) == ("plan", "not gated")
     assert "verify not gated" in d.render()
 
@@ -250,7 +251,7 @@ def test_the_digest_clips_a_runaway_index_like_the_prompt_does(repo: pathlib.Pat
     layout = _write_session(repo)
     for i in range(120):
         memory.add(layout.state_dir, f"fact-{i:03d}", "x" * 60)
-    d = run_review.run_digest(layout)
+    d = review_session.run_digest(layout)
     assert len(d.memory_index) <= memory.INDEX_INJECT_CAP
     assert d.memory_index.endswith(
         "... (index clipped; the rest are <name>.md files in the memory dir)"
@@ -280,16 +281,16 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         {"type": "session.end", "reason": "finish_session", "turns": 6, "all_passed": False},
     ]
     layout = _write_session(repo, session_id="run-resumed", events=resumed)
-    d = run_review.run_digest(layout)
+    d = review_session.run_digest(layout)
     assert d.verify == "unverified"
-    assert _session_log.scan_session_log(layout.logs_path).verify_verdict() is None
+    assert session_log.scan_session_log(layout.logs_path).verify_verdict() is None
 
     never_ran = [
         {"type": "session.start", "session_id": "n", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": False},
     ]
     layout = _write_session(repo, session_id="run-never", events=never_ran)
-    assert run_review.run_digest(layout).verify == "unverified"
+    assert review_session.run_digest(layout).verify == "unverified"
 
     killed = [
         {"type": "session.start", "session_id": "k", "mode": "run", "user_task": "t"},
@@ -303,20 +304,20 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
         },
     ]
     layout = _write_session(repo, session_id="run-killed", events=killed)
-    assert run_review.run_digest(layout).verify == "unverified"
+    assert review_session.run_digest(layout).verify == "unverified"
 
     gateless = [
         {"type": "session.start", "session_id": "g", "mode": "run", "user_task": "t"},
         {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": None},
     ]
     layout = _write_session(repo, session_id="run-gateless", events=gateless)
-    assert run_review.run_digest(layout).verify == "not gated"
+    assert review_session.run_digest(layout).verify == "not gated"
 
 
 def test_the_caps_are_named_not_silent(repo: pathlib.Path) -> None:
     many = [{"type": "loop.steer.injected", "chars": 1, "text": f"steer {i}"} for i in range(25)]
     layout = _write_session(repo, events=many)
-    d = run_review.run_digest(layout)
+    d = review_session.run_digest(layout)
     assert len(d.steers) == 20
     assert d.steers_total == 25
     assert "operator steers (20, 5 more not shown):" in d.render()
@@ -355,7 +356,7 @@ class _FakeProvider:
 
 def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
     provider = _FakeProvider()
-    out = run_review.review_digest(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
+    out = review_session.review_digest(provider, digest="session x: task", agents_md="# rules")  # type: ignore[arg-type]
     assert out.startswith("## Outcome")
     assert provider.last_user == "AGENTS.md:\n# rules\n\nRUN RECORD:\nsession x: task"
     assert "Candidate memory facts" in provider.last_system
@@ -370,10 +371,10 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
         "or the memory index already state",
     ):
         assert line in provider.last_system
-    with pytest.raises(run_review.RunReviewError, match="provider call failed"):
-        run_review.review_digest(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
-    with pytest.raises(run_review.RunReviewError, match="empty"):
-        run_review.review_digest(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
+    with pytest.raises(review_session.RunReviewError, match="provider call failed"):
+        review_session.review_digest(_FakeProvider(raise_error=True), digest="x")  # type: ignore[arg-type]
+    with pytest.raises(review_session.RunReviewError, match="empty"):
+        review_session.review_digest(_FakeProvider(response_text="  "), digest="x")  # type: ignore[arg-type]
 
 
 def _reviewer_config() -> Config:
@@ -398,8 +399,10 @@ def test_the_verb_prints_and_saves_the_review(
         return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
-    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
+    monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(
+        role_providers, "build_role_provider", mock.MagicMock(return_value=provider)
+    )
 
     rc = main(["sessions", "review", "run-AAAA11"])
 
@@ -434,8 +437,10 @@ def test_the_verb_reviews_any_session_and_picks_the_newest_across_buckets(
         return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
-    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock(return_value=provider))
+    monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(
+        role_providers, "build_role_provider", mock.MagicMock(return_value=provider)
+    )
 
     modelgit = _write_session(repo, session_id="run-MODEL1")
     modelgit.manifest_path.write_text(
@@ -494,8 +499,8 @@ def test_the_model_flag_reaches_the_reviewer(
         return _FakeProvider()
 
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
-    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
-    monkeypatch.setattr(providers, "build_role_provider", build)
+    monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(role_providers, "build_role_provider", build)
     assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 0
     capsys.readouterr()
     assert seen == ["other"]
@@ -514,9 +519,9 @@ def test_the_verb_refuses_an_unknown_session_and_a_provider_it_cannot_build(
         return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
-    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
-        providers, "build_role_provider", mock.MagicMock(side_effect=ProviderError("no key"))
+        role_providers, "build_role_provider", mock.MagicMock(side_effect=ProviderError("no key"))
     )
     assert main(["sessions", "review", "run-AAAA11", "--model", "local/other"]) == 2
     assert "provider init failed: no key" in capsys.readouterr().err
@@ -532,9 +537,9 @@ def test_a_failed_reviewer_call_is_reported(
         return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr("agent6.config.layer.load_effective", loaded)
-    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     monkeypatch.setattr(
-        providers,
+        role_providers,
         "build_role_provider",
         mock.MagicMock(return_value=_FakeProvider(raise_error=True)),
     )
@@ -567,7 +572,7 @@ def test_the_verb_refuses_a_session_that_never_started(
     """A fork that was never started has no record, so no model call is spent on it."""
     _write_session(repo, events=[])
     monkeypatch.setattr(
-        providers, "build_role_provider", mock.MagicMock(side_effect=AssertionError("called"))
+        role_providers, "build_role_provider", mock.MagicMock(side_effect=AssertionError("called"))
     )
 
     assert main(["sessions", "review", "run-AAAA11"]) == 2
@@ -592,7 +597,7 @@ def test_digest_names_verification_identity_and_capture_limit(repo: pathlib.Path
             }
         ],
     )
-    rendered = run_review.run_digest(layout).render()
+    rendered = review_session.run_digest(layout).render()
     assert "observed-gate" in rendered and "tree-one" in rendered
     assert "truncated" in rendered and "capture completeness unknown" in rendered
 
@@ -611,7 +616,7 @@ def test_verify_details_stay_with_their_own_run(tmp_path: pathlib.Path) -> None:
             {"type": "verify.end", "verify_id": "second", "exit_code": 0, "cmd": ["true"]},
         ],
     )
-    text = run_review.run_digest(saved).render()
+    text = review_session.run_digest(saved).render()
     assert (
         text.index("- exit 1")
         < text.index("first:")

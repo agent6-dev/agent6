@@ -9,18 +9,18 @@ import httpx2
 import pytest
 
 from agent6 import kinds, media
-from agent6.harness import _conversation, _provider_call
+from agent6.harness import loop_conversation, provider_call
 from agent6.providers import (
     Provider,
-    _headers,
-    _openai_messages,
-    _responses,
-    _stream,
-    _transport,
     anthropic,
     chatgpt,
     openai,
+    openai_messages,
+    request_headers,
     responses,
+    responses_codec,
+    stream_lifecycle,
+    transport,
 )
 
 
@@ -44,8 +44,8 @@ def _provider(api: str) -> Provider:
     )
 
 
-def _conversation_with_media(mime: str) -> _conversation.Conversation:
-    conv = _conversation.Conversation()
+def _conversation_with_media(mime: str) -> loop_conversation.Conversation:
+    conv = loop_conversation.Conversation()
     conv.notice("inspect", origin="operator")
     conv.assistant(
         [
@@ -55,10 +55,10 @@ def _conversation_with_media(mime: str) -> _conversation.Conversation:
         ]
     )
     assistant = conv.messages[-1]
-    assert isinstance(assistant, _conversation.AssistantMessage)
+    assert isinstance(assistant, loop_conversation.AssistantMessage)
     conv.results(
         [
-            _conversation.ToolResultItem(
+            loop_conversation.ToolResultItem(
                 call.id,
                 "result " + call.id,
                 call,
@@ -102,7 +102,7 @@ def test_media_wire_bodies_and_attribution(
         conv.set_result_content(2, 2, "result c", drop_attachment=True)
     canonical = conv.to_wire()
     captured: list[dict[str, Any]] = []
-    facts: list[_headers.RequestFacts] = []
+    facts: list[request_headers.RequestFacts] = []
 
     def post(*args: Any, **kwargs: Any) -> httpx2.Response:
         captured.append(json.loads(kwargs["content"]))
@@ -115,12 +115,14 @@ def test_media_wire_bodies_and_attribution(
             httpx2.Response(200, text="data: " + json.dumps(event) + "\n\n")
         )
 
-    monkeypatch.setattr(_transport, "http_post", post)
-    monkeypatch.setattr(_stream, "http_stream", stream)
+    monkeypatch.setattr(transport, "http_post", post)
+    monkeypatch.setattr(stream_lifecycle, "http_stream", stream)
     _provider(api).call(
         system="s",
         messages=canonical,
-        context=_headers.RequestContext("sid", False, False, conv.initiator, observe=facts.append),
+        context=request_headers.RequestContext(
+            "sid", False, False, conv.initiator, observe=facts.append
+        ),
     )
     body = captured[0]
     assert facts[0].has_images is (mime == "image/png")
@@ -214,7 +216,7 @@ def test_adapter_media_rejection_retries_text_only(
     """A real adapter error body removes media once and keeps every tool reply."""
     conv = _conversation_with_media(mime)
     captured: list[dict[str, Any]] = []
-    facts: list[_headers.RequestFacts] = []
+    facts: list[request_headers.RequestFacts] = []
     error = {"error": {"code": code, "message": "rejected"}}
 
     def reply(kwargs: dict[str, Any], *, streaming: bool) -> httpx2.Response:
@@ -232,15 +234,15 @@ def test_adapter_media_rejection_retries_text_only(
     def stream(*args: Any, **kwargs: Any) -> contextlib.AbstractContextManager[httpx2.Response]:
         return contextlib.nullcontext(reply(kwargs, streaming=True))
 
-    monkeypatch.setattr(_transport, "http_post", post)
-    monkeypatch.setattr(_stream, "http_stream", stream)
+    monkeypatch.setattr(transport, "http_post", post)
+    monkeypatch.setattr(stream_lifecycle, "http_stream", stream)
     provider = _provider(api)
-    recovery = _provider_call.MediaRecovery(media.InputCapabilities(kinds.ModelRoute(api, "m")))
-    result = _provider_call.call_with_media_recovery(
+    recovery = provider_call.MediaRecovery(media.InputCapabilities(kinds.ModelRoute(api, "m")))
+    result = provider_call.call_with_media_recovery(
         lambda messages: provider.call(
             system="s",
             messages=messages,
-            context=_headers.RequestContext(
+            context=request_headers.RequestContext(
                 "sid", False, False, conv.initiator, observe=facts.append
             ),
         ),
@@ -270,9 +272,9 @@ def test_media_path_lookup_preserves_malformed_text_only_calls(
         }
     ]
     if dialect == "openai":
-        outgoing = _openai_messages.anthropic_to_openai_messages("s", messages)
+        outgoing = openai_messages.anthropic_to_openai_messages("s", messages)
         arguments = outgoing[-1]["tool_calls"][0]["function"]["arguments"]
     else:
-        outgoing = _responses.responses_input(messages, route="r")
+        outgoing = responses_codec.responses_input(messages, route="r")
         arguments = outgoing[-1]["arguments"]
     assert json.loads(arguments) == tool_input

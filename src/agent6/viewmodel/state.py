@@ -16,12 +16,12 @@ from typing import Any
 from agent6 import terminal
 from agent6.graph import models
 from agent6.sessions import layout, process
-from agent6.viewmodel import _session_status, _state_types, events, format, log_line, review
+from agent6.viewmodel import events, format, log_line, review, session_status, state_types
 
 
-def initial_state() -> _state_types.SessionState:
+def initial_state() -> state_types.SessionState:
     """Return the state before any event."""
-    return _state_types.SessionState()
+    return state_types.SessionState()
 
 
 _MAX_TOOL_HISTORY = 50
@@ -38,8 +38,8 @@ LOG_NOISE_EVENTS = frozenset({"loop.tool.call", "loop.budget"})
 
 
 def _answered_only(
-    prompts: tuple[_state_types.ApprovalPrompt, ...],
-) -> tuple[_state_types.ApprovalPrompt, ...]:
+    prompts: tuple[state_types.ApprovalPrompt, ...],
+) -> tuple[state_types.ApprovalPrompt, ...]:
     """Drop the unanswered approvals at an execution boundary.
 
     They belong to the execution that died holding them; the new one re-asks with
@@ -55,8 +55,8 @@ def _answered_only(
 
 
 def _carried(
-    prompts: tuple[_state_types.QuestionPrompt, ...],
-) -> tuple[_state_types.QuestionPrompt, ...]:
+    prompts: tuple[state_types.QuestionPrompt, ...],
+) -> tuple[state_types.QuestionPrompt, ...]:
     """Carry every question past an execution boundary.
 
     Args:
@@ -69,8 +69,8 @@ def _carried(
 
 
 def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event type
-    state: _state_types.SessionState, event: dict[str, Any]
-) -> _state_types.SessionState:
+    state: state_types.SessionState, event: dict[str, Any]
+) -> state_types.SessionState:
     """Fold one event into the session state.
 
     The event is parsed once into a typed family; the log line and the session id
@@ -95,7 +95,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         state = dataclasses.replace(state, last_event_ep=ep)
     if etype not in STREAM_DELTA_EVENTS and etype not in LOG_NOISE_EVENTS:
         # cursor_task_id is the focus task: graph.update lands before a turn's calls.
-        entry = _state_types.LogLine(log_line.format_log_line(event), state.cursor_task_id)
+        entry = state_types.LogLine(log_line.format_log_line(event), state.cursor_task_id)
         new_log = _push_bounded(state.log_tail, entry, MAX_LOG_TAIL)
         state = dataclasses.replace(state, log_tail=new_log, log_count=state.log_count + 1)
 
@@ -164,11 +164,11 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         case events.AutoCommit(turn=turn, sha=sha, subject=subject):
             if not sha:
                 return state
-            step = _state_types.CommitStep(turn=turn, sha=sha, subject=subject)
+            step = state_types.CommitStep(turn=turn, sha=sha, subject=subject)
             return dataclasses.replace(state, steps=(*state.steps, step))
 
         case events.DiffUpdated(patch=patch, sha=sha):
-            entry = _state_types.DiffView(patch=patch, task_id=state.cursor_task_id, sha=sha)
+            entry = state_types.DiffView(patch=patch, task_id=state.cursor_task_id, sha=sha)
             return dataclasses.replace(
                 state,
                 latest_diff=patch,
@@ -179,7 +179,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             prior = state.last_role
             return dataclasses.replace(
                 state,
-                last_role=_state_types.RoleCall(
+                last_role=state_types.RoleCall(
                     role=role,
                     model=model,
                     in_flight=True,
@@ -225,7 +225,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
 
         case events.ToolCall(name=name, args=raw_args, call_id=cid):
-            tc = _state_types.ToolCallView(
+            tc = state_types.ToolCallView(
                 name=name,
                 args_preview=log_line.render_args(raw_args),
                 args_full=log_line.render_args(raw_args, max_value=4000),
@@ -273,7 +273,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
 
         case events.VerifyStart(cmd=cmd):
-            return dataclasses.replace(state, last_verify=_state_types.VerifyView(cmd=cmd))
+            return dataclasses.replace(state, last_verify=state_types.VerifyView(cmd=cmd))
 
         case events.VerifyEnd(
             cmd=cmd,
@@ -287,7 +287,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         ):
             return dataclasses.replace(
                 state,
-                last_verify=_state_types.VerifyView(
+                last_verify=state_types.VerifyView(
                     cmd=cmd,
                     exit_code=code,
                     duration_s=dur,
@@ -318,7 +318,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             # cumulative.
             return dataclasses.replace(
                 state,
-                budget=_state_types.BudgetView(
+                budget=state_types.BudgetView(
                     input_total=it,
                     output_total=ot,
                     cache_read_total=cr,
@@ -338,7 +338,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             )
 
         case events.ApprovalPrompt(id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep):
-            ap = _state_types.ApprovalPrompt(
+            ap = state_types.ApprovalPrompt(
                 id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep
             )
             return dataclasses.replace(state, pending_approvals=(*state.pending_approvals, ap))
@@ -352,9 +352,9 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
 
         case events.QuestionPrompt(id=qid, questions=qs, asked_ep=asked_ep, wait=wait):
             questions = tuple(
-                _state_types.Question(question=q.question, options=q.options) for q in qs
+                state_types.Question(question=q.question, options=q.options) for q in qs
             )
-            qp = _state_types.QuestionPrompt(
+            qp = state_types.QuestionPrompt(
                 id=qid,
                 questions=questions,
                 from_harness=not state.started or state.finished,
@@ -410,7 +410,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 finished=True,
                 all_passed=all_passed,
                 end_reason=reason,
-                end_summary=_session_status.end_text(reason, summary, state.finish_summary),
+                end_summary=session_status.end_text(reason, summary, state.finish_summary),
                 verify_scoped=scoped,
                 # The worker is on no task after the end: each draws its own status.
                 tasks=tuple(dataclasses.replace(t, is_cursor=False, glyph="") for t in state.tasks),
@@ -428,7 +428,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
 
 def task_tree_views(
     nodes: dict[str, Any], cursor: str | None
-) -> tuple[_state_types.TaskNodeView, ...]:
+) -> tuple[state_types.TaskNodeView, ...]:
     """Flatten the task node map into DFS pre-order with depths, for an indented tree.
 
     Args:
@@ -440,7 +440,7 @@ def task_tree_views(
         recorded order; a node whose parent is missing follows the roots; cycles and
         duplicates are visited once.
     """
-    out: list[_state_types.TaskNodeView] = []
+    out: list[state_types.TaskNodeView] = []
     seen: set[str] = set()
 
     def visit(nid: str, depth: int) -> None:
@@ -452,7 +452,7 @@ def task_tree_views(
         created_by, standing = str(node.get("created_by", "")), bool(node.get("standing", False))
         parent_id = node.get("parent_id")
         out.append(
-            _state_types.TaskNodeView(
+            state_types.TaskNodeView(
                 id=nid,
                 title=str(node.get("title", "")),
                 status=node.get("status", "pending"),
@@ -495,7 +495,7 @@ def _push_bounded[T](existing: tuple[T, ...], item: T, cap: int) -> tuple[T, ...
     return new
 
 
-def fold_session(events: Iterable[dict[str, Any]]) -> _state_types.SessionState:
+def fold_session(events: Iterable[dict[str, Any]]) -> state_types.SessionState:
     """Fold a session's whole event stream into one state.
 
     Args:
@@ -511,8 +511,8 @@ def fold_session(events: Iterable[dict[str, Any]]) -> _state_types.SessionState:
 
 
 def open_approval_of(
-    state: _state_types.SessionState, *, taken: Callable[[str], bool] = lambda _aid: False
-) -> _state_types.ApprovalPrompt | None:
+    state: state_types.SessionState, *, taken: Callable[[str], bool] = lambda _aid: False
+) -> state_types.ApprovalPrompt | None:
     """Return the approval a surface answers now.
 
     The one rule behind the server's answer route, the run views' docked row and the
@@ -530,7 +530,7 @@ def open_approval_of(
     )
 
 
-def open_approval(session_dir: pathlib.Path) -> _state_types.ApprovalPrompt | None:
+def open_approval(session_dir: pathlib.Path) -> state_types.ApprovalPrompt | None:
     """Return the run's open approval from its journal, or None when none is open."""
     from agent6.viewmodel import tail  # noqa: PLC0415  # cycle at import time  # noqa: PLC0415  # cycle at import time
 
@@ -539,7 +539,7 @@ def open_approval(session_dir: pathlib.Path) -> _state_types.ApprovalPrompt | No
     )
 
 
-def pending_questions(session_dir: pathlib.Path) -> tuple[_state_types.QuestionPrompt, ...]:
+def pending_questions(session_dir: pathlib.Path) -> tuple[state_types.QuestionPrompt, ...]:
     """Return the run's unanswered `ask_user` prompts, oldest first, from its journal.
 
     Every surface that writes an answer file checks against them, so an answer list of
@@ -564,7 +564,7 @@ def pending_questions(session_dir: pathlib.Path) -> tuple[_state_types.QuestionP
 
 def fold_until_commit(
     events: Iterable[dict[str, Any]], sha: str
-) -> _state_types.SessionState | None:
+) -> state_types.SessionState | None:
     """Fold the state as of one of the run's commits.
 
     Args:

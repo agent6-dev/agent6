@@ -4,11 +4,11 @@
 
 from __future__ import annotations
 
-from agent6.harness import _spiral
+from agent6.harness import spiral
 
 
 def test_repeat_streak_extends_and_resets() -> None:
-    g = _spiral.SpiralGuard()
+    g = spiral.SpiralGuard()
     g.note_call("read:a")
     g.note_call("read:a")
     assert g.call_streak == 2
@@ -17,7 +17,7 @@ def test_repeat_streak_extends_and_resets() -> None:
 
 
 def test_stub_repeat_needs_streak_identity_and_size() -> None:
-    g = _spiral.SpiralGuard()
+    g = spiral.SpiralGuard()
     g.note_call("read:a")
     g.note_success("x" * 500)
     g.note_call("read:a")  # back-to-back repeat
@@ -29,7 +29,7 @@ def test_stub_repeat_needs_streak_identity_and_size() -> None:
 
 
 def test_success_clears_the_whole_error_spiral() -> None:
-    g = _spiral.SpiralGuard()
+    g = spiral.SpiralGuard()
     g.note_error("boom", denial=True, content="{}")
     g.note_error("boom", denial=False, content="{}")
     assert g.error_streak == 2
@@ -41,7 +41,7 @@ def test_success_clears_the_whole_error_spiral() -> None:
 
 
 def test_a_new_error_signature_rearms_the_nudge_allowance() -> None:
-    g = _spiral.SpiralGuard()
+    g = spiral.SpiralGuard()
     g.note_error("sig-a", denial=False, content="{}")
     g.error_ladder.used = 2
     g.note_error("sig-b", denial=False, content="{}")

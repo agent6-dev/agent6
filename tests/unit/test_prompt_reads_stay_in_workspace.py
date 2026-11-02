@@ -9,11 +9,8 @@ import subprocess
 
 import pytest
 
-from agent6 import verify_infer
-from agent6.ui.cli import (
-    init,
-    prompt_cmds,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.tools import verify_infer
+from agent6.ui.cli import init_wizard, prompt_cmds
 
 _MARKER = "OUTSIDE-MARKER-7f3a"
 
@@ -145,7 +142,7 @@ def test_init_infers_no_verify_command_from_a_hidden_agents_md(
         asked.append(question)
         return False
 
-    init._setup_verify_command(repo, ask=ask, config_paths=(cfg,))
+    init_wizard._setup_verify_command(repo, ask=ask, config_paths=(cfg,))
     assert _MARKER not in "".join(asked) + capsys.readouterr().out
 
 

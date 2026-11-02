@@ -3,7 +3,7 @@
 """Run the agent loop over a session.
 
 `Harness` (`loop.py`) drives one execution: the provider calls, the tool dispatch, the guards
-and gates, and the snapshot a resume re-enters; the sibling `_name` modules hold its helpers.
+and gates, and the snapshot a resume re-enters; sibling modules hold its helpers.
 `system_prompt_for` and `model_exchange_for` expose the run's first exchange to
 `agent6 prompt show`.
 """
@@ -14,14 +14,15 @@ import dataclasses
 import pathlib
 from typing import Literal
 
-from agent6 import kinds, memory, skills
+from agent6 import kinds
 from agent6.config import Config
-from agent6.harness import _context, _dag_focus, _prompt_blocks, _toolset
+from agent6.context import memory, skills
+from agent6.harness import dag_focus, prompt_blocks, repo_context, toolset
 from agent6.providers import ToolDefinition
 from agent6.sandbox import detect
 from agent6.tools import dispatch
 
-agents_md_text = _context.agents_md_text
+agents_md_text = repo_context.agents_md_text
 
 __all__ = [
     "ModelExchange",
@@ -52,10 +53,10 @@ def system_prompt_for(
     Returns:
         The system prompt text.
     """
-    repo = _context.load_repo_summary(root, config.sandbox.hide_paths)
+    repo = repo_context.load_repo_summary(root, config.sandbox.hide_paths)
     # Agent mode assembles without repo context: one gate for every recall block.
     recall = None if mode == "agent" else state_dir
-    return _prompt_blocks.build_system_prompt(
+    return prompt_blocks.build_system_prompt(
         config=config,
         repo=repo,
         mode=mode,
@@ -113,11 +114,11 @@ def model_exchange_for(
         mode="machine" if mode == "agent" else mode,
         state_dir=state_dir,
     )
-    tools = tuple(_toolset.tool_definitions(dispatcher, mode=mode))
-    header = _prompt_blocks.initial_instructions(
+    tools = tuple(toolset.tool_definitions(dispatcher, mode=mode))
+    header = prompt_blocks.initial_instructions(
         mode, config.sandbox.run_commands, has_gate=bool(config.harness.verify_command)
     )
-    hint = _dag_focus.initial_dag_hint("<root task id>", mode, config.prompt.decompose == "on")
+    hint = dag_focus.initial_dag_hint("<root task id>", mode, config.prompt.decompose == "on")
     return ModelExchange(
         mode=mode,
         system=system,

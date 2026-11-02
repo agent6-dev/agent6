@@ -17,18 +17,18 @@ import os
 import pathlib
 from typing import Any
 
-from agent6 import errors, event_log, task_text, terminal
+from agent6 import errors, task_text, terminal
 from agent6 import paths as agent6_paths
 from agent6.app import fork, fork_worktrees, resume
 from agent6.app import reporter as app_reporter
 from agent6.config import ConfigError, layer
 from agent6.graph import storage
-from agent6.harness import _snapshot
+from agent6.harness import loop_snapshot
+from agent6.sessions import event_log, lock, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
-from agent6.viewmodel import _session_log
+from agent6.viewmodel import session_log
 
 _STEER_NOTICE = "OPERATOR STEERING"
 
@@ -108,10 +108,10 @@ class UndoTarget:
 
 def _snapshot_at(
     layout: sessions_layout.SessionLayout, at_turn: int
-) -> _snapshot.SessionSnapshot | None:
+) -> loop_snapshot.SessionSnapshot | None:
     """Return the checkpoint in the file, or None when it is unreadable."""
     try:
-        return _snapshot.load_session_snapshot(layout.checkpoint_path(at_turn))
+        return loop_snapshot.load_session_snapshot(layout.checkpoint_path(at_turn))
     except (OSError, ValueError):
         return None
 
@@ -144,7 +144,7 @@ def undo_target(  # noqa: PLR0911 - each refusal names its own reason
         return None
     newest = turns[-1]
     try:
-        snap = _snapshot.load_session_snapshot(src.checkpoint_path(newest))
+        snap = loop_snapshot.load_session_snapshot(src.checkpoint_path(newest))
     except (OSError, ValueError) as exc:
         reporter.error(f"cannot read checkpoint {newest} of {src.session_id}: {exc}")
         return None
@@ -441,7 +441,7 @@ def undo_fork(  # noqa: PLR0911 - each refusal names its own reason
                 checkout,
                 tip=git_read.chain_tip(checkout, ref) or sha,
                 sha=sha,
-                end_tree=_session_log.scan_session_log(undone.logs_path).end_tree,
+                end_tree=session_log.scan_session_log(undone.logs_path).end_tree,
                 exclude=left_alone,
             )
         except errors.GitError as exc:
@@ -470,7 +470,7 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
         child: The fork's id.
         undone_text: The message taken back.
     """
-    turns = _session_log.scan_session_log(undone.logs_path).turn or 0
+    turns = session_log.scan_session_log(undone.logs_path).turn or 0
     events = event_log.EventSink(undone.logs_path)
     with contextlib.suppress(event_log.EventWriteError):
         events.emit("session.undone", new_session_id=child, undone_text=undone_text)

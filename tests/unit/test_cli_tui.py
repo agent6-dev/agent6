@@ -17,13 +17,11 @@ from typing import Any
 
 import pytest
 
-from agent6 import event_log, portable
-from agent6.sessions import ipc, process
+from agent6 import portable
+from agent6.sessions import event_log, ipc, process
 from agent6.tools import operator_prompts, schema
 from agent6.ui import steer
-from agent6.ui.cli import _interact as interactmod
-from agent6.ui.cli import _live as livemod
-from agent6.ui.cli import _steer as cli__steer
+from agent6.ui.cli import interact, live, steer_tty
 
 
 def _events_of(log: pathlib.Path, type_: str) -> list[dict[str, Any]]:
@@ -45,8 +43,8 @@ def _prompts(
     Journaling into events.
     """
     return operator_prompts.OperatorPrompts(
-        approver=interactmod.build_approver(session_dir, None, steer_cell),
-        questioner=interactmod.build_questioner(session_dir),
+        approver=interact.build_approver(session_dir, None, steer_cell),
+        questioner=interact.build_questioner(session_dir),
         journal=events.emit,
         session_dir=session_dir,
     )
@@ -120,7 +118,7 @@ def test_approver_uses_tui_answer_when_live(
     events = event_log.EventSink(log)
     monkeypatch.setattr(process, "frontend_is_live", _live)
     monkeypatch.setattr(ipc, "read_answer", _ans_yes)
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)
     approve = _prompts(tmp_path, events).approve
     assert approve("run `ls`?", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.prompt")
@@ -142,7 +140,7 @@ def test_approver_does_not_consume_an_answer_written_before_the_prompt(
         ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=0.4, poll_s=0.05)
     )
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground stdin path
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_no)
     ipc.write_answer(tmp_path, "approval-1", "yes")  # the premature POST
     approve = _prompts(tmp_path, events).approve
     # The premature "yes" is cleared; read_answer times out and falls back to stdin, which denies.
@@ -162,7 +160,7 @@ def test_approver_consumes_an_answer_written_after_the_prompt(
     monkeypatch.setattr(
         ipc, "read_answer", functools.partial(ipc.read_answer, timeout_s=3.0, poll_s=0.05)
     )
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_no)
     _when_called(
         monkeypatch, ipc, "read_answer", lambda: ipc.write_answer(tmp_path, "approval-1", "yes")
     )
@@ -182,7 +180,7 @@ def test_approver_falls_back_to_stdin_without_tui(
     events = event_log.EventSink(log)
     monkeypatch.setattr(process, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_no)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_no)
     approve = _prompts(tmp_path, events).approve
     assert approve("x", scope=ipc.COMMAND_SCOPE) is False
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
@@ -196,7 +194,7 @@ def test_approver_headless_no_frontend_waits_not_denies(
     events = event_log.EventSink(log)
     # The real frontend_is_live: nothing is attached at approve() time, so the wait path runs.
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)  # headless
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)  # never stdin
 
     def attach_and_answer() -> None:
         process.register_frontend(tmp_path, os.getpid())
@@ -216,11 +214,11 @@ def test_approver_session_allows_every_later_command(
     events = event_log.EventSink(log)
     monkeypatch.setattr(process, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_session)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_session)
     approve = _prompts(tmp_path, events).approve
     assert approve("first?", scope=ipc.COMMAND_SCOPE) is True
     # A second prompt never reaches the stdin approver: the session marker auto-passes.
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)
     assert approve("second?", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[-1]["source"] == "session"
 
@@ -233,7 +231,7 @@ def test_approver_tui_timeout_falls_back_to_stdin(
     monkeypatch.setattr(process, "frontend_is_live", _live)
     monkeypatch.setattr(ipc, "read_answer", _ans_none)  # TUI died / timed out
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)  # foreground
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_yes)
     approve = _prompts(tmp_path, events).approve
     assert approve("x", scope=ipc.COMMAND_SCOPE) is True
     assert _events_of(log, "approval.answer")[0]["source"] == "stdin"
@@ -257,10 +255,10 @@ def _no() -> bool:
 
 def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
     def should(**kw: Any) -> bool:
-        return livemod.should_spawn_tui(**kw)
+        return live.should_spawn_tui(**kw)
 
-    monkeypatch.setattr(livemod, "_tui_available", _yes)
-    monkeypatch.setattr(livemod.sys, "stdout", _FakeStdout(tty=True))
+    monkeypatch.setattr(live, "_tui_available", _yes)
+    monkeypatch.setattr(live.sys, "stdout", _FakeStdout(tty=True))
     # Headless by default: no --tui -> never spawn.
     assert should(tui=False, interactive=False, mode="run") is False
     # --tui on a TTY with textual + run mode -> spawn.
@@ -271,32 +269,32 @@ def test_should_spawn_tui_gating(monkeypatch: pytest.MonkeyPatch) -> None:
     assert should(tui=True, interactive=False, mode="plan") is True
     assert should(tui=True, interactive=False, mode="ask") is False
     # textual not installed.
-    monkeypatch.setattr(livemod, "_tui_available", _no)
+    monkeypatch.setattr(live, "_tui_available", _no)
     assert should(tui=True, interactive=False, mode="run") is False
     # non-TTY (benches / CI / pipes).
-    monkeypatch.setattr(livemod, "_tui_available", _yes)
-    monkeypatch.setattr(livemod.sys, "stdout", _FakeStdout(tty=False))
+    monkeypatch.setattr(live, "_tui_available", _yes)
+    monkeypatch.setattr(live.sys, "stdout", _FakeStdout(tty=False))
     assert should(tui=True, interactive=False, mode="run") is False
 
 
 def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:
     def modes(*, tui_enabled: bool) -> tuple[bool, bool]:
-        return livemod.stream_modes(tui_enabled=tui_enabled)
+        return live.stream_modes(tui_enabled=tui_enabled)
 
     monkeypatch.delenv("AGENT6_FORCE_STREAM", raising=False)
     monkeypatch.delenv("AGENT6_STREAM_TO_LOG", raising=False)
 
     # Headless, no env: the audited non-streaming path, no console echo.
-    monkeypatch.setattr(livemod.sys, "stderr", _FakeStdout(tty=False))
+    monkeypatch.setattr(live.sys, "stderr", _FakeStdout(tty=False))
     assert modes(tui_enabled=False) == (False, False)
 
     # Interactive stderr TTY: stream; echo only when the TUI does NOT own the term.
-    monkeypatch.setattr(livemod.sys, "stderr", _FakeStdout(tty=True))
+    monkeypatch.setattr(live.sys, "stderr", _FakeStdout(tty=True))
     assert modes(tui_enabled=False) == (True, True)  # plain ask/plan
     assert modes(tui_enabled=True) == (True, False)  # the TUI renders the deltas
 
     # AGENT6_FORCE_STREAM (bench/CI): stream AND echo even when headless.
-    monkeypatch.setattr(livemod.sys, "stderr", _FakeStdout(tty=False))
+    monkeypatch.setattr(live.sys, "stderr", _FakeStdout(tty=False))
     monkeypatch.setenv("AGENT6_FORCE_STREAM", "1")
     assert modes(tui_enabled=False) == (True, True)
     monkeypatch.delenv("AGENT6_FORCE_STREAM")
@@ -308,7 +306,7 @@ def test_stream_modes(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_tui_session_disabled_is_noop(tmp_path: pathlib.Path) -> None:
     # enabled=False must not spawn anything or touch stdout.
-    with livemod.tui_session(tmp_path, enabled=False):
+    with live.tui_session(tmp_path, enabled=False):
         pass
     assert not (tmp_path / "tui_console.log").exists()
 
@@ -366,7 +364,7 @@ def test_approver_away_deny_auto_denies(
 
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # must NOT prompt
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)  # must NOT prompt
     ipc.set_away_mode(tmp_path, "deny")
     approve = _prompts(tmp_path, events).approve
     assert approve("rm -rf /", scope=ipc.COMMAND_SCOPE) is False
@@ -382,7 +380,7 @@ def test_approver_live_front_end_wins_over_away_mode(
     events = event_log.EventSink(log)
     monkeypatch.setattr(process, "frontend_is_live", _live)  # a front-end is attached
     monkeypatch.setattr(ipc, "read_answer", _ans_yes)  # and it approved
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)  # no stdin fall
     ipc.set_away_mode(tmp_path, "deny")  # would deny if the front-end did NOT win
     approve = _prompts(tmp_path, events).approve
     assert (
@@ -397,7 +395,7 @@ def test_approver_away_wait_blocks_for_a_front_end_when_none_attached(
     # away="wait" with nothing attached blocks until a front-end attaches and answers.
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)  # never stdin
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)  # never stdin
     ipc.set_away_mode(tmp_path, "wait")
 
     def attach_and_answer() -> None:
@@ -423,7 +421,7 @@ def test_a_stop_request_ends_an_away_wait(
 
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)
     ipc.set_away_mode(tmp_path, "wait")
 
     def stop_it() -> None:
@@ -481,7 +479,7 @@ def test_approver_wait_consumes_a_claimless_answer(
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_forbidden)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_forbidden)
 
     def abort_if_wedged() -> None:
         # A wait loop that never reads a claim-less answer fails fast instead of hanging the suite.
@@ -507,7 +505,7 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
 
     A blank line precedes the answer line.
     """
-    from agent6.ui.cli import _interact as interactmod
+    from agent6.ui.cli import interact
 
     seen: list[str] = []
     plains: list[object] = []
@@ -517,8 +515,8 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
         plains.append(kw.get("plain"))
         return "y"
 
-    monkeypatch.setattr(cli__steer, "tty_prompt", _capture)
-    assert interactmod.default_stdin_approver("Allow run_command: git log --stat -5") == "yes"
+    monkeypatch.setattr(steer_tty, "tty_prompt", _capture)
+    assert interact.default_stdin_approver("Allow run_command: git log --stat -5") == "yes"
     rendered = seen[0]
     plain = re.sub(r"\x1b\[[0-9;]*m", "", rendered)
     assert plain.startswith("? Allow run_command:\n\n    git log --stat -5\n\n  [y/N/a/d]")
@@ -528,7 +526,7 @@ def test_stdin_approver_renders_the_command_on_its_own_lines(
     assert plains[0] == plain
     # A prompt without the "<head>: <payload>" shape keeps the one-line form.
     seen.clear()
-    interactmod.default_stdin_approver("Proceed?", standing=False)
+    interact.default_stdin_approver("Proceed?", standing=False)
     assert seen[0] == "Proceed? [y/N]: "
 
 
@@ -540,7 +538,7 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     An operator prompt counts as a Ctrl-C boundary; the menu's action seeds the next boundary's
     steer.
     """
-    from agent6.ui.cli import _interact as interactmod
+    from agent6.ui.cli import interact
 
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     notices: list[str] = []
@@ -571,8 +569,8 @@ def test_approval_with_a_pause_armed_opens_the_menu_after_the_answer(
     monkeypatch.setattr(process, "frontend_is_live", _not_live)
     monkeypatch.setattr(ipc, "away_mode", _no_away)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
-    monkeypatch.setattr(cli__steer, "tty_message", notices.append)
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _approve_yes)
+    monkeypatch.setattr(steer_tty, "tty_message", notices.append)
+    monkeypatch.setattr(interact, "default_stdin_approver", _approve_yes)
 
     approve = _prompts(tmp_path, events, [_steer(True)]).approve
     assert approve("Allow run_command: ls", scope="command") is True
@@ -594,24 +592,24 @@ def test_the_prompts_pause_a_console_view_attached_after_they_were_built(
     The lifecycle builds the gate before the execution attaches the view; a view captured at build
     time pauses nothing, and the heartbeat's line-erase wipes the tty prompt.
     """
-    from agent6.ui.cli import _console_view, run
+    from agent6.ui.cli import console_render, run
 
-    paused: list[_console_view.ConsoleView] = []
-    real_pause = _console_view.ConsoleView.pause
+    paused: list[console_render.ConsoleView] = []
+    real_pause = console_render.ConsoleView.pause
 
-    def _pause(self: _console_view.ConsoleView) -> Any:
+    def _pause(self: console_render.ConsoleView) -> Any:
         paused.append(self)
         return real_pause(self)
 
-    monkeypatch.setattr(_console_view.ConsoleView, "pause", _pause)
+    monkeypatch.setattr(console_render.ConsoleView, "pause", _pause)
     monkeypatch.setattr(process, "frontend_is_live", _dead)
     monkeypatch.setattr(portable, "has_controlling_tty", _tty)
-    monkeypatch.setattr(interactmod, "default_stdin_approver", _stdin_yes)
+    monkeypatch.setattr(interact, "default_stdin_approver", _stdin_yes)
 
     def _first(_q: tuple[schema.UserQuestion, ...], **_k: object) -> tuple[str, ...]:
         return ("a",)
 
-    monkeypatch.setattr(interactmod, "default_stdin_questioner", _first)
+    monkeypatch.setattr(interact, "default_stdin_questioner", _first)
     fe = run.session_frontend()
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     prompts = operator_prompts.OperatorPrompts(
@@ -658,11 +656,11 @@ def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
         return _Dead()
 
     monkeypatch.setattr(
-        livemod,
+        live,
         "subprocess",
         types.SimpleNamespace(Popen=spawn_dead, TimeoutExpired=subprocess.TimeoutExpired),
     )
-    with livemod.tui_session(session_dir, enabled=True):
+    with live.tui_session(session_dir, enabled=True):
         print("run chatter")
     err = capsys.readouterr().err
     assert "dashboard exited with code 3 before the run ended" in err
@@ -681,13 +679,13 @@ def test_a_dashboard_that_dies_before_the_run_ends_is_reported(
     def spawn_left(argv: list[str], **kwargs: Any) -> _Left:
         return _Left()
 
-    monkeypatch.setattr(livemod.subprocess, "Popen", spawn_left)
-    with livemod.tui_session(session_dir, enabled=True):
+    monkeypatch.setattr(live.subprocess, "Popen", spawn_left)
+    with live.tui_session(session_dir, enabled=True):
         pass
     assert "the dashboard closed before the run ended" in capsys.readouterr().err
 
-    monkeypatch.setattr(livemod.subprocess, "Popen", spawn_dead)
-    with pytest.raises(KeyboardInterrupt), livemod.tui_session(session_dir, enabled=True):
+    monkeypatch.setattr(live.subprocess, "Popen", spawn_dead)
+    with pytest.raises(KeyboardInterrupt), live.tui_session(session_dir, enabled=True):
         raise KeyboardInterrupt
     assert "dashboard" not in capsys.readouterr().err
 
@@ -710,12 +708,12 @@ def test_tui_session_degrades_when_console_log_cannot_open(
         return object()
 
     monkeypatch.setattr(
-        livemod,
+        live,
         "subprocess",
         types.SimpleNamespace(Popen=fake_popen, TimeoutExpired=subprocess.TimeoutExpired),
     )
     ran = False
-    with livemod.tui_session(session_dir, enabled=True):
+    with live.tui_session(session_dir, enabled=True):
         ran = True
     assert ran, "the run must continue TUI-less, not abort"
     assert spawned == [], "the log opens before the spawn, so there is nothing to orphan"
@@ -759,13 +757,13 @@ def test_ctrl_c_kills_a_dashboard_that_ignores_graceful_shutdown(
     def spawn_wedged(_argv: list[str], **_kwargs: Any) -> _Wedged:
         return _Wedged()
 
-    monkeypatch.setattr(livemod.subprocess, "Popen", spawn_wedged)
+    monkeypatch.setattr(live.subprocess, "Popen", spawn_wedged)
     process.register_frontend(session_dir, os.getpid())  # the dashboard holds its claim
 
-    with livemod.tui_session(session_dir, enabled=True):
+    with live.tui_session(session_dir, enabled=True):
         pass
 
-    assert actions == [f"signal:{livemod.signal.SIGINT}", "terminate", "kill"]
+    assert actions == [f"signal:{live.signal.SIGINT}", "terminate", "kill"]
 
 
 def test_tui_session_restores_the_console_when_a_second_ctrl_c_lands(
@@ -795,13 +793,13 @@ def test_tui_session_restores_the_console_when_a_second_ctrl_c_lands(
         return _Stubborn()
 
     monkeypatch.setattr(
-        livemod,
+        live,
         "subprocess",
         types.SimpleNamespace(Popen=spawn, TimeoutExpired=subprocess.TimeoutExpired),
     )
     process.register_frontend(session_dir, os.getpid())  # the dashboard holds its claim
     before = (sys.stdout, sys.stderr)
-    with pytest.raises(KeyboardInterrupt), livemod.tui_session(session_dir, enabled=True):
+    with pytest.raises(KeyboardInterrupt), live.tui_session(session_dir, enabled=True):
         pass
 
     assert (sys.stdout, sys.stderr) == before
@@ -818,7 +816,7 @@ def test_the_questioner_waits_for_a_later_front_end_when_nothing_is_set(
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
-    monkeypatch.setattr(interactmod, "default_stdin_questioner", _stdin_forbidden)
+    monkeypatch.setattr(interact, "default_stdin_questioner", _stdin_forbidden)
 
     def attach_and_answer() -> None:
         process.register_frontend(tmp_path, os.getpid())
@@ -837,7 +835,7 @@ def test_the_questioner_returns_unanswered_at_once_under_away_deny(
     log = tmp_path / "logs.jsonl"
     events = event_log.EventSink(log)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
-    monkeypatch.setattr(interactmod, "default_stdin_questioner", _stdin_forbidden)
+    monkeypatch.setattr(interact, "default_stdin_questioner", _stdin_forbidden)
     ipc.set_away_mode(tmp_path, "deny")
     answer = _prompts(tmp_path, events).ask(_question())
     assert answer.status == "unanswered" and answer.answers == ("",)

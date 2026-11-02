@@ -9,7 +9,7 @@ import pathlib
 import sys
 import time
 
-from agent6 import paths, secret_store
+from agent6 import paths
 from agent6.config import (
     AnthropicProviderEntry,
     ChatGPTProviderEntry,
@@ -17,16 +17,24 @@ from agent6.config import (
     OpenAIProviderEntry,
     ProviderEntry,
     ResponsesProviderEntry,
-    _layer_data,
     io,
     layer,
+    layer_data,
     provider_name_refusal,
+    secret_store,
     validate_base_url,
     write,
 )
 from agent6.models import cache
-from agent6.providers import _headers, _oauth_protocol, chatgpt_oauth, claude_code, oauth, types
-from agent6.ui.cli import _common, _connect_status, _oauth
+from agent6.providers import (
+    claude_code,
+    oauth,
+    oauth_chatgpt,
+    oauth_protocol,
+    provider_types,
+    request_headers,
+)
+from agent6.ui.cli import common, connect_oauth, connect_status
 
 
 def _prompt_api_key(name: str) -> str:
@@ -44,7 +52,7 @@ def _prompt_api_key(name: str) -> str:
     """
     prompt = f"API key for {name} (input hidden, blank for none): "
     try:
-        api_key = _common.read_secret(prompt).strip()
+        api_key = common.read_secret(prompt).strip()
     except EOFError:
         return ""
     if api_key and not sys.stdin.isatty():
@@ -85,7 +93,7 @@ class _Current:
 
     effective: _Leaves
     target: _Leaves
-    shadowed: dict[str, _layer_data.Layer]
+    shadowed: dict[str, layer_data.Layer]
 
 
 def _target_leaves(name: str, target: pathlib.Path) -> _Leaves:
@@ -232,10 +240,10 @@ def _resolve_provider_name(provider: str) -> str | None:
         try:
             name = input("Provider name [anthropic]: ").strip() or "anthropic"
         except EOFError:
-            _common.error("no input.")
+            common.error("no input.")
             return None
     if refusal := provider_name_refusal(name):
-        _common.error(refusal)
+        common.error(refusal)
         return None
     return name
 
@@ -292,8 +300,8 @@ def _verify_sign_in(
     print("Checking the sign-in against the provider...")
     try:
         oauth.OAuthCredential(name, entry).token()
-    except types.ProviderError as exc:
-        _common.warn(f"the sign-in is saved but not usable yet: {exc}")
+    except provider_types.ProviderError as exc:
+        common.warn(f"the sign-in is saved but not usable yet: {exc}")
         return
     listed = cache.fetch_models_live(name, entry, None, timeout_s=10.0)
     if listed:
@@ -326,24 +334,24 @@ def _sign_in(
         The exit code.
     """
     profile = oauth.profile_for(entry)
-    headers = _headers.HeaderSet.from_config(entry.extra_headers)
+    headers = request_headers.HeaderSet.from_config(entry.extra_headers)
     try:
-        grant = _oauth.sign_in_grant(name, profile, headers, flow)
+        grant = connect_oauth.sign_in_grant(name, profile, headers, flow)
         if grant is None:
             return 2
         stored = oauth.stored_grant_for(grant, entry, now=time.time())
         saved = secret_store.save_oauth_grant(name, stored)
-    except (types.ProviderError, secret_store.SecretsError) as exc:
-        _common.error(f"{exc}")
+    except (provider_types.ProviderError, secret_store.SecretsError) as exc:
+        common.error(f"{exc}")
         return 2
-    plan = chatgpt_oauth.plan_type_of(grant) if isinstance(entry, ChatGPTProviderEntry) else ""
+    plan = oauth_chatgpt.plan_type_of(grant) if isinstance(entry, ChatGPTProviderEntry) else ""
     print(
         f"Signed in{f' ({plan} plan)' if plan else ''}; the grant is saved to {saved} (0600),"
         f" bound to [providers.{name}]."
     )
     if isinstance(entry, ChatGPTProviderEntry):
         if not stored.account_id:
-            _common.warn(
+            common.warn(
                 "the sign-in carried no ChatGPT account id; runs will refuse until a"
                 " sign-in with a ChatGPT plan succeeds."
             )
@@ -371,7 +379,7 @@ def _claude_code_check(name: str) -> None:
     if err is None:
         print("Claude Code (`claude` on PATH): signed in.")
         return
-    _common.warn(f"{err}\n  [providers.{name}] is written but not usable yet.")
+    common.warn(f"{err}\n  [providers.{name}] is written but not usable yet.")
 
 
 def _prompt_api_format(name: str, preset_format: str, current_format: str) -> str | None:
@@ -400,10 +408,10 @@ def _prompt_api_format(name: str, preset_format: str, current_format: str) -> st
                 or default
             )
         except EOFError:
-            _common.error("no input.")
+            common.error("no input.")
             return None
     if api_format not in ("anthropic", "openai", "chatgpt", "responses", "claude_code"):
-        _common.error(
+        common.error(
             f"unknown api_format {api_format!r}"
             " (expected anthropic, openai, chatgpt, responses or claude_code)."
         )
@@ -437,25 +445,25 @@ def _revoke(name: str, entry: ProviderEntry | None) -> bool:
         return False
     try:
         grant = oauth.load_bound_grant(name, entry)
-    except types.ProviderError as exc:
-        _common.warn(f"{exc} Not revoked.")
+    except provider_types.ProviderError as exc:
+        common.warn(f"{exc} Not revoked.")
         return False
     profile = oauth.profile_for(entry)
     where = profile.revocation_endpoint
     if where is None:
         return False
-    err = _oauth_protocol.revoke_tokens(
+    err = oauth_protocol.revoke_tokens(
         where,
         profile.client_id,
         access_token=grant.access_token,
         refresh_token=grant.refresh_token,
         encoding=profile.revocation_encoding,
-        headers=_headers.HeaderSet.from_config(entry.extra_headers).renderer("oauth"),
+        headers=request_headers.HeaderSet.from_config(entry.extra_headers).renderer("oauth"),
     )
     if err is None:
         print(f"Revoked the sign-in for {name!r} at {where}.")
         return True
-    _common.warn(f"revocation failed ({err}); removing the local grant anyway.")
+    common.warn(f"revocation failed ({err}); removing the local grant anyway.")
     return False
 
 
@@ -485,7 +493,7 @@ def _cmd_logout(name: str, entry: ProviderEntry | None, api_format: str) -> int:
     try:
         removed = secret_store.delete_provider_secrets(name)
     except secret_store.SecretsError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     print(
         f"Removed stored credentials for {name!r} from secrets.toml"
@@ -530,7 +538,7 @@ def _write_shown_values(
         try:
             url = _prompt_base_url(offered)
         except ValueError as exc:
-            _common.error(f"{exc}")
+            common.error(f"{exc}")
             return 2
         _shadow_notice(current, "base_url", to_repo, url)
         fields["base_url"] = url if url != current.target.base_url else None
@@ -538,7 +546,7 @@ def _write_shown_values(
         print(f"[providers.{name}] in {target} already holds these values.")
         return 0
     if (refusal := _write_provider_block(name, fields, to_repo=to_repo)) is not None:
-        _common.refuse(refusal)
+        common.refuse(refusal)
         return 2
     print(f"Wrote [providers.{name}] to {target}.")
     return 0
@@ -566,7 +574,7 @@ def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int
     ):
         return _sign_in(name, entry, flow, verify)
     if api_format == "chatgpt":
-        _common.error("the provider config does not load; run `agent6 check config`.")
+        common.error("the provider config does not load; run `agent6 check config`.")
         return 2
     try:
         api_key = _prompt_api_key(name)
@@ -576,14 +584,14 @@ def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int
         try:
             saved = secret_store.save_secret(name, api_key)
         except secret_store.SecretsError as exc:
-            _common.error(f"{exc}")
+            common.error(f"{exc}")
             return 2
         print(f"Saved key to {saved} (0600).")
         if verify:
             _verify_key(entry, api_key)
     elif api_format == "anthropic":
         # The Anthropic api_format always sends a key, so a keyless block fails at the first run.
-        _common.warn(
+        common.warn(
             f"no key entered, but the Anthropic API format requires one.\n"
             f"  [providers.{name}] is written but not usable yet; rerun"
             " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
@@ -634,8 +642,8 @@ def _cmd_connect(
             if set_
         ]
         if conflicts:
-            _common.error(f"--status cannot combine with {', '.join(conflicts)}.")
-        return 2 if conflicts else _connect_status.show(provider, config_paths)
+            common.error(f"--status cannot combine with {', '.join(conflicts)}.")
+        return 2 if conflicts else connect_status.show(provider, config_paths)
     name = _resolve_provider_name(provider)
     if name is None:
         return 2
@@ -646,7 +654,7 @@ def _cmd_connect(
         current = _current(name, target, to_repo)
     except ConfigError as exc:
         if not logout:
-            _common.error(str(exc))
+            common.error(str(exc))
             return 2
         current = _Current(_Leaves("", ""), _Leaves("", ""), {})
     if logout:

@@ -15,7 +15,7 @@ import pytest
 from agent6 import budget as agent6_budget
 from agent6.config import Config, ResponsesProviderEntry
 from agent6.models import registry
-from agent6.providers import ProviderError, ToolDefinition, _responses, responses, wire
+from agent6.providers import ProviderError, ToolDefinition, responses, responses_codec, wire
 
 _BASE = "https://models.example/v1"
 _USAGE = {
@@ -134,7 +134,7 @@ def test_a_json_call_sends_the_contract_and_parses_the_response_object() -> None
         extra_body={"store": True, "previous_response_id": "resp_0", "metadata": {"k": "v"}},
     )
     tools = [ToolDefinition(name="read_file", description="d", input_schema={"type": "object"})]
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(
             system="be brief",
             messages=[{"role": "user", "content": "go"}],
@@ -153,10 +153,10 @@ def test_a_json_call_sends_the_contract_and_parses_the_response_object() -> None
     assert resp.text == "hello" and resp.stop_reason == "tool_use"
     assert resp.tool_uses == ({"id": "c1", "name": "read_file", "input": {"path": "x"}},)
     assert (resp.input_tokens, resp.cache_read_tokens, resp.output_tokens) == (35, 7, 9)
-    route = _responses.replay_route("responses", _BASE, "r-1")
+    route = responses_codec.replay_route("responses", _BASE, "r-1")
     assert resp.raw["content"][0]["reasoning_replay"]["route"] == route
     # The next call replays the reasoning item on this route and keeps the pairing.
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {"role": "assistant", "content": resp.raw["content"]},
             {
@@ -185,7 +185,7 @@ def test_an_incomplete_response_reads_as_the_output_cap() -> None:
             }
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = _provider().call(system="s", messages=[{"role": "user", "content": "go"}])
     assert resp.stop_reason == "max_tokens" and resp.text == "partial"
 
@@ -197,7 +197,7 @@ def test_a_failed_response_object_raises_its_error() -> None:
         )
 
     with (
-        mock.patch("agent6.providers._transport.http_post", side_effect=fake_post),
+        mock.patch("agent6.providers.transport.http_post", side_effect=fake_post),
         pytest.raises(ProviderError, match="server_error: boom"),
     ):
         _provider().call(system="s", messages=[{"role": "user", "content": "go"}])
@@ -210,7 +210,7 @@ def test_a_budgeted_call_without_usage_is_refused_and_a_priced_one_is_booked() -
         return _json_response({"status": "completed", "output": [_message("x")], "usage": {}})
 
     with (
-        mock.patch("agent6.providers._transport.http_post", side_effect=unmetered),
+        mock.patch("agent6.providers.transport.http_post", side_effect=unmetered),
         pytest.raises(ProviderError, match=r"usage\.input_tokens"),
     ):
         _provider(budget=budget).call(system="s", messages=[{"role": "user", "content": "go"}])
@@ -218,7 +218,7 @@ def test_a_budgeted_call_without_usage_is_refused_and_a_priced_one_is_booked() -
     def metered(*_a: Any, **kw: Any) -> httpx2.Response:
         return _json_response({"status": "completed", "output": [_message("x")], "usage": _USAGE})
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=metered):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=metered):
         _provider(budget=budget).call(system="s", messages=[{"role": "user", "content": "go"}])
     snap = budget.snapshot()
     assert (snap.input_total, snap.cache_read_total, snap.output_total) == (35, 7, 9)
@@ -237,7 +237,7 @@ def test_a_temperature_refusal_drops_it_for_the_run() -> None:
         return _json_response({"status": "completed", "output": [_message("ok")], "usage": _USAGE})
 
     provider = _provider()
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         first = provider.call(
             system="s", messages=[{"role": "user", "content": "go"}], temperature=0.5
         )
@@ -272,7 +272,7 @@ def test_a_stream_feeds_the_callbacks_and_settles_on_the_terminal_response() -> 
     text: list[str] = []
     thinking: list[str] = []
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
-    with mock.patch("agent6.providers._stream.http_stream", side_effect=stream):
+    with mock.patch("agent6.providers.stream_lifecycle.http_stream", side_effect=stream):
         resp = _provider(budget=budget).call(
             system="s",
             messages=[{"role": "user", "content": "go"}],
@@ -294,7 +294,7 @@ def test_a_cut_stream_is_truncated_and_books_what_it_cost() -> None:
         return _FakeStreamResponse(lines=lines)
 
     with (
-        mock.patch("agent6.providers._stream.http_stream", side_effect=stream),
+        mock.patch("agent6.providers.stream_lifecycle.http_stream", side_effect=stream),
         pytest.raises(ProviderError, match="cut off"),
     ):
         _provider().call(
@@ -319,7 +319,7 @@ def test_a_failed_stream_books_the_usage_it_reports() -> None:
 
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     with (
-        mock.patch("agent6.providers._stream.http_stream", side_effect=stream),
+        mock.patch("agent6.providers.stream_lifecycle.http_stream", side_effect=stream),
         pytest.raises(ProviderError, match="server_error"),
     ):
         _provider(budget=budget).call(

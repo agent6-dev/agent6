@@ -26,8 +26,7 @@ from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import process
 from agent6.tools import operator_prompts, schema
-from agent6.ui.cli import _interact
-from agent6.ui.cli import _steer as cli__steer
+from agent6.ui.cli import interact, steer_tty
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore:This process.*is multi-threaded, use of fork:DeprecationWarning"
@@ -60,9 +59,9 @@ def _drive_pty(child: Any, expect: bytes, reply: bytes) -> int:
 
 def test_tty_prompt_round_trips_on_the_controlling_terminal() -> None:
     def child() -> int:
-        from agent6.ui.cli import _steer
+        from agent6.ui.cli import steer_tty
 
-        ans = _steer.tty_prompt("PICK> ", fall_back_to_stdin=False)
+        ans = steer_tty.tty_prompt("PICK> ", fall_back_to_stdin=False)
         return 0 if ans == "two" else 13
 
     assert _drive_pty(child, b"PICK>", b"two\n") == 0
@@ -76,10 +75,10 @@ def test_tty_prompt_discards_type_ahead() -> None:
     def child() -> int:
         import time
 
-        from agent6.ui.cli import _steer
+        from agent6.ui.cli import steer_tty
 
         time.sleep(0.5)  # let the parent stuff type-ahead into the pty first
-        ans = _steer.tty_prompt("APPROVE> ", fall_back_to_stdin=False)
+        ans = steer_tty.tty_prompt("APPROVE> ", fall_back_to_stdin=False)
         return 0 if ans == "y" else 13
 
     pid, master = pty.fork()
@@ -108,7 +107,7 @@ def test_tty_prompt_discards_type_ahead() -> None:
 def test_ask_one_stdin_prompts_and_maps_a_digit_to_its_option() -> None:
     def child() -> int:
 
-        ans = _interact.ask_one_stdin(
+        ans = interact.ask_one_stdin(
             schema.UserQuestion(question="Which theme?", options=("alpha", "beta"))
         )
         return 0 if ans == "beta" else 13
@@ -121,7 +120,7 @@ def test_stdin_questioner_returns_none_without_a_terminal() -> None:
     # in a subprocess so an interactively-run pytest (which HAS a /dev/tty)
     # cannot block on a real prompt.
     code = (
-        "from agent6.ui.cli._interact import default_stdin_questioner\n"
+        "from agent6.ui.cli.interact import default_stdin_questioner\n"
         "from agent6.tools.schema import UserQuestion\n"
         "q = (UserQuestion(question='anyone there?'),)\n"
         "raise SystemExit(0 if default_stdin_questioner(q) is None else 13)\n"
@@ -142,11 +141,11 @@ def test_an_unanswered_question_is_named_where_the_run_reports(tmp_path: pathlib
         "import pathlib, sys\n"
         "from agent6.sessions import ipc\n"
         "from agent6.tools import operator_prompts, schema\n"
-        "from agent6.ui.cli import _interact\n"
+        "from agent6.ui.cli import interact\n"
         "ipc.set_away_mode(pathlib.Path(sys.argv[1]), 'deny')\n"
         "q = (schema.UserQuestion(question='tabs or spaces?', options=('tabs', 'spaces')),)\n"
         "request = operator_prompts.QuestionRequest(id='q1', questions=q, call_id=None)\n"
-        "_interact.build_questioner(pathlib.Path(sys.argv[1]))(request)\n"
+        "interact.build_questioner(pathlib.Path(sys.argv[1]))(request)\n"
     )
     proc = subprocess.run(
         [sys.executable, "-c", code, str(tmp_path)],
@@ -169,7 +168,7 @@ class _Events:
 def _no_terminal(monkeypatch: pytest.MonkeyPatch, *, away: str) -> list[str]:
     """A run with no controlling terminal under the away mode; returns what `/dev/tty` got."""
     tty_lines: list[str] = []
-    monkeypatch.setattr(cli__steer, "tty_message", tty_lines.append)
+    monkeypatch.setattr(steer_tty, "tty_message", tty_lines.append)
 
     def _away(_d: object) -> str:
         return away
@@ -184,7 +183,7 @@ def _no_terminal(monkeypatch: pytest.MonkeyPatch, *, away: str) -> list[str]:
 
 def _approve(session_dir: pathlib.Path) -> bool:
     return operator_prompts.OperatorPrompts(
-        approver=_interact.build_approver(session_dir),
+        approver=interact.build_approver(session_dir),
         journal=_Events().emit,
         session_dir=session_dir,
     ).approve("Allow run_command: ls", scope=None)
@@ -263,7 +262,7 @@ def test_a_headless_question_park_says_where_to_answer_and_that_it_was(
 
     monkeypatch.setattr(sessions_ipc, "await_frontend_reply", _reply)
     ask = operator_prompts.OperatorPrompts(
-        questioner=_interact.build_questioner(tmp_path),
+        questioner=interact.build_questioner(tmp_path),
         journal=_Events().emit,
         session_dir=tmp_path,
     ).ask
@@ -284,13 +283,13 @@ def test_tty_prompt_ends_once_until_holds(tmp_path: pathlib.Path) -> None:
     flag = tmp_path / "answered"
 
     def child() -> int:
-        from agent6.ui.cli import _steer
+        from agent6.ui.cli import steer_tty
 
-        ans = _steer.tty_prompt("PICK> ", fall_back_to_stdin=False, until=flag.exists)
+        ans = steer_tty.tty_prompt("PICK> ", fall_back_to_stdin=False, until=flag.exists)
         if ans is not None:
             return 13
         # The half-typed "tw" must not ride into the next prompt as its answer.
-        nxt = _steer.tty_prompt("NEXT> ", fall_back_to_stdin=False)
+        nxt = steer_tty.tty_prompt("NEXT> ", fall_back_to_stdin=False)
         return 0 if nxt == "ok" else 14
 
     pid, master = pty.fork()
@@ -338,8 +337,8 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: pathlib.Path) -> None
                 emitted.append(fields)
 
         prompts = operator_prompts.OperatorPrompts(
-            approver=_interact.build_approver(session_dir),
-            questioner=_interact.build_questioner(session_dir),
+            approver=interact.build_approver(session_dir),
+            questioner=interact.build_questioner(session_dir),
             journal=_emit,
             session_dir=session_dir,
         )
@@ -385,9 +384,9 @@ def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: pathlib
         # pytest's capture replaced sys.stdin/stdout; the pty is on fds 0-2.
         sys.stdin = open(0, closefd=False)  # noqa: SIM115
         sys.stdout = open(1, "w", closefd=False)  # noqa: SIM115
-        from agent6.ui.cli import _steer_menu
+        from agent6.ui.cli import steer_menu
 
-        return 0 if _steer_menu.pause_menu(session_dir) == "from the web" else 13
+        return 0 if steer_menu.pause_menu(session_dir) == "from the web" else 13
 
     pid, master = pty.fork()
     if pid == 0:  # pragma: no cover - child process
@@ -434,7 +433,7 @@ def test_detach_away_mode_asks_on_the_terminal_with_stdin_redirected(
 
         os.dup2(os.open(os.devnull, os.O_RDONLY), 0)
         assert not sys.stdin.isatty()
-        _interact.prompt_detach_away_mode(tmp_path, (ipc.COMMAND_SCOPE,))
+        interact.prompt_detach_away_mode(tmp_path, (ipc.COMMAND_SCOPE,))
         if ipc.away_mode(tmp_path) != "" or not ipc.session_allow_set(tmp_path, ipc.COMMAND_SCOPE):
             return 13  # the answer typed at the prompt was not recorded
         return 0

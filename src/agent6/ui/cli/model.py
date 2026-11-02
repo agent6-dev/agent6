@@ -11,19 +11,20 @@ import pathlib
 import sys
 from typing import cast
 
-from agent6 import paths, secret_store
-from agent6.app import _setup
+from agent6 import paths
+from agent6.app import session_setup
 from agent6.config import (
     ClaudeCodeProviderEntry,
     ConfigError,
     RoleName,
     io,
     layer,
+    secret_store,
     write,
 )
 from agent6.models import choices
 from agent6.providers import claude_code
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 
 def _connected_providers(config_paths: tuple[pathlib.Path, ...]) -> list[str]:
@@ -51,12 +52,12 @@ def _prompt_for_provider(config_paths: tuple[pathlib.Path, ...]) -> str:
     if providers:
         print("Connected providers: " + ", ".join(providers))
         default = providers[0]
-        choice = _common.safe_input(f"Provider [{default}]: ")
+        choice = common.safe_input(f"Provider [{default}]: ")
         if choice is None:
             return ""
         return choice or default
     print("No providers connected yet; run `agent6 connect` first, or type a name.")
-    return _common.safe_input("Provider: ") or ""
+    return common.safe_input("Provider: ") or ""
 
 
 def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> str | None:
@@ -75,18 +76,18 @@ def _prompt_for_model(config_paths: tuple[pathlib.Path, ...], provider: str) -> 
         print(f"Models for {provider}:")
         for i, model in enumerate(options, 1):
             print(f"  {i:>2}. {model}")
-        choice = _common.safe_input("Model (name or number): ")
+        choice = common.safe_input("Model (name or number): ")
         if choice is None:
             return ""
         if choice.isdigit():
             idx = int(choice) - 1
             if 0 <= idx < len(options):
                 return options[idx]
-            _common.error(f"no model {choice}: the list has {len(options)}.")
+            common.error(f"no model {choice}: the list has {len(options)}.")
             return None
         return choice
     print(f"No known models for {provider} (couldn't reach its API or none configured).")
-    return _common.safe_input("Model: ") or ""
+    return common.safe_input("Model: ") or ""
 
 
 def _show_assignments(config_paths: tuple[pathlib.Path, ...]) -> int:
@@ -136,7 +137,7 @@ def _print_catalog(config_paths: tuple[pathlib.Path, ...], role: str, provider: 
     """
     options = _models_for(config_paths, provider)
     if not options:
-        _common.error(
+        common.error(
             f"no known models for {provider}: no listing reached and no role names one."
             f" Set one with: agent6 model {role} {provider}/<model>"
         )
@@ -155,15 +156,15 @@ def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: st
         return
     entry = eff.config.providers.get(provider)
     if entry is None:
-        _common.warn(f"provider {provider!r} is not configured; run `agent6 connect` first.")
+        common.warn(f"provider {provider!r} is not configured; run `agent6 connect` first.")
         return
     if isinstance(entry, ClaudeCodeProviderEntry):
         if (err := claude_code.login_status(entry.binary)) is not None:
-            _common.warn(f"provider {provider!r}: {err}")
+            common.warn(f"provider {provider!r}: {err}")
         return
     if entry.api_format == "chatgpt" or entry.oauth is not None:
-        if (err := _setup.sign_in_refusal(provider, entry)) is not None:
-            _common.warn(err)
+        if (err := session_setup.sign_in_refusal(provider, entry)) is not None:
+            common.warn(err)
         return
     if entry.auth_style == "none" or entry.token_command:
         return
@@ -173,7 +174,7 @@ def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: st
             if entry.api_key_env
             else "run `agent6 connect`"
         )
-        _common.warn(f"provider {provider!r} has no stored API key; {remedy} before using it.")
+        common.warn(f"provider {provider!r} has no stored API key; {remedy} before using it.")
 
 
 def _read_route(
@@ -254,7 +255,7 @@ def _cmd_model(
     try:
         provider, model = _read_route(config_paths, role, route, interactive=interactive)
     except ConfigError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     if not model and not interactive:
         if effort:
@@ -265,7 +266,7 @@ def _cmd_model(
         picked = _prompt_for_model(config_paths, provider)
         if not picked:
             if picked == "":
-                _common.error("no model given.")
+                common.error("no model given.")
             return 2
         model = picked
     target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
@@ -279,7 +280,7 @@ def _cmd_model(
     for r in roles:
         err = write.set_config_table(pathlib.Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
         if err is not None:
-            _common.refuse(f"{provider}/{model} would make the config invalid:\n{err}")
+            common.refuse(f"{provider}/{model} would make the config invalid:\n{err}")
             return 2
     where = "[models.*] (all roles)" if role == "all" else f"[models.{role}]"
     print(f"Set {where} = {provider}/{model}{f' (effort={effort})' if effort else ''} in {target}.")

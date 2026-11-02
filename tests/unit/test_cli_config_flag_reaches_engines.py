@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import layer
 from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
@@ -87,7 +87,7 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
         seen.append(explicit)
         raise _ConfigError("stop here")
 
-    monkeypatch.setattr(_setup, "load_session_config", fake_load)
+    monkeypatch.setattr(session_setup, "load_session_config", fake_load)
 
     class _Server:
         def __init__(self) -> None:

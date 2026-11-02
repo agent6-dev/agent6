@@ -218,7 +218,7 @@ def _run_lifecycle_mermaid() -> str:
     # providers and the tools; run's is the `_gate` closure in run_task.
     gate = _calls_in_order("src/agent6/app/run.py", "_gate", _RUN_LIFECYCLE_TIER)
     execution = _calls_in_order(
-        "src/agent6/app/_execution.py", "run_execution", (*_RUN_LIFECYCLE_TIER, "gate")
+        "src/agent6/app/execution.py", "run_execution", (*_RUN_LIFECYCLE_TIER, "gate")
     )
     body = [stage for name in execution for stage in (gate if name == "gate" else [name])]
     stages = [stage for name in outer for stage in (body if name == "run_execution" else [name])]

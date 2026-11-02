@@ -25,7 +25,7 @@ import pydantic_core
 
 from agent6 import errors as agent6_errors
 from agent6 import paths, portable
-from agent6.config import _base, _harness, _layer_data, _providers, io, layer
+from agent6.config import harness_config, io, layer, layer_data, provider_config, validation
 from agent6.config import model as config_model
 
 
@@ -132,7 +132,7 @@ def target_unparseable(target: pathlib.Path) -> bool:
     """
     try:
         io.read_toml_file(target)
-    except _base.ConfigError:
+    except validation.ConfigError:
         return True
     return False
 
@@ -151,7 +151,7 @@ def merged_config_error(repo_root: pathlib.Path) -> str | None:
     """
     try:
         layer.load_effective(repo_root, ())
-    except _base.ConfigError as exc:
+    except validation.ConfigError as exc:
         return str(exc)
     return None
 
@@ -187,7 +187,7 @@ def keep_or_rollback(target: pathlib.Path, prior: str | None, err: str, *, held:
 
 # Derived: a hand-listed copy would leave a new entry type validated by nothing.
 PROVIDER_MEMBERS: tuple[type[pydantic.BaseModel], ...] = get_args(
-    get_args(_providers.ProviderEntry)[0]
+    get_args(provider_config.ProviderEntry)[0]
 )
 
 
@@ -234,7 +234,7 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
 
 
 def unknown_key_error(
-    key: str, repo_root: pathlib.Path, *, eff: _layer_data.EffectiveConfig | None = None
+    key: str, repo_root: pathlib.Path, *, eff: layer_data.EffectiveConfig | None = None
 ) -> str:
     """Return the message for a key the schema forbids, with a did-you-mean.
 
@@ -250,8 +250,8 @@ def unknown_key_error(
     """
     try:
         pool = layer.leaf_keys(eff if eff is not None else layer.load_effective(repo_root, ()))
-    except _base.ConfigError:
-        pool = sorted(_layer_data.flatten_leaves(config_model.Config().model_dump(mode="python")))
+    except validation.ConfigError:
+        pool = sorted(layer_data.flatten_leaves(config_model.Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
     hint = f". Did you mean {' or '.join(repr(c) for c in close)}?" if close else ""
     return f"unknown config key {key!r}{hint} (see `agent6 config show`)"
@@ -289,10 +289,10 @@ def _provider_key_refusal(key: str, value: object = None) -> str | None:
     if not parts or parts[0] != "providers":
         return None
     if len(parts) >= 2:
-        return _providers.provider_name_refusal(parts[1]) or None
+        return provider_config.provider_name_refusal(parts[1]) or None
     if isinstance(value, dict):
         for name in value:
-            if refusal := _providers.provider_name_refusal(name):
+            if refusal := provider_config.provider_name_refusal(name):
                 return refusal
     return None
 
@@ -351,7 +351,7 @@ def written_value_error(
             message = _error_about(err, key, value, repo_root, to_repo=to_repo)
             if message is not None:
                 return message
-    except _base.ConfigError as exc:
+    except validation.ConfigError as exc:
         return str(exc)
     return None
 
@@ -431,7 +431,7 @@ def revalidate_write(
     """
     try:
         doc = io.read_toml_file(target)
-    except _base.ConfigError as exc:
+    except validation.ConfigError as exc:
         # Unparseable TOML is always this edit's doing; a raise would escape the rollback.
         return keep_or_rollback(target, prior, str(exc), held=held)
     for wkey, wvalue in written:
@@ -447,7 +447,7 @@ def revalidate_write(
             return keep_or_rollback(target, prior, value_err, held=held)
     try:
         layer.load_effective(repo_root, ())
-    except _base.ConfigError as exc:
+    except validation.ConfigError as exc:
         err = str(exc) + _whole_table_hint(exc, written, to_repo=to_repo)
     else:
         return None
@@ -458,7 +458,7 @@ def revalidate_write(
 
 
 def _whole_table_hint(
-    exc: _base.ConfigError, written: Sequence[tuple[str, object]], *, to_repo: bool
+    exc: validation.ConfigError, written: Sequence[tuple[str, object]], *, to_repo: bool
 ) -> str:
     """Return the line naming the one write that sets a table's required fields together.
 
@@ -610,13 +610,15 @@ def set_config_value(
         was_valid = merged_config_error(repo_root) is None
         if isinstance(parsed, dict) and names_a_section(dotted_key):
             if not parsed:
-                raise _base.ConfigError(f"{dotted_key} = {{}} sets nothing; name the leaves to set")
+                raise validation.ConfigError(
+                    f"{dotted_key} = {{}} sets nothing; name the leaves to set"
+                )
             try:
                 for leaf, val in parsed.items():
                     io.upsert_toml_leaf(
                         target, io.render_key((*io.split_key(dotted_key), leaf)), val
                     )
-            except _base.ConfigError as exc:
+            except validation.ConfigError as exc:
                 # A refusal mid-way leaves earlier leaves on disk.
                 return keep_or_rollback(target, prior, str(exc), held=held)
             written = [
@@ -707,7 +709,7 @@ ENTRY_TABLES: tuple[EntryTable, ...] = (
 
 def _is_argv(table: EntryTable, field: str) -> bool:
     """Return whether a form field is an argv, so its line is split with shell quoting."""
-    return any(_base.is_argv_field(info) for info in _entry_fields(table, field))
+    return any(validation.is_argv_field(info) for info in _entry_fields(table, field))
 
 
 def _entry_fields(table: EntryTable, field: str) -> tuple[pydantic.fields.FieldInfo, ...]:
@@ -777,7 +779,7 @@ def reviewer_choices() -> dict[str, list[str]]:
     """Return the reviewer form's fixed choices from the schema."""
     return {
         name: choices
-        for name, field in _harness.ReviewerConfig.model_fields.items()
+        for name, field in harness_config.ReviewerConfig.model_fields.items()
         if (choices := _field_choices(field.annotation))
     }
 
@@ -868,7 +870,7 @@ def add_entry(
         OperatorError: The target cannot be written.
     """
     name = name.strip()
-    if table.path == "providers" and (refusal := _providers.provider_name_refusal(name)):
+    if table.path == "providers" and (refusal := provider_config.provider_name_refusal(name)):
         return refusal
     if not name:
         return f"{table.label} name is required"
@@ -910,7 +912,7 @@ def remove_entry(
     Returns:
         Whether the entry was present and any revalidation error.
     """
-    if table.path == "providers" and (refusal := _providers.provider_name_refusal(name)):
+    if table.path == "providers" and (refusal := provider_config.provider_name_refusal(name)):
         return UnsetResult(removed=False, error=refusal)
     key = io.render_key((*io.split_key(table.path), name))
     unset = unset_config_value if table.leaf else unset_config_table
@@ -984,9 +986,11 @@ def set_config_leaves(
             for key, val in fields.items():
                 if val is not None:
                     io.upsert_toml_leaf(target, io.render_key((*io.split_key(table), key)), val)
-        except _base.ConfigError as exc:
+        except validation.ConfigError as exc:
             # Earlier leaves may already have landed.
-            raise _base.ConfigError(keep_or_rollback(target, prior, str(exc), held=held)) from exc
+            raise validation.ConfigError(
+                keep_or_rollback(target, prior, str(exc), held=held)
+            ) from exc
         return revalidate_write(
             repo_root,
             target,

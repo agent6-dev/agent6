@@ -220,7 +220,7 @@ def test_receipt_cli_is_read_only(
 
 def test_receipt_compares_recorded_panel_with_end_tree(tmp_path: pathlib.Path) -> None:
     """A finished reviewed session compares immutable tree content without a checkout."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
     from agent6.viewmodel import receipt
     from tests import review_helpers
 
@@ -235,7 +235,7 @@ def test_receipt_compares_recorded_panel_with_end_tree(tmp_path: pathlib.Path) -
 
 def test_historical_baseline_marks_only_its_observation(tmp_path: pathlib.Path) -> None:
     """An id-less baseline event never relabels every earlier verification as baseline."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
     from agent6.viewmodel import receipt
 
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
@@ -333,13 +333,13 @@ def test_receipt_uses_one_shared_scan_without_per_line_adapters(tmp_path: pathli
 
     import pydantic
 
-    from agent6.viewmodel import _session_log, receipt
+    from agent6.viewmodel import receipt, session_log
 
     row = json.dumps({"type": "verify.end", "verify_id": "v", "cmd": ["true"], "exit_code": 0})
     (tmp_path / "logs.jsonl").write_text((row + "\n") * 2000)
     with (
         mock.patch.object(
-            _session_log, "scan_session_log", wraps=_session_log.scan_session_log
+            session_log, "scan_session_log", wraps=session_log.scan_session_log
         ) as scan,
         mock.patch.object(pydantic, "TypeAdapter", wraps=pydantic.TypeAdapter) as adapter,
     ):
@@ -350,8 +350,8 @@ def test_receipt_uses_one_shared_scan_without_per_line_adapters(tmp_path: pathli
 
 def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.Path) -> None:
     """A torn multibyte tail keeps earlier output without certifying a tree."""
-    from agent6 import event_log
-    from agent6.viewmodel import _session_log, receipt
+    from agent6.sessions import event_log
+    from agent6.viewmodel import receipt, session_log
 
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.emit(
@@ -370,5 +370,5 @@ def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.P
     assert len(view.verifications) == 1
     assert view.verifications[0].stdout_tail == "the retained output"
     assert "Final tree not certified" in receipt.render(view)
-    assert view.review == _session_log.scan_session_log(sink.path).review
+    assert view.review == session_log.scan_session_log(sink.path).review
     assert view.evidence_notes

@@ -88,12 +88,12 @@ def test_the_repl_watch_reads_its_own_log(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The REPL watch reads its own log under asks/."""
-    from agent6.ui.cli import _repl  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import repl  # pyright: ignore[reportPrivateUsage]
 
     state = paths.state_dir(tmp_path)
     _seed(state, "asks", "brave-oak-AAAAAA", mode="ask")
 
-    _repl.repl_show_recent_events(tmp_path, "brave-oak-AAAAAA", n=5)
+    repl.repl_show_recent_events(tmp_path, "brave-oak-AAAAAA", n=5)
     out = capsys.readouterr()
     assert "no logs.jsonl" not in out.err + out.out
 

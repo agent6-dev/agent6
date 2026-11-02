@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from agent6.machine import MachineError, MachineResult, journal, load_machine, schema
 from agent6.sessions import layout, process
-from agent6.viewmodel import _machine_logs, format
+from agent6.viewmodel import format, machine_logs
 
 # Front-ends render notifications as ephemeral surfaces, so only the tail travels.
 _NOTIFY_KEEP = 20
@@ -258,7 +258,7 @@ class InstanceProbes:
 
     alive: bool
     parked: bool
-    execution: _machine_logs.AgentExecution
+    execution: machine_logs.AgentExecution
     wait_error: str = ""
 
     def status_word(self, ms: MachineState) -> str:
@@ -294,14 +294,14 @@ def probe_instance(
     machine_dir: pathlib.Path,
     ms: MachineState,
     *,
-    execution: _machine_logs.AgentExecution | None = None,
+    execution: machine_logs.AgentExecution | None = None,
 ) -> InstanceProbes:
     """Probe an instance dir beside its fold.
 
     Args:
         machine_dir: The instance's dir.
         ms: The folded state.
-        execution: The newest execution from a caller's `_machine_logs.NewestExecutionFold`; without
+        execution: The newest execution from a caller's `machine_logs.NewestExecutionFold`; without
             it the log is folded here, for a live, unended machine.
 
     Returns:
@@ -310,9 +310,9 @@ def probe_instance(
     alive = process.worker_is_alive(machine_dir)
     if execution is None:
         execution = (
-            _machine_logs.newest_agent_execution(machine_dir)
+            machine_logs.newest_agent_execution(machine_dir)
             if ms.ended is None and alive
-            else _machine_logs.AgentExecution()
+            else machine_logs.AgentExecution()
         )
     try:
         parked = armed_wait(machine_dir, ms) is not None
@@ -556,7 +556,7 @@ def machine_state_as_dict(
     ms: MachineState,
     machine_dir: pathlib.Path | None = None,
     *,
-    execution: _machine_logs.AgentExecution | None = None,
+    execution: machine_logs.AgentExecution | None = None,
 ) -> dict[str, Any]:
     """Return the wire form of a `MachineState`, what `attach --json` and the web serialize.
 
@@ -565,7 +565,7 @@ def machine_state_as_dict(
         machine_dir: The instance's dir; with it `status` is the dir-aware word, so a
             client can tell a parked instance from a running one, and every verb's
             refusal rides along so a front-end gates its buttons from the one decision.
-        execution: The newest execution from a caller's `_machine_logs.NewestExecutionFold`.
+        execution: The newest execution from a caller's `machine_logs.NewestExecutionFold`.
 
     Returns:
         The state's fields, plus `status`, `level`, `refusals` and, for a stopped

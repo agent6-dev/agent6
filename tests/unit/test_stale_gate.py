@@ -15,16 +15,16 @@ import pytest
 from agent6.app import reporter
 from agent6.config import Config
 from agent6.harness import (
-    _chain,
-    _conversation,
-    _loop_state,
-    _loop_steer,
-    _operator,
-    _snapshot,
     loop,
+    loop_conversation,
+    loop_snapshot,
+    loop_state,
+    loop_steer,
+    operator_bridge,
+    run_chain,
 )
 from agent6.tools import results
-from agent6.viewmodel import _session_status
+from agent6.viewmodel import session_status
 
 
 def test_a_stale_gate_finish_reads_finished_with_its_cause() -> None:
@@ -34,9 +34,7 @@ def test_a_stale_gate_finish_reads_finished_with_its_cause() -> None:
     the run its word. A stale gate is a detail, not a new status word: `died_without_end`,
     the compare gates and the TUI colours key off the existing set.
     """
-    assert _session_status.status_word(
-        finished=True, all_passed=False, end_reason="gate_stale"
-    ) == (
+    assert session_status.status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
         "finished",
         "gate_stale",
     )
@@ -47,7 +45,7 @@ def test_a_green_tree_is_still_what_passes() -> None:
 
     `gate_stale` never reaches a green run (see finish_reason).
     """
-    assert _session_status.status_word(finished=True, all_passed=True, end_reason="gate_stale") == (
+    assert session_status.status_word(finished=True, all_passed=True, end_reason="gate_stale") == (
         "passed",
         "",
     )
@@ -77,7 +75,7 @@ def test_the_proposal_is_printed_for_the_operator_to_set() -> None:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
-            _snapshot.SessionResult(
+            loop_snapshot.SessionResult(
                 completed=True,
                 reason="gate_stale",
                 summary="s",
@@ -108,7 +106,7 @@ def test_a_long_proposal_is_clipped() -> None:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
-            _snapshot.SessionResult(
+            loop_snapshot.SessionResult(
                 completed=True,
                 reason="gate_stale",
                 summary="s",
@@ -136,7 +134,7 @@ def test_a_short_prose_proposal_is_printed_whole_with_no_clip_mark() -> None:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
-            _snapshot.SessionResult(
+            loop_snapshot.SessionResult(
                 completed=True,
                 reason="gate_stale",
                 summary="s",
@@ -157,7 +155,7 @@ def _stale_report(proposal: str) -> str:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
-            _snapshot.SessionResult(
+            loop_snapshot.SessionResult(
                 completed=True,
                 reason="gate_stale",
                 summary="s",
@@ -184,7 +182,7 @@ def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
-            _snapshot.SessionResult(
+            loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="s",
@@ -204,7 +202,7 @@ def test_nothing_is_printed_without_a_declaration() -> None:
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         finalize._print_stale_gate(
-            _snapshot.SessionResult(
+            loop_snapshot.SessionResult(
                 completed=True, reason="finish_session", summary="s", turns=1, tool_calls=1
             ),
             reporter=reporter.STDIO_REPORTER,
@@ -226,13 +224,13 @@ def test_nothing_is_printed_without_a_declaration() -> None:
 def test_a_declaration_names_the_end_only_over_a_red_tree(
     declared: str, green: bool | None, expected: str
 ) -> None:
-    from agent6.harness import _finish_gates, _verify_verdict
+    from agent6.harness import finish_gates, verify_verdict
 
-    reason = _finish_gates.finish_reason(
+    reason = finish_gates.finish_reason(
         "finish_session",
         stale_gate=declared,
         tree_green=green,
-        verify=_verify_verdict.VerifyVerdict(),
+        verify=verify_verdict.VerifyVerdict(),
     )
     assert reason == expected
 
@@ -262,11 +260,11 @@ def test_a_command_the_model_chose_is_not_echoed_back() -> None:
 
 
 def _finish_call(
-    wf: loop.Harness, state: _loop_state.LoopState, tool_input: dict[str, object]
-) -> _loop_state.TurnState:
+    wf: loop.Harness, state: loop_state.LoopState, tool_input: dict[str, object]
+) -> loop_state.TurnState:
     """Return the turn after a finish_session went through the capture and the finish gates."""
-    turn = _loop_state.TurnState(
-        number=3, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
+    turn = loop_state.TurnState(
+        number=3, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
     wf._capture_finish(state, turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
     ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
@@ -274,11 +272,11 @@ def _finish_call(
     return turn
 
 
-def _red_gated_run(tmp_path: pathlib.Path) -> tuple[loop.Harness, _loop_state.LoopState]:
+def _red_gated_run(tmp_path: pathlib.Path) -> tuple[loop.Harness, loop_state.LoopState]:
     dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
-        chain=_chain.RunChain(tmp_path),
+        chain=run_chain.RunChain(tmp_path),
         config=Config.model_validate(
             {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
         ),
@@ -286,9 +284,9 @@ def _red_gated_run(tmp_path: pathlib.Path) -> tuple[loop.Harness, _loop_state.Lo
         dispatcher=dispatcher,
         logger=lambda _line: None,
         mode="run",
-        bridge=_operator.OperatorBridge(stop_requested=lambda: True),
+        bridge=operator_bridge.OperatorBridge(stop_requested=lambda: True),
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_fail("1 failed")
     return wf, state
 
@@ -307,7 +305,7 @@ def test_a_proposal_on_a_returned_finish_reaches_the_end_report(
     assert returned.finish is None and returned.end_returned
     state.gates.verify_retries_used = 2
     stands = _finish_call(wf, state, {"summary": "done"})
-    result = wf._turn_stop_checks(state, stands, _conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
+    result = wf._turn_stop_checks(state, stands, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.stale_gate == "pytest tests/unit"
     # The end is named by its own call, which made no claim.
     assert (result.reason, result.verified) == ("finish_session", "failed")
@@ -320,6 +318,6 @@ def test_the_latest_proposal_is_the_one_reported_at_any_end(tmp_path: pathlib.Pa
     wf, state = _red_gated_run(tmp_path)
     _finish_call(wf, state, {"summary": "done", "stale_gate": "pytest tests/unit"})
     _finish_call(wf, state, {"summary": "done", "stale_gate": "pytest tests/fast"})
-    stopped = _loop_steer.operator_boundary(wf, _conversation.Conversation(), 4, state)
+    stopped = loop_steer.operator_boundary(wf, loop_conversation.Conversation(), 4, state)
     assert stopped is not None and stopped.reason == "steer_abort"
     assert stopped.stale_gate == "pytest tests/fast"

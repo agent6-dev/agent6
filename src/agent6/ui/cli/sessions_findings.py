@@ -14,7 +14,7 @@ from agent6 import review_records
 from agent6.app import review_actions
 from agent6.sessions import id
 from agent6.ui import spawn
-from agent6.ui.cli import _common, completers
+from agent6.ui.cli import common, completers
 from agent6.viewmodel import review
 
 
@@ -31,17 +31,17 @@ def add_action_options(parser: argparse.ArgumentParser) -> None:
 
 def add_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Add findings, resolve and reopen under sessions."""
-    findings = _common._sub(
+    findings = common._sub(
         sub, "findings", help="List open review findings and the review version."
     )
-    _common._add_session_id(findings, completers._complete_session_ids)
+    common._add_session_id(findings, completers._complete_session_ids)
     findings.add_argument("--all", action="store_true", help="Include resolved findings.")
     findings.add_argument("--json", action="store_true", help="Print structured review evidence.")
     for verb in ("resolve", "reopen"):
-        parser = _common._sub(
+        parser = common._sub(
             sub, verb, help=f"{verb.capitalize()} a finding with an operator reason."
         )
-        session = parser.add_argument("session_id", help=_common.SESSION_ID)
+        session = parser.add_argument("session_id", help=common.SESSION_ID)
         session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
         finding = parser.add_argument("finding_id", help="The finding ID from sessions findings.")
         finding.completer = completers.complete_finding_ids  # type: ignore[attr-defined]
@@ -80,13 +80,13 @@ def cmd_findings(session_id: str, *, all_findings: bool, as_json: bool) -> int:
     Returns:
         Zero on success, 2 when the session or review evidence is unreadable.
     """
-    saved = _common.resolve_target(session_id)
+    saved = common.resolve_target(session_id)
     if saved is None:
         return 2
     try:
         view = review_actions.read_review(saved.session_dir)
     except review_actions.ReviewActionError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     payload = review.as_dict(view)
     payload["findings"] = [f for f in payload["findings"] if all_findings or f["status"] == "open"]
@@ -144,7 +144,7 @@ def cmd_action(
         Zero for a recorded or queued action, 2 for a refusal or failed delivery.
     """
     try:
-        saved = _common.resolve_session_layout(pathlib.Path.cwd(), session_id)
+        saved = common.resolve_session_layout(pathlib.Path.cwd(), session_id)
         view = review_actions.read_review(saved.session_dir)
         resolution = (
             review_records.FindingResolution.model_validate(
@@ -177,7 +177,7 @@ def cmd_action(
         OSError,
         ValueError,
     ) as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     print(
         f"{saved.session_id}: {result.message} "

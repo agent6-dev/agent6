@@ -32,7 +32,7 @@ from agent6.machine import MachineError
 from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.telemetry import export
-from agent6.ui.web import _sse, actions, auth, git_model, model, page, review_routes
+from agent6.ui.web import actions, auth, git_model, model, page, review_routes, sse
 from agent6.viewmodel import (
     UnknownStepError,
     machine_snapshot,
@@ -1091,7 +1091,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._begin_sse()
         self.server.claim_session(session_dir)
         try:
-            _sse.stream_session(self._channel(), session_dir, repo=self.cwd)
+            sse.stream_session(self._channel(), session_dir, repo=self.cwd)
         finally:
             self.server.release_session(session_dir)
 
@@ -1107,13 +1107,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._begin_sse()
         self.server.claim_session(machine_dir)
         try:
-            _sse.stream_machine(self._channel(), machine_dir)
+            sse.stream_machine(self._channel(), machine_dir)
         finally:
             self.server.release_session(machine_dir)
 
-    def _channel(self) -> _sse.SseChannel:
+    def _channel(self) -> sse.SseChannel:
         """Return this handler's socket writes as a channel."""
-        return _sse.SseChannel(send=self._sse_send, ping=self._sse_ping)
+        return sse.SseChannel(send=self._sse_send, ping=self._sse_ping)
 
 
 def _launch_lines(url: str, secret: auth.Secret) -> list[str]:

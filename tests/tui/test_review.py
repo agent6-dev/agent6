@@ -10,9 +10,8 @@ from typing import Any
 import pytest
 from textual import widgets
 
-from agent6 import event_log
 from agent6.app import review_actions
-from agent6.sessions import ipc, process
+from agent6.sessions import event_log, ipc, process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import home, modals
@@ -355,12 +354,12 @@ def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
 
 def test_denied_gate_story_is_not_running(tmp_path: pathlib.Path) -> None:
     """The diff pane settles an attempt whose command was denied."""
-    from agent6.ui.tui import _diff_pane
+    from agent6.ui.tui import diff_pane
     from agent6.viewmodel import state
     from tests.unit import test_verification_evidence
 
     folded = state.fold_session(test_verification_evidence.denied_rows(tmp_path))
-    pane = _diff_pane.DiffPane(tmp_path, id="diff")
+    pane = diff_pane.DiffPane(tmp_path, id="diff")
     text = pane._story(folded, None).plain
     assert "denied" in text and "running" not in text and "None" not in text
     assert "run_commands" in text

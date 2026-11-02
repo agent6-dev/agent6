@@ -19,7 +19,7 @@ import pytest
 from agent6 import paths, portable
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
-from agent6.ui.cli import _steer, main
+from agent6.ui.cli import main, steer_tty
 from agent6.vcs import git_read
 
 _ID = "dead-run-BBBB22"
@@ -220,7 +220,7 @@ def test_rm_without_a_terminal_refuses_without_an_id(
     def never(*_args: object, **_kwargs: object) -> str | None:
         raise AssertionError("rm asked with no terminal")
 
-    monkeypatch.setattr(_steer, "tty_prompt", never)
+    monkeypatch.setattr(steer_tty, "tty_prompt", never)
     assert main(["sessions", "rm"]) == 2
     out = capsys.readouterr()
     assert "no controlling terminal" in out.err
@@ -242,7 +242,7 @@ def test_rm_with_an_id_without_a_terminal_deletes_without_asking(
     def never(*_args: object, **_kwargs: object) -> str | None:
         raise AssertionError("rm asked with no terminal")
 
-    monkeypatch.setattr(_steer, "tty_prompt", never)
+    monkeypatch.setattr(steer_tty, "tty_prompt", never)
     assert main(["sessions", "rm", _ID]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
@@ -264,7 +264,7 @@ def test_rm_yes_without_a_terminal_deletes_without_asking(
     def never(*_args: object, **_kwargs: object) -> str | None:
         raise AssertionError("rm asked with no terminal")
 
-    monkeypatch.setattr(_steer, "tty_prompt", never)
+    monkeypatch.setattr(steer_tty, "tty_prompt", never)
     assert main(["sessions", "rm", flag]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
@@ -284,7 +284,7 @@ def test_rm_asks_without_a_terminal_refuses_without_yes(
     def never(*_args: object, **_kwargs: object) -> str | None:
         raise AssertionError("rm asked with no terminal")
 
-    monkeypatch.setattr(_steer, "tty_prompt", never)
+    monkeypatch.setattr(steer_tty, "tty_prompt", never)
     assert main(["sessions", "rm", "--asks"]) == 2
     err = capsys.readouterr().err
     assert "no controlling terminal" in err and "2 asks" in err and "--yes" in err
@@ -306,7 +306,7 @@ def test_rm_refuses_a_session_that_went_live_while_the_question_stood(
         process.write_worker_pid(layout.session_dir, os.getpid())
         return True
 
-    monkeypatch.setattr(_steer, "delete_confirmed", _resumed_meanwhile)
+    monkeypatch.setattr(steer_tty, "delete_confirmed", _resumed_meanwhile)
     assert main(["sessions", "rm", _ID]) == 2
     assert "still live" in capsys.readouterr().err
     assert layout.session_dir.exists()

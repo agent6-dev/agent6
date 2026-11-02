@@ -26,19 +26,20 @@ from typing import Any
 
 import pytest
 
-from agent6 import directive, kinds, memory, paths, portable
-from agent6.app import _lane_watch as lane_watch
+from agent6 import directive, kinds, paths, portable
 from agent6.app import (
-    _parallel_results,
-    _workdirs,
     compare,
+    lane_watch,
     parallel,
-    providers,
+    parallel_results,
     reporter,
+    role_providers,
     stamps,
+    workdirs,
 )
 from agent6.app import lanes as app_lanes
 from agent6.config import Config, ConfigError
+from agent6.context import memory
 from agent6.harness import subrun
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc, process
@@ -46,7 +47,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main, main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.vcs import git_ops, git_read
-from agent6.viewmodel import _session_log, _session_status, listing
+from agent6.viewmodel import listing, session_log, session_status
 
 
 def _git(repo: pathlib.Path, *args: str) -> None:
@@ -876,7 +877,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
 
     def fake_summary(rd: pathlib.Path) -> SessionSummary:
         return SessionSummary(
-            session_id=rd.name, mode="run", task_label=_session_status.TaskLabel("t"),
+            session_id=rd.name, mode="run", task_label=session_status.TaskLabel("t"),
             status=next(statuses),
             reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
         )  # fmt: skip
@@ -999,7 +1000,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
     def provider(*_a: Any, **_kw: Any) -> FinishedProvider:
         return FinishedProvider()
 
-    monkeypatch.setattr(providers, "build_role_provider", provider)
+    monkeypatch.setattr(role_providers, "build_role_provider", provider)
 
     def spawn(
         argv: list[str],
@@ -1374,7 +1375,7 @@ def test_run_parallel_removes_its_emptied_workdir_levels(
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
-    per_repo = _workdirs.workdir_base(cfg, origin)
+    per_repo = workdirs.workdir_base(cfg, origin)
     lanes = app_lanes.build_lane_specs(
         "2", cfg=cfg, origin=origin, fanout_id="fan", workdir_root=per_repo / "fan"
     )
@@ -1784,7 +1785,7 @@ def test_lineage_stamp_oserror_does_not_abort_import_loop(
 
     # The stamp is the fan-out's own manifest write; the lane imports keep the real writer.
     stand_in = types.SimpleNamespace(write_manifest=boom)
-    monkeypatch.setattr(_parallel_results, "stamps", stand_in)
+    monkeypatch.setattr(parallel_results, "stamps", stand_in)
 
     rc = parallel.run_parallel(
         "t",
@@ -1877,7 +1878,7 @@ def test_await_waits_for_worker_pid_to_clear(
 
     # Clear the live pid only on the SECOND status poll of the lane's run dir,
     # so poll 1 exercises the race window deterministically.
-    real_summarize = _parallel_results.summarize_session_dir
+    real_summarize = parallel_results.summarize_session_dir
     polls = {"n": 0}
 
     def summarize_then_clear_pid(session_dir: pathlib.Path) -> object:
@@ -1888,7 +1889,7 @@ def test_await_waits_for_worker_pid_to_clear(
                 (session_dir / "worker.pid").unlink(missing_ok=True)
         return summary
 
-    monkeypatch.setattr(_parallel_results, "summarize_session_dir", summarize_then_clear_pid)
+    monkeypatch.setattr(parallel_results, "summarize_session_dir", summarize_then_clear_pid)
     monkeypatch.setattr(lane_watch, "summarize_session_dir", summarize_then_clear_pid)
     monkeypatch.setattr(lane_watch, "POLL_INTERVAL_S", 0.01)
 
@@ -2261,7 +2262,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     origin_state = paths.state_dir(origin)
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
-    per_repo = _workdirs.workdir_base(cfg, origin)
+    per_repo = workdirs.workdir_base(cfg, origin)
     spec = subrun.LaneSpec(
         lane=1, session_id="co-p9-l1", workdir=per_repo / "co" / "grp" / "lane-1", route=None
     )
@@ -2358,7 +2359,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     # orphaned lane was never adopted.
     assert all(group == "co-p2" for (_l, _r, _t, group, _w) in seen)
     assert all(
-        str(_workdirs.subordinate_workdir_root(cfg, origin, group) / f"lane-{lane}") == workdir
+        str(workdirs.subordinate_workdir_root(cfg, origin, group) / f"lane-{lane}") == workdir
         for (lane, _r, _t, group, workdir) in seen
     )
 
@@ -2597,7 +2598,7 @@ def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
     base = Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
     spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", route=None)
-    path = _workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset({"git.branch_per_run"}))
+    path = workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset({"git.branch_per_run"}))
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
 
@@ -2622,7 +2623,7 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
         route=kinds.ModelRoute("p", "other"),
     )
     written = tomllib.loads(
-        _workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).read_text(
+        workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).read_text(
             encoding="utf-8"
         )
     )
@@ -2803,11 +2804,11 @@ def test_fanout_exit_reflects_the_gate_verdicts() -> None:
             session_id="s", task="t", diff="", verify_ok=verify_ok, cost_usd=0.0
         )
 
-    assert _parallel_results.fanout_exit_code([]) == 1
-    assert _parallel_results.fanout_exit_code([_cand(True), _cand(False)]) == 0
-    assert _parallel_results.fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
-    assert _parallel_results.fanout_exit_code([_cand(False), _cand(False)]) == 4
-    assert _parallel_results.fanout_exit_code([_cand(False), _cand(None)]) == 4
+    assert parallel_results.fanout_exit_code([]) == 1
+    assert parallel_results.fanout_exit_code([_cand(True), _cand(False)]) == 0
+    assert parallel_results.fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
+    assert parallel_results.fanout_exit_code([_cand(False), _cand(False)]) == 4
+    assert parallel_results.fanout_exit_code([_cand(False), _cand(None)]) == 4
 
 
 def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
@@ -2997,7 +2998,7 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     for clone in (unmerged, merged):
         paths.jail_cache_home(clone).mkdir(parents=True)
 
-    swept, kept = _workdirs.sweep_fanout_clones(origin, cfg)
+    swept, kept = workdirs.sweep_fanout_clones(origin, cfg)
     assert (swept, kept) == (1, 1)  # the foreign repo's dir is not counted
     assert (scoped / "fan-a").is_dir()  # unique commits: kept whole
     assert not (scoped / "fan-b").exists()
@@ -3029,7 +3030,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         assert cwd == lanes[0].workdir
         assert not before and not list_dirs()
         assert env["AGENT6_PARALLEL_LINEAGE"] == "failed11:failed11:1"
-        assert _workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
+        assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
         return None, "lane refused before creating a session"
 
     failed_runtime = dataclasses.replace(runtime, spawn=fail_spawn)
@@ -3094,17 +3095,17 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     subrun.clone_workspace(origin, lane)
     # No session dir yet: a lane between its clone and its first write looks
     # like one that never started, and a prune in that window must not win.
-    assert _workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
     session = paths.state_dir(lane) / "sessions" / "runs" / "fan-starting-l1"
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text("", encoding="utf-8")  # a record, not a husk
     process.write_worker_pid(session, os.getpid())
 
-    assert _workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
+    assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
     assert lane.is_dir()
 
     (session / "worker.pid").unlink()
-    assert _workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
     assert not lane.parent.exists()
 
     # A lane that died in preflight leaves a husk (a session dir with no
@@ -3112,7 +3113,7 @@ def test_sweep_keeps_a_commitless_clone_only_while_its_lane_lives(
     subrun.clone_workspace(origin, lane)
     husk = paths.state_dir(lane) / "sessions" / "runs" / "fan-starting-l2"
     husk.mkdir(parents=True)
-    assert _workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
+    assert workdirs.sweep_fanout_clones(origin, cfg) == (1, 0)
 
 
 def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
@@ -3143,7 +3144,7 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
         ["git", "-C", str(origin), "fetch", str(lane), tip], check=True, capture_output=True
     )
 
-    swept, kept = _workdirs.sweep_fanout_clones(origin, cfg)
+    swept, kept = workdirs.sweep_fanout_clones(origin, cfg)
 
     assert (swept, kept) == (0, 1)
     assert lane.is_dir(), "the last ref reaching the lane's work was deleted"
@@ -3168,7 +3169,7 @@ def test_sweep_leaves_a_dir_that_is_not_a_fan_out_group_alone(
     notes.mkdir()
     (notes / "todo.md").write_text("mine\n", encoding="utf-8")
 
-    swept, kept = _workdirs.sweep_fanout_clones(origin, cfg)
+    swept, kept = workdirs.sweep_fanout_clones(origin, cfg)
     assert (swept, kept) == (0, 0)
     assert (theirs / "draft.txt").read_text(encoding="utf-8") == "uncommitted\n"
     assert (notes / "todo.md").read_text(encoding="utf-8") == "mine\n"
@@ -3189,7 +3190,7 @@ def test_carry_back_names_the_kept_dir_only_when_it_holds_something(
     memory.remove(lane_state, "d-fact")
     (memory.memory_dir(origin_state) / "d-fact.md").write_text("D per the origin.\n")
     dest = tmp_path / "dest"
-    _parallel_results.carry_back(
+    parallel_results.carry_back(
         lane_state, origin_state, dest, lane=2, reporter=reporter.STDIO_REPORTER
     )
     err = capsys.readouterr().err
@@ -3231,7 +3232,7 @@ def test_run_parallel_is_a_session_of_its_own(
     assert manifest.fanout == sessions_manifest.FanoutStamp(lanes=2, spec="2")
     assert manifest.run_branch is None and manifest.mode == "run"
     assert manifest.user_task == "do the task" and manifest.parallel is None
-    scan = _session_log.scan_session_log(coordinator / "logs.jsonl")
+    scan = session_log.scan_session_log(coordinator / "logs.jsonl")
     # No model finished a fan-out: its lanes ran and were ranked.
     assert scan.saw_start and scan.finished and scan.end_reason == "lanes_ranked"
     types = [
@@ -3408,7 +3409,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
             fanout_id="crash",
         )
     coordinator = origin_state / "sessions" / "runs" / "crash"
-    scan = _session_log.scan_session_log(coordinator / "logs.jsonl")
+    scan = session_log.scan_session_log(coordinator / "logs.jsonl")
     assert scan.finished and scan.end_reason == "crashed"
     assert not (coordinator / "worker.pid").exists()
     assert listing.summarize_session_dir(coordinator).status == "failed"
@@ -3431,7 +3432,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
             fanout_id="kbi",
         )
     coordinator = origin_state / "sessions" / "runs" / "kbi"
-    assert _session_log.scan_session_log(coordinator / "logs.jsonl").end_reason == "interrupted"
+    assert session_log.scan_session_log(coordinator / "logs.jsonl").end_reason == "interrupted"
     assert listing.summarize_session_dir(coordinator).status == "stopped"
 
 
@@ -3475,4 +3476,4 @@ def test_a_relative_workdir_resolves_to_an_absolute_path(
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"workspace": {"base_dir": "wt"}})
 
-    assert _workdirs.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)
+    assert workdirs.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)

@@ -19,7 +19,7 @@ from agent6.app import merge, resume
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.vcs import git_read
 from agent6.viewmodel import (
     LogScan,
@@ -304,7 +304,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     Returns:
         The exit code; 2 when the session cannot be resolved.
     """
-    layout = _common.resolve_target(session_id)
+    layout = common.resolve_target(session_id)
     if layout is None:
         return 2
     target = layout.session_dir
@@ -520,13 +520,13 @@ def _print_listening_ports(session_dir: pathlib.Path) -> None:
 def _print_task_tree(session_dir: pathlib.Path) -> None:
     """Print the run's task tree when it decomposed into subtasks; a single root is skipped."""
     from agent6.graph import storage  # noqa: PLC0415  # noqa: PLC0415
-    from agent6.ui.cli import _task_tree  # noqa: PLC0415  # noqa: PLC0415
+    from agent6.ui.cli import task_tree  # noqa: PLC0415  # noqa: PLC0415
 
     layout = sessions_layout.layout_of(session_dir)
     nodes = storage.load_graph(layout)
     if len(nodes) <= 1:
         return
-    lines = _task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
+    lines = task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)})
     if lines:
         print("\ntasks:")
         for line in lines:

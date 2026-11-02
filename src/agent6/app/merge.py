@@ -18,11 +18,11 @@ from collections.abc import Callable
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, event_log
-from agent6.app import _merge_message, _setup, stamps
+from agent6 import errors
+from agent6.app import merge_message, session_setup, stamps
 from agent6.config import Config
+from agent6.sessions import event_log, lock, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import lock, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import scan_session_log
@@ -158,7 +158,7 @@ def dispatch_merge(
     """
     if method == "squash" and message is None:
         # The message names what this merge lands: the commits after the landed base.
-        message = _merge_message.squash_message(
+        message = merge_message.squash_message(
             cwd,
             cfg,
             manifest,
@@ -273,7 +273,7 @@ def execute_merge(
     Returns:
         What the merge did.
     """
-    _setup.apply_git_ops_policy(cfg)
+    session_setup.apply_git_ops_policy(cfg)
     try:
         with contextlib.ExitStack() as cleanup:
             if worker_lock_fd is None:
@@ -334,7 +334,7 @@ def execute_merge(
                 events=events,
                 warn=warn,
                 merge_base=merge_base,
-                finish_summaries=_merge_message.finish_summaries(layout),
+                finish_summaries=merge_message.finish_summaries(layout),
             )
             if result.conflicted:
                 return MergeOutcome("conflict", conflicts=result.conflicts)

@@ -15,14 +15,13 @@ import re
 from typing import Any
 
 from agent6 import paths
-from agent6.app import _workdirs, confine
-from agent6.config import ConfigError, _layer_data, _presets, io, layer, write
+from agent6.app import confine, workdirs
+from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
 from agent6.vcs import git_read
 from agent6.viewmodel import (
     MachineSummary,
-    _machine_logs,
     config_view,
     fold_session,
     fold_transcript,
@@ -31,6 +30,7 @@ from agent6.viewmodel import (
     listing,
     machine_files,
     machine_instance_dirs,
+    machine_logs,
     operator_inputs,
     restate,
     session_state_as_dict,
@@ -112,7 +112,7 @@ def draft_workspace(
         cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError:
         return None
-    workspace = _workdirs.subordinate_workdir_root(cfg, cwd, name)
+    workspace = workdirs.subordinate_workdir_root(cfg, cwd, name)
     return workspace if (workspace / ".git").exists() else None
 
 
@@ -268,7 +268,7 @@ def hub_payload(
         "machines": _list_machines(cwd),
         "machine_files": list_machine_files(cwd),
         "drafts": _list_drafts(cwd),
-        "presets": _presets.available_preset_names(cwd, config_paths),
+        "presets": layer_presets.available_preset_names(cwd, config_paths),
         "preset_default_label": choices.default_label(choices.default_preset(cwd, config_paths)),
     }
 
@@ -319,7 +319,7 @@ def restate_payload(session_dir: pathlib.Path) -> dict[str, Any]:
 
 def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
     """Return the conversation of the machine's newest agent-state execution, or no items."""
-    log = _machine_logs.newest_state_log(machine_dir)
+    log = machine_logs.newest_state_log(machine_dir)
     if log is None:
         return {"items": []}
     events = list(tail_events(log, follow=False))
@@ -332,7 +332,7 @@ def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
 
 
 def machine_reasoning_snapshot(
-    machine_dir: pathlib.Path, *, fold: _machine_logs.NewestExecutionFold | None = None
+    machine_dir: pathlib.Path, *, fold: machine_logs.NewestExecutionFold | None = None
 ) -> dict[str, Any]:
     """Return the session state of the machine's newest agent-state execution.
 
@@ -350,7 +350,7 @@ def machine_reasoning_snapshot(
     if fold is not None:
         log, state = fold.refresh(machine_dir), fold.state
     else:
-        log = _machine_logs.newest_state_log(machine_dir)
+        log = machine_logs.newest_state_log(machine_dir)
         state = fold_session(tail_events(log, follow=False)) if log is not None else None
     if log is None or state is None:
         return {}
@@ -384,7 +384,7 @@ def config_payload(
     )
     entry_sources: dict[tuple[str, str], str] = {}
     for source in eff.layers:
-        for key in _layer_data.flatten_leaves(source.data):
+        for key in layer_data.flatten_leaves(source.data):
             if entry := write.entry_of(key):
                 table, name = entry
                 entry_sources[table.path, name] = source.source
@@ -422,7 +422,7 @@ def config_suggestions(
         offers, or [] on a config error.
     """
     if key == "preset":
-        return _presets.available_preset_names(cwd, config_paths)
+        return layer_presets.available_preset_names(cwd, config_paths)
     try:
         eff = layer.load_effective(cwd, config_paths)
     except ConfigError:

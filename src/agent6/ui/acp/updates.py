@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from agent6 import directive, evidence
-from agent6.viewmodel import _session_status, _state_view, events, receipt, transcript
+from agent6.viewmodel import events, receipt, session_status, state_view, transcript
 
 # The update a fold item becomes; the operator's own words echo back as a user message.
 _CHUNK_KIND = {
@@ -106,7 +106,7 @@ class RunInfo:
     """The session's title, slash commands and context use, projected from the journal.
 
     `used` over `size` is the rule behind every surface's `ctx N%` readout
-    (`_state_view.context_fill`): the last completed call's whole prompt over its model's window.
+    (`state_view.context_fill`): the last completed call's whole prompt over its model's window.
 
     Attributes:
         acp_session_id: The conversation the notifications address.
@@ -116,7 +116,7 @@ class RunInfo:
     """
 
     acp_session_id: str
-    window: Callable[[str, str], int | None] = _state_view.cached_context_window
+    window: Callable[[str, str], int | None] = state_view.cached_context_window
     banked_usd: float = 0.0
     _verification: evidence.VerificationEvidence | None = dataclasses.field(
         default=None, init=False
@@ -186,7 +186,7 @@ class RunInfo:
     def _start(self, user_task: str) -> list[dict[str, Any]]:
         """Return the title, when the task has a headline, and the commands."""
         out: list[dict[str, Any]] = []
-        if title := printable(_session_status.task_snippet(user_task)):
+        if title := printable(session_status.task_snippet(user_task)):
             out.append(
                 _update(
                     self.acp_session_id, {"sessionUpdate": "session_info_update", "title": title}
@@ -307,7 +307,7 @@ def updates_for(
     if item.kind == "done":
         summary = item.body.strip()
         result: list[dict[str, Any]] = []
-        if summary and item.arg in _session_status.MODEL_ENDS:
+        if summary and item.arg in session_status.MODEL_ENDS:
             result.append(
                 _update(
                     acp_session_id,

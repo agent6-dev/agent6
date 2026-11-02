@@ -13,9 +13,9 @@ import pathlib
 from typing import Any
 from unittest import mock
 
-from agent6 import memory
 from agent6.config import Config
-from agent6.harness import _chain, _conversation, _guards, _loop_state, _snapshot, loop
+from agent6.context import memory
+from agent6.harness import guards, loop, loop_conversation, loop_snapshot, loop_state, run_chain
 from agent6.tools import results
 
 
@@ -23,7 +23,7 @@ def _wf(state_dir: pathlib.Path | None, **kw: Any) -> loop.Harness:
     events = mock.MagicMock()
     events.path = pathlib.Path("/x/sessions/runs/run-a/logs.jsonl")
     return loop.Harness(
-        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None),
@@ -34,17 +34,17 @@ def _wf(state_dir: pathlib.Path | None, **kw: Any) -> loop.Harness:
     )
 
 
-def _state() -> _loop_state.LoopState:
-    return _loop_state.LoopState(original_task="t", tool_calls=0)
+def _state() -> loop_state.LoopState:
+    return loop_state.LoopState(original_task="t", tool_calls=0)
 
 
-def _turn() -> _loop_state.TurnState:
-    return _loop_state.TurnState(
-        number=1, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
+def _turn() -> loop_state.TurnState:
+    return loop_state.TurnState(
+        number=1, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
 
 
-def _read(wf: loop.Harness, state: _loop_state.LoopState, path: str) -> None:
+def _read(wf: loop.Harness, state: loop_state.LoopState, path: str) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         _turn(),
@@ -55,7 +55,7 @@ def _read(wf: loop.Harness, state: _loop_state.LoopState, path: str) -> None:
 
 
 def _edit(
-    wf: loop.Harness, state: _loop_state.LoopState, path: str, *, created: bool = False
+    wf: loop.Harness, state: loop_state.LoopState, path: str, *, created: bool = False
 ) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
@@ -70,7 +70,7 @@ def _edit(
     )
 
 
-def _patch(wf: loop.Harness, state: _loop_state.LoopState, text: str) -> None:
+def _patch(wf: loop.Harness, state: loop_state.LoopState, text: str) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
         _turn(),
@@ -167,9 +167,7 @@ def test_the_execution_end_drops_a_deleted_fact_and_starts_a_recreated_one_afres
     )
     wf = _wf(tmp_path)
     state = _state()
-    state.memory = _guards.MemoryState(
-        wrote=["again"], created=["again"], deleted=["gone", "again"]
-    )
+    state.memory = guards.MemoryState(wrote=["again"], created=["again"], deleted=["gone", "again"])
     wf._record_memory_use(state)  # pyright: ignore[reportPrivateUsage]
     use = memory.read_use(tmp_path)
     assert "gone" not in use
@@ -222,7 +220,7 @@ def test_no_store_means_nothing_is_counted() -> None:
 def test_the_execution_end_persists_what_it_wrote_and_read(tmp_path: pathlib.Path) -> None:
     wf = _wf(tmp_path)
     state = _state()
-    state.memory = _guards.MemoryState(
+    state.memory = guards.MemoryState(
         wrote=["quirk", "edited"], created=["quirk"], read={"quirk": 2, "other": 1}
     )
     wf._record_memory_use(state)  # pyright: ignore[reportPrivateUsage]
@@ -248,7 +246,7 @@ def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried()
 
     A resumed execution records only what it touches itself.
     """
-    snap = _snapshot.SessionSnapshot(
+    snap = loop_snapshot.SessionSnapshot(
         system="s",
         messages=[],
         tool_calls=0,
@@ -260,13 +258,13 @@ def test_a_resumed_execution_starts_its_own_count_with_the_nudge_flags_carried()
         memory_flip_nudged=True,
     )
     state = _state()
-    _loop_state.restore_completion_state(state, snap)
+    loop_state.restore_completion_state(state, snap)
     assert (state.memory.written, state.memory.flip_nudged) == (True, True)
     assert (state.memory.wrote, state.memory.read) == ([], {})
     # The shape itself: the snapshot carries the two flags and nothing
     # else of the memory bookkeeping, so no restore can bring an execution's
     # touched facts into the next one.
-    assert {f for f in _snapshot.SessionSnapshot.model_fields if f.startswith("memory_")} == {
+    assert {f for f in loop_snapshot.SessionSnapshot.model_fields if f.startswith("memory_")} == {
         "memory_written",
         "memory_flip_nudged",
     }
@@ -280,8 +278,10 @@ def test_finish_records_the_use(tmp_path: pathlib.Path) -> None:
     """
     wf = _wf(tmp_path)
     state = _state()
-    state.memory = _guards.MemoryState(read={"quirk": 1})
-    end = _snapshot.End(reason="finish_session", summary="done", completed=True, verdict="passed")
+    state.memory = guards.MemoryState(read={"quirk": 1})
+    end = loop_snapshot.End(
+        reason="finish_session", summary="done", completed=True, verdict="passed"
+    )
     result = wf.finish(state, end, turn=3)
     assert result.completed is True
     assert memory.read_use(tmp_path)["quirk"].reads == 1
@@ -305,7 +305,7 @@ def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(
     events = mock.MagicMock()
     events.path = pathlib.Path("/x/sessions/runs/run-a/logs.jsonl")
     wf = loop.Harness(
-        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None),
@@ -314,10 +314,10 @@ def test_a_record_that_cannot_be_written_logs_and_lets_the_end_stand(
         events=events,
     )
     state = _state()
-    state.memory = _guards.MemoryState(read={"quirk": 1})
+    state.memory = guards.MemoryState(read={"quirk": 1})
     tmp_path.chmod(stat.S_IRUSR | stat.S_IXUSR)
     try:
-        end = _snapshot.End(
+        end = loop_snapshot.End(
             reason="finish_session", summary="done", completed=True, verdict="passed"
         )
         result = wf.finish(state, end, turn=1)

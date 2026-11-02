@@ -116,6 +116,6 @@ def test_a_task_tree_render_failure_is_not_an_empty_section(
     def broken(*_a: object, **_k: object) -> list[str]:
         raise RuntimeError("a render defect")
 
-    monkeypatch.setattr("agent6.ui.cli._task_tree.task_tree_lines", broken)
+    monkeypatch.setattr("agent6.ui.cli.task_tree.task_tree_lines", broken)
     with pytest.raises(RuntimeError, match="a render defect"):
         sessions_show._print_task_tree(session)

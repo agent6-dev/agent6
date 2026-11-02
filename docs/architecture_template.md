@@ -15,7 +15,7 @@ An edge is "imports from"; a dashed edge would mark an import climbing the stack
 Any layer may also use the shared substrate: <!-- generated: substrate-names -->.
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
-Only its modules import the runner, `_git_command.py`.
+Only its modules import the runner, `git_command.py`.
 It runs each git command with a 120-second timeout.
 By default, it switches off the repository's hooks, fsmonitor, external diff, textconv, commit signing, and filter and merge drivers.
 `git_policy.py` holds those switches and the hook and driver policy; `errors.py` owns `GitError`.
@@ -27,20 +27,20 @@ By default, it switches off the repository's hooks, fsmonitor, external diff, te
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
     - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `code_review` (the single call behind `agent6 review`), `run_review` (the read-only pass behind `agent6 sessions review`) and the review panel (`_panel`, `_review_seat`, `_reviewer`); the agent loop makes its own provider calls through `_provider_call`.
-  `harness/_loop_resume.py` owns snapshot carryover and persistence; `harness/_loop_steer.py` applies steering at turn and execution boundaries.
+- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_diff` (the single call behind `agent6 review`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `review_seat`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
+  `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
-  `harness/_toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
+  `harness/toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
 - **sandbox** ([src/agent6/sandbox/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/sandbox)): the `agent6-jail` launcher and its policy.
   The jail bounds commands, one launcher per run; the agent process itself is never confined.
 
 **Where the CLI resolves things.** `ui/cli` parses arguments, optionally spawns the TUI, and picks a mode.
 
 - `cli_main` is the one error boundary: `OperatorError` (with `ConfigError`, `MemoryStoreError`) prints an `ERROR:` refusal at exit 2; a closed output pipe (`agent6 ... | head`) ends quietly at exit 141; anything else crash-reports with a saved traceback at exit 1
-- config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`, then a machine's `[config]` overlay and one state's `config` table; a selected preset sits just above the layer that named it); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secret_store.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/secret_store.py).
-  `config/_layer_data.py` discovers and merges layers with per-leaf provenance; `config/_presets.py` selects and lists presets.
+- config resolves through [config/layer.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/layer.py) (defaults, global, per-repo, `--config FILE`, then a machine's `[config]` overlay and one state's `config` table; a selected preset sits just above the layer that named it); paths and sudo/root through [paths.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/paths.py); keys through [secret_store.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/secret_store.py).
+  `config/layer_data.py` discovers and merges layers with per-leaf provenance; `config/layer_presets.py` selects and lists presets.
 - per-repo state lives out of the workspace at `$XDG_STATE_HOME/agent6/<repo-id>/`, written `<state-dir>` below, keyed on the repository (a subdirectory reaches the same runs, memory and config, and so does a linked worktree, through its `.git` file)
-- `pack.py` copies and imports portable workspace state; `_pack_manifest.py` validates its trust boundary without importing path resolution.
+- `pack.py` copies and imports portable workspace state; `pack_manifest.py` validates its trust boundary without importing path resolution.
   `ui/cli/pack_cmds.py` owns the two command surfaces and shares init's `.gitignore` writer.
   `paths.project_root` refuses any pack until `unpack` imports it or the operator deletes it.
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
@@ -80,12 +80,12 @@ A run keeps one message history with one provider and one model.
 - the model drives by calling tools; the harness dispatches, snapshots, tracks budget
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
-- `_context.review_rules` loads base-tree rule blobs through `vcs._review_rules`; `loop.review.start` records the paths, blob IDs, byte counts and completeness, shared by the panel and standalone code review
+- `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `loop.review.start` records the paths, blob IDs, byte counts and completeness, shared by the panel and standalone code review
 - under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
 An in-loop panel records the run base and reviewed head's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
 It does not capture a separate snapshot or move the operator's index, HEAD or run chain.
-`harness/_review_history.py` restores those records on resume.
+`harness/review_history.py` restores those records on resume.
 Only exact normalized finding content, location and the cited blob identify a repeat.
 The journal keeps repeated observations even when the worker feedback omits them.
 Findings cut from the feedback notice remain eligible for a later notice.
@@ -101,20 +101,20 @@ Journal append order, not timestamps, orders events.
 `harness/loop.py` holds the turn: the request, the model call, the tool dispatch, what the tools did, and the ends.
 What the turn leans on sits beside it, one module each:
 
-- `_chain` (the run's commit chain)
-- `_operator` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means)
-- `_advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads)
-- `_guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges)
-- `_metric` (a metric run's plateau, ceiling and early-finish rules) and `_metric_sampler` (the readings a run takes)
-- `_quiet_turns` (the nudges an empty or prose-only turn draws)
-- `_finish_gates` (what a finish call declares, what it must satisfy and what an end is called)
-- `_standing` (the standing goal's re-entry)
-- `_operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`)
-- `_parallel_dispatch` (the `/parallel` fan-out)
-- `_checkpoint` (the per-turn commit and the final one)
-- `_compactor` (the compaction driver over `_compaction`'s tier-1 rules, `_compaction_result`'s markers and caps, and `_compaction_window`'s sizing and restart rules)
-- `_memory_touch` (what a tool call did to the memory store)
-- the settings each sibling owns (`_reviewer`, `_compaction_window`, `_provider_call`, `_prompt_revision`)
+- `run_chain` (the run's commit chain)
+- `operator_bridge` (the operator's callables, the steer verbs, the pin cap, and what a steer's text means)
+- `advice` (what an advisor answers with, a nudge, a stop or a refusal, and the turn's context it reads)
+- `guards` (the advisors, one function per heuristic with its counters: no progress, settled, stagnation, the memory flip, the loop guard, the tool-error ladder, reachability, focus, the budget nudges)
+- `metric_rules` (a metric run's plateau, ceiling and early-finish rules) and `metric_sampler` (the readings a run takes)
+- `quiet_turns` (the nudges an empty or prose-only turn draws)
+- `finish_gates` (what a finish call declares, what it must satisfy and what an end is called)
+- `standing_goal` (the standing goal's re-entry)
+- `operator_tasks` (the operator's writes to the task graph: the root, the goal, `/task` and `/retire`)
+- `parallel_dispatch` (the `/parallel` fan-out)
+- `run_checkpoint` (the per-turn commit and the final one)
+- `compaction_driver` (the compaction driver over `compaction_rules`'s tier-1 rules, `compaction_elision`'s markers and caps, and `compaction_window`'s sizing and restart rules)
+- `memory_touch` (what a tool call did to the memory store)
+- the settings each sibling owns (`review_gate`, `compaction_window`, `provider_call`, `prompt_revision`)
 
 The loop runs the advisors and the gates in a declared order and applies each answer; a heuristic is one function and one test file.
 After stop checks, a `finish_session` turn polls for queued answers before ending.
@@ -243,10 +243,10 @@ Configured redirect validation accepts only loopback literals.
 A stored grant without an account cannot replace a pinned identity; only a refresh of the known grant inherits its account.
 A classified `OAuthError.code` of `refresh_token_reused` permits one reread after one second, accepting only a different, fresh, binding-valid, same-account grant.
 The other classified codes are `refresh_token_expired`, `refresh_token_invalidated` and `invalid_grant`; unclassified refusals have `code=None`.
-`_oauth_exchange.py` owns the optional second exchange and its expiry parser.
+`oauth_exchange.py` owns the optional second exchange and its expiry parser.
 
 Configured issuers and ChatGPT use `OAuthCredential` and bound `StoredGrant` records.
-`app/providers.py` injects an observer that writes `provider.auth` to the run's journal.
+`app/role_providers.py` injects an observer that writes `provider.auth` to the run's journal.
 A refresh or exchange reports success after persistence, or failure after its endpoint refuses; the observer runs outside both credential locks.
 Recovery reports the answer to the one post-401 retry, not the decision to rotate.
 A sibling adoption without a refresh, a cached read and an initial 403 refusal emit nothing.
@@ -254,10 +254,10 @@ Holders and transports built without an observer emit nothing.
 The transcript fold produces no item for this event, as for other unknown events.
 ChatGPT model listings read through the holder with refresh disabled and fall back to the cache on failure.
 
-`ui/cli/_oauth.py` selects and runs browser, device and paste flows through the resolved profile.
+`ui/cli/connect_oauth.py` selects and runs browser, device and paste flows through the resolved profile.
 ChatGPT's proprietary device flow falls back to the displayed authorization URL and pasted callback on refusal or cancellation.
 Legacy ChatGPT records refuse with `agent6 connect <name>`; a successful connect replaces the entry atomically.
-`app/_setup.py::sign_in_refusal` shares the bound-grant diagnosis between run preflight, `check config` and `model`.
+`app/session_setup.py::sign_in_refusal` shares the bound-grant diagnosis between run preflight, `check config` and `model`.
 `connect --status` reads the same validator's `BoundGrantError.cause` and checks each locally usable credential without refreshing or exchanging it.
 The bound store's security rules are in [Security](security.md#8-secrets-and-connect).
 
@@ -265,7 +265,7 @@ The bound store's security rules are in [Security](security.md#8-secrets-and-con
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
 Commands and verify run jailed; file tools resolve through the workspace boundary.
-`tools/_command_tools.py` holds jailed execution, command check-ins, and background read and stop handlers.
+`tools/command_tools.py` holds jailed execution, command check-ins, and background read and stop handlers.
 `tools/dispatch.py` owns routing, approvals, verify and metric events, and the jail-session lifecycle.
 
 Command streams lose terminal escape sequences before their 20,000-character tail cap and the model's result-byte cap.
@@ -279,7 +279,7 @@ The table routes <!-- generated: tool-names -->.
 
 ## A review
 
-A single read-only pass ([harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
+A single read-only pass ([harness/review_diff.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_diff.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
 It prints a markdown review, and makes no edits, no commits, and no `run_command`; `--reviewers N` runs the adversarial panel instead, which returns structured findings.
 Either output is also saved as `<stamp>-review.md` under `<state-dir>/reviews/`, beside the provider transcripts.
 
@@ -302,7 +302,7 @@ An open grounded block or unreadable evidence refuses the merge with its reason.
 Missing, stale and legacy count-only reviews do not block a merge.
 
 `app/review_actions.py` owns Fix, Resolve and Reopen for every front-end.
-Live requests cross `sessions.ipc` as typed envelopes; `app/_execution.py` drains them before polling the steer bridge.
+Live requests cross `sessions.ipc` as typed envelopes; `app/execution.py` drains them before polling the steer bridge.
 The worker checks the expected version and journals the action in append order.
 Offline actions use the existing session writer lock and recheck that no worker is alive.
 A repeated request ID returns its journal result or retained worker reply before checking the supplied version.
@@ -315,7 +315,7 @@ The web Findings card reads the same review fold as the merge guard.
 `client_git_diff.js` owns each diff request's lifetime; `client_review.js` attaches findings through the source renderer's line attributes only when both comparison trees match.
 Reviewed file links keep the panel and side, so Files reads the cited version rather than the working tree.
 
-`agent6 sessions review <id>` ([harness/run_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/run_review.py)) reviews a finished session's record the same way: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
+`agent6 sessions review <id>` ([harness/review_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_session.py)) reviews a finished session's record the same way: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.
 
 ## Parallel runs
@@ -341,8 +341,8 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 
 [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) implements those Protocols: it holds the front-end's `LaneRuntime`, plans the lanes, clones, spawns, awaits and imports one lane, and builds the coordinator's `/parallel` dispatcher.
 [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) drives the fan-out session: spawn, await, import, rank, report.
-[app/_parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_parallel_results.py) imports the finished lanes, carries memory and decisions back, and stamps and prints the ranking.
-[app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) resolves `[workspace].base_dir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
+[app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) imports the finished lanes, carries memory and decisions back, and stamps and prints the ranking.
+[app/workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/workdirs.py) resolves `[workspace].base_dir` for clones and linked worktrees, writes lane configs, recovers orphaned lanes and removes imported or safely swept clones.
 The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_and_locate`, the path the web and TUI hubs start a run with) is injected as a `LaneRuntime` by the CLI adapter `ui/cli/parallel.py`, and liveness probes use `sessions.process` and stop requests use the run-dir bridge (`sessions.ipc`).
 
 **`agent6 run --parallel N|[provider/]model,...`** plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
@@ -359,7 +359,7 @@ The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_and_locate`, the p
 - nothing merges automatically
 - `--max-usd` is per lane and caps the judge like one more lane; the `$X/lane x N + judge = $Y total` line prints before spawning
 
-**A `/parallel` steer dispatches a sibling group** through `OperatorBridge.lane_spawner`, on `Harness.bridge` (the injection point keeping `harness` from importing `ui`; `app/_execution.py` wires the front-end's spawner, run mode only).
+**A `/parallel` steer dispatches a sibling group** through `OperatorBridge.lane_spawner`, on `Harness.bridge` (the injection point keeping `harness` from importing `ui`; `app/execution.py` wires the front-end's spawner, run mode only).
 
 - the loop blocks with no provider calls while lanes run, in this order:
     - expand each segment into its lanes
@@ -420,12 +420,12 @@ Every end the loop reaches records the tree the run left (`session.end.tree`), a
 It refuses when the run also changed one of those paths, since stashing it would take the run's work with the edit.
 A resume after a death, a detach or an older session has no recorded tree: the changes no commit has and no tool of the run wrote follow the same policy, and its note names what the next commit takes.
 
-A resume whose merge stamp covers everything the run committed, in a checkout whose HEAD holds the landing commit, continues from HEAD (`app/_resume_chain.py`).
+A resume whose merge stamp covers everything the run committed, in a checkout whose HEAD holds the landing commit, continues from HEAD (`app/resume_chain.py`).
 The chain ref and run branch only move forward: to HEAD after a `merge` or `ff_only` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier steps stay reachable for `fork --at-turn`.
 The manifest's `base_sha` and the merge stamp's tip move to that commit, so `sessions diff`, `sessions commits`, the squash message, the review diff and the next merge read only the new work.
 `base_branch` moves to the branch the merge landed on when the checkout has it out.
 Where the workspace's HEAD does not hold the landing commit (a worktree run, a fork of a squash-merged run), the chain stays as it is and a resume moves `base_sha` alone, to the commit the next merge into `base_branch` starts from.
-`app/_merge_message.py` builds the squash message from the commits after the base its own merge starts from, so it names what that merge lands.
+`app/merge_message.py` builds the squash message from the commits after the base its own merge starts from, so it names what that merge lands.
 A run branch that is not at the chain tip (a commit made on `agent6/<id>`) refuses the resume, naming the commit; `--force` continues on the chain and leaves the branch.
 
 ## Session state on disk
@@ -505,10 +505,10 @@ One listing row shape (`viewmodel.summary_row`) serves `sessions list --json` an
 Two shared layers sit under them.
 
 - the read side, [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel): the `SessionState` and `MachineState` fold plus its wire form, exactly what `agent6 attach --json` and the web endpoints emit
-    - tolerant session journal scan: `viewmodel/_session_log.py`; shared labels and status decisions: `viewmodel/_session_status.py`; directory discovery and listing rows: `viewmodel/listing.py`; the review queue's groups: `viewmodel/review_queue.py`; the telemetry projection: `viewmodel/telemetry.py` folds runs and delegates machine transitions to `viewmodel/telemetry_machine.py`, `viewmodel/telemetry_records.py` holds the spans, log records and open work, `viewmodel/telemetry_metrics.py` the metric table and meter
-    - session view records: `viewmodel/_state_types.py`; status, context usage and wire rendering: `viewmodel/_state_view.py`; event handling: `viewmodel/state.py`
-    - machine execution and spend reads: `viewmodel/_machine_logs.py`; watcher cursors: `viewmodel/_machine_watch.py`; journal folding, probes and verb refusals: `viewmodel/machine_state.py`
-    - transcript event ordering: `viewmodel/transcript.py`; tool previews and marker text: `viewmodel/_transcript_text.py`
+    - tolerant session journal scan: `viewmodel/session_log.py`; shared labels and status decisions: `viewmodel/session_status.py`; directory discovery and listing rows: `viewmodel/listing.py`; the review queue's groups: `viewmodel/review_queue.py`; the telemetry projection: `viewmodel/telemetry.py` folds runs and delegates machine transitions to `viewmodel/telemetry_machine.py`, `viewmodel/telemetry_records.py` holds the spans, log records and open work, `viewmodel/telemetry_metrics.py` the metric table and meter
+    - session view records: `viewmodel/state_types.py`; status, context usage and wire rendering: `viewmodel/state_view.py`; event handling: `viewmodel/state.py`
+    - machine execution and spend reads: `viewmodel/machine_logs.py`; watcher cursors: `viewmodel/machine_watch.py`; journal folding, probes and verb refusals: `viewmodel/machine_state.py`
+    - transcript event ordering: `viewmodel/transcript.py`; tool previews and marker text: `viewmodel/transcript_text.py`
 - the write side: [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py) for detached spawns, and [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) for the approval, question, finding-action, task-queue, steer, stop-request and compact-request file contract the harness polls
 - process identities, worker and network pid records, and front-end claims: `sessions/process.py`, shared by the bridge and its callers
 
@@ -534,7 +534,7 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 A pass covers the final tree only when both observations and the end tree match; commit identity alone does not invalidate unchanged content.
 `viewmodel/receipt.py` derives `ReceiptView` from the journal and manifest, with no second receipt file or duplicate event.
 The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call or verification run.
-`VerifyRun` in `harness/run_review.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
+`VerifyRun` in `harness/review_session.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
 
 The manifest's optional `MergeStamp.method` and `target_before` own reversal bounds.
 `RevertPlan` uses those facts and `vcs/commit_graph.py` to check parents and enumerate landed commits without depending on source refs.
@@ -601,27 +601,27 @@ Every approval publishes as `approval.prompt`; one a standing answer covers jour
 
 | Concern | File or directory |
 | --- | --- |
-| Config schema | [config/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config) (`model.py` holds `Config`, `[agent6]` and the model roles; the other sections live in `_sandbox.py`, `_harness.py`, `_git.py`, `_surfaces.py`, `_providers.py`) |
+| Config schema | [config/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config) (`model.py` holds `Config`, `[agent6]` and the model roles; the other sections live in `sandbox_config.py`, `harness_config.py`, `git_config.py`, `surface_config.py`, `provider_config.py`) |
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
 | Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings the loop, review, judge, and machine assemble; `revision.py` holds the loop's prompt-revision, summariser, gist and restart-notice prompts) |
-| Review pass | [harness/code_review.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/code_review.py); the panel is `harness/_panel.py`, `harness/_review_seat.py` and `harness/_reviewer.py` |
+| Review pass | [harness/review_diff.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_diff.py); the panel is `harness/review_panel.py`, `harness/review_seat.py` and `harness/review_gate.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_policy.py) |
 | Subordinate-run primitive | [harness/subrun.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/subrun.py) |
 | Run-dir single-writer lock | [sessions/lock.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/lock.py) |
 | Compare judge | [harness/judge.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/judge.py) |
-| Fan-out orchestrator | [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/_parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_parallel_results.py) (import and comparison reporting), [app/_workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/_workdirs.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
-| Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) (`oauth.py` holds bound grants; `_oauth_profile.py` holds resolved settings and identity and expiry policies; `_oauth_exchange.py` exchanges issuer bearers for model tokens; `claude_code.py` orchestrates rounds; `_claude_code_protocol.py` handles control messages and tool continuations; `_claude_code_session.py` owns session state and pipe I/O; `_claude_code_stream.py` folds stream events and scrubs email; `_claude_code_wire.py` holds wire shapes) |
+| Fan-out orchestrator | [app/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel.py) (pipeline), [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) (lanes), [app/parallel_results.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/parallel_results.py) (import and comparison reporting), [app/workdirs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/workdirs.py) (working directories), [ui/cli/parallel.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/parallel.py) (CLI adapter) |
+| Provider clients | [providers/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/providers) (`oauth.py` holds bound grants; `oauth_profile.py` holds resolved settings and identity and expiry policies; `oauth_exchange.py` exchanges issuer bearers for model tokens; `claude_code.py` orchestrates rounds; `claude_code_protocol.py` handles control messages and tool continuations; `claude_code_session.py` owns session state and pipe I/O; `claude_code_stream.py` folds stream events and scrubs email; `claude_code_wire.py` holds wire shapes) |
 | Task graph | [graph/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/graph) |
-| Event log and fold | [event_log.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/event_log.py) (writer), [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (fold) |
+| Event log and fold | [event_log.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/event_log.py) (writer), [viewmodel/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/viewmodel) (fold) |
 | Front-end write bridge | [ui/spawn.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/spawn.py), [ui/notify.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/notify.py), [sessions/ipc.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/ipc.py) |
 | Telemetry export | [ui/telemetry/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/telemetry): the journal reader that encodes `viewmodel/telemetry.py` as OTLP JSON and Prometheus text, started by `agent6 telemetry export` |
 | Web UI | [ui/web/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui/web) (stdlib HTTP server and one embedded page) |
-| Repo memory | [memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/memory.py) (store), `<state-dir>/memory/` (data) |
-| Machine engine | [machine/engine.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/engine.py) (replay and live loop), [machine/_execution.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/_execution.py) (state execution and reducer), [machine/_contracts.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/_contracts.py) (world protocol and execution records), [machine/journal.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) (journal and instance dir) |
+| Repo memory | [memory.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/context/memory.py) (store), `<state-dir>/memory/` (data) |
+| Machine engine | [machine/engine.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/engine.py) (replay and live loop), [machine/execution.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/execution.py) (state execution and reducer), [machine/contracts.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/contracts.py) (world protocol and execution records), [machine/journal.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) (journal and instance dir) |
 
 ## Bench and development switches
 
@@ -659,11 +659,11 @@ Claude Code receives MCP image or resource items, replays retained attachments a
 
 - [Tools](usage.md#tools) lists the fixed image and PDF limits.
 - `AttachmentBudget` counts original bytes; Claude Code checks its complete encoded stdin line against the 8 MiB line cap.
-- `_media_files.inspect_media` checks bounded container bytes without decoding pixels.
+- `media_files.inspect_media` checks bounded container bytes without decoding pixels.
 - Compaction elides delivered attachments without gisting their payloads; `MEDIA_CONTEXT_CHARS` reserves context independently of base64 length and needs live calibration, especially for PDFs.
 - `models.cache.cached_input_capabilities` reads explicit image and document facts from fresh listings, bound to the endpoint, provider entry and exact model.
 - Missing modality data means unknown; names never imply support.
-- `_provider_call.call_with_media_recovery` applies the calling role's facts to canonical tool results and retries one recognized `MediaInputError` without rerunning tools.
+- `provider_call.call_with_media_recovery` applies the calling role's facts to canonical tool results and retries one recognized `MediaInputError` without rerunning tools.
 - Delivery refusals emit `loop.media.refused` against each affected call ID and update the worker's latest snapshot before retrying.
 - Confirmed unsupported modalities stay unsupported for that route during the execution; malformed media and size rejections do not change capability facts.
 

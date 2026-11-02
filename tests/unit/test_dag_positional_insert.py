@@ -62,7 +62,7 @@ def test_after_must_name_a_sibling(tmp_path: pathlib.Path) -> None:
 
 def test_the_inserted_task_is_focused_next(tmp_path: pathlib.Path) -> None:
     """The frontier surfaces an inserted task in its new position, not at the end."""
-    from agent6.harness import _dag_focus
+    from agent6.harness import dag_focus
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -72,14 +72,14 @@ def test_the_inserted_task_is_focused_next(tmp_path: pathlib.Path) -> None:
     nodes = cur.nodes()
     assert nodes[root].children[1] == middle
     # first is still open, so it stays the focus; the inserted task is next in line.
-    assert _dag_focus.first_ready_subtask(nodes) == first
+    assert dag_focus.first_ready_subtask(nodes) == first
     assert [c for c in nodes[root].children][1] == middle
 
 
 def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: pathlib.Path) -> None:
     """`list_tasks` reads back the tree order the frontier executes, not the node map's order."""
     from agent6.graph import order
-    from agent6.tools import _dag_tools
+    from agent6.tools import dag_tools
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -88,7 +88,7 @@ def test_list_tasks_reads_back_the_order_the_frontier_executes(tmp_path: pathlib
     middle = _add(cur, root, "middle", after=first)
     assert cur.get(root).children == (first, middle, last)
 
-    listed = [t["id"] for t in _dag_tools.list_tasks(cur, {}).to_wire()["tasks"]]
+    listed = [t["id"] for t in dag_tools.list_tasks(cur, {}).to_wire()["tasks"]]
     assert listed == order.tree_order(cur.nodes()), (
         "the model reads a different order than it planned"
     )
@@ -102,7 +102,7 @@ def test_standing_task_is_the_fallback_never_the_frontier(tmp_path: pathlib.Path
     """
     import pytest
 
-    from agent6.harness import _dag_focus
+    from agent6.harness import dag_focus
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -114,19 +114,19 @@ def test_standing_task_is_the_fallback_never_the_frontier(tmp_path: pathlib.Path
     ).id
     work = _add(cur, root, "real work")
     # Ordinary work outranks the standing node.
-    assert _dag_focus.first_ready_subtask(cur.nodes()) == work
+    assert dag_focus.first_ready_subtask(cur.nodes()) == work
     cur.update_status(models.UpdateStatusIntent(id=work, new_status="passed"))
     # The queue drained: the standing node is the fallback.
-    assert _dag_focus.first_ready_subtask(cur.nodes()) == standing
+    assert dag_focus.first_ready_subtask(cur.nodes()) == standing
     # New work preempts it, even with the cursor parked on the standing node.
     late = _add(cur, root, "late arrival")
-    assert _dag_focus.current_task_id(cur.nodes(), standing) == late
+    assert dag_focus.current_task_id(cur.nodes(), standing) == late
     # It never passes; retiring is skipped/obsolete.
     with pytest.raises(curator.CuratorError, match="never passes"):
         cur.update_status(models.UpdateStatusIntent(id=standing, new_status="passed"))
     cur.update_status(models.UpdateStatusIntent(id=late, new_status="passed"))
     cur.update_status(models.UpdateStatusIntent(id=standing, new_status="skipped"))
-    assert _dag_focus.first_ready_subtask(cur.nodes()) is None
+    assert dag_focus.first_ready_subtask(cur.nodes()) is None
 
 
 def test_standing_survives_the_storage_round_trip(tmp_path: pathlib.Path) -> None:
@@ -152,7 +152,7 @@ def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: pathlib.P
 
     A model asking for a standing task of its own gets an ordinary one, which stays retirable.
     """
-    from agent6.tools import _dag_tools, errors
+    from agent6.tools import dag_tools, tool_errors
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
@@ -174,9 +174,9 @@ def test_the_model_cannot_retire_the_operators_standing_goal(tmp_path: pathlib.P
     ).id
     assert not cur.get(models_own).standing
     for status in ("skipped", "obsolete"):
-        with pytest.raises(errors.ToolError, match="operator's standing goal"):
-            _dag_tools.update_task(cur, {"id": operators, "status": status})
-    assert _dag_tools.update_task(cur, {"id": models_own, "status": "skipped"}).status == "skipped"
+        with pytest.raises(tool_errors.ToolError, match="operator's standing goal"):
+            dag_tools.update_task(cur, {"id": operators, "status": status})
+    assert dag_tools.update_task(cur, {"id": models_own, "status": "skipped"}).status == "skipped"
     # The curator (the operator's route) can still retire it.
     cur.update_status(models.UpdateStatusIntent(id=operators, new_status="skipped"))
 
@@ -187,14 +187,14 @@ def test_a_parent_over_a_failed_child_is_focused_and_its_refusal_names_the_child
     """A parent over a failed child is focused, and its refusal to pass names the child."""
     import pytest
 
-    from agent6.harness import _dag_focus
+    from agent6.harness import dag_focus
 
     cur = _curator(tmp_path)
     root = _add(cur, None, "root")
     phase = _add(cur, root, "phase")
     step = _add(cur, phase, "step")
     cur.update_status(models.UpdateStatusIntent(id=step, new_status="failed"))
-    assert _dag_focus.first_ready_subtask(cur.nodes()) == phase
+    assert dag_focus.first_ready_subtask(cur.nodes()) == phase
     with pytest.raises(curator.CuratorError, match=f"unresolved children \\({step}\\)"):
         cur.update_status(models.UpdateStatusIntent(id=phase, new_status="passed"))
     cur.update_status(models.UpdateStatusIntent(id=step, new_status="skipped"))

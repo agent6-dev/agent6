@@ -19,8 +19,8 @@ import pytest
 
 from agent6 import kinds, portable
 from agent6.config import Config
-from agent6.tools import dispatch, errors, fetch, operator_prompts
-from agent6.ui.cli import _steer
+from agent6.tools import dispatch, fetch, operator_prompts, tool_errors
+from agent6.ui.cli import steer_tty
 
 
 class _Body(httpx2.SyncByteStream):
@@ -136,7 +136,7 @@ def test_a_host_the_operator_never_named_is_asked_about(tmp_path: pathlib.Path) 
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=Config(), prompts=operator_prompts.OperatorPrompts(approver=_deny)
     )
-    with pytest.raises(errors.ToolDeniedError, match="fetch not approved"):
+    with pytest.raises(tool_errors.ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://example.com/x?k=v"})
     assert asked == ["Allow fetch: example.com /x?k=v"]
 
@@ -188,15 +188,14 @@ def test_allowing_every_command_does_not_allow_the_network(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An "s" answered at a run_command prompt never auto-approves later fetches."""
-    from agent6 import event_log
-    from agent6.sessions import ipc
-    from agent6.ui.cli import _interact
+    from agent6.sessions import event_log, ipc
+    from agent6.ui.cli import interact
 
     session_dir = tmp_path / "run"
     (session_dir / "approvals").mkdir(parents=True)
     ipc.set_session_allow(session_dir, ipc.COMMAND_SCOPE)
     approve = operator_prompts.OperatorPrompts(
-        approver=_interact.build_approver(session_dir),
+        approver=interact.build_approver(session_dir),
         journal=event_log.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     ).approve
@@ -211,9 +210,8 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An "a" typed at a fetch prompt grants nothing: the asking side decides what it means."""
-    from agent6 import event_log
-    from agent6.sessions import ipc
-    from agent6.ui.cli import _interact as interactmod
+    from agent6.sessions import event_log, ipc
+    from agent6.ui.cli import interact
 
     session_dir = tmp_path / "run"
     (session_dir / "approvals").mkdir(parents=True)
@@ -224,9 +222,9 @@ def test_answering_allow_all_on_a_fetch_prompt_allows_no_commands(
         return "a"  # "allow all", on a prompt that offers no such thing
 
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
-    monkeypatch.setattr(_steer, "tty_prompt", _typed)
+    monkeypatch.setattr(steer_tty, "tty_prompt", _typed)
     approve = operator_prompts.OperatorPrompts(
-        approver=interactmod.build_approver(session_dir),
+        approver=interact.build_approver(session_dir),
         journal=event_log.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     ).approve
@@ -244,7 +242,7 @@ def test_a_hidden_fetch_cannot_still_be_dispatched(tmp_path: pathlib.Path) -> No
     cfg = Config.model_validate({"sandbox": {"network": "host"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     assert "fetch" not in d.available_tool_names()
-    with pytest.raises(errors.ToolError, match="not available"):
+    with pytest.raises(tool_errors.ToolError, match="not available"):
         d.dispatch("fetch", {"url": "https://example.com/x"})
 
 
@@ -259,7 +257,7 @@ def test_fetch_is_hidden_wherever_a_command_reaches_the_network(
         isolation=isolation,
     )
     assert "fetch" not in d.available_tool_names()
-    with pytest.raises(errors.ToolError, match="not available"):
+    with pytest.raises(tool_errors.ToolError, match="not available"):
         d.dispatch("fetch", {"url": "https://example.com/x"})
 
 
@@ -314,7 +312,7 @@ def test_a_denied_fetch_never_touches_the_resolver(
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=Config(), prompts=operator_prompts.OperatorPrompts(approver=_deny)
     )
-    with pytest.raises(errors.ToolDeniedError, match="fetch not approved"):
+    with pytest.raises(tool_errors.ToolDeniedError, match="fetch not approved"):
         d.dispatch("fetch", {"url": "https://payload.exfil.attacker.example/x"})
     assert resolved == []
 

@@ -8,7 +8,7 @@ import json
 import pathlib
 
 from agent6.machine import AgentFact, StepEvent
-from agent6.viewmodel import _machine_logs
+from agent6.viewmodel import machine_logs
 
 
 def _agent_step(seq: int, usd: float) -> StepEvent:
@@ -45,7 +45,7 @@ def test_spend_folds_the_running_state_when_alive(tmp_path: pathlib.Path) -> Non
     # A booked step at seq 0, plus a running state at seq 1 whose live spend must be added.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 1, "hunt", 0.059)  # in-flight, unbooked
-    spend, inflight = _machine_logs.machine_spend(events, tmp_path, alive=True)
+    spend, inflight = machine_logs.machine_spend(events, tmp_path, alive=True)
     assert abs(spend.usd - 0.159) < 1e-9  # 0.10 booked + 0.059 live
     assert inflight == "hunt"
     assert spend.input_tokens == 170 and spend.output_tokens == 80
@@ -55,7 +55,7 @@ def test_spend_ignores_the_state_log_when_not_alive(tmp_path: pathlib.Path) -> N
     # A dead/parked machine: do not fold a stale in-flight log (only booked steps).
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 1, "hunt", 0.059)
-    spend, inflight = _machine_logs.machine_spend(events, tmp_path, alive=False)
+    spend, inflight = machine_logs.machine_spend(events, tmp_path, alive=False)
     assert abs(spend.usd - 0.10) < 1e-9 and inflight == ""
 
 
@@ -63,7 +63,7 @@ def test_spend_does_not_double_count_a_booked_state(tmp_path: pathlib.Path) -> N
     # The newest log's seq matches a booked StepEvent, so its cost must not be added again.
     events = [_agent_step(0, 0.10)]
     _state_log(tmp_path, 0, "s0", 0.10)  # same seq as the booked step
-    spend, inflight = _machine_logs.machine_spend(events, tmp_path, alive=True)
+    spend, inflight = machine_logs.machine_spend(events, tmp_path, alive=True)
     assert abs(spend.usd - 0.10) < 1e-9 and inflight == ""
 
 
@@ -84,9 +84,9 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: pathlib.Path) ->
     )
     offset = log.stat().st_size
     # Attempt 2 died before any budget.update: nothing after the offset.
-    assert _machine_logs.read_budget_totals(log, from_offset=offset) == _machine_logs.Spend()
+    assert machine_logs.read_budget_totals(log, from_offset=offset) == machine_logs.Spend()
     # Without the offset the prior attempt's totals still read.
-    assert _machine_logs.read_budget_totals(log).usd == 0.90
+    assert machine_logs.read_budget_totals(log).usd == 0.90
     # Attempt 2 then emits its own update: only ITS totals salvage.
     with log.open("a", encoding="utf-8") as fh:
         fh.write(
@@ -95,7 +95,7 @@ def test_read_budget_totals_offset_scopes_to_one_call(tmp_path: pathlib.Path) ->
             )
             + "\n"
         )
-    assert _machine_logs.read_budget_totals(log, from_offset=offset) == _machine_logs.Spend(
+    assert machine_logs.read_budget_totals(log, from_offset=offset) == machine_logs.Spend(
         0.05, 2, 1
     )
 
@@ -120,11 +120,11 @@ def test_unpriced_spend_reads_as_a_partial_lower_bound(tmp_path: pathlib.Path) -
         + "\n",
         encoding="utf-8",
     )
-    spend = _machine_logs.read_budget_totals(log)
+    spend = machine_logs.read_budget_totals(log)
     assert spend.partial is True
     assert budget.format_usd(spend.usd, partial=spend.partial).startswith("~$")
     # The flag survives folding with priced (non-partial) slices.
-    assert (spend + _machine_logs.Spend(1.0)).partial is True
+    assert (spend + machine_logs.Spend(1.0)).partial is True
 
 
 def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: pathlib.Path) -> None:
@@ -146,7 +146,7 @@ def test_spend_of_a_state_whose_capture_failed_is_still_booked(tmp_path: pathlib
             output_tokens=8_000,
         )
     ]
-    spend, _inflight = _machine_logs.machine_spend(events, root, alive=False)
+    spend, _inflight = machine_logs.machine_spend(events, root, alive=False)
     assert spend.usd == 1.23, "the dollars actually spent were dropped"
     assert spend.input_tokens == 40_000
     assert spend.output_tokens == 8_000
@@ -170,7 +170,7 @@ def test_an_unpriced_unbooked_slice_keeps_its_tokens_and_its_marker(tmp_path: pa
         input_tokens=40_000,
         output_tokens=8_000,
     )
-    spend, _inflight = _machine_logs.machine_spend([end], root, alive=False)
+    spend, _inflight = machine_logs.machine_spend([end], root, alive=False)
     assert spend.input_tokens == 40_000
     assert spend.output_tokens == 8_000
     assert spend.partial is True, "the '~' lower-bound marker was dropped"
@@ -203,7 +203,7 @@ def test_book_crashed_attempt_journals_the_orphan_slice(tmp_path: pathlib.Path) 
     assert len([e for e in journal.read() if isinstance(e, AttemptSpend)]) == 1
 
     # The spend fold keeps the slice with the worker dead.
-    spend, _ = _machine_logs.machine_spend(journal.read(), tmp_path, alive=False)
+    spend, _ = machine_logs.machine_spend(journal.read(), tmp_path, alive=False)
     assert abs(spend.usd - 0.159) < 1e-9
     assert spend.input_tokens == 170 and spend.output_tokens == 80
 
@@ -366,7 +366,7 @@ def test_the_ledger_carries_the_cached_tokens_and_sums_them(tmp_path: pathlib.Pa
         + "\n",
         encoding="utf-8",
     )
-    spend = _machine_logs.read_budget_totals(log)
+    spend = machine_logs.read_budget_totals(log)
     assert (spend.cache_read_tokens, spend.cache_creation_tokens) == (42486, 22617)
-    total = spend + _machine_logs.Spend(0.0, 1, 1, False, 4, 6)
+    total = spend + machine_logs.Spend(0.0, 1, 1, False, 4, 6)
     assert (total.cache_read_tokens, total.cache_creation_tokens) == (42490, 22623)

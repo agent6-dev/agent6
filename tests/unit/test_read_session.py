@@ -169,7 +169,7 @@ def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: pathlib
     project does not have is an error, not an empty read.
     """
     from agent6.config import Config
-    from agent6.tools import dispatch, errors
+    from agent6.tools import dispatch, tool_errors
 
     _session(tmp_path, "asks", "quiet-fox-AAAAAA", "ask", "video question", ["use ffmpeg"])
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), state_dir=tmp_path)
@@ -178,16 +178,16 @@ def test_the_tool_returns_the_roster_and_refuses_an_unknown_id(tmp_path: pathlib
     assert "conversation" not in out
     got = d.dispatch("read_session", {"id": "quiet-fox-AAAAAA"}).to_wire()
     assert "use ffmpeg" in got["conversation"]
-    with pytest.raises(errors.ToolError, match="no session"):
+    with pytest.raises(tool_errors.ToolError, match="no session"):
         d.dispatch("read_session", {"id": "nope"})
 
 
 def test_the_tool_is_unwired_without_a_project_state_dir(tmp_path: pathlib.Path) -> None:
     from agent6.config import Config
-    from agent6.tools import dispatch, errors
+    from agent6.tools import dispatch, tool_errors
 
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config())
-    with pytest.raises(errors.ToolError, match="state dir"):
+    with pytest.raises(tool_errors.ToolError, match="state dir"):
         d.dispatch("read_session", {})
 
 
@@ -248,8 +248,9 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
     import types
     from unittest import mock
 
-    from agent6 import budget, event_log
-    from agent6.app import providers
+    from agent6 import budget
+    from agent6.app import role_providers
+    from agent6.sessions import event_log
 
     d = tmp_path / "sessions" / "asks" / "quiet-fox-AAAAAA"
     d.mkdir(parents=True)
@@ -271,7 +272,7 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
         cache_creation_tokens=0,
         raw={},
     )
-    providers.InstrumentedProvider(
+    role_providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="m",

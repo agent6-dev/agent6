@@ -19,8 +19,7 @@ from unittest import mock
 import pytest
 
 from agent6 import paths
-from agent6.app import _execution as app__execution
-from agent6.app import _session
+from agent6.app import execution, session_parts
 from agent6.app import run as run_mod
 from agent6.config import Config
 from agent6.sessions import process
@@ -53,13 +52,13 @@ def test_run_writes_its_worker_pid_before_it_asks_the_operator(
         return "none"
 
     monkeypatch.setattr(process, "write_worker_pid", _pid)
-    monkeypatch.setattr(_session, "select_isolation", _isolation)
+    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
 
     def _execution(*_a: object, **_k: object) -> object:
         order.append("execution")
         raise RuntimeError("stop here")
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
 
     def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
@@ -101,7 +100,7 @@ def test_a_cancelled_start_question_leaves_no_pid_behind(
     def _isolation(*_a: object, **_k: object) -> str:
         return "none"
 
-    monkeypatch.setattr(_session, "select_isolation", _isolation)
+    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
 
     def _cancel(_request: operator_prompts.QuestionRequest, /) -> operator_prompts.QuestionAnswer:
         return operator_prompts.QuestionAnswer(("cancel",), "stdin")
@@ -136,7 +135,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     An in-process front-end outlives the run, so its pid must not remain the session's worker
     identity when closing its console view fails.
     """
-    from agent6.app import _execution as app__execution
+    from agent6.app import execution
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -146,11 +145,11 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid(
     def _full(*_args: object, **_kwargs: object) -> str:
         return "full"
 
-    def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
-        return app__execution.ExecutionEnd(0)
+    def _finished(*_args: object, **_kwargs: object) -> execution.ExecutionEnd:
+        return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(_session, "select_isolation", _full)
-    monkeypatch.setattr(app__execution, "run_execution", _finished)
+    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
 
@@ -176,7 +175,7 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     A console teardown that raises must not leave the operator's pre-run changes stashed with
     nothing said.
     """
-    from agent6.app import _execution as app__execution
+    from agent6.app import execution
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     repo = tmp_path / "repo"
@@ -187,11 +186,11 @@ def test_a_frontend_teardown_failure_still_pops_the_auto_stash(
     def _full(*_args: object, **_kwargs: object) -> str:
         return "full"
 
-    def _finished(*_args: object, **_kwargs: object) -> app__execution.ExecutionEnd:
-        return app__execution.ExecutionEnd(0)
+    def _finished(*_args: object, **_kwargs: object) -> execution.ExecutionEnd:
+        return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(_session, "select_isolation", _full)
-    monkeypatch.setattr(app__execution, "run_execution", _finished)
+    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(execution, "run_execution", _finished)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("console teardown failed")
     cfg = Config.model_validate(

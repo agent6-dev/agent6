@@ -15,10 +15,10 @@ import pytest
 
 from agent6 import kinds
 from agent6.config import Config, load_config
-from agent6.harness import _chain, _dag_focus, _loop_state, _prompt_blocks, _provider_call, _toolset
+from agent6.harness import dag_focus, loop_state, prompt_blocks, provider_call, run_chain, toolset
 from agent6.harness import loop as loopmod
 from agent6.providers import ProviderResponse
-from agent6.tools import dispatch, errors, mcp_client, results, schema
+from agent6.tools import dispatch, mcp_client, results, schema, tool_errors
 
 _VALID_TOML = """
 [agent6]
@@ -108,7 +108,7 @@ def test_dispatch_finish_planning_returns_ack(tmp_path: pathlib.Path) -> None:
 def test_dispatch_finish_planning_rejects_empty(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
-    with pytest.raises(errors.ToolError, match="summary"):
+    with pytest.raises(tool_errors.ToolError, match="summary"):
         d.dispatch("finish_planning", {"summary": "", "plan_markdown": "x"})
 
 
@@ -140,7 +140,7 @@ def test_build_system_prompt_plan_mode_mentions_plan(tmp_path: pathlib.Path) -> 
         agents_md="",
         recent_log="",
     )
-    text = _prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    text = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="plan", skills=None
     )
     assert "PLAN mode" in text or "plan mode" in text.lower()
@@ -159,8 +159,8 @@ def test_system_prompt_file_override_replaces_run_base_keeps_blocks(tmp_path: pa
         agents_md="",
         recent_log="",
     )
-    run = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
-    plan = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)  # pyright: ignore[reportPrivateUsage]
+    run = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
+    plan = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)  # pyright: ignore[reportPrivateUsage]
     # override replaces the run base...
     assert "CUSTOM WORKER" in run and "<agent6>" not in run
     # ...but the dynamic blocks (budget, repo-priors) still append
@@ -187,9 +187,9 @@ def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
     off = Config.model_validate({"prompt": {"decompose": "off"}})
     on = Config.model_validate({"prompt": {"decompose": "on"}})
     auto = Config()  # unresolved "auto" reaching the engine renders like off
-    run_off = _prompt_blocks.build_system_prompt(config=off, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
-    run_on = _prompt_blocks.build_system_prompt(config=on, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
-    run_auto = _prompt_blocks.build_system_prompt(config=auto, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
+    run_off = prompt_blocks.build_system_prompt(config=off, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
+    run_on = prompt_blocks.build_system_prompt(config=on, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
+    run_auto = prompt_blocks.build_system_prompt(config=auto, repo=repo, mode="run", skills=None)  # pyright: ignore[reportPrivateUsage]
     assert "__DAG_RULES_BLOCK__" not in run_off and "__DAG_RULES_BLOCK__" not in run_on
     assert "<dag-rules>" in run_off and "<decompose-first>" not in run_off
     assert "<decompose-first>" in run_on and "<dag-rules>" not in run_on
@@ -197,7 +197,7 @@ def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
     # decompose is a run-mode worker feature: other modes never carry either block
     # or a leaked sentinel.
     for mode in ("plan", "ask", "agent"):
-        text = _prompt_blocks.build_system_prompt(config=on, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
+        text = prompt_blocks.build_system_prompt(config=on, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
         assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
 
 
@@ -212,7 +212,7 @@ def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
     and tells the worker to edit); ask wires a curator too but exposes no DAG tools, so a hint there
     names a tool the model cannot call.
     """
-    hint = _dag_focus.initial_dag_hint  # pyright: ignore[reportPrivateUsage]
+    hint = dag_focus.initial_dag_hint  # pyright: ignore[reportPrivateUsage]
     rid = "01" + "A" * 24
     run_dec = hint(rid, "run", True)
     assert "<decompose-first>" in run_dec and "Do not edit" in run_dec
@@ -266,7 +266,7 @@ def test_build_system_prompt_warns_against_git_checkout_revert(tmp_path: pathlib
         agents_md="",
         recent_log="",
     )
-    text = _prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    text = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="run", skills=None
     )
     assert "git checkout" in text
@@ -284,7 +284,7 @@ def _run_prompt(tmp_path: pathlib.Path, cfg: Config, isolation: kinds.IsolationL
         agents_md="",
         recent_log="",
     )
-    return _prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    return prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="run", skills=None, isolation=isolation
     )
 
@@ -342,7 +342,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
         agents_md="",
         recent_log="",
     )
-    text = _prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    text = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="run", skills=None
     )
     assert "the harness runs the metric and" in text
@@ -350,7 +350,7 @@ def test_build_system_prompt_describes_auto_metric_feedback(tmp_path: pathlib.Pa
     # Run-mode only: plan/ask do not expose `run_metric_command`, and the
     # auto-metric-after-verify behaviour the block describes is the run loop's.
     for mode in ("plan", "ask"):
-        other = _prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+        other = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
             config=cfg, repo=repo, mode=mode, skills=None
         )
         assert "<metric-command>" not in other, mode
@@ -387,7 +387,7 @@ def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them
         recent_log="",
     )
 
-    text = _prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
+    text = prompt_blocks.build_system_prompt(  # pyright: ignore[reportPrivateUsage]
         config=cfg, repo=repo, mode="run", skills=None
     )
     assert "<no-verify-command>" in text
@@ -396,8 +396,7 @@ def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them
     assert "commits each editing turn" in text
 
     names = {
-        t.name
-        for t in _toolset.tool_definitions(dispatch.ToolDispatcher(root=tmp_path, config=cfg))
+        t.name for t in toolset.tool_definitions(dispatch.ToolDispatcher(root=tmp_path, config=cfg))
     }  # pyright: ignore[reportPrivateUsage]
     assert schema.RunMetricInput.TOOL_NAME not in names
     assert schema.RunCommandInput.TOOL_NAME not in names
@@ -419,8 +418,8 @@ def test_no_commands_removes_run_command_from_read_only_mode_prompts(
     )
     dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("plan", "ask"):
-        prompt = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
-        names = {tool.name for tool in _toolset.tool_definitions(dispatcher, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        prompt = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
+        names = {tool.name for tool in toolset.tool_definitions(dispatcher, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "run_command" not in names
         assert "run_command" not in prompt, mode
         assert "probe's writes" not in prompt, mode
@@ -445,10 +444,10 @@ def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: pathli
     )
     for commands in ("ask", "deny"):
         cfg = Config.model_validate({"sandbox": {"run_commands": commands}})
-        plan = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)  # pyright: ignore[reportPrivateUsage]
+        plan = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)  # pyright: ignore[reportPrivateUsage]
         rules = plan.split("<tool-use-rules>\n", 1)[1].split("</tool-use-rules>", 1)[0]
         assert rules.startswith("- ") and "\n\n" not in rules, rules
-        ask = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)  # pyright: ignore[reportPrivateUsage]
+        ask = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)  # pyright: ignore[reportPrivateUsage]
         assert "\n- run_command" not in ask
         assert ("not exposed. run_command runs jailed" in ask) == (commands == "ask")
 
@@ -456,7 +455,7 @@ def test_read_only_mode_prompts_splice_the_command_note_cleanly(tmp_path: pathli
 def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    defs = _toolset.tool_definitions(d, mode="plan")  # pyright: ignore[reportPrivateUsage]
+    defs = toolset.tool_definitions(d, mode="plan")  # pyright: ignore[reportPrivateUsage]
     names = {t.name for t in defs}
     assert schema.ApplyEditInput.TOOL_NAME not in names
     assert schema.ApplyPatchInput.TOOL_NAME not in names
@@ -467,7 +466,7 @@ def test_tool_definitions_plan_mode_filters_edit_tools(tmp_path: pathlib.Path) -
 def test_tool_definitions_run_mode_includes_edit_tools(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    defs = _toolset.tool_definitions(d, mode="run")  # pyright: ignore[reportPrivateUsage]
+    defs = toolset.tool_definitions(d, mode="run")  # pyright: ignore[reportPrivateUsage]
     names = {t.name for t in defs}
     assert schema.ApplyEditInput.TOOL_NAME in names
     assert schema.ApplyPatchInput.TOOL_NAME in names
@@ -485,7 +484,7 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(
     cfg = load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     for mode in ("machine", "agent"):
-        names = {t.name for t in _toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert schema.ReadFileInput.TOOL_NAME in names, mode
         assert schema.FinishSessionInput.TOOL_NAME in names, mode
         assert schema.ApplyEditInput.TOOL_NAME not in names, mode
@@ -518,20 +517,20 @@ def test_mcp_tools_are_run_mode_only(tmp_path: pathlib.Path) -> None:
 
     d_run = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
     d_run._mcp_manager = cast("mcp_client.MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
-    run_names = {t.name for t in _toolset.tool_definitions(d_run, mode="run")}
+    run_names = {t.name for t in toolset.tool_definitions(d_run, mode="run")}
     assert "mcp__fs__write_file" in run_names
 
     for mode in ("plan", "ask", "machine", "agent"):
         d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
         d._mcp_manager = cast("mcp_client.MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
-        names = {t.name for t in _toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "mcp__fs__write_file" not in names, mode
 
     # The dispatcher backstop: a read-only-mode dispatcher refuses mcp__* even
     # if a tool-list regression re-exposed it.
     d_plan = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
     d_plan._mcp_manager = cast("mcp_client.MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
-    with pytest.raises(errors.ToolError, match="not available in plan mode"):
+    with pytest.raises(tool_errors.ToolError, match="not available in plan mode"):
         d_plan._dispatch_inner("mcp__fs__write_file", {})  # pyright: ignore[reportPrivateUsage]
 
 
@@ -546,7 +545,7 @@ def test_build_system_prompt_machine_and_agent_modes(tmp_path: pathlib.Path) -> 
         agents_md="",
         recent_log="",
     )
-    agent = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="agent", skills=None)  # pyright: ignore[reportPrivateUsage]
+    agent = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="agent", skills=None)  # pyright: ignore[reportPrivateUsage]
     assert "state of a state machine" in agent
     assert "run_verify_command" not in agent
 
@@ -558,7 +557,7 @@ def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: pathlib.
     p.write_text(_VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'), "utf-8")
     cfg = load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    names = {t.name for t in _toolset.tool_definitions(d, mode="ask")}  # pyright: ignore[reportPrivateUsage]
+    names = {t.name for t in toolset.tool_definitions(d, mode="ask")}  # pyright: ignore[reportPrivateUsage]
     assert schema.ReadFileInput.TOOL_NAME in names  # can read
     assert schema.RunCommandInput.TOOL_NAME in names  # can run commands to investigate
     assert schema.ApplyEditInput.TOOL_NAME not in names  # but not edit
@@ -572,12 +571,12 @@ def test_tool_definitions_ask_mode_is_read_only_with_commands(tmp_path: pathlib.
 def test_dispatcher_refuses_mutations_in_ask_mode(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="ask")
-    with pytest.raises(errors.ToolError, match="ask mode"):
+    with pytest.raises(tool_errors.ToolError, match="ask mode"):
         d.dispatch(
             "apply_edit",
             {"path": "f.py", "edits": [{"kind": "create", "old_string": "", "new_string": "x\n"}]},
         )
-    with pytest.raises(errors.ToolError, match="ask mode"):
+    with pytest.raises(tool_errors.ToolError, match="ask mode"):
         d.dispatch("apply_patch", {"patch": "--- a\n+++ b\n"})
 
 
@@ -595,7 +594,7 @@ def _wf(
     **kw: Any,
 ) -> loopmod.Harness:
     defaults: dict[str, Any] = {
-        "chain": _chain.RunChain(
+        "chain": run_chain.RunChain(
             root or pathlib.Path("/tmp"),
             ref=ref,
             branch=branch,
@@ -620,7 +619,7 @@ def _wf(
         "provider": mock.MagicMock(),
         "dispatcher": mock.MagicMock(last_verification=None),
         "logger": _silent,
-        "call": _provider_call.CallSettings(retry_delay_s=0.01),
+        "call": provider_call.CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
     return loopmod.Harness(**defaults)
@@ -667,7 +666,7 @@ def _plan_wf(
     repo: pathlib.Path, provider: Any, plan_path: pathlib.Path, state_path: pathlib.Path
 ) -> loopmod.Harness:
     return loopmod.Harness(
-        chain=_chain.RunChain(repo),
+        chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
@@ -689,7 +688,7 @@ def _plan_wf(
             dispatch=mock.MagicMock(return_value=results.RawResult({"acknowledged": True})),
         ),
         logger=_silent,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=5,
         mode="plan",
         plan_output_path=plan_path,
@@ -770,14 +769,14 @@ def test_an_unreadable_plan_parks_the_execution(tmp_path: pathlib.Path) -> None:
     Continuing on the planner's own copy burns budget on direction the operator may have superseded;
     the execution ends with the remedy instead.
     """
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
     plan = tmp_path / "plan.md"
     plan.write_text("# Plan\n", encoding="utf-8")
     plan.chmod(0o000)
     try:
         wf = loopmod.Harness(
-            chain=_chain.RunChain(tmp_path),
+            chain=run_chain.RunChain(tmp_path),
             config=mock.MagicMock(),
             provider=mock.MagicMock(),
             dispatcher=mock.MagicMock(last_verification=None),
@@ -786,11 +785,11 @@ def test_an_unreadable_plan_parks_the_execution(tmp_path: pathlib.Path) -> None:
             logger=lambda _m: None,
         )
         got = wf._maybe_inject_plan(  # pyright: ignore[reportPrivateUsage]
-            mock.MagicMock(), _loop_state.LoopState(original_task="t", tool_calls=4), turn=3
+            mock.MagicMock(), loop_state.LoopState(original_task="t", tool_calls=4), turn=3
         )
     finally:
         plan.chmod(0o600)
-    assert isinstance(got, _snapshot.SessionResult)
+    assert isinstance(got, loop_snapshot.SessionResult)
     assert got.reason == "plan_unreadable" and got.completed is False
     assert "plan.md unreadable" in got.summary
     assert "agent6 resume" in got.summary  # the remedy is in hand
@@ -804,7 +803,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
     renders when none are recorded.
     """
     from agent6.config import Config
-    from agent6.harness import _prompt_blocks  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import prompt_blocks  # pyright: ignore[reportPrivateUsage]
 
     repo = kinds.RepoSummary(
         root=tmp_path,
@@ -817,7 +816,7 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
         is_git=False,
     )
     for mode in ("run", "plan", "ask"):
-        text = _prompt_blocks.build_system_prompt(
+        text = prompt_blocks.build_system_prompt(
             config=Config(),
             repo=repo,
             mode=mode,
@@ -827,6 +826,6 @@ def test_the_decisions_block_renders_when_rulings_exist(tmp_path: pathlib.Path) 
         assert "<decisions>" in text and "A: No." in text
         assert "decisions.md" not in text  # a file the model cannot open is not named
         assert "recorded rulings" in text and "each ask_user answer" not in text
-    assert "<decisions>" not in _prompt_blocks.build_system_prompt(
+    assert "<decisions>" not in prompt_blocks.build_system_prompt(
         config=Config(), repo=repo, mode="run", skills=None
     )

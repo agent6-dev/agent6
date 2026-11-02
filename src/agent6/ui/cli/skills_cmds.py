@@ -25,11 +25,11 @@ import tomllib
 import httpx2
 
 from agent6 import errors, paths
-from agent6 import skills as agent6_skills
 from agent6.config import ConfigError, io, layer
-from agent6.skills import Skill, resolve_states  # noqa: ICN003  # re-export
+from agent6.context import skills as agent6_skills
+from agent6.context.skills import Skill, resolve_states  # noqa: ICN003  # re-export
 from agent6.tools import http_body
-from agent6.ui.cli import _common, _steer_menu
+from agent6.ui.cli import common, steer_menu
 from agent6.vcs import git_policy
 
 _ORIGIN_FILE = ".origin.toml"
@@ -57,7 +57,7 @@ def _short_source(src: str) -> str:
         if src.startswith(scheme):
             src = src[len(scheme) :]
             break
-    return _common.home_contracted(src)
+    return common.home_contracted(src)
 
 
 def _installed_dir() -> pathlib.Path:
@@ -468,31 +468,31 @@ def _cmd_skills_install(
     width = _term_width()
     if len(installed) == 1:
         name = installed[0]
-        print(f"Installed {_common.sgr(name, '1')}")
+        print(f"Installed {common.sgr(name, '1')}")
         if desc := (by_name[name].description if name in by_name else ""):
-            print(f"  {_common.sgr(_one_line(desc, width - 2), '2')}")
+            print(f"  {common.sgr(_one_line(desc, width - 2), '2')}")
     else:
-        print(_common.sgr(f"Installed {len(installed)} skills from {_short_source(url)}:", "1"))
+        print(common.sgr(f"Installed {len(installed)} skills from {_short_source(url)}:", "1"))
         name_w = min(32, max(len(n) for n in installed))
         for name in sorted(installed):
             desc = by_name[name].description if name in by_name else ""
             prefix = f"  {name:<{name_w}}  "
-            print(f"{prefix}{_common.sgr(_one_line(desc, max(20, width - len(prefix))), '2')}")
+            print(f"{prefix}{common.sgr(_one_line(desc, max(20, width - len(prefix))), '2')}")
     for name in installed:
-        if f"/{name}" in _steer_menu.MENU_COMMANDS:
+        if f"/{name}" in steer_menu.MENU_COMMANDS:
             print(
                 f"note: /{name} is a built-in pause-menu command and keeps its meaning;"
                 " the skill stays reachable via the <skills> index, use_skill, and --skill"
             )
     if _print_disabled_notes(installed, config_paths):
-        print(_common.sgr("Installed; `agent6 skills list` shows the effective state.", "2"))
+        print(common.sgr("Installed; `agent6 skills list` shows the effective state.", "2"))
     else:
-        print(_common.sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
+        print(common.sgr("Enabled and active now; `agent6 skills list` to review.", "2"))
     return 0
 
 
 def _print_disabled_notes(installed: list[str], config_paths: tuple[pathlib.Path, ...]) -> bool:
-    """Name every installed skill a surviving `skills.state = "disabled"` leaf covers.
+    """Name every installed skill a surviving `agent6_skills.state = "disabled"` leaf covers.
 
     Args:
         installed: The names just installed.
@@ -511,7 +511,7 @@ def _print_disabled_notes(installed: list[str], config_paths: tuple[pathlib.Path
 
 
 def _state_map(config_paths: tuple[pathlib.Path, ...]) -> dict[str, str]:
-    """Return the effective `[skills.state]` map, or {} when config is unreadable.
+    """Return the effective `[agent6_skills.state]` map, or {} when config is unreadable.
 
     The notes built on it then just do not print; the command's own work is already done.
 
@@ -608,7 +608,7 @@ def _cmd_skills_update(name: str) -> int:
     def _row(skill: str, status: str, *, dim: bool, note: str = "") -> None:
         """Print one update row."""
         line = f"  {skill:<{name_w}}  {f'{status}  {note}'.rstrip()}"
-        print(_common.sgr(line, "2") if dim else line)
+        print(common.sgr(line, "2") if dim else line)
 
     counts = {"updated": 0, "unchanged": 0, "skipped": 0}
     for skill_dir in targets:
@@ -639,7 +639,7 @@ def _cmd_skills_update(name: str) -> int:
             _row(skill_dir.name, "unchanged", dim=True)
             counts["unchanged"] += 1
     parts = [f"{counts[k]} {k}" for k in ("updated", "unchanged", "skipped") if counts[k]]
-    print(_common.sgr(", ".join(parts), "1"))
+    print(common.sgr(", ".join(parts), "1"))
     return 0
 
 
@@ -671,7 +671,7 @@ def _cmd_skills_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
 
     if cfg is not None and not cfg.skills.enabled:
         # With the master switch off a run has none of this: the index is empty, use_skill absent.
-        print(_common.sgr("skills are DISABLED (agent6 config set skills.enabled true)", "1"))
+        print(common.sgr("skills are DISABLED (agent6 config set skills.enabled true)", "1"))
         print("installed, but no run loads any of them:\n")
 
     states = [state.get(s.name, "enabled") for s in skills]
@@ -680,7 +680,7 @@ def _cmd_skills_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     summary = f"{len(skills)} skill{'s' if len(skills) != 1 else ''}"
     if detail:
         summary += f"  ({', '.join(detail)})"
-    print(_common.sgr(summary, "1"))
+    print(common.sgr(summary, "1"))
 
     # Grouped by origin, so a repo shipping 20 skills prints its URL once; the state column
     # appears only when some skill is not plain-enabled.
@@ -693,7 +693,7 @@ def _cmd_skills_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     name_w = min(32, max(len(s.name) for s in skills))
     tag_w = len("[disabled]")
     for src, items in groups.items():
-        print(f"\n{_common.sgr(_short_source(src), '2')}")
+        print(f"\n{common.sgr(_short_source(src), '2')}")
         for s in sorted(items, key=lambda k: k.name):
             st = state.get(s.name, "enabled")
             name = s.name if len(s.name) <= name_w else s.name[: name_w - 1] + "…"
@@ -702,7 +702,7 @@ def _cmd_skills_list(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
                 prefix += f"{('' if st == 'enabled' else f'[{st}]'):<{tag_w}}  "
             print(f"{prefix}{_one_line(s.description, max(20, _term_width() - len(prefix)))}")
     for w in warnings:
-        _common.warn(f"{w}")
+        common.warn(f"{w}")
     return 0
 
 

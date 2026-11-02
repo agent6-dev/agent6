@@ -42,19 +42,19 @@ from typing import Any
 from agent6 import budget as agent6_budget
 from agent6 import portable
 from agent6.providers import (
-    _claude_code_protocol,
-    _claude_code_session,
-    _claude_code_stream,
-    _claude_code_wire,
-    _headers,
-    _stream,
-    types,
+    claude_code_protocol,
+    claude_code_session,
+    claude_code_stream,
+    claude_code_wire,
+    provider_types,
+    request_headers,
+    stream_lifecycle,
 )
 from agent6.sandbox import jail
 
 # A reading follows message_stop within milliseconds (4 ms measured on CLI 2.1.251), so one
 # tick covers it; a process's first round always gets one, inside the grace or not meterable.
-_PLAN_READING_DRAIN_S = _stream.STREAM_WATCHDOG_TICK_S
+_PLAN_READING_DRAIN_S = stream_lifecycle.STREAM_WATCHDOG_TICK_S
 _PLAN_READING_GRACE_S = 3.0
 # The reserve the compaction thresholds keep below the window; past it the session restarts.
 _CONTEXT_RESERVE_TOKENS = 16_384
@@ -83,7 +83,7 @@ def login_status(binary: str, *, timeout_s: float = 20.0) -> str | None:
     argv = [binary, "auth", "status", "--json"]
     try:
         proc = subprocess.run(  # noqa: PLW1510 - a signed-out login exits 1 with a JSON body
-            argv, env=_claude_code_wire.child_env(), capture_output=True, timeout=timeout_s
+            argv, env=claude_code_wire.child_env(), capture_output=True, timeout=timeout_s
         )
     except FileNotFoundError:
         return _missing_binary(binary)
@@ -132,11 +132,11 @@ class ClaudeCodeProvider:
     model: str
     binary: str = "claude"
     effort: str | None = None
-    transcript_sink: types.TranscriptRecorder | None = None
+    transcript_sink: provider_types.TranscriptRecorder | None = None
     budget: agent6_budget.BudgetTracker | None = None
     context_tokens: int | None = None
     # The live session; a list, since the dataclass is frozen.
-    _cell: list[_claude_code_session.Session | None] = dataclasses.field(
+    _cell: list[claude_code_session.Session | None] = dataclasses.field(
         default_factory=lambda: [None]
     )
 
@@ -145,7 +145,7 @@ class ClaudeCodeProvider:
         *,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[types.ToolDefinition] | None = None,
+        tools: list[provider_types.ToolDefinition] | None = None,
         max_tokens: int = 4096,
         temperature: float | None = None,
         reasoning_effort: str | None = None,
@@ -153,8 +153,8 @@ class ClaudeCodeProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
-        context: _headers.RequestContext | None = None,
-    ) -> types.ProviderResponse:
+        context: request_headers.RequestContext | None = None,
+    ) -> provider_types.ProviderResponse:
         """Run one round on the worker's process, or one process for a tool-less call.
 
         Args:
@@ -182,7 +182,7 @@ class ClaudeCodeProvider:
         if self.budget is not None:
             self.budget.check()
         tool_list = list(tools or ())
-        watch = _claude_code_session.Watch(should_abort, should_interrupt)
+        watch = claude_code_session.Watch(should_abort, should_interrupt)
         s = self._cell[0] if tool_list else None
         try:
             if tool_list:
@@ -190,7 +190,7 @@ class ClaudeCodeProvider:
             else:
                 # The worker's session, blocked on its tools/call, is untouched.
                 s = self._spawn(system, [], messages, watch)
-            s.consumed = _claude_code_wire.history_skeleton(messages)
+            s.consumed = claude_code_wire.history_skeleton(messages)
             resp = self._read_round(s, watch, text_delta_callback, thinking_delta_callback)
             self._record_transcript(s, system, messages, resp)
         except BaseException:
@@ -206,7 +206,7 @@ class ClaudeCodeProvider:
         if (s := self._cell[0]) is not None:
             self._close(s)
 
-    def _close(self, s: _claude_code_session.Session) -> None:
+    def _close(self, s: claude_code_session.Session) -> None:
         """Reap a session and forget it when it is the live one."""
         s.reap()
         if self._cell[0] is s:
@@ -216,12 +216,12 @@ class ClaudeCodeProvider:
 
     def _worker_session(
         self,
-        s: _claude_code_session.Session | None,
+        s: claude_code_session.Session | None,
         system: str,
-        tools: list[types.ToolDefinition],
+        tools: list[provider_types.ToolDefinition],
         messages: Sequence[Mapping[str, Any]],
-        watch: _claude_code_session.Watch,
-    ) -> _claude_code_session.Session:
+        watch: claude_code_session.Watch,
+    ) -> claude_code_session.Session:
         """Continue the worker's process when the history extends what it produced, else respawn.
 
         Args:
@@ -241,9 +241,9 @@ class ClaudeCodeProvider:
             and s.system == system
             and s.tools == tools
         ):
-            tail = _claude_code_session.continuation(s, messages)
+            tail = claude_code_session.continuation(s, messages)
             if tail is not None:
-                _claude_code_protocol.continue_session(s, tail, watch, model=self.model)
+                claude_code_protocol.continue_session(s, tail, watch, model=self.model)
                 return s
         self.close()
         s = self._cell[0] = self._spawn(system, tools, messages, watch)
@@ -252,10 +252,10 @@ class ClaudeCodeProvider:
     def _spawn(
         self,
         system: str,
-        tools: list[types.ToolDefinition],
+        tools: list[provider_types.ToolDefinition],
         messages: Sequence[Mapping[str, Any]],
-        watch: _claude_code_session.Watch,
-    ) -> _claude_code_session.Session:
+        watch: claude_code_session.Watch,
+    ) -> claude_code_session.Session:
         """Spawn one child through its handshake and the history's `system/init`.
 
         Args:
@@ -276,21 +276,21 @@ class ClaudeCodeProvider:
         portable.atomic_write(prompt_file, system)  # a new file lands 0600
         try:
             proc = subprocess.Popen(
-                _claude_code_wire.claude_argv(self.binary, self.model, self.effort, prompt_file),
+                claude_code_wire.claude_argv(self.binary, self.model, self.effort, prompt_file),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=private_dir,
-                env=_claude_code_wire.child_env(),
+                env=claude_code_wire.child_env(),
                 start_new_session=True,
                 preexec_fn=jail.die_with_parent(os.getpid(), sig=signal.SIGKILL),  # noqa: PLW1509
             )
         except FileNotFoundError as exc:
             shutil.rmtree(private_dir, ignore_errors=True)
-            raise types.ProviderError(_missing_binary(self.binary), fatal=True) from exc
+            raise provider_types.ProviderError(_missing_binary(self.binary), fatal=True) from exc
         except OSError as exc:
             shutil.rmtree(private_dir, ignore_errors=True)
-            raise types.ProviderError(f"cannot start {self.binary!r}: {exc}") from exc
+            raise provider_types.ProviderError(f"cannot start {self.binary!r}: {exc}") from exc
         # Unregistered, the child is exactly what the escapee sweep would kill.
         jail.keep_out_of_the_sweep(proc.pid)
         assert proc.stderr is not None
@@ -302,7 +302,7 @@ class ClaudeCodeProvider:
             name="agent6-claude-stderr",
             daemon=True,
         )
-        s = _claude_code_session.Session(
+        s = claude_code_session.Session(
             proc=proc,
             private_dir=private_dir,
             system=system,
@@ -312,14 +312,14 @@ class ClaudeCodeProvider:
             stderr_tail=tail,
         )
         threading.Thread(
-            target=_claude_code_session.read_stdout,
+            target=claude_code_session.read_stdout,
             args=(s,),
             name="agent6-claude-stdout",
             daemon=True,
         ).start()
         drain.start()
         try:
-            _claude_code_session.write(
+            claude_code_session.write(
                 s,
                 {
                     "type": "control_request",
@@ -329,19 +329,19 @@ class ClaudeCodeProvider:
                 log=False,
             )
             while (
-                _claude_code_protocol.next_line(s, watch, model=self.model).get("type")
+                claude_code_protocol.next_line(s, watch, model=self.model).get("type")
                 != "_agent6_handshake_done"
             ):
                 pass
-            _claude_code_session.write(
-                s, _claude_code_wire.user_line(_claude_code_wire.render_history(messages))
+            claude_code_session.write(
+                s, claude_code_wire.user_line(claude_code_wire.render_history(messages))
             )
             while True:
-                line = _claude_code_protocol.next_line(s, watch, model=self.model)
+                line = claude_code_protocol.next_line(s, watch, model=self.model)
                 if line.get("type") == "system" and line.get("subtype") == "init":
-                    _claude_code_protocol.audit_init(s, line, model=self.model)
+                    claude_code_protocol.audit_init(s, line, model=self.model)
                     return s
-                _claude_code_protocol.absorb(s, line, model=self.model)
+                claude_code_protocol.absorb(s, line, model=self.model)
         except BaseException:
             s.reap()
             raise
@@ -350,11 +350,11 @@ class ClaudeCodeProvider:
 
     def _read_round(
         self,
-        s: _claude_code_session.Session,
-        watch: _claude_code_session.Watch,
+        s: claude_code_session.Session,
+        watch: claude_code_session.Watch,
         text_cb: Callable[[str], None] | None,
         thinking_cb: Callable[[str], None] | None,
-    ) -> types.ProviderResponse:
+    ) -> provider_types.ProviderResponse:
         """Read one round to its end and meter it.
 
         Args:
@@ -366,28 +366,28 @@ class ClaudeCodeProvider:
         Returns:
             The round's response.
         """
-        r = _claude_code_stream.Round()
+        r = claude_code_stream.Round()
         plan_before = s.plan
-        watch.limit = _stream.STREAM_FIRST_DATA_TIMEOUT_S
+        watch.limit = stream_lifecycle.STREAM_FIRST_DATA_TIMEOUT_S
         while not r.ended:
-            line = _claude_code_protocol.next_line(s, watch, model=self.model)
+            line = claude_code_protocol.next_line(s, watch, model=self.model)
             kind = line.get("type")
             if kind == "stream_event":
-                _claude_code_stream.stream_event(
+                claude_code_stream.stream_event(
                     s, r, line.get("event") or {}, watch, text_cb, thinking_cb
                 )
             elif kind == "assistant":
                 r.blocks.extend(
-                    _claude_code_stream.block(s, b)
-                    for b in _claude_code_wire.message_blocks(line.get("message") or {})
+                    claude_code_stream.block(s, b)
+                    for b in claude_code_wire.message_blocks(line.get("message") or {})
                 )
             elif kind == "result":
                 # A turn that ended without a stream: the signed-out synthetic reply.
-                _claude_code_protocol.check_result(s, line)
+                claude_code_protocol.check_result(s, line)
                 r.stop_reason = r.stop_reason or str(line.get("stop_reason") or "end_turn")
                 r.ended = True
             else:
-                _claude_code_protocol.absorb(s, line, model=self.model)
+                claude_code_protocol.absorb(s, line, model=self.model)
         ids = tuple(str(b.get("id", "")) for b in r.blocks if b.get("type") == "tool_use")
         if not ids:
             self._read_to_result(s, watch)
@@ -396,8 +396,8 @@ class ClaudeCodeProvider:
         return self._finish_round(s, r, ids)
 
     def _finish_round(
-        self, s: _claude_code_session.Session, r: _claude_code_stream.Round, ids: tuple[str, ...]
-    ) -> types.ProviderResponse:
+        self, s: claude_code_session.Session, r: claude_code_stream.Round, ids: tuple[str, ...]
+    ) -> provider_types.ProviderResponse:
         """Meter the round and build its response.
 
         Args:
@@ -416,7 +416,7 @@ class ClaudeCodeProvider:
         live_context = input_tokens + cache_read + cache_creation
         if self.context_tokens and live_context > self.context_tokens - _CONTEXT_RESERVE_TOKENS:
             s.restart_next = True  # the next call replays the compacted mirror
-        return types.ProviderResponse(
+        return provider_types.ProviderResponse(
             text="\n\n".join(str(b.get("text", "")) for b in r.blocks if b.get("type") == "text"),
             tool_uses=tuple(
                 {"id": b.get("id"), "name": b.get("name"), "input": b.get("input")}
@@ -439,7 +439,7 @@ class ClaudeCodeProvider:
         )
 
     def _read_to_result(
-        self, s: _claude_code_session.Session, watch: _claude_code_session.Watch
+        self, s: claude_code_session.Session, watch: claude_code_session.Watch
     ) -> None:
         """Read a prose round's `result` line, so a turn error is raised where it happened.
 
@@ -450,21 +450,21 @@ class ClaudeCodeProvider:
         Raises:
             ProviderError: The turn failed, or another round started first.
         """
-        watch.limit = _stream.STREAM_IDLE_TIMEOUT_S
+        watch.limit = stream_lifecycle.STREAM_IDLE_TIMEOUT_S
         while True:
-            line = _claude_code_protocol.next_line(s, watch, model=self.model)
+            line = claude_code_protocol.next_line(s, watch, model=self.model)
             if line.get("type") == "result":
-                _claude_code_protocol.check_result(s, line)
+                claude_code_protocol.check_result(s, line)
                 return
             if line.get("type") in ("stream_event", "assistant"):
-                raise types.ProviderError(
+                raise provider_types.ProviderError(
                     "claude started another round before reporting the turn's result"
                 )
-            _claude_code_protocol.absorb(s, line, model=self.model)
+            claude_code_protocol.absorb(s, line, model=self.model)
 
     def _drain_after_round(
         self,
-        s: _claude_code_session.Session,
+        s: claude_code_session.Session,
         ids: tuple[str, ...],
         plan_before: agent6_budget.PlanUsage | None,
     ) -> None:
@@ -490,7 +490,7 @@ class ClaudeCodeProvider:
             if remaining <= 0:
                 return
             try:
-                line = s.lines.get(timeout=min(remaining, _stream.STREAM_WATCHDOG_TICK_S))
+                line = s.lines.get(timeout=min(remaining, stream_lifecycle.STREAM_WATCHDOG_TICK_S))
             except queue.Empty:
                 continue
             if line is None or line.get("type") in (
@@ -501,11 +501,11 @@ class ClaudeCodeProvider:
             ):
                 s.pushback.append(line)
                 return
-            _claude_code_protocol.absorb(s, line, model=self.model)
+            claude_code_protocol.absorb(s, line, model=self.model)
 
     def _record(
         self,
-        s: _claude_code_session.Session,
+        s: claude_code_session.Session,
         inp: int,
         out: int,
         cache_read: int,
@@ -527,7 +527,7 @@ class ClaudeCodeProvider:
         if self.budget is None:
             return
         if s.plan is None:
-            raise types.ProviderError(
+            raise provider_types.ProviderError(
                 "claude reported no plan window (rate_limit_event) for this round; agent6 meters"
                 " this provider by plan window only",
                 fatal=True,
@@ -543,17 +543,17 @@ class ClaudeCodeProvider:
             plan_usage=s.plan,
         )
         if inp + cache_read + cache_creation <= 0:
-            raise types.ProviderError(
+            raise provider_types.ProviderError(
                 "claude reported no usage input tokens for this round; budgeted runs require"
                 " provider usage accounting"
             )
 
     def _record_transcript(
         self,
-        s: _claude_code_session.Session,
+        s: claude_code_session.Session,
         system: str,
         messages: list[dict[str, Any]],
-        resp: types.ProviderResponse,
+        resp: provider_types.ProviderResponse,
     ) -> None:
         """Record the round as one transcript entry, then clear the stdin log."""
         if self.transcript_sink is None:

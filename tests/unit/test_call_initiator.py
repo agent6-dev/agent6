@@ -6,12 +6,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.harness import _conversation, _provider_call
-from agent6.providers import ProviderResponse, _headers
+from agent6.harness import loop_conversation, provider_call
+from agent6.providers import ProviderResponse, request_headers
 
 
 def test_the_initiator_follows_the_latest_notice_origin() -> None:
-    conv = _conversation.Conversation()
+    conv = loop_conversation.Conversation()
     assert conv.initiator == "agent"
     conv.notice("TASK: do it", origin="operator")
     assert conv.initiator == "user"
@@ -24,7 +24,7 @@ def test_the_initiator_follows_the_latest_notice_origin() -> None:
     conv.notice("OPERATOR STEERING: faster", origin="operator")
     assert conv.initiator == "user"
     # The wire carries text only: a snapshot read back is the harness's.
-    reloaded = _conversation.Conversation.from_wire(conv.to_wire())
+    reloaded = loop_conversation.Conversation.from_wire(conv.to_wire())
     assert reloaded.initiator == "agent"
 
 
@@ -45,7 +45,7 @@ def test_the_caller_passes_the_initiator_as_a_partial_context() -> None:
                 raw={},
             )
 
-    caller = _provider_call.ProviderCaller(
+    caller = provider_call.ProviderCaller(
         provider=_Provider(),  # type: ignore[arg-type]
         retry_count=0,
         retry_delay_s=0.0,
@@ -59,4 +59,4 @@ def test_the_caller_passes_the_initiator_as_a_partial_context() -> None:
     caller.call("s", [], [], 10, initiator="user")
     caller.call("s", [], [], 10)
     assert [c.initiator for c in seen] == ["user", "agent"]
-    assert all(isinstance(c, _headers.RequestContext) and c.session_id == "" for c in seen)
+    assert all(isinstance(c, request_headers.RequestContext) and c.session_id == "" for c in seen)

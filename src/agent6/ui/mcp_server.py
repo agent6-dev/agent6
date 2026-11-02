@@ -27,7 +27,7 @@ from agent6.config import Config, layer
 from agent6.graph import storage
 from agent6.sessions import id, manifest
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import dispatch, errors
+from agent6.tools import dispatch, tool_errors
 from agent6.viewmodel import listing, session_dirs
 
 _PROTOCOL_VERSION = "2024-11-05"
@@ -392,7 +392,7 @@ class MCPServer:
             raise _RpcError(-32602, violation)
         try:
             payload = self._tools[name].handler(args)
-        except (errors.ToolError, errors.OperatorCommandUnexecutableError) as exc:
+        except (tool_errors.ToolError, tool_errors.OperatorCommandUnexecutableError) as exc:
             # An escaping error would end the serve process and break the pipe for every client.
             return {
                 "content": [{"type": "text", "text": str(exc)}],
@@ -452,17 +452,17 @@ class MCPServer:
         if isinstance(session_id_arg, str) and session_id_arg:
             # A traversing or absolute id is refused before it builds a path.
             if not sessions_layout.is_safe_session_id(session_id_arg):
-                raise errors.ToolError(f"invalid session_id: {session_id_arg!r}")
+                raise tool_errors.ToolError(f"invalid session_id: {session_id_arg!r}")
             session_id = session_id_arg
         else:
             resolved = _most_recent_session_id(self._agent6_dir)
             if resolved is None:
-                raise errors.ToolError("no sessions found under the agent6 state dir")
+                raise tool_errors.ToolError("no sessions found under the agent6 state dir")
             session_id = resolved
         try:
             layout = id.resolve_session(self._agent6_dir, session_id)
         except id.SessionIdError as exc:
-            raise errors.ToolError(str(exc)) from exc
+            raise tool_errors.ToolError(str(exc)) from exc
         nodes = storage.load_graph(layout)
         return {
             "session_id": session_id,

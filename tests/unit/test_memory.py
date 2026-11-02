@@ -13,7 +13,8 @@ from typing import Any
 
 import pytest
 
-from agent6 import memory, portable
+from agent6 import portable
+from agent6.context import memory
 
 
 def test_add_writes_file_and_renders_entry(tmp_path: pathlib.Path) -> None:
@@ -581,13 +582,13 @@ def test_carry_back_lands_a_lanes_use_record(tmp_path: pathlib.Path) -> None:
 
     Otherwise it goes with the lane's state dir.
     """
-    from agent6.app import _parallel_results, reporter
+    from agent6.app import parallel_results, reporter
 
     origin, lane, dest = tmp_path / "origin", tmp_path / "lane", tmp_path / "dest"
     memory.add(lane, "lane-fact", "A fact the lane found.")
     memory.record_use(lane, session="lane-1", wrote=("lane-fact",), read={"lane-fact": 2})
     said: list[str] = []
-    _parallel_results.carry_back(
+    parallel_results.carry_back(
         lane, origin, dest, lane=1, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     use = memory.read_use(origin)
@@ -602,7 +603,7 @@ def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathli
     Left in place, the origin's record kept naming the fact's writers and readers after the
     file was gone, and a lane that later recreated the name inherited them.
     """
-    from agent6.app import _parallel_results, reporter
+    from agent6.app import parallel_results, reporter
 
     origin, lane = tmp_path / "origin", tmp_path / "lane"
     memory.add(origin, "fact", "Original.")
@@ -610,7 +611,7 @@ def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathli
     assert memory.read_use(origin)["fact"].writers == ("operator", "run-o")
     memory.seed_store(origin, lane)
     memory.remove(lane, "fact")
-    _parallel_results.carry_back(
+    parallel_results.carry_back(
         lane,
         origin,
         tmp_path / "imported",
@@ -622,7 +623,7 @@ def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathli
     memory.seed_store(origin, lane)
     memory.memory_dir(lane).joinpath("fact.md").write_text("Another life.\n", encoding="utf-8")
     memory.record_use(lane, session="lane-2", wrote=("fact",), created=("fact",), read={})
-    _parallel_results.carry_back(
+    parallel_results.carry_back(
         lane,
         origin,
         tmp_path / "imported-2",

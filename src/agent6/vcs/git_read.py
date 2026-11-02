@@ -13,7 +13,7 @@ import tempfile
 from collections.abc import Collection
 
 from agent6 import errors, paths
-from agent6.vcs import _git_command, commit_message
+from agent6.vcs import commit_message, git_command
 
 # A name handed to git as a pathspec is the file, never a glob: `a*.txt` matches only itself.
 LITERAL_PATHSPECS = {"GIT_LITERAL_PATHSPECS": "1"}
@@ -78,12 +78,12 @@ def verify_git_identity(path: pathlib.Path, identity: CommitIdentity) -> tuple[s
     name = (
         identity.name
         or os.environ.get("GIT_COMMITTER_NAME", "").strip()
-        or _git_command.run(path, "config", "user.name", check=False).stdout.strip()
+        or git_command.run(path, "config", "user.name", check=False).stdout.strip()
     )
     email = (
         identity.email
         or os.environ.get("GIT_COMMITTER_EMAIL", "").strip()
-        or _git_command.run(path, "config", "user.email", check=False).stdout.strip()
+        or git_command.run(path, "config", "user.email", check=False).stdout.strip()
     )
     missing: list[str] = []
     if not name:
@@ -103,7 +103,7 @@ def verify_git_identity(path: pathlib.Path, identity: CommitIdentity) -> tuple[s
 
 def is_git_repo(path: pathlib.Path) -> bool:
     """Return whether the path is inside a git work tree."""
-    res = _git_command.run(path, "rev-parse", "--is-inside-work-tree", check=False)
+    res = git_command.run(path, "rev-parse", "--is-inside-work-tree", check=False)
     return res.ok and res.stdout.strip() == "true"
 
 
@@ -119,12 +119,12 @@ def pack_exclusion_error(path: pathlib.Path) -> str | None:
     Raises:
         GitError: Git cannot inspect the repository.
     """
-    if _git_command.run(path, "ls-files", "-z", "--", ".agent6").stdout:
+    if git_command.run(path, "ls-files", "-z", "--", ".agent6").stdout:
         return f"{path / '.agent6'}: tracked paths must be removed from git's index before packing."
     args = ("check-ignore", "-q", "--", ".agent6/pack.json")
-    result = _git_command.run(path, *args, check=False)
+    result = git_command.run(path, *args, check=False)
     if result.returncode not in (0, 1):
-        error = _git_command.failure(args, result.returncode, result.stdout, result.stderr)
+        error = git_command.failure(args, result.returncode, result.stdout, result.stderr)
         raise error
     if not result.ok:
         return (
@@ -136,7 +136,7 @@ def pack_exclusion_error(path: pathlib.Path) -> str | None:
 
 def toplevel(path: pathlib.Path) -> pathlib.Path | None:
     """Return the enclosing work tree's root, or None outside a repo or inside `.git`."""
-    res = _git_command.run(path, "rev-parse", "--show-toplevel", check=False)
+    res = git_command.run(path, "rev-parse", "--show-toplevel", check=False)
     if not res.ok:
         return None
     text = res.stdout.strip()
@@ -155,7 +155,7 @@ def paths_dirty(path: pathlib.Path, rel_paths: tuple[str, ...]) -> bool:
     """
     if not rel_paths:
         return False
-    res = _git_command.run(
+    res = git_command.run(
         path, "status", "--porcelain", "--", *rel_paths, check=False, env_extra=LITERAL_PATHSPECS
     )
     return bool(res.stdout.strip())
@@ -172,7 +172,7 @@ def porcelain_entries(path: pathlib.Path) -> list[tuple[str, str]]:
     Returns:
         The (code, path) pairs.
     """
-    fields = _git_command.nul_fields(
+    fields = git_command.nul_fields(
         path, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False
     )
     out: list[tuple[str, str]] = []
@@ -263,13 +263,13 @@ def status(path: pathlib.Path, *, exclude: Collection[str] = ()) -> GitStatus:
     """
     if not is_git_repo(path):
         raise errors.GitError(f"Not a git repository: {path}")
-    branch_res = _git_command.run(path, "rev-parse", "--abbrev-ref", "HEAD", check=False)
+    branch_res = git_command.run(path, "rev-parse", "--abbrev-ref", "HEAD", check=False)
     if branch_res.ok:
         branch = branch_res.stdout.strip()
     else:
         # An unborn HEAD fails rev-parse, but `branch --show-current` still names the branch.
-        branch = _git_command.run(path, "branch", "--show-current", check=False).stdout.strip()
-    head_res = _git_command.run(path, "rev-parse", "HEAD", check=False)
+        branch = git_command.run(path, "branch", "--show-current", check=False).stdout.strip()
+    head_res = git_command.run(path, "rev-parse", "HEAD", check=False)
     head_sha = head_res.stdout.strip() if head_res.ok else ""
     untracked = 0
     modified = 0
@@ -316,7 +316,7 @@ def find_stash(path: pathlib.Path, message: str) -> StashEntry | None:
     Returns:
         The entry, or None.
     """
-    res = _git_command.run(path, "stash", "list", "--format=%gd%x09%H%x09%gs", check=False)
+    res = git_command.run(path, "stash", "list", "--format=%gd%x09%H%x09%gs", check=False)
     for line in res.stdout.splitlines():
         ref, _, rest = line.partition("\t")
         sha, _, subject = rest.partition("\t")
@@ -327,7 +327,7 @@ def find_stash(path: pathlib.Path, message: str) -> StashEntry | None:
 
 def branch_exists(path: pathlib.Path, name: str) -> bool:
     """Return whether the local branch exists."""
-    return _git_command.run(
+    return git_command.run(
         path, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}", check=False
     ).ok
 
@@ -344,12 +344,12 @@ def valid_branch_name(name: str) -> bool:
     Returns:
         True when git accepts it as a branch name.
     """
-    return _git_command.run(pathlib.Path("/"), "check-ref-format", "--branch", name, check=False).ok
+    return git_command.run(pathlib.Path("/"), "check-ref-format", "--branch", name, check=False).ok
 
 
 def list_run_branches(path: pathlib.Path) -> tuple[str, ...]:
     """Return the local branches under `agent6/`, sorted."""
-    res = _git_command.run(
+    res = git_command.run(
         path, "for-each-ref", "--format=%(refname:short)", "refs/heads/agent6/", check=False
     )
     return tuple(b for b in res.stdout.splitlines() if b.strip())
@@ -366,7 +366,7 @@ def run_ref_tips(path: pathlib.Path) -> dict[str, str]:
     Returns:
         Branch short names and full chain ref names, each to its sha.
     """
-    res = _git_command.run(
+    res = git_command.run(
         path,
         "for-each-ref",
         "--format=%(refname) %(objectname)",
@@ -386,14 +386,12 @@ def run_ref_tips(path: pathlib.Path) -> dict[str, str]:
 
 def is_ancestor(path: pathlib.Path, maybe_ancestor: str, ref: str) -> bool:
     """Return whether the first commit is reachable from the second."""
-    return _git_command.run(
-        path, "merge-base", "--is-ancestor", maybe_ancestor, ref, check=False
-    ).ok
+    return git_command.run(path, "merge-base", "--is-ancestor", maybe_ancestor, ref, check=False).ok
 
 
 def branch_tip_sha(path: pathlib.Path, branch: str) -> str | None:
     """Return the sha the branch points at, or None when it does not resolve."""
-    res = _git_command.run(
+    res = git_command.run(
         path, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False
     )
     sha = res.stdout.strip()
@@ -480,7 +478,7 @@ def list_chain_refs(path: pathlib.Path) -> tuple[tuple[str, str], ...]:
         The (session id, sha) pairs.
     """
     pattern = f"{CHAIN_NS}/*/{CHAIN_KIND}"
-    out = _git_command.run(
+    out = git_command.run(
         path, "for-each-ref", "--format=%(refname)%00%(objectname)", pattern
     ).stdout
     rows: list[tuple[str, str]] = []
@@ -493,7 +491,7 @@ def list_chain_refs(path: pathlib.Path) -> tuple[tuple[str, str], ...]:
 
 def git_common_dir(path: pathlib.Path) -> pathlib.Path:
     """Return the repository's shared `.git` directory, absolute: the main checkout's."""
-    out = _git_command.run(
+    out = git_command.run(
         path, "rev-parse", "--path-format=absolute", "--git-common-dir"
     ).stdout.strip()
     return pathlib.Path(out).resolve()
@@ -501,7 +499,7 @@ def git_common_dir(path: pathlib.Path) -> pathlib.Path:
 
 def worktree_of_branch(path: pathlib.Path, branch: str) -> pathlib.Path | None:
     """Return the checkout that has the branch checked out, or None when none does."""
-    out = _git_command.run(path, "worktree", "list", "--porcelain").stdout
+    out = git_command.run(path, "worktree", "list", "--porcelain").stdout
     where: pathlib.Path | None = None
     for line in out.splitlines():
         if line.startswith("worktree "):
@@ -526,7 +524,7 @@ def unignored(path: pathlib.Path, candidates: tuple[str, ...]) -> tuple[str, ...
     # check-ignore prints the ignored inputs and exits 1 when none match; only stdout is read.
     # The names go in on stdin, so one a model wrote never reaches the argv.
     ignored = set(
-        _git_command.nul_fields(
+        git_command.nul_fields(
             path, "check-ignore", "-z", "--stdin", stdin_text="\0".join(candidates), check=False
         )
     )
@@ -535,7 +533,7 @@ def unignored(path: pathlib.Path, candidates: tuple[str, ...]) -> tuple[str, ...
 
 def chain_tip(path: pathlib.Path, ref: str) -> str | None:
     """Return the commit sha the ref resolves to, or None when it does not exist."""
-    res = _git_command.run(
+    res = git_command.run(
         path, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}", check=False
     )
     sha = res.stdout.strip()
@@ -555,7 +553,7 @@ def commit_is_reachable(path: pathlib.Path, sha: str) -> bool:
     Returns:
         True when a ref contains it; False also for a commit the repository lacks.
     """
-    res = _git_command.run(
+    res = git_command.run(
         path, "for-each-ref", "--contains", sha, "--count=1", "--format=%(refname)", check=False
     )
     return res.ok and bool(res.stdout.strip())
@@ -582,7 +580,7 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
     env = {"GIT_INDEX_FILE": str(tmp / "index")}
     try:
         if seed is not None:
-            _git_command.run(path, "read-tree", seed, env_extra=env)
+            git_command.run(path, "read-tree", seed, env_extra=env)
         # git refuses a pathspec naming an ignored path, exclude or not, and `add -A` never
         # takes one: an excluded path the ignore rules cover by now needs no exclude.
         exclude = unignored(path, tuple(sorted(exclude)))
@@ -591,7 +589,7 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
             spec.write_bytes(
                 b"\0".join([b":/", *(f":(top,exclude,literal){rel}".encode() for rel in exclude)])
             )
-            _git_command.run(
+            git_command.run(
                 path,
                 "add",
                 "-A",
@@ -600,8 +598,8 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
                 env_extra=env,
             )
         else:
-            _git_command.run(path, "add", "-A", env_extra=env)
-        return _git_command.run(path, "write-tree", env_extra=env).stdout.strip()
+            git_command.run(path, "add", "-A", env_extra=env)
+        return git_command.run(path, "write-tree", env_extra=env).stdout.strip()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -622,13 +620,13 @@ def worktree_matches(path: pathlib.Path, ref: str, paths: Collection[str]) -> bo
         True when the contents are equal; False also on a bad ref.
     """
     specs = (f":(top,literal){p}" for p in sorted(paths))
-    res = _git_command.run(path, "diff", "--quiet", ref, "--", *specs, check=False)
+    res = git_command.run(path, "diff", "--quiet", ref, "--", *specs, check=False)
     return res.returncode == 0
 
 
 def tree_sha(path: pathlib.Path, rev: str) -> str:
     """Return the tree sha of a commit-ish."""
-    return _git_command.run(path, "rev-parse", f"{rev}^{{tree}}").stdout.strip()
+    return git_command.run(path, "rev-parse", f"{rev}^{{tree}}").stdout.strip()
 
 
 def chain_dirty(
@@ -691,10 +689,10 @@ def tree_paths(path: pathlib.Path, ref: str) -> frozenset[str]:
     Raises:
         GitError: The ref is not a tree.
     """
-    if _git_command.run(path, "rev-parse", "--verify", "--quiet", ref, check=False).returncode != 0:
+    if git_command.run(path, "rev-parse", "--verify", "--quiet", ref, check=False).returncode != 0:
         return frozenset()
     return frozenset(
-        filter(None, _git_command.nul_fields(path, "ls-tree", "-r", "--name-only", "-z", ref))
+        filter(None, git_command.nul_fields(path, "ls-tree", "-r", "--name-only", "-z", ref))
     )
 
 
@@ -714,7 +712,7 @@ def tree_diff_paths(path: pathlib.Path, old_tree: str, new_tree: str) -> list[st
     return list(
         filter(
             None,
-            _git_command.nul_fields(
+            git_command.nul_fields(
                 path, "diff-tree", "-r", "-z", "--name-only", old_tree, new_tree
             ),
         )
@@ -727,7 +725,7 @@ def list_run_commits(
     """Return the commits on the run branch since the base, oldest first."""
     # A body can hold any byte but NUL, so records split on NUL and fields at most twice.
     fmt = "%H%x1f%s%x1f%B"
-    res = _git_command.run(
+    res = git_command.run(
         path, "log", "-z", "--reverse", f"--format={fmt}", f"{base_sha}..{run_branch}", check=False
     )
     if not res.ok:
@@ -761,7 +759,7 @@ def worktree_name_status(
     Returns:
         The (status, path) pairs.
     """
-    res = _git_command.run(path, "status", "--porcelain", check=False)
+    res = git_command.run(path, "status", "--porcelain", check=False)
     pairs: list[tuple[str, str]] = []
     for line in res.stdout.splitlines():
         if len(line) < 4:
@@ -776,7 +774,7 @@ def worktree_name_status(
 
 def range_name_status(path: pathlib.Path, base: str, head: str) -> tuple[tuple[str, str], ...]:
     """Return the status letter and path of every change in a range, the deriver's squash input."""
-    res = _git_command.run(path, "diff", "--name-status", f"{base}..{head}", check=False)
+    res = git_command.run(path, "diff", "--name-status", f"{base}..{head}", check=False)
     pairs: list[tuple[str, str]] = []
     for line in res.stdout.splitlines():
         cols = line.split("\t")
@@ -787,7 +785,7 @@ def range_name_status(path: pathlib.Path, base: str, head: str) -> tuple[tuple[s
 
 def recent_log(path: pathlib.Path, n: int = 20) -> str:
     """Return the last commits as one-line log text; "" when the log cannot be read."""
-    res = _git_command.run(path, "log", f"-n{n}", "--oneline", check=False)
+    res = git_command.run(path, "log", f"-n{n}", "--oneline", check=False)
     return res.stdout if res.ok else ""
 
 
@@ -807,7 +805,7 @@ def read_file_at(path: pathlib.Path, ref: str, name: str) -> str:
     """
     metadata = tree_entry(path, ref, name)
     if metadata.startswith(("100644 blob ", "100755 blob ")):
-        return _git_command.run(path, "cat-file", "blob", metadata.split()[2]).stdout
+        return git_command.run(path, "cat-file", "blob", metadata.split()[2]).stdout
     return ""
 
 
@@ -825,7 +823,7 @@ def tree_entry(path: pathlib.Path, rev: str, name: str) -> str:
     Raises:
         GitError: The rev cannot be read or git fails.
     """
-    entries = _git_command.nul_fields(
+    entries = git_command.nul_fields(
         path, "ls-tree", "-z", "--full-tree", rev, "--", name, env_extra=LITERAL_PATHSPECS
     )
     for entry in entries:
@@ -846,7 +844,7 @@ def tracked_files(path: pathlib.Path) -> tuple[str, ...]:
         map available rather than an empty repo.
     """
     # Outside a repo git exits nonzero and lists nothing; a timeout still raises.
-    return tuple(filter(None, _git_command.nul_fields(path, "ls-files", "-z", check=False)))
+    return tuple(filter(None, git_command.nul_fields(path, "ls-files", "-z", check=False)))
 
 
 def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = ()) -> str:
@@ -871,7 +869,7 @@ def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = 
     try:
         index_copy = tmp / "index"
         real_index = pathlib.Path(
-            _git_command.run(
+            git_command.run(
                 path, "rev-parse", "--path-format=absolute", "--git-path", "index"
             ).stdout.rstrip("\n")
         )
@@ -880,10 +878,8 @@ def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = 
         if real_index.is_file():
             shutil.copy2(real_index, index_copy)
         env = {"GIT_INDEX_FILE": str(index_copy)}
-        _git_command.run(path, "add", "-N", "--", ".", *specs, check=False, env_extra=env)
-        res = _git_command.run(
-            path, "diff", base_sha, "--", ".", *specs, check=False, env_extra=env
-        )
+        git_command.run(path, "add", "-N", "--", ".", *specs, check=False, env_extra=env)
+        res = git_command.run(path, "diff", base_sha, "--", ".", *specs, check=False, env_extra=env)
         return res.stdout if res.ok else ""
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -891,7 +887,7 @@ def diff_since(path: pathlib.Path, base_sha: str, *, exclude: Collection[str] = 
 
 def diff_range(path: pathlib.Path, base_sha: str, ref: str) -> str:
     """Return the diff a committed range introduces; "" when the range does not resolve."""
-    res = _git_command.run(path, "diff", f"{base_sha}..{ref}", check=False)
+    res = git_command.run(path, "diff", f"{base_sha}..{ref}", check=False)
     return res.stdout if res.ok else ""
 
 
@@ -906,7 +902,7 @@ def commit_diff(path: pathlib.Path, sha: str, *, max_bytes: int = 16384) -> str:
     Returns:
         The patch text; "" when git fails.
     """
-    res = _git_command.run(path, "show", "--format=", "--no-color", sha, "--", ".", check=False)
+    res = git_command.run(path, "show", "--format=", "--no-color", sha, "--", ".", check=False)
     if not res.ok:
         return ""
     return res.stdout[:max_bytes]

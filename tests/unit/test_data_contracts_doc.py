@@ -40,7 +40,7 @@ def test_data_contracts_page_is_not_stale() -> None:
 def test_function_only_module_has_no_class_kind() -> None:
     """A function-only wire builder must not be described as a plain class."""
     generator = _load_generator()
-    facts = generator._module_facts("agent6.viewmodel._state_view")
+    facts = generator._module_facts("agent6.viewmodel.state_view")
     assert not facts.class_fields
     assert "session_state_as_dict" in facts.class_docs
     assert generator._kind(facts, "session_state_as_dict") == ""

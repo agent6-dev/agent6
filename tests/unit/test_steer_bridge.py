@@ -16,11 +16,12 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, portable
-from agent6.harness import _chain, _operator, _provider_call
+from agent6 import portable
+from agent6.harness import operator_bridge, provider_call, run_chain
+from agent6.sessions import event_log
 from agent6.sessions import ipc as sessions_ipc
 from agent6.ui import steer as ui_steer
-from agent6.ui.cli import _steer
+from agent6.ui.cli import steer_tty
 
 
 def test_prompt_consumes_bridged_answer(tmp_path: pathlib.Path) -> None:
@@ -72,7 +73,7 @@ def test_make_steer_state_without_tty_uses_bridge(
 
     monkeypatch.setattr("builtins.open", fake_open)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
-    steer = _steer.make_steer_state(events, tmp_path)
+    steer = steer_tty.make_steer_state(events, tmp_path)
     # Without /dev/tty, a pending request still reads as requested.
     sessions_ipc.request_steer(tmp_path)
     assert steer.requested() is True
@@ -108,9 +109,9 @@ def test_sigint_escalates_boundary_interrupt_stop(
     """Ctrl-C's stages: pause at the next boundary, interrupt the in-flight call, stop."""
     import signal
 
-    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
+    monkeypatch.setattr("agent6.ui.cli.steer_tty.tty_message", _silent_banner)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
-    steer = _steer.install_steer_sigint(events, tmp_path)
+    steer = steer_tty.install_steer_sigint(events, tmp_path)
     try:
         assert steer.requested() is False
         signal.raise_signal(signal.SIGINT)  # 1st: graceful pause
@@ -136,16 +137,16 @@ def test_sigint_at_the_pause_prompt_stops(
     """
     import signal
 
-    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
-    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli.steer_tty.tty_message", _silent_banner)
+    monkeypatch.setattr("agent6.ui.cli.menu_input.menu_capable", lambda: False)
 
     def prompt_hit_by_ctrl_c(text: str, **_kw: object) -> str | None:
         signal.raise_signal(signal.SIGINT)
         return ""
 
-    monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_hit_by_ctrl_c)
+    monkeypatch.setattr("agent6.ui.cli.steer_tty.tty_prompt", prompt_hit_by_ctrl_c)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
-    steer = _steer.install_steer_sigint(events, tmp_path)
+    steer = steer_tty.install_steer_sigint(events, tmp_path)
     try:
         signal.raise_signal(signal.SIGINT)  # stage 1: the boundary pause
         with pytest.raises(KeyboardInterrupt):
@@ -162,15 +163,15 @@ def test_a_seeded_steer_is_the_answer_on_the_terminal_too(
     `resume --steer` and the end-of-session follow-up seed it; the path consumed only a live
     front-end's answer and asked again for the text the operator had just typed.
     """
-    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.menu_input.menu_capable", lambda: True)
 
     def no_menu(session_dir: pathlib.Path, **_kw: object) -> str | None:
         pytest.fail("the menu opened over a seeded steer")
 
-    monkeypatch.setattr("agent6.ui.cli._steer_menu.pause_menu", no_menu)
+    monkeypatch.setattr("agent6.ui.cli.steer_menu.pause_menu", no_menu)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     sessions_ipc.submit_steer(tmp_path, "also add a test that mul(2, 0) == 0")
-    steer = _steer.install_steer_sigint(events, tmp_path)
+    steer = steer_tty.install_steer_sigint(events, tmp_path)
     try:
         assert steer.requested()
         assert steer.prompt() == "also add a test that mul(2, 0) == 0"
@@ -188,7 +189,7 @@ def test_prompt_pauses_the_console_spinner(
     from collections.abc import Generator
     from typing import cast
 
-    from agent6.ui.cli import _console_view
+    from agent6.ui.cli import console_render
 
     calls: list[str] = []
 
@@ -199,16 +200,16 @@ def test_prompt_pauses_the_console_spinner(
             yield
             calls.append("resume")
 
-    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.menu_input.menu_capable", lambda: True)
 
     def fake_menu(session_dir: pathlib.Path, **_kw: object) -> str | None:
         calls.append("prompt")
         return "steer text"
 
-    monkeypatch.setattr("agent6.ui.cli._steer_menu.pause_menu", fake_menu)
+    monkeypatch.setattr("agent6.ui.cli.steer_menu.pause_menu", fake_menu)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
-    steer = _steer.install_steer_sigint(
-        events, tmp_path, cast(_console_view.ConsoleView, FakeView())
+    steer = steer_tty.install_steer_sigint(
+        events, tmp_path, cast(console_render.ConsoleView, FakeView())
     )
     try:
         assert steer.prompt() == "steer text"
@@ -227,7 +228,7 @@ def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.Monkey
     from collections.abc import Generator
     from typing import cast
 
-    from agent6.ui.cli import _console_view
+    from agent6.ui.cli import console_render
 
     calls: list[str] = []
 
@@ -243,13 +244,13 @@ def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.Monkey
         return "a"
 
     monkeypatch.setattr("builtins.input", fake_input)
-    out = _steer.select_revised_prompt(
-        "orig", "rev", (), cast("_console_view.ConsoleView", FakeView())
+    out = steer_tty.select_revised_prompt(
+        "orig", "rev", (), cast("console_render.ConsoleView", FakeView())
     )
     assert out == "rev"
     assert calls == ["pause", "prompt", "resume"]
     # And the bare (console_view=None) path still works.
-    assert _steer.select_revised_prompt("orig", "rev", ()) == "rev"
+    assert steer_tty.select_revised_prompt("orig", "rev", ()) == "rev"
 
 
 def test_reset_stage_disarms_without_touching_the_markers(tmp_path: pathlib.Path) -> None:
@@ -261,7 +262,7 @@ def test_reset_stage_disarms_without_touching_the_markers(tmp_path: pathlib.Path
     import signal
 
     events = mock.MagicMock()
-    steer = _steer.install_steer_sigint(events, tmp_path)
+    steer = steer_tty.install_steer_sigint(events, tmp_path)
     try:
         handler = signal.getsignal(signal.SIGINT)
         assert callable(handler)
@@ -297,12 +298,12 @@ def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
         resets.append(True)
 
     wf = loop.Harness(
-        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=mock.MagicMock(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None),
         mode="ask",
-        bridge=_operator.OperatorBridge(steer_reset=spy),
+        bridge=operator_bridge.OperatorBridge(steer_reset=spy),
     )
     for expected in (1, 2):
         with contextlib.suppress(Exception):  # mocks explode later in the execution
@@ -334,7 +335,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
     )
     dispatcher = mock.MagicMock(last_verification=None)
     wf = loop.Harness(
-        chain=_chain.RunChain(repo),
+        chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
@@ -353,7 +354,7 @@ def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -
         provider=provider,
         dispatcher=dispatcher,
         logger=lambda _msg: None,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=3,
     )
     wf.run("do something")
@@ -437,8 +438,8 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
 
     A front-end's steer ends the prompt and is the answer, not a line the operator never typed.
     """
-    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
-    monkeypatch.setattr("agent6.ui.cli._menu_input.menu_capable", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli.steer_tty.tty_message", _silent_banner)
+    monkeypatch.setattr("agent6.ui.cli.menu_input.menu_capable", lambda: False)
 
     def prompt_superseded(text: str, **kw: object) -> str | None:
         until = kw.get("until")
@@ -447,9 +448,9 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
         assert until()  # the prompt would now end
         return None
 
-    monkeypatch.setattr("agent6.ui.cli._steer.tty_prompt", prompt_superseded)
+    monkeypatch.setattr("agent6.ui.cli.steer_tty.tty_prompt", prompt_superseded)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
-    steer = _steer.install_steer_sigint(events, tmp_path)
+    steer = steer_tty.install_steer_sigint(events, tmp_path)
     try:
         import signal
 
@@ -472,7 +473,7 @@ def test_edit_survives_an_unparsable_editor(
 
     monkeypatch.setenv("EDITOR", 'code --wait "')
     monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
-    assert _steer._select_revised_prompt("orig", "revised", ()) == "revised"
+    assert steer_tty._select_revised_prompt("orig", "revised", ()) == "revised"
     assert "$EDITOR" in capsys.readouterr().err
 
 
@@ -488,7 +489,7 @@ def test_edit_survives_a_non_utf8_save(
     script.chmod(0o755)
     monkeypatch.setenv("EDITOR", str(script))
     monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
-    assert _steer._select_revised_prompt("orig", "revised", ()) == "revised"
+    assert steer_tty._select_revised_prompt("orig", "revised", ()) == "revised"
     assert "not UTF-8" in capsys.readouterr().err
 
 
@@ -523,7 +524,7 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
             return getattr(reader, name)
 
     monkeypatch.setattr(sys, "stdin", NotifyingStdin())
-    steer = _steer.install_steer_sigint(mock.MagicMock(), tmp_path)
+    steer = steer_tty.install_steer_sigint(mock.MagicMock(), tmp_path)
 
     def press_then_rescue() -> None:
         blocked.wait(10.0)
@@ -537,7 +538,7 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
     presser = threading.Thread(target=press_then_rescue)
     presser.start()
     try:
-        assert _steer.select_revised_prompt("original", "revised", ()) is None
+        assert steer_tty.select_revised_prompt("original", "revised", ()) is None
         assert steer.armed() is False
     finally:
         steer.restore()
@@ -558,11 +559,11 @@ def test_sigterm_stops_the_run_outright(
 
     from agent6.ui import steer as ui_steer
 
-    monkeypatch.setattr("agent6.ui.cli._steer.tty_message", _silent_banner)
+    monkeypatch.setattr("agent6.ui.cli.steer_tty.tty_message", _silent_banner)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     before = signal.getsignal(signal.SIGTERM)
     steer = (
-        _steer.install_steer_sigint(events, tmp_path)
+        steer_tty.install_steer_sigint(events, tmp_path)
         if terminal
         else ui_steer.file_bridge_steer(tmp_path)
     )

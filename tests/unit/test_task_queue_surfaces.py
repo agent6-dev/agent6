@@ -14,7 +14,7 @@ import datetime
 from typing import Any
 
 from agent6.graph import models
-from agent6.harness import _advice
+from agent6.harness import advice
 from agent6.viewmodel import log_line, state, transcript
 
 _NOW = datetime.datetime(2026, 9, 16, tzinfo=datetime.UTC)
@@ -76,7 +76,7 @@ def test_an_end_over_an_operator_task_names_it_as_theirs() -> None:
         "mine": _node(created_by="worker", title="refactor the parser"),
     }
 
-    summary = _advice.with_open_tasks("stopped", _advice.open_subtasks(nodes))
+    summary = advice.with_open_tasks("stopped", advice.open_subtasks(nodes))
 
     assert "add a --json flag (queued by you)" in summary
     assert "refactor the parser" in summary
@@ -88,7 +88,7 @@ def test_every_surface_reads_one_owner_note() -> None:
 
     The TUI and web decided "queued by you" for themselves and the CLI tree marked nothing.
     """
-    from agent6.ui.cli import _task_tree
+    from agent6.ui.cli import task_tree
 
     nodes = {
         "0001": {
@@ -129,6 +129,6 @@ def test_every_surface_reads_one_owner_note() -> None:
         ("4", "standing goal"),
     ]
     assert models.owner_note(created_by="user", parent_id=None, standing=False) == ""
-    lines = _task_tree.task_tree_lines(nodes, "0002")
+    lines = task_tree.task_tree_lines(nodes, "0002")
     assert lines[2].startswith("  3    ") and lines[2].endswith("queued  (queued by you)")
     assert lines[3].endswith("keep the suite green  (standing goal)")

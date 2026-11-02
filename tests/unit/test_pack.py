@@ -13,8 +13,8 @@ import threading
 
 import pytest
 
-from agent6 import _pack_manifest, errors, pack, paths, portable, secret_store
-from agent6.config import write
+from agent6 import errors, pack, pack_manifest, paths, portable
+from agent6.config import secret_store, write
 
 
 def _write(path: pathlib.Path, text: str = "payload", mode: int = 0o640) -> pathlib.Path:
@@ -336,7 +336,7 @@ def test_unpack_serializes_a_writer_between_preflight_and_move(
         future: concurrent.futures.Future[None] | None = None
 
         def race(
-            project: pathlib.Path, manifest: _pack_manifest.Manifest
+            project: pathlib.Path, manifest: pack_manifest.Manifest
         ) -> tuple[pack.FileFacts, ...]:
             nonlocal future
             facts = preflight(project, manifest)

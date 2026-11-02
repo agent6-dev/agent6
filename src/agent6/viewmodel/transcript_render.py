@@ -23,7 +23,7 @@ from typing import Any
 from agent6.providers import result_text
 from agent6.viewmodel import format
 
-# Equals ELISION_PREFIX in harness/_compaction.py (a test pins it), so the read model
+# Equals ELISION_PREFIX in harness/compaction_elision.py (a test pins it), so the read model
 # needs no engine import.
 ELISION_MARKER_PREFIX = "<elided by context compaction"
 _GIST_MARKER_PREFIX = ELISION_MARKER_PREFIX + " (distilled)"

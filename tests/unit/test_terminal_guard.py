@@ -15,7 +15,7 @@ import sys
 import pytest
 
 from agent6.sessions import layout
-from agent6.ui.cli import _console_view, _steer, _terminal_guard, cli_main
+from agent6.ui.cli import cli_main, console_render, steer_tty, terminal_guard
 
 OSC52 = "\x1b]52;c;aGVsbG8=\x07"
 
@@ -27,26 +27,26 @@ class _Tty(io.StringIO):
 
 def test_the_stream_drops_foreign_controls_and_keeps_the_clis_own() -> None:
     raw = _Tty()
-    out = _terminal_guard.ScrubbedStream(raw)
+    out = terminal_guard.ScrubbedStream(raw)
     text = f"a{OSC52}b \x1b[2mdim\x1b[0m \r\x1b[2Kspin \x1b[6n cr\rx \x1b[8mhid\x1b[1;08m\x1b[0m\n"
     assert out.write(text) == len(raw.getvalue())
     assert raw.getvalue() == "ab \x1b[2mdim\x1b[0m spin  crx hid\x1b[0m\n"
     out.writelines([f"1{OSC52}", "2\n"])
     assert raw.getvalue().endswith("12\n")
-    assert out.isatty() is True and _terminal_guard.raw_stream(out) is raw
+    assert out.isatty() is True and terminal_guard.raw_stream(out) is raw
 
 
 def test_the_spinner_erases_its_line_under_the_wrapper() -> None:
     """The erase idiom is written under the wrapper, so a file name carrying it forges nothing."""
     raw = io.StringIO()
-    view = _console_view.ConsoleView(_terminal_guard.ScrubbedStream(raw), color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(terminal_guard.ScrubbedStream(raw), color=False)  # type: ignore[arg-type]
     view._status_active = True  # pyright: ignore[reportPrivateUsage]
     view._clear_status()  # pyright: ignore[reportPrivateUsage]
     assert raw.getvalue() == "\r\x1b[2K"
 
 
 def test_the_guard_wraps_both_streams_for_the_block(capsys: pytest.CaptureFixture[str]) -> None:
-    with _terminal_guard.guarded_terminal():
+    with terminal_guard.guarded_terminal():
         print(f"out{OSC52}", end="")
         print(f"err{OSC52}", end="", file=sys.stderr)
     print("after", end="")
@@ -58,10 +58,11 @@ def test_the_tty_writers_scrub_like_stdout(monkeypatch: pytest.MonkeyPatch) -> N
     """`tty_message` and `tty_prompt` reach the terminal past the wrapped streams, scrubbed."""
     master, slave = pty.openpty()
     try:
-        monkeypatch.setattr("agent6.ui.cli._steer.TTY_PATH", os.ttyname(slave))
-        _steer.tty_message(f"[agent6] {OSC52}note\n")
+        monkeypatch.setattr("agent6.ui.cli.steer_tty.TTY_PATH", os.ttyname(slave))
+        steer_tty.tty_message(f"[agent6] {OSC52}note\n")
         assert (
-            _steer.tty_prompt(f"Allow {OSC52}rm? \x1b[2m[y/N]\x1b[0m: ", until=lambda: True) is None
+            steer_tty.tty_prompt(f"Allow {OSC52}rm? \x1b[2m[y/N]\x1b[0m: ", until=lambda: True)
+            is None
         )
         seen = b""
         while select.select([master], [], [], 0.5)[0]:

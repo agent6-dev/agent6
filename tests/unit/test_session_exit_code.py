@@ -15,17 +15,17 @@ from typing import get_args
 import pytest
 
 from agent6.app import finalize
-from agent6.harness import _snapshot
-from agent6.viewmodel import _session_status
+from agent6.harness import loop_snapshot
+from agent6.viewmodel import session_status
 
 
 def _result(
     *,
     completed: bool,
-    reason: _snapshot.SessionEndReason,
-    verified: _snapshot.Verification = "not_applicable",
-) -> _snapshot.SessionResult:
-    return _snapshot.SessionResult(
+    reason: loop_snapshot.SessionEndReason,
+    verified: loop_snapshot.Verification = "not_applicable",
+) -> loop_snapshot.SessionResult:
+    return loop_snapshot.SessionResult(
         completed=completed,
         reason=reason,
         summary="",
@@ -57,12 +57,12 @@ def test_exit_code_operator_stop_is_130() -> None:
     for reason in ("steer_abort", "steer_exit", "interrupted"):
         assert finalize.session_exit_code(_result(completed=False, reason=reason)) == 130
     # The stop at the commit hook is a completed end, and the operator's stop whatever the gate.
-    for verified in get_args(_snapshot.Verification):
+    for verified in get_args(loop_snapshot.Verification):
         stopped = _result(completed=True, reason="interactive_stop", verified=verified)
         assert finalize.session_exit_code(stopped, stranded=True) == 130
     # One owner: exactly the ends the listing words "stopped" exit 130.
-    for reason in get_args(_snapshot.SessionEndReason):
-        word, _detail = _session_status.status_word(
+    for reason in get_args(loop_snapshot.SessionEndReason):
+        word, _detail = session_status.status_word(
             finished=True, all_passed=False, end_reason=reason
         )
         code = finalize.session_exit_code(_result(completed=False, reason=reason))
@@ -116,7 +116,7 @@ def test_exit_code_verified_finish_is_zero() -> None:
     [("passed", 0), ("not_applicable", 0), ("failed", 4), ("unverified", 4)],
 )
 def test_harness_end_labels_do_not_change_exit_codes(
-    reason: _snapshot.SessionEndReason, verified: _snapshot.Verification, code: int
+    reason: loop_snapshot.SessionEndReason, verified: loop_snapshot.Verification, code: int
 ) -> None:
     """A harness end keeps exit 0 for green or absent gates and 4 for not-green gates."""
     assert (
@@ -162,7 +162,7 @@ def test_auto_merge_needs_a_model_finish_and_a_vouched_for_tree() -> None:
 @pytest.mark.parametrize("reason", ["verify_settled", "settled", "silent_finish", "metric_plateau"])
 @pytest.mark.parametrize("verified", ["passed", "not_applicable"])
 def test_auto_merge_rejects_a_harness_end(
-    reason: _snapshot.SessionEndReason, verified: _snapshot.Verification
+    reason: loop_snapshot.SessionEndReason, verified: loop_snapshot.Verification
 ) -> None:
     """A harness-ended run must not auto-merge even with a green or absent gate."""
     assert not finalize.auto_merge_eligible(

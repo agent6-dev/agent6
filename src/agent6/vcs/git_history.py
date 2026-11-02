@@ -15,7 +15,7 @@ import re
 from collections.abc import Sequence
 
 from agent6 import errors
-from agent6.vcs import _git_command, git_read
+from agent6.vcs import git_command, git_read
 
 # The revision that names the working tree as the head of a diff or compare.
 WORKTREE = "WORKTREE"
@@ -82,7 +82,7 @@ def list_refs(path: pathlib.Path) -> tuple[RefRow, ...]:
     Raises:
         GitError: The path is not a repository.
     """
-    out = _git_command.run(
+    out = git_command.run(
         path,
         "for-each-ref",
         "--format=%(refname)%00%(objectname)%00%(*objectname)%00%(HEAD)",
@@ -104,10 +104,10 @@ def list_refs(path: pathlib.Path) -> tuple[RefRow, ...]:
 
 def head_commit(path: pathlib.Path) -> tuple[str, str]:
     """Return HEAD's sha and branch; the sha is "" when unborn, the branch "" when detached."""
-    sha = _git_command.run(
+    sha = git_command.run(
         path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}", check=False
     ).stdout.strip()
-    branch = _git_command.run(
+    branch = git_command.run(
         path, "symbolic-ref", "--quiet", "--short", "HEAD", check=False
     ).stdout.strip()
     return sha, branch
@@ -125,7 +125,7 @@ def resolve_commit(path: pathlib.Path, rev: str) -> str:
     Returns:
         The full sha, or "" when the revision names no commit.
     """
-    res = _git_command.run(
+    res = git_command.run(
         path,
         "rev-parse",
         "--verify",
@@ -187,7 +187,7 @@ def log_commits(
     Returns:
         The commits; empty when a rev does not resolve or the branch is unborn.
     """
-    res = _git_command.run(
+    res = git_command.run(
         path,
         "log",
         "-z",
@@ -214,7 +214,7 @@ def search_log(path: pathlib.Path, text: str, *, limit: int) -> tuple[LogCommit,
         The matching commits, newest first.
     """
     grep = ("-i", "--fixed-strings", f"--grep={text}") if text else ()
-    res = _git_command.run(
+    res = git_command.run(
         path,
         "log",
         "-z",
@@ -270,7 +270,7 @@ def commit_info(path: pathlib.Path, sha: str) -> CommitInfo:
         GitError: The sha is not a commit.
     """
     fmt = "%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%cn%x1f%ce%x1f%cI%x1f%s%x1f%b"
-    out = _git_command.run(
+    out = git_command.run(
         path, "log", "--max-count=1", f"--format={fmt}", "--end-of-options", sha
     ).stdout
     fields = out.split("\x1f", 9)
@@ -312,7 +312,7 @@ def _listing(
     path: pathlib.Path, cmd: tuple[str, ...], what: str, revs: tuple[str, ...]
 ) -> list[str]:
     """Return the NUL-separated fields of a `--name-status` or `--numstat` diff listing."""
-    return _git_command.nul_fields(path, *cmd, "-M", "-z", what, "--end-of-options", *revs)
+    return git_command.nul_fields(path, *cmd, "-M", "-z", what, "--end-of-options", *revs)
 
 
 def _numstat(
@@ -439,7 +439,7 @@ def worktree_files(path: pathlib.Path, base: str) -> tuple[ChangedFile, ...]:
         GitError: The base cannot be read.
     """
     rows = list(_changed(path, _WORKTREE, (base,)))
-    names = _git_command.nul_fields(path, "ls-files", "-z", "--others", "--exclude-standard")
+    names = git_command.nul_fields(path, "ls-files", "-z", "--others", "--exclude-standard")
     for name in names:
         if not name:
             continue
@@ -465,7 +465,7 @@ def worktree_entry(path: pathlib.Path, name: str) -> str:
     Returns:
         "tracked", "untracked" or "".
     """
-    fields = _git_command.nul_fields(
+    fields = git_command.nul_fields(
         path,
         "ls-files",
         "-z",
@@ -572,9 +572,9 @@ def _patch(
     Raises:
         GitError: git exited with another code.
     """
-    _argv, rc, out, err = _git_command.spawn(path, args, git_read.LITERAL_PATHSPECS, None)
+    _argv, rc, out, err = git_command.spawn(path, args, git_read.LITERAL_PATHSPECS, None)
     if rc not in ok:
-        error = _git_command.failure(
+        error = git_command.failure(
             args, rc, out.decode(errors="replace"), err.decode(errors="replace")
         )
         raise error

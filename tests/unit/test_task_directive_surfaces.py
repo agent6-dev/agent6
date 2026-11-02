@@ -91,13 +91,11 @@ def test_the_pause_menu_queues_and_re_prompts(
 
     `/task` shares a prefix with `/tasks` and the argument branch listed its own commands.
     """
-    from agent6.ui.cli import _steer_menu
+    from agent6.ui.cli import steer_menu
 
     d = _paused(tmp_path)
 
-    assert (
-        _steer_menu.pause_menu(d, input_fn=_feed(["/task ship the changelog", "/continue"])) == ""
-    )
+    assert steer_menu.pause_menu(d, input_fn=_feed(["/task ship the changelog", "/continue"])) == ""
 
     assert "task queued" in capsys.readouterr().out
     assert [r.text for r in ipc.drain_requests(d)] == ["ship the changelog"]
@@ -106,11 +104,11 @@ def test_the_pause_menu_queues_and_re_prompts(
 def test_the_pause_menu_refuses_a_bare_directive(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import _steer_menu
+    from agent6.ui.cli import steer_menu
 
     d = _paused(tmp_path)
 
-    assert _steer_menu.pause_menu(d, input_fn=_feed(["/task", "/continue"])) == ""
+    assert steer_menu.pause_menu(d, input_fn=_feed(["/task", "/continue"])) == ""
 
     assert "/task needs the work" in capsys.readouterr().out
     assert [r.text for r in ipc.drain_requests(d)] == []
@@ -123,11 +121,11 @@ def test_a_partial_command_never_fires(
 
     `/stat` fired `/status` until `/standing` made it ambiguous.
     """
-    from agent6.ui.cli import _steer_menu
+    from agent6.ui.cli import steer_menu
 
     d = _paused(tmp_path)
 
-    assert _steer_menu.pause_menu(d, input_fn=_feed(["/stat", "/continue"])) == ""
+    assert steer_menu.pause_menu(d, input_fn=_feed(["/stat", "/continue"])) == ""
 
     out = capsys.readouterr().out
     assert "unknown command '/stat'" in out and "/status" in out
@@ -172,13 +170,13 @@ def test_now_acts_the_same_wherever_it_is_typed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """One submitter carries `/now`'s urgency on every surface, and `--now` says the same thing."""
-    from agent6.ui import directives
+    from agent6.ui import directive_actions
 
     monkeypatch.chdir(tmp_path)
     for text, flag in (("/now wrap up", False), ("wrap up", True)):
         d = _live_run(tmp_path / text.replace("/", "").replace(" ", "-"))
 
-        did, said = directives.submit_composer_line(d, text, now=flag)
+        did, said = directive_actions.submit_composer_line(d, text, now=flag)
 
         assert did and "interrupting the call in flight" in said
         assert ipc.steer_interrupt_pending(d)
@@ -186,20 +184,20 @@ def test_now_acts_the_same_wherever_it_is_typed(
 
 
 def test_a_bare_now_refuses_everywhere(tmp_path: pathlib.Path) -> None:
-    from agent6.ui import directives
+    from agent6.ui import directive_actions
 
-    did, said = directives.submit_composer_line(tmp_path, "/now")
+    did, said = directive_actions.submit_composer_line(tmp_path, "/now")
 
     assert not did and "/now needs the instruction" in said
 
 
 def test_a_directive_typed_mid_line_is_named_in_the_reply(tmp_path: pathlib.Path) -> None:
     """A directive is only a leading token; a later one travels as text, and the hint says so."""
-    from agent6.ui import directives
+    from agent6.ui import directive_actions
 
     d = _live_run(tmp_path)
 
-    did, said = directives.submit_composer_line(d, "carry on, then /task add a --json flag")
+    did, said = directive_actions.submit_composer_line(d, "carry on, then /task add a --json flag")
 
     assert did and "`/task` mid-line is text" in said
     assert ipc.take_steer_answer(d) == "carry on, then /task add a --json flag"
@@ -207,11 +205,11 @@ def test_a_directive_typed_mid_line_is_named_in_the_reply(tmp_path: pathlib.Path
 
 def test_a_directive_behind_leading_space_is_not_called_text(tmp_path: pathlib.Path) -> None:
     """Every directive acts through leading whitespace, and the hint reads the text sent."""
-    from agent6.ui import directives
+    from agent6.ui import directive_actions
 
     d = _live_run(tmp_path)
 
-    did, said = directives.submit_composer_line(d, "  /now hurry")
+    did, said = directive_actions.submit_composer_line(d, "  /now hurry")
 
     assert did and "mid-line" not in said
     assert ipc.steer_interrupt_pending(d)
@@ -219,16 +217,16 @@ def test_a_directive_behind_leading_space_is_not_called_text(tmp_path: pathlib.P
 
 
 def test_an_ordinary_line_and_a_real_directive_say_nothing_extra(tmp_path: pathlib.Path) -> None:
-    from agent6.ui import directives
+    from agent6.ui import directive_actions
 
     d = _live_run(tmp_path / "plain")
-    assert directives.submit_composer_line(d, "focus on the parser") == (
+    assert directive_actions.submit_composer_line(d, "focus on the parser") == (
         True,
         "steer queued; it reaches the model at the next step",
     )
     # `/parallel` separates tasks by design, so a later one is meant.
     assert (
-        directives.submit_composer_line(d, "/parallel a /parallel b")[1]
+        directive_actions.submit_composer_line(d, "/parallel a /parallel b")[1]
         == "steer queued; it reaches the model at the next step"
     )
 

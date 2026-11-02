@@ -16,11 +16,11 @@ import pytest
 
 from agent6 import errors, paths
 from agent6.app import reporter, undo
-from agent6.harness import _snapshot
+from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lock, process
 from agent6.vcs import git_ops, git_read
-from agent6.viewmodel import _session_log, _session_status
+from agent6.viewmodel import session_log, session_status
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -49,7 +49,7 @@ def _checkpoint(
                 "content": [{"type": "text", "text": f"OPERATOR STEERING (x):\nsteer {i}"}],
             }
         )
-    snap = _snapshot.SessionSnapshot(
+    snap = loop_snapshot.SessionSnapshot(
         system="s",
         messages=messages,
         tool_calls=0,
@@ -230,9 +230,9 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.end"]
     assert tail[-2]["new_session_id"] == child and tail[-2]["undone_text"] == "steer 1"
     assert tail[-1]["reason"] == "undone" and tail[-1]["turns"] == 2
-    scan = _session_log.scan_session_log(layout.logs_path)
+    scan = session_log.scan_session_log(layout.logs_path)
     assert scan.undone_to == child
-    word, _detail = _session_status.status_word(
+    word, _detail = session_status.status_word(
         finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
     )
     assert word == "undone"

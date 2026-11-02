@@ -41,13 +41,13 @@ def test_the_advertised_docs_are_bundled() -> None:
 
 def test_the_reader_serves_every_bundled_doc() -> None:
     """The reader's name list covers every bundled doc."""
-    from agent6.tools import _agent6_docs
+    from agent6.tools import docs_bundle
 
     bundled = {pathlib.Path(dest).name for dest in _bundled().values()}
-    assert bundled == set(_agent6_docs.AGENT6_DOC_FILES), (
+    assert bundled == set(docs_bundle.AGENT6_DOC_FILES), (
         "bundle and reader disagree: only bundled"
-        f" {sorted(bundled - set(_agent6_docs.AGENT6_DOC_FILES))}, "
-        f"only in the reader {sorted(set(_agent6_docs.AGENT6_DOC_FILES) - bundled)}"
+        f" {sorted(bundled - set(docs_bundle.AGENT6_DOC_FILES))}, "
+        f"only in the reader {sorted(set(docs_bundle.AGENT6_DOC_FILES) - bundled)}"
     )
 
 
@@ -57,13 +57,13 @@ def test_every_operator_facing_nav_page_is_servable() -> None:
     index.md (the home page) and data-contracts.md (a generated wire-schema reference) are not
     names the reader carries.
     """
-    from agent6.tools import _agent6_docs
+    from agent6.tools import docs_bundle
 
     mkdocs = (_ROOT / "docs" / "mkdocs.yml").read_text(encoding="utf-8")
     nav_pages = re.findall(r"^\s*-\s+.+:\s*(\S+\.md)\s*$", mkdocs, re.M)
     assert nav_pages
     skip = {"index.md", "data-contracts.md"}
     for page in {p for p in nav_pages if p not in skip}:
-        assert _agent6_docs.read_agent6_doc(pathlib.Path(page).stem.upper()) is not None, (
+        assert docs_bundle.read_agent6_doc(pathlib.Path(page).stem.upper()) is not None, (
             f"{page} is not servable"
         )

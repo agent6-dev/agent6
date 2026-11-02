@@ -17,10 +17,7 @@ import pytest
 from agent6 import portable
 from agent6.sessions import ipc as sessions_ipc
 from agent6.sessions import process
-from agent6.ui.cli import (
-    _common,  # pyright: ignore[reportPrivateUsage]
-    sessions_show,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.ui.cli import common, sessions_show
 from agent6.vcs import git_read
 
 
@@ -35,7 +32,7 @@ def _make_run(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     runs.mkdir(parents=True, exist_ok=True)
     d = runs / "winsome-dawn-YWH5ZS"
     d.mkdir()
@@ -977,7 +974,7 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
     surface. The start emitter owns the order, so no entry point (the loop's two starts, machine
     create's header) can invert it.
     """
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     sdir = tmp_path / "sess"
     sdir.mkdir()

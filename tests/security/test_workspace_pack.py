@@ -8,7 +8,7 @@ from agent6 import kinds, pack, paths
 from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import jail
-from agent6.tools import _path_safety, dispatch, errors, index
+from agent6.tools import dispatch, index, path_safety, tool_errors
 from agent6.vcs import git_read
 
 
@@ -33,9 +33,9 @@ def test_tools_hide_pack_at_every_isolation_level(
     _secret(root)
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation=isolation)
     try:
-        with pytest.raises(errors.ToolError, match="absent"):
+        with pytest.raises(tool_errors.ToolError, match="absent"):
             d.dispatch("read_file", {"path": f"{subdir}/.agent6/config/secrets.toml"})
-        with pytest.raises(errors.ToolError, match="absent"):
+        with pytest.raises(tool_errors.ToolError, match="absent"):
             d.dispatch("list_dir", {"path": f"{subdir}/.agent6"})
         assert ".agent6/" not in d.dispatch("list_dir", {"path": subdir}).to_wire()["entries"]
         (root / ".agent6/secret.py").write_text("def secret_symbol():\n    pass\n")
@@ -49,12 +49,12 @@ def test_tools_hide_pack_at_every_isolation_level(
 
 def test_bare_workspace_and_host_reads_hide_pack(tmp_path: pathlib.Path) -> None:
     secret = _secret(tmp_path)
-    for ws in (_path_safety.Workspace(tmp_path), _path_safety.host_workspace(tmp_path)):
+    for ws in (path_safety.Workspace(tmp_path), path_safety.host_workspace(tmp_path)):
         assert ws.is_denied(secret)
-        with pytest.raises(errors.ToolError, match="absent"):
+        with pytest.raises(tool_errors.ToolError, match="absent"):
             ws.resolve_read(".agent6/config/secrets.toml")
-    assert _path_safety.read_workspace_text(tmp_path, ".agent6/config/secrets.toml") == ""
-    symbols = index.SymbolIndex(_path_safety.Workspace(tmp_path))
+    assert path_safety.read_workspace_text(tmp_path, ".agent6/config/secrets.toml") == ""
+    symbols = index.SymbolIndex(path_safety.Workspace(tmp_path))
     assert symbols._included_rel(secret) is None  # pyright: ignore[reportPrivateUsage]
     public = tmp_path / "public.py"
     public.write_text("def visible(): pass\n")
@@ -108,9 +108,9 @@ def test_file_boundary_denies_pack_names_inside_grants(tmp_path: pathlib.Path) -
     root.mkdir()
     grant = paths.state_dir(root) / "memory"
     secret = _secret(grant / "child")
-    ws = _path_safety.Workspace(root, read_roots=(grant,), exempt=(grant,))
+    ws = path_safety.Workspace(root, read_roots=(grant,), exempt=(grant,))
     assert ws.is_denied(secret)
-    with pytest.raises(errors.ToolError, match="absent"):
+    with pytest.raises(tool_errors.ToolError, match="absent"):
         ws.resolve_read(str(secret))
 
 

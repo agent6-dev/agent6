@@ -26,12 +26,12 @@ import sys
 from typing import TextIO
 
 from agent6 import kinds
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest, process
-from agent6.ui.cli import _common, exec_cmds
+from agent6.ui.cli import common, exec_cmds
 from agent6.viewmodel import session_is_live, summarize_session_dir
 
 # The namespaces to enter; the `os` flags are looked up at join time so the module imports anywhere.
@@ -277,9 +277,9 @@ def _launch_policy(
         assert stamped is not None
         # The recorded word, not the holder: a host-network run can still hold a netns for MCP.
         network = stamped[1] if stamped[1] is not None else ("session" if pid else None)
-        return detect.resolve_isolation(recorded, _setup.detect_env()), network
+        return detect.resolve_isolation(recorded, session_setup.detect_env()), network
     if recorded not in ("", "auto"):
-        _common.refuse(
+        common.refuse(
             f"run {layout.session_id} recorded isolation {recorded!r}, a level this agent6 does"
             " not know: an older agent6 started it, and only that one reaches its commands"
             " as they run."
@@ -290,7 +290,7 @@ def _launch_policy(
         " current config, which may differ from what the run's commands got.",
         file=sys.stderr,
     )
-    isolation = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
+    isolation = detect.resolve_isolation(cfg.sandbox.isolation, session_setup.detect_env())
     return isolation, ("session" if pid else None)
 
 
@@ -316,7 +316,7 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
     """
     # A live run only: a finished run's jail is gone with it, and a fresh one is a different place.
     if not session_is_live(layout.session_dir):
-        _common.refuse(f"{no_session_network_reason(layout)}")
+        common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     pid = process.read_session_netns_pid(layout.session_dir)
     launch = _launch_policy(layout, cfg, pid)
@@ -329,11 +329,11 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
             workspace, cfg, isolation, argv, network, worktree_git_dir=git_dir
         )
     except jail.JailUnavailableError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     if policy.network == "session" and pid is None:
         # A session policy with no live holder has no network to join.
-        _common.refuse(f"{no_session_network_reason(layout)}")
+        common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     if policy.network == "session":
         # Borrowed through the holder, which can exit between the read above and this open.
@@ -348,14 +348,14 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
         except OSError as exc:
             if userns_fd >= 0:
                 os.close(userns_fd)
-            _common.refuse(f"the session's network is gone: {exc}")
+            common.refuse(f"the session's network is gone: {exc}")
             return 2
     else:
         borrowed = None
     try:
         return exec_cmds.run_attached(policy, borrowed)
     except jail.JailUnavailableError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     finally:
         if borrowed is not None:

@@ -9,17 +9,17 @@ import pathlib
 
 from agent6 import __version__, paths
 from agent6.ui.cli import (
-    _common,
-    _config_args,
-    _machine_args,
-    _mcp_args,
-    _plan_args,
-    _review_args,
-    _run_args,
-    _sessions_args,
-    _skills_args,
-    _watch_args,
+    common,
     completers,
+    config_args,
+    machine_args,
+    mcp_args,
+    plan_args,
+    review_args,
+    run_args,
+    sessions_args,
+    skills_args,
+    watch_args,
 )
 
 # Commands with a default verb (`plan <task>` is `plan run <task>`, a bare `skills` lists); the
@@ -268,28 +268,28 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     groups = parser._action_groups  # pyright: ignore[reportPrivateUsage]
     groups.insert(0, groups.pop())
 
-    _run_args._add_run_parser(sub)
+    run_args._add_run_parser(sub)
 
-    _run_args._add_resume_parser(sub)
+    run_args._add_resume_parser(sub)
 
-    _run_args._add_fork_parser(sub)
+    run_args._add_fork_parser(sub)
 
-    _plan_args._add_plan_parser(sub)
+    plan_args._add_plan_parser(sub)
 
-    _plan_args._add_ask_parser(sub)
+    plan_args._add_ask_parser(sub)
 
-    _review_args._add_review_parser(sub)
+    review_args._add_review_parser(sub)
 
-    _watch_args._add_attach_parser(sub)
-    _watch_args._add_steer_parser(sub)
+    watch_args._add_attach_parser(sub)
+    watch_args._add_steer_parser(sub)
 
-    _watch_args._add_stop_parser(sub)
-    _watch_args._add_answer_parser(sub)
-    _watch_args._add_net_parsers(sub)
+    watch_args._add_stop_parser(sub)
+    watch_args._add_answer_parser(sub)
+    watch_args._add_net_parsers(sub)
 
-    _sessions_args._add_sessions_parser(sub)
+    sessions_args._add_sessions_parser(sub)
 
-    ps_p = _common._sub(
+    ps_p = common._sub(
         sub,
         "ps",
         help=(
@@ -310,7 +310,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         " the JSON form nests them always).",
     )
 
-    hist_p = _common._sub(
+    hist_p = common._sub(
         sub,
         "history",
         help=(
@@ -319,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     hist_sub = hist_p.add_subparsers(dest="history_command", required=True, metavar="<subcommand>")
-    hist_search = _common._sub(
+    hist_search = common._sub(
         hist_sub, "search", help="ripgrep-backed search over this repository's sessions."
     )
     hist_search.add_argument(
@@ -339,7 +339,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     hist_search_session.completer = completers._complete_session_ids  # type: ignore[attr-defined]
 
-    tele_p = _common._sub(
+    tele_p = common._sub(
         sub,
         "telemetry",
         help=(
@@ -350,7 +350,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     tele_sub = tele_p.add_subparsers(
         dest="telemetry_command", required=True, metavar="<subcommand>"
     )
-    tele_export = _common._sub(
+    tele_export = common._sub(
         tele_sub,
         "export",
         help="Read the journals once and deliver their spans, metrics and log records.",
@@ -369,11 +369,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Keep reading the named session's journal as it grows, until interrupted.",
     )
 
-    _watch_args._add_tui_parser(sub)
+    watch_args._add_tui_parser(sub)
 
-    _watch_args._add_web_parser(sub)
+    watch_args._add_web_parser(sub)
 
-    _common._sub(
+    common._sub(
         sub,
         "acp",
         help=(
@@ -384,10 +384,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    _common._sub(sub, "pack", help="Copy this home's state into .agent6/ for workspace sync.")
-    _common._sub(sub, "unpack", help="Move .agent6/ state into this home, refusing conflicts.")
+    common._sub(sub, "pack", help="Copy this home's state into .agent6/ for workspace sync.")
+    common._sub(sub, "unpack", help="Move .agent6/ state into this home, refusing conflicts.")
 
-    init_p = _common._sub(
+    init_p = common._sub(
         sub,
         "init",
         help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",
@@ -410,15 +410,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    _config_args._add_connect_parser(sub)
+    config_args._add_connect_parser(sub)
 
-    _config_args._add_model_parser(sub)
+    config_args._add_model_parser(sub)
 
-    _config_args._add_config_parser(sub)
+    config_args._add_config_parser(sub)
 
-    _review_args._add_check_parser(sub)
+    review_args._add_check_parser(sub)
 
-    prompt_p = _common._sub(
+    prompt_p = common._sub(
         sub,
         "prompt",
         help="Inspect the assembled system prompt for this repo + config.",
@@ -426,7 +426,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     prompt_sub = prompt_p.add_subparsers(
         dest="prompt_command", required=True, metavar="<subcommand>"
     )
-    prompt_show = _common._sub(
+    prompt_show = common._sub(
         prompt_sub,
         "show",
         help=(
@@ -451,7 +451,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    completions_p = _common._sub(
+    completions_p = common._sub(
         sub,
         "completions",
         help=(
@@ -477,11 +477,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Print the completion script to stdout instead of installing it.",
     )
 
-    _review_args._add_system_parser(sub)
+    review_args._add_system_parser(sub)
 
-    _skills_args._add_skills_parser(sub)
+    skills_args._add_skills_parser(sub)
 
-    mcp_p = _common._sub(
+    mcp_p = common._sub(
         sub,
         "mcp",
         help=(
@@ -490,8 +490,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     mcp_sub = mcp_p.add_subparsers(dest="mcp_command", required=True, metavar="<subcommand>")
-    _mcp_args._add_mcp_server_parsers(mcp_sub)
-    mcp_serve = _common._sub(
+    mcp_args._add_mcp_server_parsers(mcp_sub)
+    mcp_serve = common._sub(
         mcp_sub,
         "serve",
         help=(
@@ -504,9 +504,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
             " this command."
         ),
     )
-    _common._add_config_flag(mcp_serve)
+    common._add_config_flag(mcp_serve)
 
-    mem_p = _common._sub(
+    mem_p = common._sub(
         sub,
         "memory",
         help=(
@@ -517,7 +517,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     mem_sub = mem_p.add_subparsers(dest="memory_command", required=True, metavar="<subcommand>")
-    mem_add = _common._sub(
+    mem_add = common._sub(
         mem_sub,
         "add",
         help="Write <name>.md: a fact the model may correct.",
@@ -530,10 +530,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
     mem_add.add_argument("body", help="The fact (in quotes; the index shows its first line).")
-    _common._sub(mem_sub, "list", help="Print the rendered memory index.")
-    mem_show = _common._sub(mem_sub, "show", help="Print one memory file.")
+    common._sub(mem_sub, "list", help="Print the rendered memory index.")
+    mem_show = common._sub(mem_sub, "show", help="Print one memory file.")
     mem_show.add_argument("name", help="Memory name.")
-    mem_rm = _common._sub(
+    mem_rm = common._sub(
         mem_sub,
         "rm",
         help=(
@@ -543,7 +543,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     )
     mem_rm.add_argument("name", help="Memory name.")
     mem_rm.add_argument("-y", "--yes", action="store_true", help="Delete without asking.")
-    _common._sub(
+    common._sub(
         mem_sub,
         "decisions",
         help=(
@@ -553,6 +553,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    _machine_args._add_machine_parser(sub)
+    machine_args._add_machine_parser(sub)
 
     return parser

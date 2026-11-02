@@ -17,10 +17,10 @@ import pytest
 
 from agent6 import paths
 from agent6 import providers as provider_api
-from agent6.app import providers
+from agent6.app import role_providers
 from agent6.app import stop as stop_mod
 from agent6.sessions import ipc, process
-from agent6.tools import _command_tools, results
+from agent6.tools import command_tools, results
 from agent6.ui.cli import main
 from agent6.ui.cli import parser as cli_parser
 
@@ -134,12 +134,12 @@ def test_worker_stop_words_match_the_request(
         def call(self, **kwargs: Any) -> provider_api.ProviderResponse:
             return call(**kwargs)
 
-    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=Worker()))
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=Worker()))
     # The launcher cannot run nested here: the result is the one the dispatcher builds for a
     # command an immediate stop ended, or for one a stop after the step let finish.
     cut_now = urgency != "after_step"
     monkeypatch.setattr(
-        _command_tools,
+        command_tools,
         "run_model_command",
         mock.Mock(
             return_value=results.ExecResult(
@@ -182,7 +182,7 @@ def test_worker_stop_during_a_model_call_names_the_interruption(
             assert kwargs["should_abort"]()
             raise provider_api.ProviderAborted("operator stop")
 
-    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=Worker()))
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=Worker()))
     assert main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
     output = capsys.readouterr().out
     assert "operator stopped the run during step 1; model call was cut short" in output

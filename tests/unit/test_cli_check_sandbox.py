@@ -16,10 +16,10 @@ import sys
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, jail, landlock, tool_paths
-from agent6.ui.cli import _check_render, _check_sandbox, _sandbox_paths, check_cmds
+from agent6.ui.cli import check_cmds, check_render, check_sandbox, sandbox_paths
 
 _ENV = detect.Environment(
     in_container=False,
@@ -47,7 +47,7 @@ def _fake_result(argv: tuple[str, ...], rc: int) -> kinds.CommandResult:
 def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
     """Stub landlock_abi, run_in_jail and the tool scan; record every policy the check builds."""
     seen: list[kinds.JailPolicy] = []
-    monkeypatch.setattr(_check_sandbox, "landlock_abi", lambda: 8)
+    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 8)
 
     def fake_run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         seen.append(policy)
@@ -55,7 +55,7 @@ def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
         rc = 2 if policy.argv[0].endswith("getent") else 0
         return _fake_result(policy.argv, rc)
 
-    monkeypatch.setattr(_check_sandbox, "run_in_jail", fake_run)
+    monkeypatch.setattr(check_sandbox, "run_in_jail", fake_run)
     monkeypatch.setattr(tool_paths, "operator_tool_mounts", lambda: _MOUNTS)
     return seen
 
@@ -63,7 +63,7 @@ def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
 def _force_profile(
     monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None
 ) -> None:
-    monkeypatch.setattr(_setup, "detect_env", lambda: _ENV)
+    monkeypatch.setattr(session_setup, "detect_env", lambda: _ENV)
 
     def _reason(_env: object) -> str | None:
         return reason
@@ -104,12 +104,12 @@ def linked_install_roots(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
             (bins / link).symlink_to(target)
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
     _force_profile(monkeypatch, "full")
-    monkeypatch.setattr(_check_sandbox, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 5)
 
     def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return _fake_result(policy.argv, 2 if policy.argv[0].endswith("getent") else 0)
 
-    monkeypatch.setattr(_check_sandbox, "run_in_jail", run)
+    monkeypatch.setattr(check_sandbox, "run_in_jail", run)
     return tmp_path
 
 
@@ -137,10 +137,10 @@ def test_check_sandbox_reports_a_landlock_probe_error(
     def _run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return _fake_result(policy.argv, 0)
 
-    monkeypatch.setattr(_check_sandbox, "landlock_abi", _denied)
-    monkeypatch.setattr(_check_sandbox, "run_in_jail", _run)
+    monkeypatch.setattr(check_sandbox, "landlock_abi", _denied)
+    monkeypatch.setattr(check_sandbox, "run_in_jail", _run)
 
-    checks = _check_sandbox.check_sandbox_section(Config())
+    checks = check_sandbox.check_sandbox_section(Config())
 
     assert _row(checks, "sandbox").status == "FAIL"
     assert "[FAIL] landlock_abi: landlock_create_ruleset" in capsys.readouterr().out
@@ -167,7 +167,7 @@ def test_check_sandbox_names_the_network_its_probe_ran_on(
     """
     _force_profile(monkeypatch, "full")
     cfg = Config.model_validate({"sandbox": {"network": network}})
-    checks = _check_sandbox.check_sandbox_section(cfg)
+    checks = check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "PASS", out
     assert (
@@ -183,7 +183,7 @@ def test_check_sandbox_partial_passes_and_skips_network(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _force_profile(monkeypatch, "partial")
-    checks = _check_sandbox.check_sandbox_section(Config())
+    checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "PASS", out
     assert "isolation: partial  (sandbox.isolation = auto;" in out
@@ -198,7 +198,7 @@ def test_check_sandbox_full_runs_network_probe(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _force_profile(monkeypatch, "full")
-    checks = _check_sandbox.check_sandbox_section(Config())
+    checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "PASS", out
     assert "isolation: full  (sandbox.isolation = auto; userns yes, Landlock ABI 5" in out
@@ -216,7 +216,7 @@ def test_check_sandbox_none_skips_probes(
 ) -> None:
     """A host with no jail is a FAIL, and the commands table says what that reaches."""
     _force_profile(monkeypatch, "none")
-    checks = _check_sandbox.check_sandbox_section(Config())
+    checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "FAIL", out
     assert "isolation: none  (sandbox.isolation = auto;" in out
@@ -251,7 +251,7 @@ def test_check_sandbox_degraded_names_why(
     """
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
     _force_profile(monkeypatch, "partial", reason=why)
-    checks = _check_sandbox.check_sandbox_section(Config())
+    checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "PASS", out
     assert f"'full' is unavailable because {why}" in out
@@ -268,7 +268,7 @@ def test_every_operator_tool_mount_is_a_row(
 ) -> None:
     """The report counted the links into home dirs; the bin dirs on PATH were named nowhere."""
     _force_profile(monkeypatch, "full")
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
     rows = _commands_block(capsys.readouterr().out)
     assert "    ro  tool  /opt/tools/bin  (on the jail's PATH)" in rows
     assert "    ro  tool  /opt/tools/lib/x  (/opt/tools/bin/x links into /opt/tools/lib/x)" in rows
@@ -286,7 +286,7 @@ def test_sibling_install_roots_share_a_row(
     base = linked_install_roots
     _, mounts_before = tool_paths.operator_tool_paths()
 
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
 
     out = capsys.readouterr().out
     rows = [line for line in _commands_block(out) if f" {base}/venvs/" in line]
@@ -308,7 +308,7 @@ def test_lone_install_root_stays_separate(
 ) -> None:
     """A root without a sibling keeps its path and single-root link annotation."""
     base = linked_install_roots
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {base}/tools/" in line]
     assert rows == [
         f"    ro  tool  {base}/tools/agent6  ({base}/bin/agent6 links into {base}/tools/agent6)"
@@ -329,7 +329,7 @@ def test_path_directory_beside_install_roots_stays_separate(
     (base / "bin" / "path-tool").symlink_to(target)
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (base / "bin", path_dir))
 
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
 
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {base}/venvs/" in line]
     assert len(rows) == 2
@@ -352,7 +352,7 @@ def test_install_root_groups_keep_distinct_access_modes(
     writable = base / "venvs" / "uv"
     cfg = Config(sandbox=SandboxConfig(extra_write_paths=(str(writable),)))
 
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
 
     out = capsys.readouterr().out
     rows = [line for line in _commands_block(out) if f" {base}/venvs/" in line]
@@ -378,7 +378,7 @@ def test_link_target_directories_beside_install_roots_stay_separate(
         target.touch()
         (base / "bin" / name).symlink_to(target)
 
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
 
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {base}/venvs/" in line]
     assert len(rows) == 3
@@ -397,7 +397,7 @@ def test_install_root_groups_keep_other_provenance(
     root = base / "venvs" / "pyxargs"
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(root),)))
 
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
 
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {base}/venvs/" in line]
     assert rows == [
@@ -414,7 +414,7 @@ def test_rows_sort_by_path_with_a_root_and_a_home_row(
 ) -> None:
     """Each table opens at `/`, names the home directory, and lists parents before children."""
     _force_profile(monkeypatch, "full")
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     home = paths.effective_user().home.resolve()
     files = out.split("  in-process file tools", 1)[1].split("\n\n", 1)[0].splitlines()[1:]
@@ -441,7 +441,7 @@ def test_a_grant_of_the_home_directory_replaces_its_row(
     monkeypatch.setenv("HOME", str(tmp_path))
     home = tmp_path.resolve()
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(tmp_path),)))
-    checks = _check_sandbox.check_sandbox_section(cfg)
+    checks = check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     warn = _row(checks, "sandbox.grants")
     assert warn.status == "WARN"
@@ -459,7 +459,7 @@ def test_check_sandbox_probes_the_isolation_the_config_selects(
     """The probes exercise the jail a run here would use."""
     _honour_request(monkeypatch)
     cfg = Config(sandbox=SandboxConfig(isolation="partial"))
-    checks = _check_sandbox.check_sandbox_section(cfg)
+    checks = check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "PASS", out
     assert "isolation: partial  (sandbox.isolation = partial;" in out
@@ -475,7 +475,7 @@ def test_check_sandbox_names_the_degrade_reason_only_for_auto(
     why = "unprivileged user namespaces are disabled (user.max_user_namespaces = 0)"
     _force_profile(monkeypatch, "partial", reason=why)
     cfg = Config(sandbox=SandboxConfig(isolation="partial"))
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert "isolation: partial  (sandbox.isolation = partial;" in out
     assert "'full' is unavailable" not in out
@@ -495,8 +495,8 @@ def test_check_names_a_jail_binary_it_cannot_run(
     def _binary_refusal() -> object:
         raise jail.JailUnavailableError(refusal)
 
-    monkeypatch.setattr(_setup, "detect_env", _binary_refusal)
-    checks = _check_sandbox.check_sandbox_section(Config())
+    monkeypatch.setattr(session_setup, "detect_env", _binary_refusal)
+    checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert [(c.name, c.status, c.detail) for c in checks] == [
         ("sandbox.isolation", "FAIL", refusal)
@@ -512,7 +512,7 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An explicit level the host refuses is a FAIL naming it; nothing probes another level."""
-    monkeypatch.setattr(_setup, "detect_env", lambda: _ENV)
+    monkeypatch.setattr(session_setup, "detect_env", lambda: _ENV)
 
     def _refuse(req: str, _env: object) -> str:
         raise detect.IsolationUnavailableError(
@@ -521,7 +521,7 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
 
     monkeypatch.setattr(detect, "resolve_isolation", _refuse)
     cfg = Config(sandbox=SandboxConfig(isolation="full"))
-    checks = _check_sandbox.check_sandbox_section(cfg)
+    checks = check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert _row(checks, "sandbox.isolation").status == "FAIL"
     assert "requires user namespaces" in out
@@ -536,7 +536,7 @@ def test_check_sandbox_names_which_opt_out_left_nothing_to_probe(
     """`none` from the config is the operator's opt-out: a WARN naming the setting, no FAIL."""
     _honour_request(monkeypatch)
     cfg = Config(sandbox=SandboxConfig(isolation="none"))
-    checks = _check_sandbox.check_sandbox_section(cfg)
+    checks = check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     assert _row(checks, "sandbox").status == "WARN", out
     assert "isolation: none  (sandbox.isolation = none;" in out
@@ -571,14 +571,14 @@ def test_check_sandbox_runs_the_refusal_ladder_a_run_applies(
     """
     _honour_request(monkeypatch)
     cfg = Config.model_validate({"sandbox": {"isolation": "partial", "network": "session"}})
-    checks = _check_sandbox.check_sandbox_section(cfg)
+    checks = check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     refusal = _row(checks, "sandbox.refusal")
     assert refusal.status == "FAIL"
     assert "sandbox.network = 'session' requires sandbox.isolation = 'full'" in refusal.detail
     assert "[FAIL] a run would refuse" in out
     ok = Config.model_validate({"sandbox": {"isolation": "partial"}})
-    checks = _check_sandbox.check_sandbox_section(ok)
+    checks = check_sandbox.check_sandbox_section(ok)
     assert _row(checks, "sandbox.refusal").status == "PASS"
 
 
@@ -587,10 +587,10 @@ def test_check_sandbox_runs_its_probes_unstubbed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The operator's one "is my sandbox working" command runs its probes unstubbed once."""
-    if _check_sandbox.landlock_abi() < 1:
+    if check_sandbox.landlock_abi() < 1:
         pytest.skip("no Landlock: the command's own landlock_abi row fails here")
     monkeypatch.chdir(tmp_path)
-    checks = _check_sandbox.check_sandbox_section(Config())
+    checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert all(c.status == "PASS" for c in checks), out
     assert "isolation: " in out
@@ -599,12 +599,12 @@ def test_check_sandbox_runs_its_probes_unstubbed(
 def test_a_root_grant_covers_the_default_rows() -> None:
     """`extra_read_paths = ["/"]` listed `ro /` over `-- / (refused ...)` and a refused home."""
     root = pathlib.Path("/")
-    grant = _sandbox_paths.Row("ro", root, "sandbox.extra_read_paths")
+    grant = sandbox_paths.Row("ro", root, "sandbox.extra_read_paths")
     defaults = (
-        _sandbox_paths.Row("--", root, "refused except the paths below"),
-        _sandbox_paths.Row("--", pathlib.Path("/home/op"), "refused, except the rows under it"),
+        sandbox_paths.Row("--", root, "refused except the paths below"),
+        sandbox_paths.Row("--", pathlib.Path("/home/op"), "refused, except the rows under it"),
     )
-    assert _sandbox_paths.with_defaults([grant], *defaults) == [grant]  # pyright: ignore[reportPrivateUsage]
+    assert sandbox_paths.with_defaults([grant], *defaults) == [grant]  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial"])
@@ -628,7 +628,7 @@ def test_policy_paths_merge_discovery_and_config_without_losing_access(
             }
         }
     )
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
     out = capsys.readouterr().out
     for scope in ("in-process file tools", "jailed commands"):
         block = out.split(f"  {scope}", 1)[1].split("\n\n", 1)[0]
@@ -659,7 +659,7 @@ def test_device_rows_use_each_nodes_policy_access(
 ) -> None:
     """The five device grants are separate from shared memory, with distinct read/write rights."""
     _force_profile(monkeypatch, isolation)
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
     rows = _commands_block(capsys.readouterr().out)
     for name, mode in (
         ("null", "rw"),
@@ -695,7 +695,7 @@ def test_git_row_names_configuration_and_effective_protection(
     """Writable Git metadata does not imply that protection was disabled in configuration."""
     _force_profile(monkeypatch, isolation)
     cfg = Config.model_validate({"sandbox": {"protect_git": protect}})
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
     rows = _commands_block(capsys.readouterr().out)
     git = pathlib.Path.cwd() / ".git"
     row = next(line for line in rows if f" {git}  " in line)
@@ -734,7 +734,7 @@ def test_report_colours_and_plain_modes_carry_the_same_words(
     monkeypatch.setenv("COLUMNS", "4000")
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
     coloured = capsys.readouterr().out
     assert "\x1b[1mpartial\x1b[0m" in coloured
     assert "\x1b[32m[PASS]\x1b[0m" in coloured
@@ -758,7 +758,7 @@ def test_report_colours_and_plain_modes_carry_the_same_words(
             monkeypatch.setenv("NO_COLOR", "1")
         else:
             monkeypatch.delenv("NO_COLOR", raising=False)
-        _check_sandbox.check_sandbox_section(Config())
+        check_sandbox.check_sandbox_section(Config())
         assert capsys.readouterr().out == plain
 
 
@@ -779,13 +779,13 @@ def test_tool_discovery_retains_links_beside_path_reason(
     (bins / "python").symlink_to(runtime / "python")
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
-    monkeypatch.setattr(_check_sandbox, "landlock_abi", lambda: 5)
+    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 5)
 
     def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
         return _fake_result(policy.argv, 2 if policy.argv[0].endswith("getent") else 0)
 
-    monkeypatch.setattr(_check_sandbox, "run_in_jail", run)
-    _check_sandbox.check_sandbox_section(Config())
+    monkeypatch.setattr(check_sandbox, "run_in_jail", run)
+    check_sandbox.check_sandbox_section(Config())
     rows = _commands_block(capsys.readouterr().out)
     bin_row = next(line for line in rows if f" {bins}  " in line)
     assert "on the jail's PATH" in bin_row
@@ -808,10 +808,10 @@ def test_regular_path_tools_have_no_install_root_row(
     (root / "credentials.toml").touch()
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
 
-    rows = _sandbox_paths._tool_rows()
+    rows = sandbox_paths._tool_rows()
 
-    assert rows == [_sandbox_paths.Row("ro", bins, "on the jail's PATH", "tool")]
-    _check_render.rows(rows)
+    assert rows == [sandbox_paths.Row("ro", bins, "on the jail's PATH", "tool")]
+    check_render.rows(rows)
     assert capsys.readouterr().out.strip() == f"ro  tool  {bins}  (on the jail's PATH)"
 
 
@@ -835,7 +835,7 @@ def test_linked_tool_keeps_bin_when_the_install_root_holds_path(
     path_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins, path_dir))
 
-    rows = _sandbox_paths._tool_rows()
+    rows = sandbox_paths._tool_rows()
 
     assert {r.path for r in rows} == {bins, path_dir, target.parent}
     bin_row = next(r for r in rows if r.path == target.parent)
@@ -844,8 +844,8 @@ def test_linked_tool_keeps_bin_when_the_install_root_holds_path(
         f"{link} links into {target.parent}; "
         f"install root not widened: {root} holds a PATH directory"
     )
-    assert bin_row == _sandbox_paths.Row("ro", target.parent, note, "tool")
-    _check_render.rows([bin_row])
+    assert bin_row == sandbox_paths.Row("ro", target.parent, note, "tool")
+    check_render.rows([bin_row])
     assert capsys.readouterr().out.strip() == f"ro  tool  {target.parent}  ({note})"
 
 
@@ -875,15 +875,15 @@ def test_linked_tool_row_names_the_directory_link(
         (bins / "a").symlink_to(plain)
     monkeypatch.setattr(tool_paths, "_tool_bin_dirs", lambda: (bins,))
 
-    rows = _sandbox_paths._tool_rows()
+    rows = sandbox_paths._tool_rows()
 
     assert {r.path for r in rows} == {bins, pythons}
     row = next(r for r in rows if r.path == pythons)
     note = f"{shim} links into {pythons} through {directory}"
     if plain_first:
         note += ", 1 more"
-    assert row == _sandbox_paths.Row("ro", pythons, note, "tool")
-    _check_render.rows([row])
+    assert row == sandbox_paths.Row("ro", pythons, note, "tool")
+    check_render.rows([row])
     assert capsys.readouterr().out.strip() == f"ro  tool  {pythons}  ({note})"
 
 
@@ -928,11 +928,11 @@ def test_linked_tool_keeps_resolved_root_when_link_parent_is_unsafe(
     _, mounts = tool_paths.operator_tool_paths()
 
     assert mounts == tuple(sorted((*path_dirs, root)))
-    rows = [r for r in _sandbox_paths._tool_rows() if r.path == root]
+    rows = [r for r in sandbox_paths._tool_rows() if r.path == root]
     refusal = f"{parent} holds a PATH directory" if parent_kind == "path" else str(parent)
     note = f"{shim} links into {root}; install root not widened: {refusal}"
-    assert rows == [_sandbox_paths.Row("ro", root, note, "tool")]
-    _check_render.rows(rows)
+    assert rows == [sandbox_paths.Row("ro", root, note, "tool")]
+    check_render.rows(rows)
     assert capsys.readouterr().out.strip() == f"ro  tool  {root}  ({note})"
 
 
@@ -959,11 +959,9 @@ def test_linked_tools_grant_the_install_root_only_for_bin_targets(
 
     _, mounts = tool_paths.operator_tool_paths()
     assert mounts == tuple(sorted((bins, grant)))
-    rows = [r for r in _sandbox_paths._tool_rows() if r.path == grant]
-    assert rows == [
-        _sandbox_paths.Row("ro", grant, f"{bins}/py links into {grant}, 1 more", "tool")
-    ]
-    _check_render.rows(rows)
+    rows = [r for r in sandbox_paths._tool_rows() if r.path == grant]
+    assert rows == [sandbox_paths.Row("ro", grant, f"{bins}/py links into {grant}, 1 more", "tool")]
+    check_render.rows(rows)
     assert capsys.readouterr().out.strip() == (
         f"ro  tool  {grant}  ({bins}/py links into {grant}, 1 more)"
     )
@@ -1022,9 +1020,9 @@ def test_linked_tool_keeps_bin_when_the_install_root_is_unsafe(
     assert root not in mounts
     if root_kind != "filesystem":
         assert target.parent in mounts
-    rows = [r for r in _sandbox_paths._tool_rows() if r.path == target.parent]
+    rows = [r for r in sandbox_paths._tool_rows() if r.path == target.parent]
     assert rows == [
-        _sandbox_paths.Row(
+        sandbox_paths.Row(
             "ro",
             target.parent,
             f"{link} links into {target.parent}; install root not widened: {root}",
@@ -1041,7 +1039,7 @@ def test_resource_annotations_follow_explicit_grants(
     """An explicit resource grant does not keep the default unavailable annotation."""
     _force_profile(monkeypatch, "partial")
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=("/proc", "/dev/shm")))
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
     rows = _commands_block(capsys.readouterr().out)
     for path in ("/proc", "/dev/shm"):
         row = next(line for line in rows if f" {path}  " in line)
@@ -1064,7 +1062,7 @@ def test_network_provenance_does_not_override_a_write_grant(
     path.touch()
     monkeypatch.setattr(policy, "host_network_reads", lambda: (path,))
     cfg = Config(sandbox=SandboxConfig(network="host", extra_write_paths=(str(path),)))
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {path}  " in line]
     assert rows == [f"    rw  net   {path}  (sandbox.extra_write_paths)"]
 
@@ -1086,7 +1084,7 @@ def test_hidden_symlink_row_uses_the_resolved_target(
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"sandbox": {"isolation": isolation, "hide_paths": [str(link)]}})
 
-    _check_sandbox.check_sandbox_section(cfg)
+    check_sandbox.check_sandbox_section(cfg)
 
     rows = _commands_block(capsys.readouterr().out)
     masked = [line for line in rows if f" {private}  " in line or f" {link}  " in line]
@@ -1110,7 +1108,7 @@ def test_git_symlink_row_uses_the_protected_metadata_path(
     metadata.mkdir()
     (tmp_path / ".git").symlink_to(metadata, target_is_directory=True)
     monkeypatch.chdir(tmp_path)
-    _check_sandbox.check_sandbox_section(Config())
+    check_sandbox.check_sandbox_section(Config())
     rows = _commands_block(capsys.readouterr().out)
     assert (
         f"    ro        {metadata}  (sandbox.protect_git: configured auto, read-only under full)"
@@ -1127,7 +1125,7 @@ def test_annotations_wrap_without_overflow_or_shortening_paths(
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
     note = "annotations retain every word and the complete path"
-    _check_render.rows([_sandbox_paths.Row("ro", path, note)])
+    check_render.rows([sandbox_paths.Row("ro", path, note)])
     lines = capsys.readouterr().out.splitlines()
     assert all(len(line) <= 70 for line in lines), lines
     assert lines[0] == f"    ro        {path}"

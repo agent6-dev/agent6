@@ -12,8 +12,7 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.app import merge
-from agent6.app import providers as app_providers
+from agent6.app import merge, role_providers
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.cli import main
@@ -527,7 +526,7 @@ def test_the_repl_diff_keeps_gits_pager_out(
     """
     import subprocess
 
-    from agent6.ui.cli import _repl
+    from agent6.ui.cli import repl
 
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-DIFF02", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
@@ -539,7 +538,7 @@ def test_the_repl_diff_keeps_gits_pager_out(
         return real_run(argv, **kw)  # type: ignore[arg-type]
 
     monkeypatch.setattr(subprocess, "run", _spy)
-    _repl.repl_run_diff("run-DIFF02")
+    repl.repl_run_diff("run-DIFF02")
     assert "+a" in capfd.readouterr().out
     diffs = [a for a in seen if a[0] == "git" and "diff" in a and "--quiet" not in a]
     assert diffs and all(a[1] == "--no-pager" for a in diffs)
@@ -1115,7 +1114,7 @@ def test_merge_squash_model_style_degrades_on_a_budget_fault(
     def over(*_a: object, **_k: object) -> object:
         raise agent6_budget.BudgetExceededError("the ceiling was crossed on the last call")
 
-    monkeypatch.setattr(app_providers, "build_role_provider", over)
+    monkeypatch.setattr(role_providers, "build_role_provider", over)
     _setup_run(tmp_path, "run-BDG111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-BDG111", "--method", "squash"]) == 0
     assert "model squash message failed (the ceiling was crossed" in capsys.readouterr().err
@@ -1158,7 +1157,7 @@ def test_merge_squash_model_style_names_the_providers_failure(
     def at_limit(*_a: object, **_k: object) -> object:
         return _AtLimit()
 
-    monkeypatch.setattr(app_providers, "build_role_provider", at_limit)
+    monkeypatch.setattr(role_providers, "build_role_provider", at_limit)
     _setup_run(tmp_path, "run-LIM111", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     assert main(["sessions", "merge", "run-LIM111", "--method", "squash"]) == 0
     err = capsys.readouterr().err
@@ -1175,7 +1174,7 @@ def test_model_squash_uses_the_whole_run(
     oversized: bool,
 ) -> None:
     """A review execution must not replace the landed diff or the original finish context."""
-    from agent6.app import _merge_message
+    from agent6.app import merge_message
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
@@ -1223,8 +1222,8 @@ def test_model_squash_uses_the_whole_run(
     def provider(*_args: object, **_kwargs: object) -> object:
         return object()
 
-    monkeypatch.setattr(app_providers, "build_role_provider", provider)
-    monkeypatch.setattr(_merge_message, "call_for_text", draft)
+    monkeypatch.setattr(role_providers, "build_role_provider", provider)
+    monkeypatch.setattr(merge_message, "call_for_text", draft)
     assert main(["sessions", "merge", session_id, "--method", "squash"]) == 0
     assert "+context_window = 200000" in seen["user"]
     assert "+Document the fallback." in seen["user"]
@@ -1306,15 +1305,15 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     from typing import Any
 
     from agent6 import budget as agent6_budget
-    from agent6.app import _merge_message
+    from agent6.app import merge_message
     from agent6.config import Config
-    from agent6.providers import types
+    from agent6.providers import provider_types
 
     seen: dict[str, Any] = {}
 
     class _Prov:
-        def call(self, **_k: Any) -> types.ProviderResponse:
-            return types.ProviderResponse(
+        def call(self, **_k: Any) -> provider_types.ProviderResponse:
+            return provider_types.ProviderResponse(
                 text="feat: x\n\nbody",
                 tool_uses=(),
                 stop_reason="end_turn",
@@ -1338,11 +1337,11 @@ def test_model_squash_message_spends_the_runs_budget_and_reaches_the_log(
     def _no_files(*_a: Any) -> list[tuple[str, str]]:
         return []
 
-    monkeypatch.setattr(app_providers, "build_role_provider", _brp)
+    monkeypatch.setattr(role_providers, "build_role_provider", _brp)
     monkeypatch.setattr(git_read, "range_name_status", _no_files)
     sink = _Sink()
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    msg = _merge_message.model_squash_message(
+    msg = merge_message.model_squash_message(
         tmp_path,
         Config(),
         (),

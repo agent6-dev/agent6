@@ -12,7 +12,7 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6.providers import ProviderError, _headers, openai, token_command
+from agent6.providers import ProviderError, openai, request_headers, token_command
 
 
 def _fake_response(body: dict[str, Any], status: int = 200) -> httpx2.Response:
@@ -47,7 +47,7 @@ def test_call_translates_messages_and_parses_usage() -> None:
             }
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(
             system="you are a reviewer",
             messages=[{"role": "user", "content": "judge this"}],
@@ -85,7 +85,7 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
 
     # OpenAI-direct reasoning model (default base_url = api.openai.com).
     direct = openai.OpenAIProvider(api_key="sk", model="o3-mini", reasoning_effort="medium")
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning_effort") == "medium"
     assert "reasoning" not in captured["body"]
@@ -97,7 +97,7 @@ def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
         base_url="https://openrouter.ai/api/v1",
         reasoning_effort="high",
     )
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         router.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning") == {"effort": "high"}
     assert "reasoning_effort" not in captured["body"]
@@ -120,7 +120,7 @@ def test_openai_direct_gpt5_honors_reasoning_effort() -> None:
         )
 
     direct = openai.OpenAIProvider(api_key="sk", model="gpt-5", reasoning_effort="high")
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         direct.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"].get("reasoning_effort") == "high"
     assert "reasoning" not in captured["body"]  # not the nested OpenRouter object
@@ -143,7 +143,7 @@ def test_call_merges_extra_body() -> None:
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert captured["body"]["provider"] == {"sort": "throughput"}
@@ -175,7 +175,7 @@ def test_extra_body_cannot_replace_the_structural_request_shape() -> None:
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": {}}
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     body = captured["body"]
@@ -204,7 +204,7 @@ def test_call_clamps_negative_fresh_input_to_zero() -> None:
             }
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert resp.input_tokens == 0
@@ -226,7 +226,7 @@ def test_call_flattens_anthropic_block_content() -> None:
         {"type": "text", "text": "hello "},
         {"type": "text", "text": "world"},
     ]
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": msg_content}])
 
     # Two text blocks in one turn stay apart by a blank line.
@@ -237,7 +237,7 @@ def test_call_raises_provider_error_on_http_status() -> None:
     provider = openai.OpenAIProvider(api_key="sk", model="gpt-x")
     with (
         mock.patch(
-            "agent6.providers._transport.http_post",
+            "agent6.providers.transport.http_post",
             return_value=_fake_response({"error": "no"}, status=500),
         ),
         pytest.raises(ProviderError, match="OpenAI API error 500"),
@@ -262,7 +262,7 @@ def test_an_empty_key_sends_no_auth_header() -> None:
             }
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert "authorization" not in {k.lower() for k in captured["headers"]}
@@ -274,7 +274,7 @@ def test_base_url_override_and_extra_headers() -> None:
         api_key="or-test",
         model="meta-llama/llama-3.3-70b-instruct",
         base_url="https://openrouter.ai/api/v1",
-        extra_headers=_headers.HeaderSet.from_config(
+        extra_headers=request_headers.HeaderSet.from_config(
             {"HTTP-Referer": "https://example.com/r", "X-Title": "agent6"}
         ),
     )
@@ -285,7 +285,7 @@ def test_base_url_override_and_extra_headers() -> None:
         captured["headers"] = kw["headers"]
         return _fake_response({"choices": [{"message": {"content": "k"}}], "usage": {}})
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
 
     assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
@@ -367,12 +367,12 @@ def test_call_bumps_max_tokens_for_reasoning_models() -> None:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=16384)
     assert captured["body"]["max_tokens"] == openai.REASONING_MODEL_MIN_MAX_TOKENS
 
     # Caller-supplied value above the floor wins.
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=65536)
     assert captured["body"]["max_tokens"] == 65536
 
@@ -385,7 +385,7 @@ def test_call_does_not_bump_max_tokens_for_normal_models() -> None:
         captured["body"] = json.loads(kw["content"])
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}], max_tokens=4096)
     assert captured["body"]["max_tokens"] == 4096
 
@@ -405,19 +405,19 @@ def test_reasoning_effort_arg_overrides_default(monkeypatch: Any) -> None:
         return _fake_response({"choices": [{"message": {"content": "ok"}}], "usage": {}})
 
     # No arg -> env override wins.
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
     assert captured["body"]["reasoning"] == {"effort": "medium"}
 
     # Explicit "off" -> reasoning channel explicitly disabled.
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(
             system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="off"
         )
     assert captured["body"]["reasoning"] == {"enabled": False}
 
     # Explicit "low" -> overrides env "medium".
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         provider.call(
             system="s", messages=[{"role": "user", "content": "hi"}], reasoning_effort="low"
         )
@@ -448,7 +448,7 @@ def test_call_captures_reasoning_content_in_raw() -> None:
             }
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "q"}])
 
     assert resp.text == "the answer is 42"
@@ -477,7 +477,7 @@ def test_call_captures_deepseek_reasoning_field() -> None:
             }
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "q"}])
 
     assert any(
@@ -510,7 +510,7 @@ def test_credential_overrides_static_key_in_auth_header() -> None:
             {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]}
         )
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
 
     assert captured["auth"] == "Bearer minted-tok"
@@ -537,7 +537,7 @@ def test_401_refreshes_token_command_and_retries(tmp_path: pathlib.Path) -> None
         seen.append(kw["headers"].get("authorization"))
         return responses[len(seen) - 1]
 
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake_post):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake_post):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
 
     assert seen == ["Bearer tok1", "Bearer tok2"]
@@ -554,7 +554,7 @@ def test_401_without_credential_is_not_retried() -> None:
         return _fake_response({}, status=401)
 
     with (
-        mock.patch("agent6.providers._transport.http_post", side_effect=fake_post),
+        mock.patch("agent6.providers.transport.http_post", side_effect=fake_post),
         pytest.raises(ProviderError),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
@@ -584,7 +584,7 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
         return _fake_response(failed)
 
     with (
-        mock.patch("agent6.providers._transport.http_post", side_effect=fake_post),
+        mock.patch("agent6.providers.transport.http_post", side_effect=fake_post),
         pytest.raises(ProviderError, match="finish_reason='error'"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "hi"}])
@@ -593,13 +593,13 @@ def test_an_upstream_error_completion_is_retryable_and_still_metered() -> None:
     assert (snap.input_total, snap.output_total) == (12000, 16801), "billed tokens went unmetered"
 
     # A partial answer under the same finish reason is still handed back.
-    from agent6.providers import _openai_parse
+    from agent6.providers import openai_parse
 
     partial = {
         "choices": [{"finish_reason": "error", "message": {"content": "half an answer"}}],
         "usage": {"prompt_tokens": 10, "completion_tokens": 5},
     }
-    assert _openai_parse.parse_response(partial).text == "half an answer"
+    assert openai_parse.parse_response(partial).text == "half an answer"
 
 
 def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
@@ -624,7 +624,7 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
     provider = openai.OpenAIProvider(api_key="k", model="gpt-x", budget=budget)
     with (
         mock.patch(
-            "agent6.providers._stream.http_stream",
+            "agent6.providers.stream_lifecycle.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
         pytest.raises(ProviderError, match="finish_reason='error'"),
@@ -654,7 +654,7 @@ def test_a_streamed_upstream_error_completion_is_refused_the_same_way() -> None:
     ],
 )
 def test_openai_usage_counts_are_non_negative_integers(field: str, value: object) -> None:
-    from agent6.providers import _openai_parse
+    from agent6.providers import openai_parse
 
     usage: dict[str, object] = {"prompt_tokens": 10, "completion_tokens": 2}
     if field == "cached_tokens":
@@ -663,7 +663,7 @@ def test_openai_usage_counts_are_non_negative_integers(field: str, value: object
         usage[field] = value
 
     with pytest.raises(ProviderError, match=rf"usage\..*{field}"):
-        _openai_parse.parse_response(
+        openai_parse.parse_response(
             {
                 "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
                 "usage": usage,
@@ -672,9 +672,9 @@ def test_openai_usage_counts_are_non_negative_integers(field: str, value: object
 
 
 def test_openai_usage_counts_accept_integer_strings_and_integral_floats() -> None:
-    from agent6.providers import _openai_parse
+    from agent6.providers import openai_parse
 
-    response = _openai_parse.parse_response(
+    response = openai_parse.parse_response(
         {
             "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
             "usage": {
@@ -718,10 +718,10 @@ def test_openai_usage_counts_accept_integer_strings_and_integral_floats() -> Non
     ],
 )
 def test_openai_response_fields_are_not_coerced(choice: dict[str, Any]) -> None:
-    from agent6.providers import _openai_parse
+    from agent6.providers import openai_parse
 
     with pytest.raises(ProviderError):
-        _openai_parse.parse_response(
+        openai_parse.parse_response(
             {"choices": [choice], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
         )
 
@@ -732,7 +732,7 @@ def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
     A native tool_call with no `function.name` is dropped, as the comment above the check says;
     requiring a string there refuses the whole body.
     """
-    from agent6.providers import _openai_parse
+    from agent6.providers import openai_parse
 
     body = {
         "choices": [
@@ -749,13 +749,13 @@ def test_a_nameless_tool_call_is_dropped_beside_a_valid_one() -> None:
         ],
         "usage": {"prompt_tokens": 1, "completion_tokens": 1},
     }
-    resp = _openai_parse.parse_response(body, tool_names=frozenset({"read_file"}))
+    resp = openai_parse.parse_response(body, tool_names=frozenset({"read_file"}))
     assert [t["name"] for t in resp.tool_uses] == ["read_file"]
     assert resp.stop_reason == ""
 
 
 def test_a_nested_usage_count_error_names_its_path() -> None:
-    from agent6.providers import _openai_parse, types
+    from agent6.providers import openai_parse, provider_types
 
     body = {
         "choices": [],
@@ -765,15 +765,17 @@ def test_a_nested_usage_count_error_names_its_path() -> None:
             "prompt_tokens_details": {"cached_tokens": -1},
         },
     }
-    with pytest.raises(types.ProviderError, match=r"usage\.prompt_tokens_details\.cached_tokens"):
-        _openai_parse.parse_response(body)
+    with pytest.raises(
+        provider_types.ProviderError, match=r"usage\.prompt_tokens_details\.cached_tokens"
+    ):
+        openai_parse.parse_response(body)
 
 
 def test_openai_tool_call_ids_are_unique() -> None:
-    from agent6.providers import _openai_parse
+    from agent6.providers import openai_parse
 
     with pytest.raises(ProviderError, match=r"duplicate.*tool_call.id"):
-        _openai_parse.parse_response(
+        openai_parse.parse_response(
             {
                 "choices": [
                     {

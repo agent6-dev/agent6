@@ -14,7 +14,7 @@ import pathlib
 
 from agent6 import paths
 from agent6.sessions import layout, process
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.viewmodel import format, listing, machine_state
 
 
@@ -56,7 +56,7 @@ class _Row:
             self.status,
             str(self.pid) if self.pid is not None else "?",
             "attached" if self.attached else "",
-            _common.home_contracted(self.worktree) if self.worktree else "",
+            common.home_contracted(self.worktree) if self.worktree else "",
         )
 
 
@@ -109,7 +109,7 @@ def _live_rows() -> _Live:
         for repo_dir in sorted(base.iterdir()):
             root = paths.repo_root_of_id(repo_dir.name)
             # An elided-hash id is not reversible to a path; the cell says so.
-            where = _common.home_contracted(str(root)) if root is not None else None
+            where = common.home_contracted(str(root)) if root is not None else None
             for bucket in layout.SESSION_BUCKETS:
                 bucket_path = repo_dir / "sessions" / bucket
                 if not bucket_path.is_dir():

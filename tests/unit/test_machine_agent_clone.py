@@ -16,9 +16,8 @@ from typing import Any, ClassVar, Literal
 import pytest
 
 from agent6 import errors
-from agent6.app import machine_agent as ma
-from agent6.app import providers, reporter
-from agent6.app.machine import StateConfig
+from agent6.app import reporter, role_providers
+from agent6.app.machine import StateConfig, agent
 from agent6.config import Config
 from agent6.machine import AgentRequest
 from agent6.providers import ProviderResponse
@@ -92,7 +91,7 @@ class _FakeChild:
 
 
 def _runner(origin: pathlib.Path, tmp_path: pathlib.Path):  # type: ignore[no-untyped-def]
-    return ma.build_machine_agent_runner(
+    return agent.build_machine_agent_runner(
         _OVERLAYS,
         origin,
         tmp_path / "m1" / "agent_transcripts",
@@ -104,7 +103,7 @@ def _runner(origin: pathlib.Path, tmp_path: pathlib.Path):  # type: ignore[no-un
 
 
 # The two states `_req` names, each under an empty overlay at isolation none.
-_OVERLAYS = {f"s{seq}": ma.StateOverlay({}, "none") for seq in (0, 1)}
+_OVERLAYS = {f"s{seq}": agent.StateOverlay({}, "none") for seq in (0, 1)}
 
 
 def _req(seq: int, mode: str = "run") -> AgentRequest:
@@ -115,7 +114,7 @@ def test_run_states_continue_the_machine_branch_and_never_touch_the_checkout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     origin = _origin(tmp_path)
-    monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
     runner = _runner(origin, tmp_path)
 
     r1 = runner(_req(0), None)
@@ -140,7 +139,7 @@ def test_run_state_request_keeps_the_true_checkout_as_cwd_for_config(
 ) -> None:
     """A run state's request keeps the operator's repo as `cwd`; `root` is the clone it works in."""
     origin = _origin(tmp_path)
-    monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
     _FakeChild.seen_cwds = []
     runner = _runner(origin, tmp_path)
@@ -159,7 +158,7 @@ def test_read_only_states_see_the_machine_tree_and_land_nothing(
     It commits nothing, so the branch does not move and its clone is cleaned up.
     """
     origin = _origin(tmp_path)
-    monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
     _FakeChild.seen_files = []
     runner = _runner(origin, tmp_path)
@@ -178,9 +177,9 @@ def test_without_a_machine_tree_read_only_states_run_in_place(
 ) -> None:
     """With no machine_id or clone_root a read-only request runs in cwd."""
     origin = _origin(tmp_path)
-    monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
     _FakeChild.workdirs = []
-    runner = ma.build_machine_agent_runner(
+    runner = agent.build_machine_agent_runner(
         _OVERLAYS, origin, tmp_path / "m1" / "agent_transcripts", (), None
     )
     assert runner(_req(0, mode="agent"), None).reason == "finish_session"
@@ -405,7 +404,7 @@ def test_tool_clone_host_failure_aborts_the_machine(
     def fail_clone(*args: object) -> None:
         raise subrun.SubrunError("clone unavailable")
 
-    monkeypatch.setattr(ma, "clone_at_machine_chain", fail_clone)
+    monkeypatch.setattr(agent, "clone_at_machine_chain", fail_clone)
     world = machine.LiveWorld(
         cwd=origin,
         journal=machine.MachineJournal(tmp_path / "instance"),
@@ -573,8 +572,8 @@ def test_invalid_utf8_result_routes_failed_instead_of_escaping(
             return _BadResultChild(argv, **kwargs)
         return _REAL_POPEN(argv, **kwargs)
 
-    monkeypatch.setattr(ma.subprocess, "Popen", bad_result)
-    runner = ma.build_machine_agent_runner(_OVERLAYS, origin, tmp_path / "transcripts")
+    monkeypatch.setattr(agent.subprocess, "Popen", bad_result)
+    runner = agent.build_machine_agent_runner(_OVERLAYS, origin, tmp_path / "transcripts")
 
     assert runner(_req(0, mode="agent"), None).reason == "error"
 
@@ -590,7 +589,7 @@ def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
             raise OSError("process table full")
         return _REAL_POPEN(argv, **kwargs)
 
-    monkeypatch.setattr(ma.subprocess, "Popen", fail_spawn)
+    monkeypatch.setattr(agent.subprocess, "Popen", fail_spawn)
     result = _runner(origin, tmp_path)(_req(0), None)
 
     assert result.reason.startswith("error: machine agent failed to start:")
@@ -602,7 +601,7 @@ def test_import_failure_keeps_the_clone_and_routes_failed(
 ) -> None:
     """A state whose commits did not land routes failed; the clone is kept for adopt and prune."""
     origin = _origin(tmp_path)
-    monkeypatch.setattr(ma.subprocess, "Popen", _fake_popen)
+    monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
 
     def _boom(*_a: object, **_k: object) -> None:
         raise errors.GitError("refs locked")
@@ -643,20 +642,20 @@ def _state_in_a_clone(
     monkeypatch: pytest.MonkeyPatch,
     setup: list[str],
     mode: Literal["run", "agent", "machine"] = "run",
-) -> tuple[ma.AgentExecResult, _Finishes, pathlib.Path, pathlib.Path]:
+) -> tuple[agent.AgentExecResult, _Finishes, pathlib.Path, pathlib.Path]:
     """Run one run-mode state through `run_one` in a fresh clone, with a setup command."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
     monkeypatch.setenv("PROBE_KEY", "sk-probe")
     origin = _origin(tmp_path)
     clone = tmp_path / "clones" / "state-0000"
-    ma.clone_at_machine_chain(origin, clone, CHAIN)
+    agent.clone_at_machine_chain(origin, clone, CHAIN)
     prov = _Finishes()
 
     def _factory(*_a: Any, **_k: Any) -> _Finishes:
         return prov
 
-    monkeypatch.setattr(providers, "build_role_provider", _factory)
-    req = ma.MachineAgentRequest(
+    monkeypatch.setattr(role_providers, "build_role_provider", _factory)
+    req = agent.MachineAgentRequest(
         cwd=origin,
         root=clone,
         overlay={
@@ -675,7 +674,7 @@ def _state_in_a_clone(
         transcript_dir=tmp_path / "m1" / "agent_transcripts",
         request=AgentRequest(prompt="p", timeout_s=60.0, mode=mode, state_name="s0", step_seq=0),
     )
-    return ma.run_one(req), prov, origin, clone
+    return agent.run_one(req), prov, origin, clone
 
 
 @pytest.mark.parametrize("mode", ["run", "agent", "machine"])

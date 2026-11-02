@@ -11,8 +11,8 @@ import stat
 import tempfile
 
 from agent6 import errors
-from agent6.tools import _path_safety
-from agent6.vcs import _git_command, git_history, git_read
+from agent6.tools import path_safety
+from agent6.vcs import git_command, git_history, git_read
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -64,13 +64,13 @@ def read_blob(path: pathlib.Path, sha: str, *, max_bytes: int) -> Blob:
     Raises:
         GitError: The blob cannot be read.
     """
-    size = int(_git_command.run(path, "cat-file", "-s", sha).stdout)
+    size = int(git_command.run(path, "cat-file", "-s", sha).stdout)
     if size > max_bytes:
         return Blob(size, None)
     args = ("cat-file", "blob", sha)
-    _argv, rc, out, err = _git_command.spawn(path, args, None, None)
+    _argv, rc, out, err = git_command.spawn(path, args, None, None)
     if rc != 0:
-        error = _git_command.failure(
+        error = git_command.failure(
             args, rc, out.decode(errors="replace"), err.decode(errors="replace")
         )
         raise error
@@ -174,11 +174,11 @@ def _ignore_revs_copies(path: pathlib.Path, into: pathlib.Path, hide: tuple[str,
     Returns:
         The refusal naming the setting and failed constraint, or "".
     """
-    res = _git_command.run(
+    res = git_command.run(
         path, "config", "--get-all", "-z", "--type=path", "blame.ignoreRevsFile", check=False
     )
     root = path.resolve()
-    workspace = _path_safety.host_workspace(root, hide)
+    workspace = path_safety.host_workspace(root, hide)
     lexical_hidden = tuple(pathlib.Path(os.path.abspath(p)) for p in hide)  # noqa: PTH100
     workspace = dataclasses.replace(workspace, denied=(*workspace.denied, *lexical_hidden))
     # NUL-delimited: a value holding a newline is one path to git, and must be one here.
@@ -257,9 +257,9 @@ def blame_lines(
     with tempfile.TemporaryDirectory(prefix="agent6-blame-") as tmp:
         if reason := _ignore_revs_copies(path, pathlib.Path(tmp), hide):
             raise errors.GitError(reason)
-        gitdir = _git_command.run(path, "rev-parse", "--absolute-git-dir").stdout.strip()
+        gitdir = git_command.run(path, "rev-parse", "--absolute-git-dir").stdout.strip()
         # Git 2.53 blame needs the verified sha before --end-of-options when a path follows --.
-        out = _git_command.run(
+        out = git_command.run(
             pathlib.Path(tmp),
             "blame",
             "--porcelain",
@@ -331,7 +331,7 @@ def tree_files(path: pathlib.Path, rev: str) -> tuple[TreeFile, ...]:
     Raises:
         GitError: The rev cannot be read.
     """
-    fields = _git_command.nul_fields(path, "ls-tree", "-r", "-z", "-l", "--end-of-options", rev)
+    fields = git_command.nul_fields(path, "ls-tree", "-r", "-z", "-l", "--end-of-options", rev)
     rows: list[TreeFile] = []
     for entry in fields:
         meta, _, name = entry.partition("\t")
@@ -358,12 +358,12 @@ def worktree_tree_files(path: pathlib.Path) -> tuple[TreeFile, ...]:
         The entries on disk with their size and kind, sorted by path; a tracked file gone
         from disk is left out.
     """
-    entries = _git_command.nul_fields(
+    entries = git_command.nul_fields(
         path, "ls-files", "-z", "-t", "--stage", "--cached", "--others", "--exclude-standard"
     )
     changed: set[str] = set()
     status = iter(
-        _git_command.nul_fields(path, "status", "--porcelain=v1", "-z", "--untracked-files=no")
+        git_command.nul_fields(path, "status", "--porcelain=v1", "-z", "--untracked-files=no")
     )
     for entry in status:
         if entry:

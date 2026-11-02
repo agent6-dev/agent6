@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """One sentence per shared argument across the CLI.
 
-The constants in `ui/cli/_common.py` are the one owner of the session-id and `--repo` wordings, and
+The constants in `ui/cli/common.py` are the one owner of the session-id and `--repo` wordings, and
 this walk keeps every site on them.
 """
 
@@ -11,11 +11,11 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterator
 
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.ui.cli import parser as cli_parser
 
 _REPO_HELPS = {
-    _common.REPO_FLAG_HELP,
+    common.REPO_FLAG_HELP,
     "Remove from the per-repo config instead of the global config.",
 }
 
@@ -36,7 +36,7 @@ def test_every_id_and_repo_argument_shares_one_sentence() -> None:
         if action.dest in ("session_id", "target") and not action.option_strings:
             # fork names its source run and plan show its plan; the rule is the same.
             assert "or unambiguous prefix" in help_text, (path, help_text)
-            assert help_text.startswith(_common.SESSION_ID) or path.startswith(
+            assert help_text.startswith(common.SESSION_ID) or path.startswith(
                 ("agent6 fork", "agent6 plan")
             ), (
                 path,
@@ -44,7 +44,7 @@ def test_every_id_and_repo_argument_shares_one_sentence() -> None:
             )
             seen["session_id"] += 1
         elif action.dest == "machine_id" and not action.option_strings:
-            assert help_text == _common.MACHINE_ID_HELP, (path, help_text)
+            assert help_text == common.MACHINE_ID_HELP, (path, help_text)
             seen["machine_id"] += 1
         elif "--repo" in action.option_strings:
             assert help_text in _REPO_HELPS, (path, help_text)

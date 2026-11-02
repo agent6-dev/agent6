@@ -13,11 +13,15 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6 import secret_store
-from agent6.config import AnthropicProviderEntry, ChatGPTProviderEntry, OpenAIProviderEntry
+from agent6.config import (
+    AnthropicProviderEntry,
+    ChatGPTProviderEntry,
+    OpenAIProviderEntry,
+    secret_store,
+)
 from agent6.models import cache as models_cache
 from agent6.models import registry as models_registry
-from agent6.providers import _oauth_protocol, _transport, oauth, types
+from agent6.providers import oauth, oauth_protocol, provider_types, transport
 
 
 def test_chatgpt_listing_refuses_legacy_before_sending_a_bearer(
@@ -35,8 +39,8 @@ def test_chatgpt_listing_refuses_legacy_before_sending_a_bearer(
         },
     )
     with (
-        mock.patch.object(_transport, "http_request") as request,
-        pytest.raises(types.ProviderError, match="predates credential binding"),
+        mock.patch.object(transport, "http_request") as request,
+        pytest.raises(provider_types.ProviderError, match="predates credential binding"),
     ):
         models_cache._fetch("work", ChatGPTProviderEntry(api_format="chatgpt"), None, 1)
     request.assert_not_called()
@@ -49,7 +53,7 @@ def test_chatgpt_listing_uses_holder_without_refresh_and_falls_back_to_cache(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     secret_store.save_oauth_grant(
-        "work", oauth.stored_grant_for(_oauth_protocol.TokenGrant("expired", "RT", 1), entry, now=1)
+        "work", oauth.stored_grant_for(oauth_protocol.TokenGrant("expired", "RT", 1), entry, now=1)
     )
     path = cache_home / "models" / "work.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -66,7 +70,7 @@ def test_chatgpt_listing_uses_holder_without_refresh_and_falls_back_to_cache(
         return httpx2.Response(401, request=httpx2.Request(method, url))
 
     monkeypatch.setattr(oauth.OAuthCredential, "token", token)
-    monkeypatch.setattr(_transport, "http_request", refused)
+    monkeypatch.setattr(transport, "http_request", refused)
     assert models_cache.list_models("work", entry, None, ttl_s=0) == ["cached"]
     assert seen == [{"refresh": False}]
 
@@ -91,7 +95,7 @@ def _ok_response(ids: list[str]) -> object:
 def test_fetches_and_caches_openai(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_transport, "http_request", _ok_response(["gpt-x", "gpt-y"]))
+    monkeypatch.setattr(transport, "http_request", _ok_response(["gpt-x", "gpt-y"]))
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     out = models_cache.list_models("openai", entry, "sk-test")
     assert out == ["gpt-x", "gpt-y"]
@@ -119,7 +123,7 @@ def test_model_listings_use_the_capped_request(
         secret_store.save_oauth_grant(
             "p",
             oauth.stored_grant_for(
-                _oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
+                oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
             ),
         )
     url = "https://models.example/v1/models"
@@ -130,14 +134,14 @@ def test_model_listings_use_the_capped_request(
         json={"data": [{"id": "m1"}], "models": [{"slug": "m1"}]},
         request=httpx2.Request("GET", url),
     )
-    monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", cap)
+    monkeypatch.setattr(transport, "MAX_RESPONSE_BYTES", cap)
     with (
         mock.patch.object(httpx2, "get", return_value=response),
         mock.patch.object(httpx2, "stream", return_value=contextlib.nullcontext(response)),
-        mock.patch.object(_transport, "http_request", wraps=_transport.http_request) as request,
+        mock.patch.object(transport, "http_request", wraps=transport.http_request) as request,
     ):
         if cap == 16:
-            with pytest.raises(types.ProviderError) as refused:
+            with pytest.raises(provider_types.ProviderError) as refused:
                 models_cache._fetch("p", entry, "AT", 7.0)
             assert str(refused.value) == (
                 "provider response exceeded 16 bytes; refusing to buffer it"
@@ -164,7 +168,7 @@ def test_fresh_cache_skips_network(
     def _boom(*a: object, **k: object) -> httpx2.Response:
         raise AssertionError("network must not be hit when cache is fresh")
 
-    monkeypatch.setattr(_transport, "http_request", _boom)
+    monkeypatch.setattr(transport, "http_request", _boom)
     entry = AnthropicProviderEntry(api_format="anthropic")
     assert models_cache.list_models("anthropic", entry, "sk-test") == ["claude-cached"]
 
@@ -184,7 +188,7 @@ def test_stale_cache_used_on_network_error(
     def _fail(*a: object, **k: object) -> httpx2.Response:
         raise httpx2.ConnectError("no route")
 
-    monkeypatch.setattr(_transport, "http_request", _fail)
+    monkeypatch.setattr(transport, "http_request", _fail)
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://openrouter.ai/api/v1")
     assert models_cache.list_models("openrouter", entry, None) == ["stale-1"]
 
@@ -195,7 +199,7 @@ def test_no_cache_network_error_returns_empty(
     def _fail(*a: object, **k: object) -> httpx2.Response:
         raise httpx2.ConnectTimeout("slow")
 
-    monkeypatch.setattr(_transport, "http_request", _fail)
+    monkeypatch.setattr(transport, "http_request", _fail)
     entry = OpenAIProviderEntry(api_format="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
@@ -208,7 +212,7 @@ def test_never_raises_on_bad_payload(
             200, text="not json", request=httpx2.Request("GET", "http://x/models")
         )
 
-    monkeypatch.setattr(_transport, "http_request", _garbage)
+    monkeypatch.setattr(transport, "http_request", _garbage)
     entry = OpenAIProviderEntry(api_format="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
@@ -227,7 +231,7 @@ def test_unsafe_provider_name_still_fetches(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # An unsafe name skips the cache but still fetches live (never raises).
-    monkeypatch.setattr(_transport, "http_request", _ok_response(["m1"]))
+    monkeypatch.setattr(transport, "http_request", _ok_response(["m1"]))
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
     assert models_cache.list_models("../evil", entry, "sk") == ["m1"]
     assert not (cache_home / "models").exists()  # nothing written outside
@@ -249,7 +253,7 @@ def test_caches_context_length_and_reads_it_back(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        _transport,
+        transport,
         "http_request",
         _ok_full(
             [
@@ -279,14 +283,14 @@ def test_fetch_models_live_bypasses_ttl_and_signals_failure(
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"models": ["stale-1"]}), encoding="utf-8")
     entry = OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")
-    monkeypatch.setattr(_transport, "http_request", _ok_response(["fresh-1"]))
+    monkeypatch.setattr(transport, "http_request", _ok_response(["fresh-1"]))
     assert models_cache.fetch_models_live("o", entry, None) == ["fresh-1"]
     assert json.loads(path.read_text())["models"] == ["fresh-1"]
 
     def _fail(*a: object, **k: object) -> httpx2.Response:
         raise httpx2.ConnectError("down")
 
-    monkeypatch.setattr(_transport, "http_request", _fail)
+    monkeypatch.setattr(transport, "http_request", _fail)
     assert models_cache.fetch_models_live("o", entry, None) is None
 
 
@@ -348,7 +352,7 @@ def test_pricing_catalog_refresh_prices_a_bare_claude_id(
             request=httpx2.Request("GET", url),
         )
 
-    monkeypatch.setattr(_transport, "http_request", _get)
+    monkeypatch.setattr(transport, "http_request", _get)
     assert models_pricing.lookup_price("claude-opus-5") is None
     models_cache.refresh_pricing_catalog()
     price = models_pricing.lookup_price("claude-opus-5")
@@ -364,8 +368,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     It comes from the backend's own /models with the stored bearer, the account header and a ceiling
     client_version; hidden entries stay out of completion; context windows land in the cache.
     """
-    from agent6 import secret_store
-    from agent6.config import ChatGPTProviderEntry
+    from agent6.config import ChatGPTProviderEntry, secret_store
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     entry = ChatGPTProviderEntry(api_format="chatgpt")
@@ -398,7 +401,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
         }
         return httpx2.Response(200, json=body, request=httpx2.Request("GET", url))
 
-    monkeypatch.setattr(_transport, "http_request", _get)
+    monkeypatch.setattr(transport, "http_request", _get)
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     ids = models_cache.list_models("chatgpt", entry, None, ttl_s=0)
     assert ids == ["gpt-5.6-sol"]
@@ -420,7 +423,7 @@ def test_chatgpt_listing_without_sign_in_fails_soft(
     def _never(method: str, url: str, headers: dict[str, str], timeout: float) -> httpx2.Response:
         pytest.fail("no sign-in: nothing to fetch with")
 
-    monkeypatch.setattr(_transport, "http_request", _never)
+    monkeypatch.setattr(transport, "http_request", _never)
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     assert models_cache.list_models("chatgpt", entry, None, ttl_s=0) == []
 
@@ -444,7 +447,7 @@ def test_input_modalities_are_explicit_bound_and_fresh(
             200, json=payload, request=httpx2.Request("GET", "https://models.example/v1/models")
         )
 
-    monkeypatch.setattr(_transport, "http_request", fake_get)
+    monkeypatch.setattr(transport, "http_request", fake_get)
     assert models_cache.fetch_models_live("p", entry, None)
     fact = models_cache.cached_input_capabilities("p", entry, "vision")
     assert (fact.image, fact.document) == ("supported", "supported")
@@ -478,7 +481,7 @@ def test_review_seats_resolve_their_own_modality_facts(
 ) -> None:
     """Review seats receive their exact route's capability, not the worker's state."""
     from agent6 import budget
-    from agent6.app import providers
+    from agent6.app import role_providers
     from agent6.config import Config
 
     cfg = Config.model_validate(
@@ -500,12 +503,12 @@ def test_review_seats_resolve_their_own_modality_facts(
             200, json=payload, request=httpx2.Request("GET", "https://models.example/v1/models")
         )
 
-    monkeypatch.setattr(_transport, "http_request", fake_get)
+    monkeypatch.setattr(transport, "http_request", fake_get)
     models_cache.fetch_models_live("p", cfg.providers["p"], None)
-    worker = providers.input_capabilities(cfg, cfg.models.resolve("worker"))
-    seats = providers.build_review_seats(
+    worker = role_providers.input_capabilities(cfg, cfg.models.resolve("worker"))
+    seats = role_providers.build_review_seats(
         cfg,
-        transcript_sink=types.TranscriptSink(cache_home / "transcripts"),
+        transcript_sink=provider_types.TranscriptSink(cache_home / "transcripts"),
         budget=budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=10000, max_plan_points=0),
         n=1,
     )

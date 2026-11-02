@@ -16,19 +16,19 @@ import subprocess
 from collections.abc import Callable, Collection, Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import child_env, errors, event_log, terminal
-from agent6.app import merge
-from agent6.app import providers as app_providers
+from agent6 import child_env, errors, terminal
+from agent6.app import merge, role_providers
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, NotifyConfig
-from agent6.harness import _advice, _snapshot
+from agent6.harness import advice, loop_snapshot
+from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import commit_message, git_ops, git_read
 from agent6.viewmodel import (
-    _session_status,
     format,
     scan_session_log,
+    session_status,
     summarize_session_dir,
     tail_events,
     wire,
@@ -45,7 +45,7 @@ EXIT_NO_COMMIT_LANDED = 5
 EXIT_OPERATOR_STOP = 130
 
 
-def session_exit_code(result: _snapshot.SessionResult, *, stranded: bool = False) -> int:
+def session_exit_code(result: loop_snapshot.SessionResult, *, stranded: bool = False) -> int:
     """Map a finished run to its process exit code.
 
     An unverified finish exits 4 like a red one, so a worker cannot pass by never
@@ -60,7 +60,7 @@ def session_exit_code(result: _snapshot.SessionResult, *, stranded: bool = False
         0 for a green or gateless finish, 130 an operator stop, 3 budget, 4 not green,
         5 stranded, 1 else.
     """
-    if result.reason in _session_status.OPERATOR_STOPS:
+    if result.reason in session_status.OPERATOR_STOPS:
         return EXIT_OPERATOR_STOP
     if result.completed:
         if result.verified in ("failed", "unverified"):
@@ -72,7 +72,7 @@ def session_exit_code(result: _snapshot.SessionResult, *, stranded: bool = False
 
 
 def stranded_edits(
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
     hidden: frozenset[str] = frozenset(),
@@ -114,7 +114,7 @@ def stranded_edits(
     return dirty
 
 
-def auto_merge_eligible(result: _snapshot.SessionResult) -> bool:
+def auto_merge_eligible(result: loop_snapshot.SessionResult) -> bool:
     """Tell whether the model finished the run over a green or absent gate.
 
     Args:
@@ -185,7 +185,7 @@ def _print_next_session(
 
 
 def _print_red_gate(
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
     reporter: app_reporter.Reporter,
@@ -241,7 +241,7 @@ def _print_red_gate(
 
 
 def _print_unverified(
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
@@ -274,7 +274,9 @@ def _print_unverified(
         )
 
 
-def _print_stale_gate(result: _snapshot.SessionResult, *, reporter: app_reporter.Reporter) -> None:
+def _print_stale_gate(
+    result: loop_snapshot.SessionResult, *, reporter: app_reporter.Reporter
+) -> None:
     """Print the worker's proposed gate replacement, and that nothing moved.
 
     Applying the proposal is the operator's call: agent6 cannot tell a gate that judges the
@@ -302,7 +304,7 @@ STALE_GATE_NOTE_MAX_CHARS = 200
 
 
 def _print_settled(
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
     reporter: app_reporter.Reporter,
@@ -333,11 +335,11 @@ def settle_budget(budget: agent6_budget.BudgetTracker, events: event_log.EventSi
         events: The session journal.
     """
     if budget.settle():
-        events.emit("budget.update", **app_providers.budget_update_fields(budget))
+        events.emit("budget.update", **role_providers.budget_update_fields(budget))
 
 
 def print_session_end(
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
@@ -370,7 +372,7 @@ def print_session_end(
             reporter.out(f"  {result.summary}")
     elif result.reason == "silent_finish":
         # The stream showed the model's closing text; the open-task note is the harness's own.
-        if note := _advice.open_tasks_note(result.summary):
+        if note := advice.open_tasks_note(result.summary):
             reporter.out(f"  {note}")
     elif result.summary and result.reason not in ("finish_session", "finish_planning"):
         # The stream's done line carries a clean finish's summary only; a failure's reason
@@ -408,7 +410,7 @@ _LEFT_OUT_CAP = 10  # paths the end summary's left-out line names before it coun
 
 
 def _print_run_branch_footer(
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
@@ -531,7 +533,7 @@ def _print_left_out(
 
 
 def _print_no_commit_footer(
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     *,
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,

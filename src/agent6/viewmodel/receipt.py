@@ -12,8 +12,8 @@ import pydantic
 from agent6 import errors, evidence
 from agent6.sessions import manifest
 from agent6.vcs import commit_graph, git_read
-from agent6.viewmodel import _session_log
 from agent6.viewmodel import review as review_view
+from agent6.viewmodel import session_log
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -143,7 +143,7 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
     except manifest.ManifestError as exc:
         saved = manifest.SessionManifest()
         notes.append(f"Manifest unreadable: {exc}")
-    fold = _session_log.scan_session_log(session_dir / "logs.jsonl")
+    fold = session_log.scan_session_log(session_dir / "logs.jsonl")
     notes.extend(fold.evidence_notes)
     if not fold.verifications:
         notes.append("No verification recorded.")

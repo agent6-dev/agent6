@@ -11,7 +11,7 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 
-from agent6.app.machine import _bundle
+from agent6.app.machine import bundle
 from agent6.viewmodel import machine_files, machine_instance_dirs, summarize_machine_dir
 
 
@@ -53,7 +53,7 @@ def machine_rows(cwd: pathlib.Path, state_dir: pathlib.Path) -> list[MachineRow]
     Returns:
         The rows in listing order.
     """
-    files = [(p, _bundle.summarize_machine_file(p)) for p in machine_files(cwd)]
+    files = [(p, bundle.summarize_machine_file(p)) for p in machine_files(cwd)]
     rows: list[MachineRow] = []
     joined: set[pathlib.Path] = set()
     for inst in (summarize_machine_dir(d) for d in machine_instance_dirs(state_dir)):

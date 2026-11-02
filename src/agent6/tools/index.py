@@ -20,7 +20,7 @@ from typing import Final
 import tree_sitter
 import tree_sitter_language_pack
 
-from agent6.tools import _path_safety
+from agent6.tools import path_safety
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -287,7 +287,7 @@ class SymbolIndex:
 
     def __init__(
         self,
-        ws: _path_safety.Workspace,
+        ws: path_safety.Workspace,
         *,
         excludes: tuple[str, ...] = _DEFAULT_EXCLUDES,
     ) -> None:
@@ -414,7 +414,7 @@ class SymbolIndex:
             return
         parser, def_query, ref_query = bits
         try:
-            src = _path_safety.read_bytes_contained(_path_safety.contain(self._root, rel))
+            src = path_safety.read_bytes_contained(path_safety.contain(self._root, rel))
         except OSError:
             self._symbols.pop(p, None)
             self._refs.pop(p, None)

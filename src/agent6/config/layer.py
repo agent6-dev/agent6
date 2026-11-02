@@ -7,7 +7,7 @@ The layers, lowest precedence first: `default` (the model's defaults), `global`
 `flag` (`--config FILE`), `machine` (a machine's `[config]` overlay) and `state` (one
 state's `config` table). The raw tables are
 deep-merged in that order and validated once; every leaf remembers the layer that set it.
-A selected preset is spliced in just above the layer that selected it, per `_presets.apply_preset`.
+A selected preset is spliced in above its selecting layer, per `layer_presets.apply_preset`.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from typing import Any
 import pydantic
 
 from agent6 import paths
-from agent6.config import _base, _layer_data, _presets, io
+from agent6.config import io, layer_data, layer_presets, validation
 from agent6.config import model as config_model
 
 # The `config show` and `config fill` order, from the model so a new section is never omitted.
@@ -28,7 +28,7 @@ SECTION_ORDER = tuple(config_model.Config.model_fields)
 
 def load_effective(
     repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = (), *, preset: str = ""
-) -> _layer_data.EffectiveConfig:
+) -> layer_data.EffectiveConfig:
     """Load the effective config of a repo.
 
     Args:
@@ -42,17 +42,17 @@ def load_effective(
     Raises:
         ConfigError: A layer is unreadable or the merged config is invalid.
     """
-    layers = _layer_data.discover_layers(repo_root, explicit_paths)
-    presets = _presets.preset_names(layers)
-    layers = _presets.apply_preset(layers, preset)
-    return _layer_data.effective_from_layers(
+    layers = layer_data.discover_layers(repo_root, explicit_paths)
+    presets = layer_presets.preset_names(layers)
+    layers = layer_presets.apply_preset(layers, preset)
+    return layer_data.effective_from_layers(
         layers, source="(merged config layers)", presets=presets
     )
 
 
 def shadowing_layer(
-    eff: _layer_data.EffectiveConfig, leaf: str, target: _layer_data.LayerName
-) -> _layer_data.Layer | None:
+    eff: layer_data.EffectiveConfig, leaf: str, target: layer_data.LayerName
+) -> layer_data.Layer | None:
     """Return the layer above the target that sets a leaf, or None.
 
     A write to the target changes what a run reads only when no layer above it sets the leaf.
@@ -82,7 +82,7 @@ def shadowing_layer(
     return next((lyr for lyr in above if lyr.source == source), None)
 
 
-def load_global_only() -> _layer_data.EffectiveConfig:
+def load_global_only() -> layer_data.EffectiveConfig:
     """Load the defaults plus the global config: what `agent6 config fill` materializes.
 
     A fill writes the global file, so the repo layer would follow the operator to every
@@ -97,13 +97,11 @@ def load_global_only() -> _layer_data.EffectiveConfig:
     """
     gpath = paths.global_config_path()
     layers = (
-        [_layer_data.Layer("global", gpath, _layer_data.read_toml(gpath))]
-        if gpath.is_file()
-        else []
+        [layer_data.Layer("global", gpath, layer_data.read_toml(gpath))] if gpath.is_file() else []
     )
-    cleaned, _ = _presets.strip_presets(layers)
-    return _layer_data.effective_from_layers(
-        cleaned, source="(global config)", presets=_presets.preset_names(layers)
+    cleaned, _ = layer_presets.strip_presets(layers)
+    return layer_data.effective_from_layers(
+        cleaned, source="(global config)", presets=layer_presets.preset_names(layers)
     )
 
 
@@ -113,7 +111,7 @@ def load_effective_with_overlay(
     *,
     explicit_paths: tuple[pathlib.Path, ...] = (),
     state_overlay: dict[str, Any] | None = None,
-) -> _layer_data.EffectiveConfig:
+) -> layer_data.EffectiveConfig:
     """Load the effective config with a machine's overlays as the highest layers.
 
     Args:
@@ -130,16 +128,16 @@ def load_effective_with_overlay(
         ConfigError: A layer is unreadable, an overlay selects a preset, or the merged
             config is invalid.
     """
-    layers = _layer_data.discover_layers(repo_root, explicit_paths)
+    layers = layer_data.discover_layers(repo_root, explicit_paths)
     if overlay:
-        _layer_data.forbid_layer_preset("machine overlay", overlay)
-        layers = [*layers, _layer_data.Layer("machine", None, overlay)]
+        layer_data.forbid_layer_preset("machine overlay", overlay)
+        layers = [*layers, layer_data.Layer("machine", None, overlay)]
     if state_overlay:
-        _layer_data.forbid_layer_preset("state overlay", state_overlay)
-        layers = [*layers, _layer_data.Layer("state", None, state_overlay)]
-    presets = _presets.preset_names(layers)
-    layers = _presets.apply_preset(layers, "")
-    return _layer_data.effective_from_layers(
+        layer_data.forbid_layer_preset("state overlay", state_overlay)
+        layers = [*layers, layer_data.Layer("state", None, state_overlay)]
+    presets = layer_presets.preset_names(layers)
+    layers = layer_presets.apply_preset(layers, "")
+    return layer_data.effective_from_layers(
         layers, source="(merged config layers + machine overlay)", presets=presets
     )
 
@@ -161,7 +159,7 @@ class InvalidEntry:
 
     leaf: str
     value: Any
-    layer: _layer_data.LayerName
+    layer: layer_data.LayerName
     path: pathlib.Path
     file_key: str
     is_table: bool = False
@@ -183,7 +181,7 @@ class ConfigDiagnosis:
 
 def _fix_scope_layers(
     repo_root: pathlib.Path, machine: pathlib.Path | None
-) -> list[_layer_data.Layer]:
+) -> list[layer_data.Layer]:
     """Return the layers `config fix` repairs, with presets applied as in a real load.
 
     Args:
@@ -196,18 +194,18 @@ def _fix_scope_layers(
     Raises:
         ConfigError: A layer is unreadable, or the overlay selects a preset.
     """
-    layers = _layer_data.discover_layers(repo_root, ())
+    layers = layer_data.discover_layers(repo_root, ())
     if machine is not None:
         overlay = io.read_toml_file(machine).get("config", {})
         if isinstance(overlay, dict) and overlay:
-            _layer_data.forbid_layer_preset("machine overlay", overlay)
-            layers = [*layers, _layer_data.Layer("machine", machine, overlay)]
-    return _presets.apply_preset(layers, "")
+            layer_data.forbid_layer_preset("machine overlay", overlay)
+            layers = [*layers, layer_data.Layer("machine", machine, overlay)]
+    return layer_presets.apply_preset(layers, "")
 
 
 def _merge_with_origin(
-    layers: list[_layer_data.Layer],
-) -> tuple[dict[str, Any], dict[str, _layer_data.Layer]]:
+    layers: list[layer_data.Layer],
+) -> tuple[dict[str, Any], dict[str, layer_data.Layer]]:
     """Deep-merge the layers and map each dotted leaf to the layer that set it.
 
     Args:
@@ -216,14 +214,14 @@ def _merge_with_origin(
     Returns:
         The merged table, and the layer of each leaf.
     """
-    merged, sources = _layer_data.merge_layers(layers)
+    merged, sources = layer_data.merge_layers(layers)
     by_name = {layer.source: layer for layer in layers}
     return merged, {leaf: by_name[name] for leaf, name in sources.items() if name in by_name}
 
 
 def _removable_for(
-    loc: str, origin: dict[str, _layer_data.Layer]
-) -> tuple[str, _layer_data.Layer, bool] | None:
+    loc: str, origin: dict[str, layer_data.Layer]
+) -> tuple[str, layer_data.Layer, bool] | None:
     """Return what to drop for a validation error at a location.
 
     Three shapes: the location is a file leaf; it is under a file leaf (the longest present
@@ -250,7 +248,7 @@ def _removable_for(
 
 
 def _diagnose_errors(
-    exc: pydantic.ValidationError, origin: dict[str, _layer_data.Layer], *, only_layer: str | None
+    exc: pydantic.ValidationError, origin: dict[str, layer_data.Layer], *, only_layer: str | None
 ) -> ConfigDiagnosis:
     """Turn validation errors into droppable entries and a note for the rest.
 
@@ -295,7 +293,7 @@ def _diagnose_errors(
     return ConfigDiagnosis(tuple(removable), "\n".join(blocked) if blocked else None)
 
 
-def _diagnose_layers(layers: list[_layer_data.Layer], *, only_layer: str | None) -> ConfigDiagnosis:
+def _diagnose_layers(layers: list[layer_data.Layer], *, only_layer: str | None) -> ConfigDiagnosis:
     """Validate a layer prefix and locate its invalid entries.
 
     Args:
@@ -308,7 +306,7 @@ def _diagnose_layers(layers: list[_layer_data.Layer], *, only_layer: str | None)
     merged, origin = _merge_with_origin(layers)
     try:
         config_model.Config.model_validate(merged)
-    except _base.ConfigError as exc:
+    except validation.ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
     except pydantic.ValidationError as exc:
         return _diagnose_errors(exc, origin, only_layer=only_layer)
@@ -331,8 +329,8 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
     Raises:
         ConfigError: A layer is unreadable.
     """
-    by_name: dict[str, list[_layer_data.Layer]] = {}
-    for layer in _layer_data.discover_layers(repo_root, ()):
+    by_name: dict[str, list[layer_data.Layer]] = {}
+    for layer in layer_data.discover_layers(repo_root, ()):
         presets = layer.data.get("presets")
         if not isinstance(presets, dict):
             continue
@@ -353,7 +351,7 @@ def _diagnose_presets(repo_root: pathlib.Path) -> ConfigDiagnosis:
                     ),
                     None,
                 )
-            by_name.setdefault(name, []).append(_layer_data.Layer(layer.name, layer.path, body))
+            by_name.setdefault(name, []).append(layer_data.Layer(layer.name, layer.path, body))
     for name, layers in by_name.items():
         for end in range(1, len(layers) + 1):
             diagnosis = _diagnose_layers(layers[:end], only_layer=None)
@@ -407,19 +405,19 @@ def find_invalid_entries(
         if machine is None and (preset_diagnosis := _diagnose_presets(repo_root)).removable:
             return preset_diagnosis
         if machine is None:
-            cleaned, _ = _presets.strip_presets(_layer_data.discover_layers(repo_root, ()))
+            cleaned, _ = layer_presets.strip_presets(layer_data.discover_layers(repo_root, ()))
             for end in range(1, len(cleaned) + 1):
                 diagnosis = _diagnose_layers(cleaned[:end], only_layer=None)
                 leaves = tuple(entry for entry in diagnosis.removable if not entry.is_table)
                 if leaves:
                     return ConfigDiagnosis(leaves, None)
         layers = _fix_scope_layers(repo_root, machine)
-    except _base.ConfigError as exc:
+    except validation.ConfigError as exc:
         return ConfigDiagnosis((), str(exc))
     return _diagnose_layers(layers, only_layer=only)
 
 
-def leaf_keys(eff: _layer_data.EffectiveConfig) -> list[str]:
+def leaf_keys(eff: layer_data.EffectiveConfig) -> list[str]:
     """Return every dotted leaf path of the effective config, sorted.
 
     Args:
@@ -428,10 +426,10 @@ def leaf_keys(eff: _layer_data.EffectiveConfig) -> list[str]:
     Returns:
         The paths.
     """
-    return sorted(_layer_data.config_leaves(eff.config))
+    return sorted(layer_data.config_leaves(eff.config))
 
 
-def effective_leaf(eff: _layer_data.EffectiveConfig, dotted_key: str) -> tuple[Any, str] | None:
+def effective_leaf(eff: layer_data.EffectiveConfig, dotted_key: str) -> tuple[Any, str] | None:
     """Return a leaf's value and the layer that set it, as `config show` reports them.
 
     Args:
@@ -442,7 +440,7 @@ def effective_leaf(eff: _layer_data.EffectiveConfig, dotted_key: str) -> tuple[A
         `(value, source)`, the source `default` when no layer set it and `unset` for a preset
         leaf no layer authored; None when the key is not a leaf.
     """
-    leaves = _layer_data.config_leaves(eff.config)
+    leaves = layer_data.config_leaves(eff.config)
     parts = io.split_key(dotted_key)
     dotted_key = io.render_key(parts)
     if parts[0] == "presets" and len(parts) > 2:
@@ -457,10 +455,10 @@ def effective_leaf(eff: _layer_data.EffectiveConfig, dotted_key: str) -> tuple[A
         return None
     if dotted_key in leaves:
         return leaves[dotted_key], eff.sources.get(dotted_key, "default")
-    nested = _layer_data.flatten_leaves(eff.config.model_dump(mode="python"))
+    nested = layer_data.flatten_leaves(eff.config.model_dump(mode="python"))
     if dotted_key not in nested:
         return None
-    _, sources = _layer_data.merge_layers(list(eff.layers))
+    _, sources = layer_data.merge_layers(list(eff.layers))
     return nested[dotted_key], sources.get(dotted_key, "default")
 
 
@@ -541,10 +539,10 @@ def materialize(
     """
     data = config.model_dump(mode="python")
     if explicit_leaves is not None:
-        defaults = _layer_data.config_leaves(config_model.Config())
+        defaults = layer_data.config_leaves(config_model.Config())
         selected = {
             leaf
-            for leaf, value in _layer_data.config_leaves(config).items()
+            for leaf, value in layer_data.config_leaves(config).items()
             if leaf in explicit_leaves or leaf not in defaults or value != defaults[leaf]
         }
 
@@ -605,5 +603,5 @@ def _file_presets(path: pathlib.Path | None) -> dict[str, Any]:
     """
     if path is None or not path.is_file():
         return {}
-    presets = _layer_data.read_toml(path).get("presets")
+    presets = layer_data.read_toml(path).get("presets")
     return presets if isinstance(presets, dict) else {}

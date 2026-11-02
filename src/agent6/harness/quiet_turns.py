@@ -1,0 +1,129 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Eric Lesiuta
+"""Answer the turns that say nothing with a nudge.
+
+`QuietGuard` holds the counters; each function answers one kind of quiet turn with the
+`Nudge` the loop puts in the conversation, or None when the turn stands.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+from typing import TYPE_CHECKING
+
+from agent6.harness import advice, nudges, provider_call
+from agent6.providers import ProviderResponse
+
+if TYPE_CHECKING:
+    from agent6.harness import loop_state
+
+# An early prose turn on an untouched tree is a stall for this many turns, then a finish.
+SILENT_NO_WORK_UNTIL = 3
+
+
+@dataclasses.dataclass(slots=True)
+class QuietGuard:
+    """Count the nudges the quiet turns of one execution drew.
+
+    Attributes:
+        went_quiet_nudges_used: Nudges the streak of empty turns drew; any other turn resets it.
+        silent_no_work_nudges_used: Nudges early prose turns on an untouched tree drew.
+        question_nudged: Whether the once-per-run nudge for a prose turn ending on a question fired.
+    """
+
+    went_quiet_nudges_used: int = 0
+    silent_no_work_nudges_used: int = 0
+    question_nudged: bool = False
+
+
+def silent_no_work(state: loop_state.LoopState, ctx: advice.TurnContext) -> advice.Nudge | None:
+    """Steer an early prose turn on an untouched tree back to the tools.
+
+    A prose turn within the first `SILENT_NO_WORK_UNTIL` turns of a run that edited nothing
+    is a stall, nudged up to `SILENT_NO_WORK_PATIENCE` times; a later prose turn is a finish.
+
+    Args:
+        state: The execution's state.
+        ctx: The turn's context.
+
+    Returns:
+        The nudge, or None when the turn stands as a finish.
+    """
+    quiet = state.quiet
+    if not (
+        ctx.mode == "run"
+        and ctx.turn <= SILENT_NO_WORK_UNTIL
+        and not state.ever_edited
+        and not state.verify.ever_passed
+        and quiet.silent_no_work_nudges_used < nudges.SILENT_NO_WORK_PATIENCE
+    ):
+        return None
+    quiet.silent_no_work_nudges_used += 1
+    return advice.Nudge(
+        nudges.SILENT_NO_WORK_NUDGE,
+        event="loop.silent_no_work.nudge",
+        fields={"turn": ctx.turn, "nudges_used": quiet.silent_no_work_nudges_used},
+        log=(
+            f"  silent finish rejected: no work yet (nudge"
+            f" #{quiet.silent_no_work_nudges_used}) at turn {ctx.turn}"
+        ),
+    )
+
+
+def question_in_prose(
+    state: loop_state.LoopState, ctx: advice.TurnContext, text: str
+) -> advice.Nudge | None:
+    """Tell the model once per run that a question in prose reaches nobody.
+
+    A second question is accepted as the finish, so a stubborn model cannot loop the run.
+
+    Args:
+        state: The execution's state.
+        ctx: The turn's context.
+        text: The turn's prose.
+
+    Returns:
+        The nudge to call ask_user or finish_session, or None.
+    """
+    if ctx.mode != "run" or state.quiet.question_nudged or not nudges.ends_with_question(text):
+        return None
+    state.quiet.question_nudged = True
+    return advice.Nudge(
+        nudges.QUESTION_NUDGE,
+        event="loop.question_nudge",
+        fields={"turn": ctx.turn},
+        log=f"  silent_finish nudged: ended on a question at turn {ctx.turn}",
+    )
+
+
+def went_quiet(
+    state: loop_state.LoopState, ctx: advice.TurnContext, resp: ProviderResponse
+) -> advice.Nudge | None:
+    """Nudge an empty turn, up to the cap per streak.
+
+    A turn that spent its whole output budget on reasoning gets the starved wording.
+
+    Args:
+        state: The execution's state.
+        ctx: The turn's context, which carries the cap.
+        resp: The empty response.
+
+    Returns:
+        The nudge, or None once the cap is spent and the run ends as went_quiet.
+    """
+    cap = ctx.went_quiet_max_nudges
+    quiet = state.quiet
+    if quiet.went_quiet_nudges_used >= cap:
+        return None
+    quiet.went_quiet_nudges_used += 1
+    starved = provider_call.reasoning_starvation(resp) > 0
+    return advice.Nudge(
+        nudges.reasoning_starved_nudge(resp.output_tokens) if starved else nudges.WENT_QUIET_NUDGE,
+        event="loop.went_quiet.nudge",
+        fields={
+            "turn": ctx.turn,
+            "nudges_used": quiet.went_quiet_nudges_used,
+            "nudges_max": cap,
+            "output_tokens": resp.output_tokens,
+        },
+    )

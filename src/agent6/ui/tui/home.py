@@ -13,7 +13,7 @@ import pathlib
 from collections.abc import Callable, Iterable
 from typing import Any, ClassVar
 
-from agent6.config import _presets
+from agent6.config import layer_presets
 
 try:
     from rich import text
@@ -46,10 +46,10 @@ from agent6.vcs import git_read
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
     SessionSummary,
-    _session_status,
     format,
     is_winner,
     session_dirs,
+    session_status,
     summarize_session_dir,
 )
 from agent6.viewmodel import listing as viewmodel_listing
@@ -255,7 +255,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
         self._fanouts = {row.summary.session_id: row for row in listing if row.lanes}
 
-        pending: list[tuple[tuple[str | text.Text, ...], _session_status.TaskLabel]] = []
+        pending: list[tuple[tuple[str | text.Text, ...], session_status.TaskLabel]] = []
 
         def add(row: viewmodel_listing.ListingRow, id_cell: str) -> None:
             # The time is the row's: a fan-out's latest lane activity, as `sessions list` shows it.
@@ -397,7 +397,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             new_work.NewWorkScreen(
                 self.repo_cwd,
                 self.config_paths,
-                presets=_presets.available_preset_names(self.repo_cwd, self.config_paths),
+                presets=layer_presets.available_preset_names(self.repo_cwd, self.config_paths),
                 routes=choices.available_routes(self.repo_cwd, self.config_paths),
             )
         )

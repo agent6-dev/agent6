@@ -16,7 +16,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.sandbox import detect
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
@@ -44,7 +44,7 @@ def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str, A
     def _effective(*args: Any, **kwargs: Any) -> Any:
         return type("E", (), {"config": None})()
 
-    monkeypatch.setattr("agent6.ui.cli._common.resolve_target", _resolve)
+    monkeypatch.setattr("agent6.ui.cli.common.resolve_target", _resolve)
     monkeypatch.setattr("agent6.ui.cli.net_cmds.exec_in_session", _exec)
     monkeypatch.setattr("agent6.ui.cli.net_cmds.forward", _forward)
     monkeypatch.setattr("agent6.config.layer.load_effective", _effective)
@@ -213,7 +213,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
 
     monkeypatch.setattr(policy, "jail_policy", fake_jail_policy)
     monkeypatch.setattr(process, "read_session_netns_pid", _no_pid)
-    monkeypatch.setattr(_setup, "detect_env", _env)
+    monkeypatch.setattr(session_setup, "detect_env", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _resolve)
 
     cfg = Config.model_validate({"sandbox": {"isolation": "full"}})
@@ -388,7 +388,9 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
     def _full(_req: str, _env: Any) -> str:
         return "full"
 
-    monkeypatch.setattr(_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True))
+    monkeypatch.setattr(
+        session_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True)
+    )
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
 
@@ -458,7 +460,9 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
     def _full(_req: str, _env: Any) -> str:
         return "full"
 
-    monkeypatch.setattr(_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True))
+    monkeypatch.setattr(
+        session_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True)
+    )
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
 

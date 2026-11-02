@@ -15,7 +15,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from agent6 import errors, portable
-from agent6.config import _base
+from agent6.config import validation
 
 _KEY_PART = r"""(?:[A-Za-z0-9_-]+|"(?:[^"\\\r\n]|\\[^\r\n])*"|'[^'\r\n]*')"""
 _DOTTED_KEY = rf"{_KEY_PART}(?:[ \t]*\.[ \t]*{_KEY_PART})*"
@@ -38,11 +38,11 @@ def split_key(key: str) -> list[str]:
     """
     message = f"invalid config key {key!r}: expected a TOML dotted key"
     if _KEY_RE.fullmatch(key) is None:
-        raise _base.ConfigError(message)
+        raise validation.ConfigError(message)
     try:
         value = tomllib.loads(f"{key} = 0")
     except tomllib.TOMLDecodeError as exc:
-        raise _base.ConfigError(f"{message}: {exc}") from exc
+        raise validation.ConfigError(f"{message}: {exc}") from exc
     parts: list[str] = []
     while isinstance(value, dict):
         part, value = next(iter(value.items()))
@@ -170,7 +170,7 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
             return "{}"
         items = ", ".join(f"{toml_key(k)} = {format_toml_value(v)}" for k, v in value.items())
         return "{ " + items + " }"
-    raise _base.ConfigError(f"cannot serialize {value!r} to TOML")
+    raise validation.ConfigError(f"cannot serialize {value!r} to TOML")
 
 
 def toml_key(key: object) -> str:
@@ -233,7 +233,7 @@ def upsert_toml_leaf(path: pathlib.Path, dotted_key: str, value: object) -> None
             # Raised here so every writer hits it; the header the surgery would emit collides
             # with the headerless ancestor, and _drop_top_region_key would then delete it whole.
             if owner := _undeclared_ancestor_in("\n".join(lines), dotted_key):
-                raise _base.ConfigError(
+                raise validation.ConfigError(
                     f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                     " (a value, an inline table, a dotted key, or an array-of-tables),"
                     f" so it cannot be set on its own. Set {owner} as a whole, or edit"
@@ -521,7 +521,7 @@ def remove_toml_leaf(path: pathlib.Path, dotted_key: str) -> bool:
             return False
         # Without this a leaf inside an inline table reads "not found" while `config get` shows it.
         if table and (owner := undeclared_table_ancestor(path, dotted_key)):
-            raise _base.ConfigError(
+            raise validation.ConfigError(
                 f"{dotted_key} lives inside {owner}, which is not a plain [table]"
                 " (an inline table, a dotted key, or an array-of-tables), so it"
                 f" cannot be unset on its own. Set {owner} as a whole, or edit {path}"
@@ -597,9 +597,9 @@ def read_toml_file(path: pathlib.Path) -> dict[str, Any]:
     try:
         return tomllib.loads(path.read_text(encoding="utf-8"))
     except tomllib.TOMLDecodeError as exc:
-        raise _base.ConfigError(f"{path}: invalid TOML: {exc}") from exc
+        raise validation.ConfigError(f"{path}: invalid TOML: {exc}") from exc
     except (OSError, UnicodeDecodeError) as exc:
-        raise _base.ConfigError(f"{path}: cannot be read: {exc}") from exc
+        raise validation.ConfigError(f"{path}: cannot be read: {exc}") from exc
 
 
 def undeclared_table_ancestor(path: pathlib.Path, dotted_key: str) -> str | None:

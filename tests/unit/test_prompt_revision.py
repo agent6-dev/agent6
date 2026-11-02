@@ -10,10 +10,10 @@ from unittest import mock
 
 from agent6 import kinds
 from agent6.config import Config, load_config
-from agent6.harness import _chain, _prompt_revision, _provider_call, loop
+from agent6.harness import loop, prompt_revision, provider_call, run_chain
 from agent6.providers import ProviderResponse
 from agent6.tools import results
-from agent6.viewmodel import _session_status
+from agent6.viewmodel import session_status
 
 _VALID_TOML = """
 [agent6]
@@ -106,19 +106,19 @@ def _wf(tmp_path: pathlib.Path, **kw: Any) -> loop.Harness:
         returncode=0, stdout="", stderr="", duration_s=0.1, exec_failed=False
     )
     defaults: dict[str, Any] = {
-        "chain": _chain.RunChain(tmp_path),
+        "chain": run_chain.RunChain(tmp_path),
         "config": _config(tmp_path),
         "provider": mock.MagicMock(),
         "dispatcher": dispatcher,
         "logger": _silent,
-        "call": _provider_call.CallSettings(retry_delay_s=0.01),
+        "call": provider_call.CallSettings(retry_delay_s=0.01),
     }
     defaults.update(kw)
     return loop.Harness(**defaults)
 
 
 def test_parse_prompt_revision_tagged_output() -> None:
-    parsed = _prompt_revision.parse_prompt_revision(
+    parsed = prompt_revision.parse_prompt_revision(
         "<revised_task>Fix foo and verify with pytest.</revised_task>\n"
         "<clarifying_questions>\n- Which API version?\n- none\n</clarifying_questions>"
     )
@@ -127,9 +127,7 @@ def test_parse_prompt_revision_tagged_output() -> None:
 
 
 def test_parse_prompt_revision_falls_back_to_plain_text() -> None:
-    parsed = _prompt_revision.parse_prompt_revision(
-        "Fix the failing test with the smallest change."
-    )
+    parsed = prompt_revision.parse_prompt_revision("Fix the failing test with the smallest change.")
     assert parsed.revised_task == "Fix the failing test with the smallest change."
     assert parsed.clarifying_questions == ()
 
@@ -138,7 +136,7 @@ def test_parse_prompt_revision_keeps_leading_digits_in_questions() -> None:
     # Only the list marker is stripped. The old charset lstrip("-*0123456789. ")
     # also ate leading digits of the question itself ("- 32-bit support
     # needed?" became "bit support needed?").
-    parsed = _prompt_revision.parse_prompt_revision(
+    parsed = prompt_revision.parse_prompt_revision(
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n"
         "- 32-bit support needed?\n"
@@ -154,7 +152,7 @@ def test_parse_prompt_revision_keeps_leading_digits_in_questions() -> None:
 
 
 def test_parse_prompt_revision_unmarked_question_passes_through() -> None:
-    parsed = _prompt_revision.parse_prompt_revision(
+    parsed = prompt_revision.parse_prompt_revision(
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n3rd-party deps allowed?\n* none\n</clarifying_questions>"
     )
@@ -166,7 +164,7 @@ def test_parse_prompt_revision_unmarked_question_passes_through() -> None:
 def test_parse_prompt_revision_keeps_leading_decimal_in_question() -> None:
     # A question that opens with a bare decimal ("0.5s ...") is NOT a numbered
     # list item ("0." has no trailing space); its leading digits must survive.
-    parsed = _prompt_revision.parse_prompt_revision(
+    parsed = prompt_revision.parse_prompt_revision(
         "<revised_task>t</revised_task>\n"
         "<clarifying_questions>\n0.5s latency budget acceptable?\n</clarifying_questions>"
     )
@@ -184,10 +182,10 @@ def test_workflow_auto_revises_task_before_worker_call(tmp_path: pathlib.Path) -
     wf = _wf(
         tmp_path,
         provider=worker,
-        revision=_prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
+        revision=prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.repo_context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.reason == "finish_session"
@@ -209,10 +207,10 @@ def test_workflow_prompt_revision_empty_response_fails_before_worker(
     wf = _wf(
         tmp_path,
         provider=worker,
-        revision=_prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
+        revision=prompt_revision.RevisionSettings(reviser=reviser, mode="auto"),
     )
 
-    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.repo_context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix it")
 
     assert result.completed is False
@@ -231,12 +229,12 @@ def test_workflow_interactive_selector_can_use_original(tmp_path: pathlib.Path) 
     wf = _wf(
         tmp_path,
         provider=worker,
-        revision=_prompt_revision.RevisionSettings(
+        revision=prompt_revision.RevisionSettings(
             reviser=reviser, mode="interactive", selector=select_original
         ),
     )
 
-    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.repo_context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("keep this exact task")
 
     assert result.reason == "finish_session"
@@ -260,12 +258,12 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: pathlib.P
     reviser.call.return_value = _text_resp("<revised_task>Rewrite everything.</revised_task>")
     wf = _wf(
         tmp_path,
-        revision=_prompt_revision.RevisionSettings(
+        revision=prompt_revision.RevisionSettings(
             reviser=reviser, mode="interactive", selector=quit_at_the_choice
         ),
     )
-    with mock.patch("agent6.harness._context.load_repo_summary", return_value=_repo(tmp_path)):
+    with mock.patch("agent6.harness.repo_context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")
     assert result.reason == "steer_abort"
-    word, _ = _session_status.status_word(finished=True, all_passed=False, end_reason=result.reason)
+    word, _ = session_status.status_word(finished=True, all_passed=False, end_reason=result.reason)
     assert word == "stopped"

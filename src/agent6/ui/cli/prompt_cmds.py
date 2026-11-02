@@ -8,9 +8,10 @@ import json
 import pathlib
 from typing import Literal
 
-from agent6 import paths, verify_infer
+from agent6 import paths
 from agent6.config import layer
 from agent6.harness import ModelExchange, model_exchange_for
+from agent6.tools import verify_infer
 
 
 def _cmd_prompt_show(

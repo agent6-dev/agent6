@@ -8,9 +8,8 @@ import pathlib
 
 import pydantic
 
-from agent6 import secret_store
-from agent6.config import ConfigError, TelemetryConfig, io, layer
-from agent6.ui.cli import _common
+from agent6.config import ConfigError, TelemetryConfig, io, layer, secret_store
+from agent6.ui.cli import common
 
 
 def write_value(key: str, value: str | None) -> int:
@@ -34,14 +33,14 @@ def write_value(key: str, value: str | None) -> int:
         except pydantic.ValidationError:
             valid = False
     if not valid:
-        _common.error(
+        common.error(
             "--secret accepts only telemetry.headers.<name> with a header name telemetry accepts"
         )
         return 2
     try:
         target = secret_store.write_telemetry_header(parts[2], value)
     except secret_store.SecretsError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     verb = "Set" if value is not None else "Unset"
     print(f"{verb} {io.render_key(parts)} in {target}")

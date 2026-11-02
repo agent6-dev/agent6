@@ -8,7 +8,7 @@ import pathlib
 
 import pytest
 
-from agent6.machine import _semantics, schema
+from agent6.machine import schema, semantics
 
 # The worked example from the state-machines page; error-case tests mutate a copy.
 VALID_MACHINE = """
@@ -95,12 +95,12 @@ def _write(tmp_path: pathlib.Path, body: str) -> pathlib.Path:
 
 def _problems(tmp_path: pathlib.Path, body: str) -> list[str]:
     with pytest.raises(schema.MachineError) as excinfo:
-        _semantics.load_machine(_write(tmp_path, body))
+        semantics.load_machine(_write(tmp_path, body))
     return excinfo.value.problems
 
 
 def test_valid_machine_loads(tmp_path: pathlib.Path) -> None:
-    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, VALID_MACHINE))
     assert spec.machine == "item-classifier"
     assert spec.initial == "poll"
     assert set(spec.states) == {
@@ -116,7 +116,7 @@ def test_valid_machine_loads(tmp_path: pathlib.Path) -> None:
 
 def test_seconds_fields_validate(tmp_path: pathlib.Path) -> None:
     """A machine accepts timeout_s for agents and tools and a templated delay_s for waits."""
-    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, VALID_MACHINE))
     tool = spec.states["scan"]
     agent = spec.states["classify"]
     wait = spec.states["poll"]
@@ -180,7 +180,7 @@ def test_non_utf8_file_raises_machine_error(tmp_path: pathlib.Path) -> None:
     path = tmp_path / "m.asm.toml"
     path.write_bytes(b"machine = \xff\xfe not utf-8")
     with pytest.raises(schema.MachineError) as excinfo:
-        _semantics.load_machine(path)
+        semantics.load_machine(path)
     assert any("UTF-8" in p for p in excinfo.value.problems)
 
 
@@ -211,9 +211,9 @@ def test_a_float_variable_refuses_a_non_finite_value(tmp_path: pathlib.Path, lit
 
 def test_a_captured_record_refuses_a_non_finite_float(tmp_path: pathlib.Path) -> None:
     """A tool's JSON stdout may carry `NaN`, which Python's json reads as a float."""
-    spec = _semantics.load_machine(_write(tmp_path, VALID_MACHINE))
+    spec = semantics.load_machine(_write(tmp_path, VALID_MACHINE))
     payload = {"label": "urgent", "confidence": float("nan")}
-    problems = _semantics.validate_record_payload(
+    problems = semantics.validate_record_payload(
         spec.schemas, "classification", payload, where="scan"
     )
     assert problems == ["scan.confidence: expected a finite float, got nan"]
@@ -383,14 +383,14 @@ def test_template_len_of_int_rejected_at_load(tmp_path: pathlib.Path) -> None:
 
 def test_template_len_of_list_allowed(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace("{{ pending | json }}", "{{ pending | len }}")
-    _semantics.load_machine(_write(tmp_path, body))
+    semantics.load_machine(_write(tmp_path, body))
 
 
 def test_predicate_len_of_str_allowed(tmp_path: pathlib.Path) -> None:
     # `len(cursor)` (cursor is str) is fine and must NOT be flagged.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(cursor) == 0")
     # No MachineError raised means the machine validated cleanly.
-    _semantics.load_machine(_write(tmp_path, body))
+    semantics.load_machine(_write(tmp_path, body))
 
 
 def test_wait_delay_s_float_ref_rejected(tmp_path: pathlib.Path) -> None:
@@ -422,7 +422,7 @@ def test_wait_delay_s_composite_template_allowed(tmp_path: pathlib.Path) -> None
         'delay_s = "{{ poll_secs }}"',
         'delay_s = "{{ poll_secs }}0"',
     )
-    _semantics.load_machine(_write(tmp_path, body))
+    semantics.load_machine(_write(tmp_path, body))
 
 
 def test_wait_until_garbage_literal_rejected(tmp_path: pathlib.Path) -> None:
@@ -448,7 +448,7 @@ def test_wait_until_composite_template_allowed(tmp_path: pathlib.Path) -> None:
         'delay_s = "{{ poll_secs }}"',
         'until = "{{ day }}T00:00:00Z"',
     )
-    _semantics.load_machine(_write(tmp_path, body))
+    semantics.load_machine(_write(tmp_path, body))
 
 
 def test_wait_until_unverifiable_composite_template_allowed_at_load(tmp_path: pathlib.Path) -> None:
@@ -456,7 +456,7 @@ def test_wait_until_unverifiable_composite_template_allowed_at_load(tmp_path: pa
         'delay_s = "{{ poll_secs }}"',
         'until = "prefix-{{ cursor }}"',
     )
-    _semantics.load_machine(_write(tmp_path, body))
+    semantics.load_machine(_write(tmp_path, body))
 
 
 # , type checks,,,,,,,,,,,,,,, -
@@ -558,7 +558,7 @@ def test_wait_forever_no_timer_is_valid(tmp_path: pathlib.Path) -> None:
         'delay_s = "{{ poll_secs }}"\non = { tick = "scan", signal = "scan" }',
         'on = { signal = "scan" }',
     )
-    spec = _semantics.load_machine(_write(tmp_path, body))
+    spec = semantics.load_machine(_write(tmp_path, body))
     assert spec.machine == "item-classifier"
 
 
@@ -592,7 +592,7 @@ def test_notify_string_and_table_forms_load(tmp_path: pathlib.Path) -> None:
         '[states.record]\nkind = "tool"',
         '[states.record]\nkind = "tool"\nnotify = { message = "archived", level = "warn" }',
     )
-    spec = _semantics.load_machine(_write(tmp_path, body))
+    spec = semantics.load_machine(_write(tmp_path, body))
     assert spec.machine == "item-classifier"
 
 
@@ -613,7 +613,7 @@ def test_a_terminal_reason_is_checked_as_a_template(tmp_path: pathlib.Path) -> N
     assert any("state 'halt' reason" in p and "nope" in p for p in problems)
     problems = _problems(tmp_path, VALID_MACHINE.replace(reason, 'reason = "left {{ pending }}"'))
     assert any("state 'halt' reason" in p and "bare reference" in p for p in problems)
-    spec = _semantics.load_machine(
+    spec = semantics.load_machine(
         _write(tmp_path, VALID_MACHINE.replace(reason, 'reason = "stopped at {{ cursor }}"'))
     )
     halt = spec.states["halt"]
@@ -673,7 +673,7 @@ def test_machine_overlay_cannot_enable_repo_drivers(tmp_path: pathlib.Path) -> N
 def test_machine_overlay_allows_benign_git_commit_identity(tmp_path: pathlib.Path) -> None:
     # A [config.git.commit] override is harmless; the forbid is surgical to run_repo_hooks.
     body = VALID_MACHINE + '\n[config.git.commit]\nname = "ci-bot"\nemail = "ci@example.com"\n'
-    spec = _semantics.load_machine(_write(tmp_path, body))
+    spec = semantics.load_machine(_write(tmp_path, body))
     assert spec.machine == "item-classifier"
 
 
@@ -728,7 +728,7 @@ def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.
         'kind  = "agent"\nmax_usd = 1.5\n'
         'config = { models = { worker = { model = "claude-sonnet-4-5", effort = "high" } } }',
     )
-    state = _semantics.load_machine(_write(tmp_path, body)).states["classify"]
+    state = semantics.load_machine(_write(tmp_path, body)).states["classify"]
     assert isinstance(state, schema.AgentState)
     assert state.max_usd == 1.5
     assert state.config == {"models": {"worker": {"model": "claude-sonnet-4-5", "effort": "high"}}}
@@ -789,7 +789,7 @@ trigger = "on_verify_fail"
 max_tokens_fallback = 50000
 """
     )
-    spec = _semantics.load_machine(_write(tmp_path, body))
+    spec = semantics.load_machine(_write(tmp_path, body))
     assert spec.config["review"]["trigger"] == "on_verify_fail"
     assert spec.config["budget"]["max_tokens_fallback"] == 50000
 
@@ -818,14 +818,14 @@ def test_machine_config_overlay_takes_sandbox_keys(tmp_path: pathlib.Path) -> No
 network = "session"
 """
     )
-    spec = _semantics.load_machine(_write(tmp_path, body))
+    spec = semantics.load_machine(_write(tmp_path, body))
     assert spec.config == {"sandbox": {"network": "session"}}
 
 
 def test_budget_max_usd_is_optional(tmp_path: pathlib.Path) -> None:
     # No USD limit is valid; max_transitions is the always-on runaway guard.
     neither = VALID_MACHINE.replace("max_usd         = 25.0", "")
-    spec = _semantics.load_machine(_write(tmp_path, neither))
+    spec = semantics.load_machine(_write(tmp_path, neither))
     assert spec.budget.max_usd is None
 
 
@@ -846,7 +846,7 @@ def test_budget_best_effort_usd_limit_is_gone(tmp_path: pathlib.Path) -> None:
     # The old soft field must fail the grammar loudly, never load as an ignored knob.
     body = VALID_MACHINE.replace("max_usd         = 25.0", "best_effort_usd_limit = 25.0")
     with pytest.raises(schema.MachineError, match="best_effort_usd_limit"):
-        _semantics.load_machine(_write(tmp_path, body))
+        semantics.load_machine(_write(tmp_path, body))
 
 
 def test_agent_state_best_effort_field_is_gone(tmp_path: pathlib.Path) -> None:
@@ -856,7 +856,7 @@ def test_agent_state_best_effort_field_is_gone(tmp_path: pathlib.Path) -> None:
         1,
     )
     with pytest.raises(schema.MachineError, match="best_effort_usd_limit"):
-        _semantics.load_machine(_write(tmp_path, body))
+        semantics.load_machine(_write(tmp_path, body))
 
 
 def test_wait_delay_s_accepts_a_bare_integer() -> None:
@@ -885,4 +885,4 @@ def test_a_schema_named_after_a_builtin_type_is_refused(tmp_path: pathlib.Path) 
     path.write_text(src, encoding="utf-8")
 
     with pytest.raises(schema.MachineError, match="built-in type"):
-        _semantics.load_machine(path)
+        semantics.load_machine(path)

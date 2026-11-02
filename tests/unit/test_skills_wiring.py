@@ -6,9 +6,10 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6 import kinds, skills
+from agent6 import kinds
 from agent6.config import Config, load_config
-from agent6.harness import _chain, _prompt_blocks
+from agent6.context import skills
+from agent6.harness import prompt_blocks, run_chain
 
 _VALID_TOML = """
 [agent6]
@@ -58,10 +59,10 @@ def _resolved(
 
 class TestSkillsBlock:
     def test_empty_renders_nothing(self) -> None:
-        assert _prompt_blocks.skills_block(_resolved()) == ""
+        assert prompt_blocks.skills_block(_resolved()) == ""
 
     def test_index_lists_name_and_description(self) -> None:
-        block = _prompt_blocks.skills_block(
+        block = prompt_blocks.skills_block(
             _resolved(enabled=(_skill("tidy", "Use when output is verbose."),))
         )
         assert block.startswith("<skills>")
@@ -71,7 +72,7 @@ class TestSkillsBlock:
 
     def test_always_injects_full_text(self) -> None:
         sk = _skill("caveman", text="---\nname: caveman\ndescription: d\n---\n\nGRUNT RULES\n")
-        block = _prompt_blocks.skills_block(_resolved(always=(sk,)))
+        block = prompt_blocks.skills_block(_resolved(always=(sk,)))
         assert '<skill name="caveman">' in block
         assert "GRUNT RULES" in block
         # an always skill is not ALSO indexed
@@ -79,24 +80,24 @@ class TestSkillsBlock:
 
     def test_multiline_description_stays_on_one_index_line(self) -> None:
         skill = _skill("tidy", "Use when output is verbose.\nNever add filler.")
-        block = _prompt_blocks.skills_block(_resolved(enabled=(skill,)))
+        block = prompt_blocks.skills_block(_resolved(enabled=(skill,)))
         index_lines = [line for line in block.splitlines() if line.startswith("- ")]
         assert index_lines == ["- tidy — Use when output is verbose. Never add filler."]
 
     def test_long_description_clipped(self) -> None:
-        block = _prompt_blocks.skills_block(_resolved(enabled=(_skill("big", "words " * 100),)))
+        block = prompt_blocks.skills_block(_resolved(enabled=(_skill("big", "words " * 100),)))
         line = next(ln for ln in block.splitlines() if ln.startswith("- big"))
         assert len(line) <= 220
 
     def test_oversized_always_text_clipped(self) -> None:
         sk = _skill("huge", text="x" * 60_000)
-        block = _prompt_blocks.skills_block(_resolved(always=(sk,)))
+        block = prompt_blocks.skills_block(_resolved(always=(sk,)))
         assert len(block) < 40_000
         assert "[clipped]" in block
 
     def test_index_bounded_with_elision_note(self) -> None:
         many = tuple(_skill(f"skill-{i:02d}") for i in range(400))
-        block = _prompt_blocks.skills_block(_resolved(enabled=many))
+        block = prompt_blocks.skills_block(_resolved(enabled=many))
         assert len(block) < 12_000
         assert "elided" in block
         assert "agent6 skills list" not in block
@@ -104,7 +105,7 @@ class TestSkillsBlock:
 
 class TestBuildSystemPromptSkills:
     def test_skills_part_appended_in_run_mode(self, tmp_path: pathlib.Path) -> None:
-        out = _prompt_blocks.build_system_prompt(
+        out = prompt_blocks.build_system_prompt(
             config=_config(tmp_path),
             repo=_repo(tmp_path),
             mode="run",
@@ -114,7 +115,7 @@ class TestBuildSystemPromptSkills:
         assert "- tidy —" in out
 
     def test_no_skills_no_block(self, tmp_path: pathlib.Path) -> None:
-        out = _prompt_blocks.build_system_prompt(
+        out = prompt_blocks.build_system_prompt(
             config=_config(tmp_path),
             repo=_repo(tmp_path),
             mode="run",
@@ -126,7 +127,7 @@ class TestBuildSystemPromptSkills:
         override = tmp_path / "base.md"
         override.write_text("CUSTOM BASE\n", encoding="utf-8")
         cfg = _config(tmp_path, f'[prompt]\nsystem_prompt_file = "{override}"\n')
-        out = _prompt_blocks.build_system_prompt(
+        out = prompt_blocks.build_system_prompt(
             config=cfg,
             repo=_repo(tmp_path),
             mode="run",
@@ -184,7 +185,7 @@ class TestUseSkillTool:
         assert out["content"] == "EXTRA CONTENT\n"
 
     def test_traversal_refused(self, tmp_path: pathlib.Path, monkeypatch: object) -> None:
-        from agent6.tools import dispatch, errors
+        from agent6.tools import dispatch, tool_errors
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
@@ -192,11 +193,11 @@ class TestUseSkillTool:
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
         import pytest
 
-        with pytest.raises(errors.ToolError, match="escapes"):
+        with pytest.raises(tool_errors.ToolError, match="escapes"):
             d.dispatch("use_skill", {"name": "tidy", "file": "../secret.txt"})
 
     def test_symlink_out_refused(self, tmp_path: pathlib.Path, monkeypatch: object) -> None:
-        from agent6.tools import dispatch, errors
+        from agent6.tools import dispatch, tool_errors
 
         sd = _skills_env(tmp_path, monkeypatch)
         skill_dir = _install(sd, "tidy")
@@ -206,7 +207,7 @@ class TestUseSkillTool:
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
         import pytest
 
-        with pytest.raises(errors.ToolError, match="escapes"):
+        with pytest.raises(tool_errors.ToolError, match="escapes"):
             d.dispatch("use_skill", {"name": "tidy", "file": "link.md"})
 
     def test_a_read_that_lands_under_a_hidden_path_is_refused(
@@ -215,7 +216,7 @@ class TestUseSkillTool:
         """A skill directory or SKILL.md linked under `sandbox.hide_paths` served hidden text."""
         import pytest
 
-        from agent6.tools import dispatch, errors
+        from agent6.tools import dispatch, tool_errors
 
         sd = _skills_env(tmp_path, monkeypatch)
         hidden = tmp_path / "hidden"
@@ -235,11 +236,11 @@ class TestUseSkillTool:
         # Discovery leaves the two hidden ones out: nothing of them reaches the prompt.
         assert [s.name for s in d.resolved_skills().enabled] == ["moved"]
         for call in ({"name": "vault"}, {"name": "vault", "file": "notes.md"}, {"name": "linked"}):
-            with pytest.raises(errors.ToolError, match="unknown or disabled skill"):
+            with pytest.raises(tool_errors.ToolError, match="unknown or disabled skill"):
                 d.dispatch("use_skill", call)
         moved.unlink()
         moved.symlink_to(_install(hidden, "moved") / "SKILL.md")
-        with pytest.raises(errors.ToolError, match="hidden from this run"):
+        with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
             d.dispatch("use_skill", {"name": "moved"})
 
     def test_a_linked_skill_outside_the_hidden_paths_is_served(
@@ -286,18 +287,18 @@ class TestUseSkillTool:
     def test_unknown_skill_lists_available(
         self, tmp_path: pathlib.Path, monkeypatch: object
     ) -> None:
-        from agent6.tools import dispatch, errors
+        from agent6.tools import dispatch, tool_errors
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
         import pytest
 
-        with pytest.raises(errors.ToolError, match="tidy"):
+        with pytest.raises(tool_errors.ToolError, match="tidy"):
             d.dispatch("use_skill", {"name": "ghost"})
 
     def test_disabled_skill_not_servable(self, tmp_path: pathlib.Path, monkeypatch: object) -> None:
-        from agent6.tools import dispatch, errors
+        from agent6.tools import dispatch, tool_errors
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
@@ -305,64 +306,62 @@ class TestUseSkillTool:
         d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
         import pytest
 
-        with pytest.raises(errors.ToolError, match="unknown or disabled"):
+        with pytest.raises(tool_errors.ToolError, match="unknown or disabled"):
             d.dispatch("use_skill", {"name": "tidy"})
 
     def test_run_mode_only(self, tmp_path: pathlib.Path, monkeypatch: object) -> None:
-        from agent6.tools import dispatch, errors
+        from agent6.tools import dispatch, tool_errors
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), mode="plan")
         import pytest
 
-        with pytest.raises(errors.ToolError, match="not available in plan mode"):
+        with pytest.raises(tool_errors.ToolError, match="not available in plan mode"):
             d.dispatch("use_skill", {"name": "tidy"})
 
 
 class TestUseSkillGating:
     def test_hidden_when_no_skills(self, tmp_path: pathlib.Path, monkeypatch: object) -> None:
-        from agent6.harness import _toolset
+        from agent6.harness import toolset
         from agent6.tools import dispatch
 
         _skills_env(tmp_path, monkeypatch)  # empty data dir
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-        assert "use_skill" not in {t.name for t in _toolset.tool_definitions(d, mode="run")}
+        assert "use_skill" not in {t.name for t in toolset.tool_definitions(d, mode="run")}
 
     def test_exposed_when_skills_installed(
         self, tmp_path: pathlib.Path, monkeypatch: object
     ) -> None:
-        from agent6.harness import _toolset
+        from agent6.harness import toolset
         from agent6.tools import dispatch
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-        assert "use_skill" in {t.name for t in _toolset.tool_definitions(d, mode="run")}
+        assert "use_skill" in {t.name for t in toolset.tool_definitions(d, mode="run")}
 
     def test_hidden_when_subsystem_disabled(
         self, tmp_path: pathlib.Path, monkeypatch: object
     ) -> None:
-        from agent6.harness import _toolset
+        from agent6.harness import toolset
         from agent6.tools import dispatch
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         cfg = _config(tmp_path, "[skills]\nenabled = false\n")
         d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-        assert "use_skill" not in {t.name for t in _toolset.tool_definitions(d, mode="run")}
+        assert "use_skill" not in {t.name for t in toolset.tool_definitions(d, mode="run")}
 
     def test_never_exposed_outside_run(self, tmp_path: pathlib.Path, monkeypatch: object) -> None:
-        from agent6.harness import _toolset
+        from agent6.harness import toolset
         from agent6.tools import dispatch
 
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
         for mode in ("plan", "ask", "machine", "agent"):
-            assert "use_skill" not in {t.name for t in _toolset.tool_definitions(d, mode=mode)}, (
-                mode
-            )
+            assert "use_skill" not in {t.name for t in toolset.tool_definitions(d, mode=mode)}, mode
 
 
 class TestWorkflowLoadSkills:
@@ -377,7 +376,7 @@ class TestWorkflowLoadSkills:
         cfg = _config(tmp_path)
         d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
         wf = loop.Harness(
-            chain=_chain.RunChain(tmp_path),
+            chain=run_chain.RunChain(tmp_path),
             config=cfg,
             provider=None,  # pyright: ignore[reportArgumentType]
             dispatcher=d,
@@ -396,7 +395,7 @@ class TestWorkflowLoadSkills:
         cfg = _config(tmp_path)
         d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode="plan")
         wf = loop.Harness(
-            chain=_chain.RunChain(tmp_path),
+            chain=run_chain.RunChain(tmp_path),
             config=cfg,
             provider=None,  # type: ignore[arg-type]
             dispatcher=d,

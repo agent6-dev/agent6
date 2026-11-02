@@ -15,7 +15,7 @@ from agent6 import kinds
 from agent6.app import machine
 from agent6.app.machine import run
 from agent6.config import Config
-from agent6.machine import _contracts, _execution, _semantics, live_world
+from agent6.machine import contracts, execution, live_world, semantics
 from agent6.machine import engine as machine_engine
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import jail
@@ -362,13 +362,13 @@ reason = "fail"
 class FakeWorld:
     """A deterministic :class:`World`: programmed tool results and wakes."""
 
-    tool_results: dict[str, _contracts.ToolExecResult]
-    wakes: list[_contracts.WaitWake] = dataclasses.field(default_factory=list)
+    tool_results: dict[str, contracts.ToolExecResult]
+    wakes: list[contracts.WaitWake] = dataclasses.field(default_factory=list)
     clock: float = 1000.0
     calls: list[tuple[str, ...]] = dataclasses.field(default_factory=list)
     state_calls: list[tuple[tuple[str, ...], str]] = dataclasses.field(default_factory=list)
-    agent_results: list[_contracts.AgentExecResult] = dataclasses.field(default_factory=list)
-    agent_calls: list[_contracts.AgentRequest] = dataclasses.field(default_factory=list)
+    agent_results: list[contracts.AgentExecResult] = dataclasses.field(default_factory=list)
+    agent_calls: list[contracts.AgentRequest] = dataclasses.field(default_factory=list)
     sleep_deadlines: list[float | None] = dataclasses.field(default_factory=list)
     materialized: list[Any] = dataclasses.field(default_factory=list)
     notifications: list[tuple[str, str, str, str]] = dataclasses.field(default_factory=list)
@@ -381,21 +381,21 @@ class FakeWorld:
         state: str = "",
         pass_env: tuple[str, ...] = (),
         step_seq: int = 0,
-    ) -> _contracts.ToolExecResult:
+    ) -> contracts.ToolExecResult:
         self.calls.append(argv)
         self.state_calls.append((argv, state))
         return self.tool_results[argv[0]]
 
-    def run_agent(self, request: _contracts.AgentRequest) -> _contracts.AgentExecResult:
+    def run_agent(self, request: contracts.AgentRequest) -> contracts.AgentExecResult:
         self.agent_calls.append(request)
         return self.agent_results.pop(0)
 
     def now(self) -> float:
         return self.clock
 
-    def sleep_until(self, wake_epoch: float | None) -> _contracts.WaitWake:
+    def sleep_until(self, wake_epoch: float | None) -> contracts.WaitWake:
         self.sleep_deadlines.append(wake_epoch)
-        return self.wakes.pop(0) if self.wakes else _contracts.WaitWake("tick")
+        return self.wakes.pop(0) if self.wakes else contracts.WaitWake("tick")
 
     def materialize_poke(self, payload: Any) -> None:
         self.materialized.append(payload)
@@ -404,8 +404,8 @@ class FakeWorld:
         self.notifications.append((kind, state, message, level))
 
 
-def _ok(stdout: str = "") -> _contracts.ToolExecResult:
-    return _contracts.ToolExecResult(exit_code=0, stdout=stdout, timed_out=False)
+def _ok(stdout: str = "") -> contracts.ToolExecResult:
+    return contracts.ToolExecResult(exit_code=0, stdout=stdout, timed_out=False)
 
 
 def _load(tmp_path: pathlib.Path, text: str) -> tuple[machine_journal.MachineJournal, pathlib.Path]:
@@ -416,10 +416,10 @@ def _load(tmp_path: pathlib.Path, text: str) -> tuple[machine_journal.MachineJou
 
 def test_full_run_reaches_ok_terminal(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
-    world: _contracts.World = FakeWorld({"scan": _ok('{"items": ["a", "b"]}'), "record": _ok()})
+    spec = semantics.load_machine(f)
+    world: contracts.World = FakeWorld({"scan": _ok('{"items": ["a", "b"]}'), "record": _ok()})
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "done", "stop_ok", 3)
+    assert result == contracts.MachineResult("ok", "done", "stop_ok", 3)
     snap = journal.latest_snapshot()
     assert snap is not None
     assert snap.blackboard["items"] == ["a", "b"]
@@ -427,18 +427,18 @@ def test_full_run_reaches_ok_terminal(tmp_path: pathlib.Path) -> None:
 
 def test_branch_routes_to_ok_when_empty(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": []}')})
     result = machine_engine.drive(spec, journal, world, live=True)
     # scan -> check -> stop_ok (record never runs)
-    assert result == _contracts.MachineResult("ok", "done", "stop_ok", 2)
+    assert result == contracts.MachineResult("ok", "done", "stop_ok", 2)
     assert world.calls == [("scan",)]
 
 
 def test_tool_stdout_violating_output_schema_halts(tmp_path: pathlib.Path) -> None:
     """A tool output that fails its declared schema halts the machine with a clean failed result."""
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": "notalist"}')})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
@@ -450,8 +450,8 @@ def test_tool_stdout_violating_output_schema_halts(tmp_path: pathlib.Path) -> No
 
 def test_tool_nonzero_routes_to_failure(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
-    world = FakeWorld({"scan": _contracts.ToolExecResult(exit_code=1, stdout="", timed_out=False)})
+    spec = semantics.load_machine(f)
+    world = FakeWorld({"scan": contracts.ToolExecResult(exit_code=1, stdout="", timed_out=False)})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
     assert result.state == "stop_fail"
@@ -460,10 +460,10 @@ def test_tool_nonzero_routes_to_failure(tmp_path: pathlib.Path) -> None:
 def test_tool_stderr_is_journaled_on_the_fact(tmp_path: pathlib.Path) -> None:
     # A failing tool's stderr flows into the journal; routing still keys off exit_code.
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld(
         {
-            "scan": _contracts.ToolExecResult(
+            "scan": contracts.ToolExecResult(
                 exit_code=2, stdout="", timed_out=False, stderr="boom: bad flag\n"
             )
         }
@@ -481,8 +481,8 @@ def test_tool_stderr_is_journaled_on_the_fact(tmp_path: pathlib.Path) -> None:
 
 def test_tool_timeout_routes_to_failure(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
-    world = FakeWorld({"scan": _contracts.ToolExecResult(exit_code=0, stdout="", timed_out=True)})
+    spec = semantics.load_machine(f)
+    world = FakeWorld({"scan": contracts.ToolExecResult(exit_code=0, stdout="", timed_out=True)})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
     assert result.state == "stop_fail"
@@ -491,8 +491,8 @@ def test_tool_timeout_routes_to_failure(tmp_path: pathlib.Path) -> None:
 def test_empty_tool_stdout_is_not_json_for_an_opaque_capture(tmp_path: pathlib.Path) -> None:
     """`stdout_json` means parse one JSON value; an empty stdout is malformed, not a null."""
     journal, f = _load(tmp_path, FOREVER)
-    spec = _semantics.load_machine(f)
-    world = FakeWorld({"record": _ok("")}, wakes=[_contracts.WaitWake("signal")])
+    spec = semantics.load_machine(f)
+    world = FakeWorld({"record": _ok("")}, wakes=[contracts.WaitWake("signal")])
 
     result = machine_engine.drive(spec, journal, world, live=True)
 
@@ -505,7 +505,7 @@ def test_empty_tool_stdout_is_not_json_for_an_opaque_capture(tmp_path: pathlib.P
 def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: pathlib.Path) -> None:
     # Non-JSON stdout halts FAILED cleanly and never journals the poison fact.
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok("not json at all")})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
@@ -522,7 +522,7 @@ def test_tool_bad_stdout_fails_clean_without_poisoning_journal(tmp_path: pathlib
 def test_recovery_rejects_a_tool_route_that_disagrees_with_its_fact(tmp_path: pathlib.Path) -> None:
     """A successful tool fact determines `ok`; a journal cannot relabel it during crash recovery."""
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     journal.begin(machine="counter", version=1)
     journal.append(
@@ -541,7 +541,7 @@ def test_recovery_rejects_a_tool_route_that_disagrees_with_its_fact(tmp_path: pa
         )
     )
 
-    with pytest.raises(_contracts.EngineError, match="fact implies label 'ok'"):
+    with pytest.raises(contracts.EngineError, match="fact implies label 'ok'"):
         machine_engine.drive(spec, journal, None, live=False)
 
 
@@ -550,7 +550,7 @@ def test_recovery_rejects_a_branch_choice_that_the_blackboard_did_not_take(
 ) -> None:
     """A branch is pure, so replay recomputes its winning clause and trusts no journaled index."""
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     journal.begin(machine="counter", version=1)
     journal.append(
@@ -574,13 +574,13 @@ def test_recovery_rejects_a_branch_choice_that_the_blackboard_did_not_take(
         )
     )
 
-    with pytest.raises(_contracts.EngineError, match=r"branch fact selects clause 1.*clause 0"):
+    with pytest.raises(contracts.EngineError, match=r"branch fact selects clause 1.*clause 0"):
         machine_engine.drive(spec, journal, None, live=False)
 
 
 def test_recovery_rejects_a_journal_without_its_begin_event(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     journal.append(
         machine_journal.StepEvent(
@@ -593,14 +593,14 @@ def test_recovery_rejects_a_journal_without_its_begin_event(tmp_path: pathlib.Pa
         )
     )
 
-    with pytest.raises(_contracts.EngineError, match=r"must start with a machine\.begin"):
+    with pytest.raises(contracts.EngineError, match=r"must start with a machine\.begin"):
         machine_engine.drive(spec, journal, None, live=False)
 
 
 def test_recovery_rejects_a_goto_the_state_never_declared(tmp_path: pathlib.Path) -> None:
     # A fabricated destination fails loudly at its own event.
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     journal.begin(machine="counter", version=1)
     journal.append(
@@ -613,7 +613,7 @@ def test_recovery_rejects_a_goto_the_state_never_declared(tmp_path: pathlib.Path
             fact=machine_journal.ToolFact(exit_code=0, stdout='{"items": []}', timed_out=False),
         )
     )
-    with pytest.raises(_contracts.EngineError, match="not an edge"):
+    with pytest.raises(contracts.EngineError, match="not an edge"):
         machine_engine.drive(spec, journal, FakeWorld({}), live=True)
 
 
@@ -654,8 +654,8 @@ on = { ok = "stop_ok", nonzero = "stop_fail", timeout = "stop_fail" }
     ).replace('{ else = true, goto = "record" }', '{ else = true, goto = "stop_ok" }')
     edited_dir = tmp_path / "edited"
     edited_dir.mkdir()
-    spec = _semantics.load_machine(_load(edited_dir, edited)[1])
-    with pytest.raises(_contracts.EngineError, match=r"no longer declares|not an edge"):
+    spec = semantics.load_machine(_load(edited_dir, edited)[1])
+    with pytest.raises(contracts.EngineError, match=r"no longer declares|not an edge"):
         machine_engine.drive(spec, journal, FakeWorld({}), live=True)
 
 
@@ -664,31 +664,31 @@ def test_recovery_rejects_machine_id_mismatch_after_the_journal_ended(
 ) -> None:
     """A terminal journal still belongs to its recorded machine, not a spec reusing the dir."""
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     machine_engine.drive(spec, journal, FakeWorld({"scan": _ok('{"items": []}')}), live=True)
     other_path = tmp_path / "other.asm.toml"
     other_path.write_text(
         COUNTER.replace('machine = "counter"', 'machine = "other"'), encoding="utf-8"
     )
-    other = _semantics.load_machine(other_path)
+    other = semantics.load_machine(other_path)
 
-    with pytest.raises(_contracts.EngineError, match="started by machine 'counter'"):
+    with pytest.raises(contracts.EngineError, match="started by machine 'counter'"):
         machine_engine.drive(other, journal, None, live=True)
 
 
 def test_recovery_rejects_machine_id_mismatch(tmp_path: pathlib.Path) -> None:
     # A different machine reusing the same instance id is caught up front.
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     journal.begin(machine="someone_else", version=1)
-    with pytest.raises(_contracts.EngineError, match="someone_else"):
+    with pytest.raises(contracts.EngineError, match="someone_else"):
         machine_engine.drive(spec, journal, FakeWorld({}), live=True)
 
 
 def test_record_splices_captured_list(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": ["x", "y", "z"]}'), "record": _ok()})
     machine_engine.drive(spec, journal, world, live=True)
     assert world.calls == [("scan",), ("record", "x", "y", "z")]
@@ -696,7 +696,7 @@ def test_record_splices_captured_list(tmp_path: pathlib.Path) -> None:
 
 def test_replay_reproduces_path_without_world(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": ["a"]}'), "record": _ok()})
     live = machine_engine.drive(spec, journal, world, live=True)
     replayed = machine_engine.drive(spec, journal, None, live=False)
@@ -705,7 +705,7 @@ def test_replay_reproduces_path_without_world(tmp_path: pathlib.Path) -> None:
 
 def test_replay_of_incomplete_journal(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     journal.begin(machine="counter", version=1)
     journal.append(
@@ -726,7 +726,7 @@ def test_replay_of_incomplete_journal(tmp_path: pathlib.Path) -> None:
 
 def test_crash_recovery_continues_without_redoing_step(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     # A crash after `scan`: recovery rebuilds `items` from the fact and continues from `check`.
     journal.ensure_dirs()
     journal.begin(machine="counter", version=1)
@@ -744,13 +744,13 @@ def test_crash_recovery_continues_without_redoing_step(tmp_path: pathlib.Path) -
     )
     world = FakeWorld({"record": _ok()})  # no "scan" — proving it is not re-run
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "done", "stop_ok", 3)
+    assert result == contracts.MachineResult("ok", "done", "stop_ok", 3)
     assert world.calls == [("record", "a", "b")]
 
 
 def test_resume_finished_machine_is_idempotent(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": []}')})
     first = machine_engine.drive(spec, journal, world, live=True)
     # A second run with no world at all returns the recorded terminal result.
@@ -761,7 +761,7 @@ def test_resume_finished_machine_is_idempotent(tmp_path: pathlib.Path) -> None:
 def test_max_transitions_halts_loop(tmp_path: pathlib.Path) -> None:
     """A transition count equal to its cap is reached, not exceeded."""
     journal, f = _load(tmp_path, SPINNER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"noop": _ok()})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
@@ -771,10 +771,10 @@ def test_max_transitions_halts_loop(tmp_path: pathlib.Path) -> None:
 
 def test_wait_tick_path(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, WAITER)
-    spec = _semantics.load_machine(f)
-    world = FakeWorld({}, wakes=[_contracts.WaitWake("tick")])
+    spec = semantics.load_machine(f)
+    world = FakeWorld({}, wakes=[contracts.WaitWake("tick")])
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "ticked", "done", 1)
+    assert result == contracts.MachineResult("ok", "ticked", "done", 1)
     events = journal.read()
     step = next(e for e in events if isinstance(e, machine_journal.StepEvent))
     assert step.label == "tick"
@@ -782,7 +782,7 @@ def test_wait_tick_path(tmp_path: pathlib.Path) -> None:
 
 def test_wait_zero_dynamic_interval_fails_cleanly(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, WAITER_DYNAMIC_ZERO)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     result = machine_engine.drive(spec, journal, FakeWorld({}), live=True)
     assert result.status == "failed"
     assert "`delay_s` must be >= 1" in result.reason
@@ -817,7 +817,7 @@ def test_run_tool_uses_the_injected_jail_runner(tmp_path: pathlib.Path) -> None:
 def test_exit_on_wait_zero_dynamic_interval_fails_cleanly(tmp_path: pathlib.Path) -> None:
     # The --exit-on-wait path halts FAILED with a journaled MachineEnd too.
     journal, f = _load(tmp_path, WAITER_DYNAMIC_ZERO)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     result = machine_engine.drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
     assert result.status == "failed"
     assert "`delay_s` must be >= 1" in result.reason
@@ -826,10 +826,10 @@ def test_exit_on_wait_zero_dynamic_interval_fails_cleanly(tmp_path: pathlib.Path
 
 def test_wait_signal_path(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, WAITER)
-    spec = _semantics.load_machine(f)
-    world = FakeWorld({}, wakes=[_contracts.WaitWake("signal")])
+    spec = semantics.load_machine(f)
+    world = FakeWorld({}, wakes=[contracts.WaitWake("signal")])
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "signalled", "woken", 1)
+    assert result == contracts.MachineResult("ok", "signalled", "woken", 1)
 
 
 def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: pathlib.Path) -> None:
@@ -861,11 +861,11 @@ def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: pathl
         def now(self) -> float:
             return 1000.0
 
-        def sleep_until(self, wake_epoch: float | None) -> _contracts.WaitWake:
+        def sleep_until(self, wake_epoch: float | None) -> contracts.WaitWake:
             pending = self._journal.read_pending_wait()
             self.persisted.append(None if pending is None else pending.wake_epoch)
             self.slept.append(wake_epoch)
-            return _contracts.WaitWake("tick")
+            return contracts.WaitWake("tick")
 
         def materialize_poke(self, payload: Any) -> None:
             pass
@@ -874,7 +874,7 @@ def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: pathl
             pass
 
     journal, f = _load(tmp_path, WAITER_DELAYED)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = _ClockedWorld(journal)
     assert machine_engine.drive(spec, journal, world, live=True).status == "ok"
     # The deadline was durable before the sleep, and the sleep received it.
@@ -894,12 +894,12 @@ def test_a_foreground_wait_persists_its_deadline_before_sleeping(tmp_path: pathl
 def test_a_signal_wake_acks_its_poke_after_the_step(tmp_path: pathlib.Path) -> None:
     """A poke's claim file outlives take_signal and is dropped once the step is durable."""
     journal, f = _load(tmp_path, WAITER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.poke("p")
     assert journal.take_signal() == (True, "p")  # the claim is made, unacked
-    world = FakeWorld({}, wakes=[_contracts.WaitWake("signal", "p")])
+    world = FakeWorld({}, wakes=[contracts.WaitWake("signal", "p")])
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "signalled", "woken", 1)
+    assert result == contracts.MachineResult("ok", "signalled", "woken", 1)
     assert not journal.signal_path.with_suffix(".consuming").exists()
     assert journal.take_signal() == (False, None)
 
@@ -907,7 +907,7 @@ def test_a_signal_wake_acks_its_poke_after_the_step(tmp_path: pathlib.Path) -> N
 def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: pathlib.Path) -> None:
     """The wait record is dropped only once the transition it produced is in the journal."""
     journal, f = _load(tmp_path, WAITER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     armed: list[machine_journal.PendingWait | None] = []
     appended = journal.append
 
@@ -920,7 +920,7 @@ def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: pathlib.Path
     journal.append = _die_on_the_step  # type: ignore[method-assign]
     with pytest.raises(KeyboardInterrupt):
         machine_engine.drive(
-            spec, journal, FakeWorld({}, wakes=[_contracts.WaitWake("tick")]), live=True
+            spec, journal, FakeWorld({}, wakes=[contracts.WaitWake("tick")]), live=True
         )
     journal.append = appended  # type: ignore[method-assign]
 
@@ -931,7 +931,7 @@ def test_a_wake_record_outlives_the_step_that_consumes_it(tmp_path: pathlib.Path
 
 def test_notify_journals_event_and_fires_hook(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, NOTIFIER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"noop": _ok()})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "ok"
@@ -950,7 +950,7 @@ def test_terminal_notify_render_failure_keeps_status_but_is_never_silent(
 ) -> None:
     """`notify` is presentation only: a render failure is journaled, never a status flip."""
     journal, f = _load(tmp_path, NOTIFY_FAIL)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "ok"
@@ -971,7 +971,7 @@ def test_a_terminal_reason_is_rendered_against_the_blackboard(tmp_path: pathlib.
     journal, f = _load(
         tmp_path, NOTIFIER.replace('reason = "finished"', 'reason = "finished for {{ who }}"')
     )
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"noop": _ok()})
     result = machine_engine.drive(spec, journal, world, live=True)
     assert (result.status, result.reason) == ("ok", "finished for ops")
@@ -990,7 +990,7 @@ def test_a_terminal_reason_that_cannot_render_keeps_its_status_and_says_so(
         'reason = "finished"', 'reason = "finished: {{ out.note }}"'
     )
     journal, f = _load(tmp_path, body)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     result = machine_engine.drive(spec, journal, FakeWorld({}), live=True)
     assert result.status == "ok"
     assert result.reason.startswith("finished: {{ out.note }} (reason not rendered: ")
@@ -1118,7 +1118,7 @@ def test_live_world_run_tool_maps_rc124_to_timed_out(
 def test_notify_does_not_change_replay_path(tmp_path: pathlib.Path) -> None:
     # machine.notify is presentation only: replay ignores it and reproduces.
     journal, f = _load(tmp_path, NOTIFIER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     live = machine_engine.drive(spec, journal, FakeWorld({"noop": _ok()}), live=True)
     replayed = machine_engine.drive(spec, journal, None, live=False)
     assert replayed == live
@@ -1126,13 +1126,13 @@ def test_notify_does_not_change_replay_path(tmp_path: pathlib.Path) -> None:
 
 def test_wait_forever_blocks_on_signal_only(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, FOREVER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld(
         {"record": _ok('{"got": true}')},
-        wakes=[_contracts.WaitWake("signal", {"cmd": "go", "n": 2})],
+        wakes=[contracts.WaitWake("signal", {"cmd": "go", "n": 2})],
     )
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "done", "stop_ok", 2)
+    assert result == contracts.MachineResult("ok", "done", "stop_ok", 2)
     # A no-timer wait passes None as the deadline (park until a signal).
     assert world.sleep_deadlines == [None]
     # The poke payload was materialized for the next tool and journaled.
@@ -1151,9 +1151,9 @@ def test_wait_forever_blocks_on_signal_only(tmp_path: pathlib.Path) -> None:
 def test_wait_forever_payload_reproduces_on_replay(tmp_path: pathlib.Path) -> None:
     # The journaled poke payload is a fact: replay rebuilds the identical path.
     journal, f = _load(tmp_path, FOREVER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld(
-        {"record": _ok('{"got": true}')}, wakes=[_contracts.WaitWake("signal", {"cmd": "go"})]
+        {"record": _ok('{"got": true}')}, wakes=[contracts.WaitWake("signal", {"cmd": "go"})]
     )
     live = machine_engine.drive(spec, journal, world, live=True)
     replayed = machine_engine.drive(spec, journal, None, live=False)
@@ -1162,7 +1162,7 @@ def test_wait_forever_payload_reproduces_on_replay(tmp_path: pathlib.Path) -> No
 
 def test_exit_on_wait_forever_parks_until_signal(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, FOREVER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     # No timer: --exit-on-wait persists a signal-only pending wait (no instant).
     result = machine_engine.drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
     assert result.status == "waiting"
@@ -1179,7 +1179,7 @@ def test_exit_on_wait_forever_parks_until_signal(tmp_path: pathlib.Path) -> None
         live=True,
         exit_on_wait=True,
     )
-    assert result == _contracts.MachineResult("ok", "done", "stop_ok", 2)
+    assert result == contracts.MachineResult("ok", "done", "stop_ok", 2)
     wait_step = next(e for e in journal.read() if isinstance(e, machine_journal.StepEvent))
 
     assert isinstance(wait_step.fact, machine_journal.WaitFact)
@@ -1188,7 +1188,7 @@ def test_exit_on_wait_forever_parks_until_signal(tmp_path: pathlib.Path) -> None
 
 def test_exit_on_wait_arms_and_yields_waiting(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, WAITER_DELAYED)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({}, clock=1000.0)
     result = machine_engine.drive(spec, journal, world, live=True, exit_on_wait=True)
     assert result.status == "waiting"
@@ -1207,14 +1207,14 @@ def test_exit_on_wait_arms_and_yields_waiting(tmp_path: pathlib.Path) -> None:
 
 def test_exit_on_wait_fires_tick_when_due(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, WAITER_DELAYED)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     # First invocation arms the wait (wake at 1060).
     machine_engine.drive(spec, journal, FakeWorld({}, clock=1000.0), live=True, exit_on_wait=True)
     # A later scheduler tick re-invokes once the instant has passed.
     result = machine_engine.drive(
         spec, journal, FakeWorld({}, clock=1060.0), live=True, exit_on_wait=True
     )
-    assert result == _contracts.MachineResult("ok", "ticked", "done", 1)
+    assert result == contracts.MachineResult("ok", "ticked", "done", 1)
     step = next(e for e in journal.read() if isinstance(e, machine_journal.StepEvent))
     assert step.label == "tick"
     # The persisted wait was cleared once it fired.
@@ -1223,33 +1223,33 @@ def test_exit_on_wait_fires_tick_when_due(tmp_path: pathlib.Path) -> None:
 
 def test_exit_on_wait_fires_signal_before_due(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, WAITER_DELAYED)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     machine_engine.drive(spec, journal, FakeWorld({}, clock=1000.0), live=True, exit_on_wait=True)
     # Operator poke arrives before the wake instant.
     journal.poke()
     result = machine_engine.drive(
         spec, journal, FakeWorld({}, clock=1005.0), live=True, exit_on_wait=True
     )
-    assert result == _contracts.MachineResult("ok", "signalled", "woken", 1)
+    assert result == contracts.MachineResult("ok", "signalled", "woken", 1)
     assert journal.read_pending_wait() is None
 
 
 def test_blocking_wait_clears_persisted_wait(tmp_path: pathlib.Path) -> None:
     # A blocking run that consumes the wake clears the stale wait.json with it.
     journal, f = _load(tmp_path, WAITER_DELAYED)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     machine_engine.drive(spec, journal, FakeWorld({}, clock=1000.0), live=True, exit_on_wait=True)
     assert journal.read_pending_wait() is not None
     result = machine_engine.drive(
-        spec, journal, FakeWorld({}, wakes=[_contracts.WaitWake("tick")]), live=True
+        spec, journal, FakeWorld({}, wakes=[contracts.WaitWake("tick")]), live=True
     )
-    assert result == _contracts.MachineResult("ok", "ticked", "done", 1)
+    assert result == contracts.MachineResult("ok", "ticked", "done", 1)
     assert journal.read_pending_wait() is None
 
 
 def test_exit_on_wait_wake_epoch_computed_once(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, WAITER_DELAYED)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     machine_engine.drive(spec, journal, FakeWorld({}, clock=1000.0), live=True, exit_on_wait=True)
     # A second not-ready invocation must NOT re-arm (would be 1030+60 = 1090).
     result = machine_engine.drive(
@@ -1263,7 +1263,7 @@ def test_exit_on_wait_wake_epoch_computed_once(tmp_path: pathlib.Path) -> None:
 
 def test_journal_begins_once(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": []}')})
     machine_engine.drive(spec, journal, world, live=True)
     events = journal.read()
@@ -1274,17 +1274,17 @@ def test_journal_begins_once(tmp_path: pathlib.Path) -> None:
 # Agent state.
 
 
-def _agent(reason: str, payload: dict[str, Any] | None) -> _contracts.AgentExecResult:
-    return _contracts.AgentExecResult(reason=reason, payload=payload)
+def _agent(reason: str, payload: dict[str, Any] | None) -> contracts.AgentExecResult:
+    return contracts.AgentExecResult(reason=reason, payload=payload)
 
 
 def test_agent_ok_captures_payload_and_routes(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     payload = {"approved": True, "note": "lgtm"}
     world = FakeWorld({}, agent_results=[_agent("finish_session", payload)])
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "approved", "stop_ok", 2)
+    assert result == contracts.MachineResult("ok", "approved", "stop_ok", 2)
     snap = journal.latest_snapshot()
     assert snap is not None
     assert snap.blackboard["verdict"] == payload
@@ -1298,7 +1298,7 @@ def test_an_agent_request_carries_the_cap_and_no_model_knob(tmp_path: pathlib.Pa
         'prompt = "Review the change."', 'prompt = "Review the change."\nmax_usd = 2.5'
     ) + ('\n[states.review.config.models.worker]\neffort = "high"\ntemperature = 0.3\n')
     journal, f = _load(tmp_path, body)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({}, agent_results=[_agent("finish_session", {"approved": True})])
     machine_engine.drive(spec, journal, world, live=True)
     req = world.agent_calls[0]
@@ -1306,13 +1306,13 @@ def test_an_agent_request_carries_the_cap_and_no_model_knob(tmp_path: pathlib.Pa
     assert req.max_usd == 1.0
     assert req.effort is None
     assert not {"model", "provider", "temperature", "max_tokens_fallback"} & set(
-        _contracts.AgentRequest.model_fields
+        contracts.AgentRequest.model_fields
     )
 
 
 def test_agent_ok_but_rejected_routes_fail(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     payload = {"approved": False, "note": "needs work"}
     world = FakeWorld({}, agent_results=[_agent("finish_session", payload)])
     result = machine_engine.drive(spec, journal, world, live=True)
@@ -1326,7 +1326,7 @@ def test_agent_ok_but_rejected_routes_fail(tmp_path: pathlib.Path) -> None:
 
 def test_agent_invalid_payload_routes_failed_no_capture(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     # Missing the required `note` field -> schema validation fails -> "failed".
     world = FakeWorld({}, agent_results=[_agent("finish_session", {"approved": True})])
     result = machine_engine.drive(spec, journal, world, live=True)
@@ -1340,7 +1340,7 @@ def test_agent_invalid_payload_routes_failed_no_capture(tmp_path: pathlib.Path) 
 
 def test_agent_finish_session_without_payload_routes_failed(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({}, agent_results=[_agent("finish_session", None)])
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
@@ -1349,7 +1349,7 @@ def test_agent_finish_session_without_payload_routes_failed(tmp_path: pathlib.Pa
 
 def test_agent_budget_exhausted_label(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({}, agent_results=[_agent("budget_exhausted", None)])
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
@@ -1359,7 +1359,7 @@ def test_agent_budget_exhausted_label(tmp_path: pathlib.Path) -> None:
 
 def test_agent_timeout_label(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({}, agent_results=[_agent("timeout", None)])
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed"
@@ -1400,11 +1400,11 @@ reason = "fail"
 def test_machine_stops_when_cumulative_max_usd_exceeded(tmp_path: pathlib.Path) -> None:
     # Each step costs $0.10 against a $0.05 budget, so the budget guard must stop the loop.
     journal, f = _load(tmp_path, _SPENDER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld(
         {},
         agent_results=[
-            _contracts.AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.10)
+            contracts.AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.10)
         ],
     )
     result = machine_engine.drive(spec, journal, world, live=True)
@@ -1419,12 +1419,12 @@ def test_the_agent_request_cap_is_clamped_to_the_remaining_machine_budget(
     """A child agent's cap is min(state cap, remaining machine budget)."""
     body = _SPENDER.replace('prompt = "do"', 'prompt = "do"\nmax_usd = 0.10')
     journal, f = _load(tmp_path, body)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld(
         {},
         agent_results=[
-            _contracts.AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.04),
-            _contracts.AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.04),
+            contracts.AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.04),
+            contracts.AgentExecResult(reason="finish_session", payload={"ok": True}, usd=0.04),
         ],
     )
     result = machine_engine.drive(spec, journal, world, live=True)
@@ -1436,8 +1436,8 @@ def test_the_agent_request_cap_is_clamped_to_the_remaining_machine_budget(
 
 def test_agent_spend_threaded_into_fact(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
-    result = _contracts.AgentExecResult(
+    spec = semantics.load_machine(f)
+    result = contracts.AgentExecResult(
         reason="finish_session",
         payload={"approved": True, "note": "ok"},
         usd=0.25,
@@ -1460,10 +1460,10 @@ def test_agent_spend_threaded_into_fact(tmp_path: pathlib.Path) -> None:
 
 def test_agent_set_capture_extracts_scalar_field(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, SCORER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({}, agent_results=[_agent("finish_session", {"points": 7})])
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "done", "stop_ok", 1)
+    assert result == contracts.MachineResult("ok", "done", "stop_ok", 1)
     snap = journal.latest_snapshot()
     assert snap is not None
     assert snap.blackboard["total"] == 7
@@ -1471,7 +1471,7 @@ def test_agent_set_capture_extracts_scalar_field(tmp_path: pathlib.Path) -> None
 
 def test_agent_replay_reproduces_path_without_world(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     payload = {"approved": True, "note": "ok"}
     world = FakeWorld({}, agent_results=[_agent("finish_session", payload)])
     live = machine_engine.drive(spec, journal, world, live=True)
@@ -1482,7 +1482,7 @@ def test_agent_replay_reproduces_path_without_world(tmp_path: pathlib.Path) -> N
 def test_agent_recovery_revalidates_the_journaled_payload(tmp_path: pathlib.Path) -> None:
     """The machine's record schema rejects a fabricated `ok` payload before it reaches the board."""
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     journal.begin(machine="reviewer", version=1)
     journal.append(
@@ -1500,13 +1500,13 @@ def test_agent_recovery_revalidates_the_journaled_payload(tmp_path: pathlib.Path
         )
     )
 
-    with pytest.raises(_contracts.EngineError, match="missing required field 'note'"):
+    with pytest.raises(contracts.EngineError, match="missing required field 'note'"):
         machine_engine.drive(spec, journal, None, live=False)
 
 
 def test_agent_crash_recovery_does_not_rerun(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     # A crash after the agent ran: recovery rebuilds `verdict` without calling the runner again.
     journal.ensure_dirs()
     journal.begin(machine="reviewer", version=1)
@@ -1526,16 +1526,16 @@ def test_agent_crash_recovery_does_not_rerun(tmp_path: pathlib.Path) -> None:
     )
     world = FakeWorld({})  # no programmed agent results — proving it is not re-run
     result = machine_engine.drive(spec, journal, world, live=True)
-    assert result == _contracts.MachineResult("ok", "approved", "stop_ok", 2)
+    assert result == contracts.MachineResult("ok", "approved", "stop_ok", 2)
     assert world.agent_calls == []
 
 
 def test_agent_without_runner_raises(tmp_path: pathlib.Path) -> None:
     journal, f = _load(tmp_path, REVIEWER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     journal.ensure_dirs()
     world = live_world.LiveWorld(cwd=tmp_path, journal=journal, agent_runner=None)
-    with pytest.raises(_contracts.EngineError, match="no agent runner"):
+    with pytest.raises(contracts.EngineError, match="no agent runner"):
         machine_engine.drive(spec, journal, world, live=True)
 
 
@@ -1546,13 +1546,13 @@ def test_per_state_agent_log_path_and_prune(tmp_path: pathlib.Path) -> None:
     captured: list[pathlib.Path | None] = []
 
     def fake_runner(
-        req: _contracts.AgentRequest, events_log: pathlib.Path | None
-    ) -> _contracts.AgentExecResult:
+        req: contracts.AgentRequest, events_log: pathlib.Path | None
+    ) -> contracts.AgentExecResult:
         captured.append(events_log)
         if events_log is not None:  # the real subprocess creates the log; simulate it
             events_log.parent.mkdir(parents=True, exist_ok=True)
             events_log.write_text("{}\n", encoding="utf-8")
-        return _contracts.AgentExecResult(reason="finish_session", payload=None)
+        return contracts.AgentExecResult(reason="finish_session", payload=None)
 
     world = live_world.LiveWorld(
         cwd=tmp_path,
@@ -1563,7 +1563,7 @@ def test_per_state_agent_log_path_and_prune(tmp_path: pathlib.Path) -> None:
     )
     for seq in range(5):
         world.run_agent(
-            _contracts.AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=seq)
+            contracts.AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=seq)
         )
 
     # Each call got its own seq-named log path.
@@ -1579,12 +1579,12 @@ def test_state_log_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
     states_root = tmp_path / "inst" / "states"
 
     def fake_runner(
-        req: _contracts.AgentRequest, events_log: pathlib.Path | None
-    ) -> _contracts.AgentExecResult:
+        req: contracts.AgentRequest, events_log: pathlib.Path | None
+    ) -> contracts.AgentExecResult:
         if events_log is not None:
             events_log.parent.mkdir(parents=True, exist_ok=True)
             events_log.write_text("{}\n", encoding="utf-8")
-        return _contracts.AgentExecResult(reason="finish_session", payload=None)
+        return contracts.AgentExecResult(reason="finish_session", payload=None)
 
     world = live_world.LiveWorld(
         cwd=tmp_path,
@@ -1595,7 +1595,7 @@ def test_state_log_keep_zero_disables_pruning(tmp_path: pathlib.Path) -> None:
     )
     for seq in range(5):
         world.run_agent(
-            _contracts.AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=seq)
+            contracts.AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=seq)
         )
     assert len(list(states_root.iterdir())) == 5
 
@@ -1605,17 +1605,17 @@ def test_per_state_log_disabled_without_root(tmp_path: pathlib.Path) -> None:
     seen: list[pathlib.Path | None] = []
 
     def fake_runner(
-        req: _contracts.AgentRequest, events_log: pathlib.Path | None
-    ) -> _contracts.AgentExecResult:
+        req: contracts.AgentRequest, events_log: pathlib.Path | None
+    ) -> contracts.AgentExecResult:
         seen.append(events_log)
-        return _contracts.AgentExecResult(reason="finish_session", payload=None)
+        return contracts.AgentExecResult(reason="finish_session", payload=None)
 
     world = live_world.LiveWorld(
         cwd=tmp_path,
         journal=machine_journal.MachineJournal(tmp_path / "i"),
         agent_runner=fake_runner,
     )
-    world.run_agent(_contracts.AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=0))
+    world.run_agent(contracts.AgentRequest(prompt="x", timeout_s=1.0, state_name="s", step_seq=0))
     assert seen == [None]
 
 
@@ -1627,7 +1627,7 @@ def test_best_effort_usd_limit_no_longer_validates(tmp_path: pathlib.Path) -> No
     f = tmp_path / "m.asm.toml"
     f.write_text(body, encoding="utf-8")
     with pytest.raises(MachineError, match="best_effort_usd_limit"):
-        _semantics.load_machine(f)
+        semantics.load_machine(f)
 
 
 NOTIFY_WAIT = """
@@ -1655,7 +1655,7 @@ def test_parked_wait_notify_fires_once_across_scheduler_ticks(tmp_path: pathlib.
     # Re-driving a parked machine must not re-fire the wait's notify: it belongs to state entry.
 
     journal, f = _load(tmp_path, NOTIFY_WAIT)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     hook_notifies = 0
     for _ in range(3):
         world = FakeWorld({})
@@ -1685,7 +1685,7 @@ def test_machine_is_parked_reflects_pending_wait(tmp_path: pathlib.Path) -> None
     from agent6.viewmodel import fold_machine, probe_instance
 
     journal, f = _load(tmp_path, FOREVER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     assert probe_instance(journal.root, fold_machine(spec, journal.read())).parked is False
     result = machine_engine.drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True)
     assert result.status == "waiting"
@@ -1743,12 +1743,12 @@ def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: pathli
         task: str
 
     _journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     state = spec.states["scan"]
     assert isinstance(state, schema.ToolState)
     blackboard: dict[str, Any] = {}
     # The journal sanitizes on write, so only the IN-MEMORY value matters here.
-    _execution.apply_capture(spec, state, '{"items": ["emoji tail \\ud83d"]}', blackboard)
+    execution.apply_capture(spec, state, '{"items": ["emoji tail \\ud83d"]}', blackboard)
 
     captured = blackboard["items"][0]
     assert "emoji tail" in captured  # kept, not dropped
@@ -1774,20 +1774,20 @@ def test_replay_rejects_a_diverged_state_seq_or_fact_kind(tmp_path: pathlib.Path
         }
         fields.update(overrides)
         journal.append(machine_journal.StepEvent(**fields))
-        return journal, _semantics.load_machine(f)
+        return journal, semantics.load_machine(f)
 
     journal, spec = journal_with(state="record")  # not the replayed position
-    with pytest.raises(_contracts.EngineError, match="diverges"):
+    with pytest.raises(contracts.EngineError, match="diverges"):
         machine_engine.drive(spec, journal, FakeWorld({}), live=True)
 
     journal, spec = journal_with(seq=41)  # noncontiguous
-    with pytest.raises(_contracts.EngineError, match="not contiguous"):
+    with pytest.raises(contracts.EngineError, match="not contiguous"):
         machine_engine.drive(spec, journal, FakeWorld({}), live=True)
 
     journal, spec = journal_with(
         fact=machine_journal.BranchFact(clause_index=0)
     )  # wrong kind for a tool state
-    with pytest.raises(_contracts.EngineError, match="cannot produce"):
+    with pytest.raises(contracts.EngineError, match="cannot produce"):
         machine_engine.drive(spec, journal, FakeWorld({}), live=True)
 
 
@@ -1798,7 +1798,7 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: pathlib.Path) -
     later drive continues.
     """
     journal, f = _load(tmp_path, COUNTER)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     world = FakeWorld({"scan": _ok('{"items": ["a"]}'), "record": _ok()})
     real_run_tool = world.run_tool
 
@@ -1809,7 +1809,7 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: pathlib.Path) -
         state: str = "",
         pass_env: Any = (),
         step_seq: int = 0,
-    ) -> _contracts.ToolExecResult:
+    ) -> contracts.ToolExecResult:
         machine_journal.write_stop_request(journal.root)
         return real_run_tool(argv, timeout_s, state=state)
 
@@ -1828,8 +1828,8 @@ def test_stop_request_parks_at_the_transition_boundary(tmp_path: pathlib.Path) -
 def test_stop_interrupts_a_foreground_wait_and_keeps_it_armed(tmp_path: pathlib.Path) -> None:
     """A stop that lands mid-sleep parks without consuming the wait; a later run resumes it."""
     journal, f = _load(tmp_path, WAITER)
-    spec = _semantics.load_machine(f)
-    world = FakeWorld({}, wakes=[_contracts.WaitWake("stop")])
+    spec = semantics.load_machine(f)
+    world = FakeWorld({}, wakes=[contracts.WaitWake("stop")])
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "stopped"
     pending = journal.read_pending_wait()
@@ -1880,7 +1880,7 @@ def test_a_wait_never_inherits_the_previous_waits_record(tmp_path: pathlib.Path)
     Arming keys on the state name: `second` computes its own instant instead of firing on `first`'s.
     """
     journal, f = _load(tmp_path, WAITER_CHAIN)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     appended = journal.append
 
     def _die_after_the_step(event: object) -> None:
@@ -1942,7 +1942,7 @@ reason = "looped"
 def test_a_revisited_wait_state_arms_its_own_fresh_instant(tmp_path: pathlib.Path) -> None:
     """A state reached twice arms its own instant on the second visit, never a stale record."""
     journal, f = _load(tmp_path, LOOP_WAIT)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     appended = journal.append
 
     def _die_after_the_step(event: object) -> None:
@@ -1970,7 +1970,7 @@ def test_a_revisited_wait_state_arms_its_own_fresh_instant(tmp_path: pathlib.Pat
 def test_a_corrupt_wait_record_refuses_before_the_notify_re_fires(tmp_path: pathlib.Path) -> None:
     """A corrupt wait record refuses the parked entry instead of paging on every tick."""
     journal, f = _load(tmp_path, NOTIFY_WAIT)
-    spec = _semantics.load_machine(f)
+    spec = semantics.load_machine(f)
     assert (
         machine_engine.drive(spec, journal, FakeWorld({}), live=True, exit_on_wait=True).status
         == "waiting"

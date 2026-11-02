@@ -15,13 +15,17 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import _execution as app__execution
-from agent6.app import _session as app__session
-from agent6.app import _setup as app__setup
-from agent6.app import confine, preflight, stamps
-from agent6.app import providers as app_providers
-from agent6.config import Config, _layer_data, layer
-from agent6.harness import _chain, _prompt_blocks, _snapshot, _verify_verdict
+from agent6.app import (
+    confine,
+    execution,
+    preflight,
+    role_providers,
+    session_parts,
+    session_setup,
+    stamps,
+)
+from agent6.config import Config, layer, layer_data
+from agent6.harness import loop_snapshot, prompt_blocks, run_chain, verify_verdict
 from agent6.sandbox import detect
 from agent6.tools import dispatch
 from agent6.vcs import git_read
@@ -68,10 +72,10 @@ def test_adopt_verify_command_probes_the_jail_path(tmp_path: pathlib.Path) -> No
 
 def test_system_prompt_switches_verify_block(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
-    with_verify = _prompt_blocks.build_system_prompt(
+    with_verify = prompt_blocks.build_system_prompt(
         config=_cfg(verify=True), repo=repo, mode="run", skills=None
     )
-    gateless = _prompt_blocks.build_system_prompt(
+    gateless = prompt_blocks.build_system_prompt(
         config=_cfg(verify=False), repo=repo, mode="run", skills=None
     )
     assert "<verify-command>" in with_verify and "<no-verify-command>" not in with_verify
@@ -87,7 +91,7 @@ def test_system_prompt_switches_verify_block(tmp_path: pathlib.Path) -> None:
     assert "stale_gate" in with_verify and "commits each editing turn" in with_verify
     # The per-step commit rule belongs to a gate that judges each step.
     never = Config.model_validate({"harness": {"verify_command": ["true"], "verify_when": "never"}})
-    assert "pending changes automatically after each passing" in _prompt_blocks.build_system_prompt(
+    assert "pending changes automatically after each passing" in prompt_blocks.build_system_prompt(
         config=never, repo=repo, mode="run", skills=None
     )
 
@@ -99,9 +103,9 @@ def test_no_verify_block_wording_matches_the_mode(tmp_path: pathlib.Path) -> Non
     """
     repo = _repo(tmp_path)
     cfg = _cfg(verify=False)
-    run = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
-    plan = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)
-    ask = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)
+    run = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
+    plan = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="plan", skills=None)
+    ask = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="ask", skills=None)
 
     def block(text: str) -> str:
         start = text.index("<no-verify-command>")
@@ -173,10 +177,10 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
     """
     import types
 
-    from agent6.harness import _loop_state, loop
+    from agent6.harness import loop, loop_state
 
     wf = loop.Harness.__new__(loop.Harness)
-    wf.chain = _chain.RunChain(tmp_path)
+    wf.chain = run_chain.RunChain(tmp_path)
     wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         sandbox=types.SimpleNamespace(hide_paths=()),
         harness=types.SimpleNamespace(
@@ -195,8 +199,8 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
     )
     wf.dispatcher = mock.MagicMock()
     wf.dispatcher.command_policy.return_value = "deny"  # denied mid-run
-    state = mock.MagicMock(spec=_loop_state.LoopState)
-    state.verify = _verify_verdict.VerifyVerdict(last_ok=False, edited_since=False)
+    state = mock.MagicMock(spec=loop_state.LoopState)
+    state.verify = verify_verdict.VerifyVerdict(last_ok=False, edited_since=False)
 
     assert wf.gate.tree_green(state.verify) is False
 
@@ -238,14 +242,14 @@ def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: pathlib.P
     from every remaining call: commits stopped, the finish was graded failed, exit 4.
     """
     from agent6.config import Config
-    from agent6.harness import _toolset
+    from agent6.harness import toolset
 
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config())
-    before = {t.name for t in _toolset.tool_definitions(d, mode="run")}
+    before = {t.name for t in toolset.tool_definitions(d, mode="run")}
     assert "run_verify_command" not in before
 
     assert d.adopt_verify_command(("/bin/true",)) is True
-    after = {t.name for t in _toolset.tool_definitions(d, mode="run")}
+    after = {t.name for t in toolset.tool_definitions(d, mode="run")}
     assert "run_verify_command" in after, "the adopted gate has no tool to run it"
 
 
@@ -304,8 +308,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     the newer pin rather than undoing adoption or un-adoption. A withheld pin is the gate too: a
     resume that may run commands re-arms it.
     """
-    from agent6.app import _execution as app__execution
-    from agent6.app import resume
+    from agent6.app import execution, resume
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -328,7 +331,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
-                "version": _snapshot.SNAPSHOT_VERSION,
+                "version": loop_snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
@@ -341,9 +344,9 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         encoding="utf-8",
     )
     cfg = _role_cfg({"sandbox": {"run_commands": "allow"}})
-    effective = _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+    effective = layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
-    def _effective(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+    def _effective(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
         return effective
 
     def _full(*_a: object, **_k: object) -> str:
@@ -353,18 +356,18 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         return None
 
     monkeypatch.setattr(layer, "load_effective", _effective)
-    monkeypatch.setattr(app__session, "select_isolation", _full)
-    monkeypatch.setattr(app__setup, "check_provider_keys", _none)
+    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_read, "verify_git_identity", _none)
     used: list[tuple[str, ...]] = []
 
     def _execution(
-        _cfg: Config, _layout: object, inputs: app__execution.ExecutionInputs, **_kw: object
-    ) -> app__execution.ExecutionEnd:
+        _cfg: Config, _layout: object, inputs: execution.ExecutionInputs, **_kw: object
+    ) -> execution.ExecutionEnd:
         used.append(inputs.gate(_cfg, mock.MagicMock()).harness.verify_command)
-        return app__execution.ExecutionEnd(0)
+        return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
     assert (
         resume.resume_task(
             (), "crashed-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
@@ -406,7 +409,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
-                "version": _snapshot.SNAPSHOT_VERSION,
+                "version": loop_snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
@@ -426,8 +429,8 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
 
     # The real type: preflight reads `explicit_leaves` to tell a default this
     # host cannot honour (degrade) from a value the operator set (refuse).
-    def _load(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
-        return _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
+        return layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _full(*_a: object, **_k: object) -> str:
         return "full"
@@ -440,13 +443,13 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
 
     pinned: list[tuple[tuple[str, ...], str]] = []
     monkeypatch.setattr(layer, "load_effective", _load)
-    monkeypatch.setattr(app__setup, "detect_env", object)
+    monkeypatch.setattr(session_setup, "detect_env", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
     monkeypatch.setattr(preflight, "budget_preflight", _none)
-    monkeypatch.setattr(app_providers, "build_role_provider", _provider)
-    monkeypatch.setattr(app__setup, "check_provider_keys", _none)
+    monkeypatch.setattr(role_providers, "build_role_provider", _provider)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_read, "verify_git_identity", _none)
     monkeypatch.setattr(stamps, "pin_gate", _capture_pin(pinned))
 
@@ -500,12 +503,12 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
         return mock.MagicMock()
 
     pinned: list[tuple[tuple[str, ...], str]] = []
-    monkeypatch.setattr(app__setup, "detect_env", object)
+    monkeypatch.setattr(session_setup, "detect_env", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
     monkeypatch.setattr(preflight, "budget_preflight", _none)
-    monkeypatch.setattr(app_providers, "build_role_provider", _provider)
+    monkeypatch.setattr(role_providers, "build_role_provider", _provider)
     monkeypatch.setattr(git_read, "verify_git_identity", _none)
     monkeypatch.setattr(stamps, "pin_gate", _capture_pin(pinned))
 
@@ -530,10 +533,10 @@ def test_partial_fs_rule_renders_only_under_partial(tmp_path: pathlib.Path) -> N
     """PARTIAL_FS_RULE, the create-a-top-level-entry workaround, renders only under `partial`."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
-    full = _prompt_blocks.build_system_prompt(
+    full = prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, isolation="full", protected_paths=True
     )
-    partial = _prompt_blocks.build_system_prompt(
+    partial = prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, isolation="partial", protected_paths=True
     )
     assert "Under partial isolation" not in full
@@ -547,14 +550,14 @@ def test_patch_only_prompt_names_only_the_offered_edit_tool(
     """The patch-only experiment removes apply_edit's contract from the prompt with the tool."""
     monkeypatch.setenv("AGENT6_DISABLE_APPLY_EDIT", "1")
     cfg = _cfg(verify=True)
-    prompt = _prompt_blocks.build_system_prompt(
+    prompt = prompt_blocks.build_system_prompt(
         config=cfg, repo=_repo(tmp_path), mode="run", skills=None
     )
-    from agent6.harness import _toolset
+    from agent6.harness import toolset
 
     names = {
         tool.name
-        for tool in _toolset.tool_definitions(dispatch.ToolDispatcher(root=tmp_path, config=cfg))
+        for tool in toolset.tool_definitions(dispatch.ToolDispatcher(root=tmp_path, config=cfg))
     }
     assert "apply_edit" not in names
     assert "apply_edit" not in prompt
@@ -578,7 +581,7 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Pa
         ("partial", on, False),
         ("none", on, False),
     ):
-        out = _prompt_blocks.build_system_prompt(
+        out = prompt_blocks.build_system_prompt(
             config=cfg,
             repo=repo,
             mode="run",
@@ -592,7 +595,7 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Pa
 def test_agents_md_section_absent_when_repo_has_none(tmp_path: pathlib.Path) -> None:
     """A repo without AGENTS.md gets no empty conventions header."""
     repo = _repo(tmp_path)
-    out = _prompt_blocks.build_system_prompt(
+    out = prompt_blocks.build_system_prompt(
         config=_cfg(verify=True), repo=repo, mode="run", skills=None
     )
     assert "AGENTS.md (project conventions):" not in out
@@ -610,10 +613,10 @@ def test_prompt_git_rules_match_git_control(tmp_path: pathlib.Path) -> None:
             "sandbox": {"protect_git": "off"},
         }
     )
-    agent6_prompt = _prompt_blocks.build_system_prompt(
+    agent6_prompt = prompt_blocks.build_system_prompt(
         config=agent6_cfg, repo=repo, mode="run", skills=None
     )
-    model_prompt = _prompt_blocks.build_system_prompt(
+    model_prompt = prompt_blocks.build_system_prompt(
         config=model_cfg, repo=repo, mode="run", skills=None
     )
     assert "The harness commits" in agent6_prompt
@@ -624,7 +627,7 @@ def test_prompt_git_rules_match_git_control(tmp_path: pathlib.Path) -> None:
     gateless_cfg = Config.model_validate(
         {"git": {"control": "model"}, "sandbox": {"protect_git": "off"}}
     )
-    gateless = _prompt_blocks.build_system_prompt(
+    gateless = prompt_blocks.build_system_prompt(
         config=gateless_cfg,
         repo=repo,
         mode="run",
@@ -644,14 +647,14 @@ def test_model_git_rule_does_not_offer_a_withheld_run_command(tmp_path: pathlib.
             "sandbox": {"run_commands": "deny", "protect_git": "off"},
         }
     )
-    prompt = _prompt_blocks.build_system_prompt(
+    prompt = prompt_blocks.build_system_prompt(
         config=cfg, repo=_repo(tmp_path), mode="run", skills=None
     )
-    from agent6.harness import _toolset
+    from agent6.harness import toolset
 
     names = {
         tool.name
-        for tool in _toolset.tool_definitions(
+        for tool in toolset.tool_definitions(
             dispatch.ToolDispatcher(root=tmp_path, config=cfg), mode="run"
         )
     }
@@ -676,9 +679,9 @@ def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: pathl
             "budget": {"max_plan_points": 3},
         }
     )
-    prompt = _prompt_blocks.build_system_prompt(config=sub, repo=repo, mode="run", skills=None)
+    prompt = prompt_blocks.build_system_prompt(config=sub, repo=repo, mode="run", skills=None)
     assert "meter in plan percent (max_plan_points 3 points per run)" in prompt
-    plain = _prompt_blocks.build_system_prompt(config=Config(), repo=repo, mode="run", skills=None)
+    plain = prompt_blocks.build_system_prompt(config=Config(), repo=repo, mode="run", skills=None)
     assert "plan percent" not in plain
 
 
@@ -687,8 +690,8 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
     import json
 
     from agent6 import budget as agent6_budget
-    from agent6 import event_log
     from agent6.config import Config
+    from agent6.sessions import event_log
 
     (tmp_path / "AGENTS.md").write_text(
         "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
@@ -725,23 +728,23 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: pathlib.Path
     Inside a container whose python3 lacks pytest the adopted gate was an always-red no-op.
     """
     from agent6.config import Config
-    from agent6.harness import _loop_state, loop
+    from agent6.harness import loop, loop_state
 
     (tmp_path / "AGENTS.md").write_text(
         "## Verify command\n\n```bash\ntrue\n```\n", encoding="utf-8"
     )
     dispatcher = mock.MagicMock(last_verification=None)
     wf = loop.Harness(
-        chain=_chain.RunChain(tmp_path),
+        chain=run_chain.RunChain(tmp_path),
         config=Config.model_validate({"harness": {"verify_infer": False}}),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _line: None,
     )
-    turn = _loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
     wf.gate.maybe_adopt(mock.MagicMock(), turn)
     dispatcher.adopt_verify_command.assert_not_called()
-    assert wf.gate.command(_verify_verdict.VerifyVerdict()) == ()
+    assert wf.gate.command(verify_verdict.VerifyVerdict()) == ()
 
 
 def test_the_decline_line_prints_when_its_reason_changes(
@@ -749,21 +752,21 @@ def test_the_decline_line_prints_when_its_reason_changes(
 ) -> None:
     """A gateless run's commits re-run inference; the same decline was logged after each one."""
     from agent6.config import Config
-    from agent6.harness import _loop_state, loop
+    from agent6.harness import loop, loop_state
 
     (jail_bin / "npm").unlink()
     (tmp_path / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
     lines: list[str] = []
     wf = loop.Harness(
-        chain=_chain.RunChain(tmp_path),
+        chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None),
         logger=lines.append,
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     for i in (1, 2, 3):
-        turn = _loop_state.TurnState(number=i, resp=mock.MagicMock(), assistant=mock.MagicMock())
+        turn = loop_state.TurnState(number=i, resp=mock.MagicMock(), assistant=mock.MagicMock())
         wf.gate.maybe_adopt(state, turn)
     declined = [line for line in lines if "verify inference declined" in line]
     assert len(declined) == 1, lines
@@ -772,7 +775,7 @@ def test_the_decline_line_prints_when_its_reason_changes(
     (tmp_path / "package.json").unlink()
     (jail_bin / "cargo").unlink()
     (tmp_path / "Cargo.toml").write_text('[package]\nname = "x"\n', encoding="utf-8")
-    turn = _loop_state.TurnState(number=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn = loop_state.TurnState(number=4, resp=mock.MagicMock(), assistant=mock.MagicMock())
     wf.gate.maybe_adopt(state, turn)
     declined = [line for line in lines if "verify inference declined" in line]
     assert len(declined) == 2, lines
@@ -785,7 +788,7 @@ def test_prompt_says_nothing_commits_under_commit_per_turn_off(tmp_path: pathlib
     cfg = Config.model_validate(
         {"harness": {"verify_command": ["true"]}, "git": {"commit_per_turn": False}}
     )
-    out = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
+    out = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
     assert "Nothing commits automatically" in out
     assert "The harness commits" not in out and "You own git" not in out
 
@@ -800,11 +803,11 @@ def test_partial_rule_renders_only_where_the_jail_carries_protect_paths(
     """
     repo = _repo(tmp_path)
     cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
-    plain = _prompt_blocks.build_system_prompt(
+    plain = prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, isolation="partial"
     )
     assert "cannot CREATE new" not in plain
-    carved = _prompt_blocks.build_system_prompt(
+    carved = prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, isolation="partial", protected_paths=True
     )
     assert "cannot CREATE new" in carved
@@ -816,19 +819,19 @@ def test_the_dag_block_and_tools_follow_the_curator(tmp_path: pathlib.Path) -> N
     Every call errored "DAG curator not available", and the block's first instruction was
     unsatisfiable.
     """
-    from agent6.harness import _toolset
+    from agent6.harness import toolset
 
     repo = _repo(tmp_path)
     cfg = Config.model_validate({"prompt": {"decompose": "on"}})
-    with_dag = _prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
-    without = _prompt_blocks.build_system_prompt(
+    with_dag = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
+    without = prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, dag_available=False
     )
     assert "<decompose-first>" in with_dag and "add_task" in with_dag
     assert "<decompose-first>" not in without and "add_task" not in without
     names = {
         t.name
-        for t in _toolset.tool_definitions(
+        for t in toolset.tool_definitions(
             dispatch.ToolDispatcher(root=tmp_path, config=cfg), mode="run"
         )
     }
@@ -839,13 +842,13 @@ def test_the_stale_gate_sentence_is_run_mode_only(tmp_path: pathlib.Path) -> Non
     """The verify block names `finish_session`'s stale_gate field in run prompts only."""
     repo = _repo(tmp_path)
     cfg = _cfg(verify=True)
-    assert "stale_gate" in _prompt_blocks.build_system_prompt(
+    assert "stale_gate" in prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None
     )
-    assert "stale_gate" not in _prompt_blocks.build_system_prompt(
+    assert "stale_gate" not in prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="plan", skills=None
     )
-    assert "stale_gate" not in _prompt_blocks.build_system_prompt(
+    assert "stale_gate" not in prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="ask", skills=None
     )
 
@@ -869,7 +872,7 @@ def test_a_resumes_key_check_precedes_isolation(
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
-                "version": _snapshot.SNAPSHOT_VERSION,
+                "version": loop_snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
@@ -881,13 +884,13 @@ def test_a_resumes_key_check_precedes_isolation(
         ),
         encoding="utf-8",
     )
-    effective = _layer_data.EffectiveConfig(config=_role_cfg({}), sources={}, layers=())
+    effective = layer_data.EffectiveConfig(config=_role_cfg({}), sources={}, layers=())
     seen: list[str] = []
 
     class _Stop(Exception):  # noqa: N818  # a signal, not an error  # a signal, not an error
         pass
 
-    def _effective(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+    def _effective(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
         return effective
 
     def _route(*_a: object, **_k: object) -> bool:
@@ -900,7 +903,7 @@ def test_a_resumes_key_check_precedes_isolation(
 
     monkeypatch.setattr(layer, "load_effective", _effective)
     monkeypatch.setattr(preflight, "route_preflight", _route)
-    monkeypatch.setattr(app__session, "select_isolation", _isolation)
+    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
     with pytest.raises(_Stop):
         resume.resume_task(
             (), "order-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
@@ -919,8 +922,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
 
     One cause was reported up to three times, kilobytes of argv each time.
     """
-    from agent6.app import _execution as app__execution
-    from agent6.app import resume
+    from agent6.app import execution, resume
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -945,7 +947,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     (session_dir / "loop_state.json").write_text(
         json.dumps(
             {
-                "version": _snapshot.SNAPSHOT_VERSION,
+                "version": loop_snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [],
                 "tool_calls": 0,
@@ -959,9 +961,9 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     )
     harness = {"verify_command": list(gate)} if configured else {}
     cfg = _role_cfg({"sandbox": {"run_commands": "deny"}, "harness": harness})
-    effective = _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+    effective = layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
-    def _effective(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+    def _effective(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
         return effective
 
     def _full(*_a: object, **_k: object) -> str:
@@ -971,17 +973,17 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
         return None
 
     monkeypatch.setattr(layer, "load_effective", _effective)
-    monkeypatch.setattr(app__session, "select_isolation", _full)
-    monkeypatch.setattr(app__setup, "check_provider_keys", _none)
+    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _none)
     monkeypatch.setattr(git_read, "verify_git_identity", _none)
 
     def _execution(
-        _cfg: Config, _layout: object, inputs: app__execution.ExecutionInputs, **_kw: object
-    ) -> app__execution.ExecutionEnd:
+        _cfg: Config, _layout: object, inputs: execution.ExecutionInputs, **_kw: object
+    ) -> execution.ExecutionEnd:
         inputs.gate(_cfg, mock.MagicMock())
-        return app__execution.ExecutionEnd(0)
+        return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
     rc = resume.resume_task(
         (), "withheld-AAAA11", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )

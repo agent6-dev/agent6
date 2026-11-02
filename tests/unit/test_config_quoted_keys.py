@@ -7,7 +7,7 @@ import pathlib
 import pytest
 
 from agent6 import paths
-from agent6.config import ConfigError, _layer_data, io, layer, notices, write
+from agent6.config import ConfigError, io, layer, layer_data, notices, write
 from agent6.ui.cli import cli_main, completers
 from agent6.viewmodel import config_view
 
@@ -37,15 +37,15 @@ def test_quoted_mapping_keys_have_distinct_rows_and_sources(
     eff = layer.load_effective(tmp_path)
     literal = 'providers.demo.extra_body."a.b"'
     nested = "providers.demo.extra_body.a"
-    leaves = _layer_data.config_leaves(eff.config)
+    leaves = layer_data.config_leaves(eff.config)
     assert leaves[literal] == "literal"
     assert leaves[nested] == {"b": "repo"}
     assert eff.sources[literal] == "global"
     assert eff.sources[nested] == "repo"
-    _, sources = _layer_data.merge_layers(list(eff.layers))
+    _, sources = layer_data.merge_layers(list(eff.layers))
     assert sources[literal] == "global"
     assert sources[nested + ".b"] == "repo"
-    assert _layer_data.flatten_leaves(io.read_toml_file(mapping_config))[literal] == "literal"
+    assert layer_data.flatten_leaves(io.read_toml_file(mapping_config))[literal] == "literal"
     assert notices.write_message(tmp_path, [literal], "Saved") == "Saved"
     assert nested in notices.write_message(tmp_path, [nested], "Saved")
     assert cli_main(["config", "show", "--json"]) == 0

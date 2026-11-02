@@ -281,7 +281,7 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
     streaming is the default and a permanent code would otherwise be retried every turn. A 502 stays
     retryable; insufficient_quota is permanent.
     """
-    from agent6.harness import _provider_call
+    from agent6.harness import provider_call
 
     provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
@@ -307,11 +307,11 @@ def test_streaming_mid_stream_error_frame_raises_not_silent() -> None:
     transient = _run({"code": 502, "message": "upstream gateway error"})
     assert "stream error: 502" in str(transient)
     assert transient.status_code == 502  # carried, not dropped to None
-    assert transient.status_code not in _provider_call.NON_RETRYABLE_HTTP_STATUSES  # retryable
+    assert transient.status_code not in provider_call.NON_RETRYABLE_HTTP_STATUSES  # retryable
 
     permanent = _run({"code": "insufficient_quota", "message": "no credits"})
     assert permanent.status_code == 402  # permanent string code classified
-    assert permanent.status_code in _provider_call.NON_RETRYABLE_HTTP_STATUSES  # not retried
+    assert permanent.status_code in provider_call.NON_RETRYABLE_HTTP_STATUSES  # not retried
 
 
 def test_streaming_premature_end_without_done_or_finish_raises() -> None:
@@ -445,7 +445,7 @@ def test_no_callback_does_not_stream() -> None:
         )
 
     with (
-        mock.patch("agent6.providers._transport.http_post", side_effect=fake_post) as post_mock,
+        mock.patch("agent6.providers.transport.http_post", side_effect=fake_post) as post_mock,
         mock.patch("httpx2.stream") as stream_mock,
     ):
         resp = provider.call(
@@ -469,13 +469,13 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     import threading
     import time
 
-    from agent6.providers import _stream as stream_mod
+    from agent6.providers import stream_lifecycle
 
     # Only heartbeats, no data line ever: this is the prefill-wedge case, so the
     # FIRST-data timeout governs (the mid-stream idle timeout only applies after
     # tokens start).
-    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
-    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_WATCHDOG_TICK_S", 0.05)
 
     provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
@@ -535,11 +535,11 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
     import threading
     import time
 
-    from agent6.providers import _stream as stream_mod
+    from agent6.providers import stream_lifecycle
 
-    monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 0.3)
-    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
-    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_IDLE_TIMEOUT_S", 0.3)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 30.0)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_WATCHDOG_TICK_S", 0.05)
 
     provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
@@ -596,18 +596,18 @@ def test_lenient_json_object_recovers_common_malformations() -> None:
     junk) are recovered so the tool just runs, and the ambiguous ones are refused so the
     `_raw_arguments` sentinel is kept.
     """
-    from agent6.providers import _openai_recovery
+    from agent6.providers import openai_recovery
 
     # Raw newline inside a string value (a multiline code param).
-    assert _openai_recovery.lenient_json_object('{"new_string": "a\nb"}') == {"new_string": "a\nb"}
+    assert openai_recovery.lenient_json_object('{"new_string": "a\nb"}') == {"new_string": "a\nb"}
     # Trailing junk after a valid object (a leaked closing tag / prose).
-    assert _openai_recovery.lenient_json_object('{"path": "a.py"} </invoke>') == {"path": "a.py"}
+    assert openai_recovery.lenient_json_object('{"path": "a.py"} </invoke>') == {"path": "a.py"}
     # A bad regex escape (\d) is a hard JSON error -> keep the sentinel (None).
-    assert _openai_recovery.lenient_json_object(r'{"pattern": "\d+"}') is None
+    assert openai_recovery.lenient_json_object(r'{"pattern": "\d+"}') is None
     # A scalar / array is not tool args -> None.
-    assert _openai_recovery.lenient_json_object("42") is None
-    assert _openai_recovery.lenient_json_object('["a"]') is None
-    assert _openai_recovery.lenient_json_object("") is None
+    assert openai_recovery.lenient_json_object("42") is None
+    assert openai_recovery.lenient_json_object('["a"]') is None
+    assert openai_recovery.lenient_json_object("") is None
 
 
 def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -620,11 +620,11 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
     import threading
     import time
 
-    from agent6.providers import _stream as stream_mod
+    from agent6.providers import stream_lifecycle
 
-    monkeypatch.setattr(stream_mod, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
-    monkeypatch.setattr(stream_mod, "STREAM_IDLE_TIMEOUT_S", 0.2)
-    monkeypatch.setattr(stream_mod, "STREAM_WATCHDOG_TICK_S", 0.05)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_IDLE_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_WATCHDOG_TICK_S", 0.05)
     provider = openai.OpenAIProvider(api_key="sk-test", model="kimi")
 
     class _RoleThenSilent:
@@ -680,13 +680,13 @@ def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: pathlib.Pa
     that was cut and re-issued, while the sibling truncation one branch up records status 0; an
     audit of a retried run must see what happened.
     """
-    from agent6.providers import types
+    from agent6.providers import provider_types
 
     provider = openai.OpenAIProvider(
         api_key="sk-test",
         model="kimi",
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
-        transcript_sink=types.TranscriptSink(tmp_path),
+        transcript_sink=provider_types.TranscriptSink(tmp_path),
     )
     lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]
         {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}

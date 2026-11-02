@@ -16,7 +16,7 @@ from agent6.config import layer
 from agent6.harness import judge
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import _common, _compare, sessions_cmds
+from agent6.ui.cli import common, compare_ranking, sessions_cmds
 from agent6.vcs import git_read
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
@@ -124,7 +124,7 @@ def _fanout_lanes(cwd: pathlib.Path, parallel_id: str) -> tuple[str, ...]:
         The lane ids; empty when no run names the fan-out.
     """
     lanes: list[tuple[int, str]] = []
-    runs = _common._runs_dir(cwd)
+    runs = common._runs_dir(cwd)
     if runs.is_dir():
         for d in runs.iterdir():
             with contextlib.suppress(sessions_manifest.ManifestError):
@@ -192,7 +192,7 @@ def _cmd_compare(
         by_fanout = bool(lanes)
         session_ids = lanes or session_ids
     if len(session_ids) < 2:
-        _common.error(
+        common.error(
             "sessions compare needs 2 or more run ids, or one --parallel fan-out id"
             f" (its lanes); got {len(session_ids)}."
         )
@@ -205,7 +205,7 @@ def _cmd_compare(
             return res
         layout, manifest = res
         if layout.session_id in seen:
-            _common.error(f"run {layout.session_id!r} was given more than once.")
+            common.error(f"run {layout.session_id!r} was given more than once.")
             return 2
         seen.add(layout.session_id)
         resolved.append((layout, manifest))
@@ -215,7 +215,7 @@ def _cmd_compare(
     for note in notes:
         print(note)
     if not candidates:
-        _common.error("no comparable runs; every run given is still live or never finished.")
+        common.error("no comparable runs; every run given is still live or never finished.")
         return 2
 
     merged = {
@@ -231,7 +231,7 @@ def _cmd_compare(
     }
     recorded = _recorded_outcome(resolved, candidates) if by_fanout and not rejudge else None
     if recorded is not None:
-        print(f"[agent6] the recorded verdict for {_common.plural(len(candidates), 'lane')}:")
+        print(f"[agent6] the recorded verdict for {common.plural(len(candidates), 'lane')}:")
         compare.print_ranked_candidates(
             candidates, recorded, rows=rows, merged_into=merged, committed=committed
         )
@@ -240,7 +240,7 @@ def _cmd_compare(
 
     reviewer = cfg.models.resolve("reviewer")
     # Advisory and stateless: only the fan-out's auto-compare stamps a manifest.
-    outcome = _compare.rank(cfg, candidates, transcript_dir=paths.state_dir(cwd) / "compare")
+    outcome = compare_ranking.rank(cfg, candidates, transcript_dir=paths.state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
     compare.print_ranked_candidates(
         candidates, outcome, rows=rows, merged_into=merged, committed=committed

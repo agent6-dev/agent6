@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import event_log, paths, review_records
+from agent6 import paths, review_records
 from agent6.app import review_actions
-from agent6.sessions import ipc, process
+from agent6.sessions import event_log, ipc, process
 from agent6.ui.acp import runner, server, session, updates
 from agent6.viewmodel import transcript
 from tests import review_helpers

@@ -21,13 +21,13 @@ from agent6.app import fork_worktrees, resume
 from agent6.sessions import id, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import _common, _steer
+from agent6.ui.cli import common, steer_tty
 from agent6.vcs import git_ops, git_policy, git_read
 from agent6.viewmodel import (
-    _session_status,
     format,
     newest_session_dir,
     session_dirs,
+    session_status,
     summarize_session_dir,
     wire,
 )
@@ -59,7 +59,7 @@ def _cmd_list(
     )
     if not listing:
         print(
-            "[]" if as_json else _common.nothing_yet()
+            "[]" if as_json else common.nothing_yet()
         )  # the empty listing is output, not an error
         return 0
     if as_json:
@@ -71,10 +71,10 @@ def _cmd_list(
 
     def cells(
         row: viewmodel_listing.ListingRow, id_cell: str
-    ) -> tuple[str, str, str, str, str, str, _session_status.TaskLabel]:
+    ) -> tuple[str, str, str, str, str, str, session_status.TaskLabel]:
         """Return a row's cells with the id cell as given; the review cell is "" by activity."""
         s = row.summary
-        styled, plain = _common.styled_status(
+        styled, plain = common.styled_status(
             s.status,
             s.reason,
             color=color,
@@ -90,7 +90,7 @@ def _cmd_list(
             s.task_label,
         )
 
-    rows: list[tuple[str, str, str, str, str, str, _session_status.TaskLabel]] = []
+    rows: list[tuple[str, str, str, str, str, str, session_status.TaskLabel]] = []
 
     def emit(row: viewmodel_listing.ListingRow, depth: int) -> None:
         """Append the row's cells, then its lanes' when listing them."""
@@ -182,7 +182,7 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
             return 0
     base_sha = manifest.base_sha
     if not base_sha:
-        _common.error("manifest has no base_sha; nothing to diff against")
+        common.error("manifest has no base_sha; nothing to diff against")
         return 2
 
     head_ref = ref.head_ref
@@ -348,13 +348,13 @@ def _resolve_session_manifest(
     Returns:
         `(layout, manifest)`, or the exit code of a printed error.
     """
-    runs_dir = _common._runs_dir(cwd)
+    runs_dir = common._runs_dir(cwd)
     if not session_id:
         # No id: the most recent run; a plan or an ask has no branch for these verbs.
         latest = newest_session_dir([runs_dir]) if runs_dir.is_dir() else None
         if latest is None:
             # Only branchless sessions: say so; a fresh state dir keeps the first-contact copy.
-            _common.print_nothing_yet(
+            common.print_nothing_yet(
                 "runs" if session_dirs(agent6_paths.state_dir(cwd)) else "sessions"
             )
             return 2
@@ -363,18 +363,18 @@ def _resolve_session_manifest(
     else:
         # Every bucket: a plan the operator named exists, it just has no branch to show.
         try:
-            layout = _common.resolve_session_layout(cwd, session_id)
+            layout = common.resolve_session_layout(cwd, session_id)
         except id.SessionIdError as exc:
-            _common.error(f"{exc}")
+            common.error(f"{exc}")
             return 2
     target_id = layout.session_id
     if not layout.manifest_path.is_file():
-        _common.error(f"session {target_id} has no manifest.json{missing_hint}")
+        common.error(f"session {target_id} has no manifest.json{missing_hint}")
         return 2
     try:
         manifest = sessions_manifest.read_manifest(layout.session_dir)
     except sessions_manifest.ManifestError as exc:
-        _common.error(f"could not read manifest: {exc}")
+        common.error(f"could not read manifest: {exc}")
         return 2
     # A fan-out commits nothing: its lanes hold the work.
     refusal = (
@@ -384,7 +384,7 @@ def _resolve_session_manifest(
         else sessions_manifest.model_git_refusal(manifest, "sessions")
     )
     if refusal is not None:
-        _common.refuse(f"{refusal}")
+        common.refuse(f"{refusal}")
         return 2
     return layout, manifest
 
@@ -456,11 +456,11 @@ def _cmd_commits(*, session_id: str) -> int:
     _layout, manifest = res
     ref = _commits_ref(cwd, manifest)
     if not ref.head_ref:
-        _common.error(f"this session has no branch to list commits from ({ref.reason}).")
+        common.error(f"this session has no branch to list commits from ({ref.reason}).")
         return 2
     base_sha = manifest.base_sha
     if not base_sha:
-        _common.error("manifest has no base_sha; nothing to list commits from")
+        common.error("manifest has no base_sha; nothing to list commits from")
         return 2
     head_ref = ref.head_ref
     # A branch may stand in for a pruned one: say where the work went.
@@ -499,9 +499,9 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
         print(agent6_paths.state_dir(cwd))
         return 0
     try:
-        layout = _common.resolve_session_layout(cwd, session_id)
+        layout = common.resolve_session_layout(cwd, session_id)
     except id.SessionIdError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     print(layout.session_dir)
     return 0
@@ -519,20 +519,20 @@ def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
         The exit code; 1 when a deletion failed, never a success line over a surviving dir.
     """
     if session_id:
-        _common.error("--asks clears this directory's asks; drop the run id.")
+        common.error("--asks clears this directory's asks; drop the run id.")
         return 2
     bucket = sessions_layout.bucket_dir(agent6_paths.state_dir(cwd), "asks")
     gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
     count = f"{gone} ask{'' if gone == 1 else 's'}"
     if gone and not yes and not portable.has_controlling_tty():
-        _common.refuse(
+        common.refuse(
             f"no controlling terminal to confirm deleting {count} saved from {cwd}; use --yes."
         )
         return 2
     if (
         gone
         and not yes
-        and not _steer.delete_confirmed(
+        and not steer_tty.delete_confirmed(
             f"sessions rm --asks will delete {count} saved from {cwd}", "Delete them?"
         )
     ):
@@ -542,7 +542,7 @@ def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     except FileNotFoundError:
         pass
     except OSError as exc:
-        _common.error(f"could not remove {bucket}: {exc}")
+        common.error(f"could not remove {bucket}: {exc}")
         return 1
     print(f"removed {count} from {cwd}")
     return 0
@@ -629,15 +629,15 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     cwd = fork_worktrees.sweep_checkout(pathlib.Path.cwd())
     try:
         # rm is the surface that deletes a husk, so it resolves one.
-        layout = _common.resolve_or_newest_layout(cwd, session_id, allow_husk=True)
+        layout = common.resolve_or_newest_layout(cwd, session_id, allow_husk=True)
     except id.SessionIdError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     if layout is None or (not session_id and not yes and not portable.has_controlling_tty()):
         if layout is None:
-            _common.print_nothing_yet()
+            common.print_nothing_yet()
         else:
-            _common.refuse(
+            common.refuse(
                 "no session id and no controlling terminal to confirm deleting "
                 f"{layout.session_id}; pass the id "
                 f"(`agent6 sessions rm {layout.session_id}`) or use --yes."
@@ -661,12 +661,12 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     tips = (landed,) if landed else ()
     reason = _rm_refusal(layout, worktree if not sharing else None, tips)
     if not reason and not yes:
-        if not _steer.delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
+        if not steer_tty.delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
             return 0
         # A resume from another terminal while the question stood makes the session live again.
         reason = _rm_refusal(layout, worktree if not sharing else None, tips)
     if reason:
-        _common.refuse(f"{reason}")
+        common.refuse(f"{reason}")
         return 2
     return _rm_session(cwd, layout, worktree, sharing, tips)
 
@@ -694,7 +694,7 @@ def _rm_session(
         shutil.rmtree(layout.session_dir)
     except OSError as exc:
         # A partial delete leaves a remnant: no success line, and the chain ref stays as its anchor.
-        _common.error(f"could not remove {layout.session_dir}: {exc}")
+        common.error(f"could not remove {layout.session_dir}: {exc}")
         return 1
     went: list[str] = []  # what went with the record
     stays = ""
@@ -728,5 +728,5 @@ def _rm_session(
     what = [layout.session_id, *went]
     removed = f"{', '.join(what[:-1])} and {what[-1]}" if went else what[0]
     print(f"removed {removed}{stays}")
-    _common.note_removed_cwd(cwd)
+    common.note_removed_cwd(cwd)
     return 0

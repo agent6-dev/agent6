@@ -8,7 +8,7 @@ import pytest
 
 from agent6 import review_records
 from agent6.ui.acp import updates
-from agent6.ui.cli import _console_view
+from agent6.ui.cli import console_render
 from agent6.ui.tui import conversation
 from agent6.viewmodel import log_line, review, state, transcript
 
@@ -67,7 +67,7 @@ def test_cli_tui_and_acp_render_the_same_recorded_sources() -> None:
     assert expected in item.body and "rules complete" in item.body
     assert "base tree bt" in item.body
     output = io.StringIO()
-    console = _console_view.ConsoleView(out=output, color=False)
+    console = console_render.ConsoleView(out=output, color=False)
     console.feed(event)
     console.close()
     assert expected in output.getvalue()
@@ -101,7 +101,7 @@ def test_rule_notices_escape_controls_without_losing_the_name(field: str) -> Non
     )
     (item,) = transcript.fold_transcript([event])
     output = io.StringIO()
-    console = _console_view.ConsoleView(out=output, color=False)
+    console = console_render.ConsoleView(out=output, color=False)
     console.feed(event)
     console.close()
     tui = "\n".join(line.plain for line in conversation._item_renderables(item, detail="collapsed"))

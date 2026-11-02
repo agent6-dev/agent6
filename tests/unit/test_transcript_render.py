@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.harness import _compaction_result
+from agent6.harness import compaction_elision
 from agent6.sessions import process
 from agent6.viewmodel import transcript_render
 
@@ -572,7 +572,7 @@ def test_second_same_identity_elision_in_a_later_pass_is_counted() -> None:
 
 def test_elision_marker_prefix_matches_the_compaction_placeholder() -> None:
     """The renderer detects placeholders by prefix, pinned without a viewmodel-to-harness import."""
-    assert transcript_render.ELISION_MARKER_PREFIX == _compaction_result.ELISION_PREFIX
+    assert transcript_render.ELISION_MARKER_PREFIX == compaction_elision.ELISION_PREFIX
 
 
 def test_load_transcripts_sorted_by_seq(tmp_path: pathlib.Path) -> None:

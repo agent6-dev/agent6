@@ -20,19 +20,19 @@ import pytest
 
 from agent6.config import Config
 from agent6.harness import (
-    _chain,
-    _compaction_result,
-    _compactor,
-    _conversation,
-    _loop_resume,
-    _loop_state,
-    _loop_steer,
-    _metric,
-    _provider_call,
-    _snapshot,
+    compaction_driver,
+    compaction_elision,
     loop,
+    loop_conversation,
+    loop_resume,
+    loop_snapshot,
+    loop_state,
+    loop_steer,
+    metric_rules,
+    provider_call,
+    run_chain,
 )
-from agent6.tools import errors, results
+from agent6.tools import results, tool_errors
 
 # The `[git]` surface the loop reads, empty as a real Config carries it unset.
 _GIT_STUB = types.SimpleNamespace(
@@ -67,7 +67,7 @@ def _wf(
             or None
         )
     defaults: dict[str, Any] = {
-        "chain": _chain.RunChain(
+        "chain": run_chain.RunChain(
             root or pathlib.Path("/tmp"),
             ref=ref or ("refs/agent6/test" if root is not None else None),
             fallback_parent=fallback_parent,
@@ -132,16 +132,16 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = _loop_state.LoopState(original_task="t", tool_calls=2)
+    state = loop_state.LoopState(original_task="t", tool_calls=2)
     state.verify.ever_passed = True
     state.verify.scoped = True
     state.settled.gateless_ever_edited = True
     state.metric.history.append(
-        _metric.MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True)
+        metric_rules.MetricSample(label="x", score=27.0, returncode=0, at_ceiling=True)
     )
     state.system, state.tool_calls, state.root_task_id = "s", 2, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
-    loaded = _snapshot.load_session_snapshot(snap)
+    loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
+    loaded = loop_snapshot.load_session_snapshot(snap)
     assert loaded.verify_ever_passed is True
     assert loaded.verify_scoped is True
     assert loaded.gateless_ever_edited is True
@@ -172,16 +172,16 @@ def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) ->
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.ever_failed = True
     state.memory.written = True
     state.memory.flip_nudged = True
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=3)
+    loop_resume.save_resume_snapshot(wf, state, [], next_turn=3)
 
-    loaded = _snapshot.load_session_snapshot(snap)
-    fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
-    _loop_state.restore_completion_state(fresh, loaded)
+    loaded = loop_snapshot.load_session_snapshot(snap)
+    fresh = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_state.restore_completion_state(fresh, loaded)
 
     assert fresh.verify.ever_failed is True
     assert fresh.memory.written is True
@@ -210,20 +210,20 @@ def test_completed_prose_turn_is_snapshotted_before_the_boundary(tmp_path: pathl
         root=repo,
         provider=provider,
         resume_state_path=snap_path,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=5,
     )
-    stopped = _snapshot.SessionResult(
+    stopped = loop_snapshot.SessionResult(
         completed=False, reason="interactive_stop", summary="", turns=1, tool_calls=0
     )
 
-    def stop_at_boundary(*_a: object, **_k: object) -> _snapshot.SessionResult:
+    def stop_at_boundary(*_a: object, **_k: object) -> loop_snapshot.SessionResult:
         return stopped
 
-    with mock.patch.object(_loop_steer, "operator_boundary", stop_at_boundary):
+    with mock.patch.object(loop_steer, "operator_boundary", stop_at_boundary):
         result = wf.run("do the task")
     assert result.reason == "interactive_stop"
-    loaded = _snapshot.load_session_snapshot(snap_path)
+    loaded = loop_snapshot.load_session_snapshot(snap_path)
     assert loaded.next_turn == 2  # the prose turn is a COMPLETED turn
     dumped = json.dumps(loaded.messages)
     assert "answer in prose" in dumped  # the model's turn survives the stop
@@ -256,15 +256,15 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.parallel_groups_dispatched = 2
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
-    loaded = _snapshot.load_session_snapshot(snap)
+    loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
+    loaded = loop_snapshot.load_session_snapshot(snap)
     assert loaded.parallel_groups_dispatched == 2
 
-    fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
-    _loop_state.restore_completion_state(fresh, loaded)
+    fresh = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_state.restore_completion_state(fresh, loaded)
     assert fresh.parallel_groups_dispatched == 2  # the next dispatch is p3, not p1
 
 
@@ -291,22 +291,22 @@ def test_snapshot_persists_and_restores_pins(tmp_path: pathlib.Path) -> None:
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.pins.extend(["never touch schema files", "goal:\nship X"])
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
-    loaded = _snapshot.load_session_snapshot(snap)
+    loop_resume.save_resume_snapshot(wf, state, [], next_turn=4)
+    loaded = loop_snapshot.load_session_snapshot(snap)
     assert loaded.pins == ("never touch schema files", "goal:\nship X")
 
-    fresh = _loop_state.LoopState(original_task="t", tool_calls=0)
-    _loop_state.restore_completion_state(fresh, loaded)
+    fresh = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_state.restore_completion_state(fresh, loaded)
     assert fresh.pins == ["never touch schema files", "goal:\nship X"]
 
     # Pre-pins snapshot (no `pins` key) still loads: additive default.
     raw = json.loads(snap.read_text(encoding="utf-8"))
     del raw["pins"]
     snap.write_text(json.dumps(raw), encoding="utf-8")
-    assert _snapshot.load_session_snapshot(snap).pins == ()
+    assert loop_snapshot.load_session_snapshot(snap).pins == ()
 
 
 def test_pre_version_bump_snapshot_refused_loudly(tmp_path: pathlib.Path) -> None:
@@ -328,7 +328,7 @@ def test_pre_version_bump_snapshot_refused_loudly(tmp_path: pathlib.Path) -> Non
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="predates a state-format change"):
-        _snapshot.load_session_snapshot(snap)
+        loop_snapshot.load_session_snapshot(snap)
 
 
 def test_malformed_snapshot_shapes_fail_loud(tmp_path: pathlib.Path) -> None:
@@ -339,17 +339,17 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: pathlib.Path) -> None:
     for bad in ("null", "[]", "123", '"str"'):
         snap.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
-            _snapshot.load_session_snapshot(snap)
+            loop_snapshot.load_session_snapshot(snap)
     # current version, wrong internals: missing required keys, and a non-list messages
     snap.write_text(
-        json.dumps({"version": _snapshot.SNAPSHOT_VERSION, "system": "s"}), encoding="utf-8"
+        json.dumps({"version": loop_snapshot.SNAPSHOT_VERSION, "system": "s"}), encoding="utf-8"
     )
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
-        _snapshot.load_session_snapshot(snap)
+        loop_snapshot.load_session_snapshot(snap)
     snap.write_text(
         json.dumps(
             {
-                "version": _snapshot.SNAPSHOT_VERSION,
+                "version": loop_snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": "oops",
                 "tool_calls": 0,
@@ -359,7 +359,7 @@ def test_malformed_snapshot_shapes_fail_loud(tmp_path: pathlib.Path) -> None:
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="messages"):
-        _snapshot.load_session_snapshot(snap)
+        loop_snapshot.load_session_snapshot(snap)
 
 
 def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -411,23 +411,23 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run")
 
     captured: dict[str, Any] = {}
-    orig = _metric.MetricGuard.at_ceiling
+    orig = metric_rules.MetricGuard.at_ceiling
 
-    def _spy(guard: _metric.MetricGuard) -> bool:
+    def _spy(guard: metric_rules.MetricGuard) -> bool:
         captured["at_ceiling"] = orig(guard)
         return captured["at_ceiling"]
 
-    monkeypatch.setattr(_metric.MetricGuard, "at_ceiling", _spy)
+    monkeypatch.setattr(metric_rules.MetricGuard, "at_ceiling", _spy)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=_conversation.Conversation.from_wire(
+        conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
         start_turn=3,
         root_task_id=None,
         original_task="go",
-        resume_from=_snapshot.SessionSnapshot(
+        resume_from=loop_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -503,14 +503,14 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=_conversation.Conversation.from_wire(
+        conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
         start_turn=3,
         root_task_id=None,
         original_task="go",
-        resume_from=_snapshot.SessionSnapshot(
+        resume_from=loop_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -532,7 +532,7 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _snapshot.SessionSnapshot(
+        loop_snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -648,14 +648,14 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=_conversation.Conversation.from_wire(
+        conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
         start_turn=3,
         root_task_id=None,
         original_task="go",
-        resume_from=_snapshot.SessionSnapshot(
+        resume_from=loop_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -754,9 +754,9 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
         mode="run",
         resume_state_path=snap,
     )
-    orig_save = _loop_resume.save_resume_snapshot
+    orig_save = loop_resume.save_resume_snapshot
     orig_call = provider.call
-    orig_compact = _compactor.Compactor.compact
+    orig_compact = compaction_driver.Compactor.compact
 
     def _spy_save(
         harness: loop.Harness, state: Any, messages: list[dict[str, Any]], **kw: Any
@@ -774,18 +774,20 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
         events.append({"kind": "provider_call"})
         return orig_call(**kw)
 
-    def _spy_compact(compactor: _compactor.Compactor, msgs: Any, state: Any, **kw: Any) -> bool:
+    def _spy_compact(
+        compactor: compaction_driver.Compactor, msgs: Any, state: Any, **kw: Any
+    ) -> bool:
         events.append({"kind": "compact"})
         return orig_compact(compactor, msgs, state, **kw)
 
-    save_spy = mock.patch.object(_loop_resume, "save_resume_snapshot", _spy_save)
+    save_spy = mock.patch.object(loop_resume, "save_resume_snapshot", _spy_save)
     save_spy.start()
     provider.call = _spy_call
-    compact_spy = mock.patch.object(_compactor.Compactor, "compact", _spy_compact)
+    compact_spy = mock.patch.object(compaction_driver.Compactor, "compact", _spy_compact)
     compact_spy.start()
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="s",
-        conversation=_conversation.Conversation.from_wire(
+        conversation=loop_conversation.Conversation.from_wire(
             [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
         ),
         tool_calls=0,
@@ -980,7 +982,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
     ev = _EventCapture()
     wf = _wf(provider=provider, dispatcher=dispatcher, config=config, mode="run", events=ev)
     # A restored context carrying two bare elisions and one distilled gist.
-    restored = _conversation.Conversation.from_wire(
+    restored = loop_conversation.Conversation.from_wire(
         [
             {"role": "user", "content": [{"type": "text", "text": "go"}]},
             {
@@ -993,7 +995,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
                     {
                         "type": "tool_result",
                         "tool_use_id": "a",
-                        "content": f"{_compaction_result.ELISION_PREFIX}: x",
+                        "content": f"{compaction_elision.ELISION_PREFIX}: x",
                     }
                 ],
             },
@@ -1007,7 +1009,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
                     {
                         "type": "tool_result",
                         "tool_use_id": "b",
-                        "content": f"{_compaction_result.ELISION_PREFIX}: y",
+                        "content": f"{compaction_elision.ELISION_PREFIX}: y",
                     }
                 ],
             },
@@ -1021,7 +1023,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
                     {
                         "type": "tool_result",
                         "tool_use_id": "c",
-                        "content": f"{_compaction_result.ELISION_GIST_PREFIX}: z",
+                        "content": f"{compaction_elision.ELISION_GIST_PREFIX}: z",
                     }
                 ],
             },
@@ -1034,7 +1036,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
         start_turn=3,
         root_task_id=None,
         original_task="go",
-        resume_from=_snapshot.SessionSnapshot(
+        resume_from=loop_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -1102,7 +1104,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
         events=ev,
         initial_pins=("never touch schema files",),
     )
-    conversation = _conversation.Conversation.from_wire(
+    conversation = loop_conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1125,7 +1127,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
 
 def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
     """`--pin` seeds pins through the same cap and non-empty check as `/pin`."""
-    from agent6.harness import _operator
+    from agent6.harness import operator_bridge
     from agent6.providers import ProviderResponse
 
     provider = mock.MagicMock()
@@ -1165,7 +1167,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         ),
     )
     ev = _EventCapture()
-    huge = "x" * (_operator.PINS_MAX_CHARS + 1)
+    huge = "x" * (operator_bridge.PINS_MAX_CHARS + 1)
     wf = _wf(
         provider=provider,
         dispatcher=dispatcher,
@@ -1174,7 +1176,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
         events=ev,
         initial_pins=("keep this", "", huge, "   "),  # 1 good, 1 empty, 1 over-cap, 1 blank
     )
-    conversation = _conversation.Conversation.from_wire(
+    conversation = loop_conversation.Conversation.from_wire(
         [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
     )
     wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
@@ -1203,7 +1205,7 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _snapshot.SessionSnapshot(
+        loop_snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -1278,7 +1280,7 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _snapshot.SessionSnapshot(
+        loop_snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -1380,7 +1382,7 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     # Execution one: the worker edits, the gate goes green, the harness chain-commits.
     (repo / "x.txt").write_text("the run's work\n", encoding="utf-8")
     assert git_ops.chain_commit(repo, "turn 1", ref=chain, fallback_parent=base) is not None
-    snap = _snapshot.SessionSnapshot.model_validate(
+    snap = loop_snapshot.SessionSnapshot.model_validate(
         {
             "system": "s",
             "messages": [],
@@ -1396,8 +1398,8 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     )
     assert snap.head_sha == git_read.chain_tip(repo, chain) != git_read.status(repo).head_sha
 
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    _loop_resume.carry_verify_verdict(wf, state, snap)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_resume.carry_verify_verdict(wf, state, snap)
 
     assert state.verify.last_ok is True
     assert state.verify.green_and_untouched is True
@@ -1425,18 +1427,18 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
         "verify_command": ("true",),
         "baseline_ok": False,
     }
-    same = _snapshot.SessionSnapshot.model_validate({**fields, "base_sha": "a" * 40})
-    moved = _snapshot.SessionSnapshot.model_validate({**fields, "base_sha": "b" * 40})
-    older = _snapshot.SessionSnapshot.model_validate(fields)  # written before the base was kept
+    same = loop_snapshot.SessionSnapshot.model_validate({**fields, "base_sha": "a" * 40})
+    moved = loop_snapshot.SessionSnapshot.model_validate({**fields, "base_sha": "b" * 40})
+    older = loop_snapshot.SessionSnapshot.model_validate(fields)  # written before the base was kept
 
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    _loop_resume.carry_verify_verdict(wf, state, same)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_resume.carry_verify_verdict(wf, state, same)
     assert state.verify.baseline_ok is False
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    _loop_resume.carry_verify_verdict(wf, state, moved)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_resume.carry_verify_verdict(wf, state, moved)
     assert state.verify.baseline_ok is None
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    _loop_resume.carry_verify_verdict(wf, state, older)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_resume.carry_verify_verdict(wf, state, older)
     assert state.verify.baseline_ok is None
 
 
@@ -1451,7 +1453,7 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
     snap_path.write_text(
-        _snapshot.SessionSnapshot(
+        loop_snapshot.SessionSnapshot(
             system="s",
             messages=[{"role": "user", "content": [{"type": "text", "text": "go"}]}],
             tool_calls=0,
@@ -1539,7 +1541,7 @@ def test_resume_restates_execution_local_gate_availability(
     ]
     path = tmp_path / "loop_state.json"
     path.write_text(
-        _snapshot.SessionSnapshot(
+        loop_snapshot.SessionSnapshot(
             system="s",
             messages=messages,
             tool_calls=0,
@@ -1595,7 +1597,7 @@ def test_resume_restates_execution_local_gate_availability(
         assert told.index(correction) > told.index(notice)
         assert "run_verify_command is available in this execution" in told
         dispatcher.run_verify.assert_called_once()
-    saved = _snapshot.load_session_snapshot(path)
+    saved = loop_snapshot.load_session_snapshot(path)
     assert saved.verify_withheld is (withheld and policy == "deny")
     provider.reset_mock()
     wf.resume()
@@ -1608,7 +1610,7 @@ def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathl
     path = tmp_path / "loop_state.json"
     dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.command_policy.return_value = "ask"
-    dispatcher.run_verify.side_effect = errors.ToolDeniedError(
+    dispatcher.run_verify.side_effect = tool_errors.ToolDeniedError(
         "run_verify_command not run: the run was asked to stop while awaiting approval."
     )
     wf = _wf(
@@ -1616,13 +1618,13 @@ def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathl
         dispatcher=dispatcher,
         resume_state_path=path,
     )
-    state = _loop_state.LoopState(original_task="tidy", tool_calls=0)
+    state = loop_state.LoopState(original_task="tidy", tool_calls=0)
     notices = wf.gate.start_baseline(state)
     assert len(notices) == 1
     assert state.verify.withheld is True
-    _loop_resume.save_resume_snapshot(wf, state, [], next_turn=1)
-    saved = _snapshot.load_session_snapshot(path)
+    loop_resume.save_resume_snapshot(wf, state, [], next_turn=1)
+    saved = loop_snapshot.load_session_snapshot(path)
     assert saved.verify_withheld is True
-    restored = _loop_state.LoopState(original_task="tidy", tool_calls=0)
-    _loop_state.restore_completion_state(restored, saved)
+    restored = loop_state.LoopState(original_task="tidy", tool_calls=0)
+    loop_state.restore_completion_state(restored, saved)
     assert restored.verify.withheld is False

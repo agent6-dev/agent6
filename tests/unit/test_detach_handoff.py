@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`_execution.detach_to_background`, the one hand-off both lifecycles make after a `/detach`."""
+"""`execution.detach_to_background`, the one hand-off both lifecycles make after a `/detach`."""
 
 from __future__ import annotations
 
@@ -14,12 +14,11 @@ from typing import Any
 
 import pytest
 
-from agent6 import event_log
-from agent6.app import _execution, _session, _setup, frontend, providers, reporter
+from agent6.app import execution, frontend, reporter, role_providers, session_parts, session_setup
 from agent6.config import Config
-from agent6.harness import _snapshot
 from agent6.harness import loop as harness_loop
-from agent6.sessions import ipc, process
+from agent6.harness import loop_snapshot
+from agent6.sessions import event_log, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
 from agent6.ui.acp import frontend as acp_frontend
@@ -50,7 +49,7 @@ def test_ask_policy_is_asked_before_the_spawn_and_the_flags_ride_along(
     said: list[str] = []
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
-    _execution.detach_to_background(
+    execution.detach_to_background(
         frontend=_frontend(calls),
         cfg=Config(),  # run_commands = ask, nothing granted
         layout=layout,
@@ -71,7 +70,7 @@ def test_a_failed_spawn_is_reported_and_never_called_a_continuation(tmp_path: pa
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="runny-one-AAAAAA")
     layout.ensure()
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
-    _execution.detach_to_background(
+    execution.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,
@@ -161,7 +160,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     process.write_worker_pid(layout.session_dir, os.getpid())
 
-    _execution.detach_to_background(
+    execution.detach_to_background(
         frontend=_frontend(calls),
         cfg=cfg,
         layout=layout,
@@ -172,7 +171,7 @@ def test_the_worker_pid_survives_the_handoff_and_goes_when_it_fails(tmp_path: pa
     # the child overwrites it
     assert process.read_worker_pid(layout.session_dir) == os.getpid()
 
-    _execution.detach_to_background(
+    execution.detach_to_background(
         frontend=_frontend(calls, spawn_err="agent6 exe not found"),
         cfg=cfg,
         layout=layout,
@@ -193,7 +192,7 @@ def _returning(value: object) -> Callable[..., object]:
 
 def _stub_execution_internals(
     monkeypatch: pytest.MonkeyPatch,
-    result: _snapshot.SessionResult | Exception,
+    result: loop_snapshot.SessionResult | Exception,
     built: dict[str, Any] | None = None,
 ) -> None:
     class _Workflow:
@@ -207,7 +206,7 @@ def _stub_execution_internals(
                 "bridge"
             ].undo_forker
 
-        def run(self, _task: str) -> _snapshot.SessionResult:
+        def run(self, _task: str) -> loop_snapshot.SessionResult:
             if isinstance(result, Exception):
                 raise result
             if result.reason == "undone" and self._undo_forker is not None:
@@ -237,13 +236,13 @@ def _stub_execution_internals(
         keep_recent_chars=1,
         cfg=Config(),
     )
-    monkeypatch.setattr(_session, "build_session_providers", _returning(session))
-    monkeypatch.setattr(providers, "build_prompt_reviser_provider", _returning(None))
-    monkeypatch.setattr(_setup, "wants_session_network", _returning(False))
-    monkeypatch.setattr(_setup, "start_mcp_manager_if_enabled", _returning(None))
-    monkeypatch.setattr(_session, "build_session_tools", _returning(tools))
+    monkeypatch.setattr(session_parts, "build_session_providers", _returning(session))
+    monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
+    monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
+    monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(session_parts, "build_session_tools", _returning(tools))
     monkeypatch.setattr(harness_loop, "Harness", _Workflow)
-    monkeypatch.setattr(_session, "session_facts_provider", _returning(lambda: None))
+    monkeypatch.setattr(session_parts, "session_facts_provider", _returning(lambda: None))
 
 
 def test_a_loop_crash_prints_the_end_that_it_journals(
@@ -266,10 +265,10 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
     cwd.mkdir()
 
     with pytest.raises(RuntimeError, match="provider stream broke"):
-        _execution.run_execution(
+        execution.run_execution(
             Config(),
             layout,
-            _execution.ExecutionInputs(
+            execution.ExecutionInputs(
                 explicit_leaves=frozenset(),
                 session_id=layout.session_id,
                 mode="run",
@@ -310,7 +309,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
     """
     _stub_execution_internals(
         monkeypatch,
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=False,
             reason="detached",
             summary="operator detached at turn 3; resuming in the background",
@@ -337,10 +336,10 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = _execution.run_execution(
+    end = execution.run_execution(
         Config(),
         layout,
-        _execution.ExecutionInputs(
+        execution.ExecutionInputs(
             explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="ask",
@@ -381,7 +380,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
     """
     _stub_execution_internals(
         monkeypatch,
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=False,
             reason="undone",
             summary="operator undid the last message at turn 3",
@@ -408,10 +407,10 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = _execution.run_execution(
+    end = execution.run_execution(
         Config(),
         layout,
-        _execution.ExecutionInputs(
+        execution.ExecutionInputs(
             explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="ask",
@@ -450,7 +449,7 @@ def test_a_surface_without_the_revise_choice_skips_revision(
     built: dict[str, Any] = {}
     _stub_execution_internals(
         monkeypatch,
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True, reason="finish_session", summary="ok", turns=1, tool_calls=0
         ),
         built,
@@ -470,10 +469,10 @@ def test_a_surface_without_the_revise_choice_skips_revision(
     cwd = tmp_path / "repo"
     cwd.mkdir()
 
-    end = _execution.run_execution(
+    end = execution.run_execution(
         Config.model_validate({"prompt": {"revise_prompt": "interactive"}}),
         layout,
-        _execution.ExecutionInputs(
+        execution.ExecutionInputs(
             explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="run",
@@ -522,7 +521,7 @@ def test_an_answer_streamed_to_the_terminal_is_not_printed_on_it_again(
 
     _stub_execution_internals(
         monkeypatch,
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True, reason="answered", summary="CoreTest", turns=1, tool_calls=1
         ),
     )
@@ -546,10 +545,10 @@ def test_an_answer_streamed_to_the_terminal_is_not_printed_on_it_again(
     )
     cwd = tmp_path / "repo"
     cwd.mkdir()
-    end = _execution.run_execution(
+    end = execution.run_execution(
         Config(),
         layout,
-        _execution.ExecutionInputs(
+        execution.ExecutionInputs(
             explicit_leaves=frozenset(),
             session_id=layout.session_id,
             mode="ask",

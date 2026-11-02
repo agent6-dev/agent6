@@ -17,8 +17,8 @@ from collections.abc import Iterable, Mapping
 from typing import Any, Literal
 
 from agent6 import budget, evidence, kinds, terminal
-from agent6.viewmodel import _session_status, _transcript_text, format, review
 from agent6.viewmodel import events as viewmodel_events
+from agent6.viewmodel import format, review, session_status, transcript_text
 
 # Text characters, not graphics, so every terminal font renders them.
 CALL = "→"
@@ -235,7 +235,7 @@ class TranscriptFold:
         )
         parts.append(counts)
         if self._commit_subject:
-            parts.append(_transcript_text.clip(self._commit_subject, 60))
+            parts.append(transcript_text.clip(self._commit_subject, 60))
         return " · ".join(parts)
 
     def _pin_items(self, event: dict[str, Any], etype: str) -> list[TranscriptItem]:
@@ -308,7 +308,7 @@ class TranscriptFold:
             n = len(str(event.get("patch", "")).splitlines())
             sha = str(event.get("sha", ""))[:12]
             return [TranscriptItem("commit", detail=f"{sha} · {n} lines" if sha else f"{n} lines")]
-        build = _transcript_text.MARKER_BODIES.get(etype)
+        build = transcript_text.MARKER_BODIES.get(etype)
         if build is not None:
             body = build(event)
             if body is None:
@@ -329,7 +329,7 @@ class TranscriptFold:
         if etype in viewmodel_events.SESSION_START_EVENTS:
             out = self.settle_open_calls("the run ended")
             if etype == "session.start":
-                task = _session_status.task_snippet(str(event.get("user_task", "")), max_chars=200)
+                task = session_status.task_snippet(str(event.get("user_task", "")), max_chars=200)
                 if task:
                     out.append(TranscriptItem("task", body=task))
             return out
@@ -339,7 +339,7 @@ class TranscriptFold:
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
             all_passed = event.get("all_passed")
-            word, detail = _session_status.status_word(
+            word, detail = session_status.status_word(
                 finished=True,
                 all_passed=all_passed if isinstance(all_passed, bool) else None,
                 end_reason=reason,
@@ -348,7 +348,7 @@ class TranscriptFold:
                 gate_timed_out=self._gate is not None and self._gate[1],
                 stranded=self._stranded,
             )
-            body = _session_status.end_text(reason, str(event.get("summary", "")), self._finish)
+            body = session_status.end_text(reason, str(event.get("summary", "")), self._finish)
             self._ended = True
             out.append(
                 TranscriptItem(
@@ -412,9 +412,9 @@ class TranscriptFold:
             first, _preview = self._pending.pop(key)
             out.append(dataclasses.replace(first, ok=False, detail="no result (superseded)"))
         pending = TranscriptItem(
-            "tool", name=name, arg=_transcript_text.salient_arg(args), call_id=str(key)
+            "tool", name=name, arg=transcript_text.salient_arg(args), call_id=str(key)
         )
-        self._pending[key] = (pending, _transcript_text.call_preview(name, args))
+        self._pending[key] = (pending, transcript_text.call_preview(name, args))
         self._verify = None
         out.append(pending)
         return out
@@ -597,7 +597,7 @@ def restate(events: list[dict[str, Any]], *, worker_dead: bool = False) -> str:
         return "nothing to restate: this session has no operator input yet"
     anchor = events[last]
     said = str(anchor.get(_OPERATOR_TEXT[str(anchor["type"])], "")).strip()
-    lines = [f"you said: {_transcript_text.clip(said, 200)}"]
+    lines = [f"you said: {transcript_text.clip(said, 200)}"]
     for item in fold_transcript(events[last:], worker_dead=worker_dead):
         if item.kind in ("thinking", "operator"):
             continue
@@ -607,7 +607,7 @@ def restate(events: list[dict[str, Any]], *, worker_dead: bool = False) -> str:
                 lines.extend(("", body))
         elif item.kind == "tool":
             arg = f" {item.arg}" if item.arg else ""
-            detail = f": {_transcript_text.clip(item.detail, 80)}" if item.detail else ""
+            detail = f": {transcript_text.clip(item.detail, 80)}" if item.detail else ""
             lines.append(f"  [{_outcome_word(item)}] {item.name}{arg}{detail}")
         else:
             body = (item.body or item.detail).strip()

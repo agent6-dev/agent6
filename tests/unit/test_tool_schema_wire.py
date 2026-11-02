@@ -180,7 +180,7 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
     The old stripper dropped every "title" key, add_task's `title` field included, so tests
     pinned a schema the model never saw.
     """
-    from agent6.harness import _toolset
+    from agent6.harness import toolset
 
     add_task = tools_schema.wire_schema(tools_schema.DagAddTaskInput)
     assert "title" in add_task["properties"] and add_task["required"] == ["title"]
@@ -207,7 +207,7 @@ def test_wire_schema_strips_schema_titles_but_keeps_a_field_named_title() -> Non
         def mcp_descriptors(self) -> tuple[object, ...]:
             return ()
 
-    definitions = _toolset.tool_definitions(_Dispatcher(), mode="run")  # type: ignore[arg-type]
+    definitions = toolset.tool_definitions(_Dispatcher(), mode="run")  # type: ignore[arg-type]
     by_name = {d.name: d for d in definitions}
     assert by_name["read_file"].input_schema == read_file
     assert by_name["add_task"].input_schema == add_task

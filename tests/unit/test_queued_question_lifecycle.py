@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import _session, providers
+from agent6.app import role_providers, session_parts
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
 from agent6.viewmodel import listing
@@ -106,7 +106,7 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     subprocess.run(["git", "-C", str(repo), "add", "a.py"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "seed"], check=True)
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(_session, "select_isolation", _none_isolation)
+    monkeypatch.setattr(session_parts, "select_isolation", _none_isolation)
     return repo
 
 
@@ -124,7 +124,7 @@ def test_a_queued_question_is_answered_on_disk_and_delivered_once_across_resumes
     log = paths.state_dir(repo) / "sessions" / "runs" / session_id / "logs.jsonl"
 
     first = _Scripted([_ask_queued(), _finish()])
-    monkeypatch.setattr(providers, "build_role_provider", _use(first))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(first))
     assert cli_main(["run", "--session-id", session_id, "task"]) == 0
     assert len(first.seen) == 2
     assert "pending" in _dump(first.seen[1])
@@ -143,7 +143,7 @@ def test_a_queued_question_is_answered_on_disk_and_delivered_once_across_resumes
     assert not listing.finished_needs_new_work(log.parent)  # the saved answer is the new work
 
     second = _Scripted([_finish()])
-    monkeypatch.setattr(providers, "build_role_provider", _use(second))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(second))
     assert cli_main(["resume", session_id]) == 0
     assert len(second.seen) == 1
     opening = _dump(second.seen[0])
@@ -156,7 +156,7 @@ def test_a_queued_question_is_answered_on_disk_and_delivered_once_across_resumes
     ]
 
     third = _Scripted([_finish()])
-    monkeypatch.setattr(providers, "build_role_provider", _use(third))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(third))
     assert cli_main(["resume", session_id]) == 2  # the answer is consumed: finished, no new work
     assert third.seen == []
     assert cli_main(["resume", session_id, "--steer", "carry on"]) == 0

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.secret_store (storage, permissions, key resolution)."""
+"""Tests for agent6.config.secret_store (storage, permissions, key resolution)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import threading
 
 import pytest
 
-from agent6 import secret_store
+from agent6.config import secret_store
 
 
 @pytest.fixture

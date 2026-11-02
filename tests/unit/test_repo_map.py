@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the per-run repo-map prior in `_context.py`."""
+"""Tests for the per-run repo-map prior in `repo_context.py`."""
 
 from __future__ import annotations
 
@@ -10,12 +10,12 @@ import subprocess
 
 import pytest
 
-from agent6.harness import _context, _prompt_blocks
+from agent6.harness import prompt_blocks, repo_context
 from agent6.vcs import git_read
 
 
 def _repo_map(root: pathlib.Path) -> str:
-    return _context._build_repo_map(git_read.tracked_files(root))
+    return repo_context._build_repo_map(git_read.tracked_files(root))
 
 
 def _init_repo(root: pathlib.Path, files: dict[str, str]) -> None:
@@ -75,8 +75,8 @@ def test_repo_map_caps_total_rows(tmp_path: pathlib.Path, count: int) -> None:
 def test_repo_prior_labels_the_filtered_top_level_listing(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path, {"visible.txt": "x", ".hidden": "x"})
 
-    summary = _context.load_repo_summary(tmp_path)
-    prompt = _prompt_blocks.repo_priors_block(summary)
+    summary = repo_context.load_repo_summary(tmp_path)
+    prompt = prompt_blocks.repo_priors_block(summary)
 
     assert summary.top_level == ("visible.txt",)
     assert "Top-level (dot-prefixed entries omitted):" in prompt
@@ -87,7 +87,7 @@ def test_repo_summary_omits_packed_file_names_even_if_git_tracks_them(
 ) -> None:
     """The prompt's file map and count share the file tools' hidden-path boundary."""
     _init_repo(tmp_path, {"public.py": "x", ".agent6/config/secrets.toml": "synthetic"})
-    summary = _context.load_repo_summary(tmp_path)
+    summary = repo_context.load_repo_summary(tmp_path)
     assert summary.file_count == 1
     assert ".agent6" not in summary.repo_map and "secrets.toml" not in summary.repo_map
     assert summary.top_level == ("public.py",)
@@ -99,6 +99,6 @@ def test_repo_map_escapes_a_name_that_is_not_utf8(tmp_path: pathlib.Path) -> Non
     repo_map = _repo_map(tmp_path)
     repo_map.encode("utf-8")
     assert '"caf\\udce9.txt"' in repo_map
-    prompt = _prompt_blocks.repo_priors_block(_context.load_repo_summary(tmp_path))
+    prompt = prompt_blocks.repo_priors_block(repo_context.load_repo_summary(tmp_path))
     prompt.encode("utf-8")
     assert prompt.count('"caf\\udce9.txt"') == 2  # the top-level listing and the map

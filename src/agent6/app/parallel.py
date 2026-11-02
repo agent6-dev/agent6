@@ -19,23 +19,24 @@ import functools
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import errors, event_log, kinds, memory, task_text
+from agent6 import errors, kinds, task_text
+from agent6.app import compare as app_compare
 from agent6.app import (
-    _lane_watch,
-    _parallel_results,
-    _setup,
-    _workdirs,
+    lane_watch,
+    parallel_results,
     preflight,
+    session_setup,
     stamps,
+    workdirs,
     workspace_setup,
 )
-from agent6.app import compare as app_compare
 from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
+from agent6.context import memory
 from agent6.harness import subrun
 from agent6.providers import TranscriptSink
-from agent6.sessions import ipc, process
+from agent6.sessions import event_log, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
@@ -152,7 +153,7 @@ def run_parallel(
             mode="run",
             events=events,
             transcript_sink=TranscriptSink(layout.transcripts_dir),
-            budget=_setup.budget_tracker(cfg),
+            budget=session_setup.budget_tracker(cfg),
             reporter=reporter,
         )
     verify_origin = ""
@@ -256,11 +257,11 @@ def _drive_fanout(
             res = spawner(spec, task)
             results.append(res)
             if res.ok:
-                _lane_watch.symlink_lane(origin_state, res)
-                _lane_watch.print_lane_status(spec, "started", "", reporter=reporter)
+                lane_watch.symlink_lane(origin_state, res)
+                lane_watch.print_lane_status(spec, "started", "", reporter=reporter)
             else:
                 reporter.note(f"lane {spec.lane} [{spec.session_id}]: FAILED to start: {res.error}")
-        interrupted = _lane_watch.await_lanes(
+        interrupted = lane_watch.await_lanes(
             [r for r in results if r.ok],
             already_interrupted=ipc.stop_request_pending(coordinator_dir),
             should_stop=lambda: ipc.stop_request_pending(coordinator_dir),
@@ -268,7 +269,7 @@ def _drive_fanout(
         )
     except KeyboardInterrupt:
         # An interrupt mid-spawn routes the started lanes through the same stop grace.
-        interrupted = _lane_watch.await_lanes(
+        interrupted = lane_watch.await_lanes(
             [r for r in results if r.ok],
             already_interrupted=True,
             reporter=reporter,
@@ -280,7 +281,7 @@ def _drive_fanout(
 
     # The stop request is consumed with the session.
     ipc.clear_stop_request(coordinator_dir)
-    batch = _parallel_results.import_lanes(
+    batch = parallel_results.import_lanes(
         results,
         origin=origin,
         origin_state=origin_state,
@@ -298,10 +299,10 @@ def _drive_fanout(
                 for res, detail in batch.failed
             ],
         )
-    _workdirs.cleanup(
+    workdirs.cleanup(
         batch.imported,
         workdir_root=lanes[0].workdir.parent,
-        base=_workdirs.workdir_base(cfg, origin),
+        base=workdirs.workdir_base(cfg, origin),
         cfg=cfg,
     )
 
@@ -315,13 +316,13 @@ def _drive_fanout(
         events=events,
         reporter=reporter,
     )
-    _parallel_results.stamp_compare_outcomes(
+    parallel_results.stamp_compare_outcomes(
         batch.candidates,
         outcome,
         origin_state=origin_state,
         reporter=reporter,
     )
-    _parallel_results.print_report(
+    parallel_results.print_report(
         batch.candidates,
         outcome,
         batch.failed,
@@ -367,10 +368,10 @@ def _drive_fanout(
     rc = (
         130
         if interrupted
-        else _parallel_results.fanout_exit_code(
+        else parallel_results.fanout_exit_code(
             batch.candidates, all_budget_exhausted=batch.all_budget_exhausted
         )
     )
-    reason, all_passed = _parallel_results.fanout_end(rc, batch.candidates)
+    reason, all_passed = parallel_results.fanout_end(rc, batch.candidates)
     events.emit("session.end", reason=reason, turns=0, all_passed=all_passed)
     return rc

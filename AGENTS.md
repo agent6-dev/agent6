@@ -35,7 +35,7 @@
 - **Structures over scores.** A measure that becomes a target stops measuring; counts (lines, modules, graph edges) point at where to look.
   Reading the structure, asking "can this be simpler?", and making it so.
 - **Decompose proactively.** Past ~600 lines per module, or a few hundred per method, split before it ossifies.
-  Lift cohesive helper groups into sibling `_name.py` modules; moved symbols get public names and direct call sites.
+  Lift cohesive helper groups into sibling modules named subject first, without a leading underscore; moved symbols get public names and direct call sites.
   A large stateful method keeps its cross-iteration bookkeeping in one mutable state dataclass.
   An extraction that shifts a module boundary records the edge in `tach.toml`, one module per commit.
 - **Secure by default, degrade or refuse.** Every knob ships with the safe default, visible in `agent6 config show`; widening is opt-in and carries a security review note.

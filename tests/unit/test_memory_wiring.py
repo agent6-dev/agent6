@@ -14,10 +14,10 @@ import pathlib
 import pytest
 
 from agent6 import kinds
-from agent6 import memory as agent6_memory
 from agent6.config import Config
-from agent6.harness import _prompt_blocks as pb
-from agent6.tools import dispatch, errors
+from agent6.context import memory as agent6_memory
+from agent6.harness import prompt_blocks
+from agent6.tools import dispatch, tool_errors
 
 
 def _repo(root: pathlib.Path) -> kinds.RepoSummary:
@@ -33,7 +33,7 @@ def _repo(root: pathlib.Path) -> kinds.RepoSummary:
 
 
 def _build(mode: str, index: str, tmp_path: pathlib.Path) -> str:
-    return pb.build_system_prompt(
+    return prompt_blocks.build_system_prompt(
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         repo=_repo(tmp_path),
         mode=mode,  # pyright: ignore[reportArgumentType]
@@ -50,7 +50,7 @@ def test_run_mode_always_carries_the_memory_header(tmp_path: pathlib.Path) -> No
     memory = out.split("<memory>")[1].split("</memory>")[0]
     assert "edit tools" in memory
     assert "deleted" in memory
-    assert "first line concise" in pb.memory_block("", "/state/memory", mode="run")
+    assert "first line concise" in prompt_blocks.memory_block("", "/state/memory", mode="run")
 
 
 def test_index_content_renders_and_clips(tmp_path: pathlib.Path) -> None:
@@ -127,9 +127,9 @@ def test_tools_reach_the_memory_dir_and_nothing_else_in_state(
     assert (mem / "new-fact.md").read_text() == "learned\n"
 
     (state / "secretish.txt").write_text("run state\n")
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch("read_file", {"path": str(state / "secretish.txt")})
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch(
             "apply_edit",
             {
@@ -152,7 +152,7 @@ def test_mixed_patch_records_memory_and_workspace_effects(
     import subprocess
     from unittest import mock
 
-    from agent6.harness import _chain, _conversation, _loop_state
+    from agent6.harness import loop_conversation, loop_state, run_chain
     from tests.unit import test_harness
 
     dispatcher, state_dir = _dispatcher(tmp_path, monkeypatch)
@@ -179,16 +179,16 @@ def test_mixed_patch_records_memory_and_workspace_effects(
     wf = test_harness._wf(  # pyright: ignore[reportPrivateUsage]
         repo, mode="run", state_dir=state_dir, events=events
     )
-    wf.chain = _chain.RunChain(
+    wf.chain = run_chain.RunChain(
         repo,
         ref="refs/agent6/t/head",
         fallback_parent="HEAD",
         untracked_at_start=frozenset({"notes.txt"}),
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
-    turn = _loop_state.TurnState(
-        number=1, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
+    turn = loop_state.TurnState(
+        number=1, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "apply_patch", result, tool_input
@@ -212,7 +212,7 @@ def test_memory_grant_absent_without_state_dir(tmp_path: pathlib.Path) -> None:
     repo.mkdir()
     cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
     d = dispatch.ToolDispatcher(root=repo, config=cfg)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch("read_file", {"path": str(tmp_path / "state" / "memory" / "fact.md")})
 
 
@@ -248,7 +248,7 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
     """
     from unittest import mock
 
-    from agent6.harness import _loop_state, loop
+    from agent6.harness import loop, loop_state
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "statehome"))
     state_dir = tmp_path / "statehome" / "repo-id"
@@ -256,9 +256,9 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
 
     wf = loop.Harness.__new__(loop.Harness)
     wf.state_dir = state_dir
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_pass()
-    turn = mock.MagicMock(spec=_loop_state.TurnState)
+    turn = mock.MagicMock(spec=loop_state.TurnState)
     target = agent6_memory.memory_dir(state_dir) / "fact.md"
 
     result = mock.MagicMock()

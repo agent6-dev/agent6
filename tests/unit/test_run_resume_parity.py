@@ -4,7 +4,7 @@
 
 The two lifecycles once each constructed the Harness and drifted (resume
 silently dropped state_dir, the interactive REPL hook, and the prompt-revision
-wiring). Now neither constructs one: both hand `ExecutionInputs` to `_execution.run_execution`,
+wiring). Now neither constructs one: both hand `ExecutionInputs` to `execution.run_execution`,
 the one place the Harness is built, so an input added to one lifecycle cannot
 be missing from the other. Pinned structurally: a `Harness(...)` call in
 either lifecycle module is the drift returning.
@@ -16,7 +16,7 @@ import ast
 import pathlib
 import types
 
-import agent6.app._execution
+import agent6.app.execution
 import agent6.app.resume
 import agent6.app.run
 
@@ -38,7 +38,7 @@ def _calls(module: types.ModuleType, name: str) -> int:
 def test_neither_lifecycle_builds_its_own_workflow() -> None:
     assert _calls(agent6.app.run, "Harness") == 0
     assert _calls(agent6.app.resume, "Harness") == 0
-    assert _calls(agent6.app._execution, "Harness") == 1  # pyright: ignore[reportPrivateUsage]
+    assert _calls(agent6.app.execution, "Harness") == 1  # pyright: ignore[reportPrivateUsage]
 
 
 def test_both_lifecycles_run_the_one_execution_body() -> None:
@@ -70,10 +70,10 @@ def test_every_budget_override_survives_a_detach() -> None:
     """
     import argparse
 
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     args = argparse.Namespace(max_usd=2.0, max_tokens_fallback=1000, max_plan_points=5.0)
-    overrides = _setup.BudgetOverrides.from_args(args)
+    overrides = session_setup.BudgetOverrides.from_args(args)
     argv = overrides.argv()
     for field in ("max_usd", "max_tokens_fallback", "max_plan_points"):
         assert getattr(overrides, field) is not None
@@ -87,7 +87,10 @@ def test_the_model_flag_survives_a_detach() -> None:
     detached execution re-reads the config's model.
     """
     from agent6 import kinds
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
-    assert _setup.override_flags(None, None, kinds.ModelRoute("p", "m")) == ["--model", "p/m"]
-    assert _setup.override_flags(None, None, None) == []
+    assert session_setup.override_flags(None, None, kinds.ModelRoute("p", "m")) == [
+        "--model",
+        "p/m",
+    ]
+    assert session_setup.override_flags(None, None, None) == []

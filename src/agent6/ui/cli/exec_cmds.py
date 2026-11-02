@@ -24,11 +24,11 @@ import types
 from typing import Any
 
 from agent6 import child_env, kinds
-from agent6.app import _setup, confine
+from agent6.app import confine, session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import policy as tools_policy
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 # The relay wakes this often to notice the command ended while a child of it holds the pty.
 _RELAY_POLL_S = 0.05
@@ -216,7 +216,7 @@ def run_attached(policy: kinds.JailPolicy, session_net: jail.SessionNetwork | No
         for sig, handler in old_handlers.items():
             signal.signal(sig, handler)
         if left:
-            _common.error(jail.survivors_message(left))
+            common.error(jail.survivors_message(left))
 
 
 def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
@@ -234,28 +234,28 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
         The command's exit code; 2 when the host or the config refuses the sandbox.
     """
     try:
-        env = _setup.detect_env()
+        env = session_setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         refusal = confine.check_network_support(cfg, isolation) or confine.config_refusal(
             cfg, isolation, cwd
         )
         if refusal is not None:
-            _common.refuse(refusal)
+            common.refuse(refusal)
             return 2
         confine.warn_sandbox_gaps(isolation, env, cfg, root=cwd)
         if not argv:
             argv = (resolve_shell(),)
-            _common.note(f"{argv[0]} in a fresh sandbox, isolation {isolation}.")
+            common.note(f"{argv[0]} in a fresh sandbox, isolation {isolation}.")
         policy = exec_policy(cwd, cfg, isolation, argv)
         # The network a run opens for its commands, for this one command.
         session_net = jail.SessionNetwork.open() if policy.network == "session" else None
     except (jail.JailUnavailableError, detect.IsolationUnavailableError) as exc:
-        _common.refuse(f"{exc}")
+        common.refuse(f"{exc}")
         return 2
     try:
         return run_attached(policy, session_net)
     except jail.JailUnavailableError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     finally:
         if session_net is not None:

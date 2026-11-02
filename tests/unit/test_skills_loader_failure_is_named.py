@@ -14,7 +14,7 @@ import pathlib
 
 import pytest
 
-from agent6 import skills
+from agent6.context import skills
 from agent6.ui.cli import skills_cmds
 
 

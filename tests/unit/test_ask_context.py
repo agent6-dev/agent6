@@ -11,12 +11,12 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.ui.cli import _ask
+from agent6.ui.cli import ask
 
 
 def _build_ask_session_digest(cwd: pathlib.Path, session_id: str, *, latest: bool) -> str | None:
     """The seed text for tests concerned with digest contents."""
-    seed = _ask.build_session_seed(cwd, session_id, latest=latest)
+    seed = ask.build_session_seed(cwd, session_id, latest=latest)
     return seed.text if seed is not None else None
 
 
@@ -107,7 +107,7 @@ def test_ask_from_latest_no_sessions_names_the_flag(
 
 def test_seed_files_wraps_and_skips_missing(tmp_path: pathlib.Path) -> None:
     (tmp_path / "a.py").write_text("print('a')\n", encoding="utf-8")
-    out = _ask.seed_files(tmp_path, ["a.py", "missing.py"])
+    out = ask.seed_files(tmp_path, ["a.py", "missing.py"])
     assert '<file path="a.py">' in out
     assert "print('a')" in out
     assert "missing" not in out  # missing file skipped, not crashed
@@ -142,16 +142,16 @@ def test_ask_transcript_snippet_skips_digest_tags() -> None:
 def test_ask_repl_multi_turn_carries_context(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
     from agent6.sessions import layout as sessions_layout
 
     class _FakeWf:
         def __init__(self) -> None:
             self.calls: list[str] = []
 
-        def run(self, q: str) -> _snapshot.SessionResult:
+        def run(self, q: str) -> loop_snapshot.SessionResult:
             self.calls.append(q)
-            return _snapshot.SessionResult(
+            return loop_snapshot.SessionResult(
                 completed=True,
                 reason="silent_finish",
                 summary=f"answer-{len(self.calls)}",
@@ -178,7 +178,7 @@ def test_ask_repl_multi_turn_carries_context(
 
     monkeypatch.setattr("builtins.input", _fake_input)
 
-    result = _ask.run_ask_repl(wf, _FakeBudget(), layout, first_question="first question")  # type: ignore[arg-type]
+    result = ask.run_ask_repl(wf, _FakeBudget(), layout, first_question="first question")  # type: ignore[arg-type]
 
     assert wf.calls[0] == "first question"  # turn 1 verbatim
     # turn 2 carried the prior Q&A as context
@@ -198,7 +198,7 @@ def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: pathlib.
 
     layout = sessions_layout.SessionLayout(state_dir=tmp_path, session_id="ask-x")
     layout.ensure()
-    _ask.save_ask_repl_transcript(
+    ask.save_ask_repl_transcript(
         layout, [("why is the broker slow?", "because"), ("more?", "sure")]
     )
     text = (layout.session_dir / "transcript.md").read_text(encoding="utf-8")
@@ -209,11 +209,11 @@ def test_ask_transcript_snippet_reads_interactive_transcripts(tmp_path: pathlib.
 
 
 def test_load_repo_summary_outside_git(tmp_path: pathlib.Path) -> None:
-    from agent6.harness import _context
+    from agent6.harness import repo_context
 
     (tmp_path / "notes.txt").write_text("alpha\n", encoding="utf-8")
     (tmp_path / "sub").mkdir()
-    summary = _context.load_repo_summary(tmp_path)
+    summary = repo_context.load_repo_summary(tmp_path)
     assert summary.is_git is False
     assert summary.branch == "" and summary.head_sha == ""
     assert summary.recent_log == "" and summary.repo_map == ""
@@ -224,7 +224,7 @@ def test_load_repo_summary_outside_git(tmp_path: pathlib.Path) -> None:
 def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
     from agent6 import kinds
     from agent6.config import load_config
-    from agent6.harness import _prompt_blocks  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import prompt_blocks  # pyright: ignore[reportPrivateUsage]
 
     cfg_path = tmp_path / "agent6.toml"
     cfg_path.write_text(
@@ -252,7 +252,7 @@ def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
         recent_log="",
         is_git=False,
     )
-    prompt = _prompt_blocks.build_system_prompt(
+    prompt = prompt_blocks.build_system_prompt(
         config=load_config(cfg_path), repo=repo, mode="ask", skills=None
     )
     assert "not a git repository" in prompt
@@ -262,7 +262,7 @@ def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
 def test_prompt_revision_context_names_non_git_directory(tmp_path: pathlib.Path) -> None:
     """Outside git the reviser context names the situation instead of a fake empty repo header."""
     from agent6 import kinds
-    from agent6.harness import _prompt_revision
+    from agent6.harness import prompt_revision
 
     repo = kinds.RepoSummary(
         root=tmp_path,
@@ -274,7 +274,7 @@ def test_prompt_revision_context_names_non_git_directory(tmp_path: pathlib.Path)
         recent_log="",
         is_git=False,
     )
-    ctx = _prompt_revision.format_prompt_revision_context(repo)
+    ctx = prompt_revision.format_prompt_revision_context(repo)
     assert "not a git repository" in ctx
     assert "branch=" not in ctx  # no fake repo header
     git_repo = kinds.RepoSummary(
@@ -286,7 +286,7 @@ def test_prompt_revision_context_names_non_git_directory(tmp_path: pathlib.Path)
         agents_md="",
         recent_log="",
     )
-    assert "branch=main" in _prompt_revision.format_prompt_revision_context(git_repo)
+    assert "branch=main" in prompt_revision.format_prompt_revision_context(git_repo)
 
 
 def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -314,7 +314,7 @@ def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) ->
             raise KeyboardInterrupt  # the operator leaves the REPL
 
         monkeypatch.setattr("builtins.input", fake_input)
-        result = _ask.run_ask_repl(
+        result = ask.run_ask_repl(
             cast("loop.Harness", object()),
             cast("Any", object()),
             cast("Any", object()),

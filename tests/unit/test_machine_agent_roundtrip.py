@@ -14,12 +14,12 @@ import sys
 
 import pytest
 
-from agent6.app import machine_agent
+from agent6.app.machine import agent
 from agent6.machine import AgentExecResult, AgentRequest
 
 
 def _round_trip(
-    tmp_path: pathlib.Path, req: machine_agent.MachineAgentRequest
+    tmp_path: pathlib.Path, req: agent.MachineAgentRequest
 ) -> tuple[int, AgentExecResult | None]:
     req_file = tmp_path / "request.json"
     out_file = tmp_path / "result.json"
@@ -42,7 +42,7 @@ def test_network_refusal_writes_a_valid_error_result(tmp_path: pathlib.Path) -> 
     # network='session' on 'partial' is unenforceable: refused before any provider call.
     cwd = tmp_path / "repo"
     cwd.mkdir()
-    req = machine_agent.MachineAgentRequest(
+    req = agent.MachineAgentRequest(
         cwd=cwd,
         root=cwd,
         overlay={"sandbox": {"network": "session"}},
@@ -61,7 +61,7 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: pathlib.Path) -> Non
     # A bad [config] overlay lands as an `error` result, not a pydantic traceback with no result.
     cwd = tmp_path / "repo"
     cwd.mkdir()
-    req = machine_agent.MachineAgentRequest(
+    req = agent.MachineAgentRequest(
         cwd=cwd,
         root=cwd,
         overlay={"budget": {"max_tokens_fallback": -5}},

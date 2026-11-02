@@ -13,8 +13,8 @@ import pathlib
 
 import pytest
 
-from agent6 import event_log
 from agent6.config import Config
+from agent6.sessions import event_log
 from agent6.tools import dispatch
 
 

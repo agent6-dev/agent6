@@ -8,7 +8,7 @@ import pathlib
 import subprocess
 
 from agent6.sessions import manifest as sessions_manifest
-from agent6.ui.cli import _ask  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import ask  # pyright: ignore[reportPrivateUsage]
 
 
 def _git(repo: pathlib.Path, *args: str) -> str:
@@ -42,7 +42,7 @@ def test_an_ask_over_a_noop_merged_run_diffs_its_tip(tmp_path: pathlib.Path) -> 
         ),
     )
 
-    got = _ask._diff_via_merge_stamp(tmp_path, manifest, base, "agent6/run-NOOP11")
+    got = ask._diff_via_merge_stamp(tmp_path, manifest, base, "agent6/run-NOOP11")
 
     assert got is not None
     label, rc, diff, _err = got
@@ -70,4 +70,4 @@ def test_a_noop_stamp_with_no_tip_names_nothing_to_diff(tmp_path: pathlib.Path) 
         run_branch="agent6/run-OLD11",
         merged=sessions_manifest.MergeStamp(into="main", sha=sessions_manifest.NO_MERGE_COMMIT),
     )
-    assert _ask._diff_via_merge_stamp(tmp_path, manifest, base, "agent6/run-OLD11") is None
+    assert ask._diff_via_merge_stamp(tmp_path, manifest, base, "agent6/run-OLD11") is None

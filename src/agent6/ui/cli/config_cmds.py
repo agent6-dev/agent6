@@ -11,17 +11,9 @@ import tempfile
 import tomllib
 
 from agent6 import errors, paths, portable
-from agent6.app import _setup, confine
+from agent6.app import confine, session_setup
 from agent6.app.machine import sandbox_widening
-from agent6.config import (
-    ConfigError,
-    _layer_data,
-    _presets,
-    io,
-    layer,
-    notices,
-    write,
-)
+from agent6.config import ConfigError, io, layer, layer_data, layer_presets, notices, write
 from agent6.machine import (
     MachineError,
     load_machine,
@@ -29,7 +21,7 @@ from agent6.machine import (
     protected_overlay_key_error,
 )
 from agent6.sandbox import detect
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.viewmodel import config_view
 
 
@@ -71,7 +63,7 @@ def _read_machine_overlay(machine: pathlib.Path | None) -> dict[str, object] | N
 
 def _effective_with_overlay(
     config_paths: tuple[pathlib.Path, ...], machine: pathlib.Path | None
-) -> _layer_data.EffectiveConfig:
+) -> layer_data.EffectiveConfig:
     """Return the effective config, with a machine file's `[config]` overlay on top when named."""
     overlay = _read_machine_overlay(machine)
     if overlay is None:
@@ -110,7 +102,7 @@ def _cmd_config_show(
                 eff, keys, resolved=resolved, color=sys.stdout.isatty(), as_json=as_json
             )
         except KeyError as exc:
-            _common.error(_config_key_error(str(exc.args[0]), eff))
+            common.error(_config_key_error(str(exc.args[0]), eff))
             return 2
         print(detail, end="")
         return 0
@@ -158,7 +150,7 @@ def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
     Returns:
         The exit code.
     """
-    cat = _presets.preset_catalog(pathlib.Path.cwd(), config_paths)
+    cat = layer_presets.preset_catalog(pathlib.Path.cwd(), config_paths)
     if cat.selected != "none":
         print(f"preset = {cat.selected}  [{cat.source}]")
     else:
@@ -169,7 +161,7 @@ def _cmd_config_presets(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
             tag += ", replaces the built-in"
         sel = "  (selected)" if info.name == cat.selected else ""
         print(f"\n{info.name}  [{tag}]{sel}")
-        leaves = _layer_data.flatten_leaves(info.overrides)
+        leaves = layer_data.flatten_leaves(info.overrides)
         if not leaves:
             print("  (plain defaults, no overrides)")
         for key, val in leaves.items():
@@ -203,7 +195,7 @@ def _cmd_config_fill(*, force: bool) -> int:
     with write.writing_config(target):
         eff = layer.load_global_only()
         if target.is_file() and not force:
-            _common.error(f"{target} already exists. Re-run with --force to overwrite.")
+            common.error(f"{target} already exists. Re-run with --force to overwrite.")
             return 2
         portable.atomic_write(
             target,
@@ -284,7 +276,7 @@ def _sandbox_problems(
     Raises:
         ConfigError: A layer does not load.
     """
-    cwd, env = pathlib.Path.cwd(), _setup.detect_env()
+    cwd, env = pathlib.Path.cwd(), session_setup.detect_env()
     operator = layer.load_effective(cwd, config_paths).config
     machine = layer.load_effective_with_overlay(cwd, overlay, explicit_paths=config_paths).config
     try:
@@ -375,7 +367,7 @@ def _revalidate_machine(
 def _warn_if_still_broken() -> None:
     """Warn when the config still fails to load after a kept write, naming the layer."""
     if (after := write.merged_config_error(pathlib.Path.cwd())) is not None:
-        _common.warn(
+        common.warn(
             "the config is still invalid because of a value this edit did not"
             f" write; fix that one on its own:\n{after}"
         )
@@ -403,7 +395,7 @@ def _cmd_config_get(
     for leaf in keys:
         found = layer.effective_leaf(eff, leaf)
         if found is None:
-            _common.error(_config_key_error(key, eff))
+            common.error(_config_key_error(key, eff))
             return 2
         value, source = found
         parts = io.split_key(leaf)
@@ -439,7 +431,7 @@ def _cmd_config_set(
     """
     key = io.render_key(io.split_key(key))
     if err := _reject_machine_protected(key, machine):
-        _common.error(f"{err}")
+        common.error(f"{err}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     parsed = io.parse_cli_value(value)
@@ -453,7 +445,7 @@ def _cmd_config_set(
             io.upsert_toml_leaf(target, prefix + key, parsed)
             err = _revalidate_machine(target, prior, held=held, config_paths=config_paths)
     if err:
-        _common.error(f"{err}")
+        common.error(f"{err}")
         return 2
     if machine is None:
         _warn_if_still_broken()
@@ -471,7 +463,7 @@ def _cmd_config_set(
     return 0
 
 
-def _config_key_error(key: str, eff: _layer_data.EffectiveConfig) -> str:
+def _config_key_error(key: str, eff: layer_data.EffectiveConfig) -> str:
     """Return the error for a key that is a section or unknown, with its did-you-mean."""
     if any(candidate.startswith(key + ".") for candidate in layer.leaf_keys(eff)):
         return f"{key!r} is not a config leaf (see `agent6 config show`)."
@@ -513,7 +505,7 @@ def _cmd_config_unset(
     """
     key = io.render_key(io.split_key(key))
     if err := _reject_machine_protected(key, machine):
-        _common.error(f"{err}")
+        common.error(f"{err}")
         return 2
     # An unset repairs a config that no longer loads, so a failing validation must not block it.
     try:
@@ -525,11 +517,11 @@ def _cmd_config_unset(
     except ConfigError:
         known_leaf = True
     if not known_leaf:
-        _common.error(f"{_not_a_leaf(key, config_paths, machine)}")
+        common.error(f"{_not_a_leaf(key, config_paths, machine)}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     if not target.is_file():
-        _common.error(f"{target} does not exist; nothing to unset.")
+        common.error(f"{target} does not exist; nothing to unset.")
         return 2
     if machine is None:
         res = write.unset_config_value(pathlib.Path.cwd(), key, to_repo=repo)
@@ -541,7 +533,7 @@ def _cmd_config_unset(
             removed = io.remove_toml_leaf(target, prefix + key)
             err = _revalidate_machine(target, prior, held=held) if removed else None
     if err:
-        _common.error(f"unsetting {key} left an invalid config:\n{err}")
+        common.error(f"unsetting {key} left an invalid config:\n{err}")
         return 2
     if not removed:
         print(f"{key} is not set in {target}; nothing to unset.")
@@ -581,7 +573,7 @@ def _config_list_edit(
     """
     key = io.render_key(io.split_key(key))
     if err := _reject_machine_protected(key, machine):
-        _common.error(f"{err}")
+        common.error(f"{err}")
         return 2
     target, prefix = _config_write_target(repo=repo, machine=machine)
     _open_target(target)
@@ -601,7 +593,7 @@ def _config_list_edit(
                 inherited = None
             current = inherited[0] if inherited is not None and inherited[0] is not None else []
         if not isinstance(current, (list, tuple)):
-            _common.error(f"{key} is not a list field in {target}.")
+            common.error(f"{key} is not a list field in {target}.")
             return 2
         parsed = io.parse_cli_value(value)
         items = list(current)
@@ -624,7 +616,7 @@ def _config_list_edit(
         else:
             err = _revalidate_machine(target, prior, held=held, config_paths=config_paths)
         if err:
-            _common.error(f"{value!r} is not valid for {key}:\n{err}")
+            common.error(f"{value!r} is not valid for {key}:\n{err}")
             return 2
     if machine is None:
         _warn_if_still_broken()
@@ -714,7 +706,7 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
         )
         print(f"Removed {what}  [{entry.layer}: {entry.path}]")
     if diag.blocked:
-        _common.error(
+        common.error(
             f"config still invalid (not an auto-removable entry); fix it by hand:\n{diag.blocked}"
         )
         return 2
@@ -723,7 +715,7 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
             f"  {e.leaf} = {config_view.format_value(e.value)}  [{e.layer}: {e.path}]"
             for e in stuck
         )
-        _common.error(
+        common.error(
             "config still invalid (flagged entries could not be auto-removed);"
             f" fix by hand:\n{names}"
         )
@@ -731,7 +723,7 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
     # Measured before claimed: a no-progress break lands here with the config still refused.
     final = layer.find_invalid_entries(repo_root, machine=machine)
     if final.removable or final.blocked:
-        _common.error(
+        common.error(
             "config still invalid (flagged entries changed under the lock"
             " this pass); re-run `agent6 config fix` or fix by hand."
         )

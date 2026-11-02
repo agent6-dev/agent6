@@ -11,7 +11,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.app import _session
+from agent6.app import session_parts
 from agent6.config import Config
 
 
@@ -57,7 +57,7 @@ def test_the_ask_lifecycle_clamps_before_anything_reads_the_knob(
         seen.append(cfg.sandbox.run_commands)
         raise preflight.SessionRefusedError(2)
 
-    monkeypatch.setattr(_session, "select_isolation", capture)
+    monkeypatch.setattr(session_parts, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)
     modes: tuple[tuple[Literal["run", "plan", "ask"], str], ...] = (
         ("ask", "ask"),
@@ -97,7 +97,7 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
     The clamp stops an ask inheriting a standing `run_commands = "allow"`; the flag typed on this
     invocation is the most specific layer and unreachable by the LLM.
     """
-    from agent6.app import _setup, preflight
+    from agent6.app import preflight, session_setup
     from agent6.app import run as run_mod
 
     seen: list[str] = []
@@ -106,7 +106,7 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
         seen.append(cfg.sandbox.run_commands)
         raise preflight.SessionRefusedError(2)
 
-    monkeypatch.setattr(_session, "select_isolation", capture)
+    monkeypatch.setattr(session_parts, "select_isolation", capture)
     monkeypatch.chdir(tmp_path)
     run_mod.run_task(
         _cfg("ask"),
@@ -114,6 +114,6 @@ def test_an_explicit_auto_approve_survives_the_ask_clamp(
         started_at=time.time(),
         frontend=mock.MagicMock(),
         mode="ask",
-        sandbox_overrides=_setup.SandboxOverrides(auto_approve=True),
+        sandbox_overrides=session_setup.SandboxOverrides(auto_approve=True),
     )
     assert seen == ["allow"], f"the operator's own flag was undone: {seen}"

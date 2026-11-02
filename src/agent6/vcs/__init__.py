@@ -4,7 +4,7 @@
 
 Git today: the operations (`git_ops`), the hardening flags and hook policy (`git_policy`),
 the history reads the web Git tab shows (`git_history`), the commit message composer
-(`commit_message`) and the private runner (`_git_command`). All leaves; import the
+(`commit_message`) and the private runner (`git_command`). All leaves; import the
 submodules directly.
 """
 

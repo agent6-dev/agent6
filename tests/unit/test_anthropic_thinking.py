@@ -23,7 +23,13 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, _headers, anthropic
+from agent6.providers import (
+    AnthropicProvider,
+    ProviderError,
+    TranscriptSink,
+    anthropic,
+    request_headers,
+)
 
 
 class _FakeResponse:
@@ -50,7 +56,7 @@ def _capture_body(monkeypatch: pytest.MonkeyPatch, bodies: list[dict[str, Any]])
         bodies.append(json.loads(kwargs["content"]))
         return _FakeResponse(status_code=200, payload=_ok_payload())
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
 
 
 @pytest.mark.parametrize("level", ["low", "medium", "high"])
@@ -188,7 +194,7 @@ def test_nonstreaming_thinking_requires_its_replay_signature(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=200, payload=payload)
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = AnthropicProvider(api_key="sk-test", model="claude-test")
     with pytest.raises(ProviderError, match="signature"):
         provider.call(system="sys", messages=[{"role": "user", "content": "go"}])
@@ -227,7 +233,7 @@ def test_request_with_no_nonempty_messages_is_not_sent(monkeypatch: pytest.Monke
     def fail_post(url: str, **kwargs: Any) -> _FakeResponse:
         raise AssertionError("an empty Messages request reached the transport")
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fail_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fail_post)
     provider = AnthropicProvider(api_key="sk-test", model="claude-test", prompt_caching=False)
     with pytest.raises(ProviderError, match="no nonempty messages") as exc_info:
         provider.call(system="sys", messages=[{"role": "assistant", "content": []}])
@@ -293,12 +299,12 @@ def test_required_prompt_cache_beta_is_merged_with_extra_betas(
         headers.append(kwargs["headers"])
         return _FakeResponse(status_code=200, payload=_ok_payload())
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = AnthropicProvider(
         api_key="sk-test",
         model="claude-test",
         prompt_caching=True,
-        extra_headers=_headers.HeaderSet.from_config(
+        extra_headers=request_headers.HeaderSet.from_config(
             {"Anthropic-Beta": "interleaved-thinking-2025-05-14"}
         ),
     )

@@ -2,14 +2,15 @@
 # Copyright 2026 Eric Lesiuta
 """State machines: declarative, replayable mini-agents.
 
-Load and validate a `.asm.toml` (`spec`, `_semantics`), render it as a diagram (`graph`),
+Load and validate a `.asm.toml` (`spec`, `semantics`), render it as a diagram (`graph`),
 and drive it deterministically (`engine`) over an append-only `journal` with crash recovery
 and offline replay. An `agent` state runs an agent6 loop through an injected runner.
 """
 
 from __future__ import annotations
 
-from agent6.machine._contracts import (  # noqa: ICN003  # re-export
+from agent6.machine.authoring import build_authoring_prompt  # noqa: ICN003  # re-export
+from agent6.machine.contracts import (  # noqa: ICN003  # re-export
     AgentExecResult,
     AgentRequest,
     EngineError,
@@ -18,13 +19,6 @@ from agent6.machine._contracts import (  # noqa: ICN003  # re-export
     WaitWake,
     World,
 )
-from agent6.machine._semantics import (  # noqa: ICN003  # re-export
-    fixture_problems,
-    load_machine,
-    validate_record_payload,
-    validate_semantics,
-)
-from agent6.machine.authoring import build_authoring_prompt  # noqa: ICN003  # re-export
 from agent6.machine.dryrun import BranchCheck, DryRunReport, StateCheck, dry_run  # noqa: ICN003  # re-export
 from agent6.machine.engine import drive  # noqa: ICN003  # re-export
 from agent6.machine.graph import render_dot, render_mermaid  # noqa: ICN003  # re-export
@@ -61,6 +55,12 @@ from agent6.machine.schema import (  # noqa: ICN003  # re-export
     ToolState,
     protected_overlay_error,
     protected_overlay_key_error,
+)
+from agent6.machine.semantics import (  # noqa: ICN003  # re-export
+    fixture_problems,
+    load_machine,
+    validate_record_payload,
+    validate_semantics,
 )
 from agent6.prompts.machine import MACHINE_AUTHOR_GUIDE  # noqa: ICN003  # re-export
 

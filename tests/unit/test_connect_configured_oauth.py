@@ -15,11 +15,11 @@ from urllib import parse
 import httpx2
 import pytest
 
-from agent6 import paths, secret_store
-from agent6.app import _setup
-from agent6.config import Config, OpenAIProviderEntry, load_config
+from agent6 import paths
+from agent6.app import session_setup
+from agent6.config import Config, OpenAIProviderEntry, load_config, secret_store
 from agent6.models import cache
-from agent6.providers import _transport, oauth, types
+from agent6.providers import oauth, provider_types, transport
 from agent6.ui.cli import main
 
 _CONFIG = """
@@ -103,8 +103,8 @@ def test_the_device_flow_signs_in_headless_and_binds_the_grant(
             200, json={"data": [{"id": "m1"}, {"id": "m2"}]}, request=httpx2.Request("GET", url)
         )
 
-    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
-    monkeypatch.setattr(_transport, "http_request", fake_get)
+    monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
+    monkeypatch.setattr(transport, "http_request", fake_get)
     assert main(["connect", "work"]) == 0
     out = capsys.readouterr().out
     assert "open  https://login.example/activate" in out and "enter the code:  ABCD-EFGH" in out
@@ -126,7 +126,7 @@ def test_the_paste_flow_sends_the_fixed_redirect_and_exchanges_the_code(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _write_config(_CONFIG.replace("http://127.0.0.1:0/auth/callback", "http://127.0.0.1:8765/cb"))
-    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli.connect_oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr("sys.stdin", io.StringIO("http://127.0.0.1:8765/cb?code=C1&state=STATE1\n"))
     exchanges: list[dict[str, str]] = []
 
@@ -136,7 +136,7 @@ def test_the_paste_flow_sends_the_fixed_redirect_and_exchanges_the_code(
         exchanges.append({"url": url, **data})
         return _Resp(200, {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600})
 
-    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
+    monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
     assert main(["connect", "work", "--flow", "paste", "--no-verify"]) == 0
     out = capsys.readouterr().out
     url = next(line.strip() for line in out.splitlines() if line.strip().startswith("https://"))
@@ -156,13 +156,13 @@ def test_a_pasted_callback_with_another_state_stores_nothing(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_config(_CONFIG.replace("http://127.0.0.1:0/auth/callback", "http://127.0.0.1:8765/cb"))
-    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli.connect_oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr("sys.stdin", io.StringIO("http://127.0.0.1:8765/cb?code=C1&state=EVIL\n"))
 
     def never(*_a: object, **_k: object) -> None:
         raise AssertionError("no token request may leave")
 
-    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", never)
+    monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", never)
     assert main(["connect", "work", "--flow", "paste"]) == 2
     assert secret_store.load_oauth_grant("work") is None
 
@@ -172,7 +172,7 @@ def test_the_browser_flow_names_the_bound_port_in_the_redirect(
 ) -> None:
     """Port 0 takes a free port before the authorization starts; the exchange names that port."""
     _write_config()
-    monkeypatch.setattr("agent6.ui.cli._oauth.gui_browser_available", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.connect_oauth.gui_browser_available", lambda: True)
     opened: list[str] = []
 
     def fake_open(url: str) -> bool:
@@ -187,7 +187,7 @@ def test_the_browser_flow_names_the_bound_port_in_the_redirect(
         threading.Thread(target=land, daemon=True).start()
         return True
 
-    monkeypatch.setattr("agent6.ui.cli._oauth.open_browser", fake_open)
+    monkeypatch.setattr("agent6.ui.cli.connect_oauth.open_browser", fake_open)
     exchanges: list[dict[str, str]] = []
 
     def fake_post(
@@ -196,7 +196,7 @@ def test_the_browser_flow_names_the_bound_port_in_the_redirect(
         exchanges.append(data)
         return _Resp(200, {"access_token": "AT1", "refresh_token": "RT1", "expires_in": 3600})
 
-    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
+    monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
     assert main(["connect", "work", "--no-verify"]) == 0
     redirect = parse.urlsplit(exchanges[0]["redirect_uri"])
     assert redirect.hostname == "127.0.0.1" and redirect.port not in (None, 0)
@@ -266,7 +266,7 @@ def test_logout_revokes_at_the_configured_endpoint_and_removes_the_grant(
         revoked.append({"url": url, "method": method, **kwargs})
         return _Resp(200, {})
 
-    monkeypatch.setattr(_transport, "http_request", fake_request)
+    monkeypatch.setattr(transport, "http_request", fake_request)
     assert main(["connect", "work", "--logout"]) == 0
     assert revoked[0]["url"] == "https://login.example/revoke"
     body = dict(parse.parse_qsl(revoked[0]["content"].decode("ascii")))
@@ -297,7 +297,7 @@ def test_the_run_preflight_wants_a_bound_grant(
     )
     entry = cfg.providers["work"]
     assert isinstance(entry, OpenAIProviderEntry)
-    assert _setup.check_provider_keys(cfg) == (
+    assert session_setup.check_provider_keys(cfg) == (
         "No sign-in stored for provider 'work'; run `agent6 connect work` to sign in again."
     )
     grant = secret_store.StoredGrant(
@@ -311,7 +311,7 @@ def test_the_run_preflight_wants_a_bound_grant(
         exchange_expires_at=None,
     )
     secret_store.save_oauth_grant("work", grant)
-    refusal = _setup.check_provider_keys(cfg)
+    refusal = session_setup.check_provider_keys(cfg)
     assert (
         refusal is not None and "other provider settings" in refusal and "connect work" in refusal
     )
@@ -325,7 +325,7 @@ def test_the_run_preflight_wants_a_bound_grant(
         return ["m1"]
 
     monkeypatch.setattr(cache, "list_models", fake_list)
-    assert _setup.check_provider_keys(cfg) is None
+    assert session_setup.check_provider_keys(cfg) is None
     assert listed == [("work", None)]
 
 
@@ -340,7 +340,7 @@ def test_model_set_names_the_missing_or_rebound_sign_in(
     monkeypatch.setattr(cache, "list_models", listed)
     assert main(["model", "worker", "work/m1"]) == 0
     err = capsys.readouterr().err
-    cause = _setup.check_provider_keys(load_config(gc))
+    cause = session_setup.check_provider_keys(load_config(gc))
     assert cause is not None and cause in err
     assert "agent6 connect work" in err
 
@@ -387,7 +387,7 @@ def test_logout_does_not_revoke_a_grant_made_under_other_settings(
     def never(*_a: object, **_k: object) -> None:
         raise AssertionError("no token may leave")
 
-    monkeypatch.setattr(_transport, "http_request", never)
+    monkeypatch.setattr(transport, "http_request", never)
     assert main(["connect", "work", "--logout"]) == 0
     output = capsys.readouterr()
     assert "other provider settings" in output.err and "locally only" in output.out
@@ -414,9 +414,11 @@ def test_logout_removes_the_grant_when_the_revocation_read_is_refused(
     )
 
     def oversized(*_a: object, **_k: object) -> None:
-        raise types.ProviderError("provider response exceeded 1048576 bytes; refusing to buffer it")
+        raise provider_types.ProviderError(
+            "provider response exceeded 1048576 bytes; refusing to buffer it"
+        )
 
-    monkeypatch.setattr(_transport, "http_request", oversized)
+    monkeypatch.setattr(transport, "http_request", oversized)
     assert main(["connect", "work", "--logout"]) == 0
     assert "revocation failed" in capsys.readouterr().err
     assert secret_store.load_oauth_grant("work") is None

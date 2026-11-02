@@ -11,8 +11,9 @@ from __future__ import annotations
 import pathlib
 import sys
 
-from agent6 import memory, paths
-from agent6.ui.cli import _steer
+from agent6 import paths
+from agent6.context import memory
+from agent6.ui.cli import steer_tty
 
 
 def _state() -> pathlib.Path:
@@ -144,7 +145,7 @@ def _cmd_memory_rm(name: str, *, yes: bool = False) -> int:
         except memory.MemoryStoreError:
             # `remove` reports the missing file.
             first = None
-        if first is not None and not _steer.delete_confirmed(
+        if first is not None and not steer_tty.delete_confirmed(
             f"memory rm will delete {name}\n  {first[0][:100] if first else '(an empty file)'}",
             "Delete it?",
         ):

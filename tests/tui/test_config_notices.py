@@ -9,7 +9,7 @@ from textual import widgets
 
 from agent6 import paths
 from agent6.config import io
-from agent6.ui.tui import _config_forms, config_page, forms
+from agent6.ui.tui import config_forms, config_page, forms
 
 
 class _Host(textual_app.App[None]):
@@ -82,7 +82,7 @@ def test_config_write_notices_name_a_shadowing_layer(
                 screen.action_edit()
                 await pilot.pause()
                 modal = app.screen
-                assert isinstance(modal, _config_forms.EditModal)
+                assert isinstance(modal, config_forms.EditModal)
                 modal.query_one("#edit-value", forms.ChoiceField).select_value("ask")
                 modal.action_save()
             elif operation == "unset":
@@ -91,7 +91,7 @@ def test_config_write_notices_name_a_shadowing_layer(
                 screen.action_add_provider()
                 await pilot.pause()
                 modal = app.screen
-                assert isinstance(modal, _config_forms.EntryModal)
+                assert isinstance(modal, config_forms.EntryModal)
                 modal.query_one("#entry-name", widgets.Input).value = "local"
                 modal.query_one("#entry-base_url", widgets.Input).value = "https://new.test/v1"
                 modal.action_add()
@@ -103,14 +103,14 @@ def test_config_write_notices_name_a_shadowing_layer(
                 screen.action_add_reviewer()
                 await pilot.pause()
                 modal = app.screen
-                assert isinstance(modal, _config_forms.ReviewerModal)
+                assert isinstance(modal, config_forms.ReviewerModal)
                 modal.query_one("#reviewer-focus", widgets.Input).value = "new"
                 modal.action_add()
             else:
                 screen.action_remove_reviewer()
                 await pilot.pause()
                 modal = app.screen
-                assert isinstance(modal, _config_forms.RemoveReviewerModal)
+                assert isinstance(modal, config_forms.RemoveReviewerModal)
                 modal.action_remove()
                 await pilot.pause()
                 await pilot.press("y")

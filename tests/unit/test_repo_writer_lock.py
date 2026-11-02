@@ -21,8 +21,7 @@ from unittest import mock
 import pytest
 
 from agent6 import errors, paths
-from agent6.app import _execution as app__execution
-from agent6.app import _session, _setup, stamps
+from agent6.app import execution, session_parts, session_setup, stamps
 from agent6.app import run as app_run
 from agent6.config import Config
 from agent6.models import validate
@@ -118,7 +117,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     # No provider key here: the lifecycle's route preflight passes.
 
-    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _no_missing_keys)
     repo = tmp_path / "repo"
     _init_repo(repo)
     monkeypatch.chdir(repo)
@@ -236,7 +235,7 @@ def test_resume_starts_a_parked_run_with_the_saved_task(
         return 0
 
     monkeypatch.setattr(app_run, "run_task", fake_run_task)
-    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
         (), "run-PARKED2", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
@@ -459,7 +458,7 @@ def test_parked_resume_passes_the_steer_through_to_run_task(
         return 0
 
     monkeypatch.setattr(app_run, "run_task", fake_run_task)
-    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing_keys)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _no_missing_keys)
     rc = resume_mod.resume_task(
         (),
         "run-PSTEER",
@@ -548,9 +547,9 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     A front-end teardown failure must not strand either resume flock in an in-process editor server;
     later runs must not wait for a process restart.
     """
-    from agent6.app import _execution as app__execution
+    from agent6.app import execution
     from agent6.app import resume as resume_mod
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
     state = paths.state_dir(repo)
     layout = sessions_layout.SessionLayout(state_dir=state, session_id="run-RTD")
@@ -570,7 +569,7 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
         encoding="utf-8",
     )
     (layout.session_dir / "loop_state.json").write_text(
-        _snapshot.SessionSnapshot(
+        loop_snapshot.SessionSnapshot(
             system="s",
             messages=[],
             tool_calls=0,
@@ -588,12 +587,12 @@ def test_resume_teardown_raise_still_releases_both_writer_locks(
     def _full(*_a: object, **_k: object) -> str:
         return "full"
 
-    def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
-        return app__execution.ExecutionEnd(0)
+    def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
+        return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(_setup, "check_provider_keys", _none)
-    monkeypatch.setattr(_session, "select_isolation", _full)
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _none)
+    monkeypatch.setattr(session_parts, "select_isolation", _full)
+    monkeypatch.setattr(execution, "run_execution", _execution)
     frontend = mock.MagicMock()
     frontend.close_console_view.side_effect = OSError("resume teardown raise")
     with pytest.raises(OSError, match="resume teardown raise"):
@@ -677,7 +676,7 @@ def test_a_reused_ask_dir_drops_the_previous_executions_markers_and_keeps_this_e
     """
     import os
 
-    from agent6.app import _execution as app__execution
+    from agent6.app import execution
     from agent6.app import run as run_mod
     from agent6.sessions import ipc
 
@@ -697,12 +696,12 @@ def test_a_reused_ask_dir_drops_the_previous_executions_markers_and_keeps_this_e
     ipc.request_stop(layout.session_dir)  # the cancel, after the execution began
     seen: list[tuple[bool, bool]] = []
 
-    def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
+    def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
         d = layout.session_dir
         seen.append((ipc.steer_request_pending(d), ipc.stop_request_pending(d)))
-        return app__execution.ExecutionEnd(rc=0)
+        return execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
     rc = run_mod.run_task(
         _load_cfg(),
         "again?",
@@ -725,11 +724,10 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     execution's first checkpoint would commit it. At resume, every currently untracked file that no
     tool call of the run wrote joins the set; the run's own uncommitted file stays its own.
     """
-    from agent6 import secret_store
-    from agent6.app import _execution as app__execution
-    from agent6.app import _execution as execution_mod
+    from agent6.app import execution
     from agent6.app import resume as resume_mod
-    from agent6.harness import _snapshot
+    from agent6.config import secret_store
+    from agent6.harness import loop_snapshot
 
     secret_store.save_secret("anthropic", "x")  # the provider preflight runs before the execution
     state = paths.state_dir(repo)
@@ -756,7 +754,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
         '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
         encoding="utf-8",
     )
-    snapshot = _snapshot.SessionSnapshot(
+    snapshot = loop_snapshot.SessionSnapshot(
         system="s",
         messages=[],
         tool_calls=0,
@@ -780,13 +778,13 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     seen: list[frozenset[str]] = []
 
     def _execution(
-        cfg: object, layout: object, inputs: app__execution.ExecutionInputs, **_k: object
-    ) -> app__execution.ExecutionEnd:
+        cfg: object, layout: object, inputs: execution.ExecutionInputs, **_k: object
+    ) -> execution.ExecutionEnd:
         seen.append(inputs.untracked_at_start)
-        return app__execution.ExecutionEnd(rc=0)
+        return execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
-    monkeypatch.setattr(execution_mod, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
     rc = resume_mod.resume_task(
         (), "run-U", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
@@ -822,11 +820,10 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
     execution died in may have written what appeared, so it stays the run's; a clean end keeps
     the rule that an arrival is the operator's.
     """
-    from agent6 import secret_store
-    from agent6.app import _execution as app__execution
-    from agent6.app import _execution as execution_mod
+    from agent6.app import execution
     from agent6.app import resume as resume_mod
-    from agent6.harness import _snapshot
+    from agent6.config import secret_store
+    from agent6.harness import loop_snapshot
 
     secret_store.save_secret("anthropic", "x")  # the provider preflight runs before the execution
     state = paths.state_dir(repo)
@@ -857,7 +854,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
         '{"type": "tool.call", "name": "run_command", "args": {"argv": ["sh", "gen.sh"]}}\n',
         encoding="utf-8",
     )
-    snapshot = _snapshot.SessionSnapshot(
+    snapshot = loop_snapshot.SessionSnapshot(
         system="s",
         messages=[],
         tool_calls=0,
@@ -870,19 +867,19 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
         snapshot.model_dump_json(), encoding="utf-8"
     )
     call = {"type": "tool_use", "id": "t1", "name": "run_command", "input": {"argv": ["sh"]}}
-    marker = layout.session_dir / _snapshot.TURN_IN_FLIGHT_NAME
-    _snapshot.write_turn_marker(marker, _snapshot.TurnInFlight(turn=1, assistant=(call,)))
+    marker = layout.session_dir / loop_snapshot.TURN_IN_FLIGHT_NAME
+    loop_snapshot.write_turn_marker(marker, loop_snapshot.TurnInFlight(turn=1, assistant=(call,)))
     (repo / "helper.py").write_text("VALUE = 1\n", encoding="utf-8")
     seen: list[frozenset[str]] = []
 
     def _execution(
-        cfg: object, layout: object, inputs: app__execution.ExecutionInputs, **_k: object
-    ) -> app__execution.ExecutionEnd:
+        cfg: object, layout: object, inputs: execution.ExecutionInputs, **_k: object
+    ) -> execution.ExecutionEnd:
         seen.append(inputs.untracked_at_start)
-        return app__execution.ExecutionEnd(rc=0)
+        return execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
-    monkeypatch.setattr(execution_mod, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
 
     rc = resume_mod.resume_task(
         (), "run-K", started_at=time.time(), frontend=mock.MagicMock(), force=False
@@ -906,11 +903,10 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
     off the base branch, and a merge landed that commit alone while the lane read merged.
     `agent6 fork` continues a lane in a worktree at its tip, and the refusal names it.
     """
-    from agent6 import secret_store
-    from agent6.app import _execution as app__execution
-    from agent6.app import _execution as execution_mod
+    from agent6.app import execution
     from agent6.app import resume as resume_mod
-    from agent6.harness import _snapshot
+    from agent6.config import secret_store
+    from agent6.harness import loop_snapshot
 
     secret_store.save_secret("anthropic", "x")
     state = paths.state_dir(repo)
@@ -937,7 +933,7 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
         '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
         encoding="utf-8",
     )
-    snapshot = _snapshot.SessionSnapshot(
+    snapshot = loop_snapshot.SessionSnapshot(
         system="s",
         messages=[],
         tool_calls=0,
@@ -951,12 +947,12 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
     )
     ran: list[object] = []
 
-    def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
+    def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
         ran.append(1)
-        return app__execution.ExecutionEnd(rc=0)
+        return execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
-    monkeypatch.setattr(execution_mod, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
 
     rc = resume_mod.resume_task(
         (), "fan-AAAA11-l1", started_at=time.time(), frontend=mock.MagicMock(), force=False

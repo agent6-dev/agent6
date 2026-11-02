@@ -15,12 +15,11 @@ import time
 
 import pytest
 
-from agent6 import event_log
-from agent6.app import machine_agent as app_machine_agent
-from agent6.app import providers
+from agent6.app import role_providers
+from agent6.app.machine import agent
 from agent6.harness import loop
-from agent6.machine import _contracts
-from agent6.sessions import ipc, process
+from agent6.machine import contracts
+from agent6.sessions import event_log, ipc, process
 from agent6.tools import dispatch, schema
 
 
@@ -38,7 +37,7 @@ def test_a_machine_command_grant_does_not_answer_another_scopes_prompt(
     instance, state = tmp_path / "inst", tmp_path / "inst" / "1-agent"
     state.mkdir(parents=True)
     ipc.set_session_allow(state, ipc.COMMAND_SCOPE)
-    bridges = app_machine_agent._build_machine_bridges(
+    bridges = agent._build_machine_bridges(
         instance, state, event_log.EventSink(state / "logs.jsonl")
     )
 
@@ -58,7 +57,7 @@ def test_stale_answers_cleared_before_state_reexecution(tmp_path: pathlib.Path) 
         state / "questions" / "question-1.answer",
     ):
         os.utime(stale, (time.time() - 60, time.time() - 60))  # the attempt died a minute ago
-    app_machine_agent._build_machine_bridges(instance, state, events)
+    agent._build_machine_bridges(instance, state, events)
     assert not (state / "approvals" / "approval-1.answer").exists()
     assert not (state / "questions" / "question-1.answer").exists()
     # The instance-dir front-end registration is untouched (it lives one level up).
@@ -67,7 +66,7 @@ def test_stale_answers_cleared_before_state_reexecution(tmp_path: pathlib.Path) 
 
 def test_headless_defaults_when_no_frontend(tmp_path: pathlib.Path) -> None:
     instance, state, events = _dirs(tmp_path)
-    b = app_machine_agent._build_machine_bridges(instance, state, events)
+    b = agent._build_machine_bridges(instance, state, events)
     # No front-end claim on the instance dir: deny approvals, empty answers, no steer.
     assert b.prompts.approve("run rm -rf?") is False
     assert b.prompts.ask((schema.UserQuestion(question="pick", options=("a", "b")),)).answers == (
@@ -81,9 +80,7 @@ def test_approval_answer_read_from_per_state_dir(tmp_path: pathlib.Path) -> None
     instance, state, events = _dirs(tmp_path)
     # a live front-end owns the instance
     process.register_frontend(instance, os.getpid())
-    b = app_machine_agent._build_machine_bridges(
-        instance, state, events
-    )  # clears pre-existing answers
+    b = agent._build_machine_bridges(instance, state, events)  # clears pre-existing answers
     # A writer thread answers after approve() emits the prompt, into the per-state dir.
     threading.Thread(
         target=lambda: (time.sleep(0.2), ipc.write_answer(state, "approval-1", "yes")),
@@ -95,7 +92,7 @@ def test_approval_answer_read_from_per_state_dir(tmp_path: pathlib.Path) -> None
 def test_question_answer_read_from_per_state_dir(tmp_path: pathlib.Path) -> None:
     instance, state, events = _dirs(tmp_path)
     process.register_frontend(instance, os.getpid())
-    b = app_machine_agent._build_machine_bridges(instance, state, events)
+    b = agent._build_machine_bridges(instance, state, events)
     threading.Thread(
         target=lambda: (
             time.sleep(0.2),
@@ -111,7 +108,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: pathlib.Path) -> 
     # An answer pre-written before the prompt is cleared, not consumed; the headless deny applies.
     instance, state, events = _dirs(tmp_path)
     process.register_frontend(instance, os.getpid())
-    b = app_machine_agent._build_machine_bridges(instance, state, events)
+    b = agent._build_machine_bridges(instance, state, events)
     ipc.write_answer(state, "approval-1", "yes")  # premature: no prompt yet
     # No writer thread, so the approver falls through to the deny; a short timeout keeps it quick.
 
@@ -130,7 +127,7 @@ def test_machine_approval_ignores_a_premature_answer(tmp_path: pathlib.Path) -> 
 def test_steer_request_and_answer_bridge(tmp_path: pathlib.Path) -> None:
     instance, state, events = _dirs(tmp_path)
     process.register_frontend(instance, os.getpid())
-    b = app_machine_agent._build_machine_bridges(instance, state, events)
+    b = agent._build_machine_bridges(instance, state, events)
     # A front-end drops a steer.request in the per-state dir.
 
     ipc.request_steer(state)
@@ -150,8 +147,8 @@ def test_machine_agent_wires_the_summariser_seat(
     """
     from typing import Any
 
-    from agent6.app import machine_agent
-    from agent6.harness import _snapshot
+    from agent6.app.machine import agent
+    from agent6.harness import loop_snapshot
 
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
@@ -170,8 +167,8 @@ def test_machine_agent_wires_the_summariser_seat(
         def __init__(self, **kw: Any) -> None:
             wf_kwargs.update(kw)
 
-        def run(self, _prompt: str) -> _snapshot.SessionResult:
-            return _snapshot.SessionResult(
+        def run(self, _prompt: str) -> loop_snapshot.SessionResult:
+            return loop_snapshot.SessionResult(
                 reason="finish_session", completed=True, summary="done", turns=1, tool_calls=0
             )
 
@@ -184,23 +181,23 @@ def test_machine_agent_wires_the_summariser_seat(
         return summariser
 
     monkeypatch.setattr(loop, "Harness", _FakeWf)
-    monkeypatch.setattr(providers, "build_role_provider", _fake_role)
-    monkeypatch.setattr(providers, "reviewer_seat_provider", _fake_summariser)
+    monkeypatch.setattr(role_providers, "build_role_provider", _fake_role)
+    monkeypatch.setattr(role_providers, "reviewer_seat_provider", _fake_summariser)
 
     def _fake_dispatcher(**_k: Any) -> object:
         return object()
 
     monkeypatch.setattr(dispatch, "ToolDispatcher", _fake_dispatcher)
 
-    req = machine_agent.MachineAgentRequest(
+    req = agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,
         overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
-        request=_contracts.AgentRequest(prompt="go", timeout_s=5.0),
+        request=contracts.AgentRequest(prompt="go", timeout_s=5.0),
     )
-    out = machine_agent.run_one(req)
+    out = agent.run_one(req)
     assert out.reason == "finish_session"
     assert wf_kwargs["compaction"].summariser is summariser
     assert sinks["worker"] is sinks["summariser"]  # one sink, one seq counter
@@ -213,7 +210,7 @@ def test_away_wait_parks_a_prompt_for_the_frontend(tmp_path: pathlib.Path) -> No
     """
     instance, state, events = _dirs(tmp_path)
     ipc.set_away_mode(instance, "wait")
-    b = app_machine_agent._build_machine_bridges(instance, state, events)
+    b = agent._build_machine_bridges(instance, state, events)
 
     def _answer_late() -> None:
         time.sleep(0.4)
@@ -240,7 +237,7 @@ def test_away_wait_prompt_stops_with_the_run(tmp_path: pathlib.Path) -> None:
     """A parked prompt does not outlive the operator's Stop: the approval resolves to deny."""
     instance, state, events = _dirs(tmp_path)
     ipc.set_away_mode(instance, "wait")
-    b = app_machine_agent._build_machine_bridges(instance, state, events)
+    b = agent._build_machine_bridges(instance, state, events)
 
     def _stop_late() -> None:
         time.sleep(0.4)
@@ -260,16 +257,16 @@ def test_the_agent_seat_journals_under_a_driving_role(
     from unittest import mock
 
     from agent6 import budget, kinds
-    from agent6.app import machine_agent
+    from agent6.app.machine import agent
     from agent6.config import Config
     from agent6.machine import AgentRequest
 
     def stub_provider(*_args: object, **_kwargs: object) -> mock.MagicMock:
         return mock.MagicMock()
 
-    monkeypatch.setattr(providers, "build_role_provider", stub_provider)
-    monkeypatch.setattr(providers, "reviewer_seat_provider", stub_provider)
-    req = machine_agent.MachineAgentRequest(
+    monkeypatch.setattr(role_providers, "build_role_provider", stub_provider)
+    monkeypatch.setattr(role_providers, "reviewer_seat_provider", stub_provider)
+    req = agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,
         overlay={},
@@ -277,7 +274,7 @@ def test_the_agent_seat_journals_under_a_driving_role(
         transcript_dir=tmp_path / "transcripts",
         request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
     )
-    provider, _summariser, _events = machine_agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
+    provider, _summariser, _events = agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
         Config(),
         req,
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),

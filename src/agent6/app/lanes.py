@@ -13,11 +13,12 @@ import threading
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import directive, errors, kinds, memory, paths
-from agent6.app import _lane_watch, _parallel_results, _workdirs
+from agent6 import directive, errors, kinds, paths
 from agent6.app import compare as app_compare
+from agent6.app import lane_watch, parallel_results, workdirs
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
+from agent6.context import memory
 from agent6.harness import subrun
 from agent6.models import validate
 from agent6.sessions import ipc
@@ -97,7 +98,7 @@ def build_lane_specs(
         ConfigError: A lane's model names nothing.
     """
     if workdir_root is None:
-        workdir_root = _workdirs.subordinate_workdir_root(cfg, origin, fanout_id)
+        workdir_root = workdirs.subordinate_workdir_root(cfg, origin, fanout_id)
     routes = lane_routes(cfg, directive.parse_spec(spec, limit=cfg.parallel.max_lanes))
     return [
         subrun.LaneSpec(
@@ -176,7 +177,7 @@ def bridge_spawner(
         return subrun.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
-    config_path = _workdirs.write_lane_config(cfg, spec, explicit_leaves=explicit_leaves)
+    config_path = workdirs.write_lane_config(cfg, spec, explicit_leaves=explicit_leaves)
     lane_state = paths.state_dir(spec.workdir)
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
     memory.seed_store(paths.state_dir(origin), lane_state)
@@ -242,7 +243,7 @@ def run_lane_to_completion(
     spawner: subrun.LaneSpawner | None = None,
     at: str | None = None,
     import_lock: threading.Lock | None = None,
-    poll_interval_s: float = _lane_watch.POLL_INTERVAL_S,
+    poll_interval_s: float = lane_watch.POLL_INTERVAL_S,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
     should_stop: Callable[[], bool] | None = None,
     hard_stop: threading.Event | None = None,
@@ -302,10 +303,10 @@ def run_lane_to_completion(
     if not res.ok:
         return res
     # The live symlink lets a hub answer the lane's prompts while it runs.
-    _lane_watch.symlink_lane(origin_state, res)
-    if not _lane_watch.await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
+    lane_watch.symlink_lane(origin_state, res)
+    if not lane_watch.await_lane(res, poll_interval_s=poll_interval_s, should_stop=should_stop):
         asked = ipc.request_stop(res.session_dir, now=True)
-        if not _lane_watch.drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
+        if not lane_watch.drain_lane(res, poll_interval_s=poll_interval_s, hard_stop=hard_stop):
             # Still running: the clone and symlink hold the only copy of its branch.
             return subrun.LaneResult(
                 spec=spec,
@@ -317,12 +318,12 @@ def run_lane_to_completion(
                 + " keeps running detached; not imported",
             )
     try:
-        dest = _parallel_results.import_lane(res, origin, origin_state, import_lock)
+        dest = parallel_results.import_lane(res, origin, origin_state, import_lock)
     except subrun.SubrunError as exc:
         return subrun.LaneResult(
             spec=res.spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
-    _parallel_results.carry_back(
+    parallel_results.carry_back(
         paths.state_dir(res.spec.workdir),
         origin_state,
         dest,
@@ -330,10 +331,10 @@ def run_lane_to_completion(
         reporter=reporter,
     )
     # Each lane removes its own dirs only; the group dir goes with whichever empties it last.
-    _workdirs.cleanup(
+    workdirs.cleanup(
         [res.spec],
         workdir_root=res.spec.workdir.parent,
-        base=_workdirs.workdir_base(cfg, origin),
+        base=workdirs.workdir_base(cfg, origin),
         cfg=cfg,
     )
     summary = summarize_session_dir(dest)
@@ -345,7 +346,7 @@ def run_lane_to_completion(
             branch=res.branch,
             ok=False,
             error=f"no result ({format.status_label(summary.status, summary.reason)});"
-            f" {_parallel_results.imported_branch_note(origin, res.branch)}",
+            f" {parallel_results.imported_branch_note(origin, res.branch)}",
         )
     return subrun.LaneResult(spec=spec, session_dir=dest, branch=res.branch, ok=True, error="")
 
@@ -407,7 +408,7 @@ def build_lane_spawner(
         # One name for the workdir, the lane ids and the stamped lineage: the sweeps derive
         # the clone path from it.
         group_id = f"{coordinator_session_id}-{group}"
-        workdir_root = _workdirs.subordinate_workdir_root(cfg, origin, group_id)
+        workdir_root = workdirs.subordinate_workdir_root(cfg, origin, group_id)
         specs = [
             subrun.LaneSpec(
                 lane=i,

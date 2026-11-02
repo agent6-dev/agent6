@@ -18,7 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 from agent6 import kinds, paths, portable
-from agent6.machine import _contracts
+from agent6.machine import contracts
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import jail
 from agent6.sessions import layout
@@ -90,7 +90,7 @@ class LiveWorld:
     cwd: pathlib.Path
     journal: machine_journal.MachineJournal
     agent_runner: (
-        Callable[[_contracts.AgentRequest, pathlib.Path | None], _contracts.AgentExecResult] | None
+        Callable[[contracts.AgentRequest, pathlib.Path | None], contracts.AgentExecResult] | None
     ) = None
     poll_interval_s: float = 0.5
     tool_policy: ToolPolicyFactory | None = None
@@ -102,7 +102,7 @@ class LiveWorld:
         Callable[[str, kinds.JailPolicy, pathlib.Path | None], kinds.CommandResult] | None
     ) = None
     on_wait: Callable[[], None] | None = None
-    on_tool_failure: Callable[[str, _contracts.ToolExecResult], None] | None = None
+    on_tool_failure: Callable[[str, contracts.ToolExecResult], None] | None = None
 
     def run_tool(
         self,
@@ -112,7 +112,7 @@ class LiveWorld:
         state: str = "",
         pass_env: tuple[str, ...] = (),
         step_seq: int = 0,
-    ) -> _contracts.ToolExecResult:
+    ) -> contracts.ToolExecResult:
         """Run one tool command in its state's jail.
 
         Startup bounded the state's sandbox by the operator's and gated `pass_env`.
@@ -128,10 +128,10 @@ class LiveWorld:
             The exit code, output and whether the command timed out.
 
         Raises:
-            _contracts.EngineError: No tool policy is wired, or the jail is unavailable.
+            contracts.EngineError: No tool policy is wired, or the jail is unavailable.
         """
         if self.tool_policy is None:
-            raise _contracts.EngineError("LiveWorld has no tool_policy factory wired")
+            raise contracts.EngineError("LiveWorld has no tool_policy factory wired")
         try:
             policy = self.tool_policy(state, tuple(argv), float(timeout_s), pass_env)
             result = (
@@ -140,9 +140,9 @@ class LiveWorld:
                 else jail.run_in_jail(policy)
             )
         except jail.JailUnavailableError as exc:
-            raise _contracts.EngineError(f"jail unavailable: {exc}") from exc
+            raise contracts.EngineError(f"jail unavailable: {exc}") from exc
         # run_in_jail returns rc 124 on a timeout and never raises TimeoutExpired.
-        outcome = _contracts.ToolExecResult(
+        outcome = contracts.ToolExecResult(
             exit_code=result.returncode,
             stdout=result.stdout,
             timed_out=result.returncode == 124,
@@ -153,7 +153,7 @@ class LiveWorld:
                 self.on_tool_failure(state, outcome)
         return outcome
 
-    def run_agent(self, request: _contracts.AgentRequest) -> _contracts.AgentExecResult:
+    def run_agent(self, request: contracts.AgentRequest) -> contracts.AgentExecResult:
         """Run one agent loop through the injected runner.
 
         Args:
@@ -163,10 +163,10 @@ class LiveWorld:
             The loop's result.
 
         Raises:
-            _contracts.EngineError: No agent runner is configured.
+            contracts.EngineError: No agent runner is configured.
         """
         if self.agent_runner is None:
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 "machine reached an `agent` state but no agent runner is configured"
             )
         return self.agent_runner(request, self._state_log(request.state_name, request.step_seq))
@@ -190,7 +190,7 @@ class LiveWorld:
         """Return the wall clock as an epoch."""
         return time.time()
 
-    def sleep_until(self, wake_epoch: float | None) -> _contracts.WaitWake:
+    def sleep_until(self, wake_epoch: float | None) -> contracts.WaitWake:
         """Block until the wake instant, a poke or a stop request, whichever comes first.
 
         Args:
@@ -205,15 +205,15 @@ class LiveWorld:
         while True:
             signaled, payload = self.journal.take_signal()
             if signaled:
-                return _contracts.WaitWake("signal", payload)
+                return contracts.WaitWake("signal", payload)
             if machine_journal.stop_requested(self.journal.root):
-                return _contracts.WaitWake("stop")  # the pending wait stays armed for the next run
+                return contracts.WaitWake("stop")  # the pending wait stays armed for the next run
             if wake_epoch is None:
                 time.sleep(self.poll_interval_s)
                 continue
             remaining = wake_epoch - time.time()
             if remaining <= 0:
-                return _contracts.WaitWake("tick")
+                return contracts.WaitWake("tick")
             time.sleep(min(remaining, self.poll_interval_s))
 
     def materialize_poke(self, payload: Any) -> None:

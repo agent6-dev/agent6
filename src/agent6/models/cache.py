@@ -31,7 +31,7 @@ from agent6.config import (
     ResponsesProviderEntry,
 )
 from agent6.models import pricing as models_pricing
-from agent6.providers import _headers, _transport, oauth, types, wire
+from agent6.providers import oauth, provider_types, request_headers, transport, wire
 
 __all__ = ["cached_context_window", "list_models"]
 
@@ -280,8 +280,8 @@ def _models_endpoint(
         auth header, and `anthropic-version` for a direct Anthropic entry.
     """
     url = entry.base_url.rstrip("/") + "/models"
-    headers = _headers.HeaderSet.from_config(entry.extra_headers).render(
-        _headers.plain_facts("models")
+    headers = request_headers.HeaderSet.from_config(entry.extra_headers).render(
+        request_headers.plain_facts("models")
     )
     # Vertex and Azure have no uniform /models endpoint; the caller swallows that failure.
     if isinstance(entry, AnthropicProviderEntry) and entry.deployment == "direct":
@@ -320,8 +320,8 @@ def _chatgpt_models_endpoint(
     token = credential.token(refresh=False)
     account = credential.account_id()
     url = f"{entry.base_url.rstrip('/')}/models?client_version={_CHATGPT_CLIENT_VERSION}"
-    headers = _headers.HeaderSet.from_config(entry.extra_headers).render(
-        _headers.plain_facts("models")
+    headers = request_headers.HeaderSet.from_config(entry.extra_headers).render(
+        request_headers.plain_facts("models")
     )
     headers["authorization"] = f"Bearer {token}"
     if account:
@@ -384,14 +384,14 @@ def _fetch(
         return Listing([], {}, {}, {})  # No endpoint: the binary resolves names itself.
     if isinstance(entry, ChatGPTProviderEntry):
         url, headers = _chatgpt_models_endpoint(provider_name, entry)
-        resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
+        resp = transport.http_request("GET", url, headers=headers, timeout=timeout_s)
         resp.raise_for_status()
         ids, context = _chatgpt_listing(resp.json())
         return Listing(ids, {}, context, {})  # A subscription prices nothing.
     if entry.oauth is not None:
         api_key = oauth.OAuthCredential(provider_name, entry).token(refresh=refresh)
     url, headers = _models_endpoint(entry, api_key)
-    resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
+    resp = transport.http_request("GET", url, headers=headers, timeout=timeout_s)
     resp.raise_for_status()
     payload = resp.json()
     return Listing(
@@ -453,7 +453,7 @@ def probe_provider_key(
         return KeyProbeResult(ok=True, status="unsupported", detail=detail)
     try:
         url, headers = _models_endpoint(entry, api_key)
-    except types.ProviderError as exc:
+    except provider_types.ProviderError as exc:
         # A credential auth_header refuses (a control char, non-ASCII) is an unusable key.
         return KeyProbeResult(ok=False, status="auth_failed", detail=str(exc)[:200])
     # OpenRouter's /models is public; probe its auth-gated /key, matched on the parsed host.
@@ -461,8 +461,8 @@ def probe_provider_key(
     if host == "openrouter.ai" or host.endswith(".openrouter.ai"):
         url = entry.base_url.rstrip("/") + "/key"
     try:
-        resp = _transport.http_request("GET", url, headers=headers, timeout=timeout_s)
-    except (httpx2.HTTPError, OSError, types.ProviderError) as exc:
+        resp = transport.http_request("GET", url, headers=headers, timeout=timeout_s)
+    except (httpx2.HTTPError, OSError, provider_types.ProviderError) as exc:
         return KeyProbeResult(ok=False, status="unreachable", detail=str(exc)[:200])
     if resp.status_code in (401, 403):
         return KeyProbeResult(ok=False, status="auth_failed", detail=f"HTTP {resp.status_code}")
@@ -529,7 +529,7 @@ def fetch_models_live(
     """
     try:
         listing = _fetch(provider_name, entry, api_key, timeout_s)
-    except (httpx2.HTTPError, ValueError, OSError, types.ProviderError):
+    except (httpx2.HTTPError, ValueError, OSError, provider_types.ProviderError):
         return None
     if not listing.models:
         return None

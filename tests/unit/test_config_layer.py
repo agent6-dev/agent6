@@ -16,9 +16,9 @@ from agent6.config import (
     Config,
     ConfigError,
     OpenAIProviderEntry,
-    _layer_data,
     io,
     layer,
+    layer_data,
     load_config,
     notices,
     write,
@@ -126,7 +126,7 @@ def test_provider_mapping_entries_keep_their_values_and_origins(
     )
     eff = layer.load_effective(repo)
     prefix = f"providers.anthropic.{field}"
-    leaves = _layer_data.config_leaves(eff.config)
+    leaves = layer_data.config_leaves(eff.config)
     assert {key: val for key, val in leaves.items() if key.startswith(prefix)} == {
         f"{prefix}.alpha": io.parse_cli_value(alpha),
         f"{prefix}.beta": "global",
@@ -574,14 +574,14 @@ def test_deep_merge_replaces_provider_when_kind_changes() -> None:
 
     base = {"providers": {"p": {"api_format": "anthropic", "api_key_env": "X"}}}
     override = {"providers": {"p": {"api_format": "openai", "base_url": "Y"}}}
-    merged = _layer_data.deep_merge(base, override)
+    merged = layer_data.deep_merge(base, override)
     assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Y"}
 
 
 def test_deep_merge_still_merges_when_kind_unchanged() -> None:
     base = {"providers": {"p": {"api_format": "openai", "base_url": "Y", "api_key_env": "X"}}}
     override = {"providers": {"p": {"base_url": "Z"}}}
-    merged = _layer_data.deep_merge(base, override)
+    merged = layer_data.deep_merge(base, override)
     assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Z", "api_key_env": "X"}
 
 

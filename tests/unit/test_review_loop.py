@@ -15,8 +15,16 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, review_records
-from agent6.harness import _chain, _context, _conversation, _panel, _reviewer, loop
+from agent6 import review_records
+from agent6.harness import (
+    loop,
+    loop_conversation,
+    repo_context,
+    review_gate,
+    review_panel,
+    run_chain,
+)
+from agent6.sessions import event_log
 from agent6.tools import results
 from agent6.vcs import git_read
 from tests.unit import test_review_diff_collect
@@ -73,16 +81,16 @@ def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
         "base", "base-tree", "tip", "head-tree", "tip", (), "revisions"
     )
     monkeypatch.setattr(
-        _context, "review_rules", mock.Mock(return_value=review_records.ReviewRules())
+        repo_context, "review_rules", mock.Mock(return_value=review_records.ReviewRules())
     )
-    monkeypatch.setattr(_chain.RunChain, "review_target", mock.Mock(return_value=target))
-    monkeypatch.setattr(_chain.RunChain, "diff_since_base", mock.Mock(return_value=_DIFF))
+    monkeypatch.setattr(run_chain.RunChain, "review_target", mock.Mock(return_value=target))
+    monkeypatch.setattr(run_chain.RunChain, "diff_since_base", mock.Mock(return_value=_DIFF))
     monkeypatch.setattr(git_read, "diff_range", mock.Mock(return_value=_DIFF))
     monkeypatch.setattr(git_read, "tree_entry", mock.Mock(return_value="100644 blob cited-blob"))
 
 
-def _seat(provider: Any, focus: str = "security", model: str = "m1") -> _reviewer.ReviewSeat:
-    return _reviewer.ReviewSeat(focus=focus, model=model, provider=provider)
+def _seat(provider: Any, focus: str = "security", model: str = "m1") -> review_gate.ReviewSeat:
+    return review_gate.ReviewSeat(focus=focus, model=model, provider=provider)
 
 
 def _disp() -> mock.MagicMock:
@@ -98,7 +106,7 @@ def _begin() -> list[dict[str, Any]]:
 
 
 def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
-    conversation = _conversation.Conversation.from_wire(messages)
+    conversation = loop_conversation.Conversation.from_wire(messages)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",
         conversation=conversation,
@@ -113,9 +121,9 @@ def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
 
 
 def test_has_reviewer_true_with_seats() -> None:
-    wf = _wf(review=_reviewer.ReviewSettings(reviewers=[_seat(mock.MagicMock())]))
+    wf = _wf(review=review_gate.ReviewSettings(reviewers=[_seat(mock.MagicMock())]))
     assert wf.reviewer.available() is True
-    assert _wf(review=_reviewer.ReviewSettings(reviewers=[])).reviewer.available() is False
+    assert _wf(review=review_gate.ReviewSettings(reviewers=[])).reviewer.available() is False
 
 
 @pytest.mark.usefixtures("immutable_target")
@@ -134,7 +142,7 @@ def test_panel_blocks_finish_under_veto_then_accepts() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
@@ -174,7 +182,7 @@ def test_panels_count_and_inject_each_finding_once(
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
@@ -255,7 +263,7 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
             base_sha=base,
             provider=worker,
             dispatcher=_disp(),
-            review=_reviewer.ReviewSettings(
+            review=review_gate.ReviewSettings(
                 reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
             ),
             resume_state_path=snapshot,
@@ -320,7 +328,7 @@ def test_second_panel_prompt_names_prior_finding() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
@@ -353,7 +361,7 @@ def test_observe_only_panels_do_not_repeat_findings(
     wf = _wf(
         provider=worker,
         dispatcher=dispatcher,
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], trigger=trigger, interval_turns=1
         ),
         base_sha="b",
@@ -386,7 +394,7 @@ def test_panel_skipped_when_budget_fraction_low() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
@@ -407,7 +415,7 @@ def test_panel_advisory_does_not_block_finish() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], block_on="none", trigger="before_finish"
         ),
         base_sha="b",
@@ -430,7 +438,7 @@ def test_panel_does_not_block_on_nongating_category_even_under_veto() -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
@@ -466,7 +474,7 @@ def test_the_configured_cap_counts_rejected_finishes(cap: int) -> None:
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)],
             block_on="any",
             trigger="before_finish",
@@ -486,13 +494,12 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     shared `panel_is_inconclusive` and `inconclusive_note` owner, and the gate still lets the finish
     through, since a panel never deadlocks a run.
     """
-    from agent6.harness import _loop_state, _panel
-    from agent6.harness import _reviewer as review_mod
+    from agent6.harness import loop_state, review_gate, review_panel
 
     abstain = review_records.ReviewVerdict(
         seat_index=0, focus="s", model_route="m", verdict="abstain", error="output hit the cap"
     )
-    res = _panel.PanelResult(
+    res = review_panel.PanelResult(
         panel_id="p",
         block_on="none",
         blocked=False,
@@ -504,12 +511,12 @@ def test_in_loop_panel_all_abstain_names_the_abstention() -> None:
     wf = _wf(
         provider=mock.MagicMock(),
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(reviewers=[_seat(mock.MagicMock())], block_on="none"),
+        review=review_gate.ReviewSettings(reviewers=[_seat(mock.MagicMock())], block_on="none"),
         base_sha="b",
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     with (
-        mock.patch.object(review_mod, "run_panel", return_value=res),
+        mock.patch.object(review_gate, "run_panel", return_value=res),
     ):
         out = wf.reviewer.critique(state, trigger="periodic", turn=1)
     assert out is not None
@@ -523,7 +530,7 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A finding the notice cut was remembered as injected, so later panels dropped it unseen."""
-    monkeypatch.setattr(_panel, "REVIEW_NOTICE_BYTES", 1_000)
+    monkeypatch.setattr(review_panel, "REVIEW_NOTICE_BYTES", 1_000)
     big = json.dumps(
         {
             "verdict": "block",
@@ -554,7 +561,7 @@ def test_findings_the_notice_cut_are_not_remembered_as_injected(
     wf = _wf(
         provider=worker,
         dispatcher=_disp(),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
         ),
         base_sha="b",
@@ -620,7 +627,7 @@ def test_panel_risk_round_trips_into_the_receipt(tmp_path: pathlib.Path, repeat:
         provider=worker,
         dispatcher=_disp(),
         events=event_log.EventSink(saved.logs_path),
-        review=_reviewer.ReviewSettings(
+        review=review_gate.ReviewSettings(
             reviewers=[_seat(seat_provider, model="provider/model")],
             block_on="none",
             trigger="before_finish",

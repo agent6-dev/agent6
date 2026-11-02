@@ -7,7 +7,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6.config import Config
-from agent6.harness import _chain
+from agent6.harness import run_chain
 from agent6.vcs import commit_message
 
 
@@ -69,11 +69,11 @@ def test_the_configured_identity_reaches_the_commit(tmp_path: pathlib.Path) -> N
     cfg = Config.model_validate(
         {"git": {"commit": {"name": "Agent Six", "email": "agent6@example.com"}}}
     )
-    identity = _chain.commit_identity(cfg.git.commit, "Assisted-by: agent6:m1")
+    identity = run_chain.commit_identity(cfg.git.commit, "Assisted-by: agent6:m1")
     assert identity is not None
     assert (identity.name, identity.email) == ("Agent Six", "agent6@example.com")
     assert identity.trailer == "Assisted-by: agent6:m1"
-    assert _chain.commit_identity(Config().git.commit, None) is None
+    assert run_chain.commit_identity(Config().git.commit, None) is None
 
 
 def test_a_shared_second_level_dir_needs_every_path_under_it() -> None:

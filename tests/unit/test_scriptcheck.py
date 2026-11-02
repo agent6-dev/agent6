@@ -10,7 +10,7 @@ import shutil
 import pytest
 
 from agent6 import kinds
-from agent6.app.machine import _scriptcheck as scriptcheck
+from agent6.app.machine import scriptcheck
 
 _CLEAN = "import json\n\n\ndef f(x: int) -> str:\n    return json.dumps({'v': x})\n"
 

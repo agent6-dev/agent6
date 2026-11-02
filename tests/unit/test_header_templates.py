@@ -12,12 +12,19 @@ import httpx2
 import pydantic
 import pytest
 
-from agent6 import __version__, secret_store
+from agent6 import __version__
 from agent6 import budget as agent6_budget
-from agent6.app import _conversations, providers
-from agent6.config import Config, OpenAIProviderEntry
+from agent6.app import conversation_ids, role_providers
+from agent6.config import Config, OpenAIProviderEntry, secret_store
 from agent6.models import cache
-from agent6.providers import ProviderResponse, _headers, _oauth_protocol, _transport, oauth, types
+from agent6.providers import (
+    ProviderResponse,
+    oauth,
+    oauth_protocol,
+    provider_types,
+    request_headers,
+    transport,
+)
 
 _HEX32 = "0123456789abcdef"
 
@@ -33,23 +40,23 @@ def _entry(headers: dict[str, Any], **extra: Any) -> OpenAIProviderEntry:
     )
 
 
-def _context(**overrides: Any) -> _headers.RequestContext:
+def _context(**overrides: Any) -> request_headers.RequestContext:
     fields: dict[str, Any] = {
         "session_id": "sid-1",
         "is_first_turn": True,
         "is_subagent": False,
         "initiator": "user",
     }
-    return _headers.RequestContext(**{**fields, **overrides})
+    return request_headers.RequestContext(**{**fields, **overrides})
 
 
 def test_a_literal_string_stays_literal_and_rides_the_api_classes_only() -> None:
     """Braces in an existing header string are text; the string never reaches an issuer."""
-    hs = _headers.HeaderSet.from_config(_entry({"X-A": "{request_id}"}).extra_headers)
-    assert hs.render(_headers.plain_facts("inference")) == {"x-a": "{request_id}"}
-    assert hs.render(_headers.plain_facts("models")) == {"x-a": "{request_id}"}
-    assert hs.render(_headers.plain_facts("oauth")) == {}
-    assert hs.render(_headers.plain_facts("exchange")) == {}
+    hs = request_headers.HeaderSet.from_config(_entry({"X-A": "{request_id}"}).extra_headers)
+    assert hs.render(request_headers.plain_facts("inference")) == {"x-a": "{request_id}"}
+    assert hs.render(request_headers.plain_facts("models")) == {"x-a": "{request_id}"}
+    assert hs.render(request_headers.plain_facts("oauth")) == {}
+    assert hs.render(request_headers.plain_facts("exchange")) == {}
 
 
 @pytest.mark.parametrize(
@@ -123,8 +130,8 @@ def test_a_configured_issuer_accepts_a_credential_header_target(target: str) -> 
             "token_endpoint": "https://login.example/token",
         },
     )
-    hs = _headers.HeaderSet.from_config(entry.extra_headers)
-    facts = _headers.plain_facts(target)
+    hs = request_headers.HeaderSet.from_config(entry.extra_headers)
+    facts = request_headers.plain_facts(target)
     assert hs.render(facts) == {"x-trace": facts.request_id}
 
 
@@ -162,8 +169,8 @@ def test_every_fact_renders_for_the_class_that_has_it() -> None:
             "x-brace": {"template": "{{literal}}"},
         }
     )
-    hs = _headers.HeaderSet.from_config(entry.extra_headers)
-    facts = _headers.call_facts("m1", (True, False), _context()).attempt()
+    hs = request_headers.HeaderSet.from_config(entry.extra_headers)
+    facts = request_headers.call_facts("m1", (True, False), _context()).attempt()
     rendered = hs.render(facts)
     assert rendered.pop("x-id") == facts.request_id and len(facts.request_id) == 32
     assert rendered == {
@@ -176,14 +183,14 @@ def test_every_fact_renders_for_the_class_that_has_it() -> None:
         "x-tools": "true",
         "x-brace": "{literal}",
     }
-    with_image = _headers.call_facts("m1", (False, True), _context()).attempt()
+    with_image = request_headers.call_facts("m1", (False, True), _context()).attempt()
     assert hs.render(with_image)["x-vision"] == "true"
-    listing = hs.render(_headers.plain_facts("models"))
+    listing = hs.render(request_headers.plain_facts("models"))
     assert set(listing) == {"x-ver"}  # the model-call facts are not the listing's to render
 
 
 def test_body_facts_read_the_serialized_request_per_format() -> None:
-    assert _headers.openai_body_facts(
+    assert request_headers.openai_body_facts(
         {
             "messages": [
                 {"role": "tool", "content": "ok"},
@@ -191,11 +198,11 @@ def test_body_facts_read_the_serialized_request_per_format() -> None:
             ]
         }
     ) == (True, True)
-    assert _headers.openai_body_facts({"messages": [{"role": "user", "content": "hi"}]}) == (
+    assert request_headers.openai_body_facts({"messages": [{"role": "user", "content": "hi"}]}) == (
         False,
         False,
     )
-    assert _headers.anthropic_body_facts(
+    assert request_headers.anthropic_body_facts(
         {
             "messages": [
                 {
@@ -211,7 +218,7 @@ def test_body_facts_read_the_serialized_request_per_format() -> None:
             ]
         }
     ) == (True, True)
-    assert _headers.responses_body_facts(
+    assert request_headers.responses_body_facts(
         {
             "input": [
                 {"type": "function_call_output", "call_id": "c", "output": "ok"},
@@ -225,11 +232,11 @@ def test_every_attempt_mints_its_own_request_id_and_reports_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A credential recovery retries the call: two attempts, two ids, two `provider.request`s."""
-    hs = _headers.HeaderSet.from_config(
+    hs = request_headers.HeaderSet.from_config(
         _entry({"x-id": {"template": "{request_id}"}}).extra_headers
     )
     seen: list[str] = []
-    observed: list[_headers.RequestFacts] = []
+    observed: list[request_headers.RequestFacts] = []
 
     class _Unauthorized:
         status_code = 401
@@ -250,8 +257,8 @@ def test_every_attempt_mints_its_own_request_id_and_reports_it(
         def invalidate(self, status: int, rejected_bearer: str) -> bool:
             return True
 
-    monkeypatch.setattr(_transport, "http_post", fake_post)
-    call = _transport.ProviderCall(
+    monkeypatch.setattr(transport, "http_post", fake_post)
+    call = transport.ProviderCall(
         api_label="OpenAI",
         api_format="openai",
         url="https://api.test/v1/chat/completions",
@@ -262,14 +269,14 @@ def test_every_attempt_mints_its_own_request_id_and_reports_it(
         transcript_sink=None,
         budget=None,
         model="m",
-        facts=_headers.call_facts("m", (False, False), _context(observe=observed.append)),
+        facts=request_headers.call_facts("m", (False, False), _context(observe=observed.append)),
         build_headers=lambda token, facts: hs.render(facts),
         adapt_400=lambda _s, _t, _b: False,
         adapt_attempts=0,
         require_metered=lambda _d: None,
         parse=lambda _d: _resp(),
     )
-    with pytest.raises(types.ProviderError, match="401"):
+    with pytest.raises(provider_types.ProviderError, match="401"):
         call.run()
     assert len(seen) == 2 and seen[0] != seen[1]
     assert [f.request_id for f in observed] == seen
@@ -292,20 +299,20 @@ def _resp() -> ProviderResponse:
 def test_a_conversation_persists_across_a_resume_and_starts_new_on_a_fork(
     tmp_path: pathlib.Path,
 ) -> None:
-    path = tmp_path / "s1" / _conversations.FILE_NAME
+    path = tmp_path / "s1" / conversation_ids.FILE_NAME
     path.parent.mkdir()
-    first = _conversations.Conversations(path=path)
+    first = conversation_ids.Conversations(path=path)
     ctx = first.context("worker", "work", initiator="user")
     assert ctx.is_first_turn and not ctx.is_subagent and len(ctx.session_id) == 32
     first.completed("worker", "work")
-    resumed = _conversations.Conversations(path=path)
+    resumed = conversation_ids.Conversations(path=path)
     again = resumed.context("worker", "work", initiator="agent")
     assert again.session_id == ctx.session_id and again.is_first_turn is False
     other = resumed.context("review:security", "work", initiator="agent")
     assert other.session_id != ctx.session_id and other.is_first_turn
-    forked = _conversations.Conversations(path=tmp_path / "s2" / _conversations.FILE_NAME)
+    forked = conversation_ids.Conversations(path=tmp_path / "s2" / conversation_ids.FILE_NAME)
     assert forked.context("worker", "work", initiator="user").session_id != ctx.session_id
-    lane = _conversations.Conversations(is_subagent=True)
+    lane = conversation_ids.Conversations(is_subagent=True)
     assert lane.context("worker", "work", initiator="user").is_subagent
     assert lane.path is None  # a path-less state writes nothing
 
@@ -314,19 +321,19 @@ class _Inner:
     """A provider that records its context and reports one attempt through it."""
 
     def __init__(self) -> None:
-        self.contexts: list[_headers.RequestContext] = []
+        self.contexts: list[request_headers.RequestContext] = []
 
     def call(self, **kw: Any) -> ProviderResponse:
         context = kw["context"]
-        assert isinstance(context, _headers.RequestContext)
+        assert isinstance(context, request_headers.RequestContext)
         self.contexts.append(context)
         if context.observe is not None:
-            context.observe(_headers.call_facts("m", (False, False), context).attempt())
+            context.observe(request_headers.call_facts("m", (False, False), context).attempt())
         return _resp()
 
 
-def _instrumented(inner: _Inner) -> providers.InstrumentedProvider:
-    return providers.InstrumentedProvider(
+def _instrumented(inner: _Inner) -> role_providers.InstrumentedProvider:
+    return role_providers.InstrumentedProvider(
         inner=inner,  # type: ignore[arg-type]
         role="worker",
         model="m",
@@ -341,8 +348,12 @@ def test_the_instrumented_provider_fills_the_context_and_reports_each_attempt() 
     inner = _Inner()
     wrapped = _instrumented(inner)
     task = [{"role": "user", "content": "do the task"}]
-    wrapped.call(system="s", messages=task, context=_headers.RequestContext.initiated_by("user"))
-    wrapped.call(system="s", messages=task, context=_headers.RequestContext.initiated_by("agent"))
+    wrapped.call(
+        system="s", messages=task, context=request_headers.RequestContext.initiated_by("user")
+    )
+    wrapped.call(
+        system="s", messages=task, context=request_headers.RequestContext.initiated_by("agent")
+    )
     wrapped.call(system="s", messages=task)
     first, second, third = inner.contexts
     assert (first.initiator, first.is_first_turn) == ("user", True)
@@ -369,21 +380,21 @@ def test_a_call_outside_a_conversation_keeps_its_model_and_body_facts() -> None:
             "x-tools": {"template": "{has_tool_results}"},
         }
     )
-    hs = _headers.HeaderSet.from_config(entry.extra_headers)
-    rendered = hs.render(_headers.call_facts("m", (True, False), None).attempt())
+    hs = request_headers.HeaderSet.from_config(entry.extra_headers)
+    rendered = hs.render(request_headers.call_facts("m", (True, False), None).attempt())
     assert set(rendered) == {"x-id", "x-model", "x-tools"}
     assert (rendered["x-model"], rendered["x-tools"]) == ("m", "true")
     # A partial context names the initiator only; the conversation facts stay out.
-    partial = _headers.RequestContext.initiated_by("user")
-    rendered = hs.render(_headers.call_facts("m", (False, False), partial).attempt())
+    partial = request_headers.RequestContext.initiated_by("user")
+    rendered = hs.render(request_headers.call_facts("m", (False, False), partial).attempt())
     assert set(rendered) == {"x-id", "x-model", "x-tools", "x-init"}
     assert rendered["x-init"] == "user"
 
 
 def test_a_malformed_conversation_file_starts_empty(tmp_path: pathlib.Path) -> None:
-    path = tmp_path / _conversations.FILE_NAME
+    path = tmp_path / conversation_ids.FILE_NAME
     path.write_text('{"routes": {"worker@work": {"id": "abc", "completed": "x"}}}')
-    ctx = _conversations.Conversations(path=path).context("worker", "work", initiator="agent")
+    ctx = conversation_ids.Conversations(path=path).context("worker", "work", initiator="agent")
     assert ctx.is_first_turn and ctx.session_id != "abc"
 
 
@@ -446,7 +457,7 @@ def test_an_oauth_targeted_template_reaches_the_token_endpoint_and_a_literal_doe
 
         return _R()
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
     cred = oauth.OAuthCredential("work", entry, now=lambda: 4_590.0)  # inside the skew: refresh
     assert cred.token() == "AT2"
     assert posted == [{"user-agent": f"agent6/{__version__}"}]

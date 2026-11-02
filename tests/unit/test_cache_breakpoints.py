@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from agent6.harness import _conversation
+from agent6.harness import loop_conversation
 from agent6.providers import anthropic
 
 
 def _marked_wire() -> list[dict[str, Any]]:
-    conv = _conversation.Conversation()
+    conv = loop_conversation.Conversation()
     conv.notice("TASK")
     conv.roll_cache_marks()
     return conv.to_wire()

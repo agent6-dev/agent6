@@ -11,7 +11,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import id
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 
 def _session_dir(
@@ -36,7 +36,7 @@ def test_explicit_id_resolves_across_buckets(tmp_path: pathlib.Path) -> None:
     (state / "sessions" / "asks" / "ask-xyz").mkdir(parents=True)
     (state / "sessions" / "asks" / "ask-xyz" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
-    layout = _common.resolve_or_newest_layout(repo, "ask-")
+    layout = common.resolve_or_newest_layout(repo, "ask-")
     assert layout is not None
     assert layout.subdir == "asks" and layout.session_id == "ask-xyz"
 
@@ -48,7 +48,7 @@ def test_empty_id_picks_the_newest_across_buckets(tmp_path: pathlib.Path) -> Non
     _session_dir(state, "runs", "old-run", log_mtime=1000.0)
     _session_dir(state, "asks", "new-ask", log_mtime=2000.0)
 
-    layout = _common.resolve_or_newest_layout(repo, "")
+    layout = common.resolve_or_newest_layout(repo, "")
     assert layout is not None
     assert layout.session_id == "new-ask" and layout.subdir == "asks"
     assert layout.session_dir == state / "sessions" / "asks" / "new-ask"
@@ -57,7 +57,7 @@ def test_empty_id_picks_the_newest_across_buckets(tmp_path: pathlib.Path) -> Non
 def test_empty_id_with_no_runs_returns_none(tmp_path: pathlib.Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
-    assert _common.resolve_or_newest_layout(repo, "") is None
+    assert common.resolve_or_newest_layout(repo, "") is None
 
 
 def test_bad_explicit_id_raises(tmp_path: pathlib.Path) -> None:
@@ -68,4 +68,4 @@ def test_bad_explicit_id_raises(tmp_path: pathlib.Path) -> None:
         "{}\n", encoding="utf-8"
     )
     with pytest.raises(id.SessionIdError):
-        _common.resolve_or_newest_layout(repo, "nope")
+        common.resolve_or_newest_layout(repo, "nope")

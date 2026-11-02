@@ -70,7 +70,7 @@ CONTRACTS: tuple[Contract, ...] = (
         title="Review read model",
         module="agent6.viewmodel.review",
         primary=("FindingView", "ReviewView", "MergeReviewGuard"),
-        writers=("viewmodel/state.py", "viewmodel/_session_log.py"),
+        writers=("viewmodel/state.py", "viewmodel/session_log.py"),
         pins=("tests/unit/test_viewmodel_review.py",),
     ),
     Contract(
@@ -90,10 +90,10 @@ CONTRACTS: tuple[Contract, ...] = (
         ),
         writers=(
             "app/review_actions.py",
-            "harness/_panel.py",
-            "harness/_review_history.py",
-            "harness/_review_seat.py",
-            "harness/_reviewer.py",
+            "harness/review_panel.py",
+            "harness/review_history.py",
+            "harness/review_seat.py",
+            "harness/review_gate.py",
             "ui/cli/sessions_findings.py",
             "ui/web/review_routes.py",
             "vcs/review.py",
@@ -110,7 +110,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="Conversation",
-        module="agent6.harness._conversation",
+        module="agent6.harness.loop_conversation",
         primary=("Conversation",),
         writers=("harness/loop.py",),
         pins=("tests/unit/data/golden_loop_wire.json",),
@@ -124,7 +124,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="SessionSnapshot",
-        module="agent6.harness._snapshot",
+        module="agent6.harness.loop_snapshot",
         primary=("SessionSnapshot",),
         writers=("harness/loop.py",),
         pins=("tests/unit/data/golden_loop_wire.json",),
@@ -134,13 +134,13 @@ CONTRACTS: tuple[Contract, ...] = (
         module="agent6.tools.results",
         primary=("ToolResult",),
         writers=(
-            "tools/_command_tools.py",
-            "tools/_control_tools.py",
-            "tools/_dag_tools.py",
-            "tools/_edit_diag.py",
-            "tools/_fs_tools.py",
-            "tools/_nav_tools.py",
-            "tools/_skill_tools.py",
+            "tools/command_tools.py",
+            "tools/control_tools.py",
+            "tools/dag_tools.py",
+            "tools/edit_diag.py",
+            "tools/fs_tools.py",
+            "tools/nav_tools.py",
+            "tools/skill_tools.py",
             "tools/dispatch.py",
         ),
         pins=("tests/unit/test_tool_result_wire.py", "tests/unit/test_tool_result_summaries.py"),
@@ -158,7 +158,7 @@ CONTRACTS: tuple[Contract, ...] = (
         module="agent6.machine.schema",
         primary=("MachineSpec",),
         # load_machine constructs it from the .asm.toml at the parse boundary.
-        writers=("machine/_semantics.py",),
+        writers=("machine/semantics.py",),
         pins=("tests/unit/test_machine_model.py",),
     ),
     Contract(
@@ -180,11 +180,11 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="Run/machine wire snapshot",
-        module="agent6.viewmodel._state_view",
+        module="agent6.viewmodel.state_view",
         # The dict these builders return IS the payload `attach --json`, the web
         # page, and the SSE stream serialize; their docstrings state the contract.
         primary=("session_state_as_dict",),
-        writers=("viewmodel/_state_view.py", "viewmodel/machine_state.py"),
+        writers=("viewmodel/state_view.py", "viewmodel/machine_state.py"),
         pins=("tests/unit/data/golden_session_state.json", "tests/unit/test_viewmodel_state.py"),
     ),
 )

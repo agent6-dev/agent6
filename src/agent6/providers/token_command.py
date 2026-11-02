@@ -19,7 +19,7 @@ import time
 from collections.abc import Sequence
 
 from agent6 import child_env
-from agent6.providers import types
+from agent6.providers import provider_types
 
 _DEFAULT_RUN_TIMEOUT_S = 30.0
 
@@ -100,18 +100,20 @@ class CommandToken:
                 check=False,
             )
         except FileNotFoundError as exc:
-            raise types.ProviderError(f"token_command not found: {self._argv[0]!r}") from exc
+            raise provider_types.ProviderError(
+                f"token_command not found: {self._argv[0]!r}"
+            ) from exc
         except subprocess.TimeoutExpired as exc:
-            raise types.ProviderError(
+            raise provider_types.ProviderError(
                 f"token_command timed out after {self._run_timeout_s:.0f}s: {self._argv}"
             ) from exc
         except OSError as exc:
-            raise types.ProviderError(f"token_command failed to start: {exc}") from exc
+            raise provider_types.ProviderError(f"token_command failed to start: {exc}") from exc
         if proc.returncode != 0:
             stderr = (proc.stderr or "").strip()[:500]
             detail = f": {stderr}" if stderr else ""
-            raise types.ProviderError(f"token_command exited {proc.returncode}{detail}")
+            raise provider_types.ProviderError(f"token_command exited {proc.returncode}{detail}")
         token = (proc.stdout or "").strip()
         if not token:
-            raise types.ProviderError(f"token_command produced no output: {self._argv}")
+            raise provider_types.ProviderError(f"token_command produced no output: {self._argv}")
         return token

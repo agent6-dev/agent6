@@ -9,8 +9,8 @@ import pathlib
 import shlex
 import shutil
 
-from agent6 import kinds, verify_infer
-from agent6.app import _setup, confine
+from agent6 import kinds
+from agent6.app import confine, session_setup
 from agent6.config import (
     Config,
     ConfigError,
@@ -23,8 +23,8 @@ from agent6.sandbox import (
     jail,
     tool_paths,
 )
-from agent6.tools import mcp_client
-from agent6.ui.cli import _check_render, _check_sandbox, _common
+from agent6.tools import mcp_client, verify_infer
+from agent6.ui.cli import check_render, check_sandbox, common
 from agent6.vcs import git_policy
 
 
@@ -59,8 +59,8 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
         checks.append(kinds.DoctorCheck(name="config_load", status="FAIL", detail=load_error))
 
     if cfg is not None and section in {"all", "sandbox"}:
-        print(_common.sgr("== sandbox ==", "1"))
-        checks.extend(_check_sandbox.check_sandbox_section(cfg))
+        print(common.sgr("== sandbox ==", "1"))
+        checks.extend(check_sandbox.check_sandbox_section(cfg))
         print()
 
     if cfg is not None and section in {"all", "config"}:
@@ -78,10 +78,10 @@ def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
         checks.extend(_doctor_check_verify(cfg))
         print()
 
-    print(_common.sgr("== summary ==", "1"))
+    print(common.sgr("== summary ==", "1"))
     failed = False
     for c in checks:
-        _check_render.result(c.status, c.name, c.detail)
+        check_render.result(c.status, c.name, c.detail)
         failed = failed or c.status == "FAIL"
     return 1 if failed else 0
 
@@ -111,7 +111,10 @@ def _probe_refusal(
     if srv.url:
         return None
     if isolation == "none":
-        return f"not probed: no jail ({_setup.no_jail_cause(cfg, env)}); a run starts it unconfined"
+        return (
+            f"not probed: no jail ({session_setup.no_jail_cause(cfg, env)}); "
+            "a run starts it unconfined"
+        )
     sb = srv.sandbox
     if sb is not None and sb.unconfined:
         return (
@@ -149,7 +152,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
         print(f"  (no MCP servers to check: {cause})")
         return [kinds.DoctorCheck(name="mcp", status="PASS", detail=f"not configured ({cause})")]
     try:
-        env = _setup.detect_env()
+        env = session_setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
     except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
         print(f"[FAIL] mcp: {exc}")
@@ -191,7 +194,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
             return [*out, kinds.DoctorCheck(name="mcp", status="FAIL", detail=str(exc))]
         try:
             specs = [
-                _setup.mcp_server_spec(cfg, root, isolation, name, srv, readonly=True)
+                session_setup.mcp_server_spec(cfg, root, isolation, name, srv, readonly=True)
                 for name, srv in probed.items()
             ]
         except JailUnavailableError as exc:
@@ -278,7 +281,7 @@ def _doctor_check_config(cfg: Config) -> list[kinds.DoctorCheck]:
         )
         out.append(kinds.DoctorCheck(name="config.provider_keys", status="INFO", detail=detail_env))
     else:
-        env_err = _setup.check_provider_keys(cfg)
+        env_err = session_setup.check_provider_keys(cfg)
         ok_env = env_err is None
         detail_env = (
             "all referenced provider credentials resolve locally;"

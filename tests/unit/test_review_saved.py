@@ -16,10 +16,11 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, paths, review_records
-from agent6.app import _setup, providers
+from agent6 import paths, review_records
+from agent6.app import role_providers, session_setup
 from agent6.config import Config, layer
-from agent6.harness import _reviewer, code_review
+from agent6.harness import review_diff, review_gate
+from agent6.sessions import event_log
 from agent6.ui.cli import review_cmds
 from tests.unit import test_review_diff_collect, test_review_gate
 
@@ -57,7 +58,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
         return types.SimpleNamespace(config=cfg)
 
     monkeypatch.setattr(layer, "load_effective", loaded)
-    monkeypatch.setattr(_setup, "check_provider_keys", mock.MagicMock(return_value=None))
+    monkeypatch.setattr(session_setup, "check_provider_keys", mock.MagicMock(return_value=None))
     return tmp_path
 
 
@@ -68,9 +69,9 @@ def _saved_reviews(repo: pathlib.Path) -> list[pathlib.Path]:
 def test_the_freeform_review_is_saved_and_its_path_named(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock())
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.MagicMock())
     monkeypatch.setattr(
-        code_review, "review_diff", mock.MagicMock(return_value="LGTM with nits\n- [nit] x")
+        review_diff, "review_diff", mock.MagicMock(return_value="LGTM with nits\n- [nit] x")
     )
 
     rc = review_cmds._cmd_review((), base="", head="HEAD", paths=())  # pyright: ignore[reportPrivateUsage]
@@ -95,9 +96,9 @@ def test_a_review_over_budget_prints_the_ledger_reason_once(
     """
     from agent6 import budget as agent6_budget
 
-    monkeypatch.setattr(providers, "build_role_provider", mock.MagicMock())
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.MagicMock())
     monkeypatch.setattr(
-        code_review,
+        review_diff,
         "review_diff",
         mock.MagicMock(
             side_effect=agent6_budget.BudgetExceededError("plan budget exhausted: 3.0 of 3pt")
@@ -130,12 +131,12 @@ class _PassingSeatProvider:
 def test_the_panel_verdict_is_saved_too(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    seat = _reviewer.ReviewSeat(
+    seat = review_gate.ReviewSeat(
         focus="correctness",
         provider=_PassingSeatProvider(),  # type: ignore[arg-type]
         model="reviewer",
     )
-    monkeypatch.setattr(providers, "build_review_seats", mock.MagicMock(return_value=[seat]))
+    monkeypatch.setattr(role_providers, "build_review_seats", mock.MagicMock(return_value=[seat]))
 
     rc = review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=1)  # pyright: ignore[reportPrivateUsage]
 
@@ -178,10 +179,10 @@ def test_review_journal_keeps_selection_separate_from_hidden_paths(
         layer, "load_effective", mock.Mock(return_value=types.SimpleNamespace(config=cfg))
     )
     monkeypatch.setattr(
-        providers,
+        role_providers,
         "build_review_seats",
         mock.Mock(
-            return_value=[_reviewer.ReviewSeat("correctness", "reviewer", _PassingSeatProvider())]
+            return_value=[review_gate.ReviewSeat("correctness", "reviewer", _PassingSeatProvider())]
         ),
     )
 
@@ -228,13 +229,13 @@ def test_untracked_repository_notes_reach_the_prompt_and_saved_receipt(
             return super().call(**kwargs)
 
     provider = CapturingProvider()
-    seat = _reviewer.ReviewSeat(
+    seat = review_gate.ReviewSeat(
         focus="correctness",
         provider=provider,  # type: ignore[arg-type]
         model="reviewer",
     )
-    monkeypatch.setattr(providers, "build_review_seats", mock.Mock(return_value=[seat]))
-    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=provider))
+    monkeypatch.setattr(role_providers, "build_review_seats", mock.Mock(return_value=[seat]))
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=provider))
 
     rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
         (), base="", head="HEAD", paths=(), reviewers=int(panel)
@@ -298,9 +299,9 @@ def test_standalone_panel_records_line_origins_against_its_base(
         )
     )
     monkeypatch.setattr(
-        providers,
+        role_providers,
         "build_review_seats",
-        mock.Mock(return_value=[_reviewer.ReviewSeat("correctness", "model", provider)]),
+        mock.Mock(return_value=[review_gate.ReviewSeat("correctness", "model", provider)]),
     )
     assert (
         review_cmds._cmd_review(
@@ -350,7 +351,7 @@ def test_failed_freeform_review_records_a_terminal_reason(
         if budget_failure
         else ProviderError("offline")
     )
-    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=provider))
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=provider))
     rc = review_cmds._cmd_review((), base="", head="HEAD", paths=())
     assert rc == (3 if budget_failure else 2)
     (journal,) = (paths.state_dir(repo) / "reviews").glob("*.jsonl")

@@ -16,13 +16,13 @@ from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
 from agent6.viewmodel import (
-    _machine_logs,
-    _session_log,
-    _session_status,
-    _state_view,
     format,
     listing,
+    machine_logs,
     machine_state,
+    session_log,
+    session_status,
+    state_view,
     tail,
 )
 from agent6.viewmodel import state as viewmodel_state
@@ -162,8 +162,8 @@ def manifest_header(
     header: dict[str, Any] = dict(branch_facts(m, repo))
     if repo is not None:
         if not status:
-            scan = _session_log.scan_session_log(session_dir / layout.LOGS_NAME)
-            status, _reason = _session_status.status_for_session_dir(
+            scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
+            status, _reason = session_status.status_for_session_dir(
                 session_dir, scan.status_facts()
             )
         header["unmerged"] = listing.unmerged(m, status, git_read.run_ref_tips(repo))
@@ -216,11 +216,11 @@ def session_snapshot(
         as_of = {"turn": at.steps[-1].turn, "sha": at.steps[-1].sha}
     else:
         state = viewmodel_state.fold_session(events)
-    word, _reason = _session_status.status_for_session_dir(
-        session_dir, _state_view.status_facts(state)
+    word, _reason = session_status.status_for_session_dir(
+        session_dir, state_view.status_facts(state)
     )
     header = manifest_header(session_dir, repo=repo, status=word)
-    snap = _state_view.session_state_as_dict(
+    snap = state_view.session_state_as_dict(
         state, session_dir, unmerged=bool(header.get("unmerged"))
     )
     snap["as_of"] = as_of
@@ -229,7 +229,7 @@ def session_snapshot(
 
 
 def machine_snapshot(
-    machine_dir: pathlib.Path, *, execution: _machine_logs.AgentExecution | None = None
+    machine_dir: pathlib.Path, *, execution: machine_logs.AgentExecution | None = None
 ) -> dict[str, Any]:
     """Fold a machine instance's state into the wire dict.
 
@@ -251,7 +251,7 @@ def machine_snapshot(
     events = MachineJournal(machine_dir).read()
     ms = machine_state.fold_machine(spec, events)
     d = machine_state.machine_state_as_dict(ms, machine_dir, execution=execution)
-    spend, in_flight = _machine_logs.machine_spend(
+    spend, in_flight = machine_logs.machine_spend(
         events, machine_dir, alive=process.worker_is_alive(machine_dir)
     )
     d["spend"] = {

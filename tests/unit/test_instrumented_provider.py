@@ -17,7 +17,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6.app import providers
+from agent6.app import role_providers
 from agent6.providers import ProviderResponse
 
 
@@ -34,8 +34,8 @@ def _resp() -> ProviderResponse:
     )
 
 
-def _wrap(inner: mock.MagicMock) -> providers.InstrumentedProvider:
-    return providers.InstrumentedProvider(
+def _wrap(inner: mock.MagicMock) -> role_providers.InstrumentedProvider:
+    return role_providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="moonshotai/kimi-k2.6",
@@ -125,7 +125,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
     """
     import types
 
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     inner = mock.MagicMock()
@@ -140,7 +140,7 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
         cache_creation_tokens=0,
         raw={},
     )
-    providers.InstrumentedProvider(
+    role_providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="m",
@@ -164,8 +164,8 @@ def test_a_failed_call_still_reports_what_it_spent(
 
     The live meters, `sessions list` and the machine spend ledger all read that event.
     """
-    from agent6 import event_log
     from agent6.providers import ProviderError
+    from agent6.sessions import event_log
 
     # The USD assertion needs a table price; the suite isolates the price cache, so seed one.
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
@@ -191,7 +191,7 @@ def test_a_failed_call_still_reports_what_it_spent(
 
     inner = mock.MagicMock()
     inner.call.side_effect = _cut_stream
-    wrapper = providers.InstrumentedProvider(
+    wrapper = role_providers.InstrumentedProvider(
         inner=inner,
         role="worker",
         model="anthropic/claude-haiku-4.5",

@@ -485,7 +485,7 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 **agent6's own git**
 
 - agent6's own commits, refs and merges go through `vcs/git_ops.py`, its queries through `vcs/git_read.py`, and the web Git and Files tabs' reads through `vcs/git_history.py` and `vcs/git_files.py`.
-  Only the `vcs` package's modules may import the private runner, `_git_command.py`, enforced by `test_only_the_vcs_package_imports_the_runner`.
+  Only the `vcs` package's modules may import the private runner, `git_command.py`, enforced by `test_only_the_vcs_package_imports_the_runner`.
     - the package spells no destructive verb at all: `push`, `reset --hard`, `commit --amend`, `rebase`, `filter-branch` / `filter-repo` and any `--force` / `-f` appear nowhere in it, so there is nothing to enable.
       `test_the_vcs_package_never_spells_a_destructive_verb` pins every verb but `filter-repo` in every module of the package, exempting two argv: `push` inside a `git stash push`, and the one `branch -D` below
     - the collectors on the [subprocess allowlist](#12-host-side-subprocess-allowlist) carry the same hardening flags.
@@ -656,7 +656,7 @@ Everything the model can influence runs through `run_in_jail` ([Sandbox](#2-sand
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
-- `vcs/_git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `_git_command`, except the config query the next line names.
+- `vcs/git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
 - `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `sandbox.isolation = "none"`.
@@ -664,7 +664,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `sandbox/jail_jobs.py`: detached jail commands and the plain background spawn under `sandbox.isolation = "none"`.
 - `sandbox/jail_session.py`: persistent jail launcher sessions and their teardown.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
-- `providers/claude_code.py` and `providers/_claude_code_session.py`: the `api_format = "claude_code"` provider and its session lifecycle helpers run the Claude Code binary the operator connected with fixed argv from operator configuration, never model output (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
+- `providers/claude_code.py` and `providers/claude_code_session.py`: the `api_format = "claude_code"` provider and its session lifecycle helpers run the Claude Code binary the operator connected with fixed argv from operator configuration, never model output (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
   Prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
   Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.
   Unjailed: it needs the operator's login under `$HOME` and its own egress, at the agent process's trust tier.
@@ -678,20 +678,20 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
   Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`), and captures `sessions merge` / `prune` / `rm` / `review` and `config set` / `unset`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
 - `ui/cli/` helpers:
-    - `_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
-    - `plan_watch.py` and `_steer.py`: `$EDITOR` for plan and steer editing
-    - `review_cmds.py`, `sessions_cmds.py` and `_ask.py`: `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
+    - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
+    - `plan_watch.py` and `steer_tty.py`: `$EDITOR` for plan and steer editing
+    - `review_cmds.py`, `sessions_cmds.py` and `ask.py`: `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
     - `history_cmds.py`: `rg` for history search
-    - `_live.py`: the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`
+    - `live.py`: the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`
     - `system_cmds.py`: `cp` / `rm` / `apparmor_parser` via sudo with fixed argv for `agent6 system apparmor`
     - `completions_cmd.py`: runs nothing itself; its one `subprocess.run` is text inside the xonsh completer script it emits, which the operator's xonsh runs at tab time to ask `agent6` for candidates
     - `skills_cmds.py`: `git clone --depth 1 -- <url>` with fixed argv for `agent6 skills install` and `skills update`.
       The URL is operator-supplied and nothing fetched is executed
-- `app/finalize.py`: both operator notify hooks (`run_notify_hook`): `[notify].on_complete` at run end and `[machine.notify].on_event` from `machine run` (built by `app/machine/_preflight.build_machine_notify_hook`).
+- `app/finalize.py`: both operator notify hooks (`run_notify_hook`): `[notify].on_complete` at run end and `[machine.notify].on_event` from `machine run` (built by `app/machine/host_preflight.build_machine_notify_hook`).
   Argv from config, env from `hook_env` (a minimal base plus `AGENT6_SESSION_*` or `AGENT6_MACHINE_*`, never the provider keys in the operator environment).
-- `app/machine/_scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.
+- `app/machine/scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.
   Those scripts execute only via `run_in_jail`.
-- `app/machine_agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
+- `app/machine/agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
 - `ui/tui/clipboard.py`: `tmux set-buffer -w` with the copied transcript text as one data argument.
 - `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment, transcript text on stdin.
 

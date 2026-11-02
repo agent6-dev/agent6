@@ -8,8 +8,8 @@ import pathlib
 
 import pytest
 
-from agent6.app import machine_agent
 from agent6.app import reporter as app_reporter
+from agent6.app.machine import agent
 from agent6.config import layer
 
 _MACHINE = """\
@@ -113,9 +113,7 @@ max_turns = 17
     mfile.write_text(_AGENT_MACHINE, encoding="utf-8")
     child_overlays: list[dict[str, object]] = []
 
-    def fake_build(
-        overlays: dict[str, machine_agent.StateOverlay], *_args: object, **_kwargs: object
-    ):  # type: ignore[no-untyped-def]
+    def fake_build(overlays: dict[str, agent.StateOverlay], *_args: object, **_kwargs: object):  # type: ignore[no-untyped-def]
         child_overlays.extend(entry.overlay for entry in overlays.values())
 
         def run(*_args: object, **_kwargs: object) -> AgentExecResult:
@@ -123,7 +121,7 @@ max_turns = 17
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
 
@@ -177,7 +175,7 @@ max_tokens_fallback = 0
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
 

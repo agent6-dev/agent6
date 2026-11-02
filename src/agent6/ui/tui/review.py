@@ -15,7 +15,7 @@ from agent6 import review_records
 from agent6.app import review_actions
 from agent6.sessions import process
 from agent6.ui import keymap, spawn
-from agent6.ui.tui import _diff_pane, forms, menubar, modals, new_work, screen_chrome
+from agent6.ui.tui import diff_pane, forms, menubar, modals, new_work, screen_chrome
 from agent6.viewmodel import receipt, review
 
 
@@ -161,7 +161,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         with containers.Horizontal(id="finding-panes"):
             with forms.ScrollPane(id="finding-context"):
                 yield widgets.Static("", id="finding-detail", markup=False)
-            yield _diff_pane.DiffPane(self._session_dir, id="review-diff")
+            yield diff_pane.DiffPane(self._session_dir, id="review-diff")
         yield widgets.Static("", id="review-result", markup=False)
         yield widgets.Footer()
 
@@ -278,7 +278,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             )
         body += "\n" + review.rules_notice(panel)
         detail.update(body)
-        self.query_one(_diff_pane.DiffPane).show_review(self._cwd, panel.target, report.location)
+        self.query_one(diff_pane.DiffPane).show_review(self._cwd, panel.target, report.location)
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Offer only actions that fit the selected finding's state.

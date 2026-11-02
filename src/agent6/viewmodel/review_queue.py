@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from agent6.viewmodel import _session_log, review
+from agent6.viewmodel import review, session_log
 
 Group = Literal["needs_answer", "blocked", "unverified", "awaiting_merge", "other"]
 # The queue's order: questions nobody answered, then open blocks, then ended runs the gate did
@@ -128,7 +128,7 @@ def _panel_state(panel: review.PanelView, *, stale: bool, live: bool) -> str:
     return "stale" if stale else "complete"
 
 
-def _verification(scan: _session_log.LogScan, mode: str) -> tuple[str, bool]:
+def _verification(scan: session_log.LogScan, mode: str) -> tuple[str, bool]:
     """Return the gate word the queue shows and whether the final tree passed whole."""
     if mode != "run":
         return "not_applicable", False
@@ -146,7 +146,7 @@ def _verification(scan: _session_log.LogScan, mode: str) -> tuple[str, bool]:
     return "passed", True
 
 
-def classify(scan: _session_log.LogScan, facts: QueueFacts) -> ReviewQueueEntry:
+def classify(scan: session_log.LogScan, facts: QueueFacts) -> ReviewQueueEntry:
     """Place a session in the review queue from its journal and the listing's facts.
 
     Args:
@@ -167,7 +167,7 @@ def classify(scan: _session_log.LogScan, facts: QueueFacts) -> ReviewQueueEntry:
 
 
 def _classify(
-    scan: _session_log.LogScan, facts: QueueFacts, *, open_questions: int
+    scan: session_log.LogScan, facts: QueueFacts, *, open_questions: int
 ) -> ReviewQueueEntry:
     """Place the session by its findings, gate and merge state, after the open questions.
 
@@ -249,7 +249,7 @@ def _classify(
 
 
 def _other_reason(
-    scan: _session_log.LogScan, facts: QueueFacts, state: str, counts: review.SeverityCounts
+    scan: session_log.LogScan, facts: QueueFacts, state: str, counts: review.SeverityCounts
 ) -> str:
     """Return why a session is review work without a place in the first three groups."""
     open_words = ", ".join(

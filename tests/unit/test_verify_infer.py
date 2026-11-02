@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from agent6 import verify_infer
+from agent6.tools import verify_infer
 
 pytestmark = pytest.mark.usefixtures("jail_bin")
 

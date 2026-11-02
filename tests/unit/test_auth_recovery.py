@@ -11,8 +11,9 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import config, secret_store
-from agent6.providers import _headers, _oauth_protocol, _transport, oauth, types
+from agent6 import config
+from agent6.config import secret_store
+from agent6.providers import oauth, oauth_protocol, provider_types, request_headers, transport
 
 
 class _AlwaysRefreshing:
@@ -31,8 +32,8 @@ class _AlwaysRefreshing:
         return True
 
 
-def _call(cred: types.BearerCredential, *, adapt_attempts: int) -> _transport.ProviderCall:
-    return _transport.ProviderCall(
+def _call(cred: provider_types.BearerCredential, *, adapt_attempts: int) -> transport.ProviderCall:
+    return transport.ProviderCall(
         api_label="OpenAI",
         api_format="openai",
         url="https://api.test/v1/chat/completions",
@@ -43,12 +44,12 @@ def _call(cred: types.BearerCredential, *, adapt_attempts: int) -> _transport.Pr
         transcript_sink=None,
         budget=None,
         model="m",
-        facts=_headers.RequestFacts(target="inference", model="m"),
+        facts=request_headers.RequestFacts(target="inference", model="m"),
         build_headers=lambda token, _facts: {"authorization": f"Bearer {token}"},
         adapt_400=lambda _s, _t, _b: False,
         adapt_attempts=adapt_attempts,
         require_metered=lambda _d: None,
-        parse=lambda _d: types.ProviderResponse(
+        parse=lambda _d: provider_types.ProviderResponse(
             text="",
             tool_uses=(),
             stop_reason="end_turn",
@@ -79,9 +80,9 @@ def test_a_401_recovers_the_credential_once_even_beside_an_adaptation_slot(
         sent.append(headers["authorization"])
         return _Unauthorized()
 
-    monkeypatch.setattr(_transport, "http_post", fake_post)
+    monkeypatch.setattr(transport, "http_post", fake_post)
     cred = _AlwaysRefreshing()
-    with pytest.raises(types.ProviderError, match="401"):
+    with pytest.raises(provider_types.ProviderError, match="401"):
         _call(cred, adapt_attempts=1).run()
     assert sent == ["Bearer t1", "Bearer t2"]
     assert cred.invalidated == [(401, "t1")]
@@ -112,7 +113,7 @@ def test_a_stale_401_retries_once_with_the_current_bearer(
     )
     secret_store.save_oauth_grant(
         "work",
-        oauth.stored_grant_for(_oauth_protocol.TokenGrant("AT1", "RT1", 3600.0), entry, now=1000.0),
+        oauth.stored_grant_for(oauth_protocol.TokenGrant("AT1", "RT1", 3600.0), entry, now=1000.0),
     )
     clock = {"now": 2000.0}
     cred = oauth.OAuthCredential("work", entry, now=lambda: clock["now"])
@@ -143,18 +144,18 @@ def test_a_stale_401_retries_once_with_the_current_bearer(
 
     call = _call(cred, adapt_attempts=1)
 
-    def fake_stream(headers: dict[str, str]) -> types.ProviderResponse:
+    def fake_stream(headers: dict[str, str]) -> provider_types.ProviderResponse:
         response = fake_post(call.url, headers=headers)
         if response.status_code == 401:
-            raise types.ProviderError("refused", status_code=401)
+            raise provider_types.ProviderError("refused", status_code=401)
         return call.parse({})
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_refresh)
-    monkeypatch.setattr(_transport, "http_post", fake_post)
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_refresh)
+    monkeypatch.setattr(transport, "http_post", fake_post)
     if streaming:
         call = dataclasses.replace(call, stream=fake_stream)
     if final_status == 401:
-        with pytest.raises(types.ProviderError) as failed:
+        with pytest.raises(provider_types.ProviderError) as failed:
             call.run()
         assert failed.value.status_code == 401
     else:
@@ -184,9 +185,9 @@ def test_a_403_that_the_credential_cannot_mend_is_final(monkeypatch: pytest.Monk
             self.invalidated.append((status, rejected_bearer))
             return False
 
-    monkeypatch.setattr(_transport, "http_post", fake_post)
+    monkeypatch.setattr(transport, "http_post", fake_post)
     cred = _Fixed()
-    with pytest.raises(types.ProviderError, match="403"):
+    with pytest.raises(provider_types.ProviderError, match="403"):
         _call(cred, adapt_attempts=1).run()
     assert sent == ["Bearer t1"]
     assert cred.invalidated == [(403, "t1")]

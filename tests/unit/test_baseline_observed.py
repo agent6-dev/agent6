@@ -14,9 +14,9 @@ from unittest import mock
 
 import pytest
 
-from agent6.harness import _chain, _finish_gates, _loop_state, _nudges, loop
+from agent6.harness import finish_gates, loop, loop_state, nudges, run_chain
 from agent6.tools import results
-from agent6.viewmodel import _session_status
+from agent6.viewmodel import session_status
 from tests.unit.turn_context import turn_context
 
 _BASE = "b" * 40
@@ -24,7 +24,7 @@ _BASE = "b" * 40
 
 def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
     wf = loop.Harness.__new__(loop.Harness)
-    wf.chain = _chain.RunChain(pathlib.Path("/nonexistent"), base_sha=_BASE)
+    wf.chain = run_chain.RunChain(pathlib.Path("/nonexistent"), base_sha=_BASE)
     object.__setattr__(
         wf, "_git_status", lambda: types.SimpleNamespace(is_clean=clean, head_sha=head)
     )
@@ -61,8 +61,8 @@ def _patch_git(monkeypatch: pytest.MonkeyPatch, wf: loop.Harness) -> None:
     monkeypatch.setattr("agent6.vcs.git_read.status", _status)
 
 
-def _state() -> _loop_state.LoopState:
-    return _loop_state.LoopState(original_task="t", tool_calls=0)
+def _state() -> loop_state.LoopState:
+    return loop_state.LoopState(original_task="t", tool_calls=0)
 
 
 def _verify(rc: int, *, duration_s: float = 5.0) -> results.ExecResult:
@@ -71,8 +71,8 @@ def _verify(rc: int, *, duration_s: float = 5.0) -> results.ExecResult:
     )
 
 
-def _turn() -> _loop_state.TurnState:
-    return _loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+def _turn() -> loop_state.TurnState:
+    return loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 @pytest.mark.parametrize("rc", [0, 1])
@@ -133,7 +133,7 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
         assert texts == []  # a green base says nothing
     else:
         assert "start: verify_command exit 1" in texts[0]
-        assert texts[1] == _nudges.BASELINE_RED_NOTICE
+        assert texts[1] == nudges.BASELINE_RED_NOTICE
 
 
 @pytest.mark.parametrize(
@@ -245,9 +245,9 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     state.verify.baseline_ok = False
     state.verify.ever_passed = True
     state.verify.last_ok = False
-    finish = _finish_gates.FinishCall("finish_session", "done")
+    finish = finish_gates.FinishCall("finish_session", "done")
 
-    assert _finish_gates.red_gate_returns(
+    assert finish_gates.red_gate_returns(
         wf.config.harness.verify_when,
         wf.config.harness.verify_retries,
         state.verify,
@@ -255,7 +255,7 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
         gate_present=wf.gate.present(state.verify),
     )
     assert (
-        _finish_gates.finish_reason(
+        finish_gates.finish_reason(
             finish.kind,
             stale_gate=finish.stale_gate,
             tree_green=wf.gate.tree_green(state.verify),
@@ -296,7 +296,7 @@ def test_a_gate_that_never_produced_a_verdict_is_not_a_red_baseline(
 def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     """A plan pass is never relabelled as a red gate: plan mode runs the gate but never edits."""
     wf = loop.Harness.__new__(loop.Harness)
-    wf.chain = _chain.RunChain(pathlib.Path("/nonexistent"))
+    wf.chain = run_chain.RunChain(pathlib.Path("/nonexistent"))
     wf.mode = "plan"
     wf.config = types.SimpleNamespace(  # pyright: ignore[reportAttributeAccessIssue]
         sandbox=types.SimpleNamespace(hide_paths=()),
@@ -318,9 +318,9 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False
-    finish = _finish_gates.FinishCall("finish_planning", "done")
+    finish = finish_gates.FinishCall("finish_planning", "done")
     assert (
-        _finish_gates.finish_reason(
+        finish_gates.finish_reason(
             finish.kind,
             stale_gate=finish.stale_gate,
             tree_green=wf.gate.tree_green(state.verify),
@@ -336,9 +336,9 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
     The exit code.
     """
     from agent6.app import finalize
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
-    inherited = _snapshot.SessionResult(
+    inherited = loop_snapshot.SessionResult(
         completed=True,
         reason="gate_red_at_base",
         summary="s",
@@ -351,7 +351,7 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
 
 def test_the_listing_and_the_header_agree_on_the_word() -> None:
 
-    assert _session_status.status_word(
+    assert session_status.status_word(
         finished=True, all_passed=False, end_reason="gate_red_at_base"
     ) == (
         "finished",
@@ -382,14 +382,14 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
             verify_infer=True,
         ),
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.last_ok = False
     state.verify.baseline_ok = False
-    turn = _loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
-    turn.finish = _finish_gates.FinishCall("finish_session", "done")
+    turn = loop_state.TurnState(number=1, resp=mock.MagicMock(), assistant=mock.MagicMock())
+    turn.finish = finish_gates.FinishCall("finish_session", "done")
 
     ctx = turn_context(tree_green=lambda: False, gate_present=lambda: True)
-    bounced = _finish_gates.verify_finish(turn, state, ctx) is not None
+    bounced = finish_gates.verify_finish(turn, state, ctx) is not None
     assert not bounced, "the finish was bounced over an inherited failure"
 
 

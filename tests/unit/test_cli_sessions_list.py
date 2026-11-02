@@ -11,11 +11,7 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.ui.cli import (
-    _common,  # pyright: ignore[reportPrivateUsage]
-    sessions_cmds,
-    sessions_show,
-)
+from agent6.ui.cli import common, sessions_cmds, sessions_show
 
 
 def _run(runs: pathlib.Path, session_id: str, *, winner: bool | None = None) -> None:
@@ -42,7 +38,7 @@ def test_runs_list_marks_the_fan_out_winner(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     _run(runs, "fan-l1", winner=False)
     _run(runs, "fan-l2", winner=True)
     _run(runs, "solo")  # a run outside any fan-out: no marker
@@ -106,7 +102,7 @@ def test_runs_list_json_carries_the_row_facts(
     monkeypatch.chdir(repo)
     assert sessions_cmds._cmd_list(as_json=True) == 0
     assert json.loads(capsys.readouterr().out) == []  # the empty listing is data too
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     _run(runs, "fan-l2", winner=True)
     assert sessions_cmds._cmd_list(as_json=True) == 0
     rows = json.loads(capsys.readouterr().out)
@@ -158,7 +154,7 @@ def test_the_list_marks_a_run_that_works_in_its_own_worktree(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     _run(runs, "apart")
     _run(runs, "inplace")
     worktree = tmp_path / "cache" / "apart"
@@ -189,7 +185,7 @@ def test_sessions_dir_names_a_sessions_own_directory(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     _run(runs, "solo-ABC123")
     assert sessions_cmds._cmd_sessions_dir("solo") == 0
     assert capsys.readouterr().out.strip() == str(runs / "solo-ABC123")
@@ -204,7 +200,7 @@ def test_runs_list_uses_plan_points_for_a_plan_metered_run(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     _run(runs, "plan-metered")
     log = runs / "plan-metered" / "logs.jsonl"
     lines = log.read_text(encoding="utf-8").splitlines()
@@ -237,7 +233,7 @@ def test_runs_list_marks_a_partial_cost(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     d = runs / "unpriced"
     d.mkdir(parents=True)
     (d / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
@@ -259,9 +255,9 @@ def test_styled_status_colors_stale_red_and_parked_yellow() -> None:
 
     A parked submission is yellow.
     """
-    stale, _ = _common.styled_status("stale", "", color=True)
+    stale, _ = common.styled_status("stale", "", color=True)
     assert "\x1b[1;31m" in stale  # the error level, like failed: the run header + web pill agree
-    parked, _ = _common.styled_status("parked", "resume to start", color=True)
+    parked, _ = common.styled_status("parked", "resume to start", color=True)
     assert "\x1b[33m" in parked  # yellow: attention, not a neutral done
 
 
@@ -276,8 +272,8 @@ def test_runs_list_columns_stay_aligned_with_a_machine_draft(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    _run(_common._runs_dir(repo), "runny-one-AAAAAA")
-    draft = _common._runs_dir(repo).parent / "machines" / "drafty-two-BBBBBB"
+    _run(common._runs_dir(repo), "runny-one-AAAAAA")
+    draft = common._runs_dir(repo).parent / "machines" / "drafty-two-BBBBBB"
     draft.mkdir(parents=True)
     (draft / "manifest.json").write_text(json.dumps({"mode": "machine"}), encoding="utf-8")
     (draft / "logs.jsonl").write_text(
@@ -350,7 +346,7 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
     tip = git("rev-parse", "HEAD")
     git("checkout", "-q", "main")
 
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     for sid, branch, merged in (
         ("unmerged-run-AAAAAA", "agent6/unmerged-run-AAAAAA", None),
         (
@@ -422,8 +418,8 @@ def test_runs_list_marks_a_branchless_chain_unmerged(
         fallback_parent=base,
     )
 
-    _run(_common._runs_dir(repo), session_id)
-    manifest = _common._runs_dir(repo) / session_id / "manifest.json"
+    _run(common._runs_dir(repo), session_id)
+    manifest = common._runs_dir(repo) / session_id / "manifest.json"
     manifest.write_text(
         json.dumps(
             {
@@ -476,7 +472,7 @@ def test_a_clean_run_awaits_a_merge_until_one_of_its_refs_moves(
         also_branch=branch,
     )
     assert sha
-    d = _common._runs_dir(repo) / session_id
+    d = common._runs_dir(repo) / session_id
     d.mkdir(parents=True)
     manifest = {
         "version": 2,
@@ -551,8 +547,8 @@ def test_a_merge_stamped_on_a_diverged_branch_reads_merged_everywhere(
     own = git("commit-tree", f"{chain}^{{tree}}", "-p", chain, "-m", "operator")
     git("update-ref", f"refs/heads/{branch}", own)
 
-    _run(_common._runs_dir(repo), session_id)
-    session_dir = _common._runs_dir(repo) / session_id
+    _run(common._runs_dir(repo), session_id)
+    session_dir = common._runs_dir(repo) / session_id
     manifest: dict[str, object] = {
         "session_id": session_id,
         "mode": "run",
@@ -653,7 +649,7 @@ def test_runs_list_folds_a_fan_outs_lanes_under_it(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    _fan_out(_common._runs_dir(repo))
+    _fan_out(common._runs_dir(repo))
 
     assert sessions_cmds._cmd_list() == 0
     out = capsys.readouterr().out
@@ -684,7 +680,7 @@ def test_a_folded_fan_out_shows_its_groups_latest_activity(
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    runs = _common._runs_dir(repo)
+    runs = common._runs_dir(repo)
     _fan_out(runs)
     _run(runs, "solo")
     old, mid, new = 1_700_000_000, 1_700_003_600, 1_700_007_200
@@ -727,8 +723,8 @@ def test_show_names_no_commit_for_a_fork_sitting_on_its_base(
     session_id = "forked-run-AAAAAA"
     branch = f"agent6/{session_id}"
     git("branch", branch, base)
-    _run(_common._runs_dir(repo), session_id)
-    (_common._runs_dir(repo) / session_id / "manifest.json").write_text(
+    _run(common._runs_dir(repo), session_id)
+    (common._runs_dir(repo) / session_id / "manifest.json").write_text(
         json.dumps(
             {"session_id": session_id, "mode": "run", "base_sha": base, "run_branch": branch}
         ),
@@ -754,7 +750,7 @@ def test_continued_run_keeps_its_label(
     """Both CLI task lines retain the original task above the latest continuation."""
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.chdir(tmp_path)
-    runs = _common._runs_dir(tmp_path)
+    runs = common._runs_dir(tmp_path)
     _run(runs, "original-task")
     d = runs / "original-task"
     (d / "manifest.json").write_text(

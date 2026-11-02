@@ -20,7 +20,7 @@ import subprocess
 import pytest
 
 from agent6 import paths
-from agent6.app import _session, _setup
+from agent6.app import session_parts, session_setup
 from agent6.config import (
     Config,
     GitConfig,
@@ -28,8 +28,8 @@ from agent6.config import (
     OpenAIProviderEntry,
     RoleModel,
     SandboxConfig,
-    _layer_data,
     layer,
+    layer_data,
 )
 from agent6.models import validate
 from agent6.sessions import layout
@@ -79,8 +79,8 @@ _seen_at_stop: list[bool] = []
 
 
 def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_policy: bool) -> None:
-    def _load_effective(*a: object, **k: object) -> _layer_data.EffectiveConfig:
-        return _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load_effective(*a: object, **k: object) -> layer_data.EffectiveConfig:
+        return layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _noop(*a: object, **k: object) -> None:
         return None
@@ -98,13 +98,13 @@ def _patch_common(monkeypatch: pytest.MonkeyPatch, cfg: Config, *, stop_after_po
         raise _Stop
 
     monkeypatch.setattr(layer, "load_effective", _load_effective)
-    monkeypatch.setattr(_setup, "apply_git_ops_policy", _noop)
+    monkeypatch.setattr(session_setup, "apply_git_ops_policy", _noop)
     monkeypatch.setattr(validate, "validate_configured_model", _model_ok)
     monkeypatch.setattr(git_read, "verify_git_identity", _noop)
     if stop_after_policy:
         # The first step after the tree policy and the untracked snapshot: the
         # execution body's provider session.
-        monkeypatch.setattr(_session, "build_session_providers", _stop)
+        monkeypatch.setattr(session_parts, "build_session_providers", _stop)
 
 
 def _answering_frontend(monkeypatch: pytest.MonkeyPatch, answer: str) -> list[schema.UserQuestion]:

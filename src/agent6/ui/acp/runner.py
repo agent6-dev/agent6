@@ -23,7 +23,7 @@ from typing import Any, BinaryIO
 
 from agent6 import errors, kinds
 from agent6 import paths as agent6_paths
-from agent6.app import _setup, finalize, frontend, resume
+from agent6.app import finalize, frontend, resume, session_setup
 from agent6.app import reporter as app_reporter
 from agent6.app import run as app_run
 from agent6.sessions import id, ipc
@@ -33,7 +33,7 @@ from agent6.ui.acp import frontend as acp_frontend
 from agent6.ui.acp import server as acp_server
 from agent6.ui.acp import session as acp_session
 from agent6.ui.acp import updates
-from agent6.viewmodel import _session_log, transcript
+from agent6.viewmodel import session_log, transcript
 from agent6.viewmodel import tail as viewmodel_tail
 
 # Bounds the join on a tail wedged on a filesystem; `_stop` ends it one read pass after the run.
@@ -528,7 +528,7 @@ class RunBridge:
 
         order = ProseOrder(self.server, session.acp_id, layout.logs_path)
         start_at = journal_before if resuming else None
-        banked = _session_log.scan_session_log(layout.logs_path).cost_usd if resuming else None
+        banked = session_log.scan_session_log(layout.logs_path).cost_usd if resuming else None
         info = updates.RunInfo(session.acp_id, banked_usd=banked or 0.0)
         tail = threading.Thread(
             target=self._stream,
@@ -552,7 +552,7 @@ class RunBridge:
                     reporter=reporter,
                 )
             else:
-                effective = _setup.load_session_config(
+                effective = session_setup.load_session_config(
                     session.cwd, self.config_paths, mode=acp_session.ACP_MODE
                 )
                 code = app_run.run_task(
@@ -575,7 +575,7 @@ class RunBridge:
             )
         # Only a journal that grew and ended in this execution carries its end reason.
         grown = viewmodel_tail.journal_size(layout.logs_path) > journal_before
-        scan = _session_log.scan_session_log(layout.logs_path)
+        scan = session_log.scan_session_log(layout.logs_path)
         end_reason = scan.end_reason if grown and scan.finished else ""
         return stop_reason(code, end_reason=end_reason)
 

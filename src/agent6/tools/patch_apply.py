@@ -20,7 +20,7 @@ import dataclasses
 import re
 from typing import Literal
 
-from agent6.tools import _edit_diag
+from agent6.tools import edit_diag
 
 _HUNK_RE = re.compile(
     r"^@@ -(?P<old_start>\d+)(?:,(?P<old_count>\d+))? "
@@ -518,7 +518,7 @@ def _match_failure_detail(lines: list[str], expected: list[str]) -> str:
         f"{indent} uniform-indent matches.\n"
         f"Expected lines:\n{_render_lines(expected)}"
     )
-    nearest = _edit_diag.closest_on_disk_region("\n".join(lines), "\n".join(expected))
+    nearest = edit_diag.closest_on_disk_region("\n".join(lines), "\n".join(expected))
     # apply_edit's similarity floor: a dissimilar block is a wrong anchor to copy.
     if nearest is None or nearest[2] < 0.5:
         return head

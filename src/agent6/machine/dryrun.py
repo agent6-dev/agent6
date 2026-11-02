@@ -16,7 +16,7 @@ import json
 import re
 from typing import Any
 
-from agent6.machine import _contracts, _execution, _semantics, journal, schema, template
+from agent6.machine import contracts, execution, journal, schema, semantics, template
 from agent6.machine import predicate as machine_predicate
 
 __all__ = [
@@ -158,7 +158,7 @@ def _check_tool(
         # A schema-less capture still requires one JSON value; null is the weakest valid one.
         stdout = "null" if state.capture is not None else ""
     fact = journal.ToolFact(exit_code=0, stdout=stdout, timed_out=False)
-    _execution.reduce(
+    execution.reduce(
         spec, state, fact, blackboard
     )  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]
@@ -175,13 +175,13 @@ def _check_agent(
 ) -> StateCheck:
     """Return the check of an agent state's success path."""
     payload = synthesize_record(spec, state.output_schema)
-    problems = _semantics.validate_record_payload(
+    problems = semantics.validate_record_payload(
         spec.schemas, state.output_schema, payload, where="finish_session payload"
     )
     if problems:  # pragma: no cover - synthesis is schema-valid by construction
         return StateCheck(name, "agent", False, "ok", None, "; ".join(problems))
     fact = journal.AgentFact(outcome="ok", reason="finish_session", payload=payload)
-    _execution.reduce(
+    execution.reduce(
         spec, state, fact, blackboard
     )  # exercises capture rendering; raises on a bad template
     goto = state.on["ok"]
@@ -213,7 +213,7 @@ def _check_state(
             )
             return StateCheck(name, "terminal", True, None, None, f"{state.status}: {reason}")
     except (
-        _contracts.EngineError,
+        contracts.EngineError,
         template.TemplateError,
         machine_predicate.PredicateError,
     ) as exc:
@@ -263,7 +263,7 @@ def dry_run(
     Returns:
         The report.
     """
-    base = _execution.initial_blackboard(spec)
+    base = execution.initial_blackboard(spec)
     # A record var defaults to {}, which a branch reading `verdict.field` cannot evaluate against,
     # so it takes the schema's zero record (optional fields absent; `has()` is their guard).
     for name, var in (*spec.vars.code.items(), *spec.vars.agent.items()):

@@ -3,8 +3,8 @@ from __future__ import annotations
 import pathlib
 from unittest import mock
 
-from agent6 import event_log
-from agent6.harness import _chain, _loop_state, _reviewer
+from agent6.harness import loop_state, review_gate, run_chain
+from agent6.sessions import event_log
 from agent6.vcs import git_read
 from tests.unit import test_review_diff_collect, test_review_gate
 
@@ -18,7 +18,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     git(tmp_path, "commit", "-qm", "base")
     base = git(tmp_path, "rev-parse", "HEAD").strip()
     (tmp_path / "operator.txt").write_text("not the run's file")
-    chain = _chain.RunChain(
+    chain = run_chain.RunChain(
         tmp_path,
         ref="refs/agent6/test/head",
         fallback_parent=base,
@@ -38,8 +38,8 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
         return test_review_gate._resp('{"verdict":"pass","summary":"ok","findings":[]}')
 
     provider.call.side_effect = seat
-    reviewer = _reviewer.Reviewer(
-        settings=_reviewer.ReviewSettings(reviewers=[_reviewer.ReviewSeat("s", "m", provider)]),
+    reviewer = review_gate.Reviewer(
+        settings=review_gate.ReviewSettings(reviewers=[review_gate.ReviewSeat("s", "m", provider)]),
         chain=chain,
         hide=(),
         review_tools=lambda: ([], mock.MagicMock()),
@@ -47,7 +47,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
         log=lambda _s: None,
         emit=sink.emit,
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     reviewer.critique(state, trigger="periodic", turn=1)
     panel = next(row for row in rows if row["type"] == "loop.review.panel")
     target = panel.get("target")
@@ -73,7 +73,7 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     git = test_review_diff_collect._git
     git(tmp_path, "init", "-q")
     (tmp_path / "AGENTS.md").write_text("head-only rule")
-    chain = _chain.RunChain(
+    chain = run_chain.RunChain(
         tmp_path, ref="refs/agent6/unborn/head", fallback_parent=None, base_sha=""
     )
     chain.commit("first change")
@@ -82,8 +82,8 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
     rows: list[dict[str, object]] = []
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
     sink.subscribe(rows.append)
-    reviewer = _reviewer.Reviewer(
-        _reviewer.ReviewSettings(reviewers=[_reviewer.ReviewSeat("s", "m", provider)]),
+    reviewer = review_gate.Reviewer(
+        review_gate.ReviewSettings(reviewers=[review_gate.ReviewSeat("s", "m", provider)]),
         chain,
         (),
         lambda: ([], mock.Mock()),
@@ -92,7 +92,7 @@ def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Pat
         sink.emit,
     )
     reviewer.critique(
-        _loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
+        loop_state.LoopState(original_task="t", tool_calls=0), trigger="periodic", turn=1
     )
     starts = [row for row in rows if row["type"] == "loop.review.start"]
     assert len(starts) == 1

@@ -17,7 +17,8 @@ from collections.abc import Callable
 import pytest
 
 from agent6 import errors, paths
-from agent6.app import _setup, machine_agent
+from agent6.app import session_setup
+from agent6.app.machine import agent
 from agent6.machine import MachineJournal, write_stop_request
 from agent6.sandbox import detect
 from agent6.sessions import ipc, process
@@ -1061,14 +1062,14 @@ model = "x"
     subprocess.run(["git", "commit", "-qm", "machine base"], check=True)
     base = git_read.status(tmp_path).head_sha
     carried: list[tuple[str, ...]] = []
-    real_overlay = machine_agent.state_overlay
+    real_overlay = agent.state_overlay
 
-    def capture(cfg: Config, isolation: kinds.IsolationLevel) -> machine_agent.StateOverlay:
+    def capture(cfg: Config, isolation: kinds.IsolationLevel) -> agent.StateOverlay:
         overlay = real_overlay(cfg, isolation)
         carried.append(tuple(overlay.overlay["workspace"]["setup_command"]))
         return overlay
 
-    monkeypatch.setattr(machine_agent, "state_overlay", capture)
+    monkeypatch.setattr(agent, "state_overlay", capture)
     argv = ["machine", "run", str(source), "--exit-on-wait", "--auto-approve"]
     assert main(argv) == 0
     root = layout.machines_root(paths.state_dir(tmp_path)) / "wait-then-run"
@@ -1159,7 +1160,7 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", build)
     assert main(["--config", str(cfg), "machine", "run", str(machine)]) == 0
 
 
@@ -1180,7 +1181,7 @@ def _stub_agent_result(monkeypatch: pytest.MonkeyPatch) -> None:
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", build)
 
 
 @pytest.mark.parametrize(
@@ -1205,13 +1206,13 @@ def test_machine_preflight_judges_the_states_routes(
     plan_note: bool,
 ) -> None:
     """A pinned worker leaves out an unused operator route, but inherited roles stay judged."""
-    from agent6 import secret_store
+    from agent6.config import secret_store
     from agent6.models import cache
 
     monkeypatch.chdir(tmp_path)
     _stub_agent_result(monkeypatch)
     from agent6.config import ChatGPTProviderEntry
-    from agent6.providers import _oauth_protocol, oauth
+    from agent6.providers import oauth, oauth_protocol
 
     def listed(*_args: object, **_kwargs: object) -> list[str]:
         return []
@@ -1220,7 +1221,7 @@ def test_machine_preflight_judges_the_states_routes(
         secret_store.save_oauth_grant(
             "plan",
             oauth.stored_grant_for(
-                _oauth_protocol.TokenGrant("AT", "RT", 3600),
+                oauth_protocol.TokenGrant("AT", "RT", 3600),
                 ChatGPTProviderEntry(api_format="chatgpt"),
                 now=0,
             ),
@@ -1584,19 +1585,19 @@ def test_run_flags_never_land_in_the_supervisors_environment(
 def test_apply_operator_env_grants_upgrades_ask_never_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from agent6.app import machine_agent
+    from agent6.app.machine import agent
     from agent6.config import Config
 
     monkeypatch.setenv("AGENT6_AUTO_APPROVE", "1")
     ask = Config.model_validate({"sandbox": {"run_commands": "ask"}})
-    assert machine_agent._apply_operator_env_grants(ask).sandbox.run_commands == "allow"
+    assert agent._apply_operator_env_grants(ask).sandbox.run_commands == "allow"
     denied = Config.model_validate({"sandbox": {"run_commands": "deny"}})
     assert (
-        machine_agent._apply_operator_env_grants(denied).sandbox.run_commands == "deny"
+        agent._apply_operator_env_grants(denied).sandbox.run_commands == "deny"
     )  # never resurrected
     monkeypatch.delenv("AGENT6_AUTO_APPROVE")
     assert (
-        machine_agent._apply_operator_env_grants(ask).sandbox.run_commands == "ask"
+        agent._apply_operator_env_grants(ask).sandbox.run_commands == "ask"
     )  # no grant, no change
 
 
@@ -1792,7 +1793,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     class _Env:
         detected_isolation = "partial"
 
-    monkeypatch.setattr(_setup, "detect_env", _Env)
+    monkeypatch.setattr(session_setup, "detect_env", _Env)
 
     def _partial(_req: str, _env: object) -> str:
         return "partial"
@@ -1816,7 +1817,7 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     class _Env:
         detected_isolation = "full"
 
-    monkeypatch.setattr(_setup, "detect_env", _Env)
+    monkeypatch.setattr(session_setup, "detect_env", _Env)
 
     def _full(_req: str, _env: object) -> str:
         return "full"

@@ -16,24 +16,24 @@ import shutil
 from collections.abc import Sequence
 
 from agent6 import budget as agent6_budget
-from agent6 import directive, errors, event_log, kinds, paths
+from agent6 import directive, errors, kinds, paths
 from agent6.app import (
-    _execution,
-    _session,
-    _setup,
-    _workdirs,
+    execution,
     finalize,
     fork_worktrees,
     preflight,
+    session_parts,
+    session_setup,
     stamps,
+    workdirs,
     workspace_setup,
 )
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
-from agent6.harness import _context
+from agent6.harness import repo_context
 from agent6.providers import TranscriptSink
-from agent6.sessions import id, ipc, lock, process
+from agent6.sessions import event_log, id, ipc, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import operator_prompts
@@ -61,8 +61,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     tui: bool = False,
     mode: kinds.ResumableMode = "run",
     standing_goal: str = "",
-    budget_overrides: _setup.BudgetOverrides | None = None,
-    sandbox_overrides: _setup.SandboxOverrides | None = None,
+    budget_overrides: session_setup.BudgetOverrides | None = None,
+    sandbox_overrides: session_setup.SandboxOverrides | None = None,
     preset: str = "",
     initial_steer: str = "",
     pins: Sequence[str] = (),
@@ -127,7 +127,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 2
 
     # The clamp comes before anything reads a knob; the invocation's grant lands after it.
-    cfg = _setup.session_config(cfg, mode, sandbox_overrides)
+    cfg = session_setup.session_config(cfg, mode, sandbox_overrides)
     if worktree and cfg.git.control == "model":
         reporter.refuse(
             "--worktree runs in a linked worktree whose .git is read-only in the jail; under"
@@ -165,14 +165,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         reporter.note(parking)
     # Before isolation: its budget preflight prices the model from the refreshed listing.
     if not preflight.route_preflight(
-        cfg, role, reporter=reporter, model_flag=_setup.route_text(model)
+        cfg, role, reporter=reporter, model_flag=session_setup.route_text(model)
     ):
         return 2
     # A worktree run selects below, once the worktree its commands run in exists.
     isolation: kinds.IsolationLevel | None = None
     if not worktree:
         try:
-            isolation = _session.select_isolation(
+            isolation = session_parts.select_isolation(
                 cfg,
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
@@ -268,7 +268,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             )
 
     if worktree:
-        path = _workdirs.subordinate_workdir_root(cfg, repo, effective_session_id)
+        path = workdirs.subordinate_workdir_root(cfg, repo, effective_session_id)
         if path.is_relative_to(repo.resolve()):
             reporter.refuse(
                 f"[workspace].base_dir puts the worktree inside this checkout ({path}), where it"
@@ -286,7 +286,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     worker_lock_fd: int | None = None
     try:
         if checkout is not None:
-            isolation = _session.select_isolation(
+            isolation = session_parts.select_isolation(
                 cfg,
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
@@ -372,8 +372,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             session_dir=layout.session_dir,
         )
 
-        _session.warn_install_inside_workspace(cwd, reporter=reporter)
-        for line in _context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
+        session_parts.warn_install_inside_workspace(cwd, reporter=reporter)
+        for line in repo_context.agents_md_notices(cwd, cfg.sandbox.hide_paths):
             reporter.note(line)
 
         # Written before the gates below, which park rather than refuse; the rewrite keeps
@@ -522,10 +522,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             reporter.note(
                 f"run {effective_session_id!r} was parked at submission{why}; starting it now."
             )
-        end = _execution.run_execution(
+        end = execution.run_execution(
             cfg,
             layout,
-            _execution.ExecutionInputs(
+            execution.ExecutionInputs(
                 session_id=effective_session_id,
                 mode=mode,
                 role=role,
@@ -588,13 +588,13 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             _drop_unrecorded_worktree()
         if detach_requested:
             # The worker lock is released, so the detached `resume` can acquire it.
-            _execution.detach_to_background(
+            execution.detach_to_background(
                 frontend=frontend,
                 cfg=cfg,
                 layout=layout,
                 cwd=repo,
-                flags=_setup.override_flags(
-                    budget_overrides, sandbox_overrides, _setup.flag_route(cfg, mode, model)
+                flags=session_setup.override_flags(
+                    budget_overrides, sandbox_overrides, session_setup.flag_route(cfg, mode, model)
                 ),
                 reporter=reporter,
             )

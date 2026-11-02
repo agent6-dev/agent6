@@ -20,8 +20,8 @@ import time
 from collections.abc import Iterable
 from typing import ClassVar
 
-from agent6.config import _presets
-from agent6.viewmodel import _session_status
+from agent6.config import layer_presets
+from agent6.viewmodel import session_status
 
 try:
     import textual
@@ -41,7 +41,7 @@ from agent6.models import choices
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import background
-from agent6.ui import directives, spawn
+from agent6.ui import directive_actions, spawn
 from agent6.ui.tui import composer, conversation, dashboard, modals, prompts, theme
 from agent6.vcs import git_read
 from agent6.viewmodel import (
@@ -147,7 +147,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self._manifest_due = 0.0
         # The (word, reason) the hub row shows too, refreshed on the ~1/s heartbeat; derived,
         # never latched, so a crash then a resume reads as running again.
-        self.dir_status: tuple[str, str] = _session_status.status_for_session_dir(
+        self.dir_status: tuple[str, str] = session_status.status_for_session_dir(
             session_dir, status_facts(self.state)
         )
         # The journal prefix folded at open; the reader starts after it.
@@ -168,7 +168,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         # The preset and model a composer resume continues under ("" is no flag).
         self.resume_preset = ""
         self.resume_model = ""
-        presets = _presets.available_preset_names(pathlib.Path.cwd(), config_paths)
+        presets = layer_presets.available_preset_names(pathlib.Path.cwd(), config_paths)
         routes = choices.available_routes(pathlib.Path.cwd(), config_paths)
         self._dash = dashboard.DashboardScreen(
             presets=presets, routes=routes, prompts=self._prompts
@@ -187,7 +187,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             pathlib.Path.cwd(), self.config_paths, self.session_dir, preset=preset
         )
 
-    def task_label(self) -> _session_status.TaskLabel:
+    def task_label(self) -> session_status.TaskLabel:
         """Return the original task and latest continuation from the live fold.
 
         Returns:
@@ -198,7 +198,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     def _task_lead(self) -> str:
         """Return the clipped task for a title, or the session name before a task is known."""
         task = self.task_label().task
-        return _session_status.task_snippet(task, max_chars=57) or self.session_dir.name
+        return session_status.task_snippet(task, max_chars=57) or self.session_dir.name
 
     def screen_title(self, context: str) -> str:
         """Return a run screen's menu-bar subtitle.
@@ -342,7 +342,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         The covered screen's bar is relabelled too, or the two would disagree until
         its next event-driven paint.
         """
-        status = _session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
+        status = session_status.status_for_session_dir(self.session_dir, status_facts(self.state))
         has_unmerged = self._unmerged and self.state.finished
         # Manifest changes are polled every five seconds, not on each repaint.
         if time.monotonic() >= self._manifest_due:
@@ -434,7 +434,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             action()
             return
         if self.session_controllable():
-            did, said = directives.submit_composer_line(
+            did, said = directive_actions.submit_composer_line(
                 self.session_dir, text, config_paths=self.config_paths
             )
             self.notify(said, severity="information" if did else "warning")
@@ -824,7 +824,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         Returns:
             True while the status word is running, starting or waiting.
         """
-        return self.dir_status[0] in _session_status.LIVE_STATUS_WORDS
+        return self.dir_status[0] in session_status.LIVE_STATUS_WORDS
 
     def finished_green(self) -> bool:
         """Return whether the agent finished over a green tree, when a bare resume has no work."""

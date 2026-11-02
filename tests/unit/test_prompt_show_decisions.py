@@ -10,8 +10,8 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-from agent6 import memory
 from agent6.config import Config
+from agent6.context import memory
 from agent6.harness import system_prompt_for
 
 

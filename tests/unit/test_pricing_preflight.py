@@ -13,9 +13,8 @@ import pathlib
 
 import pytest
 
-from agent6 import secret_store
-from agent6.app import _setup
-from agent6.config import Config
+from agent6.app import session_setup
+from agent6.config import Config, secret_store
 from agent6.models import cache
 from agent6.providers import claude_code as providers_claude_code
 
@@ -46,7 +45,7 @@ def test_claude_only_config_refreshes_the_catalog(monkeypatch: pytest.MonkeyPatc
         "claude-opus-5",
         {"anthropic": {"api_format": "anthropic", "api_key_env": "X_KEY"}},
     )
-    assert _setup.check_provider_keys(cfg) is None
+    assert session_setup.check_provider_keys(cfg) is None
     assert called, "bare claude-* with no openrouter provider must refresh the catalog"
 
 
@@ -75,7 +74,7 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
             }
         },
     )
-    assert _setup.check_provider_keys(cfg) is None
+    assert session_setup.check_provider_keys(cfg) is None
     assert not called, "a configured openrouter provider already refreshes with a key"
 
 
@@ -105,7 +104,7 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
             },
         }
     )
-    err = _setup.check_provider_keys(cfg)
+    err = session_setup.check_provider_keys(cfg)
     assert err is not None and "seatp" in err
 
 
@@ -120,7 +119,7 @@ def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyP
             },
         }
     )
-    err = _setup.check_provider_keys(cfg)
+    err = session_setup.check_provider_keys(cfg)
     assert err is not None and "ghost" in err
 
 
@@ -137,9 +136,9 @@ def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPa
             "models": {"worker": {"provider": "main", "model": "m"}},
         }
     )
-    err = _setup.check_provider_keys(cfg, extra_providers=["pinned-ghost"])
+    err = session_setup.check_provider_keys(cfg, extra_providers=["pinned-ghost"])
     assert err is not None and "pinned-ghost" in err
-    assert _setup.check_provider_keys(cfg) is None
+    assert session_setup.check_provider_keys(cfg) is None
 
 
 def test_budget_preflight_prices_a_seat_pinned_model() -> None:
@@ -176,17 +175,17 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     key lookup.
     """
     from agent6.config import ChatGPTProviderEntry
-    from agent6.providers import _oauth_protocol, oauth
+    from agent6.providers import oauth, oauth_protocol
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     cfg = _cfg("gpt-5-codex", {"chatgpt": {"api_format": "chatgpt"}})
-    err = _setup.check_provider_keys(cfg)
+    err = session_setup.check_provider_keys(cfg)
     assert err is not None and "agent6 connect chatgpt" in err
 
     secret_store.save_oauth_grant(
         "chatgpt",
         oauth.stored_grant_for(
-            _oauth_protocol.TokenGrant("AT", "RT", 3600),
+            oauth_protocol.TokenGrant("AT", "RT", 3600),
             ChatGPTProviderEntry(api_format="chatgpt"),
             now=0,
         ),
@@ -198,7 +197,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
         return []
 
     monkeypatch.setattr(cache, "list_models", fake_list)
-    assert _setup.check_provider_keys(cfg) is None
+    assert session_setup.check_provider_keys(cfg) is None
     assert listed == ["chatgpt"]  # the signed-in path refreshes the listing
 
 
@@ -315,7 +314,7 @@ def test_claude_code_routes_are_plan_metered(
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     # The sign-in probe is the next test's subject; here the binary need not exist.
     monkeypatch.setattr(providers_claude_code, "login_status", _signed_in)
-    assert _setup.check_provider_keys(cfg) is None
+    assert session_setup.check_provider_keys(cfg) is None
     assert called == []
 
 
@@ -335,10 +334,10 @@ def test_claude_code_route_needs_a_signed_in_binary(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     monkeypatch.setattr(providers_claude_code, "login_status", signed_out)
     cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code", "binary": "/opt/cc"}})
-    err = _setup.check_provider_keys(cfg)
+    err = session_setup.check_provider_keys(cfg)
     assert err is not None and "[providers.claude]" in err and "/opt/cc says" in err
     monkeypatch.setattr(providers_claude_code, "login_status", signed_in)
-    assert _setup.check_provider_keys(cfg) is None
+    assert session_setup.check_provider_keys(cfg) is None
 
 
 def test_machine_pins_carry_their_provider_into_the_notes(

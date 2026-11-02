@@ -13,12 +13,12 @@ import sys
 
 from agent6 import budget as agent6_budget
 from agent6 import paths
-from agent6.app import _setup, providers
+from agent6.app import role_providers, session_setup
 from agent6.config import ConfigError
-from agent6.harness import _context, run_review
+from agent6.harness import repo_context, review_session
 from agent6.providers import ProviderError, TranscriptSink
 from agent6.sessions import id
-from agent6.ui.cli import _common, review_cmds
+from agent6.ui.cli import common, review_cmds
 from agent6.viewmodel import scan_session_log, session_is_live
 
 
@@ -40,53 +40,53 @@ def _cmd_sessions_review(  # noqa: PLR0911
     cwd = pathlib.Path.cwd()
     # Every bucket: the review reads a journal, so a plan, an ask or a fan-out is a record too.
     try:
-        layout = _common.resolve_or_newest_layout(cwd, session_id)
+        layout = common.resolve_or_newest_layout(cwd, session_id)
     except id.SessionIdError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     if layout is None:
-        _common.print_nothing_yet("sessions")
+        common.print_nothing_yet("sessions")
         return 2
     if not session_id:
         print(f"[agent6] reviewing the newest session: {layout.session_id}", file=sys.stderr)
     if session_is_live(layout.session_dir):
-        _common.error(
+        common.error(
             f"{layout.session_id} is live; its record is not complete. Review it once it"
             f" has ended (`agent6 stop {layout.session_id}` ends it now)."
         )
         return 2
     if not scan_session_log(layout.logs_path).saw_start:
-        _common.error(f"{layout.session_id} never started; there is no record to review.")
+        common.error(f"{layout.session_id} never started; there is no record to review.")
         return 2
     try:
         cfg = review_cmds._reviewer_config(config_paths, model)
     except ConfigError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     cfg.require_runnable("reviewer")
-    err = _setup.check_provider_keys(cfg)
+    err = session_setup.check_provider_keys(cfg)
     if err is not None:
-        _common.error(f"{err}")
+        common.error(f"{err}")
         return 2
-    budget = _setup.budget_tracker(cfg)
+    budget = session_setup.budget_tracker(cfg)
     reviews_dir = paths.state_dir(cwd) / "reviews"
     transcript_sink = TranscriptSink(reviews_dir)
     try:
-        reviewer = providers.build_role_provider(
+        reviewer = role_providers.build_role_provider(
             cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="review:run"
         )
     except ProviderError as exc:
-        _common.error(f"provider init failed: {exc}")
+        common.error(f"provider init failed: {exc}")
         return 2
-    digest = run_review.run_digest(layout)
+    digest = review_session.run_digest(layout)
     print(f"[agent6] reviewing run: {layout.session_id}", file=sys.stderr)
     try:
-        text = run_review.review_digest(
+        text = review_session.review_digest(
             reviewer,
             digest=digest.render(),
-            agents_md=_context.agents_md_text(cwd, cfg.sandbox.hide_paths),
+            agents_md=repo_context.agents_md_text(cwd, cfg.sandbox.hide_paths),
         )
-    except run_review.RunReviewError as exc:
+    except review_session.RunReviewError as exc:
         print(f"REVIEW FAILED: {exc}", file=sys.stderr)
         return 2
     except agent6_budget.BudgetExceededError as exc:

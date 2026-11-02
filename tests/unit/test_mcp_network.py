@@ -80,7 +80,7 @@ def test_a_server_a_run_never_starts_refuses_no_run(
     A `none` or `session` server under `[mcp].enabled = false` refused a `partial` run that would
     start nothing, while `check mcp` read the same config as PASS.
     """
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     def config(on: bool) -> Config:
         table, server = (on, True) if switch == "mcp.enabled" else (True, on)
@@ -88,7 +88,7 @@ def test_a_server_a_run_never_starts_refuses_no_run(
         return Config.model_validate({"mcp": {"enabled": table, "servers": {"s": entry}}})
 
     off = config(False)
-    assert _setup.start_mcp_manager_if_enabled(off, tmp_path, "partial") is None
+    assert session_setup.start_mcp_manager_if_enabled(off, tmp_path, "partial") is None
     assert confine.config_refusal(off, "partial", tmp_path) is None
     err = confine.config_refusal(config(True), "partial", tmp_path)
     assert err is not None and err.startswith("MCP server 's'"), "the switch alone differs"
@@ -103,11 +103,11 @@ def test_auto_degrades_with_a_warning_naming_the_server(
     MCP setup, where the operator is already being told about their servers, rather than inside the
     isolation warner, which is about the level's own gaps.
     """
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     cfg = _server({})
     assert confine.check_mcp_network_support(cfg, "partial") is None  # never a refusal
-    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
+    session_setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
     err = capsys.readouterr().err
     assert "MCP server 's'" in err and "network" in err
 
@@ -122,24 +122,24 @@ def test_a_table_less_server_degrades_with_the_same_warning(
     `partial`), and the degrade warning reads the same effective value, or a table-less server keeps
     the host's network on `partial` with nothing said.
     """
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     cfg = Config.model_validate({"mcp": {"enabled": True, "servers": {"s": {"command": ["x"]}}}})
     assert cfg.mcp.servers["s"].sandbox is None
     assert cfg.mcp.servers["s"].effective_network == "auto"
     assert confine.check_mcp_network_support(cfg, "partial") is None  # auto never refuses
-    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
+    session_setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
     err = capsys.readouterr().err
     assert "MCP server 's'" in err and "network" in err
 
 
 def test_host_is_silent(capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path) -> None:
     """An operator who granted the network asked for it; nothing degraded."""
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     cfg = _server({"network": "host"})
     assert confine.check_mcp_network_support(cfg, "partial") is None
-    _setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
+    session_setup.start_mcp_manager_if_enabled(cfg, tmp_path, "partial")
     assert "MCP server" not in capsys.readouterr().err
 
 
@@ -160,12 +160,12 @@ def test_a_server_agent6_does_not_jail_gets_no_network_warning(
     It said taking the network away needs 'full' and named `sandbox.network = 'none'`. Config
     refuses that value for both kinds of server, and 'full' gives such a server the same network.
     """
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     cfg = Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"jailed": {"command": ["x"]}, "s": server}}}
     )
-    mgr = _setup.start_mcp_manager_if_enabled(cfg, tmp_path, isolation)
+    mgr = session_setup.start_mcp_manager_if_enabled(cfg, tmp_path, isolation)
     assert mgr is not None
     mgr.close()
     err = capsys.readouterr().err

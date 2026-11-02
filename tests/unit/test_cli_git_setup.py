@@ -14,8 +14,8 @@ import pytest
 from agent6 import errors, paths
 from agent6.app import preflight
 from agent6.config import Config, ConfigError
-from agent6.ui.cli import init, main
 from agent6.ui.cli import init_cmds as ic
+from agent6.ui.cli import init_wizard, main
 from agent6.vcs import git_ops, git_read
 
 
@@ -111,7 +111,7 @@ def test_offer_git_setup_commit_failure_stages_only_the_scaffold(
     def _fail_commit(_root: pathlib.Path, _message: str, _paths: tuple[str, ...]) -> str:
         raise errors.GitError("identity missing")
 
-    monkeypatch.setattr(init, "_ask", _yes)
+    monkeypatch.setattr(init_wizard, "_ask", _yes)
     monkeypatch.setattr(git_ops, "commit_paths", _fail_commit)
     ic._offer_git_setup(tmp_path, (scaffold,), interactive=True)
 
@@ -272,7 +272,7 @@ def test_failed_init_hands_new_scaffold_back_to_the_sudo_user(
     handed_back: list[pathlib.Path] = []
     monkeypatch.setattr(paths, "repo_config_path", _target)
     monkeypatch.setattr(git_read, "is_git_repo", _not_a_repo)
-    monkeypatch.setattr(init, "init_workspace", _fail)
+    monkeypatch.setattr(init_wizard, "init_workspace", _fail)
     monkeypatch.setattr(paths, "chown_to_real_user", handed_back.append)
 
     with pytest.raises(errors.OperatorError):
@@ -413,8 +413,8 @@ def test_init_in_a_fresh_repo_leaves_the_operators_files_out(
     def _yes(*_a: object, **_k: object) -> bool:
         return True
 
-    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
-    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
     assert main(["init"]) == 0
 
     head = subprocess.run(
@@ -441,8 +441,8 @@ def test_init_leaves_a_modified_preexisting_file_out_of_a_fresh_repo_commit(
     def _yes(*_a: object, **_k: object) -> bool:
         return True
 
-    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
-    monkeypatch.setattr("agent6.ui.cli.init._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
+    monkeypatch.setattr("agent6.ui.cli.init_wizard._ask", _yes)
     assert main(["init"]) == 0
 
     head = subprocess.run(

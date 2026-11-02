@@ -11,9 +11,9 @@ import time
 
 import pytest
 
-from agent6 import event_log
-from agent6.ui import btw, directives
-from agent6.ui.cli import _console_view, _steer_menu
+from agent6.sessions import event_log
+from agent6.ui import btw, directive_actions
+from agent6.ui.cli import console_render, steer_menu
 
 
 def _answered_ask(root: pathlib.Path, name: str, answer: str) -> pathlib.Path:
@@ -39,7 +39,7 @@ def test_the_run_is_never_blocked_and_the_answer_arrives_later(tmp_path: pathlib
     asks = tmp_path / "sessions" / "asks"
     asks.mkdir(parents=True)
     out = io.StringIO()
-    view = _console_view.ConsoleView(out, color=False)
+    view = console_render.ConsoleView(out, color=False)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     events.subscribe(view.feed)
 
@@ -85,7 +85,7 @@ def test_a_composer_s_btw_asks_on_the_front_end_s_config(
         return ""
 
     monkeypatch.setattr(btw, "direct_launch", launch)
-    did, _said = directives.submit_composer_line(
+    did, _said = directive_actions.submit_composer_line(
         session_dir, "/btw why h265", config_paths=(tmp_path / "worker.toml",)
     )
     assert did
@@ -128,14 +128,14 @@ def test_an_answer_survives_a_surface_that_cannot_print_it(tmp_path: pathlib.Pat
 
 
 def test_btw_is_offered_in_the_menu() -> None:
-    assert "/btw" in _steer_menu.MENU_COMMANDS
+    assert "/btw" in steer_menu.MENU_COMMANDS
 
 
 def test_an_unwired_btw_says_so_rather_than_failing_obscurely(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A detached run has no console view to print an answer into."""
-    _steer_menu._run_info_command("/btw why", tmp_path, None)
+    steer_menu._run_info_command("/btw why", tmp_path, None)
     assert "needs a live run" in capsys.readouterr().out
 
 
@@ -143,7 +143,7 @@ def test_a_bare_btw_asks_for_a_question(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Opening an empty session would be worse than saying nothing was asked."""
-    _steer_menu._run_info_command("/btw", tmp_path, None)
+    steer_menu._run_info_command("/btw", tmp_path, None)
     assert "ask something" in capsys.readouterr().out
 
 
@@ -158,14 +158,14 @@ def test_a_btw_with_a_question_reaches_the_runner_and_never_the_loop(
         return True, "[agent6] btw opened"
 
     lines = iter(["/btw why is the broker slow?", "/continue"])
-    action = _steer_menu.pause_menu(tmp_path, input_fn=lambda _p: next(lines), btw_runner=runner)
+    action = steer_menu.pause_menu(tmp_path, input_fn=lambda _p: next(lines), btw_runner=runner)
     assert asked == ["why is the broker slow?"]
     assert action == "", "a btw must not become a steer instruction"
 
 
 def test_ordinary_text_is_still_a_steer(tmp_path: pathlib.Path) -> None:
     lines = iter(["make it faster"])
-    assert _steer_menu.pause_menu(tmp_path, input_fn=lambda _p: next(lines)) == "make it faster"
+    assert steer_menu.pause_menu(tmp_path, input_fn=lambda _p: next(lines)) == "make it faster"
 
 
 def test_a_btw_answer_renders_in_the_shared_fold(tmp_path: pathlib.Path) -> None:
@@ -184,10 +184,10 @@ def test_btw_is_not_offered_where_nothing_can_spawn_it(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """/btw is not offered where nothing can spawn it."""
-    _steer_menu._run_info_command("/help", tmp_path, None)
+    steer_menu._run_info_command("/help", tmp_path, None)
     assert "/btw" not in capsys.readouterr().out
 
-    _steer_menu._run_info_command("/help", tmp_path, lambda _q, _d: (True, ""))
+    steer_menu._run_info_command("/help", tmp_path, lambda _q, _d: (True, ""))
     assert "/btw" in capsys.readouterr().out
 
 

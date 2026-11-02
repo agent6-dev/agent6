@@ -19,10 +19,9 @@ import pytest
 
 from agent6 import kinds as agent6_kinds
 from agent6 import paths
-from agent6.app import _execution as app__execution
-from agent6.app import _setup, resume, run, stop
+from agent6.app import execution, resume, run, session_setup, stop
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, ConfigError, _layer_data
+from agent6.config import Config, ConfigError, layer_data
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
@@ -98,9 +97,9 @@ def _repo(path: pathlib.Path) -> pathlib.Path:
     return path
 
 
-def _loaded(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
+def _loaded(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
     """The loader's result for a test that stubs `run_task`: the real type, unconfigured."""
-    return _layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
+    return layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
 
 
 def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
@@ -152,7 +151,7 @@ def test_a_cancel_reaches_the_run_it_names(
         return 0
 
     monkeypatch.setattr(run, "run_task", _blocking_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
 
     wire = _Wire()
     try:
@@ -186,7 +185,7 @@ def test_a_cancelled_execution_says_so(
         return 0
 
     monkeypatch.setattr(run, "run_task", _blocking_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -213,7 +212,7 @@ def test_a_prompt_records_its_run_under_the_conversations_id(
         return 0
 
     monkeypatch.setattr(run, "run_task", _recording_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -246,7 +245,7 @@ def test_the_runs_journal_streams_out_as_session_update(
         return 0
 
     monkeypatch.setattr(run, "run_task", _writing_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -285,7 +284,7 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
         raise RuntimeError("the provider client exploded")
 
     monkeypatch.setattr(run, "run_task", _dies_mid_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -351,7 +350,7 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A finalizer fault after session.end is reported, not hidden behind the journal's verdict."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -364,7 +363,7 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
         raise RuntimeError("the finalizer exploded")
 
     monkeypatch.setattr(run, "run_task", _dies_after_end)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     out = io.BytesIO()
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=out))
     session = session_mod.Session(acp_id="s", cwd=tmp_path)
@@ -386,7 +385,7 @@ def test_a_run_that_cannot_start_says_why(
     def _broken(*_a: object, **_kw: object) -> object:
         raise ConfigError("Config file is not valid TOML (agent6.toml)")
 
-    monkeypatch.setattr(_setup, "load_session_config", _broken)
+    monkeypatch.setattr(session_setup, "load_session_config", _broken)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -538,9 +537,9 @@ def test_the_stop_reason_is_one_acp_defines() -> None:
 def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
     """`agent6 stop` on an editor's execution exited 1, which ACP was told as a refusal."""
     from agent6.app import finalize
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
-    stopped = _snapshot.SessionResult(
+    stopped = loop_snapshot.SessionResult(
         completed=False, reason="steer_abort", summary="", turns=1, tool_calls=1
     )
     assert runner.stop_reason(finalize.session_exit_code(stopped)) == "cancelled"
@@ -596,7 +595,7 @@ def test_a_prompt_cancelled_while_queued_never_starts(
         return 0
 
     monkeypatch.setattr(run, "run_task", _blocking_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         first = wire.new_session(_repo(tmp_path))
@@ -668,7 +667,7 @@ def test_a_refusal_that_never_reached_a_journal_still_says_why(
         return 2
 
     monkeypatch.setattr(run, "run_task", _refusing_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -754,8 +753,7 @@ def test_cancelled_permission_replies_are_ignored_over_stdio(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Cancel answers the prompt before permission, and a stale allow cannot answer the next one."""
-    from agent6 import event_log
-    from agent6.sessions import ipc
+    from agent6.sessions import event_log, ipc
 
     monkeypatch.chdir(tmp_path)
     answers: list[bool] = []
@@ -780,7 +778,7 @@ def test_cancelled_permission_replies_are_ignored_over_stdio(
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -995,7 +993,7 @@ def test_a_second_prompt_resumes_the_same_run(
 
     monkeypatch.setattr(paths, "state_dir", _state_dir)
     monkeypatch.setattr(id, "unused_session_id", _minted)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
 
     def _run_task(_config: object, text: str, **kw: Any) -> int:
         calls.append(("run", str(kw["session_id"]), text))
@@ -1028,7 +1026,7 @@ def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
 
     A first execution that hit max_turns made a refused resume report max_turn_requests.
     """
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1040,7 +1038,7 @@ def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
 
     monkeypatch.setattr(paths, "state_dir", _state_dir)
     monkeypatch.setattr(id, "unused_session_id", _minted)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
 
     def _capped_run(*_a: object, **kw: Any) -> int:
         layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), str(kw["session_id"]))
@@ -1093,7 +1091,7 @@ def test_a_fault_on_a_resume_still_reaches_the_editor(
 
     monkeypatch.setattr(paths, "state_dir", _state_dir)
     monkeypatch.setattr(id, "unused_session_id", _minted)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     monkeypatch.setattr(run, "run_task", _ended_run)
     monkeypatch.setattr(resume, "resume_task", _dies_in_preflight)
     out = io.BytesIO()
@@ -1119,7 +1117,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
 
     The journaled prompt and answer pair is what lets the fold say so on every surface.
     """
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
     layouts: list[sessions_layout.SessionLayout] = []
@@ -1144,7 +1142,7 @@ def test_a_gated_call_reads_pending_on_the_wire(
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1228,7 +1226,7 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The tool call id carries the execution, since a resumed dispatcher restarts its ids at 1."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1258,7 +1256,7 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
 
     monkeypatch.setattr(run, "run_task", _run_task)
     monkeypatch.setattr(resume, "resume_task", _resume_task)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1283,7 +1281,7 @@ def test_a_late_tail_keeps_its_own_execution(tmp_path: pathlib.Path) -> None:
     """A tail outliving its execution's join keeps its number; the next one does not restamp it."""
     import time
 
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1361,7 +1359,7 @@ def test_model_deltas_stream_once_in_journal_order_and_side_calls_stay_hidden(
 
 def test_a_dead_workers_open_tool_call_is_settled(tmp_path: pathlib.Path) -> None:
     """A worker that died between tool.call and tool.result leaves no call in progress."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1415,9 +1413,10 @@ def test_the_runs_notices_reach_the_editor(
 
     The shared footer supplies the receipt command without a second ACP pointer.
     """
-    from agent6 import budget, event_log
+    from agent6 import budget
     from agent6.app import finalize
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
+    from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1432,7 +1431,7 @@ def test_the_runs_notices_reach_the_editor(
         reporter = kw["reporter"]
         assert isinstance(reporter, app_reporter.Reporter)
         finalize.print_session_end(
-            _snapshot.SessionResult(
+            loop_snapshot.SessionResult(
                 completed=True, reason="finish_session", summary="done", turns=1, tool_calls=0
             ),
             layout=layout,
@@ -1447,7 +1446,7 @@ def test_the_runs_notices_reach_the_editor(
         return 0
 
     monkeypatch.setattr(run, "run_task", _noticing_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1479,7 +1478,7 @@ def test_the_editor_gets_each_ending_fact_once(
     The lifecycle's cost receipt and the ending go to stderr (the editor's agent log), so the editor
     reads each fact once and the log keeps its headline.
     """
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1499,7 +1498,7 @@ def test_the_editor_gets_each_ending_fact_once(
         return 0
 
     monkeypatch.setattr(run, "run_task", _ending_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1536,7 +1535,7 @@ def _two_sessions_one_blocked(
         return 0
 
     monkeypatch.setattr(run, "run_task", _blocking_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     first = wire.new_session(_repo(tmp_path))
     wire.send(id=9, method="session/new", params={"cwd": str(tmp_path)})
@@ -1585,7 +1584,7 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """With two calls in flight, only the gated call reads pending on the wire."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
 
@@ -1610,7 +1609,7 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     wire = _Wire()
     try:
         session_id = wire.new_session(_repo(tmp_path))
@@ -1698,7 +1697,7 @@ def test_the_lifecycles_lines_take_their_place_in_journal_order(tmp_path: pathli
     """
     import time
 
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1789,7 +1788,7 @@ def test_a_cancel_before_the_execution_starts_leaves_no_marker_for_the_next(
         return tmp_path / "state"
 
     monkeypatch.setattr(paths, "state_dir", _state_dir)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
     session = session_mod.Session(acp_id="s", cwd=tmp_path, session_id="run-AAAA11")
     session_dir = sessions_layout.SessionLayout(tmp_path / "state", "run-AAAA11").session_dir
@@ -1827,7 +1826,7 @@ def test_a_second_prompt_after_a_recorded_execution_with_no_snapshot_starts_a_ne
 
     monkeypatch.setattr(paths, "state_dir", _state_dir)
     monkeypatch.setattr(id, "unused_session_id", _minted)
-    monkeypatch.setattr(_setup, "load_session_config", _loaded)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
     monkeypatch.setattr(run, "run_task", _run_task)
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1856,7 +1855,7 @@ def test_a_second_prompt_after_a_recorded_execution_with_no_snapshot_starts_a_ne
 
 def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathlib.Path) -> None:
     """An edit's tool_call_update carries each journaled path, absolute, so the editor follows."""
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())
@@ -1885,13 +1884,13 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
 ) -> None:
     """Startup keeps an execution's cancel marker and abort steer instead of sweeping them away."""
     from agent6 import paths
-    from agent6.app import _execution as app__execution
+    from agent6.app import execution
     from agent6.sessions import ipc
 
     def _no_keys(_cfg: Config) -> None:
         return None
 
-    monkeypatch.setattr(_setup, "check_provider_keys", _no_keys)  # no key here
+    monkeypatch.setattr(session_setup, "check_provider_keys", _no_keys)  # no key here
     repo = _repo(tmp_path / "repo")
     subprocess.run(
         ["git", "-C", str(repo), "commit", "-q", "--allow-empty", "-m", "seed"], check=True
@@ -1913,7 +1912,7 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
         time.sleep(2 * ipc.TIMESTAMP_SLACK_S)  # the lifecycle's entry is not the execution's start
         return real_run_task(cfg, text, **kw)
 
-    def _execution(*_a: object, **_k: object) -> app__execution.ExecutionEnd:
+    def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
         session_dir = session.layout(paths.state_dir(repo)).session_dir
         seen.append(
             (
@@ -1922,9 +1921,9 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
                 ipc.steer_interrupt_pending(session_dir),
             )
         )
-        return app__execution.ExecutionEnd(rc=0)
+        return execution.ExecutionEnd(rc=0)
 
-    monkeypatch.setattr(app__execution, "run_execution", _execution)
+    monkeypatch.setattr(execution, "run_execution", _execution)
     monkeypatch.setattr(run, "run_task", _cancelled_while_starting)
     bridge = runner.RunBridge(server=acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO()))
 
@@ -1973,7 +1972,7 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
     """The session's title, slash commands and context use ride the same tail as the fold."""
     import time
 
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     sent: list[dict[str, Any]] = []
     server = acp_server.ACPServer(stdin=io.BytesIO(), stdout=io.BytesIO())

@@ -8,7 +8,7 @@ from unittest import mock
 import pytest
 
 from agent6 import review_records
-from agent6.harness import _review_history
+from agent6.harness import review_history
 from agent6.vcs import git_files, git_read
 from tests.unit.test_review_diff_collect import _git
 
@@ -50,7 +50,7 @@ def _observe(
         ),
     )
     verdict = review_records.ReviewVerdict(0, "security", "model", "block", (finding,))
-    return _review_history.observations("panel", (verdict,), {}, root=root, target=target, hide=())[
+    return review_history.observations("panel", (verdict,), {}, root=root, target=target, hide=())[
         0
     ]
 

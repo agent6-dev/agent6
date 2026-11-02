@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from agent6 import review_records
-from agent6.viewmodel import _session_log, _session_status, listing, review_queue
+from agent6.viewmodel import listing, review_queue, session_log, session_status
 
 _TS = "2026-10-25T10:00:05+00:00"
 _TS_EPOCH = datetime.datetime.fromisoformat(_TS).timestamp()
@@ -99,10 +99,10 @@ _END: dict[str, Any] = {
 _END_EPOCH = datetime.datetime.fromisoformat("2026-10-25T11:00:00+00:00").timestamp()
 
 
-def _scan(rows: list[dict[str, Any]], tmp_path: pathlib.Path) -> _session_log.LogScan:
+def _scan(rows: list[dict[str, Any]], tmp_path: pathlib.Path) -> session_log.LogScan:
     log = tmp_path / "logs.jsonl"
     log.write_text("".join(json.dumps(r) + "\n" for r in rows))
-    return _session_log.scan_session_log(log)
+    return session_log.scan_session_log(log)
 
 
 def _facts(
@@ -425,7 +425,7 @@ def _summary(
     return listing.SessionSummary(
         session_id=session_id,
         mode="run",
-        task_label=_session_status.TaskLabel(session_id),
+        task_label=session_status.TaskLabel(session_id),
         status="finished",
         reason="",
         cost_usd=0.0,

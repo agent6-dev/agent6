@@ -11,8 +11,8 @@ import pathlib
 import pytest
 from textual import widgets
 
-from agent6.ui.tui import _diff_pane
 from agent6.ui.tui import app as tui_app
+from agent6.ui.tui import diff_pane
 
 
 def _mk(d: pathlib.Path) -> None:
@@ -26,7 +26,7 @@ def _mk(d: pathlib.Path) -> None:
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
 
-def _no_patch(self: _diff_pane.DiffPane, sha: str) -> str:
+def _no_patch(self: diff_pane.DiffPane, sha: str) -> str:
     return "(no diff)"  # the diff pane's git read is not under test
 
 
@@ -35,7 +35,7 @@ def test_a_selected_step_relabels_the_details_as_of_that_turn(
 ) -> None:
     d = tmp_path / "s1"
     _mk(d)
-    monkeypatch.setattr(_diff_pane.DiffPane, "_step_patch", _no_patch)
+    monkeypatch.setattr(diff_pane.DiffPane, "_step_patch", _no_patch)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
@@ -81,7 +81,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    monkeypatch.setattr(_diff_pane.DiffPane, "_step_patch", _no_patch)
+    monkeypatch.setattr(diff_pane.DiffPane, "_step_patch", _no_patch)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
@@ -108,12 +108,12 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
     """Under `[git].control = "model"` the diff pane's title survives every paint."""
     d = tmp_path / "s3"
     _mk(d)
-    monkeypatch.setattr(_diff_pane.DiffPane, "_step_patch", _no_patch)
+    monkeypatch.setattr(diff_pane.DiffPane, "_step_patch", _no_patch)
 
-    def model_owns_git(_self: _diff_pane.DiffPane) -> str:
+    def model_owns_git(_self: diff_pane.DiffPane) -> str:
         return "model"
 
-    monkeypatch.setattr(_diff_pane.DiffPane, "git_control", model_owns_git)
+    monkeypatch.setattr(diff_pane.DiffPane, "git_control", model_owns_git)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
@@ -137,11 +137,11 @@ def test_a_clipped_diff_pane_marks_the_cut() -> None:
 
     patch = "+" + "x" * 5000
     dt = text.Text()
-    _diff_pane.append_colored_diff(dt, patch, cap=2000)
+    diff_pane.append_colored_diff(dt, patch, cap=2000)
     rendered = dt.plain
     assert "truncated" in rendered
     assert len(rendered) < len(patch)
 
     whole = text.Text()
-    _diff_pane.append_colored_diff(whole, "+small\n", cap=2000)
+    diff_pane.append_colored_diff(whole, "+small\n", cap=2000)
     assert "truncated" not in whole.plain  # a patch under the cap is unmarked

@@ -4,7 +4,7 @@
 
 Ordinary configured authentication (a key, a token command or a configured issuer), JSON
 or SSE, ordinary token accounting. The subscription profile lives in `chatgpt.py`; both
-share `_responses` for the codec and the stream machine.
+share `responses_codec` for the codec and the stream machine.
 """
 
 from __future__ import annotations
@@ -16,7 +16,14 @@ from typing import Any
 import httpx2
 
 from agent6 import budget as agent6_budget
-from agent6.providers import _headers, _responses, _stream, _transport, types, wire
+from agent6.providers import (
+    provider_types,
+    request_headers,
+    responses_codec,
+    stream_lifecycle,
+    transport,
+    wire,
+)
 
 DEFAULT_MAX_TOKENS = 8192
 _LABEL = "Responses"
@@ -38,15 +45,15 @@ def _require_usage(usage: object) -> None:
     except (TypeError, ValueError):
         metered = False
     if not metered:
-        raise types.ProviderError(
+        raise provider_types.ProviderError(
             f"{_LABEL} response carried no usage.input_tokens; budgeted runs require provider"
             " usage accounting"
         )
 
 
-def _stream_error(evt: dict[str, Any]) -> types.ProviderError:
+def _stream_error(evt: dict[str, Any]) -> provider_types.ProviderError:
     """Return the error a failure frame carries, classified."""
-    return _responses.stream_error(evt, label=_LABEL)
+    return responses_codec.stream_error(evt, label=_LABEL)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -73,15 +80,17 @@ class ResponsesProvider:
     model: str
     base_url: str
     auth_style: wire.AuthStyle = "bearer"
-    extra_headers: _headers.HeaderSet = dataclasses.field(default_factory=_headers.HeaderSet)
+    extra_headers: request_headers.HeaderSet = dataclasses.field(
+        default_factory=request_headers.HeaderSet
+    )
     extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
     extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     timeout_s: float = 600.0
-    transcript_sink: types.TranscriptRecorder | None = None
-    auth_observer: types.AuthObserver | None = None
+    transcript_sink: provider_types.TranscriptRecorder | None = None
+    auth_observer: provider_types.AuthObserver | None = None
     budget: agent6_budget.BudgetTracker | None = None
     reasoning_effort: str | None = None
-    credential: types.BearerCredential | None = None
+    credential: provider_types.BearerCredential | None = None
     # Latched on a 400 naming `temperature` so the rest of the run omits it; a list, since
     # the dataclass is frozen.
     _omit_temperature: list[bool] = dataclasses.field(default_factory=lambda: [False])
@@ -89,9 +98,9 @@ class ResponsesProvider:
     @property
     def _route(self) -> str:
         """The route a reasoning item may be replayed to."""
-        return _responses.replay_route("responses", self.base_url, self.model)
+        return responses_codec.replay_route("responses", self.base_url, self.model)
 
-    def _build_headers(self, token: str, facts: _headers.RequestFacts) -> dict[str, str]:
+    def _build_headers(self, token: str, facts: request_headers.RequestFacts) -> dict[str, str]:
         """Return one attempt's request headers, built from its token and the request's facts."""
         headers: dict[str, str] = {"content-type": "application/json"}
         authed = wire.auth_header(self.auth_style, token)
@@ -117,7 +126,7 @@ class ResponsesProvider:
             return True
         return False
 
-    def _parse_response(self, data: dict[str, Any]) -> types.ProviderResponse:
+    def _parse_response(self, data: dict[str, Any]) -> provider_types.ProviderResponse:
         """Parse a non-streaming response object.
 
         Args:
@@ -133,13 +142,13 @@ class ResponsesProvider:
         if status == "failed":
             raise _stream_error({"response": data})
         if status not in ("completed", "incomplete", "done"):
-            raise types.ProviderError(f"{_LABEL} response ended with status {status}")
+            raise provider_types.ProviderError(f"{_LABEL} response ended with status {status}")
         usage = data.get("usage")
         output = data.get("output")
-        return _responses.parse_output_items(
+        return responses_codec.parse_output_items(
             output if isinstance(output, list) else [],
             usage=usage if isinstance(usage, dict) else {},
-            stop_reason=_responses.stop_reason_of(data, status),
+            stop_reason=responses_codec.stop_reason_of(data, status),
             label=_LABEL,
             route=self._route,
         )
@@ -149,7 +158,7 @@ class ResponsesProvider:
         *,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[types.ToolDefinition] | None = None,
+        tools: list[provider_types.ToolDefinition] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         extended_thinking: dict[str, Any] | None = None,
@@ -158,8 +167,8 @@ class ResponsesProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
-        context: _headers.RequestContext | None = None,
-    ) -> types.ProviderResponse:
+        context: request_headers.RequestContext | None = None,
+    ) -> provider_types.ProviderResponse:
         """Make one Responses call, streaming when a delta callback is set.
 
         Args:
@@ -196,7 +205,7 @@ class ResponsesProvider:
         body: dict[str, Any] = {
             "model": self.model,
             "instructions": system,
-            "input": _responses.responses_input(messages, route=self._route),
+            "input": responses_codec.responses_input(messages, route=self._route),
             "tool_choice": "auto",
             "store": False,
             "max_output_tokens": max_tokens,
@@ -204,7 +213,7 @@ class ResponsesProvider:
             "include": ["reasoning.encrypted_content"],
         }
         if tools:
-            body["tools"] = _responses.tools_to_responses(tools)
+            body["tools"] = responses_codec.tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
         if effort:
             # Omitting the field leaves the model's default on; "off" needs the explicit "none".
@@ -213,10 +222,10 @@ class ResponsesProvider:
             body["temperature"] = temperature
         if self.extra_body:
             body.update(
-                {k: v for k, v in self.extra_body.items() if k not in _responses.RESERVED_BODY}
+                {k: v for k, v in self.extra_body.items() if k not in responses_codec.RESERVED_BODY}
             )
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
-        return _transport.ProviderCall(
+        return transport.ProviderCall(
             api_label=_LABEL,
             api_format="responses",
             url=url,
@@ -228,7 +237,9 @@ class ResponsesProvider:
             transcript_sink=self.transcript_sink,
             budget=self.budget,
             model=self.model,
-            facts=_headers.call_facts(self.model, _headers.responses_body_facts(body), context),
+            facts=request_headers.call_facts(
+                self.model, request_headers.responses_body_facts(body), context
+            ),
             build_headers=self._build_headers,
             adapt_400=self._adapt_body_for_400,
             adapt_attempts=int("temperature" in body),
@@ -259,7 +270,7 @@ class ResponsesProvider:
         thinking_delta_callback: Callable[[str], None] | None,
         should_abort: Callable[[], bool] | None,
         should_interrupt: Callable[[], bool] | None,
-    ) -> types.ProviderResponse:
+    ) -> provider_types.ProviderResponse:
         """Make the call over SSE and book what it cost, finished or cut.
 
         Args:
@@ -281,8 +292,8 @@ class ResponsesProvider:
         """
         body = {**body, "stream": True}
         stream_headers = {**headers, "accept": "text/event-stream"}
-        state = _responses.ResponsesStreamState()
-        call = _stream.SseCall(
+        state = responses_codec.ResponsesStreamState()
+        call = stream_lifecycle.SseCall(
             api_label=_LABEL,
             api_format="responses",
             url=url,
@@ -294,9 +305,9 @@ class ResponsesProvider:
             should_interrupt=should_interrupt,
         )
 
-        def consume(resp: httpx2.Response, clock: _stream.StreamClock) -> None:
+        def consume(resp: httpx2.Response, clock: stream_lifecycle.StreamClock) -> None:
             """Read the stream's events into the state."""
-            _responses.consume_stream(
+            responses_codec.consume_stream(
                 call,
                 resp,
                 clock,
@@ -311,10 +322,10 @@ class ResponsesProvider:
             """Record what the cut turn already cost."""
             if not state.usage:
                 return
-            billed = _responses.parse_output_items(
+            billed = responses_codec.parse_output_items(
                 [], usage=state.usage, stop_reason="", label=_LABEL, route=self._route
             )
-            _stream.record_billed_usage(
+            stream_lifecycle.record_billed_usage(
                 self.budget,
                 self.model,
                 input_tokens=billed.input_tokens,
@@ -324,7 +335,7 @@ class ResponsesProvider:
 
         try:
             call.run(consume)
-            parsed = _responses.finish_stream(
+            parsed = responses_codec.finish_stream(
                 state, call=call, url=url, label=_LABEL, route=self._route
             )
             if self.budget is not None:
@@ -332,5 +343,5 @@ class ResponsesProvider:
         except BaseException:
             record_billed()
             raise
-        _transport.meter_completion(self.budget, self.model, parsed, _LABEL)
+        transport.meter_completion(self.budget, self.model, parsed, _LABEL)
         return parsed

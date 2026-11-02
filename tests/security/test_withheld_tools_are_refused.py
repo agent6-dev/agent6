@@ -18,9 +18,9 @@ from typing import Literal
 import pytest
 
 from agent6.config import Config
-from agent6.harness import _toolset
+from agent6.harness import toolset
 from agent6.sessions import ipc
-from agent6.tools import dispatch, errors, mcp_client, operator_prompts, schema
+from agent6.tools import dispatch, mcp_client, operator_prompts, schema, tool_errors
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
 
 Mode = Literal["run", "plan", "ask", "machine", "agent"]
@@ -44,11 +44,11 @@ def _assert_withheld_are_refused(
 
     `tool_definitions` is the mode's surface filtered by the dispatcher.
     """
-    offered = {t.name for t in _toolset.tool_definitions(d, mode=mode)}
+    offered = {t.name for t in toolset.tool_definitions(d, mode=mode)}
     withheld = {cls.TOOL_NAME for cls in schema.ALL_TOOLS} - offered
     assert expected <= withheld, f"expected these withheld: {expected - withheld}"
     for name in sorted(expected):
-        with pytest.raises((errors.ToolError, errors.ToolDeniedError)) as caught:
+        with pytest.raises((tool_errors.ToolError, tool_errors.ToolDeniedError)) as caught:
             d.dispatch(name, {})
         message = str(caught.value)
         assert any(w in message for w in GUARD_WORDS), (
@@ -129,7 +129,7 @@ def test_an_mcp_server_denied_for_the_session_is_refused(tmp_path: pathlib.Path)
         assert "mcp__fake__echo" in d.available_tool_names()
         ipc.set_session_deny(session_dir, "mcp.fake")
         assert "mcp__fake__echo" not in d.available_tool_names()
-        with pytest.raises(errors.ToolError, match="denied for this session"):
+        with pytest.raises(tool_errors.ToolError, match="denied for this session"):
             d.dispatch("mcp__fake__echo", {"text": "hi"})
     finally:
         mgr.close()

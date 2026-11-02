@@ -9,8 +9,7 @@ import pathlib
 import pytest
 
 import agent6
-from agent6.app import _session as session_mod
-from agent6.app import reporter
+from agent6.app import reporter, session_parts
 
 
 def test_detects_an_install_root_inside_the_workspace(
@@ -20,8 +19,8 @@ def test_detects_an_install_root_inside_the_workspace(
     pkg = ws / ".venv" / "lib" / "site-packages" / "agent6"
     pkg.mkdir(parents=True)
     monkeypatch.setattr(agent6, "__file__", str(pkg / "__init__.py"))
-    assert session_mod.install_inside_workspace(ws) == pkg
-    assert session_mod.install_inside_workspace(tmp_path / "elsewhere") is None
+    assert session_parts.install_inside_workspace(ws) == pkg
+    assert session_parts.install_inside_workspace(tmp_path / "elsewhere") is None
 
 
 def test_run_entry_warns_once_and_never_refuses(
@@ -33,7 +32,7 @@ def test_run_entry_warns_once_and_never_refuses(
     pkg.mkdir(parents=True)
     monkeypatch.setattr(agent6, "__file__", str(pkg / "__init__.py"))
     said: list[str] = []
-    session_mod.warn_install_inside_workspace(
+    session_parts.warn_install_inside_workspace(
         ws, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     warnings = [line for line in said if "WARNING" in line]
@@ -49,7 +48,7 @@ def test_no_warning_for_an_outside_install(
     ws = tmp_path / "ws"
     ws.mkdir()
     said: list[str] = []
-    session_mod.warn_install_inside_workspace(
+    session_parts.warn_install_inside_workspace(
         ws, reporter=reporter.Reporter(out=said.append, err=said.append)
     )
     assert not [line for line in said if "installed inside" in line]

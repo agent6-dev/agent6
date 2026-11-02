@@ -19,7 +19,7 @@ import subprocess
 import pytest
 
 from agent6.config import Config
-from agent6.tools import dispatch, errors
+from agent6.tools import dispatch, tool_errors
 
 CASINGS = [".git", ".GIT", ".Git", ".gIt"]
 
@@ -36,7 +36,7 @@ def test_the_git_dir_is_refused_in_any_casing(tmp_path: pathlib.Path, cased: str
     d = dispatch.ToolDispatcher(root=root, config=Config(), isolation="none")
     payload = '[filter "pwn"]\n\tclean = touch /tmp/pwned\n[core]'
     try:
-        with pytest.raises(errors.ToolError, match="Refusing to write under"):
+        with pytest.raises(tool_errors.ToolError, match="Refusing to write under"):
             d.dispatch(
                 "apply_edit",
                 {
@@ -45,7 +45,7 @@ def test_the_git_dir_is_refused_in_any_casing(tmp_path: pathlib.Path, cased: str
                 },
             )
         patch = f"--- a/{cased}/config\n+++ b/{cased}/config\n@@ -1 +1,2 @@\n [core]\n+x\n"
-        with pytest.raises(errors.ToolError, match="Refusing to write under"):
+        with pytest.raises(tool_errors.ToolError, match="Refusing to write under"):
             d.dispatch("apply_patch", {"patch": patch})
     finally:
         d.close()
@@ -68,7 +68,7 @@ def test_a_protect_path_covers_the_same_name_cased_differently(tmp_path: pathlib
     )
     try:
         for cased in ("scripts", "SCRIPTS", "Scripts"):
-            with pytest.raises(errors.ToolError, match="protected path"):
+            with pytest.raises(tool_errors.ToolError, match="protected path"):
                 d.dispatch(
                     "apply_edit",
                     {
@@ -89,7 +89,7 @@ def test_an_installed_package_tree_is_refused_in_any_casing(tmp_path: pathlib.Pa
         (tree / "mod.py").write_text("VALUE = 1\n", encoding="utf-8")
         d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="none")
         try:
-            with pytest.raises(errors.ToolError, match="installed-package tree"):
+            with pytest.raises(tool_errors.ToolError, match="installed-package tree"):
                 d.dispatch(
                     "apply_edit",
                     {

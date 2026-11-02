@@ -9,8 +9,8 @@ import time
 
 import pytest
 
-from agent6.app import _session, _setup
 from agent6.app import preflight as app_preflight
+from agent6.app import session_parts, session_setup
 from agent6.config import Config
 
 
@@ -86,7 +86,7 @@ def test_the_lifecycle_sets_the_repos_hook_policy_itself(
     def _capture(captured: Config) -> None:
         seen.append(captured.git.run_repo_hooks)
 
-    monkeypatch.setattr(_setup, "apply_git_ops_policy", _capture)
+    monkeypatch.setattr(session_setup, "apply_git_ops_policy", _capture)
     monkeypatch.chdir(tmp_path)
     cfg = Config.model_validate({"git": {"run_repo_hooks": True}})
     # It refuses immediately after (no git identity here); the policy is set
@@ -235,7 +235,7 @@ def test_the_route_preflight_precedes_isolation(
         raise _Stop
 
     monkeypatch.setattr(app_preflight, "route_preflight", _route)
-    monkeypatch.setattr(_session, "select_isolation", _isolation)
+    monkeypatch.setattr(session_parts, "select_isolation", _isolation)
     monkeypatch.chdir(tmp_path)
     front = acp_frontend.acp_frontend(
         ask=lambda _p, _o, _s, _c, _u=None: None,

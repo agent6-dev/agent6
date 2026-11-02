@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 from collections.abc import Iterable
 
-from agent6.config import _base, io, layer
+from agent6.config import io, layer, validation
 
 
 def write_message(
@@ -30,7 +30,7 @@ def write_message(
     """
     try:
         eff = layer.load_effective(repo_root, config_paths)
-    except _base.ConfigError:
+    except validation.ConfigError:
         return message
     keys = [io.render_key(io.split_key(key)) for key in keys]
     leaves = sorted(

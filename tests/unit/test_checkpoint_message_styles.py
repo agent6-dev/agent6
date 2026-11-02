@@ -11,8 +11,7 @@ from unittest import mock
 import pytest
 
 from agent6.config import Config
-from agent6.harness import _chain as chain_mod
-from agent6.harness import _loop_state, loop
+from agent6.harness import loop, loop_state, run_chain
 from agent6.tools import dispatch
 from agent6.vcs import git_read
 
@@ -22,7 +21,7 @@ def _wf(
 ) -> loop.Harness:
     cfg = Config.model_validate({"git": {"commit": {"checkpoint": {"message": style}}}})
     return loop.Harness(
-        chain=chain_mod.RunChain(tmp_path),
+        chain=run_chain.RunChain(tmp_path),
         config=cfg,
         provider=provider or mock.MagicMock(),
         dispatcher=dispatch.ToolDispatcher(root=tmp_path, config=cfg),
@@ -30,8 +29,8 @@ def _wf(
     )
 
 
-def _turn(text: str) -> _loop_state.TurnState:
-    return _loop_state.TurnState(
+def _turn(text: str) -> loop_state.TurnState:
+    return loop_state.TurnState(
         number=3, resp=mock.MagicMock(text=text), assistant=mock.MagicMock()
     )
 

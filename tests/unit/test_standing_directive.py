@@ -21,7 +21,7 @@ from agent6.graph import models
 from agent6.harness import loop
 from agent6.sessions import ipc, process
 from agent6.sessions import layout as sessions_layout
-from agent6.ui import directives
+from agent6.ui import directive_actions
 from agent6.ui.cli import main
 from tests.unit.test_task_queue_drain import (
     _workflow,  # pyright: ignore[reportPrivateUsage]
@@ -41,7 +41,7 @@ def test_it_is_offered_only_on_a_live_run() -> None:
 
 
 def test_a_bare_directive_sets_nothing(tmp_path: pathlib.Path) -> None:
-    did, said = directives.act_on_directive(tmp_path, "/standing") or (True, "")
+    did, said = directive_actions.act_on_directive(tmp_path, "/standing") or (True, "")
 
     assert not did
     assert "/standing needs the goal" in said
@@ -49,7 +49,7 @@ def test_a_bare_directive_sets_nothing(tmp_path: pathlib.Path) -> None:
 
 
 def test_the_directive_writes_the_goal(tmp_path: pathlib.Path) -> None:
-    did, said = directives.act_on_directive(tmp_path, "/standing keep the suite green") or (
+    did, said = directive_actions.act_on_directive(tmp_path, "/standing keep the suite green") or (
         False,
         "",
     )
@@ -82,7 +82,7 @@ def _run(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, str, loop.
             parent_id=None, draft=models.TaskNodeDraft(title="the run", created_by="user")
         )
     ).id
-    from agent6 import event_log
+    from agent6.sessions import event_log
 
     return curator, root, _workflow(curator, event_log.EventSink(layout.session_dir / "logs.jsonl"))
 

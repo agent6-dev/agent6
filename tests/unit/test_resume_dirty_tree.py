@@ -18,7 +18,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import _session, providers
+from agent6.app import role_providers, session_parts
 from agent6.providers import ProviderResponse
 from agent6.sessions import ipc
 from agent6.tools import operator_prompts, schema
@@ -125,7 +125,7 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, git_toml: st
     _git(repo, "add", "a.py", "b.py")
     _git(repo, "commit", "-q", "-m", "seed")
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(_session, "select_isolation", _none_isolation)
+    monkeypatch.setattr(session_parts, "select_isolation", _none_isolation)
     return repo
 
 
@@ -144,14 +144,14 @@ def _stopped_run(
             ipc.request_stop(session_dir)
 
     prov = _Scripted([step, _finish()], before_call=_stop_during_the_first_call)
-    monkeypatch.setattr(providers, "build_role_provider", _use(prov))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
     cli_main(["run", "--session-id", session_id, "task"])
     assert prov.calls == 1  # stopped at the boundary after the step
 
 
 def _resume(monkeypatch: pytest.MonkeyPatch, session_id: str, script: list[_Step]) -> int:
     prov = _Scripted(script)
-    monkeypatch.setattr(providers, "build_role_provider", _use(prov))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(prov))
     return cli_main(["resume", session_id])
 
 
@@ -258,12 +258,14 @@ def test_resume_stashes_a_staged_rename_without_taking_run_work(
     repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\n')
     session_id = "tree-MOVE01"
     monkeypatch.setattr(
-        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+        role_providers,
+        "build_role_provider",
+        _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
     assert cli_main(["run", "--session-id", session_id, "task"]) == 0
     _git(repo, "mv", "b.py", "b.rst")
     (repo / "b.rst").write_text("y = 2  # operator draft\n", encoding="utf-8")
-    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
@@ -295,14 +297,16 @@ def test_auto_stash_pop_restores_over_nonconflicting_run_work(
     session_id = "tree-POP001"
     if resuming:
         monkeypatch.setattr(
-            providers, "build_role_provider", _use(_Scripted([_edit("b.py", "y = 2\n"), _finish()]))
+            role_providers,
+            "build_role_provider",
+            _use(_Scripted([_edit("b.py", "y = 2\n"), _finish()])),
         )
         assert cli_main(["run", "--session-id", session_id, "task"]) == 0
     (repo / "a.py").write_text("x = 2  # operator draft\n", encoding="utf-8")
     capsys.readouterr()
     script = [_edit("b.py", "y = 5  # the run\n"), _finish()]
 
-    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted(script)))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted(script)))
     if resuming:
         assert cli_main(["resume", session_id, "--steer", "new work"]) == 0
     else:
@@ -325,7 +329,9 @@ def test_auto_stash_pop_keeps_a_stash_that_would_overwrite_run_work(
     repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\nauto_stash_pop = true\n')
     (repo / "a.py").write_text("x = 2  # operator draft\n", encoding="utf-8")
     monkeypatch.setattr(
-        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+        role_providers,
+        "build_role_provider",
+        _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
 
     assert cli_main(["run", "--session-id", "tree-POP002", "task"]) == 0
@@ -369,14 +375,16 @@ def test_resume_stash_refusal_counts_blockers_and_restores_from_the_run_branch(
     repo = _setup(tmp_path, monkeypatch, f'dirty_tree = "{policy}"\n')
     session_id = "tree-UNDO01"
     monkeypatch.setattr(
-        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+        role_providers,
+        "build_role_provider",
+        _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
     assert cli_main(["run", "--session-id", session_id, "task"]) == 0
     (repo / "a.py").write_text("x = 6  # operator on top\n", encoding="utf-8")
     (repo / "b.py").write_text("y = 2  # operator draft\n", encoding="utf-8")
     if policy == "ask":
         _answering_frontend(monkeypatch, "stash")
-    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
@@ -421,14 +429,14 @@ def test_resume_stash_refusal_restore_touches_only_the_files_it_names(
     _git(repo, "commit", "-q", "-m", "data")
     session_id = "tree-GLOB01"
     monkeypatch.setattr(
-        providers,
+        role_providers,
         "build_role_provider",
         _use(_Scripted([_edit("data[1].py", "run\n"), _finish()])),
     )
     assert cli_main(["run", "--session-id", session_id, "task"]) == 0
     (repo / "data[1].py").write_text("operator on top\n", encoding="utf-8")
     (repo / "data1.py").write_text("operator draft\n", encoding="utf-8")
-    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
@@ -449,7 +457,9 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
     repo = _setup(tmp_path, monkeypatch, 'dirty_tree = "stash"\ncommit_per_turn = false\n')
     session_id = "tree-UNDO02"
     monkeypatch.setattr(
-        providers, "build_role_provider", _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()]))
+        role_providers,
+        "build_role_provider",
+        _use(_Scripted([_edit("a.py", "x = 5\n"), _finish()])),
     )
     assert cli_main(["run", "--session-id", session_id, "task"]) == 0
     events = [
@@ -458,7 +468,7 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
     ]
     (end,) = [e for e in events if e["type"] == "session.end"]
     (repo / "a.py").write_text("x = 6  # operator on top\n", encoding="utf-8")
-    monkeypatch.setattr(providers, "build_role_provider", _use(_Scripted([_finish()])))
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
 
     assert cli_main(["resume", session_id, "--steer", "new work"]) == 2
@@ -615,9 +625,9 @@ def test_the_restore_recipe_names_the_file_as_it_is_not_as_it_prints(
     tmp_path: pathlib.Path,
 ) -> None:
     """A newline in a name reached the pathspec in its printed spelling, naming another file."""
-    from agent6.app import _resume_tree  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import resume_tree  # pyright: ignore[reportPrivateUsage]
 
-    text = _resume_tree._shared_refusal(  # pyright: ignore[reportPrivateUsage]
+    text = resume_tree._shared_refusal(  # pyright: ignore[reportPrivateUsage]
         tmp_path, ["a\nb.py"], end_tree="abc1234", run_branch=None
     )
     assert ":(top,literal)" not in text and "typed as the listing spells it" in text

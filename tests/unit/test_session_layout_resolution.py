@@ -13,7 +13,7 @@ import pytest
 
 from agent6 import paths
 from agent6.sessions import id
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 
 @pytest.fixture(autouse=True)
@@ -30,16 +30,16 @@ def test_resolves_runs_and_asks_with_correct_subdir(tmp_path: pathlib.Path) -> N
     (state / "sessions" / "asks" / "ask-xyz").mkdir(parents=True)
     (state / "sessions" / "asks" / "ask-xyz" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
-    session_layout = _common.resolve_session_layout(repo, "run-abc")
+    session_layout = common.resolve_session_layout(repo, "run-abc")
     assert session_layout.subdir == "runs" and session_layout.session_id == "run-abc"
 
-    ask_layout = _common.resolve_session_layout(repo, "ask-xyz")
+    ask_layout = common.resolve_session_layout(repo, "ask-xyz")
     assert ask_layout.subdir == "asks" and ask_layout.session_id == "ask-xyz"
     # The layout points at the ask's own directory (where its graph now lives).
     assert ask_layout.session_dir == state / "sessions" / "asks" / "ask-xyz"
 
     # Unique-prefix resolution works too.
-    assert _common.resolve_session_layout(repo, "ask-").session_id == "ask-xyz"
+    assert common.resolve_session_layout(repo, "ask-").session_id == "ask-xyz"
 
 
 def test_resolves_a_machine_create_draft(tmp_path: pathlib.Path) -> None:
@@ -52,7 +52,7 @@ def test_resolves_a_machine_create_draft(tmp_path: pathlib.Path) -> None:
         "{}\n", encoding="utf-8"
     )
 
-    layout = _common.resolve_session_layout(repo, "blue-")
+    layout = common.resolve_session_layout(repo, "blue-")
     assert layout.subdir == "machines"
     assert layout.session_dir == state / "sessions" / "machines" / "blue-meadow-X1"
 
@@ -67,7 +67,7 @@ def test_prefix_must_be_unique_across_runs_and_asks(tmp_path: pathlib.Path) -> N
     (state / "sessions" / "asks" / "same-ask" / "logs.jsonl").write_text("{}\n", encoding="utf-8")
 
     with pytest.raises(id.SessionIdError) as exc:
-        _common.resolve_session_layout(repo, "same-")
+        common.resolve_session_layout(repo, "same-")
     assert not exc.value.no_match  # an ambiguous prefix is not "no such session"
     assert "runs/same-run" in str(exc.value)
     assert "asks/same-ask" in str(exc.value)
@@ -84,7 +84,7 @@ def test_exact_match_wins_over_cross_bucket_prefix(tmp_path: pathlib.Path) -> No
         "{}\n", encoding="utf-8"
     )
 
-    layout = _common.resolve_session_layout(repo, "run")
+    layout = common.resolve_session_layout(repo, "run")
     assert layout.subdir == "runs"
     assert layout.session_id == "run"
 
@@ -98,7 +98,7 @@ def test_empty_query_is_invalid(tmp_path: pathlib.Path) -> None:
     )
 
     with pytest.raises(id.SessionIdError, match="empty run id"):
-        _common.resolve_session_layout(repo, "")
+        common.resolve_session_layout(repo, "")
 
 
 def test_raises_when_no_match(tmp_path: pathlib.Path) -> None:
@@ -109,4 +109,4 @@ def test_raises_when_no_match(tmp_path: pathlib.Path) -> None:
         "{}\n", encoding="utf-8"
     )
     with pytest.raises(id.SessionIdError):
-        _common.resolve_session_layout(repo, "nope")
+        common.resolve_session_layout(repo, "nope")

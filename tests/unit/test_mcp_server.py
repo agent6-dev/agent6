@@ -17,7 +17,7 @@ from agent6.config import Config, layer, load_config
 from agent6.graph import models, storage
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest, process
-from agent6.tools import errors, results
+from agent6.tools import results, tool_errors
 from agent6.ui import mcp_server as ui_mcp_server
 
 _VALID_TOML = """
@@ -570,7 +570,7 @@ def test_apply_patch_surfaces_tool_error(
     server = _server(tmp_path, run_commands="allow")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
-        raise errors.ToolError("patch did not apply")
+        raise tool_errors.ToolError("patch did not apply")
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
     resps = _roundtrip(
@@ -603,7 +603,9 @@ def test_unexecutable_operator_command_surfaces_as_iserror(
     server = _server(tmp_path, run_commands="allow")
 
     def fake_dispatch(name: str, args: dict[str, Any]) -> results.ToolResult:
-        raise errors.OperatorCommandUnexecutableError("verify command not found on the jail PATH")
+        raise tool_errors.OperatorCommandUnexecutableError(
+            "verify command not found on the jail PATH"
+        )
 
     monkeypatch.setattr(server._dispatcher, "dispatch", fake_dispatch)  # type: ignore[attr-defined]
     resps = _roundtrip(

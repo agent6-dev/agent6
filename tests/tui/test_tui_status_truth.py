@@ -26,12 +26,12 @@ import pytest
 from textual import app as textual_app
 from textual import screen, widgets
 
-from agent6.config import _presets as config_presets
+from agent6.config import layer_presets
 from agent6.models import choices
 from agent6.sessions import process
 from agent6.ui import spawn
-from agent6.ui.tui import _dashboard_header, composer
 from agent6.ui.tui import app as tui_app
+from agent6.ui.tui import composer, dashboard_header
 from agent6.viewmodel import status_facts, tail
 from tests.tui._waits import answerable, focus_answers, wait_for
 
@@ -386,7 +386,7 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     def _routes(_cwd: pathlib.Path, _cp: object) -> list[str]:
         return ["o/a", "o/b"]
 
-    monkeypatch.setattr(config_presets, "available_preset_names", _presets)
+    monkeypatch.setattr(layer_presets, "available_preset_names", _presets)
     monkeypatch.setattr(choices, "available_routes", _routes)
     _mk_parked(tmp_path / "parked2")
 
@@ -466,7 +466,7 @@ def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     ) -> tuple[str, str]:
         return "fast (as recorded)", f"o/{preset or 'a'} (config default)"
 
-    monkeypatch.setattr(config_presets, "available_preset_names", _presets)
+    monkeypatch.setattr(layer_presets, "available_preset_names", _presets)
     monkeypatch.setattr(choices, "available_routes", _routes)
     monkeypatch.setattr(choices, "resume_defaults", _defaults)
     _mk_parked(tmp_path / "parked3")
@@ -1201,7 +1201,7 @@ def test_dashboard_header_says_where_the_changes_are(
             before = str(app._dash.query_one("#top", widgets.Static).render())
             manifest["merged"] = {"into": "main", "sha": tip, "tip": tip}
             (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-            app._dash.query_one(_dashboard_header.RunHeader)._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
+            app._dash.query_one(dashboard_header.RunHeader)._branch_recheck_at = 0.0  # pyright: ignore[reportPrivateUsage]
             app._dash.render_heartbeat()
             await pilot.pause()
             after = str(app._dash.query_one("#top", widgets.Static).render())

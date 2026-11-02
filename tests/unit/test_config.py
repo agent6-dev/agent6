@@ -1047,10 +1047,10 @@ def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
     A config setting them is refused as an unknown key.
     """
     from agent6.config import ChatGPTProviderEntry
-    from agent6.providers import chatgpt_oauth
+    from agent6.providers import oauth_chatgpt
 
-    assert chatgpt_oauth.CHATGPT_ISSUER == "https://auth.openai.com"
-    assert chatgpt_oauth.CHATGPT_CLIENT_ID
+    assert oauth_chatgpt.CHATGPT_ISSUER == "https://auth.openai.com"
+    assert oauth_chatgpt.CHATGPT_CLIENT_ID
     with pytest.raises(ValueError, match="oauth_issuer"):
         ChatGPTProviderEntry.model_validate(
             {"api_format": "chatgpt", "oauth_issuer": "https://auth.example.com"}
@@ -1118,11 +1118,11 @@ def test_auto_stash_pop_needs_the_stash_choice() -> None:
     """auto_stash_pop needs the stash choice: one knob answers the dirty tree."""
     import pytest
 
-    from agent6.config import _git
+    from agent6.config import git_config
 
-    assert _git.GitConfig(dirty_tree="stash", auto_stash_pop=True).auto_stash_pop
+    assert git_config.GitConfig(dirty_tree="stash", auto_stash_pop=True).auto_stash_pop
     with pytest.raises(ValueError, match='dirty_tree = "stash"'):
-        _git.GitConfig(dirty_tree="include", auto_stash_pop=True)
+        git_config.GitConfig(dirty_tree="include", auto_stash_pop=True)
 
 
 def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: pathlib.Path) -> None:

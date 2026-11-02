@@ -16,11 +16,11 @@ from collections.abc import Callable
 import httpx2
 import pytest
 
-from agent6 import paths, secret_store
-from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry
+from agent6 import paths
+from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry, secret_store
 from agent6.models import cache
-from agent6.providers import _oauth_protocol, _transport, chatgpt_oauth, oauth, types
-from agent6.ui.cli import _common, _oauth, main
+from agent6.providers import oauth, oauth_chatgpt, oauth_protocol, provider_types, transport
+from agent6.ui.cli import common, connect_oauth, main
 from agent6.ui.cli import model as modelmod
 
 _REAL_PROBE = cache.probe_provider_key
@@ -224,7 +224,7 @@ def test_connect_checks_effective_host_after_target_layer_edit(
         requested.append(url)
         return httpx2.Response(200, json={"data": [{"id": "model"}]})
 
-    monkeypatch.setattr(_transport, "http_request", get)
+    monkeypatch.setattr(transport, "http_request", get)
     assert main(["connect", "custom", *(["--repo"] if to_repo else [])]) == 0
     out = capsys.readouterr().out
     assert prompts[-1] == "Base URL [https://repo.example/v1]: "
@@ -358,7 +358,7 @@ def test_connect_auth_none_skips_key_check(
         requested.append(url)
         return httpx2.Response(200, json={"data": [{"id": "model"}]})
 
-    monkeypatch.setattr(_transport, "http_request", get)
+    monkeypatch.setattr(transport, "http_request", get)
     assert main(["connect", "local"]) == 0
     out = capsys.readouterr().out
     assert requested == []
@@ -467,7 +467,7 @@ def test_connect_masked_echo_skips_summary(
     # On a terminal the key shows as stars while typing, so no summary follows.
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr(
-        "agent6.ui.cli.connect._common.read_secret", lambda prompt="": "sk-ant-0123456789wxyz"
+        "agent6.ui.cli.connect.common.read_secret", lambda prompt="": "sk-ant-0123456789wxyz"
     )
     rc = main(["connect", "anthropic"])
     assert rc == 0
@@ -643,7 +643,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.secret_store.resolve_api_key", _key_stub(None))
+    monkeypatch.setattr("agent6.config.secret_store.resolve_api_key", _key_stub(None))
     rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     err = capsys.readouterr().err
@@ -661,7 +661,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
     )
-    monkeypatch.setattr("agent6.secret_store.resolve_api_key", _key_stub("sk-x"))
+    monkeypatch.setattr("agent6.config.secret_store.resolve_api_key", _key_stub("sk-x"))
     rc = main(["model", "worker", "anthropic/claude-x"])
     assert rc == 0
     assert "note:" not in capsys.readouterr().err
@@ -879,7 +879,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
     monkeypatch.delenv("CST_UNSET_KEY", raising=False)
     monkeypatch.setattr(time, "time", lambda: 1000.0)
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 42 * 60),
+        oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 42 * 60),
         ChatGPTProviderEntry(api_format="chatgpt"),
         now=1000.0,
     )
@@ -911,7 +911,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
         pytest.fail("status must not prompt or read the model cache")
 
     monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
-    monkeypatch.setattr(_transport, "http_request", request)
+    monkeypatch.setattr(transport, "http_request", request)
     monkeypatch.setattr(cache, "list_models", forbidden)
     monkeypatch.setattr("subprocess.run", run)
     monkeypatch.setattr("builtins.input", forbidden)
@@ -992,7 +992,7 @@ def test_connect_status_names_bound_grant_causes(
     config.write_text('[providers.work]\napi_format = "chatgpt"\n')
     monkeypatch.setattr(time, "time", lambda: 5000.0)
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 3600),
+        oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 3600),
         ChatGPTProviderEntry(api_format="chatgpt"),
         now=1000.0,
     )
@@ -1012,7 +1012,7 @@ def test_connect_status_names_bound_grant_causes(
         assert state == "expired" and method == "GET"
         return httpx2.Response(401, request=httpx2.Request(method, url))
 
-    monkeypatch.setattr(_transport, "http_request", request)
+    monkeypatch.setattr(transport, "http_request", request)
     assert main(["connect", "--status", "work"]) == 0
     output = capsys.readouterr()
     assert expected in " ".join(output.out.split())
@@ -1047,7 +1047,7 @@ def test_connect_status_reads_explicit_config(
         assert kwargs["headers"] == {}
         return httpx2.Response(200, json={"data": []}, request=httpx2.Request(method, url))
 
-    monkeypatch.setattr(_transport, "http_request", request)
+    monkeypatch.setattr(transport, "http_request", request)
     assert main(["--config", str(config), "connect", "--status"]) == 0
     assert "extra openai none ok verified" in " ".join(capsys.readouterr().out.split())
 
@@ -1075,7 +1075,7 @@ def test_logout_unbound_chatgpt_is_local_only(
         )
     else:
         grant = oauth.stored_grant_for(
-            _oauth_protocol.TokenGrant("AT", "RT", 3600),
+            oauth_protocol.TokenGrant("AT", "RT", 3600),
             ChatGPTProviderEntry(api_format="chatgpt"),
             now=time.time(),
         )
@@ -1086,7 +1086,7 @@ def test_logout_unbound_chatgpt_is_local_only(
         requests.append(url)
         return httpx2.Response(200)
 
-    monkeypatch.setattr(_transport, "http_request", request)
+    monkeypatch.setattr(transport, "http_request", request)
     assert main(["connect", "work", "--logout"]) == 0
     assert requests == []
     output = capsys.readouterr()
@@ -1129,8 +1129,8 @@ def test_chatgpt_connect_replaces_legacy_atomically_with_bound_grant(
     def exchange(*_args: object, **_kwargs: object) -> _TokenResp:
         return _TokenResp()
 
-    monkeypatch.setattr(_oauth, "paste_callback", paste)
-    monkeypatch.setattr(_oauth_protocol, "post_form", exchange)
+    monkeypatch.setattr(connect_oauth, "paste_callback", paste)
+    monkeypatch.setattr(oauth_protocol, "post_form", exchange)
     assert main(["connect", "chatgpt", "--no-verify"]) == 0
     assert len(published) == 1 and "legacy_only" not in published[0]
     grant = secret_store.load_oauth_grant("chatgpt")
@@ -1180,14 +1180,14 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     the training-data notice; no subprocess, no browser.
     """
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli.connect_oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     exchanges: list[dict[str, str]] = []
 
     def fake_post(url: str, data: dict[str, str], timeout_s: float, **_kw: object) -> _TokenResp:
         exchanges.append(data)
         return _TokenResp()
 
-    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
+    monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
         "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=STATE1\n")
     )
@@ -1256,7 +1256,7 @@ def test_connect_chatgpt_state_mismatch_refuses(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr("agent6.ui.cli.connect_oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
     monkeypatch.setattr(
         "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=EVIL\n")
     )
@@ -1273,7 +1273,7 @@ def test_oauth_callback_server_round_trip() -> None:
     import urllib.error
     import urllib.request
 
-    srv = _oauth.CallbackServer("S1", port=0)
+    srv = connect_oauth.CallbackServer("S1", port=0)
     try:
         base = f"http://127.0.0.1:{srv.port}"
         with pytest.raises(urllib.error.HTTPError) as e404:
@@ -1300,7 +1300,7 @@ def test_connect_logout_revokes_and_removes_tokens(
     secret_store.save_oauth_grant(
         "chatgpt",
         oauth.stored_grant_for(
-            _oauth_protocol.TokenGrant("AT", "RT", 3600),
+            oauth_protocol.TokenGrant("AT", "RT", 3600),
             ChatGPTProviderEntry(api_format="chatgpt"),
             now=time.time(),
         ),
@@ -1317,7 +1317,7 @@ def test_connect_logout_revokes_and_removes_tokens(
         revoked.append({"url": url, **(json or {})})
         return _RevokeResp()
 
-    monkeypatch.setattr("agent6.providers._transport.http_request", fake_request)
+    monkeypatch.setattr("agent6.providers.transport.http_request", fake_request)
     rc = main(["connect", "chatgpt", "--logout"])
     assert rc == 0
     assert revoked[0]["url"] == "https://auth.openai.com/oauth/revoke"
@@ -1341,19 +1341,19 @@ def test_connect_chatgpt_headless_terminal_uses_the_device_flow(
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    from agent6.providers import _oauth_protocol, chatgpt_oauth
+    from agent6.providers import oauth_chatgpt, oauth_protocol
 
-    def fake_start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth:
-        return chatgpt_oauth.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
+    def fake_start(issuer: str, client_id: str) -> oauth_chatgpt.DeviceAuth:
+        return oauth_chatgpt.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
 
     def fake_poll(
-        issuer: str, client_id: str, device: chatgpt_oauth.DeviceAuth, *, provider: str
-    ) -> _oauth_protocol.TokenGrant:
+        issuer: str, client_id: str, device: oauth_chatgpt.DeviceAuth, *, provider: str
+    ) -> oauth_protocol.TokenGrant:
         assert provider == "chatgpt"
-        return _oauth_protocol.TokenGrant(_grant_jwt(), "RT9", 3600.0)
+        return oauth_protocol.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", fake_start)
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth.poll_device_auth", fake_poll)
+    monkeypatch.setattr("agent6.providers.oauth_chatgpt.start_device_auth", fake_start)
+    monkeypatch.setattr("agent6.providers.oauth_chatgpt.poll_device_auth", fake_poll)
 
     def no_input(prompt: str = "") -> str:
         pytest.fail("device path must not prompt for a paste")
@@ -1378,21 +1378,21 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    from agent6.providers import _oauth_protocol, chatgpt_oauth
+    from agent6.providers import oauth_chatgpt, oauth_protocol
 
-    def fake_start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth:
-        return chatgpt_oauth.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
+    def fake_start(issuer: str, client_id: str) -> oauth_chatgpt.DeviceAuth:
+        return oauth_chatgpt.DeviceAuth(device_auth_id="da_1", user_code="AB-12", interval_s=5.0)
 
     told: list[str] = []
 
     def fake_poll(
-        issuer: str, client_id: str, device: chatgpt_oauth.DeviceAuth, *, provider: str
-    ) -> _oauth_protocol.TokenGrant:
+        issuer: str, client_id: str, device: oauth_chatgpt.DeviceAuth, *, provider: str
+    ) -> oauth_protocol.TokenGrant:
         told.append(provider)
-        return _oauth_protocol.TokenGrant(_grant_jwt(), "RT9", 3600.0)
+        return oauth_protocol.TokenGrant(_grant_jwt(), "RT9", 3600.0)
 
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth.start_device_auth", fake_start)
-    monkeypatch.setattr("agent6.providers.chatgpt_oauth.poll_device_auth", fake_poll)
+    monkeypatch.setattr("agent6.providers.oauth_chatgpt.start_device_auth", fake_start)
+    monkeypatch.setattr("agent6.providers.oauth_chatgpt.poll_device_auth", fake_poll)
 
     def api_format(prompt: str = "") -> str:
         return "chatgpt"
@@ -1417,32 +1417,32 @@ def test_connect_chatgpt_device_failure_falls_back_to_paste(
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     monkeypatch.setattr("sys.platform", "linux")
 
-    def start(issuer: str, client_id: str) -> chatgpt_oauth.DeviceAuth | None:
+    def start(issuer: str, client_id: str) -> oauth_chatgpt.DeviceAuth | None:
         if failure == "disabled":
             return None
         if failure == "start-error":
-            raise types.ProviderError("unavailable")
-        return chatgpt_oauth.DeviceAuth("device", "AB-CD", 5)
+            raise provider_types.ProviderError("unavailable")
+        return oauth_chatgpt.DeviceAuth("device", "AB-CD", 5)
 
-    def poll(*_args: object, **_kwargs: object) -> _oauth_protocol.TokenGrant:
+    def poll(*_args: object, **_kwargs: object) -> oauth_protocol.TokenGrant:
         if failure == "interrupt":
             raise KeyboardInterrupt
-        raise types.ProviderError("poll refused")
+        raise provider_types.ProviderError("poll refused")
 
     def no_listener(*_args: object, **_kwargs: object) -> None:
         pytest.fail("a failed device flow must fall back to paste, not a listener")
 
-    monkeypatch.setattr(_oauth, "CallbackServer", no_listener)
-    monkeypatch.setattr(chatgpt_oauth, "start_device_auth", start)
-    monkeypatch.setattr(chatgpt_oauth, "poll_device_auth", poll)
-    monkeypatch.setattr("agent6.ui.cli._oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
+    monkeypatch.setattr(connect_oauth, "CallbackServer", no_listener)
+    monkeypatch.setattr(oauth_chatgpt, "start_device_auth", start)
+    monkeypatch.setattr(oauth_chatgpt, "poll_device_auth", poll)
+    monkeypatch.setattr("agent6.ui.cli.connect_oauth.secrets.token_urlsafe", lambda n=24: "STATE1")
 
     def fake_post(
         url: str, data: dict[str, str], timeout_s: float, headers: dict[str, str] | None = None
     ) -> _TokenResp:
         return _TokenResp()
 
-    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_post)
+    monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_post)
     monkeypatch.setattr(
         "sys.stdin", io.StringIO("http://localhost:1455/auth/callback?code=C1&state=STATE1\n")
     )
@@ -1504,7 +1504,7 @@ def test_a_number_outside_the_model_list_is_refused(
         return typed.pop(0)
 
     monkeypatch.setattr(modelmod, "_models_for", models)
-    monkeypatch.setattr(_common, "safe_input", answer)
+    monkeypatch.setattr(common, "safe_input", answer)
     assert modelmod._prompt_for_model((), "p") is None  # pyright: ignore[reportPrivateUsage]
     assert "no model 7: the list has 2" in capsys.readouterr().err
     assert modelmod._prompt_for_model((), "p") == "b"  # pyright: ignore[reportPrivateUsage]

@@ -77,7 +77,7 @@ def test_anthropic_records_what_a_cut_stream_already_cost(
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
-        mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=9)),
+        mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=9)),
         pytest.raises(Exception),
     ):
         provider.call(
@@ -105,7 +105,7 @@ def test_anthropic_cut_stream_keeps_message_start_output_usage() -> None:
     budget = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
-        mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=6)),
+        mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=6)),
         pytest.raises(Exception),
     ):
         provider.call(
@@ -142,7 +142,7 @@ def test_openai_records_a_cut_stream_and_keeps_the_cached_split() -> None:
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
     with (
-        mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=6)),
+        mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=6)),
         pytest.raises(Exception),
     ):
         provider.call(
@@ -166,7 +166,7 @@ def test_a_stream_that_reported_nothing_records_nothing() -> None:
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
-        mock.patch("agent6.providers._stream.http_stream", return_value=_cut(lines, at=1)),
+        mock.patch("agent6.providers.stream_lifecycle.http_stream", return_value=_cut(lines, at=1)),
         pytest.raises(Exception),
     ):
         provider.call(
@@ -201,7 +201,7 @@ def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
     A gateway with usage tracking off completes with zero input tokens; the billed output tokens are
     recorded before the retryable refusal.
     """
-    from agent6.providers import types
+    from agent6.providers import provider_types
 
     _pricing(tmp_path, monkeypatch)
     lines = _sse(
@@ -231,10 +231,10 @@ def test_anthropic_records_a_completed_stream_its_meter_guard_refuses(
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch(
-            "agent6.providers._stream.http_stream",
+            "agent6.providers.stream_lifecycle.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
-        pytest.raises(types.ProviderError, match="no usage input tokens"),
+        pytest.raises(provider_types.ProviderError, match="no usage input tokens"),
     ):
         provider.call(
             system="s",
@@ -252,7 +252,7 @@ def test_openai_records_a_completed_stream_its_meter_guard_refuses(
 
     A [DONE] stream whose usage trailer says prompt_tokens 0 still books its completion tokens.
     """
-    from agent6.providers import types
+    from agent6.providers import provider_types
 
     _pricing(tmp_path, monkeypatch)
     lines = [
@@ -270,10 +270,10 @@ def test_openai_records_a_completed_stream_its_meter_guard_refuses(
     provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
     with (
         mock.patch(
-            "agent6.providers._stream.http_stream",
+            "agent6.providers.stream_lifecycle.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
-        pytest.raises(types.ProviderError, match="no usage input tokens"),
+        pytest.raises(provider_types.ProviderError, match="no usage input tokens"),
     ):
         provider.call(
             system="s",
@@ -317,7 +317,7 @@ def test_anthropic_meters_a_completed_stream_once(
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with mock.patch(
-        "agent6.providers._stream.http_stream",
+        "agent6.providers.stream_lifecycle.http_stream",
         return_value=FakeStreamResponse(status_code=200, lines=lines),
     ):
         provider.call(
@@ -349,7 +349,7 @@ def test_anthropic_records_a_completed_malformed_stream() -> None:
     provider = AnthropicProvider(api_key="k", model="claude-sonnet-4-5", budget=budget)
     with (
         mock.patch(
-            "agent6.providers._stream.http_stream",
+            "agent6.providers.stream_lifecycle.http_stream",
             return_value=FakeStreamResponse(status_code=200, lines=lines),
         ),
         pytest.raises(ProviderError, match="duplicate"),
@@ -382,7 +382,7 @@ def test_openai_meters_a_completed_stream_once(
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     provider = OpenAIProvider(api_key="k", model="gpt-4o", budget=budget)
     with mock.patch(
-        "agent6.providers._stream.http_stream",
+        "agent6.providers.stream_lifecycle.http_stream",
         return_value=FakeStreamResponse(status_code=200, lines=lines),
     ):
         provider.call(

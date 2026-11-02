@@ -24,11 +24,11 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from agent6 import errors, kinds, paths, portable
-from agent6.app import _setup, _workdirs, fork_worktrees, resume, stamps, workspace_setup
+from agent6.app import fork_worktrees, resume, session_setup, stamps, workdirs, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
-from agent6.harness import _snapshot
+from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
 from agent6.sessions import id, layout
 from agent6.sessions import manifest as sessions_manifest
@@ -233,7 +233,7 @@ def _plan_fork(
     at_turn: int | None = None,
     new_session_id: str = "",
     cwd: pathlib.Path,
-    sandbox_overrides: _setup.SandboxOverrides | None = None,
+    sandbox_overrides: session_setup.SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> _ForkPlan:
@@ -270,7 +270,7 @@ def _plan_fork(
         raise _ForkRefusedError(2)
 
     try:
-        checkpoint = _snapshot.load_session_snapshot(checkpoint_path)
+        checkpoint = loop_snapshot.load_session_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
         reporter.error(f"failed to load checkpoint {checkpoint_path}: {exc}")
         raise _ForkRefusedError(1) from exc
@@ -301,7 +301,7 @@ def _plan_fork(
         route = (
             kinds.ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         )
-        cfg = _setup.session_config(
+        cfg = session_setup.session_config(
             cfg.with_model_route(kinds.session_kind(src_mode).role, route) if route else cfg,
             src_mode,
             sandbox_overrides,
@@ -370,7 +370,7 @@ def create_fork(
     at_turn: int | None = None,
     new_session_id: str = "",
     cwd: pathlib.Path,
-    sandbox_overrides: _setup.SandboxOverrides | None = None,
+    sandbox_overrides: session_setup.SandboxOverrides | None = None,
     refuse_continuation: Callable[[Config, str], str | None] | None = None,
     worktree: bool = True,
     checkout: fork_worktrees.Checkout | None = None,
@@ -436,7 +436,7 @@ def create_fork(
         reporter.refuse(gate_refusal)
         return "", 2
     if added:
-        path = _workdirs.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
+        path = workdirs.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
             checkout = fork_worktrees.add_session_worktree(cwd, path, plan.forked_from_sha)
         except errors.GitError as exc:
@@ -523,7 +523,7 @@ def _materialize_fork(
         forked_from_sha=plan.forked_from_sha,
         gate=plan.gate,
         budget=plan.budget,
-        isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, _setup.detect_env()),
+        isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, session_setup.detect_env()),
         worktree=checkout.worktree if checkout is not None else None,
         worktree_git_dir=checkout.git_dir if checkout is not None else None,
         workspace_set_up=checkout.set_up if checkout is not None else False,

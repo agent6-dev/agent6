@@ -18,7 +18,7 @@ import re
 from importlib import resources
 from typing import get_args
 
-from agent6.ui.cli import _console_view  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import console_render  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.tui import conversation  # pyright: ignore[reportPrivateUsage]
 from agent6.viewmodel import transcript_style
 
@@ -30,7 +30,7 @@ UNSTYLED = frozenset(name for name, style in conversation._STYLE_RICH.items() if
 def test_the_terminals_cover_the_vocabulary_exactly() -> None:
     """Both maps are indexed while rendering, so a missing name is a KeyError mid-transcript."""
     assert frozenset(conversation._STYLE_RICH) == NAMES
-    assert frozenset(_console_view._STYLE_ANSI) == NAMES
+    assert frozenset(console_render._STYLE_ANSI) == NAMES
 
 
 def test_the_web_styles_every_name_the_terminals_colour() -> None:
@@ -43,7 +43,7 @@ def test_the_web_styles_every_name_the_terminals_colour() -> None:
 
 def test_the_unstyled_names_are_the_same_two_everywhere() -> None:
     assert (
-        frozenset(name for name, style in _console_view._STYLE_ANSI.items() if not style)
+        frozenset(name for name, style in console_render._STYLE_ANSI.items() if not style)
         == UNSTYLED
     )
     assert frozenset({"text", "body"}) == UNSTYLED
@@ -54,13 +54,13 @@ def test_every_status_level_reaches_every_surface() -> None:
 
     `neutral` is plain by design, so it carries no pill.
     """
-    from agent6.ui.cli import _common  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import common  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.tui import theme
     from agent6.viewmodel import format
 
     levels = frozenset(get_args(format.StatusLevel))
     assert frozenset(format.STATUS_LEVEL.values()) <= levels
-    assert frozenset(_common._LEVEL_SGR) == levels
+    assert frozenset(common._LEVEL_SGR) == levels
     assert frozenset(theme.STATUS_LEVEL_STYLE) == levels
 
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")

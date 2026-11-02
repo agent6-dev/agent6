@@ -10,7 +10,7 @@ import pytest
 
 from agent6 import providers as provider_api
 from agent6 import review_records
-from agent6.app import providers, review_actions
+from agent6.app import review_actions, role_providers
 from agent6.sessions import ipc
 from agent6.ui.cli import main
 from tests import review_helpers
@@ -71,7 +71,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
 
     worker = mock.Mock()
     worker.call.side_effect = call
-    monkeypatch.setattr(providers, "build_role_provider", mock.Mock(return_value=worker))
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=worker))
     assert main(["--config", str(config), "run", "--session-id", "review-run", "task"]) == 130
     assert len(calls) == 2
     assert "Review finding f1" in json.dumps(calls[1], default=str)

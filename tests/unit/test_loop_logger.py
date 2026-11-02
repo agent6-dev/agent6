@@ -14,7 +14,7 @@ import sys
 
 import pytest
 
-from agent6.ui.cli import _console_view, _live
+from agent6.ui.cli import console_render, live
 
 
 def _drive(mode: str, stream: str) -> bool:
@@ -25,7 +25,7 @@ def _drive(mode: str, stream: str) -> bool:
     """
     code = (
         "import time\n"
-        "from agent6.ui.cli._live import loop_logger\n"
+        "from agent6.ui.cli.live import loop_logger\n"
         f"lg = loop_logger({mode!r}, None)\n"
         "lg('[agent6] LOOP: LOAD_CONTEXT')\n"
         "time.sleep(3)\n"
@@ -64,7 +64,7 @@ def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) 
     """
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
     out = io.StringIO()
-    log = _live.loop_logger("run", _console_view.ConsoleView(out, color=False))
+    log = live.loop_logger("run", console_render.ConsoleView(out, color=False))
     log("[agent6] LOOP: LOAD_CONTEXT")
     log("compaction: dropped 3 old tool results")
     log("compaction thresholds: drop at 471,859 chars, summarise at 983,040 [adaptive]")
@@ -78,6 +78,6 @@ def test_live_console_drops_the_loop_narration(monkeypatch: pytest.MonkeyPatch) 
     assert out.getvalue().strip() == "[agent6] verify adopted from verify.sh: ./verify.sh"
     monkeypatch.setenv("AGENT6_DEBUG", "1")
     out = io.StringIO()
-    log = _live.loop_logger("run", _console_view.ConsoleView(out, color=False))
+    log = live.loop_logger("run", console_render.ConsoleView(out, color=False))
     log("compaction thresholds: drop at 1 chars, summarise at 2 [fixed]")
     assert "compaction thresholds" in out.getvalue()

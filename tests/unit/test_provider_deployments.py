@@ -15,7 +15,7 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6.providers import anthropic, openai, types, wire
+from agent6.providers import anthropic, openai, provider_types, wire
 
 _VERTEX_ANTHROPIC = (
     "https://us-east5-aiplatform.googleapis.com/v1/projects/p/locations/us-east5"
@@ -61,7 +61,7 @@ def _openai_ok() -> httpx2.Response:
 def test_anthropic_direct_wire() -> None:
     p = anthropic.AnthropicProvider(api_key="sk-ant", model="claude-x")  # deployment/auth default
     captured, fake = _capture(_anthropic_ok())
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == "https://api.anthropic.com/v1/messages"
     assert captured["headers"]["x-api-key"] == "sk-ant"
@@ -81,7 +81,7 @@ def test_anthropic_vertex_wire() -> None:
         auth_style="bearer",
     )
     captured, fake = _capture(_anthropic_ok())
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == f"{_VERTEX_ANTHROPIC}/claude-opus-4-8:rawPredict"
     assert captured["headers"]["authorization"] == "Bearer ya29.tok"
@@ -93,7 +93,7 @@ def test_anthropic_vertex_wire() -> None:
 def test_openai_direct_wire() -> None:
     p = openai.OpenAIProvider(api_key="sk-oai", model="gpt-x")  # bearer default
     captured, fake = _capture(_openai_ok())
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == "https://api.openai.com/v1/chat/completions"
     assert captured["headers"]["authorization"] == "Bearer sk-oai"
@@ -111,7 +111,7 @@ def test_openai_azure_wire() -> None:
         extra_query={"api-version": "2024-06-01"},
     )
     captured, fake = _capture(_openai_ok())
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert captured["url"] == (
         "https://res.openai.azure.com/openai/deployments/my-deployment"
@@ -127,14 +127,14 @@ def test_openai_none_auth_sends_no_auth_header() -> None:
         api_key="", model="local", base_url="http://localhost:1234/v1", auth_style="none"
     )
     captured, fake = _capture(_openai_ok())
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     assert "authorization" not in captured["headers"]
     assert "api-key" not in captured["headers"]
 
 
 def test_api_key_header_is_redacted_in_transcripts() -> None:
-    redacted = types._redact_headers(
+    redacted = provider_types._redact_headers(
         {"api-key": "secret", "x-api-key": "s2", "content-type": "json"}
     )
     assert redacted["api-key"] == "<REDACTED>"
@@ -160,7 +160,7 @@ def test_auth_header_refuses_a_credential_that_is_not_header_safe(bad: str) -> N
     transcript. The refusal names the fault but never the value.
     """
     for style in ("bearer", "x_api_key", "api_key_header"):
-        with pytest.raises(types.ProviderError) as excinfo:
+        with pytest.raises(provider_types.ProviderError) as excinfo:
             wire.auth_header(style, bad)  # type: ignore[arg-type]
         # The secret must not leak into the error text (nor its distinctive bits).
         msg = str(excinfo.value)
@@ -182,10 +182,10 @@ def test_a_bad_credential_never_reaches_the_http_client() -> None:
     p = openai.OpenAIProvider(api_key="sk-live\r\nX-Injected: 1", model="gpt-x")
     with (
         mock.patch(
-            "agent6.providers._transport.http_post",
+            "agent6.providers.transport.http_post",
             side_effect=AssertionError("must not be called"),
         ),
-        pytest.raises(types.ProviderError),
+        pytest.raises(provider_types.ProviderError),
     ):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
 
@@ -234,7 +234,7 @@ def test_anthropic_extra_body_cannot_replace_the_structural_request_shape() -> N
         },
     )
     captured, fake = _capture(_anthropic_ok())
-    with mock.patch("agent6.providers._transport.http_post", side_effect=fake):
+    with mock.patch("agent6.providers.transport.http_post", side_effect=fake):
         p.call(system="s", messages=[{"role": "user", "content": "q"}])
     body = captured["body"]
     assert body["max_tokens"] == 7

@@ -22,22 +22,22 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, kinds, pack, paths
-from agent6.app import _execution, _session, _setup
+from agent6 import kinds, pack, paths
+from agent6.app import execution, session_parts, session_setup
 from agent6.app import fork as app_fork
 from agent6.app import resume as app_resume
 from agent6.config import Config, RoleModel
 from agent6.graph import storage
 from agent6.harness import (
-    _chain,
-    _conversation,
-    _loop_resume,
-    _loop_state,
-    _snapshot,
-    _toolset,
     loop,
+    loop_conversation,
+    loop_resume,
+    loop_snapshot,
+    loop_state,
+    run_chain,
+    toolset,
 )
-from agent6.sessions import ipc
+from agent6.sessions import event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import operator_prompts
 from agent6.ui.cli import (
@@ -77,7 +77,7 @@ def _wf(
     **kw: Any,
 ) -> loop.Harness:
     defaults: dict[str, Any] = {
-        "chain": _chain.RunChain(
+        "chain": run_chain.RunChain(
             root or pathlib.Path("/tmp"),
             ref=ref,
             branch=branch,
@@ -139,19 +139,19 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_i
         ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
 
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
-    conversation = _conversation.Conversation()
+    conversation = loop_conversation.Conversation()
     if with_image:
         assistant = conversation.assistant(
             [{"type": "tool_use", "id": "i1", "name": "read_file", "input": {"path": "page.png"}}]
         )
         image = kinds.MediaAttachment(b"private pixels", "image/png", "page.png")
         conversation.results(
-            [_conversation.ToolResultItem("i1", image.summary(), assistant.tool_uses[0], image)]
+            [loop_conversation.ToolResultItem("i1", image.summary(), assistant.tool_uses[0], image)]
         )
-    _loop_resume.save_resume_snapshot(
+    loop_resume.save_resume_snapshot(
         wf, state, conversation.to_wire(), next_turn=3, write_checkpoint=True
     )
 
@@ -160,16 +160,16 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_i
     assert snap.is_file()
     assert cp.is_file(), "per-turn checkpoint must be written"
 
-    loaded = _snapshot.load_session_snapshot(cp)
+    loaded = loop_snapshot.load_session_snapshot(cp)
     if with_image:
         for path in (snap, cp):
             text = path.read_text()
             assert "cHJpdmF0ZSBwaXhlbHM=" not in text
             assert "payload_omitted" in text and "page.png" in text
-        restored = _conversation.Conversation.from_wire(loaded.messages)
+        restored = loop_conversation.Conversation.from_wire(loaded.messages)
         last = restored.messages[-1]
-        assert isinstance(last, _conversation.UserMessage)
-        assert isinstance(last.items[0], _conversation.ToolResultItem)
+        assert isinstance(last, loop_conversation.UserMessage)
+        assert isinstance(last.items[0], loop_conversation.ToolResultItem)
         assert last.items[0].attachment is None
         assert "read_file" in last.items[0].content
     assert loaded.next_turn == 3
@@ -204,10 +204,10 @@ def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
         ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     for turn in (1, 2, 3):
         state.system, state.tool_calls, state.root_task_id = "s", 0, None
-        _loop_resume.save_resume_snapshot(
+        loop_resume.save_resume_snapshot(
             wf,
             state,
             [{"role": "user", "content": f"turn {turn}"}],
@@ -217,7 +217,9 @@ def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
     cp_dir = session_dir / "checkpoints"
     assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0001.json", "0002.json", "0003.json"]
     # Turn 1's payload was not clobbered by later turns.
-    assert _snapshot.load_session_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
+    assert (
+        loop_snapshot.load_session_snapshot(cp_dir / "0001.json").messages[0]["content"] == "turn 1"
+    )
 
 
 def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib.Path) -> None:
@@ -248,11 +250,11 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
         ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
 
     def save(content: str, turn: int, *, checkpoint: bool) -> None:
         state.system, state.tool_calls, state.root_task_id = "s", 0, None
-        _loop_resume.save_resume_snapshot(
+        loop_resume.save_resume_snapshot(
             wf,
             state,
             [{"role": "user", "content": content}],
@@ -269,11 +271,13 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
     assert sorted(p.name for p in cp_dir.glob("*.json")) == ["0002.json", "0003.json"]
     # The checkpoint holds what turn 3's call consumed, not a later overwrite.
     assert (
-        _snapshot.load_session_snapshot(cp_dir / "0003.json").messages[0]["content"]
+        loop_snapshot.load_session_snapshot(cp_dir / "0003.json").messages[0]["content"]
         == "pre-call of turn 3"
     )
     # Every save advanced the pointer.
-    assert _snapshot.load_session_snapshot(snap).messages[0]["content"] == "after turn 3's tools"
+    assert (
+        loop_snapshot.load_session_snapshot(snap).messages[0]["content"] == "after turn 3's tools"
+    )
 
 
 def test_list_checkpoint_turns_empty_for_old_run(tmp_path: pathlib.Path) -> None:
@@ -289,16 +293,16 @@ def test_load_run_snapshot_rejects_malformed_shapes(tmp_path: pathlib.Path) -> N
     for bad in ("null", "[]", '"x"'):
         cp.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="expected a JSON object"):
-            _snapshot.load_session_snapshot(cp)
+            loop_snapshot.load_session_snapshot(cp)
     cp.write_text(
-        json.dumps({"version": _snapshot.SNAPSHOT_VERSION}), encoding="utf-8"
+        json.dumps({"version": loop_snapshot.SNAPSHOT_VERSION}), encoding="utf-8"
     )  # missing required keys
     with pytest.raises(ValueError, match="malformed run-state snapshot"):
-        _snapshot.load_session_snapshot(cp)
+        loop_snapshot.load_session_snapshot(cp)
     # A torn file is the likeliest corruption, and its refusal named neither the run nor the file.
     cp.write_text('{"messages": [{"role":', encoding="utf-8")
     with pytest.raises(ValueError, match=r"unreadable run-state snapshot at .*0001\.json"):
-        _snapshot.load_session_snapshot(cp)
+        loop_snapshot.load_session_snapshot(cp)
 
 
 # --- fork command -----------------------------------------------------------
@@ -369,7 +373,7 @@ def _seed_source_run(
     _seed_graph(layout)
     for turn in turns:
         payload = {
-            "version": _snapshot.SNAPSHOT_VERSION,
+            "version": loop_snapshot.SNAPSHOT_VERSION,
             "system": "sys",
             "messages": [{"role": "user", "content": f"turn {turn}"}],
             "tool_calls": 0,
@@ -425,7 +429,7 @@ def test_transferred_session_resolves_in_the_new_checkout(
         seen.append(repo)
         raise ConfigError("relocation probe stops before provider setup")
 
-    monkeypatch.setattr(_setup, "load_session_config", stop_before_provider)
+    monkeypatch.setattr(session_setup, "load_session_config", stop_before_provider)
     assert entry.cli_main(["--allow-root", "resume", "travel-AAAAAA"]) == 2
     assert seen == [destination]
     assert "relocation probe stops" in capsys.readouterr().err
@@ -716,7 +720,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     # A parent's baseline describes another base; the fork starts with no log verdict.
     assert not dst.logs_path.exists()
     # loop_state.json + seed checkpoint 0000.json carry the latest (turn 3) state.
-    seed = _snapshot.load_session_snapshot(dst.checkpoint_path(0))
+    seed = loop_snapshot.load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "turn 3"
     assert (dst.session_dir / "loop_state.json").is_file()
     # DAG rebuilt at graph_version 3: both nodes, the child passed, the journal prefix behind it.
@@ -777,7 +781,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
     state = paths.state_dir(repo)
     src = _seed_source_run(state, "src-AAAA11", head_sha=head, turns=(1, 2))
     latest_payload = {
-        "version": _snapshot.SNAPSHOT_VERSION,
+        "version": loop_snapshot.SNAPSHOT_VERSION,
         "system": "sys",
         "messages": [{"role": "user", "content": "turn 3 from loop_state"}],
         "tool_calls": 0,
@@ -796,7 +800,7 @@ def test_latest_fork_uses_loop_state_when_checkpoint_is_missing(
 
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
-    assert _snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
+    assert loop_snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == (
         "turn 3 from loop_state"
     )
 
@@ -822,7 +826,8 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     assert (
-        _snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+        loop_snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"]
+        == "turn 2"
     )
 
 
@@ -840,7 +845,8 @@ def test_fork_at_turn_selects_that_checkpoint(
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="kid-CCCC33")
     assert (
-        _snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"] == "turn 2"
+        loop_snapshot.load_session_snapshot(dst.checkpoint_path(0)).messages[0]["content"]
+        == "turn 2"
     )
     assert json.loads(dst.manifest_path.read_text(encoding="utf-8"))["forked_from_turn"] == 2
 
@@ -885,7 +891,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     layout.session_dir.joinpath("loop_state.json").write_text(
         json.dumps(
             {
-                "version": _snapshot.SNAPSHOT_VERSION,
+                "version": loop_snapshot.SNAPSHOT_VERSION,
                 "system": "s",
                 "messages": [{"role": "user", "content": "rolling"}],
                 "tool_calls": 0,
@@ -906,7 +912,7 @@ def test_fork_at_turn_refuses_without_checkpoint_store(
     rc = fork._cmd_fork((), "bare-run", new_session_id="fresh-FFFF66", no_run=True)
     assert rc == 0
     dst = sessions_layout.SessionLayout(state_dir=state, session_id="fresh-FFFF66")
-    seed = _snapshot.load_session_snapshot(dst.checkpoint_path(0))
+    seed = loop_snapshot.load_session_snapshot(dst.checkpoint_path(0))
     assert seed.messages[0]["content"] == "rolling"
     assert seed.next_turn == 4
 
@@ -960,7 +966,7 @@ def test_fork_continue_resumes_without_force(
         (),
         "src",
         new_session_id="child-BBBB22",
-        sandbox_overrides=_setup.SandboxOverrides(auto_approve=True),
+        sandbox_overrides=session_setup.SandboxOverrides(auto_approve=True),
     )
     assert rc == 0
     assert captured["force"] is False
@@ -1407,7 +1413,7 @@ def test_a_forks_findings_description_names_the_child_session(
     assert fork._cmd_fork((), "src", at_turn=1, new_session_id="child-BBBB22", no_run=True) == 0
     child = sessions_layout.SessionLayout(state_dir=state, session_id="child-BBBB22")
     manifest = json.loads(child.manifest_path.read_text(encoding="utf-8"))
-    tools = _session.build_session_tools(
+    tools = session_parts.build_session_tools(
         Config(),
         cwd=pathlib.Path(manifest["worktree"]),
         state_dir=state,
@@ -1420,7 +1426,7 @@ def test_a_forks_findings_description_names_the_child_session(
         mcp_manager=None,
         rm_role=RoleModel(provider="openrouter", model="m"),
     )
-    definitions = {tool.name: tool for tool in _toolset.tool_definitions(tools.dispatcher)}
+    definitions = {tool.name: tool for tool in toolset.tool_definitions(tools.dispatcher)}
     description = definitions["list_findings"].description
     assert "`agent6 steer child-BBBB22 --finding <id>`" in description
     assert "`agent6 sessions resolve child-BBBB22 <id>`" in description
@@ -1458,7 +1464,7 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
 
     The process cwd stays the repo: its state dir and config are the repo's.
     """
-    from agent6.app import _execution
+    from agent6.app import execution
     from agent6.app import resume as resume_mod
 
     paths.global_config_dir().mkdir(parents=True, exist_ok=True)
@@ -1479,12 +1485,12 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     seen: dict[str, Any] = {}
 
     def _fake_execution(
-        cfg: Any, layout: Any, inputs: _execution.ExecutionInputs, **kw: Any
-    ) -> _execution.ExecutionEnd:
+        cfg: Any, layout: Any, inputs: execution.ExecutionInputs, **kw: Any
+    ) -> execution.ExecutionEnd:
         seen["cwd"] = kw["cwd"]
         seen["state_dir"] = kw["state_dir"]
         seen["process_cwd"] = pathlib.Path.cwd()
-        return _execution.ExecutionEnd(0)
+        return execution.ExecutionEnd(0)
 
     def _no_missing(_cfg: object) -> None:
         return None
@@ -1492,9 +1498,9 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     def _full(*_a: object, **_k: object) -> str:
         return "full"
 
-    monkeypatch.setattr(_execution, "run_execution", _fake_execution)
-    monkeypatch.setattr(_setup, "check_provider_keys", _no_missing)
-    monkeypatch.setattr(_session, "select_isolation", _full)
+    monkeypatch.setattr(execution, "run_execution", _fake_execution)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _no_missing)
+    monkeypatch.setattr(session_parts, "select_isolation", _full)
     rc = resume_mod.resume_task(
         (), "child-BBBB22", started_at=time.time(), frontend=mock.MagicMock(), force=False
     )
@@ -1609,7 +1615,7 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
 
     A resume runs past every refusal without a provider call.
     """
-    from agent6.app import _execution
+    from agent6.app import execution
 
     gdir = paths.global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
@@ -1626,12 +1632,12 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     def _nothing(*_a: object, **_k: object) -> None:
         return None
 
-    def _finished_execution(*_a: object, **_k: object) -> _execution.ExecutionEnd:
-        return _execution.ExecutionEnd(0)
+    def _finished_execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
+        return execution.ExecutionEnd(0)
 
-    monkeypatch.setattr(_session, "select_isolation", _unconfined)
-    monkeypatch.setattr(_setup, "check_provider_keys", _nothing)
-    monkeypatch.setattr(_execution, "run_execution", _finished_execution)
+    monkeypatch.setattr(session_parts, "select_isolation", _unconfined)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)
+    monkeypatch.setattr(execution, "run_execution", _finished_execution)
 
 
 def test_a_steered_fork_takes_the_steer_as_its_own_task(
@@ -1838,7 +1844,7 @@ def test_a_fork_from_a_forks_seed_says_so(
     _seed_source_run(state, "source11", head_sha=head, turns=(4,))
     assert main(["fork", "source11", "--at-turn", "4", "--no-run", "--session-id", "parent11"]) == 0
     parent = sessions_layout.SessionLayout(state_dir=state, session_id="parent11")
-    seeded = _snapshot.load_session_snapshot(parent.checkpoint_path(0))
+    seeded = loop_snapshot.load_session_snapshot(parent.checkpoint_path(0))
     steered = seeded.model_copy(
         update={"messages": [*seeded.messages, {"role": "user", "content": "another approach"}]}
     )
@@ -1854,7 +1860,7 @@ def test_a_fork_from_a_forks_seed_says_so(
     line = next(ln for ln in said.splitlines() if "forked parent11@turn 4" in ln)
     assert ("(the seed parent11 started from)" in line) is seed
     child = sessions_layout.SessionLayout(state_dir=state, session_id="child11")
-    copied = _snapshot.load_session_snapshot(child.session_dir / "loop_state.json")
+    copied = loop_snapshot.load_session_snapshot(child.session_dir / "loop_state.json")
     assert copied.messages == (seeded.messages if seed else steered.messages)
     manifest = json.loads(child.manifest_path.read_text(encoding="utf-8"))
     assert manifest["forked_from_turn"] == 4

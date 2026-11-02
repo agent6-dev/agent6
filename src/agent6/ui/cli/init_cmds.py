@@ -9,7 +9,7 @@ import sys
 
 from agent6 import errors, paths
 from agent6.config import Config, ConfigError, layer
-from agent6.ui.cli import _common, init
+from agent6.ui.cli import common, init_wizard
 from agent6.vcs import git_ops, git_read
 
 _SCAFFOLD_COMMIT_MESSAGE = "chore: scaffold agent6 config"
@@ -66,7 +66,9 @@ def _offer_git_setup(
         else:
             print("  Run: git init, then review and commit the files you want tracked.")
         return
-    if not init._ask("This directory is not a git repository. Initialise one now?", default=True):
+    if not init_wizard._ask(
+        "This directory is not a git repository. Initialise one now?", default=True
+    ):
         print("  Skipped. `agent6 run` needs a repo; run `git init` here first.")
         return
     try:
@@ -79,7 +81,7 @@ def _offer_git_setup(
     if not rel:
         print("  (nothing to commit; the created files are all gitignored)")
         return
-    if not init._ask("Commit the files agent6 just created?", default=True):
+    if not init_wizard._ask("Commit the files agent6 just created?", default=True):
         print(f"  Not committed. When ready: git add {' '.join(rel)} && git commit")
         return
     try:
@@ -115,7 +117,7 @@ def _offer_scaffold_commit(
         return
     manual = f"git add {' '.join(rel)} && git commit -m '{_SCAFFOLD_COMMIT_MESSAGE}'"
     print()
-    if interactive and not init._ask(
+    if interactive and not init_wizard._ask(
         "Commit the agent6 scaffold now (`agent6 run` needs a clean tree)?", default=True
     ):
         print(f"  Not committed. Before `agent6 run`: {manual}")
@@ -174,7 +176,7 @@ def _cmd_init(
     target = paths.repo_config_path(cwd)
     if not assume_yes and not sys.stdin.isatty():
         # Consent to write files comes from a TTY or --yes.
-        _common.error("no input. stdin is not a TTY; re-run with --yes to accept every default.")
+        common.error("no input. stdin is not a TTY; re-run with --yes to accept every default.")
         return 2
     interactive = not assume_yes
     # A scaffold path init leaves untouched is the operator's: excluded from the commit, reported.
@@ -188,7 +190,7 @@ def _cmd_init(
         theirs = tuple(p for p in scaffold_all if p.exists())
     try:
         try:
-            rc = init.init_workspace(
+            rc = init_wizard.init_workspace(
                 cwd,
                 ecosystem=ecosystem,
                 repo_config_target=target,

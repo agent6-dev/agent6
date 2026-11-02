@@ -997,9 +997,9 @@ def test_sse_run_emits_the_last_delta_of_a_burst(
 
     Skipped, the last delta of a burst reached the page only with the next event.
     """
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse_mod, "DELTA_COALESCE_S", 2.0)
+    monkeypatch.setattr(sse, "DELTA_COALESCE_S", 2.0)
     _srv, port = server
     _make_run(
         tmp_path,
@@ -1217,12 +1217,12 @@ def test_sse_run_closes_even_if_tailer_dies(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The tail thread always enqueues its None sentinel, so a raise there closes the stream.
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
     def _boom(*_a: object, **_k: object) -> object:
         raise RuntimeError("tailer died")
 
-    monkeypatch.setattr(sse_mod, "tail_events", _boom)
+    monkeypatch.setattr(sse, "tail_events", _boom)
     _srv, port = server
     _make_run(tmp_path, "dead-tail", [{"type": "session.start", "user_task": "x"}])
     conn = signin.SignedIn(port, timeout=5)
@@ -1247,9 +1247,9 @@ def test_sse_run_dead_worker_frame_is_terminal(
     The frame carries `stream_dead=True` and `status_label="stale"`; `finished` stays False, so
     the client closes on either signal and never reconnects forever over a dead run.
     """
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
     _make_run(
         tmp_path,
         "dead-worker",
@@ -1282,9 +1282,9 @@ def test_sse_run_pidless_stale_frame_is_terminal(
 
     The dir decision already calls a pid-less run silent past its window stale.
     """
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
     _make_run(
         tmp_path,
         "pidless-stale",
@@ -1334,9 +1334,9 @@ def test_sse_run_created_frame_is_terminal(
 
     The close asks died_without_end, and the terminal frame keeps the truthful label.
     """
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "created-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")  # no events, no pid
@@ -1377,9 +1377,9 @@ def test_sse_run_parked_keeps_streaming(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A parked run's stream stays open: a resumed submission logs into this same stream."""
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse_mod, "HEARTBEAT_S", 0.2)
+    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.2)
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "parked-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
@@ -1420,9 +1420,9 @@ def test_sse_machine_frame_carries_the_idle_age(
 
     Anchored to the frame's arrival, a state wedged for forty minutes read as seconds of work.
     """
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
+    monkeypatch.setattr(sse, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
@@ -1468,9 +1468,9 @@ def test_sse_machine_stream_spans_a_stop_and_its_resume(
     the tab reconnect every few seconds, each retry a fresh fold and a flap of the front-end
     claim. `ended` stays reserved for a durable MachineEnd.
     """
-    from agent6.ui.web import _sse as sse_mod
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(sse_mod, "MACHINE_POLL_S", 0.05)
+    monkeypatch.setattr(sse, "MACHINE_POLL_S", 0.05)
     monkeypatch.chdir(tmp_path)
     (tmp_path / "tiny.asm.toml").write_text(TINY, encoding="utf-8")
     assert main(["machine", "run", str(tmp_path / "tiny.asm.toml")]) == 0
@@ -1953,7 +1953,7 @@ def test_bare_diff_returns_the_latest_commit(
     cumulative: bool,
 ) -> None:
     """Bare run and draft diff routes select their last journaled commit, including cumulative."""
-    from agent6.app import _workdirs
+    from agent6.app import workdirs
     from agent6.config import layer
 
     _srv, port = server
@@ -1961,7 +1961,7 @@ def test_bare_diff_returns_the_latest_commit(
     sid = "latest-run"
     if draft:
         cfg = layer.load_effective(tmp_path, ()).config
-        workspace = _workdirs.subordinate_workdir_root(cfg, tmp_path, sid)
+        workspace = workdirs.subordinate_workdir_root(cfg, tmp_path, sid)
         workspace.mkdir(parents=True)
         base, c1, c2 = _git_chain(workspace)
     bucket = "machines" if draft else "runs"
@@ -2091,7 +2091,7 @@ def test_prune_route_passes_the_squash_opt_in_through(
 def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: pathlib.Path) -> None:
     """The run stream's frames stamp `shells`, so the Background shells card survives them."""
     from agent6.tools import background
-    from agent6.ui.web import _sse as web__sse
+    from agent6.ui.web import sse
 
     d = tmp_path / "sessions" / "runs" / "shellrun-AAAAAA"
     d.mkdir(parents=True)
@@ -2116,7 +2116,7 @@ def test_the_first_stream_frame_carries_the_shell_roster(tmp_path: pathlib.Path)
         frames.append(cast(dict[str, Any], payload))
         return False  # one frame, then the client leaves
 
-    web__sse.stream_session(web__sse.SseChannel(send=send, ping=lambda: False), d, repo=tmp_path)
+    sse.stream_session(sse.SseChannel(send=send, ping=lambda: False), d, repo=tmp_path)
 
     assert frames and frames[0].get("shells") == [
         "[bg1] still running (or the run that owns it ended): python -m http.server"
@@ -2130,9 +2130,9 @@ def test_idle_session_frames_only_follow_changed_state(
 ) -> None:
     """Two idle heartbeats send nothing unchanged, or one frame per shell result change."""
     from agent6.tools import background
-    from agent6.ui.web import _sse
+    from agent6.ui.web import sse
 
-    monkeypatch.setattr(_sse, "HEARTBEAT_S", 0.02)
+    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.02)
     sid = "idle-shells"
     _make_run(
         tmp_path,
@@ -2162,7 +2162,7 @@ def test_idle_session_frames_only_follow_changed_state(
             )
         return True
 
-    _sse.stream_session(_sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
+    sse.stream_session(sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
 
     assert "last_event_age_s" in frames[0][1]
     assert [beat for beat, _ in frames] == ([0, 1, 2] if changed else [0])
@@ -2178,10 +2178,10 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
 ) -> None:
     """Shell cleanup after session.end reaches the page without another log event."""
     from agent6.tools import background
-    from agent6.ui.web import _sse
+    from agent6.ui.web import sse
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(_sse, "HEARTBEAT_S", 0.05)
+    monkeypatch.setattr(sse, "HEARTBEAT_S", 0.05)
     sid = "shell-cleanup"
     _make_run(
         tmp_path,
@@ -2223,8 +2223,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
     import threading
 
     from agent6.sessions import layout as sessions_layout
-    from agent6.ui.web import _sse
-    from agent6.ui.web import _sse as web__sse
+    from agent6.ui.web import sse
 
     monkeypatch_heartbeat = 0.05
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / "mergerun-AAAAAA"
@@ -2272,12 +2271,12 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
         pings["n"] += 1
         return pings["n"] < 40  # bounded: without the fix no frame ever closes the stream
 
-    orig = _sse.HEARTBEAT_S
-    _sse.HEARTBEAT_S = monkeypatch_heartbeat
+    orig = sse.HEARTBEAT_S
+    sse.HEARTBEAT_S = monkeypatch_heartbeat
     try:
-        web__sse.stream_session(web__sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
+        sse.stream_session(sse.SseChannel(send=send, ping=ping), d, repo=tmp_path)
     finally:
-        _sse.HEARTBEAT_S = orig
+        sse.HEARTBEAT_S = orig
 
     assert any(f.get("merged_into") == "master" for f in frames), (
         "a merge landing after session.end must reach the open stream"
@@ -2371,7 +2370,7 @@ def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
 
     A header error would otherwise leave that daemon following the file forever.
     """
-    from agent6.ui.web import _sse
+    from agent6.ui.web import sse
 
     started: list[bool] = []
 
@@ -2387,13 +2386,13 @@ def test_a_stream_header_error_does_not_start_an_orphaned_tailer(
 
     # The module's own binding: patching `threading.Thread` would replace every other thread too.
     monkeypatch.setattr(
-        _sse, "threading", types.SimpleNamespace(Thread=FakeThread, Event=threading.Event)
+        sse, "threading", types.SimpleNamespace(Thread=FakeThread, Event=threading.Event)
     )
-    monkeypatch.setattr(_sse, "manifest_header", boom)
-    channel = _sse.SseChannel(send=lambda _frame: True, ping=lambda: True)
+    monkeypatch.setattr(sse, "manifest_header", boom)
+    channel = sse.SseChannel(send=lambda _frame: True, ping=lambda: True)
 
     with pytest.raises(RuntimeError, match="bad manifest"):
-        _sse.stream_session(channel, tmp_path, repo=tmp_path)
+        sse.stream_session(channel, tmp_path, repo=tmp_path)
 
     assert not started
 
@@ -2404,12 +2403,12 @@ def test_an_error_after_the_sse_headers_is_a_frame_not_a_second_status_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A stream that raises after `_begin_sse` reports its reason in the event body, not a 500."""
-    from agent6.ui.web import _sse
+    from agent6.ui.web import sse
 
     def boom(*_a: object, **_k: object) -> object:
         raise RuntimeError("header exploded")
 
-    monkeypatch.setattr(_sse, "manifest_header", boom)
+    monkeypatch.setattr(sse, "manifest_header", boom)
     _srv, port = server
     _make_run(tmp_path, "sse-err", [{"type": "session.start", "user_task": "t"}])
     conn = signin.SignedIn(port, timeout=10)
@@ -2428,11 +2427,11 @@ def test_the_machine_stream_error_frame_is_typed_like_the_run_streams(
     tmp_path: pathlib.Path,
 ) -> None:
     """The machine stream's error frame has the run stream's shape."""
-    from agent6.ui.web import _sse as web__sse
+    from agent6.ui.web import sse
 
     sent: list[Any] = []
-    chan = web__sse.SseChannel(send=lambda frame: sent.append(frame) or True, ping=lambda: True)
-    web__sse.stream_machine(chan, tmp_path / "no-such-machine")
+    chan = sse.SseChannel(send=lambda frame: sent.append(frame) or True, ping=lambda: True)
+    sse.stream_machine(chan, tmp_path / "no-such-machine")
     assert len(sent) == 1
     assert sent[0]["type"] == "error" and sent[0]["error"]
 

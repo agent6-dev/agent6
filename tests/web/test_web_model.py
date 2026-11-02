@@ -17,7 +17,7 @@ from agent6.models import registry
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
 from agent6.ui.web import model
-from agent6.viewmodel import _session_status, config_view, machine_snapshot, session_snapshot
+from agent6.viewmodel import config_view, machine_snapshot, session_snapshot, session_status
 
 
 def _bucket(cwd: pathlib.Path, sub: str) -> pathlib.Path:
@@ -868,7 +868,7 @@ def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
 
     (row,) = model.hub_payload(tmp_path)["sessions"]
     assert row["task_clipped"] == task
-    assert row["task_line"] == _session_status.task_snippet(task) == "Fix the parser"
+    assert row["task_line"] == session_status.task_snippet(task) == "Fix the parser"
 
 
 def test_the_draft_hub_row_keeps_the_cli_json_task(

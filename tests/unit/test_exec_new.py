@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from agent6 import child_env, kinds
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import policy as tools_policy
@@ -42,7 +42,7 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr("agent6.ui.cli.exec_cmds.exec_new", _exec_new)
     monkeypatch.setattr("agent6.ui.cli.net_cmds.exec_in_session", _exec_in_session)
-    monkeypatch.setattr("agent6.ui.cli._common.resolve_target", _resolve)
+    monkeypatch.setattr("agent6.ui.cli.common.resolve_target", _resolve)
     monkeypatch.setattr("agent6.config.layer.load_effective", _effective)
     return calls
 
@@ -142,7 +142,7 @@ def host(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return net
 
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
-    monkeypatch.setattr(_setup, "detect_env", _env)
+    monkeypatch.setattr(session_setup, "detect_env", _env)
     monkeypatch.setattr(exec_cmds, "run_attached", _run)
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_open))
     return seen

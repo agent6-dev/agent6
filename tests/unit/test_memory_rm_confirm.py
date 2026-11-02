@@ -9,8 +9,9 @@ import pathlib
 
 import pytest
 
-from agent6 import memory, paths, portable
-from agent6.ui.cli import _steer, main
+from agent6 import paths, portable
+from agent6.context import memory
+from agent6.ui.cli import main, steer_tty
 from tests.unit import test_sessions_rm_confirm as pty_cli
 
 pytestmark = pytest.mark.filterwarnings(
@@ -76,7 +77,7 @@ def test_memory_rm_without_a_terminal_deletes_without_asking(
     def never(*_args: object, **_kwargs: object) -> str | None:
         raise AssertionError("memory rm asked with no terminal")
 
-    monkeypatch.setattr(_steer, "tty_prompt", never)
+    monkeypatch.setattr(steer_tty, "tty_prompt", never)
     assert main(["memory", "rm", "build-quirk"]) == 0
     assert "removed build-quirk" in capsys.readouterr().out
     assert not fact.exists()

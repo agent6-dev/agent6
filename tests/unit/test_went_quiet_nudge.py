@@ -19,9 +19,9 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6 import event_log
-from agent6.harness import _chain, _operator, _provider_call, loop
+from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.providers import ProviderResponse
+from agent6.sessions import event_log
 from agent6.tools import results
 
 
@@ -103,7 +103,7 @@ def _build_wf(repo: pathlib.Path, provider: mock.MagicMock, **kwargs: Any) -> lo
     dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
     return loop.Harness(
-        chain=_chain.RunChain(repo),
+        chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
@@ -122,7 +122,7 @@ def _build_wf(repo: pathlib.Path, provider: mock.MagicMock, **kwargs: Any) -> lo
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=10,
         **kwargs,
     )
@@ -378,17 +378,17 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
 
 def test_unrunnable_signature_names_only_the_adopted_runner() -> None:
     """Exit 127 and the adopted `-m` module missing are the unrunnable signatures; a red is not."""
-    from agent6.harness import _nudges
+    from agent6.harness import nudges
 
     argv = ("python3", "-m", "pytest", "-q")
-    assert _nudges.unrunnable_signature(argv, 127, "", "") == "exit 127, the command is not found"
+    assert nudges.unrunnable_signature(argv, 127, "", "") == "exit 127, the command is not found"
     assert (
-        _nudges.unrunnable_signature(argv, 1, "", "No module named pytest")
+        nudges.unrunnable_signature(argv, 1, "", "No module named pytest")
         == "no module named pytest"
     )
-    assert _nudges.unrunnable_signature(argv, 1, "", "No module named numpy") == ""
-    assert _nudges.unrunnable_signature(argv, 1, "3 failed, 2 passed", "") == ""
-    assert _nudges.unrunnable_signature(("pytest",), 1, "", "No module named pytest") == ""
+    assert nudges.unrunnable_signature(argv, 1, "", "No module named numpy") == ""
+    assert nudges.unrunnable_signature(argv, 1, "3 failed, 2 passed", "") == ""
+    assert nudges.unrunnable_signature(("pytest",), 1, "", "No module named pytest") == ""
 
 
 def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: pathlib.Path) -> None:
@@ -417,7 +417,7 @@ def test_a_parked_quiet_turn_is_not_re_sent_after_the_steer(tmp_path: pathlib.Pa
         provider,
         events=events,
         interactive=True,
-        bridge=_operator.OperatorBridge(
+        bridge=operator_bridge.OperatorBridge(
             steer_requested=lambda: bool(parked) and bool(steers),
             steer_prompt=lambda: steers.pop(0) if steers else None,
             steer_clear=parked.clear,

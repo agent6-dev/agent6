@@ -13,9 +13,9 @@ import os
 import pathlib
 from collections.abc import Callable
 
-from agent6 import _pack_manifest, errors, kinds, paths
-from agent6.app import _setup
+from agent6 import errors, kinds, pack_manifest, paths
 from agent6.app import reporter as app_reporter
+from agent6.app import session_setup
 from agent6.config import Config, MCPServerEntry
 from agent6.models import registry
 from agent6.sandbox import detect, jail, tool_paths
@@ -63,7 +63,7 @@ def warn_sandbox_gaps(
     if isolation == "none":
         # The one owner of the cause; `check sandbox` prints the same.
         reporter.warn(
-            f"running UNSANDBOXED ({_setup.no_jail_cause(cfg, env)}). "
+            f"running UNSANDBOXED ({session_setup.no_jail_cause(cfg, env)}). "
             "Every command runs as a plain subprocess with no filesystem, network, "
             "or syscall confinement: the LLM's run_command, the verify command, and "
             "any spawned MCP server. The timeout and sandbox.memory_limit_mib still "
@@ -188,7 +188,7 @@ def _warn_grants(cfg: Config, root: pathlib.Path, reporter: app_reporter.Reporte
     for name, srv in cfg.mcp.enabled_servers.items():
         if not srv.jailed:
             continue
-        for dropped in _setup.mcp_server_grants(cfg, root, srv, name).dropped:
+        for dropped in session_setup.mcp_server_grants(cfg, root, srv, name).dropped:
             if dropped.key.startswith("mcp."):
                 reporter.warn(dropped.line())
     for line in home_grant_warnings(cfg):
@@ -414,7 +414,7 @@ def _partial_grant_regions(
     ]
     regions += [(pathlib.Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths]
     for name, srv in cfg.mcp.enabled_servers.items():
-        spol = _setup.mcp_server_policy(cfg, root, "partial", srv)
+        spol = session_setup.mcp_server_policy(cfg, root, "partial", srv)
         if spol is None:
             continue  # not jailed: a `url` or `unconfined` server
         regions += [
@@ -561,7 +561,7 @@ def check_workspace_packs(workspace: pathlib.Path) -> str | None:
     ):
         if ".agent6" in children:
             try:
-                _pack_manifest.check_origin(pathlib.Path(directory))
+                pack_manifest.check_origin(pathlib.Path(directory))
             except errors.PackError as exc:
                 refusals.append(str(exc))
         children[:] = sorted(name for name in children if name not in (".git", ".agent6"))
@@ -648,7 +648,7 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
     out = registry.resolved_adaptive_values(cfg)
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":
         try:
-            selected = detect.resolve_isolation(cfg.sandbox.isolation, _setup.detect_env())
+            selected = detect.resolve_isolation(cfg.sandbox.isolation, session_setup.detect_env())
         except jail.JailBinaryError:
             return out
         if cfg.sandbox.isolation == "auto":

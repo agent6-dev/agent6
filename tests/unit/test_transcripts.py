@@ -19,12 +19,7 @@ import httpx2
 import pytest
 
 from agent6 import media, portable
-from agent6.providers import (
-    AnthropicProvider,
-    ProviderError,
-    TranscriptSink,
-    types,  # pyright: ignore[reportPrivateUsage]
-)
+from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, provider_types
 
 
 class _FakeResponse:
@@ -68,7 +63,7 @@ def test_transcript_redacts_api_key_on_success(
             },
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     resp = provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "hi"
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -92,7 +87,7 @@ def test_transcript_redacts_api_key_on_http_error(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=429, text="rate limited")
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     with pytest.raises(ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -111,7 +106,7 @@ def test_transcript_redacts_api_key_on_network_error(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         raise httpx2.ConnectError("no route")
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     with pytest.raises(ProviderError):
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     leaks = _scan_for_secret(tmp_path / "transcripts", api_key)
@@ -131,7 +126,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=401, text=f'{{"error": "bad key {api_key}"}}')
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     with pytest.raises(ProviderError) as exc:
         provider.call(system="sys", messages=[{"role": "user", "content": "x"}])
     assert api_key not in str(exc.value)
@@ -156,7 +151,7 @@ def test_record_scrubs_credential_values_from_the_bodies(tmp_path: pathlib.Path)
 
 
 def test_redact_headers_unit() -> None:
-    out = types._redact_headers(  # pyright: ignore[reportPrivateUsage]
+    out = provider_types._redact_headers(  # pyright: ignore[reportPrivateUsage]
         {
             "x-api-key": "secret",
             "Authorization": "Bearer t",
@@ -284,8 +279,8 @@ def test_image_error_echo_is_scrubbed_before_excerpting(
             )
         return contextlib.nullcontext(httpx2.Response(400, text="bad image: " + encoded))
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", post)
-    monkeypatch.setattr("agent6.providers._stream.http_stream", stream)
+    monkeypatch.setattr("agent6.providers.transport.http_post", post)
+    monkeypatch.setattr("agent6.providers.stream_lifecycle.http_stream", stream)
     with pytest.raises(ProviderError) as error:
         provider.call(
             system="s",
@@ -364,10 +359,10 @@ def test_media_specific_errors_are_typed(
     def fake_post(*args: Any, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=400, text=json.dumps(body))
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = AnthropicProvider(api_key="key", model="m")
     mime = "application/pdf" if modality == "document" else "image/png"
-    with pytest.raises(types.MediaInputError) as caught:
+    with pytest.raises(provider_types.MediaInputError) as caught:
         provider.call(
             system="s",
             messages=[
@@ -403,7 +398,7 @@ def test_unrelated_errors_are_not_media_rejections(
     def fake_post(*args: Any, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=status, text=json.dumps({"error": {"message": message}}))
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = AnthropicProvider(api_key="key", model="m")
     with pytest.raises(ProviderError) as caught:
         provider.call(
@@ -420,7 +415,7 @@ def test_unrelated_errors_are_not_media_rejections(
                 }
             ],
         )
-    assert not isinstance(caught.value, types.MediaInputError)
+    assert not isinstance(caught.value, provider_types.MediaInputError)
 
 
 @pytest.mark.parametrize("encoded", ["sk-", base64.b64encode(b"x" * 66).decode()])
@@ -457,8 +452,8 @@ def test_credentials_are_scrubbed_before_payload_echoes(
                 )
             return contextlib.nullcontext(httpx2.Response(400, text=text))
 
-        monkeypatch.setattr("agent6.providers._transport.http_post", post)
-        monkeypatch.setattr("agent6.providers._stream.http_stream", stream)
+        monkeypatch.setattr("agent6.providers.transport.http_post", post)
+        monkeypatch.setattr("agent6.providers.stream_lifecycle.http_stream", stream)
         provider = AnthropicProvider(api_key=secret, model="m", transcript_sink=sink)
         with pytest.raises(ProviderError) as caught:
             provider.call(
@@ -544,7 +539,7 @@ def test_synthetic_media_labels_retain_source_path(
     tmp_path: pathlib.Path, responses: bool, mime: str, kind: str
 ) -> None:
     """OpenAI adapter labels supply the source path for metadata-only transcripts."""
-    from agent6.providers import _openai_messages, _responses
+    from agent6.providers import openai_messages, responses_codec
 
     encoded = base64.b64encode(b"private data" * 10).decode()
     path = "nested/page:one"
@@ -573,9 +568,9 @@ def test_synthetic_media_labels_retain_source_path(
         },
     ]
     request = (
-        {"input": _responses.responses_input(canonical, route="r")}
+        {"input": responses_codec.responses_input(canonical, route="r")}
         if responses
-        else {"messages": _openai_messages.anthropic_to_openai_messages("s", canonical)}
+        else {"messages": openai_messages.anthropic_to_openai_messages("s", canonical)}
     )
     saved = TranscriptSink(tmp_path).record(
         request_headers={},

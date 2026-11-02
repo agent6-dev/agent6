@@ -16,18 +16,20 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import budget, config, event_log, paths, portable, secret_store
-from agent6.app import providers
+from agent6 import budget, config, paths, portable
+from agent6.app import role_providers
+from agent6.config import secret_store
 from agent6.providers import (
-    _stream,
-    _transport,
     anthropic,
     chatgpt,
     oauth,
     openai,
+    provider_types,
     responses,
-    types,
+    stream_lifecycle,
+    transport,
 )
+from agent6.sessions import event_log
 from agent6.viewmodel import fold_transcript
 
 _AT = "issuer-bearer-secret"
@@ -88,20 +90,20 @@ def _route(
     )
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
-    sink = types.TranscriptSink(tmp_path / "transcripts")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
     if builder == "panel":
-        wrapped = providers.build_review_seats(
+        wrapped = role_providers.build_review_seats(
             cfg, transcript_sink=sink, budget=tracker, n=1, events=events if observed else None
         )[0].provider
     else:
-        wrapped = providers.reviewer_seat_provider(
+        wrapped = role_providers.reviewer_seat_provider(
             cfg,
             "summariser",
             transcript_sink=sink,
             budget=tracker,
             events=events if observed else None,
         )
-    inner = wrapped.inner if isinstance(wrapped, providers.InstrumentedProvider) else wrapped
+    inner = wrapped.inner if isinstance(wrapped, role_providers.InstrumentedProvider) else wrapped
     assert isinstance(
         inner,
         (
@@ -138,7 +140,7 @@ def _serve(
     def request(*_args: object, **_kwargs: object) -> httpx2.Response:
         return next(pending)
 
-    monkeypatch.setattr(_transport, method, request)
+    monkeypatch.setattr(transport, method, request)
 
 
 @pytest.mark.parametrize("api_format", ["openai", "anthropic", "responses", "chatgpt"])
@@ -170,12 +172,12 @@ def test_refresh_journals_only_the_persisted_or_refused_outcome(
             status, json={"access_token": _NEW, "expires_in": 3600, "error": "private-error"}
         )
 
-    monkeypatch.setattr(_transport, "http_request", request)
+    monkeypatch.setattr(transport, "http_request", request)
     if status == 200:
         assert holder.token() == _NEW
         assert holder.token() == _NEW  # a cached read emits nothing
     else:
-        with pytest.raises(types.ProviderError):
+        with pytest.raises(provider_types.ProviderError):
             holder.token()
     assert _auth(events) == [_fact("refresh", "success" if status == 200 else "failure")]
     assert persisted == [_NEW if status == 200 else _AT]
@@ -209,7 +211,7 @@ def test_exchange_journals_its_own_outcome(
         assert holder.token() == _EX
         assert holder.token() == _EX
     else:
-        with pytest.raises(types.ProviderError):
+        with pytest.raises(provider_types.ProviderError):
             holder.token()
     assert _auth(events) == [_fact("exchange", "success" if status == 200 else "failure")]
     assert stored == [_EX if status == 200 else ""]
@@ -268,8 +270,8 @@ def test_recovery_waits_for_the_retry_answer(
     def stream(_method: str, url: str, **kwargs: Any) -> Generator[httpx2.Response]:
         yield post(url, **kwargs)
 
-    monkeypatch.setattr(_transport, "http_post", post)
-    monkeypatch.setattr(_stream, "http_stream", stream)
+    monkeypatch.setattr(transport, "http_post", post)
+    monkeypatch.setattr(stream_lifecycle, "http_stream", stream)
     if statuses[-1] == 200:
         assert (
             provider.call(
@@ -280,7 +282,7 @@ def test_recovery_waits_for_the_retry_answer(
             == "ok"
         )
     else:
-        with pytest.raises(types.ProviderError):
+        with pytest.raises(provider_types.ProviderError):
             provider.call(
                 system="s",
                 messages=[],
@@ -309,7 +311,7 @@ def test_recovery_reports_a_refusal_inside_a_2xx_body(
         httpx2.Response(200, json={"error": {"code": "invalid_api_key"}}),
         method="http_post",
     )
-    with pytest.raises(types.ProviderError) as refused:
+    with pytest.raises(provider_types.ProviderError) as refused:
         provider.call(system="s", messages=[])
     assert refused.value.status_code == 401
     assert _auth(events) == [_fact("refresh", "success"), _fact("recovery", "failure")]
@@ -364,7 +366,7 @@ def test_auth_observer_runs_after_both_locks_are_released(
     if status == 200:
         holder.token()
     else:
-        with pytest.raises(types.ProviderError):
+        with pytest.raises(provider_types.ProviderError):
             holder.token()
     for thread in threads:
         thread.join(timeout=2)

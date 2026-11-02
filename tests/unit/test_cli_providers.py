@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.app.providers provider construction (config -> provider)."""
+"""Tests for agent6.app.role_providers provider construction (config -> provider)."""
 
 from __future__ import annotations
 
@@ -11,10 +11,16 @@ from unittest import mock
 
 import pytest
 
-from agent6 import secret_store
-from agent6.app import providers
-from agent6.config import ChatGPTProviderEntry, Config, ModelsConfig, OpenAIProviderEntry, RoleModel
-from agent6.providers import OpenAIProvider, _oauth_protocol, chatgpt, oauth, types
+from agent6.app import role_providers
+from agent6.config import (
+    ChatGPTProviderEntry,
+    Config,
+    ModelsConfig,
+    OpenAIProviderEntry,
+    RoleModel,
+    secret_store,
+)
+from agent6.providers import OpenAIProvider, chatgpt, oauth, oauth_protocol, provider_types
 
 
 @pytest.mark.parametrize("state", ["legacy", "rebound"])
@@ -37,7 +43,7 @@ def test_chatgpt_binding_refuses_before_provider_construction(
         )
     else:
         grant = oauth.stored_grant_for(
-            _oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
+            oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
         )
         secret_store.save_oauth_grant(
             "work", dataclasses.replace(grant, binding="other", account_id="acct")
@@ -46,8 +52,8 @@ def test_chatgpt_binding_refuses_before_provider_construction(
         providers={"work": entry}, models=ModelsConfig(worker=RoleModel(provider="work", model="m"))
     )
     message = "predates credential binding" if state == "legacy" else "other provider settings"
-    with pytest.raises(types.ProviderError, match=message) as refused:
-        providers.build_role_provider(
+    with pytest.raises(provider_types.ProviderError, match=message) as refused:
+        role_providers.build_role_provider(
             cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
         )
     assert "agent6 connect work" in str(refused.value)
@@ -60,7 +66,7 @@ def test_chatgpt_construction_reads_account_through_shared_holder(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
+        oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
     )
     secret_store.save_oauth_grant("work", dataclasses.replace(grant, account_id="stored"))
 
@@ -71,7 +77,7 @@ def test_chatgpt_construction_reads_account_through_shared_holder(
     cfg = Config(
         providers={"work": entry}, models=ModelsConfig(worker=RoleModel(provider="work", model="m"))
     )
-    provider = providers.build_role_provider(
+    provider = role_providers.build_role_provider(
         cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
     )
     assert isinstance(provider, chatgpt.ChatGPTProvider)
@@ -92,7 +98,7 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
         },
         models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
     )
-    prov = providers.build_role_provider(
+    prov = role_providers.build_role_provider(
         cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
     )
     assert isinstance(prov, OpenAIProvider)
@@ -120,29 +126,29 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
     )
 
     sink = mock.MagicMock()
-    providers.build_prompt_reviser_provider(
+    role_providers.build_prompt_reviser_provider(
         cfg, transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
     )
     assert sink.for_seat.call_args == mock.call("prompt_reviser")
 
     sink = mock.MagicMock()
-    providers.reviewer_seat_provider(
+    role_providers.reviewer_seat_provider(
         cfg, "summariser", transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
     )
     assert sink.for_seat.call_args == mock.call("summariser")
 
     sink = mock.MagicMock()
-    providers.build_review_seats(cfg, transcript_sink=sink, budget=mock.MagicMock(), n=1)
+    role_providers.build_review_seats(cfg, transcript_sink=sink, budget=mock.MagicMock(), n=1)
     assert sink.for_seat.call_args == mock.call("review:security")
 
     # Each instrumented seat carries its roster index, so concurrent seats' calls pair up.
     unpinned = cfg.model_copy(update={"review": ReviewConfig(trigger="on_verify_fail")})
-    seats = providers.build_review_seats(
+    seats = role_providers.build_review_seats(
         unpinned, transcript_sink=sink, budget=mock.MagicMock(), n=2, events=mock.MagicMock()
     )
     assert [getattr(s.provider, "seat_index", None) for s in seats] == [0, 1]
 
     # The role builders keep stamping the role itself.
     sink = mock.MagicMock()
-    providers.build_role_provider(cfg, "worker", transcript_sink=sink, budget=mock.MagicMock())
+    role_providers.build_role_provider(cfg, "worker", transcript_sink=sink, budget=mock.MagicMock())
     assert sink.for_seat.call_args == mock.call("worker")

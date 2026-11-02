@@ -15,7 +15,7 @@ import pathlib
 import pytest
 
 from agent6 import __version__
-from agent6.ui.telemetry import _otlp, _prometheus  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.telemetry import otlp, prometheus  # pyright: ignore[reportPrivateUsage]
 from agent6.viewmodel import telemetry, telemetry_metrics, telemetry_records
 from tests.unit import test_telemetry_fold as fold_tests
 from tests.unit import test_telemetry_machine as machine_tests
@@ -40,13 +40,13 @@ def _bodies() -> dict[str, object]:
         machine_logs.extend(emitted.logs)
     assert _START is not None and _NOW is not None and machine.first_ns is not None
     return {
-        "traces": _otlp.traces_body(spans, _RESOURCE),
-        "metrics": _otlp.metrics_body(fold.metrics(), _RESOURCE, start_ns=_START, now_ns=_NOW),
-        "logs": _otlp.logs_body(logs, _RESOURCE),
+        "traces": otlp.traces_body(spans, _RESOURCE),
+        "metrics": otlp.metrics_body(fold.metrics(), _RESOURCE, start_ns=_START, now_ns=_NOW),
+        "logs": otlp.logs_body(logs, _RESOURCE),
         "machine": {
-            "traces": _otlp.traces_body(machine_spans, _RESOURCE),
-            "logs": _otlp.logs_body(machine_logs, _RESOURCE),
-            "metrics": _otlp.metrics_body(
+            "traces": otlp.traces_body(machine_spans, _RESOURCE),
+            "logs": otlp.logs_body(machine_logs, _RESOURCE),
+            "metrics": otlp.metrics_body(
                 machine.metrics(workers={3: worker.metrics()}),
                 _RESOURCE,
                 start_ns=machine.first_ns,
@@ -99,7 +99,7 @@ def test_otlp_json_follows_the_protobuf_mapping_with_its_otlp_exceptions() -> No
     failed = next(r for r in records if r["body"] == {"stringValue": "verify failed"})
     assert (failed["severityNumber"], failed["severityText"]) == (17, "ERROR")
     assert failed["traceId"] == root["traceId"] and len(failed["spanId"]) == 16
-    assert _otlp.path_for("logs") == "/v1/logs"
+    assert otlp.path_for("logs") == "/v1/logs"
 
 
 def test_otlp_metrics_are_cumulative_sums_gauges_and_histograms() -> None:
@@ -138,15 +138,15 @@ def test_a_non_finite_value_is_refused_not_serialized() -> None:
     """Python would write `NaN`, which OTLP JSON does not accept."""
     snapshot = telemetry_metrics.MetricsSnapshot({("agent6_cost_usd_total", ()): math.nan}, {}, {})
     with pytest.raises(ValueError, match="finite"):
-        _otlp.metrics_body(snapshot, _RESOURCE, start_ns=1, now_ns=2)
+        otlp.metrics_body(snapshot, _RESOURCE, start_ns=1, now_ns=2)
     with pytest.raises(ValueError, match="finite"):
-        _prometheus.exposition(snapshot)
+        prometheus.exposition(snapshot)
 
 
 def test_the_prometheus_exposition_follows_the_text_format() -> None:
     """HELP and TYPE per metric, escaped labels, cumulative buckets up to +Inf, no timestamps."""
     fold, _spans, _logs = fold_tests._run(fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
-    text = _prometheus.exposition(fold.metrics())
+    text = prometheus.exposition(fold.metrics())
     lines = text.splitlines()
     assert lines[0] == "# HELP agent6_sessions_total Sessions whose journal was read."
     assert lines[1] == "# TYPE agent6_sessions_total counter"
@@ -164,8 +164,7 @@ def test_the_prometheus_exposition_follows_the_text_format() -> None:
     odd = telemetry_metrics.MetricsSnapshot(
         {("agent6_tool_calls_total", (("outcome", "ok"), ("tool", 'a"b\\c\nd'))): 2.0}, {}, {}
     )
-    assert (
-        'agent6_tool_calls_total{outcome="ok",tool="a\\"b\\\\c\\nd"} 2'
-        in _prometheus.exposition(odd)
+    assert 'agent6_tool_calls_total{outcome="ok",tool="a\\"b\\\\c\\nd"} 2' in prometheus.exposition(
+        odd
     )
-    assert _prometheus.exposition(telemetry_metrics.MetricsSnapshot({}, {}, {})) == ""
+    assert prometheus.exposition(telemetry_metrics.MetricsSnapshot({}, {}, {})) == ""

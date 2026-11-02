@@ -15,7 +15,7 @@ import pytest
 from agent6 import budget, errors
 from agent6.app import finalize as _finalize
 from agent6.app import reporter
-from agent6.harness import _advice, _snapshot
+from agent6.harness import advice, loop_snapshot
 from agent6.sessions import layout as sessions_layout
 from agent6.vcs import git_ops, git_read
 
@@ -33,8 +33,8 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The end block printed the settled movement; `sessions show` kept the earlier figure."""
-    from agent6 import event_log
-    from agent6.viewmodel import _session_log
+    from agent6.sessions import event_log
+    from agent6.viewmodel import session_log
 
     layout = _layout(
         tmp_path,
@@ -53,7 +53,7 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
     )
     _finalize.settle_budget(tracker, event_log.EventSink(layout.logs_path))
     _finalize.print_session_end(
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True, reason="finish_session", summary="done", turns=1, tool_calls=0
         ),
         layout=layout,
@@ -63,7 +63,7 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
         reporter=reporter.STDIO_REPORTER,
     )
     assert "window moved ~10 points" in capsys.readouterr().out
-    assert _session_log.scan_session_log(layout.logs_path).plan_consumed == 10.0
+    assert session_log.scan_session_log(layout.logs_path).plan_consumed == 10.0
 
 
 def test_finish_session_over_red_verify_is_not_headlined_passed(
@@ -77,7 +77,7 @@ def test_finish_session_over_red_verify_is_not_headlined_passed(
             {"type": "session.end", "reason": "finish_session", "all_passed": False},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True,
         reason="finish_session",
         summary="all tests pass",
@@ -106,7 +106,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="done", turns=2, tool_calls=3
     )
     _finalize.print_session_end(
@@ -142,7 +142,7 @@ def test_a_budget_stop_prints_its_detail_once(
         cache_read_tokens=0,
         cache_creation_tokens=0,
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=False,
         reason="budget_exhausted",
         summary=f"{tracker.snapshot().exhausted_reason} (at turn 2)",
@@ -174,7 +174,7 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
             {"type": "session.end", "reason": "verify_settled", "all_passed": True},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True,
         reason="verify_settled",
         summary="verify passed and the worker stopped making changes",
@@ -211,7 +211,7 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
 def test_silent_and_plateau_ends_are_not_headlined_passed(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
-    reason: _snapshot.SessionEndReason,
+    reason: loop_snapshot.SessionEndReason,
     headline: str,
     all_passed: bool | None,
 ) -> None:
@@ -224,7 +224,7 @@ def test_silent_and_plateau_ends_are_not_headlined_passed(
             {"type": "session.end", "reason": reason, "all_passed": all_passed},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason=reason, summary="done", turns=2, tool_calls=3
     )
     _finalize.print_session_end(
@@ -260,7 +260,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
         "harness": {"verify_command": ["pytest"], "verify_origin": "configured"},
     }
     (layout.session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True,
         reason="finish_session",
         summary="",
@@ -287,7 +287,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
 def _end_output(
     tmp_path: pathlib.Path,
     session_id: str,
-    result: _snapshot.SessionResult,
+    result: loop_snapshot.SessionResult,
     capsys: pytest.CaptureFixture[str],
     manifest: dict[str, object] | None = None,
 ) -> str:
@@ -327,7 +327,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         "base_sha": "a" * 40,
         "harness": {"verify_command": ["pytest", "-q"], "verify_origin": "configured"},
     }
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True,
         reason="finish_session",
         summary="",
@@ -338,7 +338,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
     out = _end_output(tmp_path, "r-red", result, capsys, manifest)
     assert "the gate is red" in out
 
-    unverified = _snapshot.SessionResult(
+    unverified = loop_snapshot.SessionResult(
         completed=True,
         reason="finish_session",
         summary="",
@@ -355,7 +355,7 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], jail_bin: pathlib.Path
 ) -> None:
     """A gate declared stale with no verify observation still prints the proposal."""
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True,
         reason="gate_stale",
         summary="",
@@ -415,7 +415,7 @@ def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
         ),
         encoding="utf-8",
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
@@ -453,7 +453,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         ),
         encoding="utf-8",
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
@@ -499,7 +499,7 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
         json.dumps({"mode": "run", "run_branch": "agent6/miss", "base_branch": "main"}),
         encoding="utf-8",
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
@@ -547,7 +547,7 @@ def _end_footer(
         ],
     )
     layout.manifest_path.write_text(json.dumps({"mode": "run", **manifest}), encoding="utf-8")
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
     )
     _finalize.print_session_end(
@@ -716,7 +716,7 @@ def test_provider_error_is_headlined_failed(tmp_path: pathlib.Path, capsys: obje
             {"type": "session.end", "reason": "provider_error", "all_passed": False},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=False, reason="provider_error", summary="", turns=1, tool_calls=0
     )
     _finalize.print_session_end(
@@ -744,7 +744,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
 
     repo = _seeded_repo(tmp_path)
     monkeypatch.chdir(repo)
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=False,
         reason="provider_error",
         summary="provider error at turn 1 (HTTP 401) Authentication failed",
@@ -809,7 +809,7 @@ def test_end_banner_adds_the_run_total_across_resume_executions(
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="", turns=5, tool_calls=2
     )
     _finalize.print_session_end(
@@ -844,7 +844,7 @@ def test_end_banner_run_total_carries_plan_points(
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="", turns=5, tool_calls=2
     )
     _finalize.print_session_end(
@@ -870,7 +870,7 @@ def test_end_banner_stays_quiet_on_a_single_execution_run(
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="", turns=2, tool_calls=1
     )
     _finalize.print_session_end(
@@ -1086,7 +1086,7 @@ def test_a_plan_that_crashed_before_finishing_gets_no_execute_hint(
         ],
     )
     layout.manifest_path.write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=False,
         reason="provider_error",
         summary="provider error at turn 1",
@@ -1118,7 +1118,7 @@ def test_a_plan_that_completed_without_finish_planning_gets_no_execute_hint(
         ],
     )
     layout.manifest_path.write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="silent_finish", summary="done", turns=1, tool_calls=0
     )
     _finalize.print_session_end(
@@ -1152,7 +1152,7 @@ def test_the_end_of_run_block_goes_through_the_reporter(
     forged = 'done\n{"jsonrpc":"2.0","id":1,"method":"fs/write_text_file","params":{}}'
     said: list[str] = []
     _finalize.print_session_end(
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True, reason="finish_session", summary=forged, turns=1, tool_calls=1
         ),
         layout=layout,
@@ -1176,7 +1176,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
         raise errors.GitError("git unreadable here")
 
     monkeypatch.setattr(git_read, "status", _boom)
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="", turns=1, tool_calls=1
     )
     session_id = "run-x"
@@ -1222,7 +1222,7 @@ def test_a_failed_run_keeps_its_reason_on_the_console_stream(
             {"type": "session.end", "reason": "provider_error", "all_passed": None},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=False,
         reason="provider_error",
         summary="provider error at turn 1: HTTP error calling http://127.0.0.1:9/v1 (openai)",
@@ -1254,7 +1254,7 @@ def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="fixed it", turns=1, tool_calls=1
     )
 
@@ -1288,7 +1288,7 @@ def test_a_silent_finish_does_not_repeat_the_answer_the_stream_showed(
     )
 
     def end_block(summary: str) -> str:
-        result = _snapshot.SessionResult(
+        result = loop_snapshot.SessionResult(
             completed=True, reason="silent_finish", summary=summary, turns=1, tool_calls=0
         )
         _finalize.print_session_end(
@@ -1303,7 +1303,7 @@ def test_a_silent_finish_does_not_repeat_the_answer_the_stream_showed(
 
     answer = "The fix is in calc.py (see add)."
     assert answer not in end_block(answer)
-    out = end_block(_advice.with_open_tasks(answer, [("t2", "write the docs")]))
+    out = end_block(advice.with_open_tasks(answer, [("t2", "write the docs")]))
     assert answer not in out
     assert "  (1 open task(s): write the docs)\n" in out
 
@@ -1324,7 +1324,7 @@ def test_the_sandbox_warning_states_its_remedy_once(
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_session", summary="", turns=1, tool_calls=1
     )
 
@@ -1361,7 +1361,7 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: pathlib.Path) -> None
     out: list[str] = []
     receipt: list[str] = []
     _finalize.print_session_end(
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True, reason="finish_session", summary="", turns=5, tool_calls=2
         ),
         layout=layout,
@@ -1392,7 +1392,7 @@ def test_a_plan_ends_without_the_no_commit_footer(
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "seed"], cwd=repo, check=True)
     monkeypatch.chdir(repo)
-    result = _snapshot.SessionResult(
+    result = loop_snapshot.SessionResult(
         completed=True, reason="finish_planning", summary="planned", turns=1, tool_calls=1
     )
     outs: dict[str, str] = {}

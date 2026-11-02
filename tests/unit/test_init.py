@@ -8,9 +8,10 @@ import pathlib
 
 import pytest
 
-from agent6 import paths, verify_infer
+from agent6 import paths
 from agent6.config import layer
-from agent6.ui.cli import init
+from agent6.tools import verify_infer
+from agent6.ui.cli import init_wizard
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +29,7 @@ def _repo(tmp_path: pathlib.Path, name: str = "repo") -> pathlib.Path:
 
 def test_init_empty_dir_creates_scaffold(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
-    rc = init.init_workspace(repo)  # default is non-interactive: accept defaults
+    rc = init_wizard.init_workspace(repo)  # default is non-interactive: accept defaults
     assert rc == 0
     assert paths.repo_config_path(repo).is_file()  # config lives OUT of the workspace
     assert not (repo / ".agent6").exists()
@@ -90,7 +91,7 @@ def test_cmd_init_does_not_blame_repo_config_for_an_invalid_explicit_config(
 def test_init_infers_verify_for_python_repo(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    init.init_workspace(repo)
+    init_wizard.init_workspace(repo)
     cfg = layer.load_effective(repo).config
     # No .venv in this fresh repo, so python3 on PATH (see verify_infer).
     assert cfg.harness.verify_command == ("python3", "-m", "pytest", "-q")
@@ -128,7 +129,7 @@ def test_init_verify_advice_matches_the_ecosystem(
 ) -> None:
     """Python runner advice belongs only in a Python scaffold, not in every template."""
     repo = _repo(tmp_path)
-    assert init.init_workspace(repo, ecosystem=ecosystem) == 0
+    assert init_wizard.init_workspace(repo, ecosystem=ecosystem) == 0
     text = (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert advice in text
     if ecosystem != "py":
@@ -139,7 +140,7 @@ def test_init_verify_advice_matches_the_ecosystem(
 def test_init_verify_from_agents_md(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     (repo / "AGENTS.md").write_text("## Verify\n\n```bash\nmake test\n```\n", encoding="utf-8")
-    init.init_workspace(repo)
+    init_wizard.init_workspace(repo)
     assert layer.load_effective(repo).config.harness.verify_command == ("make", "test")
 
 
@@ -153,7 +154,7 @@ def test_init_saves_no_gate_the_sandbox_cannot_run(
     (jail_bin / "npm").unlink()
     repo = _repo(tmp_path)
     (repo / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
-    init.init_workspace(repo)
+    init_wizard.init_workspace(repo)
     assert layer.load_effective(repo).config.harness.verify_command == ()
     out = capsys.readouterr().out
     assert (
@@ -165,17 +166,17 @@ def test_init_saves_no_gate_the_sandbox_cannot_run(
 def test_init_detects_ecosystem_for_gitignore(tmp_path: pathlib.Path) -> None:
     py = _repo(tmp_path, "py")
     (py / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
-    init.init_workspace(py)
+    init_wizard.init_workspace(py)
     assert "__pycache__/" in (py / ".gitignore").read_text(encoding="utf-8")
 
     rust = _repo(tmp_path, "rust")
     (rust / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
-    init.init_workspace(rust)
+    init_wizard.init_workspace(rust)
     assert "target/" in (rust / ".gitignore").read_text(encoding="utf-8")
 
     # No manifest, no guess: the secret entries only (`--ecosystem` picks).
     bare = _repo(tmp_path, "bare")
-    init.init_workspace(bare)
+    init_wizard.init_workspace(bare)
     ignored = (bare / ".gitignore").read_text(encoding="utf-8")
     assert ".env" in ignored and "__pycache__/" not in ignored and "target/" not in ignored
 
@@ -188,7 +189,7 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: pathlib.Path) -> No
     cfgp.write_text('[harness]\nverify_command = ["my-test"]\n', encoding="utf-8")
     (repo / "AGENTS.md").write_text("# mine\n", encoding="utf-8")
 
-    init.init_workspace(repo)
+    init_wizard.init_workspace(repo)
 
     # Existing content untouched, NO .suggested siblings, verify not clobbered.
     assert (repo / "AGENTS.md").read_text(encoding="utf-8") == "# mine\n"
@@ -199,16 +200,16 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: pathlib.Path) -> No
 
 def test_init_gitignore_is_idempotent(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
-    init.init_workspace(repo)
+    init_wizard.init_workspace(repo)
     first = (repo / ".gitignore").read_text(encoding="utf-8")
-    init.init_workspace(repo)
+    init_wizard.init_workspace(repo)
     assert (repo / ".gitignore").read_text(encoding="utf-8") == first
 
 
 def test_init_gitignore_preserves_existing(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     (repo / ".gitignore").write_text("# pre-existing\nmy-secret-file\n", encoding="utf-8")
-    init.init_workspace(repo)
+    init_wizard.init_workspace(repo)
     gi = (repo / ".gitignore").read_text(encoding="utf-8")
     assert "# pre-existing" in gi and "my-secret-file" in gi and "secrets/" in gi
 
@@ -218,7 +219,7 @@ def test_init_never_rewrites_an_agents_md_it_cannot_decode(tmp_path: pathlib.Pat
     p = tmp_path / "AGENTS.md"
     original = "# Notes pour l'\xe9quipe\n".encode("latin-1")
     p.write_bytes(original)
-    init._setup_agents_md(tmp_path, ecosystem="python", ask=lambda _p, _d: True)
+    init_wizard._setup_agents_md(tmp_path, ecosystem="python", ask=lambda _p, _d: True)
     assert p.read_bytes() == original
 
 
@@ -226,7 +227,7 @@ def test_init_still_appends_to_a_utf8_agents_md(tmp_path: pathlib.Path) -> None:
     """The converse: a legitimate file keeps its accents and gains the section."""
     p = tmp_path / "AGENTS.md"
     p.write_text("# Team notes\n\nCafé.\n", encoding="utf-8")
-    init._setup_agents_md(tmp_path, ecosystem="python", ask=lambda _p, _d: True)
+    init_wizard._setup_agents_md(tmp_path, ecosystem="python", ask=lambda _p, _d: True)
     text = p.read_text(encoding="utf-8")
     assert "Verify command" in text
     assert "Café" in text
@@ -236,7 +237,7 @@ def test_init_asks_about_the_entries_it_would_add(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The .gitignore question names the entries; a repo already carrying them is told, unasked."""
-    from agent6.ui.cli import init as init_mod
+    from agent6.ui.cli import init_wizard
 
     asked: list[str] = []
 
@@ -244,16 +245,16 @@ def test_init_asks_about_the_entries_it_would_add(
         asked.append(prompt)
         return default
 
-    monkeypatch.setattr(init_mod, "_ask", record)
+    monkeypatch.setattr(init_wizard, "_ask", record)
     repo = _repo(tmp_path)
-    assert init.init_workspace(repo, interactive=True) == 0
+    assert init_wizard.init_workspace(repo, interactive=True) == 0
     (gitignore_q,) = [q for q in asked if ".gitignore" in q]
     assert gitignore_q == (
         "Add 6 entries to .gitignore (.env, .env.*, .envrc, secrets/, *.pem, *.key)?"
     )
     asked.clear()
     capsys.readouterr()
-    assert init.init_workspace(repo, interactive=True) == 0
+    assert init_wizard.init_workspace(repo, interactive=True) == 0
     assert not [q for q in asked if ".gitignore" in q]
     assert ".gitignore already has all agent6 entries" in capsys.readouterr().out
 
@@ -292,7 +293,7 @@ def test_init_states_the_setup_command_a_lockfile_makes_obvious(tmp_path: pathli
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8")
 
-    assert init.init_workspace(repo) == 0
+    assert init_wizard.init_workspace(repo) == 0
 
     text = (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert verify_infer.setup_from_agents_md(text) == ("uv", "sync")
@@ -304,7 +305,7 @@ def test_init_writes_no_setup_block_without_a_lockfile(tmp_path: pathlib.Path) -
     repo = _repo(tmp_path)
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
 
-    assert init.init_workspace(repo) == 0
+    assert init_wizard.init_workspace(repo) == 0
 
     text = (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert "## Setup command" not in text
@@ -321,7 +322,7 @@ def test_the_starter_agents_md_quotes_the_inferred_command(
         return verify_infer.InferredVerify(("sh", "-c", "pytest -q && ruff check"), "pyproject", ())
 
     monkeypatch.setattr(verify_infer, "infer_verify_command", _inferred)
-    init._setup_agents_md(repo, ecosystem="python", ask=lambda _p, _d: True)
+    init_wizard._setup_agents_md(repo, ecosystem="python", ask=lambda _p, _d: True)
     text = (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert "sh -c 'pytest -q && ruff check'" in text
     assert "sh -c pytest -q && ruff check" not in text

@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import pathlib
 
-from agent6.app import machine_agent
+from agent6.app.machine import agent
 from agent6.machine import AgentExecResult, AgentRequest, schema
 from agent6.vcs import git_read
 
-_REQUEST = machine_agent.MachineAgentRequest(
+_REQUEST = agent.MachineAgentRequest(
     cwd=pathlib.Path("/work/repo"),
     root=pathlib.Path("/work/repo"),
     overlay={"budget": {"max_tokens_fallback": 9000}},
@@ -76,7 +76,7 @@ def test_request_serializes_to_pinned_bytes() -> None:
 
 
 def test_request_bytes_validate_to_same_object() -> None:
-    assert machine_agent.MachineAgentRequest.model_validate_json(_REQUEST_BYTES) == _REQUEST
+    assert agent.MachineAgentRequest.model_validate_json(_REQUEST_BYTES) == _REQUEST
 
 
 def test_result_serializes_to_pinned_bytes() -> None:
@@ -103,7 +103,7 @@ def test_result_payload_with_a_lone_surrogate_still_serializes() -> None:
 
 def test_defaulted_request_omits_nothing() -> None:
     # Optional envelope fields serialize explicitly, never key-drop, so the reader needs no default.
-    minimal = machine_agent.MachineAgentRequest(
+    minimal = agent.MachineAgentRequest(
         cwd=pathlib.Path("/w"),
         root=pathlib.Path("/w"),
         overlay={},

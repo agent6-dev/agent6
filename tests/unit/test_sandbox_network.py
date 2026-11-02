@@ -14,7 +14,8 @@ from typing import Any
 import pytest
 
 from agent6 import kinds
-from agent6.app import confine, machine_agent, providers
+from agent6.app import confine, role_providers
+from agent6.app.machine import agent
 from agent6.config import Config, ConfigError, validate_config
 from agent6.harness import loop as harness_loop
 from agent6.machine import AgentRequest
@@ -74,14 +75,14 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
 def test_run_one_returns_finish_payload(
     iso: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> _snapshot.SessionResult:
-            return _snapshot.SessionResult(
+        def run(self, _prompt: str) -> loop_snapshot.SessionResult:
+            return loop_snapshot.SessionResult(
                 reason="finish_session",
                 completed=True,
                 summary="done",
@@ -94,11 +95,11 @@ def test_run_one_returns_finish_payload(
         return object()
 
     monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
-    monkeypatch.setattr(providers, "build_role_provider", _fake)
-    monkeypatch.setattr(providers, "reviewer_seat_provider", _fake)
+    monkeypatch.setattr(role_providers, "build_role_provider", _fake)
+    monkeypatch.setattr(role_providers, "reviewer_seat_provider", _fake)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _fake)
 
-    req = machine_agent.MachineAgentRequest(
+    req = agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
         overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
@@ -106,21 +107,21 @@ def test_run_one_returns_finish_payload(
         transcript_dir=tmp_path / "t",
         request=AgentRequest(prompt="go", timeout_s=5.0),
     )
-    out = machine_agent.run_one(req)
+    out = agent.run_one(req)
     assert out.reason == "finish_session"
     assert out.payload == {"label": "ok"}
 
 
 def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Stub the agent loop in machine_agent; return a dict capturing dispatcher kwargs."""
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
     class _FakeWf:
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> _snapshot.SessionResult:
-            return _snapshot.SessionResult(
+        def run(self, _prompt: str) -> loop_snapshot.SessionResult:
+            return loop_snapshot.SessionResult(
                 reason="finish_session",
                 completed=True,
                 summary="d",
@@ -143,8 +144,8 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return object()
 
     monkeypatch.setattr(harness_loop, "Harness", _CapturingWf)
-    monkeypatch.setattr(providers, "build_role_provider", _prov)
-    monkeypatch.setattr(providers, "reviewer_seat_provider", _prov)
+    monkeypatch.setattr(role_providers, "build_role_provider", _prov)
+    monkeypatch.setattr(role_providers, "reviewer_seat_provider", _prov)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _disp)
     return captured
 
@@ -157,7 +158,7 @@ def test_run_one_drops_out_of_cwd_protect_paths(
     inside.write_text("x", encoding="utf-8")
     outside = tmp_path.parent / "evil.asm.toml"
     outside.write_text("x", encoding="utf-8")
-    req = machine_agent.MachineAgentRequest(
+    req = agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
         overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
@@ -166,7 +167,7 @@ def test_run_one_drops_out_of_cwd_protect_paths(
         protect_paths=(inside, outside),
         request=AgentRequest(prompt="go", timeout_s=5.0),
     )
-    machine_agent.run_one(req)
+    agent.run_one(req)
     # Only the in-cwd path survives the subprocess-boundary re-validation.
     assert captured["extra_protect_paths"] == (inside.resolve(),)
 
@@ -186,7 +187,7 @@ def test_run_one_hands_the_commit_identity_to_the_chain_and_the_jail_not_the_pro
     captured = _stub_loop(monkeypatch)
     for key in _GIT_IDENTITY_KEYS:
         monkeypatch.delenv(key, raising=False)
-    req = machine_agent.MachineAgentRequest(
+    req = agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
         overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
@@ -195,7 +196,7 @@ def test_run_one_hands_the_commit_identity_to_the_chain_and_the_jail_not_the_pro
         commit_identity=git_read.CommitIdentity(name="Machine Bot", email="bot@example.com"),
         request=AgentRequest(prompt="go", timeout_s=5.0, mode="run"),
     )
-    out = machine_agent.run_one(req)
+    out = agent.run_one(req)
     assert out.reason == "finish_session"
     assert not any(key in os.environ for key in _GIT_IDENTITY_KEYS)
     chain = captured["harness"]["chain"]

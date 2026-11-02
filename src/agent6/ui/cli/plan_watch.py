@@ -17,7 +17,7 @@ from agent6 import errors, paths
 from agent6.sessions import id, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import schema
-from agent6.ui.cli import _common, _console_view, _interact
+from agent6.ui.cli import common, console_render, interact
 from agent6.viewmodel import (
     StatusFacts,
     event_epoch,
@@ -34,7 +34,7 @@ from agent6.viewmodel import (
 
 def _plan_next(session_id: str) -> str:
     """Return what to do with a plan that has not written its page: follow it, or resume it."""
-    if session_is_live(_common._plans_dir(pathlib.Path.cwd()) / session_id):
+    if session_is_live(common._plans_dir(pathlib.Path.cwd()) / session_id):
         return f"it is still running (`agent6 attach {session_id}` follows it)"
     return f"`agent6 resume {session_id}` continues it"
 
@@ -48,11 +48,11 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
     Returns:
         The id, or None after printing an error.
     """
-    plans_dir = _common._plans_dir(pathlib.Path.cwd())
+    plans_dir = common._plans_dir(pathlib.Path.cwd())
     if not session_id:
         latest = _most_recent_plan_session_id(plans_dir)
         if latest is None:
-            _common.error("no plans yet (start one with `agent6 plan`).")
+            common.error("no plans yet (start one with `agent6 plan`).")
             return None
         session_id = latest
     state = paths.state_dir(pathlib.Path.cwd())
@@ -66,13 +66,13 @@ def _resolve_plan_session_id(session_id: str) -> str | None:
             except id.SessionIdError as other_exc:
                 exc = other_exc
             else:
-                _common.error(f"{other.session_id} is a session under {other.subdir}/, not a plan")
+                common.error(f"{other.session_id} is a session under {other.subdir}/, not a plan")
                 return None
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return None
     plan = plans_dir / resolved / "plan.md"
     if not plan.is_file():
-        _common.error(f"{resolved} has not written its plan.md yet; {_plan_next(resolved)}")
+        common.error(f"{resolved} has not written its plan.md yet; {_plan_next(resolved)}")
         return None
     return resolved
 
@@ -89,7 +89,7 @@ def _cmd_plan_show(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    plan = errors.read_operator_file(_common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md")
+    plan = errors.read_operator_file(common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md")
     sys.stdout.write(plan if plan.endswith("\n") else plan + "\n")
     return 0
 
@@ -109,17 +109,17 @@ def _cmd_plan_edit(session_id: str) -> int:
     resolved = _resolve_plan_session_id(session_id)
     if resolved is None:
         return 2
-    plan = _common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md"
-    argv = _common.editor_argv()
+    plan = common._plans_dir(pathlib.Path.cwd()) / resolved / "plan.md"
+    argv = common.editor_argv()
     if argv is None:
         return 1
     try:
         result = subprocess.run([*argv, str(plan)], check=False)
     except OSError as exc:
-        _common.error(f"failed to spawn editor {argv[0]!r}: {exc}")
+        common.error(f"failed to spawn editor {argv[0]!r}: {exc}")
         return 1
     if result.returncode != 0:
-        _common.error(f"editor {argv[0]!r} exited {result.returncode}")
+        common.error(f"editor {argv[0]!r} exited {result.returncode}")
         return 1
     return 0
 
@@ -171,25 +171,25 @@ def _cmd_watch(
     cwd = pathlib.Path.cwd()
     # Every run-style bucket, by id and for the newest, so a bare `attach` after an `ask` finds it.
     try:
-        layout = _common.resolve_or_newest_layout(cwd, session_id)
+        layout = common.resolve_or_newest_layout(cwd, session_id)
     except id.SessionIdError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     if layout is None:
-        _common.print_nothing_yet()
+        common.print_nothing_yet()
         return 2
     target = layout.session_dir
     if not session_id:
         print(f"[agent6] attached to most recent run: {target.name}", file=sys.stderr)
     if not target.is_dir():
-        _common.error(f"no such run dir: {target}")
+        common.error(f"no such run dir: {target}")
         return 2
     if not tui:
         return _cmd_watch_plain(target, since=since) if raw else _watch_transcript(target)
     try:
         from agent6.ui.tui import app  # noqa: PLC0415  # textual is optional  # noqa: PLC0415  # textual is optional
     except ImportError as e:
-        _common.error(f"{e}")
+        common.error(f"{e}")
         print(
             "HINT: drop --tui for the conversation view, or pass --raw for the line tail.",
             file=sys.stderr,
@@ -217,7 +217,7 @@ def _cmd_tui(config_paths: tuple[pathlib.Path, ...] = ()) -> int:
             home,
         )
     except ImportError as e:
-        _common.error(f"{e}")
+        common.error(f"{e}")
         print("HINT: the TUI needs 'textual' (part of the base install).", file=sys.stderr)
         return 3
     cwd = pathlib.Path.cwd()
@@ -354,7 +354,7 @@ class _CliFrontEnd:
     the start on attach, so the answered and handled id sets gate re-prompting.
     """
 
-    def __init__(self, session_dir: pathlib.Path, view: _console_view.ConsoleView) -> None:
+    def __init__(self, session_dir: pathlib.Path, view: console_render.ConsoleView) -> None:
         """Bind the session dir and the console view; nothing is prompted yet."""
         self._session_dir = session_dir
         self._view = view
@@ -419,7 +419,7 @@ class _CliFrontEnd:
         )
         if approval:
             with self._view.pause():
-                answer = _interact.default_stdin_approver(
+                answer = interact.default_stdin_approver(
                     str(event.get("prompt", "")), standing=_standing(event), until=watch.closed
                 )
             if not watch.closed() and not ipc.write_answer(
@@ -436,7 +436,7 @@ class _CliFrontEnd:
                 for q in (raw_questions if isinstance(raw_questions, list) else [])
             )
             with self._view.pause():
-                answers = _interact.default_stdin_questioner(questions, until=watch.closed)
+                answers = interact.default_stdin_questioner(questions, until=watch.closed)
             if not watch.closed() and not ipc.write_question_answers(
                 self._session_dir,
                 prompt_id,
@@ -509,7 +509,7 @@ def _render_over_session(target: pathlib.Path, events_path: pathlib.Path, *, fin
     Returns:
         The exit code, 0.
     """
-    view = _console_view.ConsoleView(
+    view = console_render.ConsoleView(
         sys.stdout, policy=lambda: session_policy(target).line(), session_id=target.name
     )
     try:
@@ -527,7 +527,7 @@ def _render_over_session(target: pathlib.Path, events_path: pathlib.Path, *, fin
 
 
 def _install_front_end(
-    target: pathlib.Path, view: _console_view.ConsoleView
+    target: pathlib.Path, view: console_render.ConsoleView
 ) -> _CliFrontEnd | None:
     """Attach as the answering front-end on an interactive terminal.
 
@@ -592,7 +592,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
         # Per poll, O(1): once following, the worker pid is the liveness evidence.
         return not process.worker_is_alive(target)
 
-    view = _console_view.ConsoleView(
+    view = console_render.ConsoleView(
         sys.stdout, policy=lambda: session_policy(target).line(), session_id=target.name
     )
     front_end = _install_front_end(target, view)
@@ -651,7 +651,7 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
     """
     events_path = target / sessions_layout.LOGS_NAME
     if not events_path.is_file():
-        _common.error(f"no logs.jsonl in {target}")
+        common.error(f"no logs.jsonl in {target}")
         return 2
 
     # The first event is the elapsed-time anchor; a torn first line must not crash the watch.
@@ -675,7 +675,7 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
     try:
         fh = events_path.open("rb")
     except OSError as exc:
-        _common.error(f"cannot open {events_path}: {exc}")
+        common.error(f"cannot open {events_path}: {exc}")
         return 2
 
     try:
@@ -685,7 +685,7 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
             try:
                 lines = fh.readlines()
             except OSError as exc:
-                _common.error(f"read failed: {exc}")
+                common.error(f"read failed: {exc}")
                 return 2
             if lines and not lines[-1].endswith(b"\n"):
                 pending = lines.pop()

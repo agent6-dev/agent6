@@ -8,10 +8,11 @@ from unittest import mock
 
 import pytest
 
-from agent6 import errors, event_log, paths, review_records
-from agent6.app import _setup, providers
+from agent6 import errors, paths, review_records
+from agent6.app import role_providers, session_setup
 from agent6.config import layer
-from agent6.harness import _chain, _context, _loop_state, _reviewer, code_review
+from agent6.harness import loop_state, repo_context, review_diff, review_gate, run_chain
+from agent6.sessions import event_log
 from agent6.ui.cli import review_cmds
 from agent6.vcs import git_files, git_read, review
 from tests.unit import test_review_gate, test_review_line_origin, test_review_saved
@@ -51,10 +52,10 @@ def test_review_never_writes_hidden_or_unselected_worktree_bytes(
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setattr(layer, "load_effective", mock.Mock(return_value=mock.Mock(config=cfg)))
-    monkeypatch.setattr(_setup, "check_provider_keys", mock.Mock(return_value=None))
-    monkeypatch.setattr(providers, "build_role_provider", mock.Mock())
+    monkeypatch.setattr(session_setup, "check_provider_keys", mock.Mock(return_value=None))
+    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock())
     provider_call = mock.Mock(return_value="VERDICT: LGTM")
-    monkeypatch.setattr(code_review, "review_diff", provider_call)
+    monkeypatch.setattr(review_diff, "review_diff", provider_call)
     assert (
         review_cmds._cmd_review(
             (), base="", head="HEAD", paths=("a.py",) if policy == "unselected" else ()
@@ -448,7 +449,7 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
         tmp_path, b"first unchanged line\nsecond unchanged line\n", old_name
     )
     monkeypatch.chdir(nested)
-    chain = _chain.RunChain(
+    chain = run_chain.RunChain(
         pathlib.Path.cwd(), ref="refs/agent6/test/head", fallback_parent=base, base_sha=base
     )
     (tmp_path / old_name).rename(tmp_path / new_name)
@@ -475,9 +476,9 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
     sink = event_log.EventSink(tmp_path / "journal" / "logs.jsonl")
     blobs = mock.Mock(wraps=git_files.blob_at)
     monkeypatch.setattr(git_files, "blob_at", blobs)
-    reviewer = _reviewer.Reviewer(
-        settings=_reviewer.ReviewSettings(
-            reviewers=[_reviewer.ReviewSeat("security", "model", provider)], block_on="any"
+    reviewer = review_gate.Reviewer(
+        settings=review_gate.ReviewSettings(
+            reviewers=[review_gate.ReviewSeat("security", "model", provider)], block_on="any"
         ),
         chain=chain,
         hide=hide,
@@ -486,7 +487,7 @@ def test_in_loop_subdirectory_panel_uses_repository_relative_evidence(
         log=lambda _s: None,
         emit=sink.emit,
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
 
     result = reviewer.critique(state, trigger="before_finish", turn=1)
 
@@ -567,7 +568,7 @@ def test_review_reasons_do_not_quote_hidden_git_inputs(tmp_path: pathlib.Path, s
         )
         _git(tmp_path, "config", "include.path", "../secret.env")
     if source == "rules":
-        rules = _context.review_rules(tmp_path, target.base_tree, (str(secret),))
+        rules = repo_context.review_rules(tmp_path, target.base_tree, (str(secret),))
         assert not rules.complete
         reason = rules.reason
     else:
@@ -594,7 +595,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
     base = test_review_line_origin._commit(tmp_path, b"old\ncontext\n")
     secret = tmp_path / "secret.env"
     hide = (str(secret),) if refusal != "ordinary" else ()
-    chain = _chain.RunChain(
+    chain = run_chain.RunChain(
         tmp_path,
         ref="refs/agent6/test/head",
         fallback_parent=base,
@@ -654,9 +655,9 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
         )
 
     provider.call.side_effect = seat
-    reviewer = _reviewer.Reviewer(
-        settings=_reviewer.ReviewSettings(
-            reviewers=[_reviewer.ReviewSeat("security", "model", provider)], block_on="any"
+    reviewer = review_gate.Reviewer(
+        settings=review_gate.ReviewSettings(
+            reviewers=[review_gate.ReviewSeat("security", "model", provider)], block_on="any"
         ),
         chain=chain,
         hide=hide,
@@ -665,7 +666,7 @@ def test_panel_classifies_immutable_bytes_before_its_single_record(
         log=lambda _s: None,
         emit=sink.emit,
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     result = reviewer.critique(state, trigger="before_finish", turn=1)
     assert result is not None and not result.satisfied
     panels = [row for row in rows if row["type"] == "loop.review.panel"]

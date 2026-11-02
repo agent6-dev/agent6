@@ -18,7 +18,7 @@ from agent6 import paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
-from agent6.viewmodel import _session_log, _session_status, format, review_queue
+from agent6.viewmodel import format, review_queue, session_log, session_status
 
 
 def session_mtime(session_dir: pathlib.Path) -> float:
@@ -161,7 +161,7 @@ class SessionSummary:
 
     session_id: str
     mode: str
-    task_label: _session_status.TaskLabel
+    task_label: session_status.TaskLabel
     status: str
     reason: str
     cost_usd: float
@@ -185,7 +185,7 @@ class SessionSummary:
     @property
     def cost_cell(self) -> str:
         """The session's cost as `cost_cell` spells it."""
-        return _session_status.cost_cell(
+        return session_status.cost_cell(
             self.cost_usd,
             partial=self.usd_partial,
             plan_consumed=self.plan_consumed,
@@ -431,13 +431,13 @@ def session_is_live(session_dir: pathlib.Path) -> bool:
     """
     logs = session_dir / layout.LOGS_NAME
     facts = (
-        _session_log.scan_session_log(logs).status_facts()
+        session_log.scan_session_log(logs).status_facts()
         if logs.is_file()
-        else _session_status.StatusFacts()
+        else session_status.StatusFacts()
     )
     return (
-        _session_status.status_for_session_dir(session_dir, facts)[0]
-        in _session_status.LIVE_STATUS_WORDS
+        session_status.status_for_session_dir(session_dir, facts)[0]
+        in session_status.LIVE_STATUS_WORDS
     )
 
 
@@ -470,7 +470,7 @@ def needs_new_work(
 
 def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
     """Return `needs_new_work` over the run's log and dir, for a verb that holds only the dir."""
-    scan = _session_log.scan_session_log(session_dir / layout.LOGS_NAME)
+    scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
     return needs_new_work(
         finished=scan.finished,
         end_reason=scan.end_reason,
@@ -621,7 +621,7 @@ def summarize_session_dir(
         The row.
     """
     logs = session_dir / layout.LOGS_NAME
-    scan = _session_log.scan_session_log(logs) if logs.is_file() else _session_log.LogScan()
+    scan = session_log.scan_session_log(logs) if logs.is_file() else session_log.LogScan()
     manifest: sessions_manifest.SessionManifest | None = None
     with contextlib.suppress(sessions_manifest.ManifestError):
         manifest = sessions_manifest.read_manifest(session_dir)
@@ -632,8 +632,8 @@ def summarize_session_dir(
         if mode == "?":
             mode = manifest.mode or mode
     if mode == "?" and not label.task:
-        label = _session_status.TaskLabel("(no logs)")
-    word, reason = _session_status.status_for_session_dir(session_dir, scan.status_facts())
+        label = session_status.TaskLabel("(no logs)")
+    word, reason = session_status.status_for_session_dir(session_dir, scan.status_facts())
     lineage = manifest.parallel if manifest is not None else None
     has_unmerged = (
         unmerged(manifest, word, branch_tips)

@@ -13,10 +13,9 @@ import pathlib
 
 import pytest
 
-from agent6 import event_log
 from agent6.config import Config
-from agent6.sessions import ipc
-from agent6.tools import dispatch, errors, mcp_client, operator_prompts
+from agent6.sessions import event_log, ipc
+from agent6.tools import dispatch, mcp_client, operator_prompts, tool_errors
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
 
 
@@ -44,10 +43,10 @@ def _deny(_request: operator_prompts.ApprovalRequest, /) -> operator_prompts.App
 
 def _cli_prompts(session_dir: pathlib.Path) -> operator_prompts.OperatorPrompts:
     """The gate over the CLI's own approver, journaling into *session_dir*."""
-    from agent6.ui.cli import _interact
+    from agent6.ui.cli import interact
 
     return operator_prompts.OperatorPrompts(
-        approver=_interact.build_approver(session_dir),
+        approver=interact.build_approver(session_dir),
         journal=event_log.EventSink(session_dir / "logs.jsonl").emit,
         session_dir=session_dir,
     )
@@ -96,7 +95,7 @@ def test_the_prompt_carries_the_arguments_in_full(tmp_path: pathlib.Path) -> Non
             mcp_manager=mgr,
             prompts=operator_prompts.OperatorPrompts(approver=_capture),
         )
-        with pytest.raises(errors.ToolDeniedError):
+        with pytest.raises(tool_errors.ToolDeniedError):
             d.dispatch("mcp__fake__echo", {"text": "x" * 500, "items": list(range(20))})
     finally:
         mgr.close()
@@ -114,7 +113,7 @@ def test_a_denied_call_never_reaches_the_server(tmp_path: pathlib.Path) -> None:
             mcp_manager=mgr,
             prompts=operator_prompts.OperatorPrompts(approver=_deny),
         )
-        with pytest.raises(errors.ToolDeniedError, match="approve"):
+        with pytest.raises(tool_errors.ToolDeniedError, match="approve"):
             d.dispatch("mcp__fake__echo", {"text": "hello"})
     finally:
         mgr.close()
@@ -161,7 +160,7 @@ def test_allowing_every_command_does_not_allow_a_server(tmp_path: pathlib.Path) 
     mgr = _manager()
     try:
         d = dispatch.ToolDispatcher(root=tmp_path, config=_cfg(), mcp_manager=mgr, prompts=prompts)
-        with pytest.raises(errors.ToolDeniedError):
+        with pytest.raises(tool_errors.ToolDeniedError):
             d.dispatch("mcp__fake__echo", {"text": "hi"})
     finally:
         mgr.close()
@@ -252,7 +251,7 @@ def test_an_unconfigured_server_is_refused_before_it_is_ever_asked_about(
             mcp_manager=mgr,
             prompts=operator_prompts.OperatorPrompts(approver=_forbidden),
         )
-        with pytest.raises(errors.ToolError, match="unknown MCP server"):
+        with pytest.raises(tool_errors.ToolError, match="unknown MCP server"):
             d.dispatch("mcp__../../tmp/x__t", {})
     finally:
         mgr.close()
@@ -278,7 +277,7 @@ def test_deny_all_for_a_server_refuses_the_next_call_not_just_the_listing(
         assert len(asked) == 1
         ipc.set_session_deny(session_dir, "mcp.fake")
         assert "mcp__fake__echo" not in d.available_tool_names()
-        with pytest.raises(errors.ToolError, match="denied for this session"):
+        with pytest.raises(tool_errors.ToolError, match="denied for this session"):
             d.dispatch("mcp__fake__echo", {"text": "hi"})
         assert len(asked) == 1, "the operator was asked again after denying the scope"
     finally:
@@ -344,7 +343,7 @@ def test_a_huge_payload_prompts_with_a_head_and_a_full_file(tmp_path: pathlib.Pa
             prompts=operator_prompts.OperatorPrompts(approver=_capture),
             session_dir=session_dir,
         )
-        with pytest.raises(errors.ToolDeniedError):
+        with pytest.raises(tool_errors.ToolDeniedError):
             d.dispatch("mcp__fake__echo", {"text": big})
     finally:
         mgr.close()

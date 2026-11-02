@@ -5,7 +5,7 @@ from __future__ import annotations
 import pathlib
 
 from agent6 import errors, pack, paths
-from agent6.ui.cli import init
+from agent6.ui.cli import init_wizard
 from agent6.vcs import git_read
 
 
@@ -23,7 +23,7 @@ def cmd_pack() -> int:
         ignore = root / ".gitignore"
         text = ignore.read_text(encoding="utf-8") if ignore.exists() else ""
         if ".agent6/" not in {line.strip() for line in text.splitlines()}:
-            print(init.append_gitignore(root, [".agent6/"]))
+            print(init_wizard.append_gitignore(root, [".agent6/"]))
             paths.chown_to_real_user(ignore)
     except (OSError, UnicodeDecodeError) as exc:
         raise errors.PackError(f"{root / '.gitignore'}: {exc}") from exc

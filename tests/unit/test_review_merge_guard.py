@@ -10,10 +10,10 @@ from typing import Any
 
 import pytest
 
-from agent6 import event_log, review_records
+from agent6 import review_records
 from agent6.app import finalize, merge, reporter, review_actions
 from agent6.config import Config
-from agent6.sessions import layout, lock, manifest
+from agent6.sessions import event_log, layout, lock, manifest
 from agent6.ui import spawn
 from agent6.ui.cli import main
 from agent6.ui.tui import home

@@ -14,9 +14,8 @@ from collections.abc import Callable
 
 import pytest
 
-from agent6 import event_log
 from agent6.app import frontend
-from agent6.sessions import ipc
+from agent6.sessions import event_log, ipc
 from agent6.tools import operator_prompts, schema
 from agent6.ui.acp import frontend as acp_frontend
 

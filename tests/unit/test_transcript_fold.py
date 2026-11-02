@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.viewmodel import _session_status, _transcript_text, fold_transcript, restate
+from agent6.viewmodel import fold_transcript, restate, session_status, transcript_text
 
 
 def _read(path: str) -> list[dict[str, object]]:
@@ -82,7 +82,7 @@ def test_session_start_opens_the_conversation_with_the_task() -> None:
     items = fold_transcript([{"type": "session.start", "user_task": task}])
     assert len(items) == 1
     assert items[0].kind == "task"
-    assert items[0].body == _session_status.task_snippet(task, max_chars=200)
+    assert items[0].body == session_status.task_snippet(task, max_chars=200)
     assert transcript_style.item_lines(items[0], detail="hidden") == [
         [(f"{transcript.DONE} {items[0].body}", "task")]
     ]
@@ -276,24 +276,24 @@ def test_parallel_failed_renders_the_dispatch_error_but_not_the_join_subset() ->
 
 
 def test_salient_arg_prefers_a_primary_key() -> None:
-    assert _transcript_text.salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
-    assert _transcript_text.salient_arg({}) == ""
-    assert _transcript_text.salient_arg({"n": 3}) == "n=3"
+    assert transcript_text.salient_arg({"recursive": True, "path": "src/x.py"}) == "src/x.py"
+    assert transcript_text.salient_arg({}) == ""
+    assert transcript_text.salient_arg({"n": 3}) == "n=3"
 
 
 def test_salient_arg_renders_argv_as_a_shell_line() -> None:
     # Not a Python list repr: the operator reads it as a command; a token with a
     # space is quoted the way a shell needs.
     assert (
-        _transcript_text.salient_arg({"argv": ["cargo", "build", "--release"]})
+        transcript_text.salient_arg({"argv": ["cargo", "build", "--release"]})
         == "cargo build --release"
     )
-    assert _transcript_text.salient_arg({"argv": ["echo", "a b"]}) == "echo 'a b'"
+    assert transcript_text.salient_arg({"argv": ["echo", "a b"]}) == "echo 'a b'"
 
 
 def test_salient_arg_renders_ask_user_questions_as_text() -> None:
     args = {"questions": [{"question": "Which theme?"}, {"question": "Apply to TUI?"}]}
-    assert _transcript_text.salient_arg(args) == "Which theme? (+1)"
+    assert transcript_text.salient_arg(args) == "Which theme? (+1)"
 
 
 def test_interleaved_tool_calls_pair_by_name() -> None:
@@ -359,9 +359,9 @@ def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
     """session.end reason="interrupted" is in SessionEndReason and reads as the operator's stop."""
     from typing import get_args
 
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
-    assert "interrupted" in get_args(_snapshot.SessionEndReason)
+    assert "interrupted" in get_args(loop_snapshot.SessionEndReason)
     (done,) = fold_transcript(
         [{"type": "session.end", "reason": "interrupted", "all_passed": False}]
     )
@@ -621,7 +621,7 @@ def test_edit_preview_shows_the_changed_lines_only() -> None:
 
 def test_salient_arg_is_always_one_line() -> None:
     """The clip flattens whitespace so a multi-line arg value keeps the tool head on one line."""
-    arg = _transcript_text.salient_arg(
+    arg = transcript_text.salient_arg(
         {"_raw_arguments": '{"argv": [".venv/bin/python", "-c", "\nfrom x"]}'}
     )
     assert "\n" not in arg
@@ -696,9 +696,9 @@ def test_every_end_reason_has_a_done_line_label() -> None:
     """
     from typing import get_args
 
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
-    assert set(_DONE_LABELS) == set(get_args(_snapshot.SessionEndReason))
+    assert set(_DONE_LABELS) == set(get_args(loop_snapshot.SessionEndReason))
     for reason, label in _DONE_LABELS.items():
         all_passed = reason in ("silent_finish", "metric_plateau", "verify_settled")
         done = next(
@@ -1091,12 +1091,12 @@ def test_a_queued_question_and_its_late_answer_read_as_markers() -> None:
 def test_media_result_renders_metadata_on_shared_and_acp_surfaces() -> None:
     """The journal carries metadata and every shared renderer shows the same media label."""
     from agent6 import kinds
-    from agent6.tools import _result_format, results
+    from agent6.tools import result_format, results
     from agent6.ui.acp import updates
     from agent6.viewmodel import transcript_style
 
     result = results.ReadMediaResult(kinds.MediaAttachment(b"x" * 2048, "image/png", "page.png"))
-    tails = _result_format.output_tails("read_file", result)
+    tails = result_format.output_tails("read_file", result)
     assert tails["attachment"] == result.attachment.metadata()
     events = [
         {"type": "tool.call", "name": "read_file", "args": {"path": "page.png"}},

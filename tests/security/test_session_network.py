@@ -287,12 +287,12 @@ def test_the_network_accessors_never_answer_none(tmp_path: pathlib.Path) -> None
 
 def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: pathlib.Path) -> None:
     """A run whose commands and servers all take the host network creates no holder."""
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     host_only = Config.model_validate({"sandbox": {"network": "host"}})
-    assert not _setup.wants_session_network(host_only, "full")
-    assert not _setup.wants_session_network(Config(), "partial"), "partial has none to give"
-    assert _setup.wants_session_network(Config(), "full"), "the default puts commands on one"
+    assert not session_setup.wants_session_network(host_only, "full")
+    assert not session_setup.wants_session_network(Config(), "partial"), "partial has none to give"
+    assert session_setup.wants_session_network(Config(), "full"), "the default puts commands on one"
 
     with_server = Config.model_validate(
         {
@@ -303,7 +303,9 @@ def test_a_run_only_builds_a_network_when_something_would_join_it(tmp_path: path
             },
         }
     )
-    assert _setup.wants_session_network(with_server, "full"), "a private server needs one too"
+    assert session_setup.wants_session_network(with_server, "full"), (
+        "a private server needs one too"
+    )
 
 
 def test_the_dev_server_case_end_to_end(tmp_path: pathlib.Path) -> None:
@@ -394,7 +396,7 @@ def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
     `private` means the same thing however many children ask for it, so there is no
     cross-key refusal to write.
     """
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     cfg = Config.model_validate(
         {
@@ -405,8 +407,8 @@ def test_a_private_server_gets_one_even_when_the_commands_are_on_the_host(
             },
         }
     )
-    assert _setup.wants_session_network(cfg, "full")
-    server = _setup.mcp_server_policy(cfg, tmp_path, "full", cfg.mcp.servers["b"])
+    assert session_setup.wants_session_network(cfg, "full")
+    server = session_setup.mcp_server_policy(cfg, tmp_path, "full", cfg.mcp.servers["b"])
     assert server is not None and server.network == "session"
     command = tools_policy.jail_policy(tmp_path, cfg, "full", ("true",))
     assert command.network == "host", "the operator put the commands on the host network"
@@ -458,7 +460,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     import socketserver
     import threading
 
-    from agent6.app import _setup
+    from agent6.app import session_setup
     from agent6.tools import mcp_client
 
     script = tmp_path / "browser_server.py"
@@ -484,7 +486,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
     host_port = httpd.server_address[1]
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
-    net = jail.SessionNetwork.open() if _setup.wants_session_network(cfg, "full") else None
+    net = jail.SessionNetwork.open() if session_setup.wants_session_network(cfg, "full") else None
     srv = cfg.mcp.servers["browser"]
     mgr = mcp_client.MCPManager.start(
         [
@@ -493,7 +495,7 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
                 command=srv.command,
                 startup_timeout_s=15.0,
                 call_timeout_s=20.0,
-                policy=_setup.mcp_server_policy(cfg, tmp_path, "full", srv),
+                policy=session_setup.mcp_server_policy(cfg, tmp_path, "full", srv),
             )
         ],
         session_net=net,

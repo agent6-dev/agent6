@@ -11,10 +11,10 @@ import pathlib
 
 import pytest
 
-from agent6 import event_log
 from agent6.app import reporter as app_reporter
 from agent6.app import stamps
 from agent6.config import Config
+from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 
@@ -137,7 +137,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
 
     from agent6 import budget
     from agent6.app import finalize
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
     rd = tmp_path / "sessions" / "runs" / "r1"
     rd.mkdir(parents=True)
@@ -175,7 +175,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
         encoding="utf-8",
     )
     finalize.print_session_end(
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True,
             reason="finish_session",
             summary="s",
@@ -207,7 +207,7 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
 
     from agent6 import budget
     from agent6.app import finalize
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
     layout = _layout(tmp_path)
     records = [
@@ -231,7 +231,7 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
         reporter=_quiet()[0],
     )
     finalize.print_session_end(
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True,
             reason="finish_session",
             summary="s",
@@ -259,7 +259,7 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
 
     from agent6 import budget
     from agent6.app import finalize
-    from agent6.harness import _snapshot
+    from agent6.harness import loop_snapshot
 
     layout = _layout(tmp_path)
     records = [
@@ -281,7 +281,7 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
         layout.session_dir, ("pytest",), "configured", events=_sink(tmp_path), reporter=_quiet()[0]
     )
     finalize.print_session_end(
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True,
             reason="finish_session",
             summary="s",

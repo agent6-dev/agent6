@@ -23,11 +23,11 @@ import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6.providers import (
-    _headers,
-    _responses,
-    _stream,
-    _transport,
-    types,
+    provider_types,
+    request_headers,
+    responses_codec,
+    stream_lifecycle,
+    transport,
 )
 from agent6.providers import wire as providers_wire
 
@@ -57,7 +57,7 @@ def _unreachable_hook(data: dict[str, Any]) -> Any:
     Raises:
         ProviderError: Always.
     """
-    raise types.ProviderError("chatgpt provider is stream-only")  # pragma: no cover
+    raise provider_types.ProviderError("chatgpt provider is stream-only")  # pragma: no cover
 
 
 _WINDOW_HEADER = re.compile(r"^x-codex-(?P<name>.+)-used-percent$")
@@ -176,9 +176,9 @@ def plan_usage_from_usage_body(body: Mapping[str, Any]) -> agent6_budget.PlanUsa
     )
 
 
-def _stream_error(evt: dict[str, Any]) -> types.ProviderError:
+def _stream_error(evt: dict[str, Any]) -> provider_types.ProviderError:
     """Return the error a `response.failed` or `error` frame carries, classified."""
-    return _responses.stream_error(evt, label="ChatGPT", usage_limit_codes=_USAGE_LIMIT_CODES)
+    return responses_codec.stream_error(evt, label="ChatGPT", usage_limit_codes=_USAGE_LIMIT_CODES)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -202,15 +202,17 @@ class ChatGPTProvider:
     """
 
     model: str
-    credential: types.BearerCredential
+    credential: provider_types.BearerCredential
     account_id: str
     base_url: str
-    extra_headers: _headers.HeaderSet = dataclasses.field(default_factory=_headers.HeaderSet)
+    extra_headers: request_headers.HeaderSet = dataclasses.field(
+        default_factory=request_headers.HeaderSet
+    )
     extra_body: dict[str, Any] = dataclasses.field(default_factory=dict)
     extra_query: dict[str, str] = dataclasses.field(default_factory=dict)
     timeout_s: float = 600.0
-    transcript_sink: types.TranscriptRecorder | None = None
-    auth_observer: types.AuthObserver | None = None
+    transcript_sink: provider_types.TranscriptRecorder | None = None
+    auth_observer: provider_types.AuthObserver | None = None
     budget: agent6_budget.BudgetTracker | None = None
     reasoning_effort: str | None = None
     # One usage preflight per provider; a list, since the dataclass is frozen.
@@ -230,16 +232,16 @@ class ChatGPTProvider:
         try:
             token = self.credential.token()
             url = f"{self.base_url.rstrip('/')}/usage"
-            resp = _transport.http_request(
+            resp = transport.http_request(
                 "GET",
                 url,
-                headers=self._build_headers(token, _headers.plain_facts("usage")),
+                headers=self._build_headers(token, request_headers.plain_facts("usage")),
                 timeout=20.0,
             )
             if resp.status_code != 200:
                 return None
             body = resp.json()
-        except (types.ProviderError, httpx2.HTTPError, ValueError, OSError):
+        except (provider_types.ProviderError, httpx2.HTTPError, ValueError, OSError):
             return None
         return plan_usage_from_usage_body(body) if isinstance(body, dict) else None
 
@@ -267,7 +269,7 @@ class ChatGPTProvider:
         reasoning["effort"] = accepted[0]
         return True
 
-    def _build_headers(self, token: str, facts: _headers.RequestFacts) -> dict[str, str]:
+    def _build_headers(self, token: str, facts: request_headers.RequestFacts) -> dict[str, str]:
         """Return one attempt's request headers, built from its token and the request's facts."""
         headers = {
             "content-type": "application/json",
@@ -286,7 +288,7 @@ class ChatGPTProvider:
         *,
         system: str,
         messages: list[dict[str, Any]],
-        tools: list[types.ToolDefinition] | None = None,
+        tools: list[provider_types.ToolDefinition] | None = None,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         temperature: float | None = None,
         extended_thinking: dict[str, Any] | None = None,
@@ -295,8 +297,8 @@ class ChatGPTProvider:
         thinking_delta_callback: Callable[[str], None] | None = None,
         should_abort: Callable[[], bool] | None = None,
         should_interrupt: Callable[[], bool] | None = None,
-        context: _headers.RequestContext | None = None,
-    ) -> types.ProviderResponse:
+        context: request_headers.RequestContext | None = None,
+    ) -> provider_types.ProviderResponse:
         """Make one Responses call over SSE.
 
         Args:
@@ -339,7 +341,7 @@ class ChatGPTProvider:
         body: dict[str, Any] = {
             "model": self.model,
             "instructions": system,
-            "input": _responses.responses_input(messages, route=self._route),
+            "input": responses_codec.responses_input(messages, route=self._route),
             "tool_choice": "auto",
             "parallel_tool_calls": True,
             "store": False,
@@ -350,7 +352,7 @@ class ChatGPTProvider:
         if context is not None and context.session_id:
             body["prompt_cache_key"] = context.session_id
         if tools:
-            body["tools"] = _responses.tools_to_responses(tools)
+            body["tools"] = responses_codec.tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
         if effort:
             # Omitting the field leaves the model's default on; "off" needs the explicit "none".
@@ -360,10 +362,10 @@ class ChatGPTProvider:
                 wire = accepted[0]  # the served model refused the level once; its floor stands in
             body["reasoning"] = {"effort": wire, "summary": "auto"}
         if self.extra_body:
-            reserved = _responses.RESERVED_BODY | {"prompt_cache_key"}
+            reserved = responses_codec.RESERVED_BODY | {"prompt_cache_key"}
             body.update({k: v for k, v in self.extra_body.items() if k not in reserved})
 
-        return _transport.ProviderCall(
+        return transport.ProviderCall(
             api_label="ChatGPT",
             api_format="chatgpt",
             url=url,
@@ -375,7 +377,9 @@ class ChatGPTProvider:
             transcript_sink=self.transcript_sink,
             budget=self.budget,
             model=self.model,
-            facts=_headers.call_facts(self.model, _headers.responses_body_facts(body), context),
+            facts=request_headers.call_facts(
+                self.model, request_headers.responses_body_facts(body), context
+            ),
             build_headers=self._build_headers,
             adapt_400=self._adapt_effort_400,
             adapt_attempts=1,
@@ -396,7 +400,7 @@ class ChatGPTProvider:
     @property
     def _route(self) -> str:
         """The route a reasoning item may be replayed to."""
-        return _responses.replay_route("chatgpt", self.base_url, self.model)
+        return responses_codec.replay_route("chatgpt", self.base_url, self.model)
 
     def _call_streaming(
         self,
@@ -408,7 +412,7 @@ class ChatGPTProvider:
         thinking_delta_callback: Callable[[str], None] | None,
         should_abort: Callable[[], bool] | None,
         should_interrupt: Callable[[], bool] | None,
-    ) -> types.ProviderResponse:
+    ) -> provider_types.ProviderResponse:
         """Make the call over SSE, metering the plan windows the response headers carry.
 
         Args:
@@ -430,7 +434,7 @@ class ChatGPTProvider:
         """
         stream_headers = dict(headers)
         stream_headers["accept"] = "text/event-stream"
-        state = _responses.ResponsesStreamState()
+        state = responses_codec.ResponsesStreamState()
         plan_usage: agent6_budget.PlanUsage | None = None
 
         def observe_headers(response_headers: Mapping[str, str]) -> None:
@@ -438,7 +442,7 @@ class ChatGPTProvider:
             nonlocal plan_usage
             plan_usage = _plan_usage_of(response_headers)
 
-        call = _stream.SseCall(
+        call = stream_lifecycle.SseCall(
             api_label="ChatGPT",
             api_format="chatgpt",
             url=url,
@@ -451,9 +455,9 @@ class ChatGPTProvider:
             response_headers=observe_headers,
         )
 
-        def consume(resp: httpx2.Response, clock: _stream.StreamClock) -> None:
+        def consume(resp: httpx2.Response, clock: stream_lifecycle.StreamClock) -> None:
             """Read the stream's events into the state."""
-            _responses.consume_stream(
+            responses_codec.consume_stream(
                 call,
                 resp,
                 clock,
@@ -468,10 +472,10 @@ class ChatGPTProvider:
             """Record what the turn cost so far, and the plan window it moved."""
             if not state.usage and plan_usage is None:
                 return
-            billed = _responses.parse_output_items(
+            billed = responses_codec.parse_output_items(
                 [], usage=state.usage, stop_reason="", label="ChatGPT", route=self._route
             )
-            _stream.record_billed_usage(
+            stream_lifecycle.record_billed_usage(
                 self.budget,
                 self.model,
                 input_tokens=billed.input_tokens,
@@ -488,16 +492,16 @@ class ChatGPTProvider:
             _record_billed()
             raise
         try:
-            parsed = _responses.finish_stream(
+            parsed = responses_codec.finish_stream(
                 state, call=call, url=url, label="ChatGPT", route=self._route
             )
-        except types.ProviderError:
+        except provider_types.ProviderError:
             _record_billed()
             raise
         if self.budget is not None:
             if int(state.usage.get("input_tokens") or 0) <= 0:
                 _record_billed()
-                raise types.ProviderError(
+                raise provider_types.ProviderError(
                     "ChatGPT stream reported no usage input tokens;"
                     " budgeted runs require provider usage accounting"
                 )

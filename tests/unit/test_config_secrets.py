@@ -11,7 +11,8 @@ import tomllib
 
 import pytest
 
-from agent6 import paths, secret_store
+from agent6 import paths
+from agent6.config import secret_store
 from agent6.ui.cli import completers, main
 
 

@@ -14,8 +14,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import errors, skills
+from agent6 import errors
 from agent6.config import write
+from agent6.context import skills
 from agent6.ui.cli import skills_cmds as cli_skills_cmds
 
 SKILL_MD = """---

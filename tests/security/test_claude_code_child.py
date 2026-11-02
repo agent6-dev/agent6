@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6.providers import _claude_code_wire
+from agent6.providers import claude_code_wire
 
 # Flags that would widen the child: its own tools, a permission mode, a settings
 # source, another system prompt, a resumed session, or a second budget meter.
@@ -41,7 +41,7 @@ _FORBIDDEN = (
 
 
 def test_argv_carries_the_default_deny_flags_and_no_widening_flag() -> None:
-    argv = _claude_code_wire.claude_argv(
+    argv = claude_code_wire.claude_argv(
         "claude", "claude-sonnet-4-5", "high", pathlib.Path("/private/system_prompt.txt")
     )
     assert not set(argv) & set(_FORBIDDEN)
@@ -52,7 +52,7 @@ def test_argv_carries_the_default_deny_flags_and_no_widening_flag() -> None:
     assert "--no-session-persistence" in argv
     assert argv[argv.index("--system-prompt-file") + 1] == "/private/system_prompt.txt"
     assert argv[argv.index("--effort") + 1] == "high"
-    assert "--effort" not in _claude_code_wire.claude_argv("claude", "m", None, pathlib.Path("/p"))
+    assert "--effort" not in claude_code_wire.claude_argv("claude", "m", None, pathlib.Path("/p"))
 
 
 def test_child_env_carries_no_credential_or_claude_session_variable(
@@ -74,13 +74,13 @@ def test_child_env_carries_no_credential_or_claude_session_variable(
         monkeypatch.setenv(name, "leak")
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/cfg")
     monkeypatch.setenv("HOME", "/home/op")
-    env = _claude_code_wire.child_env()
+    env = claude_code_wire.child_env()
     assert not any(v == "leak" for v in env.values())
     assert not any(k.startswith("ANTHROPIC") for k in env)
     assert {k for k in env if k.startswith("CLAUDE")} == {
         "CLAUDE_CONFIG_DIR",
-        *(k for k in _claude_code_wire.CLAUDE_CODE_ENV if k.startswith("CLAUDE")),
+        *(k for k in claude_code_wire.CLAUDE_CODE_ENV if k.startswith("CLAUDE")),
     }
     assert env["HOME"] == "/home/op"
-    for name, value in _claude_code_wire.CLAUDE_CODE_ENV.items():
+    for name, value in claude_code_wire.CLAUDE_CODE_ENV.items():
         assert env[name] == value

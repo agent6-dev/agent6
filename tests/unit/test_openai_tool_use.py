@@ -19,7 +19,7 @@ from typing import Any, ClassVar
 import httpx2
 import pytest
 
-from agent6.providers import OpenAIProvider, ToolDefinition, _openai_messages, _openai_recovery
+from agent6.providers import OpenAIProvider, ToolDefinition, openai_messages, openai_recovery
 
 
 class _FakeResponse:
@@ -43,7 +43,7 @@ def _ok_response(message: dict[str, Any]) -> dict[str, Any]:
 
 def test_translate_text_only_user_message() -> None:
     """The simple-text case: string content stays a string."""
-    out = _openai_messages.anthropic_to_openai_messages(
+    out = openai_messages.anthropic_to_openai_messages(
         "sys",
         [{"role": "user", "content": "hello"}],
     )
@@ -69,7 +69,7 @@ def test_translate_assistant_tool_use_becomes_tool_calls() -> None:
             ],
         }
     ]
-    out = _openai_messages.anthropic_to_openai_messages("sys", msgs)
+    out = openai_messages.anthropic_to_openai_messages("sys", msgs)
     assert out[0] == {"role": "system", "content": "sys"}
     assert out[1]["role"] == "assistant"
     assert out[1]["content"] == "Let me read that file."
@@ -93,7 +93,7 @@ def test_translate_user_tool_result_becomes_role_tool_message() -> None:
             "content": [{"type": "tool_result", "tool_use_id": "t1", "content": "file content"}],
         }
     ]
-    out = _openai_messages.anthropic_to_openai_messages("sys", msgs)
+    out = openai_messages.anthropic_to_openai_messages("sys", msgs)
     # system + role=tool message; no user message (no text).
     assert len(out) == 2
     assert out[1] == {"role": "tool", "tool_call_id": "t1", "content": "file content"}
@@ -116,7 +116,7 @@ def test_translate_user_text_plus_tool_result_emits_both() -> None:
             ],
         }
     ]
-    out = _openai_messages.anthropic_to_openai_messages("sys", msgs)
+    out = openai_messages.anthropic_to_openai_messages("sys", msgs)
     # tool_result first, then the user text.
     assert out[1] == {"role": "tool", "tool_call_id": "t1", "content": "data"}
     assert out[2] == {"role": "user", "content": "[loop-guard] stop re-reading"}
@@ -145,7 +145,7 @@ def test_translate_loop_guard_notice_lands_after_tool_results() -> None:
             ],
         },
     ]
-    out = _openai_messages.anthropic_to_openai_messages("sys", msgs)
+    out = openai_messages.anthropic_to_openai_messages("sys", msgs)
     # system, assistant, tool t1, tool t2, user notice
     assert len(out) == 5
     assert out[1]["role"] == "assistant"
@@ -170,7 +170,7 @@ def test_translate_multiple_user_notices_stay_separated() -> None:
             ],
         }
     ]
-    out = _openai_messages.anthropic_to_openai_messages("sys", msgs)
+    out = openai_messages.anthropic_to_openai_messages("sys", msgs)
     assert out[1]["content"] == (
         "[harness verify] the gate is red\n\n[no-progress] you have made no progress"
     )
@@ -191,7 +191,7 @@ def test_translate_two_assistant_text_blocks_stay_separated() -> None:
             ],
         }
     ]
-    out = _openai_messages.anthropic_to_openai_messages("sys", msgs)
+    out = openai_messages.anthropic_to_openai_messages("sys", msgs)
     assert out[1]["content"] == "First message.\n\nSecond message."
 
 
@@ -212,7 +212,7 @@ def test_translate_tool_result_list_content_flattened() -> None:
             ],
         }
     ]
-    out = _openai_messages.anthropic_to_openai_messages("sys", msgs)
+    out = openai_messages.anthropic_to_openai_messages("sys", msgs)
     assert out[1]["content"] == "first second"
 
 
@@ -230,7 +230,7 @@ def test_tools_to_openai_translation() -> None:
             input_schema={"type": "object", "properties": {"pattern": {"type": "string"}}},
         ),
     ]
-    out = _openai_messages.tools_to_openai(tools)
+    out = openai_messages.tools_to_openai(tools)
     assert out == [
         {
             "type": "function",
@@ -286,7 +286,7 @@ def test_call_with_tools_translates_request_and_response(
             ),
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     tools = [
         ToolDefinition(
@@ -346,7 +346,7 @@ def test_response_with_malformed_tool_arguments_doesnt_crash(
             ),
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert resp.tool_uses[0]["input"] == {"_raw_arguments": '{"path": "foo.py'}
@@ -384,7 +384,7 @@ def test_huge_malformed_tool_arguments_are_capped(
             ),
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     parsed = resp.tool_uses[0]["input"]
@@ -412,7 +412,7 @@ def test_extended_thinking_silently_ignored(monkeypatch: pytest.MonkeyPatch) -> 
             payload=_ok_response({"role": "assistant", "content": "ok"}),
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     provider.call(
         system="s",
@@ -434,7 +434,7 @@ def test_no_tools_path_still_works(monkeypatch: pytest.MonkeyPatch) -> None:
             payload=_ok_response({"role": "assistant", "content": "hi"}),
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "u"}])
     assert "tools" not in captured["body"]
@@ -473,7 +473,7 @@ def test_full_loop_message_roundtrip(monkeypatch: pytest.MonkeyPatch) -> None:
             ),
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
 
     # First call: simple user prompt.
@@ -561,7 +561,7 @@ def _call_with_text_content(
             },
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="qwen2.5-coder")
     return provider.call(
         system="s",
@@ -639,7 +639,7 @@ def test_native_tool_calls_take_precedence_over_text(
             ),
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="gpt-x")
     resp = provider.call(
         system="s",
@@ -741,7 +741,7 @@ def test_qwen_function_xml_does_not_turn_an_invalid_boolean_false() -> None:
     text = "<function=toggle><parameter=enabled>maybe</parameter></function>"
     schemas = {"toggle": {"properties": {"enabled": {"type": "boolean"}}}}
 
-    calls, _ = _openai_recovery.coerce_text_tool_calls(text, frozenset({"toggle"}), schemas)
+    calls, _ = openai_recovery.coerce_text_tool_calls(text, frozenset({"toggle"}), schemas)
 
     assert calls[0]["input"]["enabled"] == "maybe"
 
@@ -849,7 +849,7 @@ def test_gemma_tool_code_preserves_source_order_mixed_depth(
 def test_gemma_tool_code_keeps_an_unrecovered_sibling_fence_visible() -> None:
     text = "```tool_code\n[read_file(path='a.py')]\n```\n```tool_code\nnot valid Python (\n```"
 
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
 
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
     assert "not valid Python" in remaining
@@ -899,7 +899,7 @@ def test_blank_name_native_tool_call_is_dropped(
             },
         )
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="qwen3-coder-30b")
     resp = provider.call(
         system="s",
@@ -936,7 +936,7 @@ def test_blank_name_tool_use_and_orphan_result_dropped_in_translation() -> None:
             ],
         },
     ]
-    msgs = _openai_messages.anthropic_to_openai_messages("sys", history)
+    msgs = openai_messages.anthropic_to_openai_messages("sys", history)
     asst = next(m for m in msgs if m["role"] == "assistant")
     tool_msgs = [m for m in msgs if m["role"] == "tool"]
     assert [tc["function"]["name"] for tc in asst["tool_calls"]] == ["read_file"]
@@ -949,7 +949,7 @@ def test_blank_name_tool_use_and_orphan_result_dropped_in_translation() -> None:
 def test_translate_thinking_only_assistant_sends_empty_content() -> None:
     # A reasoning-starved turn (thinking block, no text, no tool_use) must not
     # become {"content": null} without tool_calls - strict backends 400 on it.
-    out = _openai_messages.anthropic_to_openai_messages(
+    out = openai_messages.anthropic_to_openai_messages(
         "sys",
         [
             {"role": "user", "content": "go"},
@@ -982,7 +982,7 @@ def test_max_completion_tokens_400_adapts_and_latches(monkeypatch: pytest.Monkey
         bodies.append(json.loads(kwargs["content"].decode("utf-8")))
         return responses[len(bodies) - 1]
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="my-azure-gpt5", deployment="azure")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
     assert resp.text == "ok"
@@ -1007,7 +1007,7 @@ def test_temperature_400_adapts_and_retries(monkeypatch: pytest.MonkeyPatch) -> 
         bodies.append(json.loads(kwargs["content"].decode("utf-8")))
         return responses[len(bodies) - 1]
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="my-deployment", deployment="azure")
     resp = provider.call(
         system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64, temperature=0.0
@@ -1026,7 +1026,7 @@ def test_null_usage_fields_do_not_crash(monkeypatch: pytest.MonkeyPatch) -> None
     def fake_post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=200, payload=payload)
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="m")
     resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}], max_tokens=64)
     assert resp.input_tokens == 0
@@ -1038,7 +1038,7 @@ def test_fence_recovery_preserves_other_json_fences() -> None:
         'Call:\n```json\n{"name": "read_file", "arguments": {"path": "a.py"}}\n```\n'
         'Reference config:\n```json\n{"key": "value"}\n```'
     )
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
     assert [c["name"] for c in calls] == ["read_file"]
     assert '"key": "value"' in remaining  # the second fence is content, not a call
 
@@ -1053,7 +1053,7 @@ def test_two_json_fenced_tool_calls_are_both_recovered_in_order() -> None:
         "then\n"
         '```json\n{"name": "read_file", "arguments": {"path": "b.py"}}\n```'
     )
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
     assert [c["input"]["path"] for c in calls] == ["a.py", "b.py"]
     assert "read_file" not in remaining
 
@@ -1064,7 +1064,7 @@ def test_fence_recovery_finds_a_call_after_a_content_fence() -> None:
         'Call:\n```json\n{"name": "read_file", "arguments": {"path": "a.py"}}\n```'
     )
 
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
 
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
     assert '"key": "value"' in remaining
@@ -1076,7 +1076,7 @@ def test_tool_call_tag_recovery_keeps_malformed_tag_visible() -> None:
         '<tool_call>{"name": "read_file", "arguments": {"path": "a.py"}}</tool_call>\n'
         "<tool_call>{not json}</tool_call>"
     )
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
     assert len(calls) == 1
     # The malformed second call stays visible so the model can see it failed.
     assert "{not json}" in remaining
@@ -1170,6 +1170,6 @@ def test_qwen_function_xml_keeps_unmatched_call_visible() -> None:
         "<function=read_file><parameter=path>a.py</parameter></function>\n"
         "<function=write_notes><parameter=text>x</parameter></function>"
     )
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, frozenset({"read_file"}))
     assert [c["name"] for c in calls] == ["read_file"]
     assert "<function=write_notes>" in remaining  # the unrecovered call stays visible

@@ -16,7 +16,7 @@ import tomllib
 from typing import Any
 
 from agent6 import errors
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.app.machine import (
     SandboxWidenedError,
     lint_and_typecheck,
@@ -38,7 +38,7 @@ from agent6.machine import (
     render_mermaid,
 )
 from agent6.sandbox import detect, tool_paths
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 
 def _fail(path: pathlib.Path, problems: list[str], label: str = "") -> int:
@@ -83,7 +83,9 @@ def _load_validated(
     if bundle_problems:
         return None, bundle_problems, "bundle"
     try:
-        resolve_configs(spec, pathlib.Path.cwd(), _setup.detect_env(), config_paths=config_paths)
+        resolve_configs(
+            spec, pathlib.Path.cwd(), session_setup.detect_env(), config_paths=config_paths
+        )
     except SandboxWidenedError as exc:
         return None, exc.problems, "config"
     except (ConfigError, detect.IsolationUnavailableError) as exc:
@@ -180,7 +182,7 @@ def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, 
     if script_problems:
         return _fail(path, script_problems, "scripts")
     for warning in _tool_reachability_warnings(spec, path):
-        _common.warn(warning)
+        common.warn(warning)
     if sandbox := spec.config.get("sandbox"):
         print(f"[config] sets the sandbox of every state: {_leaves(sandbox)}")
     for name, state in spec.states.items():
@@ -218,7 +220,7 @@ def _cmd_machine_test(
     if spec is None:
         return _fail(path, problems, label)
     script_problems = lint_and_typecheck(path.parent / "scripts")
-    offline = run_offline_tests(path.parent, _setup.detect_env().detected_isolation)
+    offline = run_offline_tests(path.parent, session_setup.detect_env().detected_isolation)
     script_problems.extend(offline.problems)
     if script_problems:
         return _fail(path, script_problems, "scripts")
@@ -236,15 +238,15 @@ def _cmd_machine_test(
     if report.ok:
         # A skip rides the verdict line: OK with tests silently unrun reads as tests ran green.
         skipped = (
-            f"; {_common.plural(offline.skipped, 'offline script test')} not run "
+            f"; {common.plural(offline.skipped, 'offline script test')} not run "
             f"({offline.skip_reason})"
             if offline.skipped
             else ""
         )
         print(
-            f"\nOK: {path} dry-run passed ({_common.plural(len(spec.states), 'state')}, "
-            f"including {_common.plural(len(report.branches), 'branch', 'branches')}); "
-            f"{_common.plural(offline.ran, 'offline script test')} passed{skipped}"
+            f"\nOK: {path} dry-run passed ({common.plural(len(spec.states), 'state')}, "
+            f"including {common.plural(len(report.branches), 'branch', 'branches')}); "
+            f"{common.plural(offline.ran, 'offline script test')} passed{skipped}"
         )
         return 0
     print(f"\nFAIL: {path} dry-run found problems", file=sys.stderr)

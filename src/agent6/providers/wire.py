@@ -16,7 +16,7 @@ import re
 from typing import Literal
 from urllib import parse
 
-from agent6.providers import types
+from agent6.providers import provider_types
 
 ApiFormat = Literal["anthropic", "openai", "chatgpt", "responses"]
 Deployment = Literal["direct", "vertex", "azure"]
@@ -47,7 +47,7 @@ def auth_header(style: AuthStyle, token: str) -> tuple[str, str] | None:
     if style == "none" or not token:
         return None
     if not _HEADER_SAFE_VALUE.fullmatch(token):
-        raise types.ProviderError(
+        raise provider_types.ProviderError(
             "provider credential is not a valid HTTP header value: it holds a"
             " control character, newline, or non-ASCII byte (a stray newline"
             " from copy-paste is the usual cause). The value is not shown, to"

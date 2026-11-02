@@ -17,10 +17,9 @@ from typing import Any, Literal
 from unittest import mock
 
 from agent6 import review_records
-from agent6.app import _setup, providers
+from agent6.app import role_providers, session_setup
 from agent6.config import layer
-from agent6.harness import _panel as harness__panel
-from agent6.harness import _reviewer as harness__reviewer
+from agent6.harness import review_gate, review_panel
 from agent6.vcs import review
 from tests.unit import test_review_diff_collect
 
@@ -41,8 +40,8 @@ SAMPLE_DIFF = """\
 """
 
 
-def _ctx(**kw: Any) -> harness__panel.ReviewContext:
-    return harness__panel.ReviewContext(diff=SAMPLE_DIFF, **kw)
+def _ctx(**kw: Any) -> review_panel.ReviewContext:
+    return review_panel.ReviewContext(diff=SAMPLE_DIFF, **kw)
 
 
 def _seat(
@@ -75,11 +74,11 @@ def _block(category: str, location: review_records.ReviewLocation) -> review_rec
 def _agg(
     seats: list[review_records.ReviewVerdict],
     *,
-    block_on: harness__panel.ReviewBlockOn = "any",
+    block_on: review_panel.ReviewBlockOn = "any",
     min_blocking_models: int = 2,
-    ctx: harness__panel.ReviewContext | None = None,
-) -> harness__panel.PanelResult:
-    return harness__panel.aggregate_verdicts(
+    ctx: review_panel.ReviewContext | None = None,
+) -> review_panel.PanelResult:
+    return review_panel.aggregate_verdicts(
         seats,
         ctx or _ctx(),
         block_on=block_on,
@@ -100,18 +99,18 @@ def test_diff_hunks_parses_paths_and_both_sides_of_each_hunk() -> None:
 
 def test_is_grounded_line_in_range_path_only_and_misses() -> None:
     ranges = review.diff_hunks(SAMPLE_DIFF)
-    assert harness__panel.is_grounded(_location("foo.py", 11), ranges)  # inside 10..14
-    assert harness__panel.is_grounded(_location("foo.py"), ranges)  # path-only, file touched
-    assert not harness__panel.is_grounded(
+    assert review_panel.is_grounded(_location("foo.py", 11), ranges)  # inside 10..14
+    assert review_panel.is_grounded(_location("foo.py"), ranges)  # path-only, file touched
+    assert not review_panel.is_grounded(
         _location("foo.py", 99), ranges
     )  # outside the touched range
-    assert not harness__panel.is_grounded(_location("other.py", 1), ranges)  # file not in the diff
+    assert not review_panel.is_grounded(_location("other.py", 1), ranges)  # file not in the diff
 
 
 def test_a_colon_in_the_path_is_not_a_line_separator() -> None:
     hunks = review.diff_hunks("--- a/src/a:b.py\n+++ b/src/a:b.py\n@@ -1 +1 @@\n-x\n+y\n")
-    assert harness__panel.is_grounded(_location("src/a:b.py", 1), hunks)
-    assert not harness__panel.is_grounded(_location("src/a", 1), hunks)
+    assert review_panel.is_grounded(_location("src/a:b.py", 1), hunks)
+    assert not review_panel.is_grounded(_location("src/a", 1), hunks)
 
 
 # --- executable grounding in aggregation --------------------------------------
@@ -219,7 +218,7 @@ def test_dedup_across_seats_and_against_prior_findings() -> None:
     res = _agg([_seat("m1", f, seat="a"), _seat("m2", f, seat="b")], block_on="none")
     assert len(res.merged_findings) == 1  # same (path, category) merged
     prior = (f,)
-    res2 = harness__panel.aggregate_verdicts(
+    res2 = review_panel.aggregate_verdicts(
         [_seat("m1", f)],
         _ctx(prior_findings=prior),
         block_on="none",
@@ -236,7 +235,7 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
     f = _block("security", _location("foo.py", 11))
     prior = (f,)
     for block_on in ("any", "model_quorum", "all"):
-        res = harness__panel.aggregate_verdicts(
+        res = review_panel.aggregate_verdicts(
             [_seat("m1", f)],
             _ctx(prior_findings=prior),
             block_on=block_on,
@@ -247,7 +246,7 @@ def test_prior_deduped_block_does_not_count_toward_the_gate() -> None:
         assert res.n_block == 0 and res.blocked is False, block_on
     # A NEW grounded block alongside the deduped one still gates.
     new = _block("data-loss", _location("bar.py", 1))
-    res2 = harness__panel.aggregate_verdicts(
+    res2 = review_panel.aggregate_verdicts(
         [_seat("m1", f, new)],
         _ctx(prior_findings=prior),
         block_on="any",
@@ -276,8 +275,8 @@ def test_normalized_exact_repeat_is_not_reinjected() -> None:
 
 
 def test_render_findings_formats_and_empty() -> None:
-    assert harness__panel.render_findings(()) == ""
-    out = harness__panel.render_findings(
+    assert review_panel.render_findings(()) == ""
+    out = review_panel.render_findings(
         (
             review_records.Finding(
                 category="security",
@@ -297,7 +296,7 @@ def test_render_findings_distinguishes_base_and_head_locations() -> None:
         _block("security", _location("foo.py", 11, side="base")),
         _block("security", _location("foo.py", 11)),
     )
-    assert harness__panel.render_findings(findings) == (
+    assert review_panel.render_findings(findings) == (
         "- [block:security] (foo.py:11 (base)) x\n- [block:security] (foo.py:11) x"
     )
 
@@ -316,7 +315,7 @@ def test_a_pass_verdict_cannot_contribute_a_blocking_vote() -> None:
 
 def test_quoted_paths_ground_by_their_name() -> None:
     """Git quotes a non-ASCII name in octal; the quoted form never matched a citation."""
-    from agent6.harness import _review_seat
+    from agent6.harness import review_seat
 
     diff = (
         'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
@@ -332,7 +331,7 @@ def test_quoted_paths_ground_by_their_name() -> None:
         ('we"ird.py', "base"),
         ('we"ird.py', "head"),
     }
-    cited = _review_seat.coerce_findings(
+    cited = review_seat.coerce_findings(
         [
             {
                 "category": "other",
@@ -348,14 +347,14 @@ def test_quoted_paths_ground_by_their_name() -> None:
         ]
     )
     assert cited[0].location.path == "café.py"
-    assert harness__panel.is_grounded(cited[0].location, review.diff_hunks(diff))
+    assert review_panel.is_grounded(cited[0].location, review.diff_hunks(diff))
 
 
 def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
     """A seat's quoted path holding a lone surrogate raised out of the decoder; the panel died."""
-    from agent6.harness import _review_seat
+    from agent6.harness import review_seat
 
-    cited = _review_seat.coerce_findings(
+    cited = review_seat.coerce_findings(
         [
             {
                 "category": "other",
@@ -370,12 +369,12 @@ def test_a_lone_surrogate_in_a_quoted_citation_grounds_nothing() -> None:
             }
         ]
     )
-    assert not harness__panel.is_grounded(cited[0].location, review.diff_hunks(SAMPLE_DIFF))
+    assert not review_panel.is_grounded(cited[0].location, review.diff_hunks(SAMPLE_DIFF))
 
 
 def test_quoted_hunkless_entries_and_literal_quote_names_ground() -> None:
     """A quoted header without hunks registered no path; a name holding quotes was unquoted away."""
-    from agent6.harness import _review_seat
+    from agent6.harness import review_seat
 
     diff = (
         'diff --git "a/caf\\303\\251.py" "b/caf\\303\\251.py"\n'
@@ -386,7 +385,7 @@ def test_quoted_hunkless_entries_and_literal_quote_names_ground() -> None:
     )
     hunks = review.diff_hunks(diff)
     assert hunks[("café.py", "head")] == [] and ('"note.py"', "head") in hunks
-    cited = _review_seat.coerce_findings(
+    cited = review_seat.coerce_findings(
         [
             {
                 "category": "other",
@@ -397,7 +396,7 @@ def test_quoted_hunkless_entries_and_literal_quote_names_ground() -> None:
         ]
     )
     assert cited[0].location.path == '"note.py"'
-    assert harness__panel.is_grounded(cited[0].location, hunks)
+    assert review_panel.is_grounded(cited[0].location, hunks)
 
 
 def test_added_line_starting_like_a_header_is_not_a_file_header() -> None:
@@ -430,7 +429,7 @@ def test_deleted_line_starting_like_a_header_is_not_a_file_header() -> None:
     )
     ranges = review.diff_hunks(diff)
     assert ("legacy column note", "base") not in ranges  # the deletion was not read as a header
-    assert harness__panel.is_grounded(
+    assert review_panel.is_grounded(
         _location("schema.sql", 51), ranges
     )  # the later hunk still grounds
 
@@ -444,11 +443,11 @@ def test_in_place_modification_grounds_old_side_lines() -> None:
     assert [h.old for h in ranges[("mod.py", "base")]] == [
         (100, 104)
     ]  # old side of the in-place hunk
-    assert harness__panel.is_grounded(_location("mod.py", 103, side="base"), ranges)
+    assert review_panel.is_grounded(_location("mod.py", 103, side="base"), ranges)
     res = _agg(
         [_seat("m1", _block("data-loss", _location("mod.py", 103, side="base")))],
         block_on="any",
-        ctx=harness__panel.ReviewContext(diff=diff),
+        ctx=review_panel.ReviewContext(diff=diff),
     )
     assert res.blocked is True and res.n_block == 1
     assert res.merged_findings[0].severity == "block"
@@ -460,13 +459,13 @@ def test_pure_deletion_grounds_on_the_old_path() -> None:
     diff = "--- a/gone.py\n+++ /dev/null\n@@ -1,3 +0,0 @@\n-a\n-b\n-c\n"
     ranges = review.diff_hunks(diff)
     assert ranges[("gone.py", "base")] == [review.Hunk(old=(1, 3), new=None)]
-    assert harness__panel.is_grounded(_location("gone.py", 2, side="base"), ranges)
+    assert review_panel.is_grounded(_location("gone.py", 2, side="base"), ranges)
 
 
 def test_grounding_accepts_a_single_line_and_an_inclusive_range() -> None:
     ranges = review.diff_hunks(SAMPLE_DIFF)
-    assert harness__panel.is_grounded(_location("foo.py", 11), ranges)
-    assert harness__panel.is_grounded(
+    assert review_panel.is_grounded(_location("foo.py", 11), ranges)
+    assert review_panel.is_grounded(
         _location("foo.py", 11, 13), ranges
     )  # a range fully inside 10..14
 
@@ -476,22 +475,22 @@ def test_grounding_range_overlap_not_just_start_line() -> None:
     # foo.py changed lines 10..14. A range whose START line is unchanged but whose
     # INTERIOR overlaps the touched range grounds.
     ranges = review.diff_hunks(SAMPLE_DIFF)
-    assert harness__panel.is_grounded(
+    assert review_panel.is_grounded(
         _location("foo.py", 8, 12), ranges
     )  # start 8 untouched, but 10..12 overlap
-    assert harness__panel.is_grounded(
+    assert review_panel.is_grounded(
         _location("foo.py", 13, 20), ranges
     )  # end 20 untouched, but 13..14 overlap
-    assert harness__panel.is_grounded(
+    assert review_panel.is_grounded(
         _location("foo.py", 1, 99), ranges
     )  # span fully contains the touched range
-    assert harness__panel.is_grounded(
+    assert review_panel.is_grounded(
         _location("foo.py", 14, 30), ranges
     )  # touches only the last changed line
-    assert not harness__panel.is_grounded(
+    assert not review_panel.is_grounded(
         _location("foo.py", 1, 9), ranges
     )  # entirely before the touched range
-    assert not harness__panel.is_grounded(
+    assert not review_panel.is_grounded(
         _location("foo.py", 15, 30), ranges
     )  # entirely after the touched range
 
@@ -501,17 +500,17 @@ def test_a_citation_under_a_real_top_level_a_or_b_dir_grounds() -> None:
     diff = "--- a/a/foo.py\n+++ b/a/foo.py\n@@ -1,2 +1,2 @@\n x\n-y\n+z\n"
     ranges = review.diff_hunks(diff)
     assert list(ranges) == [("a/foo.py", "base"), ("a/foo.py", "head")]
-    assert harness__panel.is_grounded(
-        _location("a/foo.py", 2), ranges
-    ) and harness__panel.is_grounded(_location("a/foo.py"), ranges)
-    assert not harness__panel.is_grounded(_location("foo.py", 2), ranges)  # a different file
+    assert review_panel.is_grounded(_location("a/foo.py", 2), ranges) and review_panel.is_grounded(
+        _location("a/foo.py"), ranges
+    )
+    assert not review_panel.is_grounded(_location("foo.py", 2), ranges)  # a different file
     res = _agg(
         [_seat("m1", _block("security", _location("a/foo.py", 2)))],
-        ctx=harness__panel.ReviewContext(diff=diff),
+        ctx=review_panel.ReviewContext(diff=diff),
     )
     assert res.blocked is True and res.merged_findings[0].severity == "block"
     # Repository paths are literal, not diff-header paths.
-    assert not harness__panel.is_grounded(_location("b/foo.py", 11), review.diff_hunks(SAMPLE_DIFF))
+    assert not review_panel.is_grounded(_location("b/foo.py", 11), review.diff_hunks(SAMPLE_DIFF))
 
 
 def test_range_block_with_unchanged_start_still_gates() -> None:
@@ -549,7 +548,7 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
         verdict="abstain",
         error="unparseable reviewer output",
     )
-    res = harness__panel.PanelResult(
+    res = review_panel.PanelResult(
         panel_id="cli",
         block_on="none",
         blocked=False,
@@ -562,11 +561,11 @@ def test_all_abstain_panel_prints_inconclusive_not_pass(
     def _fake_seats(*_a: object, **_k: object) -> list[_Seat]:
         return [_Seat(), _Seat(), _Seat()]
 
-    def _fake_panel(*_a: object, **_k: object) -> harness__panel.PanelResult:
+    def _fake_panel(*_a: object, **_k: object) -> review_panel.PanelResult:
         return res
 
-    monkeypatch.setattr(providers, "build_review_seats", _fake_seats)
-    monkeypatch.setattr(harness__reviewer, "run_panel", _fake_panel)
+    monkeypatch.setattr(role_providers, "build_review_seats", _fake_seats)
+    monkeypatch.setattr(review_gate, "run_panel", _fake_panel)
     rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
         Config(),
         git="git",
@@ -622,7 +621,7 @@ def test_review_exit_code_is_consistent_across_verdicts(
         blocked: bool,
         findings: tuple[Any, ...],
     ) -> int:
-        res = harness__panel.PanelResult(
+        res = review_panel.PanelResult(
             panel_id="cli",
             block_on="any",
             blocked=blocked,
@@ -635,11 +634,11 @@ def test_review_exit_code_is_consistent_across_verdicts(
         def _seats(*_a: object, **_k: object) -> list[_Seat]:
             return [_Seat()]
 
-        def _panel(*_a: object, **_k: object) -> harness__panel.PanelResult:
+        def _panel(*_a: object, **_k: object) -> review_panel.PanelResult:
             return res
 
-        monkeypatch.setattr(providers, "build_review_seats", _seats)
-        monkeypatch.setattr(harness__reviewer, "run_panel", _panel)
+        monkeypatch.setattr(role_providers, "build_review_seats", _seats)
+        monkeypatch.setattr(review_gate, "run_panel", _panel)
         rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
             Config(),
             git="git",
@@ -695,7 +694,7 @@ def test_panel_is_inconclusive_owner() -> None:
     passing = review_records.ReviewVerdict(
         seat_index=0, focus="s2", model_route="m2", verdict="pass"
     )
-    all_abstain = harness__panel.PanelResult(
+    all_abstain = review_panel.PanelResult(
         panel_id="p",
         block_on="none",
         blocked=False,
@@ -704,8 +703,8 @@ def test_panel_is_inconclusive_owner() -> None:
         n_block=0,
         n_abstain=2,
     )
-    assert harness__panel.panel_is_inconclusive(all_abstain) is True
-    mixed = harness__panel.PanelResult(
+    assert review_panel.panel_is_inconclusive(all_abstain) is True
+    mixed = review_panel.PanelResult(
         panel_id="p",
         block_on="none",
         blocked=False,
@@ -714,8 +713,8 @@ def test_panel_is_inconclusive_owner() -> None:
         n_block=0,
         n_abstain=1,
     )
-    assert harness__panel.panel_is_inconclusive(mixed) is False
-    empty = harness__panel.PanelResult(
+    assert review_panel.panel_is_inconclusive(mixed) is False
+    empty = review_panel.PanelResult(
         panel_id="p",
         block_on="none",
         blocked=False,
@@ -724,7 +723,7 @@ def test_panel_is_inconclusive_owner() -> None:
         n_block=0,
         n_abstain=0,
     )
-    assert harness__panel.panel_is_inconclusive(empty) is False  # nothing to be inconclusive about
+    assert review_panel.panel_is_inconclusive(empty) is False  # nothing to be inconclusive about
 
 
 def test_the_panel_refuses_unreadable_base_rules(
@@ -785,7 +784,7 @@ def test_the_panel_reviews_under_the_freeform_reviews_label(
 
     monkeypatch.setattr(layer, "load_effective", _fake_effective)
     monkeypatch.setattr(Config, "require_runnable", _runnable)
-    monkeypatch.setattr(_setup, "check_provider_keys", _no_key_error)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _no_key_error)
     monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
     test_review_diff_collect._git(tmp_path, "init", "-q", "-b", "main")
     test_review_diff_collect._git(tmp_path, "config", "user.name", "t")
@@ -838,10 +837,10 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
         ("run.sh", "base"): [],
         ("run.sh", "head"): [],
     }
-    assert harness__panel.is_grounded(_location("img.png"), ranges) and harness__panel.is_grounded(
+    assert review_panel.is_grounded(_location("img.png"), ranges) and review_panel.is_grounded(
         _location("new.py"), ranges
     )
-    assert not harness__panel.is_grounded(_location("img.png", 3), ranges)
+    assert not review_panel.is_grounded(_location("img.png", 3), ranges)
 
 
 def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
@@ -850,29 +849,29 @@ def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
     `agent6 review` runs no verify command and the loop has none when none is configured; "none
     configured" is wrong for a review of a repo that has one.
     """
-    from agent6.harness import _review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import review_seat  # pyright: ignore[reportPrivateUsage]
 
-    prompt = _review_seat.build_user_message(harness__panel.ReviewContext(task="t"))
+    prompt = review_seat.build_user_message(review_panel.ReviewContext(task="t"))
     assert "VERIFY: not run." in prompt and "none configured" not in prompt
 
 
 def test_prior_findings_notice_distinguishes_base_and_head_locations() -> None:
     """Keep the prior findings' sides visible at the same path and line."""
-    from agent6.harness import _review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import review_seat  # pyright: ignore[reportPrivateUsage]
 
     prior = (
         _block("security", _location("foo.py", 11, side="base")),
         _block("security", _location("foo.py", 11)),
     )
-    prompt = _review_seat.build_user_message(_ctx(prior_findings=prior))
+    prompt = review_seat.build_user_message(_ctx(prior_findings=prior))
     assert "ALREADY RAISED (do not repeat): foo.py:11 (base) security; foo.py:11 security" in prompt
 
 
 def test_the_seat_prompt_carries_the_whole_large_diff() -> None:
-    from agent6.harness import _review_seat  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import review_seat  # pyright: ignore[reportPrivateUsage]
 
     diff = "start\n" + "x" * 200_000 + "\nend"
-    prompt = _review_seat.build_user_message(harness__panel.ReviewContext(task="t", diff=diff))
+    prompt = review_seat.build_user_message(review_panel.ReviewContext(task="t", diff=diff))
     assert prompt.endswith(f"DIFF:\n{diff}")
 
 
@@ -890,7 +889,7 @@ def test_two_findings_in_different_hunks_of_one_file_both_survive() -> None:
     A second finding in another hunk of the same file was dropped as a duplicate of the first, and
     the report never said it existed. The key carries the hunk.
     """
-    ctx = harness__panel.ReviewContext(diff=TWO_HUNKS_DIFF)
+    ctx = review_panel.ReviewContext(diff=TWO_HUNKS_DIFF)
     seat = _seat(
         "m1",
         _block("security", _location("foo.py", 11)),
@@ -921,7 +920,7 @@ def test_side_and_location_distinguish_findings_in_overlapping_hunks() -> None:
         "@@ -10,50 +10,2 @@ def g():\n     x = 1\n" + "-    gone\n" * 48 + "     return x\n"
         "@@ -70,3 +23,4 @@ def h():\n     y = 1\n+    z = 2\n     return y\n"
     )
-    ctx = harness__panel.ReviewContext(diff=diff)
+    ctx = review_panel.ReviewContext(diff=diff)
     pre, post = (
         _block("security", _location("foo.py", 40, side="base")),
         _block("security", _location("foo.py", 42)),
@@ -950,17 +949,17 @@ def test_a_renames_two_names_do_not_ground_each_others_lines() -> None:
         ("new.py", "head"): [review.Hunk(old=None, new=(200, 202))],
         ("old.py", "base"): [review.Hunk(old=(10, 12), new=None)],
     }
-    assert harness__panel.is_grounded(
+    assert review_panel.is_grounded(
         _location("old.py", 11, side="base"), hunks
-    ) and harness__panel.is_grounded(_location("new.py", 201), hunks)
-    assert not harness__panel.is_grounded(
+    ) and review_panel.is_grounded(_location("new.py", 201), hunks)
+    assert not review_panel.is_grounded(
         _location("old.py", 201, side="base"), hunks
-    ) and not harness__panel.is_grounded(_location("new.py", 11), hunks)
+    ) and not review_panel.is_grounded(_location("new.py", 11), hunks)
     # A pure deletion inside a kept file still grounds the post-image line it
     # sits at, and a pure insertion the pre-image one.
     kept = review.diff_hunks("--- a/k.py\n+++ b/k.py\n@@ -10,5 +9,0 @@\n-a\n-b\n-c\n-d\n-e\n")
     assert kept[("k.py", "head")] == [review.Hunk(old=(10, 14), new=(9, 9))]
-    assert harness__panel.is_grounded(_location("k.py", 9), kept) and harness__panel.is_grounded(
+    assert review_panel.is_grounded(_location("k.py", 9), kept) and review_panel.is_grounded(
         _location("k.py", 12, side="base"), kept
     )
 
@@ -970,10 +969,10 @@ def test_file_level_locations_keep_the_rename_side() -> None:
         "diff --git a/old.py b/new.py\n"
         "similarity index 100%\nrename from old.py\nrename to new.py\n"
     )
-    assert harness__panel.is_grounded(_location("old.py", side="base"), hunks)
-    assert harness__panel.is_grounded(_location("new.py"), hunks)
-    assert not harness__panel.is_grounded(_location("old.py"), hunks)
-    assert not harness__panel.is_grounded(_location("new.py", side="base"), hunks)
+    assert review_panel.is_grounded(_location("old.py", side="base"), hunks)
+    assert review_panel.is_grounded(_location("new.py"), hunks)
+    assert not review_panel.is_grounded(_location("old.py"), hunks)
+    assert not review_panel.is_grounded(_location("new.py", side="base"), hunks)
 
 
 def test_file_level_locations_exclude_absent_sides() -> None:
@@ -983,10 +982,10 @@ def test_file_level_locations_exclude_absent_sides() -> None:
         "diff --git a/old.bin b/old.bin\ndeleted file mode 100644\n"
         "Binary files a/old.bin and /dev/null differ\n"
     )
-    assert harness__panel.is_grounded(_location("new.bin"), hunks)
-    assert harness__panel.is_grounded(_location("old.bin", side="base"), hunks)
-    assert not harness__panel.is_grounded(_location("new.bin", side="base"), hunks)
-    assert not harness__panel.is_grounded(_location("old.bin"), hunks)
+    assert review_panel.is_grounded(_location("new.bin"), hunks)
+    assert review_panel.is_grounded(_location("old.bin", side="base"), hunks)
+    assert not review_panel.is_grounded(_location("new.bin", side="base"), hunks)
+    assert not review_panel.is_grounded(_location("old.bin"), hunks)
 
 
 def test_type_changed_path_keeps_both_sides_hunks() -> None:
@@ -1008,11 +1007,11 @@ def test_type_changed_path_keeps_both_sides_hunks() -> None:
         ("config", "base"): [review.Hunk(old=(1, 1), new=None)],
         ("config", "head"): [review.Hunk(old=None, new=(1, 2))],
     }
-    assert harness__panel.is_grounded(_location("config", 1, side="base"), hunks)
-    assert harness__panel.is_grounded(_location("config", 2), hunks)
-    assert not harness__panel.is_grounded(_location("config", 2, side="base"), hunks)
+    assert review_panel.is_grounded(_location("config", 1, side="base"), hunks)
+    assert review_panel.is_grounded(_location("config", 2), hunks)
+    assert not review_panel.is_grounded(_location("config", 2, side="base"), hunks)
     finding = _block("data-loss", _location("config", 1, side="base"))
-    result = _agg([_seat("m1", finding)], ctx=harness__panel.ReviewContext(diff=diff))
+    result = _agg([_seat("m1", finding)], ctx=review_panel.ReviewContext(diff=diff))
     assert result.merged_findings == (finding,)
     assert result.blocked and result.n_block == 1
 
@@ -1022,8 +1021,8 @@ def test_grounding_uses_only_the_cited_side() -> None:
     hunks = review.diff_hunks("--- a/mod.py\n+++ b/mod.py\n@@ -100,3 +10,2 @@\n a\n-b\n c\n")
     base = review_records.ReviewLocation(path="mod.py", side="base", start_line=101, end_line=101)
     head = review_records.ReviewLocation(path="mod.py", side="head", start_line=101, end_line=101)
-    assert harness__panel.is_grounded(base, hunks)
-    assert not harness__panel.is_grounded(head, hunks)
+    assert review_panel.is_grounded(base, hunks)
+    assert not review_panel.is_grounded(head, hunks)
 
 
 def test_a_review_notice_is_cut_head_first_at_a_character_boundary() -> None:
@@ -1032,8 +1031,8 @@ def test_a_review_notice_is_cut_head_first_at_a_character_boundary() -> None:
     The cut keeps the head (the findings lead), lands inside the byte budget, and names the bytes it
     dropped.
     """
-    assert harness__panel.review_notice("short") == "[review]\nshort"
+    assert review_panel.review_notice("short") == "[review]\nshort"
     text = "\u6f22" * 2_000  # three bytes a character
-    head, marker = harness__panel.review_notice(text).removeprefix("[review]\n").rsplit("\n", 1)
-    assert head == "\u6f22" * (harness__panel.REVIEW_NOTICE_BYTES // 3)
+    head, marker = review_panel.review_notice(text).removeprefix("[review]\n").rsplit("\n", 1)
+    assert head == "\u6f22" * (review_panel.REVIEW_NOTICE_BYTES // 3)
     assert marker == f"[review: {6_000 - len(head.encode())} more bytes cut]"

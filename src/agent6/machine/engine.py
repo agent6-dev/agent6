@@ -16,7 +16,7 @@ import datetime
 from collections.abc import Mapping
 from typing import Any, Literal
 
-from agent6.machine import _contracts, _execution, schema
+from agent6.machine import contracts, execution, schema
 from agent6.machine import journal as machine_journal
 from agent6.machine import template as machine_template
 
@@ -30,7 +30,7 @@ def _emit_notify(
     state: schema.StateSpec,
     blackboard: Mapping[str, object],
     journal: machine_journal.MachineJournal,
-    world: _contracts.World,
+    world: contracts.World,
     state_name: str,
 ) -> None:
     """Journal a state's `notify` message on entry and fire the operator hook.
@@ -75,20 +75,20 @@ def _terminal_reason(state: schema.TerminalState, blackboard: Mapping[str, objec
         return machine_template.render_string(
             machine_template.parse_template(state.reason), blackboard, where="reason"
         )
-    except _execution.STATE_RUNTIME_ERRORS as exc:
+    except execution.STATE_RUNTIME_ERRORS as exc:
         return f"{state.reason} (reason not rendered: {exc})"
 
 
 def _emit_end(
     journal: machine_journal.MachineJournal,
-    world: _contracts.World,
+    world: contracts.World,
     *,
     status: Literal["ok", "failed"],
     reason: str,
     state: str,
     transitions: int,
     unbooked: machine_journal.AgentFact | None = None,
-) -> _contracts.MachineResult:
+) -> contracts.MachineResult:
     """Journal a `machine.end` and fire the operator notify hook for it.
 
     Args:
@@ -117,17 +117,17 @@ def _emit_end(
     )
     journal.append(end)
     world.notify("end", state, reason, status)
-    return _contracts.MachineResult.from_end(end)
+    return contracts.MachineResult.from_end(end)
 
 
 def _end_failed(
     journal: machine_journal.MachineJournal,
-    world: _contracts.World,
+    world: contracts.World,
     state: str,
     transitions: int,
     exc: Exception,
     unbooked: machine_journal.AgentFact | None = None,
-) -> _contracts.MachineResult:
+) -> contracts.MachineResult:
     """Journal a failed end for a runtime state error.
 
     Args:
@@ -170,7 +170,7 @@ class _EngineState:
 
     spec: schema.MachineSpec
     journal: machine_journal.MachineJournal
-    world: _contracts.World | None
+    world: contracts.World | None
     exit_on_wait: bool
     blackboard: dict[str, Any]
     state: str
@@ -213,15 +213,15 @@ def _validate_recorded_route(
         EngineError: The recorded clause, label or goto disagrees with the fact.
     """
     if isinstance(state, schema.BranchState) and isinstance(event.fact, machine_journal.BranchFact):
-        clause_index, expected_label, expected_goto = _execution.route_branch(state, blackboard)
+        clause_index, expected_label, expected_goto = execution.route_branch(state, blackboard)
         if event.fact.clause_index != clause_index:
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 f"journal branch fact selects clause {event.fact.clause_index} at seq"
                 f" {event.seq}, but the replayed blackboard selects clause {clause_index}."
                 f"{remedy}"
             )
     elif isinstance(state, schema.ToolState) and isinstance(event.fact, machine_journal.ToolFact):
-        expected_label = _execution.tool_outcome(event.fact)
+        expected_label = execution.tool_outcome(event.fact)
         expected_goto = state.on[expected_label]
     elif isinstance(state, schema.AgentState) and isinstance(event.fact, machine_journal.AgentFact):
         expected_label = event.fact.outcome
@@ -230,14 +230,14 @@ def _validate_recorded_route(
         expected_label = event.fact.woke_by
         expected_goto = state.on[expected_label]
     else:  # the caller's fact-kind check makes this unreachable
-        raise _contracts.EngineError(f"journal fact at seq {event.seq} cannot be routed")
+        raise contracts.EngineError(f"journal fact at seq {event.seq} cannot be routed")
     if event.label != expected_label:
-        raise _contracts.EngineError(
+        raise contracts.EngineError(
             f"journal records label {event.label!r} at seq {event.seq}, but its fact"
             f" implies label {expected_label!r}.{remedy}"
         )
     if event.goto != expected_goto:
-        raise _contracts.EngineError(
+        raise contracts.EngineError(
             f"journal records goto {event.goto!r} at seq {event.seq}, but its fact"
             f" implies goto {expected_goto!r}.{remedy}"
         )
@@ -271,37 +271,37 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
             continue
         state_spec = spec.states.get(state)
         if state_spec is None:
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 f"journal references state {state!r}, which the loaded machine no"
                 " longer declares (the file was edited since this instance started)."
                 f"{remedy}"
             )
         if event.state != state:
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 f"journal diverges at seq {event.seq}: it records state"
                 f" {event.state!r}, the replayed position is {state!r}.{remedy}"
             )
         if event.seq != transitions:
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 f"journal is not contiguous: expected seq {transitions}, found"
                 f" {event.seq} (state {state!r}).{remedy}"
             )
         expected_kind = _STATE_FACT_KINDS.get(type(state_spec))
         if expected_kind is None or not isinstance(event.fact, expected_kind):
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 f"journal fact at seq {event.seq} is {type(event.fact).__name__},"
                 f" which state {state!r} cannot produce.{remedy}"
             )
         if event.goto not in _declared_gotos(state_spec):
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 f"journal goto {event.goto!r} at seq {event.seq} is not an edge"
                 f" state {state!r} declares.{remedy}"
             )
         try:
             _validate_recorded_route(state_spec, event, blackboard, remedy)
-            blackboard = _execution.reduce(spec, state_spec, event.fact, blackboard)
-        except _execution.STATE_RUNTIME_ERRORS as exc:
-            raise _contracts.EngineError(
+            blackboard = execution.reduce(spec, state_spec, event.fact, blackboard)
+        except execution.STATE_RUNTIME_ERRORS as exc:
+            raise contracts.EngineError(
                 f"cannot replay journaled step at state {state!r}: {exc}"
             ) from exc
         if isinstance(event.fact, machine_journal.AgentFact):
@@ -314,7 +314,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
     eng.spent_usd = spent_usd
 
 
-def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per state kind
+def _run_live_loop(eng: _EngineState) -> contracts.MachineResult:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per state kind
     """Continue live from where the journal ends.
 
     One state per iteration: execute, reduce, journal the fact, advance; until a terminal, a
@@ -335,7 +335,7 @@ def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901
     exit_on_wait = eng.exit_on_wait
     world = eng.world
     if world is None:  # pragma: no cover - defensive
-        raise _contracts.EngineError("live execution requires a World")
+        raise contracts.EngineError("live execution requires a World")
     blackboard = eng.blackboard
     state = eng.state
     transitions = eng.transitions
@@ -344,12 +344,12 @@ def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901
         # A stop request parks here: the fact in flight is journaled, no end is written.
         if machine_journal.stop_requested(journal.root):
             machine_journal.clear_stop_request(journal.root)
-            return _contracts.MachineResult(
+            return contracts.MachineResult(
                 "stopped", "stop requested by the operator", state, transitions
             )
         current = spec.states.get(state)
         if current is None:
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 f"journal resumes at state {state!r}, which the loaded machine no"
                 " longer declares (the file was edited since this instance started)."
                 f" {machine_journal.fresh_start_remedy(journal.root)}"
@@ -365,7 +365,7 @@ def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901
         if not already_parked:
             try:
                 _emit_notify(current, blackboard, journal, world, state)
-            except _execution.STATE_RUNTIME_ERRORS as exc:
+            except execution.STATE_RUNTIME_ERRORS as exc:
                 # Non-fatal, never silent: the failure is journaled and the hook told.
                 fail = f"notify failed: {exc}"
                 with contextlib.suppress(machine_journal.JournalError):
@@ -403,7 +403,7 @@ def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901
 
         try:
             if exit_on_wait and isinstance(current, schema.WaitState):
-                fired = _execution.fire_persisted_wait(
+                fired = execution.fire_persisted_wait(
                     current, blackboard, journal, world, state, transitions
                 )
                 if fired is None:
@@ -412,20 +412,20 @@ def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901
                         detail = f"until {pending.wake_at}"
                     else:
                         detail = "until a signal poke"
-                    return _contracts.MachineResult("waiting", detail, state, transitions)
+                    return contracts.MachineResult("waiting", detail, state, transitions)
                 label, goto, fact = fired
             elif isinstance(current, schema.WaitState):
-                blocked = _execution.block_on_wait(
+                blocked = execution.block_on_wait(
                     current, blackboard, journal, world, state, transitions
                 )
                 if blocked is None:
                     machine_journal.clear_stop_request(journal.root)
-                    return _contracts.MachineResult(
+                    return contracts.MachineResult(
                         "stopped", "stop requested by the operator", state, transitions
                     )
                 label, goto, fact = blocked
             else:
-                label, goto, fact = _execution.execute(
+                label, goto, fact = execution.execute(
                     spec,
                     current,
                     blackboard,
@@ -434,15 +434,15 @@ def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901
                     state_name=state,
                     remaining_usd=remaining_usd,
                 )
-        except _execution.STATE_RUNTIME_ERRORS as exc:
+        except execution.STATE_RUNTIME_ERRORS as exc:
             return _end_failed(journal, world, state, transitions, exc)
         if isinstance(fact, machine_journal.WaitFact) and fact.woke_by == "signal":
             world.materialize_poke(fact.payload)
         # The capture is reduced before the step is journaled: a fact that cannot be reduced would
         # re-crash every later replay, so the machine ends here and the spend rides on the end.
         try:
-            next_blackboard = _execution.reduce(spec, current, fact, blackboard)
-        except _execution.STATE_RUNTIME_ERRORS as exc:
+            next_blackboard = execution.reduce(spec, current, fact, blackboard)
+        except execution.STATE_RUNTIME_ERRORS as exc:
             return _end_failed(
                 journal,
                 world,
@@ -479,12 +479,12 @@ def _run_live_loop(eng: _EngineState) -> _contracts.MachineResult:  # noqa: C901
 def drive(
     spec: schema.MachineSpec,
     journal: machine_journal.MachineJournal,
-    world: _contracts.World | None,
+    world: contracts.World | None,
     *,
     live: bool,
     exit_on_wait: bool = False,
     base_commit: str | None = None,
-) -> _contracts.MachineResult:
+) -> contracts.MachineResult:
     """Run or replay a machine against its journal.
 
     Args:
@@ -506,17 +506,17 @@ def drive(
     """
     events = journal.read()
     if events and not isinstance(events[0], machine_journal.MachineBegin):
-        raise _contracts.EngineError(
+        raise contracts.EngineError(
             "journal must start with a machine.begin event."
             f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
     if any(isinstance(event, machine_journal.MachineBegin) for event in events[1:]):
-        raise _contracts.EngineError(
+        raise contracts.EngineError(
             "journal contains more than one machine.begin event."
             f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
     if any(isinstance(event, machine_journal.MachineEnd) for event in events[:-1]):
-        raise _contracts.EngineError(
+        raise contracts.EngineError(
             "journal contains events after machine.end."
             f" {machine_journal.fresh_start_remedy(journal.root)}"
         )
@@ -526,7 +526,7 @@ def drive(
     if isinstance(begin, machine_journal.MachineBegin) and (
         begin.machine != spec.machine or begin.version != spec.version
     ):
-        raise _contracts.EngineError(
+        raise contracts.EngineError(
             f"this journal was started by machine {begin.machine!r} v{begin.version},"
             f" but the file declares {spec.machine!r} v{spec.version}. A different"
             " machine reused the id, or the file changed since this instance began."
@@ -542,7 +542,7 @@ def drive(
         journal=journal,
         world=world,
         exit_on_wait=exit_on_wait,
-        blackboard=_execution.initial_blackboard(spec),
+        blackboard=execution.initial_blackboard(spec),
         state=spec.initial,
     )
     _rebuild_from_journal(eng, events)
@@ -550,24 +550,24 @@ def drive(
     end = events[-1] if events and isinstance(events[-1], machine_journal.MachineEnd) else None
     if end is not None:
         if end.state != eng.state or end.transitions != eng.transitions:
-            raise _contracts.EngineError(
+            raise contracts.EngineError(
                 "journal machine.end disagrees with its replayed position:"
                 f" records state {end.state!r} after {end.transitions} transitions,"
                 f" replay reaches {eng.state!r} after {eng.transitions}."
                 f" {machine_journal.fresh_start_remedy(journal.root)}"
             )
-        return _contracts.MachineResult.from_end(end)
+        return contracts.MachineResult.from_end(end)
 
     if not live:
         current = spec.states.get(eng.state)
         if isinstance(current, schema.TerminalState):
-            return _contracts.MachineResult(
+            return contracts.MachineResult(
                 current.status,
                 _terminal_reason(current, eng.blackboard),
                 eng.state,
                 eng.transitions,
             )
-        return _contracts.MachineResult(
+        return contracts.MachineResult(
             "incomplete", "journal ends before a terminal state", eng.state, eng.transitions
         )
 

@@ -15,10 +15,10 @@ import pathlib
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import budget, event_log, kinds, portable
+from agent6 import budget, kinds, portable
 from agent6.config import Config
-from agent6.harness import _snapshot, loop, subrun
-from agent6.sessions import ipc, layout
+from agent6.harness import loop, loop_snapshot, subrun
+from agent6.sessions import event_log, ipc, layout
 from agent6.tools import mcp_client, operator_prompts
 
 
@@ -160,7 +160,7 @@ class SessionFrontend:
         build_coordinator_spawner: Builds the `/parallel` dispatch spawner, or None.
         agent6_exe: The agent6 executable to spawn.
         spawn_detached_resume: (cwd, session_id, flags) -> spawns the detached execution under
-            this invocation's overrides as CLI options (see `_setup.override_flags`).
+            this invocation's overrides as CLI options (see `session_setup.override_flags`).
     """
 
     capabilities: FrontendCapabilities
@@ -184,7 +184,7 @@ class SessionFrontend:
         Callable[[int, str], kinds.AutoCommitDirective],
     ]
     run_ask_repl: Callable[
-        [loop.Harness, budget.BudgetTracker, layout.SessionLayout, str], _snapshot.SessionResult
+        [loop.Harness, budget.BudgetTracker, layout.SessionLayout, str], loop_snapshot.SessionResult
     ]
     save_ask_transcript: Callable[[layout.SessionLayout, str, str], None]
     build_coordinator_spawner: Callable[

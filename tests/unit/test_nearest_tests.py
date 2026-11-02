@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agent6.harness import _nearest_tests
+from agent6.harness import verify_scope
 
 DIFF = """\
 diff --git a/pkg/mod.py b/pkg/mod.py
@@ -29,8 +29,8 @@ index 3..4 100644
 
 
 def test_diff_changed_paths_reads_b_side_in_order() -> None:
-    assert _nearest_tests.diff_changed_paths(DIFF) == ("pkg/mod.py", "README.md")
-    assert _nearest_tests.diff_changed_paths("") == ()
+    assert verify_scope.diff_changed_paths(DIFF) == ("pkg/mod.py", "README.md")
+    assert verify_scope.diff_changed_paths("") == ()
 
 
 def _touch(root: pathlib.Path, *rels: str) -> None:
@@ -54,7 +54,7 @@ def test_sibling_and_mirror_and_scan_layouts_are_found(tmp_path: pathlib.Path) -
         "tests/pkg/test_mod.py",
         "tests/unit/test_mod.py",
     )
-    got = _nearest_tests.nearest_test_paths(tmp_path, ("pkg/mod.py",))
+    got = verify_scope.nearest_test_paths(tmp_path, ("pkg/mod.py",))
     assert got[0] == "pkg/test_mod.py"
     assert set(got) == {
         "pkg/test_mod.py",
@@ -71,32 +71,32 @@ def test_changed_test_files_select_themselves(tmp_path: pathlib.Path) -> None:
     rather than handed to pytest as an error.
     """
     _touch(tmp_path, "tests/test_a.py")
-    got = _nearest_tests.nearest_test_paths(tmp_path, ("tests/test_a.py", "tests/test_gone.py"))
+    got = verify_scope.nearest_test_paths(tmp_path, ("tests/test_a.py", "tests/test_gone.py"))
     assert got == ("tests/test_a.py",)
 
 
 def test_non_python_and_testless_changes_select_nothing(tmp_path: pathlib.Path) -> None:
     _touch(tmp_path, "docs/page.md", "pkg/mod.py")
-    assert _nearest_tests.nearest_test_paths(tmp_path, ("docs/page.md",)) == ()
-    assert _nearest_tests.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ()
+    assert verify_scope.nearest_test_paths(tmp_path, ("docs/page.md",)) == ()
+    assert verify_scope.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ()
 
 
 def test_cap_bounds_the_selection(tmp_path: pathlib.Path) -> None:
     _touch(tmp_path, *[f"pkg/m{i}.py" for i in range(30)])
     _touch(tmp_path, *[f"pkg/test_m{i}.py" for i in range(30)])
-    got = _nearest_tests.nearest_test_paths(tmp_path, tuple(f"pkg/m{i}.py" for i in range(30)))
+    got = verify_scope.nearest_test_paths(tmp_path, tuple(f"pkg/m{i}.py" for i in range(30)))
     assert len(got) == 20
 
 
 def test_is_bare_pytest_names_the_shape_that_takes_appended_paths() -> None:
     """Only a pytest argv naming no paths selects the files appended to it."""
-    assert _nearest_tests.is_bare_pytest(("pytest",))
-    assert _nearest_tests.is_bare_pytest(("python", "-m", "pytest", "-q", "-x"))
-    assert _nearest_tests.is_bare_pytest(("/venv/bin/pytest", "--timeout=30"))
-    assert not _nearest_tests.is_bare_pytest(("sh", "-c", "uv run ruff check && uv run pytest"))
-    assert not _nearest_tests.is_bare_pytest(("python", "-m", "pytest", "-q", "tests"))
-    assert not _nearest_tests.is_bare_pytest(("make", "test"))
-    assert not _nearest_tests.is_bare_pytest(())
+    assert verify_scope.is_bare_pytest(("pytest",))
+    assert verify_scope.is_bare_pytest(("python", "-m", "pytest", "-q", "-x"))
+    assert verify_scope.is_bare_pytest(("/venv/bin/pytest", "--timeout=30"))
+    assert not verify_scope.is_bare_pytest(("sh", "-c", "uv run ruff check && uv run pytest"))
+    assert not verify_scope.is_bare_pytest(("python", "-m", "pytest", "-q", "tests"))
+    assert not verify_scope.is_bare_pytest(("make", "test"))
+    assert not verify_scope.is_bare_pytest(())
 
 
 def test_a_changed_helper_under_a_tests_dir_is_not_handed_to_pytest(tmp_path: pathlib.Path) -> None:
@@ -106,7 +106,7 @@ def test_a_changed_helper_under_a_tests_dir_is_not_handed_to_pytest(tmp_path: pa
     """
     _touch(tmp_path, "tests/conftest.py", "tests/helpers.py", "tests/test_a.py")
     changed = ("tests/conftest.py", "tests/helpers.py", "tests/test_a.py")
-    assert _nearest_tests.nearest_test_paths(tmp_path, changed) == ("tests/test_a.py",)
+    assert verify_scope.nearest_test_paths(tmp_path, changed) == ("tests/test_a.py",)
 
 
 def test_the_scan_examines_every_entry_within_its_cap(
@@ -117,11 +117,9 @@ def test_the_scan_examines_every_entry_within_its_cap(
     With three entries under tests/ and a cap of three, the last one (the nested test file) is still
     seen.
     """
-    monkeypatch.setattr("agent6.harness._nearest_tests._SCAN_CAP", 3)
+    monkeypatch.setattr("agent6.harness.verify_scope._SCAN_CAP", 3)
     _touch(tmp_path, "pkg/mod.py", "tests/test_a.py", "tests/unit/test_mod.py")
-    assert _nearest_tests.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == (
-        "tests/unit/test_mod.py",
-    )
+    assert verify_scope.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ("tests/unit/test_mod.py",)
 
 
 def test_package_level_test_dirs_are_scanned(tmp_path: pathlib.Path) -> None:
@@ -132,7 +130,7 @@ def test_package_level_test_dirs_are_scanned(tmp_path: pathlib.Path) -> None:
     timed-out gate finds nothing to scope to.
     """
     _touch(tmp_path, "pkg/core/indexes/base.py", "pkg/tests/indexes/test_base.py")
-    got = _nearest_tests.nearest_test_paths(tmp_path, ("pkg/core/indexes/base.py",))
+    got = verify_scope.nearest_test_paths(tmp_path, ("pkg/core/indexes/base.py",))
     assert got == ("pkg/tests/indexes/test_base.py",)
 
 
@@ -144,9 +142,9 @@ def test_hidden_tests_are_excluded(tmp_path: pathlib.Path, rel: str) -> None:
     _touch(tmp_path, rel, "pkg/test_mod.py")
     hide = (str((tmp_path / rel).parent),)
     changed = (rel,) if rel.startswith("private/") else ("pkg/mod.py",)
-    assert _nearest_tests.nearest_test_paths(
-        tmp_path, (*changed, "pkg/test_mod.py"), hide=hide
-    ) == ("pkg/test_mod.py",)
+    assert verify_scope.nearest_test_paths(tmp_path, (*changed, "pkg/test_mod.py"), hide=hide) == (
+        "pkg/test_mod.py",
+    )
 
 
 def test_test_symlink_into_hidden_tree_is_excluded(tmp_path: pathlib.Path) -> None:
@@ -154,7 +152,7 @@ def test_test_symlink_into_hidden_tree_is_excluded(tmp_path: pathlib.Path) -> No
     _touch(tmp_path, "private/test_mod.py")
     (tmp_path / "test_mod.py").symlink_to(tmp_path / "private/test_mod.py")
     assert (
-        _nearest_tests.nearest_test_paths(
+        verify_scope.nearest_test_paths(
             tmp_path, ("mod.py", "test_mod.py"), hide=(str(tmp_path / "private"),)
         )
         == ()
@@ -165,6 +163,4 @@ def test_scan_refuses_symlink_loop(tmp_path: pathlib.Path) -> None:
     """On Python 3.12 a looping link under a tests dir raised out of the scan."""
     _touch(tmp_path, "tests/unit/test_mod.py")
     (tmp_path / "tests/loop").symlink_to("loop")
-    assert _nearest_tests.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == (
-        "tests/unit/test_mod.py",
-    )
+    assert verify_scope.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ("tests/unit/test_mod.py",)

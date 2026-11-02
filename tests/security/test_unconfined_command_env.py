@@ -15,7 +15,7 @@ import pathlib
 import pytest
 
 from agent6 import child_env
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import Config
 from agent6.tools import dispatch
 
@@ -43,7 +43,7 @@ def test_an_unconfined_command_does_not_see_the_provider_key(
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-SECRET")
     monkeypatch.setenv("A_HARMLESS_VAR", "keep-me")
     cfg = Config.model_validate(_CFG)
-    _setup.apply_git_ops_policy(cfg)  # what a real run does at startup
+    session_setup.apply_git_ops_policy(cfg)  # what a real run does at startup
     dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=cfg, isolation="none")
 
     try:

@@ -20,7 +20,7 @@ import pathlib
 import types
 from typing import Any
 
-from agent6.harness import _chain, _compaction_window, _conversation, _operator, loop
+from agent6.harness import compaction_window, loop, loop_conversation, operator_bridge, run_chain
 from agent6.providers import ProviderResponse
 from agent6.tools import mcp_client, results
 
@@ -245,17 +245,17 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         compact_flag[0] = False
 
     wf = loop.Harness(
-        chain=_chain.RunChain(tmp_dir),
+        chain=run_chain.RunChain(tmp_dir),
         config=_config(),
         provider=worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher(compact_flag),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        compaction=_compaction_window.CompactionSettings(
+        compaction=compaction_window.CompactionSettings(
             summariser=summariser,  # type: ignore[arg-type]
             drop_at_chars=2_000,
         ),
         resume_state_path=snap_path,
-        bridge=_operator.OperatorBridge(
+        bridge=operator_bridge.OperatorBridge(
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
@@ -266,7 +266,7 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
     initial = {"role": "user", "content": [{"type": "text", "text": f"TASK:\n{_TASK}\n\nBegin."}]}
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="SYSTEM",
-        conversation=_conversation.Conversation.from_wire([initial]),
+        conversation=loop_conversation.Conversation.from_wire([initial]),
         tool_calls=0,
         start_turn=1,
         root_task_id=None,
@@ -290,12 +290,12 @@ def _run_scenario(tmp_dir: pathlib.Path) -> dict[str, Any]:
         resume_snap,
     )
     wf2 = loop.Harness(
-        chain=_chain.RunChain(tmp_dir),
+        chain=run_chain.RunChain(tmp_dir),
         config=_config(),
         provider=resume_worker,  # type: ignore[arg-type]
         dispatcher=_Dispatcher([False]),  # type: ignore[arg-type]
         logger=lambda _msg: None,
-        compaction=_compaction_window.CompactionSettings(drop_at_chars=2_000),
+        compaction=compaction_window.CompactionSettings(drop_at_chars=2_000),
         resume_state_path=resume_snap,
     )
     resumed = wf2.resume()

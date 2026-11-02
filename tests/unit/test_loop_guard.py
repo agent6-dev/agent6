@@ -17,7 +17,7 @@ from unittest import mock
 
 import pytest
 
-from agent6.harness import _chain, _guards, _loop_resume, _provider_call, loop
+from agent6.harness import guards, loop, loop_resume, provider_call, run_chain
 from agent6.providers import ProviderResponse
 from agent6.tools import results
 
@@ -67,7 +67,7 @@ def _build_wf(
     repo: pathlib.Path, provider: mock.MagicMock, dispatcher: mock.MagicMock
 ) -> loop.Harness:
     return loop.Harness(
-        chain=_chain.RunChain(
+        chain=run_chain.RunChain(
             repo,
             ref="refs/agent6/guard",
             fallback_parent=subprocess.run(
@@ -92,7 +92,7 @@ def _build_wf(
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=10,
     )
 
@@ -259,7 +259,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = loop.Harness(
-        chain=_chain.RunChain(repo),
+        chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
@@ -278,7 +278,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=5)
@@ -304,7 +304,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
     wf = loop.Harness(
-        chain=_chain.RunChain(repo),
+        chain=run_chain.RunChain(repo),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
@@ -323,7 +323,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=20,
     )
     wf.config = _knobs(wf.config, loop_guard_kill_threshold=0)
@@ -348,7 +348,7 @@ def _gated_wf(
     A run_command-authored edit stays in the worktree, and only a final checkpoint gets it into git.
     """
     return loop.Harness(
-        chain=_chain.RunChain(
+        chain=run_chain.RunChain(
             repo,
             ref="refs/agent6/guard",
             fallback_parent=subprocess.run(
@@ -373,7 +373,7 @@ def _gated_wf(
         provider=provider,
         dispatcher=dispatcher,
         logger=_silent,
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         **kw,
     )
 
@@ -510,7 +510,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: path
 
     Verify never goes green, so the per-turn auto-commit never fires.
     """
-    from agent6.tools import errors
+    from agent6.tools import tool_errors
 
     repo = tmp_path / "repo"
     _init_repo(repo)
@@ -524,7 +524,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: path
 
     def dispatch(name: str, *_a: Any, **_k: Any) -> results.RawResult:
         if name == "run_verify_command":
-            raise errors.OperatorCommandUnexecutableError(
+            raise tool_errors.OperatorCommandUnexecutableError(
                 "verify binary missing from the jail PATH"
             )
         (repo / "edit.txt").write_text("run_command wrote this\n")
@@ -668,7 +668,7 @@ def test_stagnation_ignores_the_start_gates_time(
 ) -> None:
     """A start gate that outlasted the knob fired the notice at the model's first turn."""
     clock = [0.0]
-    monkeypatch.setattr(_guards, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(guards, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
     repo = tmp_path / "repo"
     _init_repo(repo)
     provider = mock.MagicMock()
@@ -768,15 +768,15 @@ def test_resume_execution_rearms_the_turn_allowance(tmp_path: pathlib.Path) -> N
     wf = _build_wf(repo, provider, dispatcher)
     wf.max_turns = 5
     wf.resume_state_path = tmp_path / "loop_state.json"
-    from agent6.harness import _loop_state
+    from agent6.harness import loop_state
 
     (
-        _loop_state.LoopState(original_task="t", tool_calls=0).system,
-        _loop_state.LoopState(original_task="t", tool_calls=0).tool_calls,
-        _loop_state.LoopState(original_task="t", tool_calls=0).root_task_id,
+        loop_state.LoopState(original_task="t", tool_calls=0).system,
+        loop_state.LoopState(original_task="t", tool_calls=0).tool_calls,
+        loop_state.LoopState(original_task="t", tool_calls=0).root_task_id,
     ) = "s", 0, None
-    _loop_resume.save_resume_snapshot(
-        wf, _loop_state.LoopState(original_task="t", tool_calls=0), [], next_turn=6
+    loop_resume.save_resume_snapshot(
+        wf, loop_state.LoopState(original_task="t", tool_calls=0), [], next_turn=6
     )
     result = wf.resume()
 
@@ -789,31 +789,31 @@ def test_the_notice_fires_at_three_and_re_arms_after_a_quiet_turn() -> None:
 
     A shorter streak draws nothing.
     """
-    from agent6.harness import _conversation, _guards, _loop_state
+    from agent6.harness import guards, loop_conversation, loop_state
     from tests.unit.turn_context import turn_context
 
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     ctx = turn_context()
 
-    def turn(turn: int) -> _loop_state.TurnState:
-        return _loop_state.TurnState(
+    def turn(turn: int) -> loop_state.TurnState:
+        return loop_state.TurnState(
             number=turn,
             resp=mock.MagicMock(),
-            assistant=_conversation.AssistantMessage((), ()),
+            assistant=loop_conversation.AssistantMessage((), ()),
         )
 
     for _ in range(2):
         state.spiral.note_call('read_file:{"path": "x.txt"}')
-    assert _guards.loop_guard_notice(turn(2), state, ctx) is None
+    assert guards.loop_guard_notice(turn(2), state, ctx) is None
     state.spiral.note_call('read_file:{"path": "x.txt"}')
-    nudge = _guards.loop_guard_notice(turn(3), state, ctx)
+    nudge = guards.loop_guard_notice(turn(3), state, ctx)
     assert nudge is not None and "`read_file`" in nudge.text and "3 times" in nudge.text
     assert nudge.event == "loop.loop_guard.triggered"
     assert nudge.fields == {"turn": 3, "tool": "read_file", "streak": 3}
     state.spiral.note_call('read_file:{"path": "x.txt"}')
-    assert _guards.loop_guard_notice(turn(4), state, ctx) is None
+    assert guards.loop_guard_notice(turn(4), state, ctx) is None
     state.spiral.note_call('read_file:{"path": "x.txt"}')
-    again = _guards.loop_guard_notice(turn(5), state, ctx)
+    again = guards.loop_guard_notice(turn(5), state, ctx)
     assert again is not None and "5 times" in again.text
 
 
@@ -822,19 +822,19 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
 
     In the summary, the event fields and the log line; the knob at 0 disables it.
     """
-    from agent6.harness import _conversation, _guards, _loop_state
+    from agent6.harness import guards, loop_conversation, loop_state
     from tests.unit.turn_context import turn_context
 
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
-    turn = _loop_state.TurnState(
-        number=5, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    turn = loop_state.TurnState(
+        number=5, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
     ctx = turn_context(loop_guard_kill_threshold=5)
     for _ in range(4):
         state.spiral.note_call('read_file:{"path": "x.txt"}')
-    assert _guards.loop_guard_kill(turn, state, ctx) is None
+    assert guards.loop_guard_kill(turn, state, ctx) is None
     state.spiral.note_call('read_file:{"path": "x.txt"}')
-    stop = _guards.loop_guard_kill(turn, state, ctx)
+    stop = guards.loop_guard_kill(turn, state, ctx)
     assert stop is not None and stop.soft == "" and stop.declared == ""
     end = stop.end()
     assert end.reason == "loop_guard_killed" and end.completed is False
@@ -847,4 +847,4 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
         "LOOP: loop_guard_killed at turn 5 - read_file called 5x in a row (threshold=5)"
     )
     off = turn_context(loop_guard_kill_threshold=0)
-    assert _guards.loop_guard_kill(turn, state, off) is None
+    assert guards.loop_guard_kill(turn, state, off) is None

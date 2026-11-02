@@ -20,21 +20,21 @@ depends_on = []
 # coordinator dispatch + candidate-ranking core. The front-end injects the
 # presentation, process-spawn, and run-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
-# _execution drains review_actions through sessions.ipc at the worker steer boundary.
-# merge calls _merge_message; its builders use _setup, providers, harness and viewmodel.
+# execution drains review_actions through sessions.ipc at the worker steer boundary.
+# merge calls merge_message; its builders use session_setup, providers, harness and viewmodel.
 path = "agent6.app"
 depends_on = [
   "agent6",
-  "agent6._pack_manifest",
   "agent6.budget",
   "agent6.child_env",
   "agent6.config",
-  "agent6.config._layer_data",
   "agent6.config.io",
   "agent6.config.layer",
+  "agent6.config.layer_data",
+  "agent6.config.secret_store",
+  "agent6.context.memory",
   "agent6.directive",
   "agent6.errors",
-  "agent6.event_log",
   "agent6.graph.curator",
   "agent6.graph.replay",
   "agent6.graph.storage",
@@ -43,18 +43,18 @@ depends_on = [
   "agent6.machine",
   "agent6.machine.journal",
   "agent6.media",
-  "agent6.memory",
   "agent6.models.cache",
   "agent6.models.pricing",
   "agent6.models.registry",
   "agent6.models.validate",
+  "agent6.pack_manifest",
   "agent6.paths",
   "agent6.portable",
   "agent6.providers",
   "agent6.review_records",
   "agent6.sandbox",
   "agent6.sandbox.detect",
-  "agent6.secret_store",
+  "agent6.sessions.event_log",
   "agent6.sessions.id",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
@@ -66,11 +66,11 @@ depends_on = [
   "agent6.tools",
   "agent6.tools.dispatch",
   "agent6.tools.schema",
+  "agent6.tools.verify_infer",
   "agent6.vcs.commit_message",
   "agent6.vcs.git_ops",
   "agent6.vcs.git_policy",
   "agent6.vcs.git_read",
-  "agent6.verify_infer",
   "agent6.viewmodel",
 ]
 
@@ -82,23 +82,24 @@ depends_on = [
   "agent6.budget",
   "agent6.child_env",  # `exec` unsandboxed gets the environment an unsandboxed run command gets
   "agent6.config",
-  "agent6.config._layer_data",
-  "agent6.config._presets",
   "agent6.config.io",
   "agent6.config.layer",
+  "agent6.config.layer_data",
+  "agent6.config.layer_presets",
   "agent6.config.model",
   "agent6.config.notices",
+  "agent6.config.secret_store",
   "agent6.config.write",
+  "agent6.context.memory",
+  "agent6.context.skills",
   "agent6.directive",
   "agent6.errors",
-  "agent6.event_log",
   "agent6.evidence",
   "agent6.graph.order",
   "agent6.graph.storage",
   "agent6.harness",
   "agent6.kinds",
   "agent6.machine",
-  "agent6.memory",
   "agent6.models.cache",
   "agent6.models.choices",
   "agent6.models.validate",
@@ -110,20 +111,20 @@ depends_on = [
   "agent6.sandbox",
   "agent6.sandbox.detect",
   "agent6.sandbox.landlock",
-  "agent6.secret_store",
+  "agent6.sessions.event_log",
   "agent6.sessions.id",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",
   "agent6.sessions.process",
-  "agent6.skills",
   "agent6.terminal",
   "agent6.tools",
   "agent6.tools.dispatch",
   "agent6.tools.schema",
+  "agent6.tools.verify_infer",
   "agent6.ui.acp",
   "agent6.ui.btw",
-  "agent6.ui.directives",
+  "agent6.ui.directive_actions",
   "agent6.ui.keymap",
   "agent6.ui.mcp_server",
   "agent6.ui.notify",
@@ -137,31 +138,31 @@ depends_on = [
   "agent6.vcs.git_policy",
   "agent6.vcs.git_read",
   "agent6.vcs.review",
-  "agent6.verify_infer",
   "agent6.viewmodel",
   "agent6.viewmodel.receipt",
 ]
 
 [[modules]]
-# _reviewer and _toolset use _review_seat; _review_seat uses _panel and _llm_json.
-# _reviewer and loop use _review_history to restore durable panel evidence.
-# _compactor and _compaction use _compaction_result and _compaction_window.
-# _compaction_window uses _conversation and _compaction_result; the result cap
-# reads _panel and _verify_gate notice sizes within this harness boundary.
+# review_gate and toolset use review_seat; review_seat uses review_panel and llm_json.
+# review_gate and loop use review_history to restore durable panel evidence.
+# compaction_driver and compaction_rules use compaction_elision and compaction_window.
+# compaction_window uses loop_conversation and compaction_elision; the result cap
+# reads review_panel and verify_gate notice sizes within this harness boundary.
 path = "agent6.harness"
 depends_on = [
   "agent6.budget",  # loop harness needs BudgetExceededError
   "agent6.config",
+  "agent6.context.memory",  # cross-run memories injected into the system prompt
+  # the agent's own scratchpad, injected beside them
+  "agent6.context.skills",  # operator-installed skills indexed in the system prompt
   "agent6.directive",
   "agent6.errors",
-  "agent6.event_log",
   "agent6.evidence",
   "agent6.graph.curator",
   "agent6.graph.models",
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
   "agent6.kinds",
   "agent6.media",
-  "agent6.memory",  # cross-run memories injected into the system prompt
   "agent6.paths",
   "agent6.portable",
   "agent6.prompts",  # pure prompt/template text the loop assembles
@@ -170,49 +171,48 @@ depends_on = [
   # prompt show resolves the isolation a run here would get, so the preview
   # renders the same level-aware blocks the loop does
   "agent6.sandbox.detect",
+  "agent6.sessions.event_log",
   # the start-family emitter stamps worker.pid before the event is readable
   "agent6.sessions.ipc",
   # subrun lands a finished lane's session dir in the ORIGIN state dir; the
   # bucket layout has one owner rather than a second spelling here.
   "agent6.sessions.layout",
   "agent6.sessions.process",
-  # the agent's own scratchpad, injected beside them
-  "agent6.skills",  # operator-installed skills indexed in the system prompt
   "agent6.task_text",  # the session.start headline is the operator's own words
   "agent6.terminal",  # a changed path's name printed on one line
   "agent6.tools",
   "agent6.tools.dispatch",
   "agent6.tools.schema",
-  "agent6.vcs._review_rules",
+  "agent6.tools.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
   "agent6.vcs.commit_message",
   "agent6.vcs.git_ops",
   "agent6.vcs.git_read",
   "agent6.vcs.review",
-  "agent6.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
+  "agent6.vcs.review_rule_reader",
   "agent6.viewmodel",  # the run review folds a session's record with the one listing scan
 ]
 
 [[modules]]
-# claude_code uses _claude_code_protocol for control and continuation reads.
-# The protocol uses _claude_code_session, _claude_code_stream and _claude_code_wire.
-# The _claude_code_* helpers never import claude_code.
-# oauth -> _oauth_exchange -> _oauth_protocol, _transport, types stays inside providers.
-# _oauth_exchange reads the exchange settings from config._oauth.
-# oauth -> chatgpt_oauth -> _oauth_profile -> _oauth_protocol stays inside providers.
-# _oauth_profile reads the exchange settings from config._oauth.
+# claude_code uses claude_code_protocol for control and continuation reads.
+# The protocol uses claude_code_session, claude_code_stream and claude_code_wire.
+# The claude_code_* helpers never import claude_code.
+# oauth -> oauth_exchange -> oauth_protocol, transport, provider_types stays inside providers.
+# oauth_exchange reads the exchange settings from config.oauth_config.
+# oauth -> oauth_chatgpt -> oauth_profile -> oauth_protocol stays inside providers.
+# oauth_profile reads the exchange settings from config.oauth_config.
 path = "agent6.providers"
 depends_on = [
   "agent6",  # serverInfo.version on the claude_code MCP handshake
   "agent6.budget",
   "agent6.child_env",  # the claude_code child's curated environment
-  "agent6.config._headers",  # the extra_headers grammar the adapters render
-  "agent6.config._oauth",  # the configured issuer a stored grant is bound to
-  "agent6.config._surfaces",  # is_loopback_host: no ambient proxy carries a loopback bearer off the host
+  "agent6.config.header_config",  # the extra_headers grammar the adapters render
+  "agent6.config.oauth_config",  # the configured issuer a stored grant is bound to
+  "agent6.config.secret_store",
+  "agent6.config.surface_config",  # is_loopback_host: no ambient proxy carries a loopback bearer off the host
   "agent6.media",
   "agent6.paths",
   "agent6.portable",
   "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent
-  "agent6.secret_store",
 ]
 
 [[modules]]
@@ -220,19 +220,19 @@ path = "agent6.review_records"
 depends_on = []
 
 [[modules]]
-path = "agent6.event_log"
+path = "agent6.sessions.event_log"
 depends_on = ["agent6.paths"]
 
 [[modules]]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.vcs.git_read: one branch-tips snapshot per hub poll (the unmerged mark).
-depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.layer", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.tools", "agent6.ui.directives", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.vcs.git_history", "agent6.vcs.git_read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
+depends_on = ["agent6.app", "agent6.budget", "agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.notices", "agent6.config.write", "agent6.directive", "agent6.errors", "agent6.evidence", "agent6.graph.order", "agent6.kinds", "agent6.machine", "agent6.models.cache", "agent6.models.choices", "agent6.paths", "agent6.portable", "agent6.review_records", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.tools", "agent6.ui.directive_actions", "agent6.ui.keymap", "agent6.ui.notify", "agent6.ui.spawn", "agent6.vcs.git_history", "agent6.vcs.git_read", "agent6.viewmodel", "agent6.viewmodel.receipt"]
 
 [[modules]]
 # What a composer line does when it is not a steer, for every entry point that
 # takes one (the three composers and `agent6 steer`).
-path = "agent6.ui.directives"
+path = "agent6.ui.directive_actions"
 depends_on = [
   "agent6.directive",
   "agent6.graph.order",  # the order a task listing reads in
@@ -257,7 +257,7 @@ depends_on = ["agent6.sessions.ipc"]
 [[modules]]
 # The /btw side ask every composer opens (CLI menu, TUI, web).
 path = "agent6.ui.btw"
-depends_on = ["agent6.app", "agent6.event_log", "agent6.sandbox", "agent6.sessions.layout", "agent6.ui.spawn"]
+depends_on = ["agent6.app", "agent6.sandbox", "agent6.sessions.event_log", "agent6.sessions.layout", "agent6.ui.spawn"]
 
 [[modules]]
 # Find the agent6 exe and spawn it detached (new work / machines / background
@@ -321,12 +321,12 @@ depends_on = [
   "agent6.config",
   "agent6.directive",  # the `/pin` line an editor is offered as a slash command
   "agent6.errors",  # a fault after the journal opened is a bug unless it is an operator error
-  "agent6.event_log",
   "agent6.evidence",
   "agent6.harness",
   "agent6.kinds",
   "agent6.paths",
   "agent6.review_records",
+  "agent6.sessions.event_log",
   "agent6.sessions.id",
   # session/cancel drops the same stop marker the TUI and web do: a marker,
   # not a kill, so the finished step lands first.
@@ -351,7 +351,7 @@ depends_on = [
 
 [[modules]]
 # The web UI: a stdlib HTTP server + one embedded page. Renders the shared
-# view-model folds (viewmodel), the effective config (config_layer), and the
+# view-model folds (viewmodel), the effective config (config.layer), and the
 # conversation (the viewmodel transcript folds), reading run/machine dirs it
 # locates via the
 # machine spec/journal. The write side drives the frontend bridge. No UI toolkit.
@@ -367,10 +367,10 @@ depends_on = [
   # new-work preflight: refuse a run submission while a live worker holds the
   # checkout, instead of spawning a doomed detached run
     "agent6.config",
-  "agent6.config._layer_data",
-  "agent6.config._presets",
   "agent6.config.io",
   "agent6.config.layer",
+  "agent6.config.layer_data",
+  "agent6.config.layer_presets",
   "agent6.config.notices",
   "agent6.config.write",
   "agent6.errors",
@@ -386,7 +386,7 @@ depends_on = [
   # run_plan reads the session's mode from its manifest before spawning.
   "agent6.sessions.manifest",
   "agent6.sessions.process",
-  "agent6.ui.directives",
+  "agent6.ui.directive_actions",
   "agent6.ui.spawn",
   "agent6.ui.telemetry",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
@@ -402,19 +402,18 @@ depends_on = [
 # journal folded into MachineState. Consumed by the TUI, the CLI watchers, and
 # (later) the web UI. The machine fold reads the journal event types + the spec,
 # so it depends on those two leaf machine modules; nothing UI-toolkit-shaped.
-# machine_state uses _machine_logs for execution probes; _machine_watch reads
-# machine_state views and _machine_logs to advance the shared watch cursor.
-# transcript uses _transcript_text for previews and marker bodies; the helper
+# machine_state uses machine_logs for execution probes; machine_watch reads
+# machine_state views and machine_logs to advance the shared watch cursor.
+# transcript uses transcript_text for previews and marker bodies; the helper
 # reads budget, format and events without importing the stateful fold.
-# state and _session_log share review's finding and disposition fold.
+# state and session_log share review's finding and disposition fold.
 path = "agent6.viewmodel"
 depends_on = [
   "agent6.budget",
-  "agent6.config._layer_data",
-  "agent6.config._presets",
   "agent6.config.io",
   "agent6.config.layer",
-  "agent6.event_log",
+  "agent6.config.layer_data",
+  "agent6.config.layer_presets",
   "agent6.evidence",
   "agent6.graph.models",
   "agent6.kinds",
@@ -425,6 +424,7 @@ depends_on = [
   "agent6.paths",
   "agent6.providers",
   "agent6.review_records",
+  "agent6.sessions.event_log",
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",
@@ -453,7 +453,7 @@ depends_on = ["agent6.viewmodel.telemetry_metrics"]
 
 [[modules]]
 # tools: a manifest is read through the workspace containment the file tools use.
-path = "agent6.verify_infer"
+path = "agent6.tools.verify_infer"
 depends_on = ["agent6.sandbox", "agent6.tools", "agent6.vcs.git_read"]
 
 
@@ -480,7 +480,7 @@ path = "agent6.tools"
 # The in-process handlers use graph intents, workspace grants and session records.
 # Dispatch and jailed command execution have separate entries below.
 # agent6 (root): the MCP handshake sends the canonical __version__.
-depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.evidence", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.media", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.skills", "agent6.terminal", "agent6.tools.schema"]
+depends_on = ["agent6", "agent6.child_env", "agent6.config", "agent6.context.skills", "agent6.evidence", "agent6.graph.curator", "agent6.graph.models", "agent6.graph.order", "agent6.kinds", "agent6.media", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sandbox.detect", "agent6.sandbox.jail_jobs", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.sessions.manifest", "agent6.sessions.process", "agent6.terminal", "agent6.tools.schema"]
 
 [[modules]]
 path = "agent6.terminal"
@@ -501,32 +501,32 @@ path = "agent6.vcs.commit_message"
 depends_on = ["agent6.task_text"]  # the squash headline is the task's headline
 
 [[modules]]
-path = "agent6.vcs._git_command"
+path = "agent6.vcs.git_command"
 depends_on = ["agent6.errors", "agent6.kinds", "agent6.vcs.git_policy"]
 
 [[modules]]
-path = "agent6.vcs._review_rules"
+path = "agent6.vcs.review_rule_reader"
 depends_on = ["agent6.errors", "agent6.review_records", "agent6.tools", "agent6.vcs.git_files", "agent6.vcs.git_read"]
 
 [[modules]]
-path = "agent6.vcs._review_submodules"
-depends_on = ["agent6.errors", "agent6.tools", "agent6.vcs._git_command"]
+path = "agent6.vcs.review_submodules"
+depends_on = ["agent6.errors", "agent6.tools", "agent6.vcs.git_command"]
 
 [[modules]]
 path = "agent6.vcs.git_files"
-depends_on = ["agent6.errors", "agent6.tools", "agent6.vcs._git_command", "agent6.vcs.git_history", "agent6.vcs.git_read"]
+depends_on = ["agent6.errors", "agent6.tools", "agent6.vcs.git_command", "agent6.vcs.git_history", "agent6.vcs.git_read"]
 
 [[modules]]
 path = "agent6.vcs.git_history"
-depends_on = ["agent6.errors", "agent6.vcs._git_command", "agent6.vcs.git_read"]
+depends_on = ["agent6.errors", "agent6.vcs.git_command", "agent6.vcs.git_read"]
 
 [[modules]]
 path = "agent6.vcs.git_ops"
-depends_on = ["agent6.errors", "agent6.vcs._git_command", "agent6.vcs.git_policy", "agent6.vcs.git_read"]
+depends_on = ["agent6.errors", "agent6.vcs.git_command", "agent6.vcs.git_policy", "agent6.vcs.git_read"]
 
 [[modules]]
 path = "agent6.vcs.git_read"
-depends_on = ["agent6.errors", "agent6.paths", "agent6.vcs._git_command", "agent6.vcs.commit_message"]
+depends_on = ["agent6.errors", "agent6.paths", "agent6.vcs.commit_message", "agent6.vcs.git_command"]
 
 [[modules]]
 path = "agent6.vcs.git_policy"
@@ -534,64 +534,64 @@ depends_on = ["agent6.child_env", "agent6.errors"]
 
 [[modules]]
 path = "agent6.vcs.review"
-depends_on = ["agent6.errors", "agent6.review_records", "agent6.tools", "agent6.vcs._git_command", "agent6.vcs._review_submodules", "agent6.vcs.git_files", "agent6.vcs.git_history", "agent6.vcs.git_policy", "agent6.vcs.git_read"]
+depends_on = ["agent6.errors", "agent6.review_records", "agent6.tools", "agent6.vcs.git_command", "agent6.vcs.git_files", "agent6.vcs.git_history", "agent6.vcs.git_policy", "agent6.vcs.git_read", "agent6.vcs.review_submodules"]
 
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config._base", "agent6.config._git", "agent6.config._harness", "agent6.config._headers", "agent6.config._oauth", "agent6.config._providers", "agent6.config._sandbox", "agent6.config._surfaces", "agent6.config.model", "agent6.kinds"]
+depends_on = ["agent6.config.git_config", "agent6.config.harness_config", "agent6.config.header_config", "agent6.config.model", "agent6.config.oauth_config", "agent6.config.provider_config", "agent6.config.sandbox_config", "agent6.config.surface_config", "agent6.config.validation", "agent6.kinds"]
 
 [[modules]]
 # The config models share validation policy and the operator-facing error.
-path = "agent6.config._base"
+path = "agent6.config.validation"
 depends_on = ["agent6.errors"]
 
 [[modules]]
-path = "agent6.config._headers"
-depends_on = ["agent6.config._base"]
+path = "agent6.config.header_config"
+depends_on = ["agent6.config.validation"]
 
 [[modules]]
 # The [providers.*] entries, discriminated by wire format.
-path = "agent6.config._oauth"
-depends_on = ["agent6.config._base"]
+path = "agent6.config.oauth_config"
+depends_on = ["agent6.config.validation"]
 
 [[modules]]
-path = "agent6.config._providers"
-depends_on = ["agent6.config._base", "agent6.config._headers", "agent6.config._oauth", "agent6.config._sandbox"]
+path = "agent6.config.provider_config"
+depends_on = ["agent6.config.header_config", "agent6.config.oauth_config", "agent6.config.sandbox_config", "agent6.config.validation"]
 
 [[modules]]
 # The [sandbox] and [mcp] models; paths for the private-dir grant refusals.
-path = "agent6.config._sandbox"
-# _surfaces: is_loopback_host, shared with the web bind gate.
-depends_on = ["agent6.config._base", "agent6.config._surfaces", "agent6.paths"]
+path = "agent6.config.sandbox_config"
+# surface_config: is_loopback_host, shared with the web bind gate.
+depends_on = ["agent6.config.surface_config", "agent6.config.validation", "agent6.paths"]
 
 [[modules]]
 # The [git] model: worktree policy, chain commits, merge and message styles.
-path = "agent6.config._git"
-depends_on = ["agent6.config._base"]
+path = "agent6.config.git_config"
+depends_on = ["agent6.config.validation"]
 
 [[modules]]
 # The loop-behaviour models: harness, review, context, prompt, budget.
-path = "agent6.config._harness"
-depends_on = ["agent6.config._base"]
+path = "agent6.config.harness_config"
+depends_on = ["agent6.config.validation"]
 
 [[modules]]
 # The surface models: skills, machine, web, notify, parallel.
-path = "agent6.config._surfaces"
-depends_on = ["agent6.config._base"]
+path = "agent6.config.surface_config"
+depends_on = ["agent6.config.validation"]
 
 [[modules]]
 path = "agent6.config.model"
 # RoleName and the session-mode vocabulary: shared value types, so they live
 # at the leaf rather than in whichever model declared one first.
 depends_on = [
-  "agent6.config._base",
-  "agent6.config._git",
-  "agent6.config._harness",
-  "agent6.config._providers",
-  "agent6.config._sandbox",
-  "agent6.config._surfaces",
+  "agent6.config.git_config",
+  "agent6.config.harness_config",
   "agent6.config.io",
+  "agent6.config.provider_config",
+  "agent6.config.sandbox_config",
+  "agent6.config.surface_config",
+  "agent6.config.validation",
   "agent6.kinds",
 ]
 
@@ -604,35 +604,35 @@ depends_on = []
 
 [[modules]]
 path = "agent6.pack"
-depends_on = ["agent6._pack_manifest", "agent6.errors", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.errors", "agent6.pack_manifest", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.paths"
-depends_on = ["agent6._pack_manifest"]
+depends_on = ["agent6.pack_manifest"]
 
 [[modules]]
-path = "agent6._pack_manifest"
+path = "agent6.pack_manifest"
 depends_on = ["agent6.errors"]
 
 [[modules]]
-path = "agent6.secret_store"
+path = "agent6.config.secret_store"
 depends_on = ["agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.io"
-depends_on = ["agent6.config._base", "agent6.errors", "agent6.portable"]
+depends_on = ["agent6.config.validation", "agent6.errors", "agent6.portable"]
 
 [[modules]]
 path = "agent6.config.layer"
-depends_on = ["agent6.config._base", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.model", "agent6.paths"]
+depends_on = ["agent6.config.io", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.model", "agent6.config.validation", "agent6.paths"]
 
 [[modules]]
 path = "agent6.config.notices"
-depends_on = ["agent6.config._base", "agent6.config.io", "agent6.config.layer"]
+depends_on = ["agent6.config.io", "agent6.config.layer", "agent6.config.validation"]
 
 [[modules]]
 path = "agent6.config.write"
-depends_on = ["agent6.config._base", "agent6.config._harness", "agent6.config._layer_data", "agent6.config._providers", "agent6.config.io", "agent6.config.layer", "agent6.config.model", "agent6.errors", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.config.harness_config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.model", "agent6.config.provider_config", "agent6.config.validation", "agent6.errors", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.models.cache"
@@ -654,7 +654,7 @@ depends_on = ["agent6.config", "agent6.kinds", "agent6.models.cache", "agent6.pr
 # re-fetches the live listing (secrets: the key for the authed fetch) so a
 # refusal never rests on a stale snapshot.
 path = "agent6.models.validate"
-depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent6.kinds", "agent6.models.cache", "agent6.models.registry", "agent6.secret_store"]
+depends_on = ["agent6.config", "agent6.config.layer", "agent6.config.secret_store", "agent6.directive", "agent6.kinds", "agent6.models.cache", "agent6.models.registry"]
 
 [[modules]]
 # The values an open-text config leaf can take (a provider's model ids, the
@@ -662,7 +662,7 @@ depends_on = ["agent6.config", "agent6.config.layer", "agent6.directive", "agent
 # route, and TAB completion.
 path = "agent6.models.choices"
 # sessions.manifest: a resume row names the preset and model a run replays.
-depends_on = ["agent6.config", "agent6.config._layer_data", "agent6.config._presets", "agent6.config.io", "agent6.config.layer", "agent6.kinds", "agent6.models.cache", "agent6.models.validate", "agent6.secret_store", "agent6.sessions.manifest"]
+depends_on = ["agent6.config", "agent6.config.io", "agent6.config.layer", "agent6.config.layer_data", "agent6.config.layer_presets", "agent6.config.secret_store", "agent6.kinds", "agent6.models.cache", "agent6.models.validate", "agent6.sessions.manifest"]
 
 [[modules]]
 path = "agent6.sandbox.detect"
@@ -698,17 +698,17 @@ depends_on = []
 [[modules]]
 # MemoryStoreError subclasses OperatorError, so a store refusal presents as the
 # operator's at the CLI boundary while the run loop keeps its degrade catches.
-path = "agent6.memory"
+path = "agent6.context.memory"
 depends_on = ["agent6.errors", "agent6.paths", "agent6.portable"]
 
 [[modules]]
-path = "agent6.skills"
+path = "agent6.context.skills"
 depends_on = []
 
 [[modules]]
 # Pure prompt + template text (the strings agent6 sends to models). A leaf: it
 # imports nothing from agent6, so the typed assembly that fills these templates
-# lives one layer up (harness/_prompt_blocks, machine/authoring).
+# lives one layer up (harness/prompt_blocks, machine/authoring).
 path = "agent6.prompts"
 depends_on = []
 
@@ -772,7 +772,7 @@ path = "agent6.sessions.layout"
 depends_on = ["agent6.paths", "agent6.portable", "agent6.sessions.manifest"]
 
 [[modules]]
-# The single manifest.json reader (the writer is app.manifest). A pure leaf:
+# The single manifest.json reader (the writer is app.stamps). A pure leaf:
 # app, the viewmodel, and the CLI parse a run's manifest through this one owner.
 path = "agent6.sessions.manifest"
 # The session-mode vocabulary. Keeping a second list here let the two
@@ -804,7 +804,7 @@ depends_on = ["agent6.graph.models", "agent6.graph.order", "agent6.graph.storage
 
 [[modules]]
 path = "agent6.machine"
-depends_on = ["agent6.machine._contracts", "agent6.machine._semantics", "agent6.machine.authoring", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.live_world", "agent6.machine.schema", "agent6.prompts"]
+depends_on = ["agent6.machine.authoring", "agent6.machine.contracts", "agent6.machine.dryrun", "agent6.machine.engine", "agent6.machine.graph", "agent6.machine.journal", "agent6.machine.live_world", "agent6.machine.schema", "agent6.machine.semantics", "agent6.prompts"]
 
 [[modules]]
 path = "agent6.machine.authoring"
@@ -824,7 +824,7 @@ depends_on = []
 
 [[modules]]
 # Load + semantic validation; the cross-cutting rules over the model shapes.
-path = "agent6.machine._semantics"
+path = "agent6.machine.semantics"
 depends_on = ["agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
 
 [[modules]]
@@ -832,22 +832,22 @@ path = "agent6.machine.graph"
 depends_on = ["agent6.machine.schema"]
 
 [[modules]]
-# JournalError subclasses MachineError (machine.spec), so a broken journal and
+# JournalError subclasses MachineError (machine.schema), so a broken journal and
 # a broken machine file degrade through the same catch sites.
 path = "agent6.machine.journal"
 depends_on = ["agent6.machine.schema", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"
-depends_on = ["agent6.machine._contracts", "agent6.machine._execution", "agent6.machine.journal", "agent6.machine.schema", "agent6.machine.template"]
+depends_on = ["agent6.machine.contracts", "agent6.machine.execution", "agent6.machine.journal", "agent6.machine.schema", "agent6.machine.template"]
 
 [[modules]]
 path = "agent6.machine.live_world"
-depends_on = ["agent6.kinds", "agent6.machine._contracts", "agent6.machine.journal", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout"]
+depends_on = ["agent6.kinds", "agent6.machine.contracts", "agent6.machine.journal", "agent6.paths", "agent6.portable", "agent6.sandbox", "agent6.sessions.layout"]
 
 [[modules]]
 path = "agent6.machine.dryrun"
-depends_on = ["agent6.machine._contracts", "agent6.machine._execution", "agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
+depends_on = ["agent6.machine.contracts", "agent6.machine.execution", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.semantics", "agent6.machine.template"]
 
 [[modules]]
 path = "agent6.sandbox.jail_jobs"
@@ -860,32 +860,32 @@ depends_on = ["agent6.kinds", "agent6.sandbox"]
 [[modules]]
 # The start-family emitter records the worker pid before emitting the event.
 path = "agent6.sessions.process"
-depends_on = ["agent6.event_log", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.paths", "agent6.portable", "agent6.sessions.event_log"]
 
 [[modules]]
 # Routing and lifecycle own the command helpers' inputs; execution stays jailed.
 path = "agent6.tools.dispatch"
-depends_on = ["agent6.config", "agent6.errors", "agent6.event_log", "agent6.evidence", "agent6.graph.curator", "agent6.kinds", "agent6.memory", "agent6.paths", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.skills", "agent6.tools", "agent6.tools._command_tools", "agent6.tools.schema", "agent6.vcs.git_read"]
+depends_on = ["agent6.config", "agent6.context.memory", "agent6.context.skills", "agent6.errors", "agent6.evidence", "agent6.graph.curator", "agent6.kinds", "agent6.paths", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.sessions.event_log", "agent6.sessions.ipc", "agent6.sessions.layout", "agent6.tools", "agent6.tools.command_tools", "agent6.tools.schema", "agent6.vcs.git_read"]
 
 [[modules]]
-path = "agent6.tools._command_tools"
+path = "agent6.tools.command_tools"
 depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.jail_session", "agent6.tools", "agent6.tools.schema"]
 
 [[modules]]
-path = "agent6.machine._contracts"
+path = "agent6.machine.contracts"
 depends_on = ["agent6.machine.journal", "agent6.machine.schema"]
 
 [[modules]]
-path = "agent6.machine._execution"
-depends_on = ["agent6.machine._contracts", "agent6.machine._semantics", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.template"]
+path = "agent6.machine.execution"
+depends_on = ["agent6.machine.contracts", "agent6.machine.journal", "agent6.machine.predicate", "agent6.machine.schema", "agent6.machine.semantics", "agent6.machine.template"]
 
 [[modules]]
-path = "agent6.config._layer_data"
-depends_on = ["agent6.config._base", "agent6.config.io", "agent6.config.model", "agent6.paths"]
+path = "agent6.config.layer_data"
+depends_on = ["agent6.config.io", "agent6.config.model", "agent6.config.validation", "agent6.paths"]
 
 [[modules]]
-path = "agent6.config._presets"
-depends_on = ["agent6.config._base", "agent6.config._layer_data", "agent6.config.model"]
+path = "agent6.config.layer_presets"
+depends_on = ["agent6.config.layer_data", "agent6.config.model", "agent6.config.validation"]
 
 [[modules]]
 path = "agent6.evidence"
@@ -893,7 +893,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.vcs.commit_graph"
-depends_on = ["agent6.errors", "agent6.vcs._git_command"]
+depends_on = ["agent6.errors", "agent6.vcs.git_command"]
 
 [[modules]]
 path = "agent6.viewmodel.receipt"

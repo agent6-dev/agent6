@@ -725,21 +725,21 @@ The layering is `ui → app → harness → tools → sandbox`, with `agent6.mac
 The engine does not import the harness, so the tach graph stays acyclic.
 
 - `engine.drive` takes a `World`; the live one, `LiveWorld`, runs an `agent` state through an `agent_runner` callable (`Callable[[AgentRequest, Path | None], AgentExecResult]`), the path being the per-state event log (`<instance>/states/<seq>-<state>/logs.jsonl`)
-- `app/` depends on both packages: it builds that runner (`build_machine_agent_runner` in `app/machine_agent.py`), wires it into the `LiveWorld` in `app/machine/run.py`, and holds the `machine create`/`run` orchestration under `app/machine/`
+- `app/` depends on both packages: it builds that runner (`build_machine_agent_runner` in `app/machine/agent.py`), wires it into the `LiveWorld` in `app/machine/run.py`, and holds the `machine create`/`run` orchestration under `app/machine/`
 - `ui/cli` adapts argv and renders
 
 Files:
 
 - `machine/schema.py`: pydantic `MachineSpec`/state/var specs (the parse boundary).
-- `machine/_semantics.py`: semantic validation and `finish_session` payload validation.
+- `machine/semantics.py`: semantic validation and `finish_session` payload validation.
 - `machine/dryrun.py`: the pure, no-I/O dry-run behind `agent6 machine test`.
 - `machine/predicate.py`: the allow-list AST predicate evaluator.
 - `machine/template.py`: the single interpolation/splicing engine shared by the validator and the runtime.
 - `machine/graph.py`: the mermaid/DOT renderers.
 - `machine/journal.py`: append-only event log, snapshots, locking, and persisted-wake state.
 - `machine/engine.py`: the deterministic reducer loop.
-- `machine/_execution.py`: state execution and the reducer.
-- `machine/_contracts.py`: the `World` protocol, the execution records and the engine errors.
+- `machine/execution.py`: state execution and the reducer.
+- `machine/contracts.py`: the `World` protocol, the execution records and the engine errors.
 - `machine/live_world.py`: the production `World` (the jail for a tool state, the injected runner for an agent state, the clock for a wait).
 - `machine/authoring.py`: the per-attempt prompt builder for `machine create`, around the grammar guide in `agent6.prompts.machine`; it imports nothing from the harness.
 

@@ -15,7 +15,7 @@ import pytest
 
 from agent6.sessions import ipc, process
 from agent6.tools import operator_prompts
-from agent6.ui.cli import _interact
+from agent6.ui.cli import interact
 
 
 def test_the_terminal_is_not_read_while_a_front_end_is_live(
@@ -45,11 +45,11 @@ def test_the_terminal_is_not_read_while_a_front_end_is_live(
         pytest.fail("the terminal prompt ran while a front-end was live")
 
     monkeypatch.setattr(ipc, "time", _Clock())
-    monkeypatch.setattr(_interact.portable, "has_controlling_tty", lambda: True)
-    monkeypatch.setattr(_interact, "default_stdin_approver", _terminal)
+    monkeypatch.setattr(interact.portable, "has_controlling_tty", lambda: True)
+    monkeypatch.setattr(interact, "default_stdin_approver", _terminal)
     request = operator_prompts.ApprovalRequest(
         id="approval-1", prompt="Allow run_command: ls", scope="command", call_id=1
     )
-    assert _interact.build_approver(session_dir)(request) == operator_prompts.ApprovalAnswer(
+    assert interact.build_approver(session_dir)(request) == operator_prompts.ApprovalAnswer(
         True, "frontend"
     )

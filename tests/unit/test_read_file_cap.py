@@ -15,8 +15,7 @@ import pathlib
 import pytest
 
 from agent6.config import Config
-from agent6.tools import _fs_tools as tools__fs_tools
-from agent6.tools import _path_safety, dispatch
+from agent6.tools import dispatch, fs_tools, path_safety
 
 
 def _read(root: pathlib.Path, **args: object) -> dict[str, object]:
@@ -35,38 +34,36 @@ def test_read_file_passes_a_bounded_limit_to_read_contained(
     A spy pins it so an unbounded read (limit_chars=None) fails here even though the output cap
     would still look right.
     """
-    from agent6.tools import _path_safety
+    from agent6.tools import path_safety
 
     seen: list[int | None] = []
-    real = _path_safety.read_contained
+    real = path_safety.read_contained
 
-    def spy(sp: _path_safety.SafePath, *, limit_chars: int | None = None) -> str:
+    def spy(sp: path_safety.SafePath, *, limit_chars: int | None = None) -> str:
         seen.append(limit_chars)
         return real(sp, limit_chars=limit_chars)
 
-    (tmp_path / "f.txt").write_text("a" * (tools__fs_tools.MAX_READ_CHARS + 5000), encoding="utf-8")
-    monkeypatch.setattr(_path_safety, "read_contained", spy)
+    (tmp_path / "f.txt").write_text("a" * (fs_tools.MAX_READ_CHARS + 5000), encoding="utf-8")
+    monkeypatch.setattr(path_safety, "read_contained", spy)
     _read(tmp_path)
-    assert seen and seen[0] is not None and seen[0] <= tools__fs_tools.MAX_READ_CHARS + 1
+    assert seen and seen[0] is not None and seen[0] <= fs_tools.MAX_READ_CHARS + 1
 
 
 def test_a_file_over_the_cap_is_output_capped(tmp_path: pathlib.Path) -> None:
     # The output is clipped to the cap (a separate guarantee from the memory
     # bound pinned above).
-    (tmp_path / "f.txt").write_text("a" * (tools__fs_tools.MAX_READ_CHARS + 5000), encoding="utf-8")
+    (tmp_path / "f.txt").write_text("a" * (fs_tools.MAX_READ_CHARS + 5000), encoding="utf-8")
     out = _read(tmp_path)
     content = out["content"]
     assert out["truncated"] is True
-    assert isinstance(content, str) and len(content) == tools__fs_tools.MAX_READ_CHARS, (
-        "read not bounded"
-    )
+    assert isinstance(content, str) and len(content) == fs_tools.MAX_READ_CHARS, "read not bounded"
 
 
 def test_a_ranged_read_of_a_huge_file_is_output_capped(tmp_path: pathlib.Path) -> None:
     # Even with start_line/limit, the served window comes from the capped
     # prefix.
     (tmp_path / "f.txt").write_text(
-        ("x\n") * (tools__fs_tools.MAX_READ_CHARS), encoding="utf-8"
+        ("x\n") * (fs_tools.MAX_READ_CHARS), encoding="utf-8"
     )  # ~2*cap bytes
     out = _read(tmp_path, start_line=1, limit=3)
     assert out["truncated"] is True
@@ -81,8 +78,8 @@ def test_a_normal_file_is_untouched(tmp_path: pathlib.Path) -> None:
 
 
 def test_a_file_exactly_at_the_cap_is_not_flagged(tmp_path: pathlib.Path) -> None:
-    (tmp_path / "f.txt").write_text("a" * tools__fs_tools.MAX_READ_CHARS, encoding="utf-8")
+    (tmp_path / "f.txt").write_text("a" * fs_tools.MAX_READ_CHARS, encoding="utf-8")
     out = _read(tmp_path)
     content = out["content"]
     assert "truncated" not in out
-    assert isinstance(content, str) and len(content) == tools__fs_tools.MAX_READ_CHARS
+    assert isinstance(content, str) and len(content) == fs_tools.MAX_READ_CHARS

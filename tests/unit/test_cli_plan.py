@@ -10,7 +10,7 @@ import pytest
 
 from agent6 import errors, paths
 from agent6.ui.cli import cli_main, entry, main
-from agent6.viewmodel import _session_status
+from agent6.viewmodel import session_status
 
 
 def _seed_plan(tmp_path: pathlib.Path, session_id: str, body: str) -> pathlib.Path:
@@ -78,7 +78,7 @@ def test_from_plan_title_strips_the_prefix_before_marking_a_cut(length: int) -> 
     plan = f"# Plan: {title}\n\n1. implement"
     task = entry._from_plan_task(plan, "plan-id")
     assert task.splitlines()[0] == (
-        "Execute the prepared plan: " + _session_status.task_snippet(title, max_chars=80)
+        "Execute the prepared plan: " + session_status.task_snippet(title, max_chars=80)
     )
     assert plan in task
 
@@ -343,14 +343,14 @@ def test_seeding_from_a_plan_carries_its_text(
     """With a task, `--from <plan>` digests the plan session, plan.md included."""
     import json
 
-    from agent6.ui.cli import _ask
+    from agent6.ui.cli import ask
 
     monkeypatch.chdir(tmp_path)
     plan = _seed_plan(tmp_path, "happy-tree-abcd", "# Plan: do it\n\n1. step\n")
     (plan.parent / "manifest.json").write_text(
         json.dumps({"mode": "plan", "user_task": "plan it"}), encoding="utf-8"
     )
-    seed = _ask.build_session_seed(tmp_path, "happy-tree-abcd", latest=False)
+    seed = ask.build_session_seed(tmp_path, "happy-tree-abcd", latest=False)
     assert seed is not None and "## Plan" in seed.text and "1. step" in seed.text
 
 

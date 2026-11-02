@@ -27,20 +27,20 @@ import pytest
 
 from agent6 import budget as agent6_budget
 from agent6 import portable
-from agent6.app import providers
+from agent6.app import role_providers
 from agent6.config import Config
-from agent6.harness import _compaction_result
+from agent6.harness import compaction_elision
 from agent6.providers import (
     ProviderAborted,
     ProviderError,
     ProviderInterrupted,
     ToolDefinition,
     TranscriptSink,
-    _claude_code_session,
-    _claude_code_wire,
-    _stream,
     call_for_text,
     claude_code,
+    claude_code_session,
+    claude_code_wire,
+    stream_lifecycle,
 )
 from agent6.viewmodel import transcript_render
 
@@ -176,7 +176,7 @@ def test_argv_is_operator_config_only_and_the_private_dir_is_removed_on_close(
     spawn = _spawns(cap)[0]
     argv = spawn["argv"]
     prompt_file = pathlib.Path(argv[argv.index("--system-prompt-file") + 1])
-    assert (binary, *argv) == _claude_code_wire.claude_argv(
+    assert (binary, *argv) == claude_code_wire.claude_argv(
         binary, "claude-haiku-4-5", "low", prompt_file
     )
     assert all("SECRET_SYS" not in a and "SECRET_TASK" not in a for a in argv)
@@ -229,7 +229,7 @@ def test_child_env_is_curated(tmp_path: pathlib.Path, monkeypatch: pytest.Monkey
     assert not any(v == "leak" for v in env.values())
     assert "HOME" in env and "PATH" in env
     assert env["CLAUDE_CONFIG_DIR"] == str(tmp_path / "cc-config")
-    for name, value in _claude_code_wire.CLAUDE_CODE_ENV.items():
+    for name, value in claude_code_wire.CLAUDE_CODE_ENV.items():
         assert env[name] == value
 
 
@@ -256,7 +256,7 @@ def test_malformed_inline_frame_is_reported_instead_of_stranding_the_reader(
 ) -> None:
     # Long enough for the fake binary to start on a loaded box; a stranded reader still
     # ends on this timeout, with the other message.
-    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 10.0)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 10.0)
     binary, cap = _install(tmp_path, {"malformed_initialize": True})
 
     with pytest.raises(ProviderError, match="invalid stream-json message"):
@@ -433,8 +433,8 @@ def test_non_continuation_restarts_with_the_rendered_history(tmp_path: pathlib.P
     pid_before = _spawns(cap)[0]["pid"]
     provider.call(system="s", messages=resumed, tools=TOOLS)
     assert len(_spawns(cap)) == 2 and not _alive(pid_before)
-    assert _user_texts(cap)[-1] == _claude_code_wire.result_text(
-        _claude_code_wire.render_history(resumed)
+    assert _user_texts(cap)[-1] == claude_code_wire.result_text(
+        claude_code_wire.render_history(resumed)
     )
     assert "hidden" not in _user_texts(cap)[-1]
     provider.call(
@@ -598,7 +598,7 @@ def test_abort_and_interrupt_kill_the_child_and_the_next_call_respawns(
 def test_idle_child_is_killed_after_the_stream_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 0.6)
     binary, cap = _install(tmp_path, {"hang_s": 10, "turns": [[_round(text="x")]]})
     provider = _provider(binary)
     with pytest.raises(ProviderError, match="produced no output") as exc:
@@ -610,7 +610,7 @@ def test_idle_child_is_killed_after_the_stream_timeout(
 def test_stream_ping_does_not_mask_an_idle_child(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
     binary, _ = _install(
         tmp_path,
         {"hang_s": 0.8, "while_hanging": "ping", "turns": [[_round(text="late")]]},
@@ -627,7 +627,7 @@ def test_a_repeated_plan_reading_does_not_mask_an_idle_child(
 
     The CLI repeats it while it waits out a window.
     """
-    monkeypatch.setattr(_stream, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
+    monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 0.2)
     binary, _ = _install(
         tmp_path,
         {"hang_s": 0.8, "while_hanging": "rate_limit", "turns": [[_round(text="late")]]},
@@ -752,17 +752,17 @@ def test_a_call_the_cli_refuses_after_an_answer_ends_the_call_with_its_reason(
 
 
 def test_an_echoed_reason_is_its_first_line_without_the_tag() -> None:
-    assert _claude_code_session.echo_reason(
+    assert claude_code_session.echo_reason(
         "\n<tool_use_error>InputValidationError: bad\nYou sent: x"
     ) == ("InputValidationError: bad")
     assert (
-        _claude_code_session.echo_reason([{"type": "text", "text": "<tool_use_error>boom"}])
+        claude_code_session.echo_reason([{"type": "text", "text": "<tool_use_error>boom"}])
         == "boom"
     )
-    assert _claude_code_session.echo_reason(
+    assert claude_code_session.echo_reason(
         "<tool_use_error>Error: No such tool available: x</tool_use_error>"
     ) == ("Error: No such tool available: x")
-    assert _claude_code_session.echo_reason("") == "no reason given"
+    assert claude_code_session.echo_reason("") == "no reason given"
 
 
 def test_failures_map_to_provider_errors(tmp_path: pathlib.Path) -> None:
@@ -909,7 +909,7 @@ def test_login_status_reads_logged_in_only(
 
 
 def test_render_history_is_verbatim_for_one_message_and_labelled_after() -> None:
-    assert _claude_code_wire.render_history(USER0) == [
+    assert claude_code_wire.render_history(USER0) == [
         {"type": "text", "text": "TASK:\nwrite hello"}
     ]
     history = [
@@ -930,7 +930,7 @@ def test_render_history_is_verbatim_for_one_message_and_labelled_after() -> None
             ],
         },
     ]
-    text = _claude_code_wire.result_text(_claude_code_wire.render_history(history))
+    text = claude_code_wire.result_text(claude_code_wire.render_history(history))
     assert text.startswith("TASK:\nwrite hello\n\n[harness] This session continues")
     assert "### assistant\nok" in text
     assert '[tool_use read_file] {"path": "a"}' in text
@@ -948,14 +948,14 @@ def test_plan_usage_from_rate_limit_maps_the_windows() -> None:
             "seven_day_opus": {"utilization": 1.2, "resetsAt": 200},
         },
     }
-    plan = _claude_code_wire.plan_usage_from_rate_limit(info)
+    plan = claude_code_wire.plan_usage_from_rate_limit(info)
     assert plan is not None
     assert [(w.name, w.used_percent, w.window_minutes, w.resets_at) for w in plan.windows] == [
         ("five_hour", 10.0, 300, 100.0),
         ("seven_day_opus", 120.0, 10080, 200.0),
     ]
     assert plan.limit_reached and plan.has_credits and plan.window_exhausted
-    assert _claude_code_wire.plan_usage_from_rate_limit({"status": "allowed"}) is None
+    assert claude_code_wire.plan_usage_from_rate_limit({"status": "allowed"}) is None
 
 
 def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Path) -> None:
@@ -971,7 +971,7 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Pa
         )
 
     sink = TranscriptSink(tmp_path / "t")
-    provider = providers.build_role_provider(
+    provider = role_providers.build_role_provider(
         cfg("low"), "worker", transcript_sink=sink, budget=_budget()
     )
     assert isinstance(provider, claude_code.ClaudeCodeProvider)
@@ -982,19 +982,21 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Pa
     )
     assert provider.context_tokens == 200_000
     with pytest.raises(ProviderError, match="effort = off") as exc:
-        providers.build_role_provider(cfg("off"), "worker", transcript_sink=sink, budget=_budget())
+        role_providers.build_role_provider(
+            cfg("off"), "worker", transcript_sink=sink, budget=_budget()
+        )
     assert exc.value.fatal
 
 
 def test_instrumented_provider_close_forwards_to_the_inner_close() -> None:
     inner = mock.MagicMock()
-    wrapper = providers.InstrumentedProvider(
+    wrapper = role_providers.InstrumentedProvider(
         inner=inner, role="worker", model="m", provider_name="claude", events=None, budget=_budget()
     )
     wrapper.close()
     inner.close.assert_called_once_with()
     http_like = mock.MagicMock(spec=["call"])
-    bare = providers.InstrumentedProvider(
+    bare = role_providers.InstrumentedProvider(
         inner=http_like, role="worker", model="m", provider_name="p", events=None, budget=_budget()
     )
     bare.close()  # an HTTP provider has no close
@@ -1033,7 +1035,7 @@ def test_an_unclosed_session_is_reaped_at_interpreter_exit(tmp_path: pathlib.Pat
     )
     script = (
         "from agent6.providers.claude_code import ClaudeCodeProvider\n"
-        "from agent6.providers.types import ToolDefinition\n"
+        "from agent6.providers.provider_types import ToolDefinition\n"
         f"provider = ClaudeCodeProvider(model='m', binary={binary!r})\n"
         "tools = [ToolDefinition(name='read_file', description='d', input_schema={})]\n"
         "provider.call(system='s', messages=[{'role': 'user', 'content': 'go'}], tools=tools)\n"
@@ -1117,8 +1119,8 @@ def test_a_rewritten_prefix_restarts_even_at_the_same_length(tmp_path: pathlib.P
     ]
     provider.call(system="s", messages=compacted, tools=TOOLS)
     assert len(_spawns(cap)) == 2
-    assert _user_texts(cap)[-1] == _claude_code_wire.result_text(
-        _claude_code_wire.render_history(compacted)
+    assert _user_texts(cap)[-1] == claude_code_wire.result_text(
+        claude_code_wire.render_history(compacted)
     )
     provider.close()
 
@@ -1365,8 +1367,8 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     Room is left for the notices the same turn folds into the payload, whatever the characters
     weigh.
     """
-    from agent6.app import _session
-    from agent6.harness import _nudges, _panel, _verify_gate
+    from agent6.app import session_parts
+    from agent6.harness import nudges, review_panel, verify_gate
     from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
     from agent6.tools import results
 
@@ -1376,31 +1378,31 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
             "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
         }
     )
-    cap = _session.tool_result_cap_bytes(cc, "worker")
+    cap = session_parts.tool_result_cap_bytes(cc, "worker")
     assert (
         cap
-        == _compaction_result.CLAUDE_CODE_RESULT_CAP_BYTES
-        < _compaction_result.TOOL_RESULT_CAP_BYTES
+        == compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES
+        < compaction_elision.TOOL_RESULT_CAP_BYTES
     )
     assert (
-        _session.tool_result_cap_bytes(Config(), "worker")
-        == _compaction_result.TOOL_RESULT_CAP_BYTES
+        session_parts.tool_result_cap_bytes(Config(), "worker")
+        == compaction_elision.TOOL_RESULT_CAP_BYTES
     )
-    assert _compaction_result.CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
-    wide = _compaction_result.cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
+    assert compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES < CLAUDE_CODE_PERSIST_BYTES
+    wide = compaction_elision.cap_tool_result("\u6f22" * 45_000, tool_name="read_file", cap=cap)
     gate = results.ExecResult(
         returncode=1,
-        stdout="\U0001f600" * (2 * _verify_gate.VERIFY_TAIL_CHARS),
+        stdout="\U0001f600" * (2 * verify_gate.VERIFY_TAIL_CHARS),
         stderr="",
         duration_s=3.0,
         exec_failed=False,
     )
     turn = [
         wide,
-        _verify_gate.harness_verify_notice(gate, "turn"),
-        _panel.review_notice("\u6f22" * 10_000),
-        _nudges.STAGNATION_NUDGE,
-        _nudges.RUN_BUDGET_NUDGE,
+        verify_gate.harness_verify_notice(gate, "turn"),
+        review_panel.review_notice("\u6f22" * 10_000),
+        nudges.STAGNATION_NUDGE,
+        nudges.RUN_BUDGET_NUDGE,
     ]
     assert sum(len(text.encode()) for text in turn) < CLAUDE_CODE_PERSIST_BYTES
 
@@ -1411,12 +1413,12 @@ def test_a_raising_operator_poll_leaves_the_watch_ticking() -> None:
     def boom() -> bool:
         raise RuntimeError("operator state unreadable")
 
-    _claude_code_session.Watch(boom, boom).tick()
+    claude_code_session.Watch(boom, boom).tick()
 
 
 def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
     """The result cap follows the role that drives the session, the planner's on a plan."""
-    from agent6.app import _session
+    from agent6.app import session_parts
     from agent6.config import Config
 
     cfg = Config.model_validate(
@@ -1432,10 +1434,13 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
         }
     )
     assert (
-        _session.tool_result_cap_bytes(cfg, "planner")
-        == _compaction_result.CLAUDE_CODE_RESULT_CAP_BYTES
+        session_parts.tool_result_cap_bytes(cfg, "planner")
+        == compaction_elision.CLAUDE_CODE_RESULT_CAP_BYTES
     )
-    assert _session.tool_result_cap_bytes(cfg, "worker") == _compaction_result.TOOL_RESULT_CAP_BYTES
+    assert (
+        session_parts.tool_result_cap_bytes(cfg, "worker")
+        == compaction_elision.TOOL_RESULT_CAP_BYTES
+    )
 
 
 def test_the_turns_notices_survive_a_turn_the_cli_refused_whole(tmp_path: pathlib.Path) -> None:
@@ -1508,7 +1513,7 @@ def test_stdin_line_cap_counts_json_envelope_before_writing() -> None:
     """An encoded MCP reply cannot exceed the stdout line cap once its envelope is included."""
     session = mock.MagicMock()
     with pytest.raises(ProviderError, match="8 MiB"):
-        _claude_code_session.write(session, {"payload": "x" * (8 * 1024 * 1024)})
+        claude_code_session.write(session, {"payload": "x" * (8 * 1024 * 1024)})
     session.proc.stdin.write.assert_not_called()
 
 
@@ -1676,9 +1681,7 @@ def test_media_skeleton_detects_result_content_changes(change: str) -> None:
         changed[2]["content"][0]["content"][0]["text"] = "changed"
     else:
         changed[2]["content"][0]["content"][1]["source"]["data"] = "eA=="
-    assert _claude_code_wire.history_skeleton(changed) != _claude_code_wire.history_skeleton(
-        original
-    )
+    assert claude_code_wire.history_skeleton(changed) != claude_code_wire.history_skeleton(original)
 
 
 def test_text_block_results_keep_the_single_mcp_text_shape(tmp_path: pathlib.Path) -> None:

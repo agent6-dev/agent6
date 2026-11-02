@@ -11,11 +11,10 @@ from typing import Literal
 
 import pydantic
 
-from agent6 import event_log, review_records
-from agent6.sessions import ipc, layout, lock, process
-from agent6.tools import errors as tools_errors
-from agent6.tools import results
-from agent6.viewmodel import _session_log, review
+from agent6 import review_records
+from agent6.sessions import event_log, ipc, layout, lock, process
+from agent6.tools import results, tool_errors
+from agent6.viewmodel import review, session_log
 
 Source = Literal["cli", "tui", "web", "acp"]
 
@@ -73,7 +72,7 @@ def read_review(session_dir: pathlib.Path) -> review.ReviewView:
     path = session_dir / layout.LOGS_NAME
     if not path.is_file():
         raise ReviewActionError("no session journal", 404)
-    view = _session_log.scan_session_log(path).review
+    view = session_log.scan_session_log(path).review
     if view.read_failure:
         raise ReviewActionError(f"cannot read review evidence: {view.read_failure}")
     return view
@@ -95,7 +94,7 @@ def findings_result(session_dir: pathlib.Path) -> results.FindingsResult:
     try:
         view = read_review(session_dir)
     except ReviewActionError as exc:
-        raise tools_errors.ToolError(str(exc)) from exc
+        raise tool_errors.ToolError(str(exc)) from exc
     note = view.legacy_notice or ("No review panel has run." if not view.panels else "")
     return results.FindingsResult(
         findings=tuple(finding_brief(f) for f in view.findings), note=note

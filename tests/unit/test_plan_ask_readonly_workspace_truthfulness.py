@@ -20,7 +20,7 @@ from typing import Literal
 
 from agent6 import kinds
 from agent6.config import Config, load_config
-from agent6.harness import _prompt_blocks  # pyright: ignore[reportPrivateUsage]
+from agent6.harness import prompt_blocks  # pyright: ignore[reportPrivateUsage]
 
 _INTERACTIVE: tuple[Literal["plan", "ask"], ...] = ("plan", "ask")
 
@@ -51,7 +51,7 @@ def _prompt(tmp_path: pathlib.Path, mode: Literal["plan", "ask"]) -> str:
         recent_log="",
         is_git=False,
     )
-    return _prompt_blocks.build_system_prompt(
+    return prompt_blocks.build_system_prompt(
         config=load_config(cfg_path), repo=repo, mode=mode, skills=None
     )
 
@@ -96,17 +96,17 @@ def test_plan_clamps_run_commands_like_ask(tmp_path: pathlib.Path) -> None:
     tightens (a configured "deny" stays "deny"). An allow-all session answer upgrades the
     clamped "ask" back to "allow".
     """
-    from agent6.app import _setup
+    from agent6.app import session_setup
     from agent6.sessions import ipc
 
     allowed = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     # Both interactive modes clamp allow->ask; run keeps the operator's allow.
-    assert _setup.session_config(allowed, "plan").sandbox.run_commands == "ask"
-    assert _setup.session_config(allowed, "ask").sandbox.run_commands == "ask"
-    assert _setup.session_config(allowed, "run").sandbox.run_commands == "allow"
+    assert session_setup.session_config(allowed, "plan").sandbox.run_commands == "ask"
+    assert session_setup.session_config(allowed, "ask").sandbox.run_commands == "ask"
+    assert session_setup.session_config(allowed, "run").sandbox.run_commands == "allow"
     # Only tightens: a withheld "deny" is never loosened by the clamp.
     denied = Config.model_validate({"sandbox": {"run_commands": "deny"}})
-    assert _setup.session_config(denied, "plan").sandbox.run_commands == "deny"
+    assert session_setup.session_config(denied, "plan").sandbox.run_commands == "deny"
     # The clamped "ask" still upgrades to "allow" for the session on allow-all.
     assert ipc.effective_run_commands("ask", tmp_path) == "ask"
     ipc.set_session_allow(tmp_path, ipc.COMMAND_SCOPE)

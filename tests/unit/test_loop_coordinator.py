@@ -21,8 +21,7 @@ import pytest
 from agent6.app import lanes
 from agent6.config import Config
 from agent6.graph import curator, models
-from agent6.harness import _chain as chain_mod
-from agent6.harness import _operator, _provider_call, loop, subrun
+from agent6.harness import loop, operator_bridge, provider_call, run_chain, subrun
 from agent6.providers import ProviderResponse
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
@@ -250,7 +249,7 @@ def _build_wf(
     if dispatcher is None:
         disp.dispatch.return_value = tools_results.RawResult({"content": "hi\n"})
     return loop.Harness(
-        chain=chain_mod.RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
+        chain=run_chain.RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
@@ -273,13 +272,13 @@ def _build_wf(
         logger=_silent,
         events=events,
         curator=graph,
-        bridge=_operator.OperatorBridge(
+        bridge=operator_bridge.OperatorBridge(
             lane_spawner=lane_spawner,
             steer_requested=steer.requested,
             steer_prompt=steer.prompt,
             steer_clear=steer.clear,
         ),
-        call=_provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
+        call=provider_call.CallSettings(retry_count=0, retry_delay_s=0.0),
         max_turns=max_turns,
     )
 

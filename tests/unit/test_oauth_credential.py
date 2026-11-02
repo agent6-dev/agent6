@@ -17,9 +17,8 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import secret_store
-from agent6.config import ChatGPTProviderEntry, Config, OpenAIProviderEntry
-from agent6.providers import _oauth_protocol, _transport, chatgpt_oauth, oauth, types
+from agent6.config import ChatGPTProviderEntry, Config, OpenAIProviderEntry, secret_store
+from agent6.providers import oauth, oauth_chatgpt, oauth_protocol, provider_types, transport
 
 _ENTRY: dict[str, Any] = {
     "api_format": "openai",
@@ -120,7 +119,7 @@ def test_configured_profile_preserves_settings_without_chatgpt_policies() -> Non
 
 def test_chatgpt_profile_keeps_registration_and_mixed_encodings() -> None:
     profile = oauth.profile_for(ChatGPTProviderEntry(api_format="chatgpt"))
-    assert profile is chatgpt_oauth.PROFILE
+    assert profile is oauth_chatgpt.PROFILE
     assert profile.redirect_uri == "http://localhost:1455/auth/callback"
     assert profile.callback_host == "127.0.0.1"
     assert profile.request_encoding == "form" and profile.revocation_encoding == "json"
@@ -137,7 +136,7 @@ def test_chatgpt_profile_keeps_registration_and_mixed_encodings() -> None:
         "originator": "agent6",
     }
     assert profile.label == "ChatGPT"
-    assert profile.account_id_of is chatgpt_oauth.account_id_of
+    assert profile.account_id_of is oauth_chatgpt.account_id_of
     assert profile.require_refresh_token is True
     assert profile.default_expires_in == 3600.0
     assert profile.refresh_skew_s == 300.0 and profile.cap_refresh_skew is False
@@ -158,7 +157,7 @@ def test_chatgpt_binding_covers_effective_profile_settings(
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     fingerprint = oauth.binding_fingerprint(entry)
     monkeypatch.setattr(
-        chatgpt_oauth, "PROFILE", dataclasses.replace(chatgpt_oauth.PROFILE, **{field: value})
+        oauth_chatgpt, "PROFILE", dataclasses.replace(oauth_chatgpt.PROFILE, **{field: value})
     )
     assert oauth.binding_fingerprint(entry) != fingerprint
 
@@ -185,9 +184,11 @@ def test_a_grant_made_under_other_settings_refuses_before_anything_is_sent(
     def never(*_a: object, **_k: object) -> None:
         raise AssertionError("no request may leave")
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", never)
+    monkeypatch.setattr(oauth_protocol, "post_form", never)
     changed = _entry(base_url="https://other.example/v1")
-    with pytest.raises(types.ProviderError, match=r"other provider settings.*agent6 connect work"):
+    with pytest.raises(
+        provider_types.ProviderError, match=r"other provider settings.*agent6 connect work"
+    ):
         oauth.OAuthCredential("work", changed).token()
 
 
@@ -205,7 +206,7 @@ def test_a_fresh_grant_is_sent_as_it_is_and_refreshed_inside_its_skew(
         refreshes.append(data)
         return _Resp(200, {"access_token": "AT2", "expires_in": 3600})  # no rotated refresh token
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
     cred = oauth.OAuthCredential("work", entry, now=lambda: clock["now"])
     assert cred.token() == "AT1" and refreshes == []
     clock["now"] = 4_550.0  # inside the 60 s skew
@@ -227,7 +228,9 @@ def test_a_non_expiring_grant_without_a_refresh_token_is_used_until_refused(
     assert cred.invalidate(403, "AT1") is False
     assert cred.token() == "AT1"
     assert cred.invalidate(401, "AT1") is True
-    with pytest.raises(types.ProviderError, match=r"no refresh token.*agent6 connect work"):
+    with pytest.raises(
+        provider_types.ProviderError, match=r"no refresh token.*agent6 connect work"
+    ):
         cred.token()
 
 
@@ -264,7 +267,7 @@ def test_only_a_current_bearers_401_arms_a_refresh(
             },
         )
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
     cred = oauth.OAuthCredential("work", entry, now=lambda: clock["now"])
     assert cred.token() == "AT1"
     clock["now"] = 4_550.0
@@ -309,12 +312,12 @@ def test_the_second_exchange_runs_first_and_refreshes_the_issuer_once_on_its_401
         seen.append({"url": url, "data": data})
         return _Resp(200, {"access_token": "AT2", "refresh_token": "RT2", "expires_in": 7200})
 
-    monkeypatch.setattr(_transport, "http_request", fake_request)
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
+    monkeypatch.setattr(transport, "http_request", fake_request)
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
     cred = oauth.OAuthCredential("work", entry, now=lambda: clock["now"])
     assert cred.token() == "EX1"
     assert seen[0]["headers"]["authorization"] == "Bearer AT1"
-    assert seen[0]["method"] == "GET" and seen[0]["cap"] == _transport.CREDENTIAL_BODY_BYTES
+    assert seen[0]["method"] == "GET" and seen[0]["cap"] == transport.CREDENTIAL_BODY_BYTES
     stored = secret_store.load_oauth_grant("work")
     assert stored is not None and stored.exchange_access_token == "EX1"
     clock["now"] = 2_590.0  # inside the exchanged token's skew: re-exchange, which answers 401
@@ -347,8 +350,8 @@ def test_an_exchange_error_never_echoes_the_issuer_token(
             500, {"error": "boom AT-SECRET-VALUE-1"}, text='{"error": "boom AT-SECRET-VALUE-1"}'
         )
 
-    monkeypatch.setattr(_transport, "http_request", fake_request)
-    with pytest.raises(types.ProviderError) as failed:
+    monkeypatch.setattr(transport, "http_request", fake_request)
+    with pytest.raises(provider_types.ProviderError) as failed:
         oauth.OAuthCredential("work", entry, now=lambda: 2_000.0).token()
     assert "AT-SECRET-VALUE-1" not in str(failed.value) and "REDACTED" in str(failed.value)
 
@@ -382,8 +385,8 @@ def test_the_device_grant_waits_through_pending_and_slow_down(
         posts.append((url, data))
         return answers.pop(0)
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
-    started = _oauth_protocol.start_device_grant(
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
+    started = oauth_protocol.start_device_grant(
         "https://login.example/device", "client-1", scopes=("a", "b"), encoding="form", label="work"
     )
     assert (started.user_code, started.verification_uri) == (
@@ -391,7 +394,7 @@ def test_the_device_grant_waits_through_pending_and_slow_down(
         "https://login.example/device",
     )
     assert posts[0][1] == {"client_id": "client-1", "scope": "a b"}
-    grant = _oauth_protocol.poll_device_grant(
+    grant = oauth_protocol.poll_device_grant(
         "https://login.example/token",
         "client-1",
         started,
@@ -417,12 +420,10 @@ def test_a_denied_or_expired_device_grant_ends_by_name(
     ) -> _Resp:
         return _Resp(400, {"error": code})
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
-    started = _oauth_protocol.DeviceGrant(
-        "DC", "AB", "https://login.example/device", "", 1.0, 600.0
-    )
-    with pytest.raises(types.ProviderError, match=word):
-        _oauth_protocol.poll_device_grant(
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
+    started = oauth_protocol.DeviceGrant("DC", "AB", "https://login.example/device", "", 1.0, 600.0)
+    with pytest.raises(provider_types.ProviderError, match=word):
+        oauth_protocol.poll_device_grant(
             "https://login.example/token",
             "client-1",
             started,
@@ -452,7 +453,7 @@ def test_the_listing_goes_through_the_credential(
             200, json={"data": [{"id": "m1"}]}, request=httpx2.Request("GET", url)
         )
 
-    monkeypatch.setattr(_transport, "http_request", fake_get)
+    monkeypatch.setattr(transport, "http_request", fake_get)
     assert cache.fetch_models_live("work", entry, None, timeout_s=5.0) == ["m1"]
     assert seen["headers"]["authorization"] == "Bearer AT1"
 
@@ -471,10 +472,10 @@ def test_a_device_poll_never_sleeps_past_the_grant_expiry(monkeypatch: pytest.Mo
     ) -> _Resp:
         return _Resp(400, {"error": "slow_down"})
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
-    started = _oauth_protocol.DeviceGrant("DC", "AB", "https://l.example/d", "", 1e9, 5.0)
-    with pytest.raises(types.ProviderError, match="expired"):
-        _oauth_protocol.poll_device_grant(
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
+    started = oauth_protocol.DeviceGrant("DC", "AB", "https://l.example/d", "", 1e9, 5.0)
+    with pytest.raises(provider_types.ProviderError, match="expired"):
+        oauth_protocol.poll_device_grant(
             "https://l.example/token",
             "c",
             started,
@@ -500,11 +501,11 @@ def test_a_device_start_caps_the_issuers_interval(monkeypatch: pytest.MonkeyPatc
             },
         )
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
-    started = _oauth_protocol.start_device_grant(
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
+    started = oauth_protocol.start_device_grant(
         "https://l.example/device", "c", scopes=(), encoding="form", label="work"
     )
-    assert started.interval_s == _oauth_protocol.POLL_INTERVAL_CEILING_S
+    assert started.interval_s == oauth_protocol.POLL_INTERVAL_CEILING_S
 
 
 def _account_token(account: str) -> str:
@@ -516,7 +517,7 @@ def test_id_token_only_account_is_persisted_without_identity_token(gcfg: pathlib
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     identity = _account_token("account-a")
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant("opaque", "RT", 3600, identity), entry, now=1000
+        oauth_protocol.TokenGrant("opaque", "RT", 3600, identity), entry, now=1000
     )
     assert grant.account_id == "account-a"
     path = secret_store.save_oauth_grant("work", grant)
@@ -528,14 +529,14 @@ def test_id_token_only_account_is_persisted_without_identity_token(gcfg: pathlib
 
 @pytest.mark.parametrize("refresh", ["", " "])
 def test_initial_chatgpt_grant_requires_nonblank_refresh_token(refresh: str) -> None:
-    grant = _oauth_protocol.TokenGrant("AT", refresh, None)
-    with pytest.raises(types.ProviderError, match=r"ChatGPT.*no refresh_token"):
+    grant = oauth_protocol.TokenGrant("AT", refresh, None)
+    with pytest.raises(provider_types.ProviderError, match=r"ChatGPT.*no refresh_token"):
         oauth.stored_grant_for(grant, ChatGPTProviderEntry(api_format="chatgpt"), now=1000)
     assert oauth.stored_grant_for(grant, _entry(), now=1000).refresh_token == refresh
 
 
 def test_chatgpt_omitted_expiry_uses_an_hour_but_configured_expiry_is_indefinite() -> None:
-    grant = _oauth_protocol.TokenGrant("AT", "RT", None)
+    grant = oauth_protocol.TokenGrant("AT", "RT", None)
     assert (
         oauth.stored_grant_for(
             grant, ChatGPTProviderEntry(api_format="chatgpt"), now=1000
@@ -556,7 +557,7 @@ def test_chatgpt_uses_full_skew_and_keeps_account_on_partial_refresh(
         calls.append(data)
         return _Resp(200, {"access_token": "AT2"})
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    monkeypatch.setattr(oauth_protocol, "post_form", refresh)
     holder = oauth.OAuthCredential("work", entry, now=lambda: 1100)
     assert holder.token() == "AT2"
     stored = secret_store.load_oauth_grant("work")
@@ -570,7 +571,7 @@ def test_chatgpt_uses_full_skew_and_keeps_account_on_partial_refresh(
         {
             "grant_type": "refresh_token",
             "refresh_token": "RT1",
-            "client_id": chatgpt_oauth.CHATGPT_CLIENT_ID,
+            "client_id": oauth_chatgpt.CHATGPT_CLIENT_ID,
         }
     ]
 
@@ -579,7 +580,8 @@ def test_shared_holder_refuses_stored_account_contradiction(gcfg: pathlib.Path) 
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     _store(entry, access_token=_account_token("claimed"), account_id="stored")
     with pytest.raises(
-        types.ProviderError, match=r"ChatGPT.*does not match its own token.*agent6 connect work"
+        provider_types.ProviderError,
+        match=r"ChatGPT.*does not match its own token.*agent6 connect work",
     ):
         oauth.OAuthCredential("work", entry, now=lambda: 2000).token()
 
@@ -599,12 +601,14 @@ def test_shared_holder_pins_first_account_before_refresh_or_adoption(
     def refresh(*_a: object, **_kw: object) -> _Resp:
         return _Resp(200, {"access_token": second, "refresh_token": "RT2", "expires_in": 3600})
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    monkeypatch.setattr(oauth_protocol, "post_form", refresh)
     if source == "sibling":
         _store(entry, access_token=second, account_id=None)
     before = secret_store.paths.secrets_path().read_bytes()
     holder.invalidate(401, first)
-    with pytest.raises(types.ProviderError, match=r"different account.*agent6 connect work"):
+    with pytest.raises(
+        provider_types.ProviderError, match=r"different account.*agent6 connect work"
+    ):
         holder.token()
     assert secret_store.paths.secrets_path().read_bytes() == before
 
@@ -642,7 +646,7 @@ def test_read_only_bound_grant_validation(gcfg: pathlib.Path, kind: str) -> None
             "rebound": "other provider settings",
             "contradiction": "does not match its own token",
         }[kind]
-        with pytest.raises(types.ProviderError, match=message) as refused:
+        with pytest.raises(provider_types.ProviderError, match=message) as refused:
             oauth.load_bound_grant("work", entry, secrets=secrets)
         assert refused.value.status_code == 401 and "agent6 connect work" in str(refused.value)
     assert (path.read_bytes() if path.exists() else None) == before
@@ -654,10 +658,10 @@ def test_read_only_bound_grant_validation(gcfg: pathlib.Path, kind: str) -> None
 )
 def test_refresh_errors_have_classified_codes(code: str) -> None:
     response = httpx2.Response(400, json={"error": {"code": code}})
-    error = _oauth_protocol.token_error(
+    error = oauth_protocol.token_error(
         response, operation="refresh", provider="work", label="ChatGPT", secrets=("r",)
     )
-    assert isinstance(error, _oauth_protocol.OAuthError)
+    assert isinstance(error, oauth_protocol.OAuthError)
     assert error.code == code and error.status_code == 401
 
 
@@ -687,7 +691,7 @@ def test_shared_holder_rereads_once_after_reused_refresh(
         )
         secret_store.save_oauth_grant("work", sibling)
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", reused)
+    monkeypatch.setattr(oauth_protocol, "post_form", reused)
     monkeypatch.setattr(oauth.time, "sleep", sleep)
     holder = oauth.OAuthCredential("work", entry, now=lambda: 6000)
     if replacement == "fresh":
@@ -700,7 +704,7 @@ def test_shared_holder_rereads_once_after_reused_refresh(
             "rebound": "other provider settings",
             "other-account": "different account",
         }[replacement]
-        with pytest.raises(types.ProviderError, match=match):
+        with pytest.raises(provider_types.ProviderError, match=match):
             holder.token()
     assert sleeps == [1.0] and calls == ["refresh"]
 
@@ -717,9 +721,9 @@ def test_refresh_rescue_ignores_reused_token_words_in_prose(
             500, json={"error": "server_error", "description": "refresh_token_reused"}
         )
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", refused)
+    monkeypatch.setattr(oauth_protocol, "post_form", refused)
     monkeypatch.setattr(oauth.time, "sleep", sleeps.append)
-    with pytest.raises(types.ProviderError):
+    with pytest.raises(provider_types.ProviderError):
         oauth.OAuthCredential("work", entry, now=lambda: 6000).token()
     assert sleeps == []
 
@@ -745,7 +749,7 @@ def test_concurrent_holders_rotate_once_under_real_locks(
         start.wait(timeout=5)
         return holder.token()
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    monkeypatch.setattr(oauth_protocol, "post_form", refresh)
     with futures.ThreadPoolExecutor(max_workers=2) as pool:
         pending = [pool.submit(token, holder) for holder in (first, second)]
         assert [result.result(timeout=10) for result in pending] == ["AT2", "AT2"]
@@ -765,8 +769,8 @@ def test_shared_holder_refuses_an_unopenable_real_lock(
     def never(*_a: object, **_kw: object) -> _Resp:
         pytest.fail("no request may leave without the refresh lock")
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", never)
-    with pytest.raises(types.ProviderError, match="credential-refresh lock"):
+    monkeypatch.setattr(oauth_protocol, "post_form", never)
+    with pytest.raises(provider_types.ProviderError, match="credential-refresh lock"):
         oauth.OAuthCredential("work", entry, now=lambda: 6000).token()
 
 
@@ -782,7 +786,7 @@ def test_shared_holder_adopts_same_account_sibling_after_401_without_rotation(
     def never(*_a: object, **_kw: object) -> _Resp:
         pytest.fail("a fresh sibling avoids rotation")
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", never)
+    monkeypatch.setattr(oauth_protocol, "post_form", never)
     assert holder.invalidate(403, "AT1") is False
     assert holder.token() == "AT1"
     assert holder.invalidate(401, "AT1") is True
@@ -801,7 +805,7 @@ def test_partial_refresh_preserves_the_pinned_account(
     def refresh(*_a: object, **_kw: object) -> _Resp:
         return _Resp(200, {"access_token": "AT2", "expires_in": 3600})
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    monkeypatch.setattr(oauth_protocol, "post_form", refresh)
     holder.invalidate(401, "AT1")
     assert holder.token() == "AT2"
     stored = secret_store.load_oauth_grant("work")
@@ -830,11 +834,11 @@ def test_pinned_holder_refuses_an_unidentified_stored_grant(
         assert source == "rescue", "sibling adoption must not refresh"
         return httpx2.Response(400, json={"error": "refresh_token_reused"})
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", refresh)
+    monkeypatch.setattr(oauth_protocol, "post_form", refresh)
     monkeypatch.setattr(oauth.time, "sleep", publish)
     if source == "sibling":
         publish(0)
-    with pytest.raises(types.ProviderError, match="unidentified sign-in") as refused:
+    with pytest.raises(provider_types.ProviderError, match="unidentified sign-in") as refused:
         holder.token()
     assert "agent6 connect work" in str(refused.value)
     assert refused.value.status_code == 401

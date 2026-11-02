@@ -15,8 +15,8 @@ import sys
 from agent6 import directive
 from agent6.app import stop
 from agent6.sessions import id
-from agent6.ui import directives
-from agent6.ui.cli import _common
+from agent6.ui import directive_actions
+from agent6.ui.cli import common
 from agent6.viewmodel import listing, session_is_live
 
 
@@ -35,33 +35,33 @@ def _cmd_steer(
         The exit code; 2 when the session is unknown, not live, or the line is a view command.
     """
     try:
-        layout = _common.resolve_session_layout(pathlib.Path.cwd(), target)
+        layout = common.resolve_session_layout(pathlib.Path.cwd(), target)
     except id.SessionIdError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     if text.strip() == "/stop":
         out = stop.stop_session(layout.session_dir)
         print(f"[agent6] {out.message}.", file=sys.stdout if out.ok else sys.stderr)
         return 0 if out.ok or out.how == "not_live" else 1
     if text.strip().lower() in directive.VIEW_COMMANDS:
-        _common.refuse(
+        common.refuse(
             f"{text.strip()} acts on a view of the run, which a steer has none of:"
             " type it in the TUI, the web, or a live run's pause menu (Ctrl-C)"
         )
         return 2
     if not session_is_live(layout.session_dir):
-        _common.refuse(
+        common.refuse(
             f"session {layout.session_id} is not running; a steer needs a"
             f" live run. Queue one for its next execution instead:"
             f" agent6 resume {layout.session_id} --steer TEXT"
         )
         return 2
     # The one owner of what a typed line does, shared with the TUI, the web and the pause menu.
-    did, said = directives.submit_composer_line(
+    did, said = directive_actions.submit_composer_line(
         layout.session_dir, text, now=now, config_paths=config_paths
     )
     if not did:
-        _common.error(f"{said} ({layout.session_id})")
+        common.error(f"{said} ({layout.session_id})")
         return 1
     print(f"{layout.session_id}: {said}.")
     summary = listing.summarize_session_dir(layout.session_dir)

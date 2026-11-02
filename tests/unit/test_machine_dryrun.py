@@ -10,8 +10,8 @@ import re
 
 import pytest
 
-from agent6.app import _setup
-from agent6.machine import _semantics, dry_run, dryrun, load_machine
+from agent6.app import session_setup
+from agent6.machine import dry_run, dryrun, load_machine, semantics
 
 # tool -> branch -> (agent | tool) -> terminal, with a typed capture + an enum.
 DEMO = """
@@ -90,7 +90,7 @@ def test_synthesize_record_is_schema_valid(tmp_path: pathlib.Path) -> None:
     assert payload == {"label": "low", "score": 0}
     # And it passes the same strict check the live agent path uses.
     assert (
-        _semantics.validate_record_payload(
+        semantics.validate_record_payload(
             spec.schemas, "review", payload, where="finish_session payload"
         )
         == []
@@ -192,7 +192,7 @@ def test_machine_test_verdict_names_the_offline_tests_that_ran(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A successful dry-run names the number of offline script files actually executed."""
-    from agent6.app.machine import _scriptcheck
+    from agent6.app.machine import scriptcheck
     from agent6.ui.cli import main
     from tests.unit import test_scriptcheck
 
@@ -201,9 +201,9 @@ def test_machine_test_verdict_names_the_offline_tests_that_ran(
     scripts.mkdir()
     for name in ("a_test.py", "b_test.py"):
         (scripts / name).write_text("assert 1 + 1 == 2\n", encoding="utf-8")
-    full = dataclasses.replace(_setup.detect_env(), userns_supported=True)
-    monkeypatch.setattr(_setup, "detect_env", lambda: full)
-    monkeypatch.setattr(_scriptcheck, "run_in_jail", test_scriptcheck._run_python_script)
+    full = dataclasses.replace(session_setup.detect_env(), userns_supported=True)
+    monkeypatch.setattr(session_setup, "detect_env", lambda: full)
+    monkeypatch.setattr(scriptcheck, "run_in_jail", test_scriptcheck._run_python_script)
 
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
@@ -235,8 +235,8 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     scripts.mkdir()
     (scripts / "thing_test.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
     # A real environment minus user namespaces: the level under which offline tests are skipped.
-    partial = dataclasses.replace(_setup.detect_env(), userns_supported=False)
-    monkeypatch.setattr(_setup, "detect_env", lambda: partial)
+    partial = dataclasses.replace(session_setup.detect_env(), userns_supported=False)
+    monkeypatch.setattr(session_setup, "detect_env", lambda: partial)
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
     assert "1 offline script test not run" in out

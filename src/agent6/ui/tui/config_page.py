@@ -14,7 +14,7 @@ import pathlib
 from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
-from agent6.config import _layer_data
+from agent6.config import layer_data
 
 try:
     import textual
@@ -31,7 +31,7 @@ from agent6.app import confine
 from agent6.config import ConfigError, io, layer, notices, write
 from agent6.models import cache
 from agent6.models import choices as models_choices
-from agent6.ui.tui import _config_forms, menubar, modals, screen_chrome
+from agent6.ui.tui import config_forms, menubar, modals, screen_chrome
 from agent6.viewmodel import config_view
 
 
@@ -221,7 +221,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         super().__init__()
         self.repo_root = repo_root
         self.config_paths = config_paths
-        self._eff: _layer_data.EffectiveConfig | None = None
+        self._eff: layer_data.EffectiveConfig | None = None
         self._view: config_view.ConfigView | None = None
         self._table_rows: dict[
             str, list[config_view.ConfigSetting]
@@ -280,7 +280,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             for source in reversed(self._eff.layers):
                 if any(
                     leaf == key or leaf.startswith(key + ".")
-                    for leaf in _layer_data.flatten_leaves(source.data)
+                    for leaf in layer_data.flatten_leaves(source.data)
                 ):
                     return source.source
         return "default"
@@ -569,7 +569,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         table = next(t for t in write.ENTRY_TABLES if t.path == path)
 
         self.app.push_screen(
-            _config_forms.EntryModal(self.repo_root, table, self.config_paths), self._form_closed
+            config_forms.EntryModal(self.repo_root, table, self.config_paths), self._form_closed
         )
 
     def _form_closed(self, _: None) -> None:
@@ -579,7 +579,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
     def action_add_reviewer(self) -> None:
         """Open the reviewer form and reload after it."""
         self.app.push_screen(
-            _config_forms.ReviewerModal(self.repo_root, self.config_paths), self._form_closed
+            config_forms.ReviewerModal(self.repo_root, self.config_paths), self._form_closed
         )
 
     def action_remove_reviewer(self) -> None:
@@ -600,7 +600,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
             return
         self.app.push_screen(
-            _config_forms.RemoveReviewerModal(
+            config_forms.RemoveReviewerModal(
                 self.repo_root,
                 tuple(seat.focus for seat in roster),
                 to_repo=setting.source == "repo",
@@ -708,13 +708,13 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         eff = self._eff
         provider = models_choices.model_role_provider(eff, setting.key) if eff is not None else None
         if provider is not None and eff is not None:
-            modal = _config_forms.EditModal(
+            modal = config_forms.EditModal(
                 setting,
                 typeahead=cache.cached_models(provider),
                 fetch=lambda: models_choices.config_value_choices(eff, setting.key),
             )
         else:
-            modal = _config_forms.EditModal(setting)
+            modal = config_forms.EditModal(setting)
         self.app.push_screen(modal, _done)
 
     def action_reset(self) -> None:

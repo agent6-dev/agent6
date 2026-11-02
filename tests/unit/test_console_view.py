@@ -9,12 +9,12 @@ from typing import Any
 
 import pytest
 
-from agent6.ui.cli import _console_view
+from agent6.ui.cli import console_render
 
 
 def _render(events: list[dict[str, object]]) -> str:
     buf = io.StringIO()
-    view = _console_view.ConsoleView(buf, color=False)
+    view = console_render.ConsoleView(buf, color=False)
     for event in events:
         view.feed(event)
     return buf.getvalue()
@@ -95,7 +95,7 @@ def test_failed_tool_shows_its_output_tail() -> None:
 def test_steer_request_closes_open_dim_block() -> None:
     # The open dim thinking block is reset before the pause message, so it does not inherit the dim.
     buf = io.StringIO()
-    view = _console_view.ConsoleView(buf, color=True)
+    view = console_render.ConsoleView(buf, color=True)
     view.feed({"type": "role.thinking_delta", "text": "pondering the fix"})
     assert not buf.getvalue().endswith("\033[0m\n")  # block still open
     view.feed({"type": "session.steer_requested", "source": "sigint"})
@@ -183,9 +183,9 @@ def test_cli_heartbeat_shows_working_when_the_stream_stalls(
     """
     import time
 
-    monkeypatch.setattr("agent6.ui.cli._console_view._MID_BLOCK_STALL_S", 1.5)
+    monkeypatch.setattr("agent6.ui.cli.console_render._MID_BLOCK_STALL_S", 1.5)
     out = _FakeTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         view.feed({"type": "role.call", "role": "worker", "model": "m"})
         view.feed({"type": "role.text_delta", "text": "Let me investigate"})
@@ -216,7 +216,7 @@ def test_the_heartbeat_flushes_a_partial_line_while_output_flows() -> None:
     import time
 
     out = _CountingTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         view.feed({"type": "role.call", "role": "worker", "model": "m"})
         view.feed({"type": "role.text_delta", "text": "partial"})
@@ -236,7 +236,7 @@ def test_cli_heartbeat_does_not_split_a_streaming_block_at_short_gaps() -> None:
     import time
 
     out = _FakeTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         view.feed({"type": "role.call", "role": "worker", "model": "m"})
         view.feed({"type": "role.text_delta", "text": "writing to tests/test"})
@@ -254,7 +254,7 @@ def test_cli_heartbeat_spins_during_a_long_tool_run() -> None:
     import time
 
     out = _FakeTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         view.feed({"type": "role.call", "role": "worker", "model": "m"})
         view.feed({"type": "role.result", "role": "worker"})  # turn done...
@@ -271,7 +271,7 @@ def test_cli_heartbeat_silent_on_a_non_tty() -> None:
     import time
 
     buf = io.StringIO()
-    view = _console_view.ConsoleView(buf, color=False)
+    view = console_render.ConsoleView(buf, color=False)
     view.feed({"type": "role.call", "role": "worker", "model": "m"})
     time.sleep(_STALL_WAIT_S)
     assert "working…" not in buf.getvalue()
@@ -283,7 +283,7 @@ def test_notice_clears_the_spinner_before_printing() -> None:
     import time
 
     out = _FakeTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         view.feed({"type": "role.call", "role": "worker", "model": "m"})
         time.sleep(_STALL_WAIT_S)  # spinner up
@@ -301,7 +301,7 @@ def test_pause_suspends_the_heartbeat_spinner() -> None:
     import time
 
     out = _FakeTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         view.feed({"type": "tool.call", "name": "ask_user", "args": {}})
         time.sleep(_STALL_WAIT_S)  # a tool is in flight + output silent: spinner up
@@ -322,7 +322,7 @@ def test_replayed_history_does_not_reset_the_idle_timer() -> None:
     import time
 
     out = _FakeTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         wedged_at = time.time() - 2400
         view.feed({"type": "role.call", "role": "worker", "model": "m", "ts": wedged_at - 1})
@@ -344,7 +344,7 @@ def test_streamed_model_text_cannot_reach_the_terminal_with_controls() -> None:
     prints as inert text.
     """
     out = _FakeTTY()
-    view = _console_view.ConsoleView(out, color=False)  # type: ignore[arg-type]
+    view = console_render.ConsoleView(out, color=False)  # type: ignore[arg-type]
     try:
         view.feed({"type": "role.call", "role": "worker", "model": "m"})
         view.feed({"type": "role.text_delta", "text": "safe \x1b]52;c;cGF5"})
@@ -360,7 +360,7 @@ def test_the_policy_line_is_read_when_the_task_prints() -> None:
     """The policy line is read when the task prints, after the gate is inferred and pinned."""
     buf = io.StringIO()
     facts = ["kimi · isolation full · run_commands ask · no verify gate"]
-    view = _console_view.ConsoleView(buf, color=False, policy=lambda: facts[0])
+    view = console_render.ConsoleView(buf, color=False, policy=lambda: facts[0])
     facts[0] = "kimi · isolation full · run_commands ask · gate ./verify.sh (inferred)"
     view.feed({"type": "session.start", "user_task": "add mul"})
     view.close()
@@ -465,7 +465,7 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
 def test_a_queued_question_prints_its_text_and_how_to_answer() -> None:
     """A question the model queued is announced on the console with the ways to answer it."""
     buf = io.StringIO()
-    view = _console_view.ConsoleView(buf, color=False, session_id="brave-oak-AAAAAA")
+    view = console_render.ConsoleView(buf, color=False, session_id="brave-oak-AAAAAA")
     view.feed({"type": "session.start", "user_task": "t"})
     view.feed(
         {

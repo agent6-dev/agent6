@@ -17,7 +17,7 @@ from typing import Annotated, Any, Literal, Union, get_args, get_origin
 import pydantic
 import pydantic_core
 
-from agent6.config import _layer_data, _presets, io
+from agent6.config import io, layer_data, layer_presets
 from agent6.config import layer as config_layer
 
 
@@ -80,7 +80,7 @@ class ConfigView:
 
     settings: tuple[ConfigSetting, ...]
     sections: tuple[str, ...]
-    layers: tuple[_layer_data.Layer, ...]
+    layers: tuple[layer_data.Layer, ...]
 
 
 def _unwrap_optional(ann: Any) -> Any:
@@ -229,7 +229,7 @@ def field_schema(model_cls: type[pydantic.BaseModel], parts: list[str]) -> Field
     return None
 
 
-def _configured_choices(eff: _layer_data.EffectiveConfig, leaf: str) -> tuple[str, ...] | None:
+def _configured_choices(eff: layer_data.EffectiveConfig, leaf: str) -> tuple[str, ...] | None:
     """Return the choices only the effective config can state.
 
     Every editor's picker and TAB completion read them from here; the model ids of a
@@ -244,7 +244,7 @@ def _configured_choices(eff: _layer_data.EffectiveConfig, leaf: str) -> tuple[st
         `models.<role>.provider` leaf, else None.
     """
     if leaf == "preset":
-        return eff.presets or tuple(_presets.preset_names(eff.layers))
+        return eff.presets or tuple(layer_presets.preset_names(eff.layers))
     parts = io.split_key(leaf)
     if len(parts) == 3 and parts[0] == "models" and parts[2] == "provider":
         return tuple(sorted(eff.config.providers)) or None
@@ -252,7 +252,7 @@ def _configured_choices(eff: _layer_data.EffectiveConfig, leaf: str) -> tuple[st
 
 
 def build_config_view(
-    eff: _layer_data.EffectiveConfig, *, resolved: dict[str, Any] | None = None
+    eff: layer_data.EffectiveConfig, *, resolved: dict[str, Any] | None = None
 ) -> ConfigView:
     """Build the flat view every UI renders from the effective config.
 
@@ -267,7 +267,7 @@ def build_config_view(
         The view.
     """
     resolved = resolved or {}
-    leaves = _layer_data.config_leaves(eff.config)
+    leaves = layer_data.config_leaves(eff.config)
     by_section: dict[str, list[str]] = {}
     for leaf in leaves:
         by_section.setdefault(io.split_key(leaf)[0], []).append(leaf)
@@ -421,7 +421,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
 
 
 def render_key_detail(
-    eff: _layer_data.EffectiveConfig,
+    eff: layer_data.EffectiveConfig,
     keys: list[str],
     *,
     resolved: dict[str, Any] | None = None,
@@ -473,7 +473,7 @@ def render_key_detail(
 
 
 def render_show(
-    eff: _layer_data.EffectiveConfig,
+    eff: layer_data.EffectiveConfig,
     *,
     as_json: bool = False,
     resolved: dict[str, Any] | None = None,

@@ -18,16 +18,15 @@ from collections.abc import Callable, Mapping
 from typing import Any, Literal, Protocol
 from urllib import parse
 
-from agent6 import paths, portable, secret_store
-from agent6.config import _headers as header_config
-from agent6.config import _oauth as oauth_config
+from agent6 import paths, portable
+from agent6.config import header_config, oauth_config, secret_store
 from agent6.providers import (
-    _headers,
-    _oauth_exchange,
-    _oauth_profile,
-    _oauth_protocol,
-    chatgpt_oauth,
-    types,
+    oauth_chatgpt,
+    oauth_exchange,
+    oauth_profile,
+    oauth_protocol,
+    provider_types,
+    request_headers,
 )
 
 # A rotation refused for want of the lock: the message names the file to clear.
@@ -53,7 +52,7 @@ class _OAuthEntry(Protocol):
     def oauth(self) -> oauth_config.OAuthConfig | None: ...
 
 
-def profile_for(entry: _OAuthEntry) -> _oauth_profile.OAuthProfile:
+def profile_for(entry: _OAuthEntry) -> oauth_profile.OAuthProfile:
     """Resolve a configured issuer or the fixed ChatGPT registration.
 
     Args:
@@ -66,11 +65,11 @@ def profile_for(entry: _OAuthEntry) -> _oauth_profile.OAuthProfile:
         ProviderError: The entry has no OAuth sign-in.
     """
     if entry.api_format == "chatgpt":
-        return chatgpt_oauth.PROFILE
+        return oauth_chatgpt.PROFILE
     config = entry.oauth
     if config is None:
-        raise types.ProviderError("this provider has no OAuth sign-in")
-    return _oauth_profile.OAuthProfile(
+        raise provider_types.ProviderError("this provider has no OAuth sign-in")
+    return oauth_profile.OAuthProfile(
         issuer=config.issuer,
         client_id=config.client_id,
         scopes=config.scopes,
@@ -143,13 +142,13 @@ def binding_fingerprint(entry: _OAuthEntry) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
 
 
-def _reconnect(provider: str, why: str) -> types.ProviderError:
-    return types.ProviderError(
+def _reconnect(provider: str, why: str) -> provider_types.ProviderError:
+    return provider_types.ProviderError(
         f"{why}; run `agent6 connect {provider}` to sign in again.", status_code=401
     )
 
 
-class BoundGrantError(types.ProviderError):
+class BoundGrantError(provider_types.ProviderError):
     """A stored sign-in fails a local check.
 
     Attributes:
@@ -209,7 +208,7 @@ def load_bound_grant(
             " settings (its issuer, endpoints or base_url changed since)",
         )
     claimed = (
-        profile.account_id_of(_oauth_protocol.TokenGrant(grant.access_token, "", None))
+        profile.account_id_of(oauth_protocol.TokenGrant(grant.access_token, "", None))
         if profile.account_id_of
         else None
     )
@@ -275,14 +274,14 @@ class OAuthCredential:
         entry: _OAuthEntry,
         *,
         now: Callable[[], float] = time.time,
-        auth_observer: types.AuthObserver | None = None,
+        auth_observer: provider_types.AuthObserver | None = None,
     ) -> None:
         """Bind the credential to a provider's stored sign-in; nothing is read yet."""
         self._profile = profile_for(entry)
         self._provider = provider_name
         self._entry = entry
         self._account: str | None = None
-        self._header_set = _headers.HeaderSet.from_config(entry.extra_headers)
+        self._header_set = request_headers.HeaderSet.from_config(entry.extra_headers)
         self._lock = threading.Lock()
         self._grant: secret_store.StoredGrant | None = None
         self._force = False
@@ -379,7 +378,7 @@ class OAuthCredential:
             ProviderError: No usable sign-in is stored, the binding differs, the lock could
                 not be taken, or a refresh or exchange failed.
         """
-        outcomes: list[types.AuthEvent] = []
+        outcomes: list[provider_types.AuthEvent] = []
         try:
             with self._lock:
                 grant = self._grant or self._stored()
@@ -387,7 +386,7 @@ class OAuthCredential:
                     return self._adopt(grant)
                 with portable.locked_file(paths.secrets_path()) as held:
                     if not held:
-                        raise types.ProviderError(
+                        raise provider_types.ProviderError(
                             "could not take the credential-refresh lock beside"
                             f" {paths.secrets_path()}; refusing to rotate the sign-in"
                             f" ({_LOCK_HINT})"
@@ -404,7 +403,7 @@ class OAuthCredential:
                     self._auth_observer(outcome)
 
     def _renew(
-        self, grant: secret_store.StoredGrant, outcomes: list[types.AuthEvent]
+        self, grant: secret_store.StoredGrant, outcomes: list[provider_types.AuthEvent]
     ) -> secret_store.StoredGrant:
         """Replace what is stale: the exchanged token first, the issuer grant when it needs it.
 
@@ -427,14 +426,14 @@ class OAuthCredential:
             return grant
         try:
             return self._exchange(grant, oauth.exchange, outcomes)
-        except types.ProviderError as exc:
+        except provider_types.ProviderError as exc:
             if exc.status_code != 401 or issuer_stale:
                 raise
             # The issuer's bearer was refused: refresh it once, then exchange again.
             return self._exchange(self._refresh_issuer(grant, outcomes), oauth.exchange, outcomes)
 
     def _refresh_issuer(
-        self, grant: secret_store.StoredGrant, outcomes: list[types.AuthEvent]
+        self, grant: secret_store.StoredGrant, outcomes: list[provider_types.AuthEvent]
     ) -> secret_store.StoredGrant:
         """Trade the refresh token for a new issuer grant and persist it before any exchange.
 
@@ -456,7 +455,7 @@ class OAuthCredential:
             )
         oauth = self._profile
         try:
-            fresh = _oauth_protocol.refresh_grant(
+            fresh = oauth_protocol.refresh_grant(
                 oauth.token_endpoint,
                 oauth.client_id,
                 grant.refresh_token,
@@ -465,13 +464,10 @@ class OAuthCredential:
                 encoding=oauth.request_encoding,
                 headers=self._header_set.renderer("oauth"),
             )
-        except types.ProviderError as exc:
+        except provider_types.ProviderError as exc:
             if exc.status_code is not None:
-                outcomes.append(types.AuthEvent("refresh", "failure"))
-            if (
-                not isinstance(exc, _oauth_protocol.OAuthError)
-                or exc.code != "refresh_token_reused"
-            ):
+                outcomes.append(provider_types.AuthEvent("refresh", "failure"))
+            if not isinstance(exc, oauth_protocol.OAuthError) or exc.code != "refresh_token_reused":
                 raise
             # A rotation on another host can reach the secrets file after this host's refusal.
             time.sleep(1.0)
@@ -483,14 +479,14 @@ class OAuthCredential:
             stored_grant_for(fresh, self._entry, now=self._now(), previous=grant)
         )
         secret_store.save_oauth_grant(self._provider, renewed)
-        outcomes.append(types.AuthEvent("refresh", "success"))
+        outcomes.append(provider_types.AuthEvent("refresh", "success"))
         return renewed
 
     def _exchange(
         self,
         grant: secret_store.StoredGrant,
         exchange: oauth_config.OAuthExchangeConfig,
-        outcomes: list[types.AuthEvent],
+        outcomes: list[provider_types.AuthEvent],
     ) -> secret_store.StoredGrant:
         """Run the second exchange and persist its token beside the issuer grant.
 
@@ -506,15 +502,15 @@ class OAuthCredential:
             ProviderError: The exchange failed.
         """
         try:
-            token, expires_at = _oauth_exchange.run_exchange(
+            token, expires_at = oauth_exchange.run_exchange(
                 exchange,
                 grant.access_token,
-                headers=self._header_set.render(_headers.plain_facts("exchange")),
+                headers=self._header_set.render(request_headers.plain_facts("exchange")),
                 now=self._now,
             )
-        except types.ProviderError as exc:
+        except provider_types.ProviderError as exc:
             if exc.status_code is not None:
-                outcomes.append(types.AuthEvent("exchange", "failure"))
+                outcomes.append(provider_types.AuthEvent("exchange", "failure"))
             raise
         renewed = dataclasses.replace(
             grant,
@@ -523,7 +519,7 @@ class OAuthCredential:
             exchange_expires_at=expires_at,
         )
         secret_store.save_oauth_grant(self._provider, renewed)
-        outcomes.append(types.AuthEvent("exchange", "success"))
+        outcomes.append(provider_types.AuthEvent("exchange", "success"))
         return renewed
 
     def invalidate(self, status: int, rejected_bearer: str) -> bool:
@@ -538,7 +534,7 @@ class OAuthCredential:
 
 
 def stored_grant_for(
-    grant: _oauth_protocol.TokenGrant,
+    grant: oauth_protocol.TokenGrant,
     entry: _OAuthEntry,
     *,
     now: float,
@@ -560,7 +556,7 @@ def stored_grant_for(
     """
     profile = profile_for(entry)
     if previous is None and profile.require_refresh_token and not grant.refresh_token.strip():
-        raise types.ProviderError(
+        raise provider_types.ProviderError(
             f"{profile.label or 'OAuth'} token exchange response carried no refresh_token"
         )
     lifetime = grant.expires_in if grant.expires_in is not None else profile.default_expires_in

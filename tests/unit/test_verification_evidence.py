@@ -8,10 +8,11 @@ from unittest import mock
 
 import pytest
 
-from agent6 import event_log, kinds
+from agent6 import kinds
 from agent6.config import Config
-from agent6.harness import _chain, _loop_resume, _loop_state, _snapshot, loop
-from agent6.tools import _command_tools, _result_format, dispatch, errors, results
+from agent6.harness import loop, loop_resume, loop_snapshot, loop_state, run_chain
+from agent6.sessions import event_log
+from agent6.tools import command_tools, dispatch, result_format, results, tool_errors
 from agent6.vcs import git_read
 from tests.unit import test_verify_finish_gate as gate_tests
 
@@ -75,7 +76,7 @@ def test_denial_is_an_attempt_without_a_verdict(tmp_path: pathlib.Path, policy: 
     dispatcher = _dispatcher(tmp_path, journal, policy)
     with (
         mock.patch.object(dispatcher, "_approve", return_value=False),
-        pytest.raises(errors.ToolDeniedError),
+        pytest.raises(tool_errors.ToolDeniedError),
     ):
         dispatcher.run_verify()
     end = _events(journal)[-1]
@@ -84,7 +85,10 @@ def test_denial_is_an_attempt_without_a_verdict(tmp_path: pathlib.Path, policy: 
 
 @pytest.mark.parametrize(
     "exception,outcome",
-    [(errors.ToolError("jail unavailable"), "unavailable"), (KeyboardInterrupt(), "interrupted")],
+    [
+        (tool_errors.ToolError("jail unavailable"), "unavailable"),
+        (KeyboardInterrupt(), "interrupted"),
+    ],
 )
 def test_exception_keeps_an_attempt(
     tmp_path: pathlib.Path, exception: BaseException, outcome: str
@@ -93,7 +97,7 @@ def test_exception_keeps_an_attempt(
     journal = tmp_path / "logs.jsonl"
     dispatcher = _dispatcher(tmp_path, journal)
     with (
-        mock.patch.object(_command_tools, "run_argv_in_jail", side_effect=exception),
+        mock.patch.object(command_tools, "run_argv_in_jail", side_effect=exception),
         pytest.raises(type(exception)),
     ):
         dispatcher.run_verify()
@@ -108,9 +112,9 @@ def test_refusal_truncation_marks_the_reason_not_the_streams(tmp_path: pathlib.P
     dispatcher = _dispatcher(tmp_path, journal)
     with (
         mock.patch.object(
-            dispatcher, "_approve_command", side_effect=errors.ToolDeniedError("x" * 2001)
+            dispatcher, "_approve_command", side_effect=tool_errors.ToolDeniedError("x" * 2001)
         ),
-        pytest.raises(errors.ToolDeniedError),
+        pytest.raises(tool_errors.ToolDeniedError),
     ):
         dispatcher.run_verify()
     end = _events(journal)[-1]
@@ -136,7 +140,7 @@ def test_an_execution_refusal_has_no_truncated_stderr(
     )
     with (
         mock.patch("agent6.sandbox.jail.run_in_jail", return_value=raw),
-        pytest.raises(errors.OperatorCommandUnexecutableError),
+        pytest.raises(tool_errors.OperatorCommandUnexecutableError),
     ):
         dispatcher.run_verify()
     end = _events(journal)[-1]
@@ -154,13 +158,13 @@ def test_a_verifying_command_cannot_certify_its_own_edit(tmp_path: pathlib.Path)
     gate_tests._git_seed(repo)
     dispatcher = _dispatcher(repo, tmp_path / "logs.jsonl")
     harness = loop.Harness(
-        chain=_chain.RunChain(repo),
+        chain=run_chain.RunChain(repo),
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         dispatcher=dispatcher,
         provider=mock.MagicMock(),
         logger=lambda _: None,
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
 
     def edit(*args: Any, **kwargs: Any) -> results.ExecResult:
         (repo / "changed.txt").write_text("changed")
@@ -168,7 +172,7 @@ def test_a_verifying_command_cannot_certify_its_own_edit(tmp_path: pathlib.Path)
             returncode=0, stdout="pass", stderr="", duration_s=1.0, exec_failed=False
         )
 
-    with mock.patch.object(_command_tools, "run_argv_in_jail", side_effect=edit):
+    with mock.patch.object(command_tools, "run_argv_in_jail", side_effect=edit):
         result = dispatcher.run_verify()
     turn = gate_tests._turn()
     harness.gate.note_result(state, turn, result)
@@ -188,7 +192,7 @@ def test_result_format_marks_both_stream_caps() -> None:
         duration_s=0.1,
         exec_failed=False,
     )
-    wire = _result_format.exec_result(raw).to_wire()
+    wire = result_format.exec_result(raw).to_wire()
     assert wire.get("stdout_truncated") is True
     assert wire.get("stderr_truncated") is False
 
@@ -203,7 +207,7 @@ def test_launcher_early_capture_is_not_reported_complete() -> None:
         duration_s=0.1,
         exec_failed=False,
     )
-    wire = _result_format.exec_result(raw).to_wire()
+    wire = result_format.exec_result(raw).to_wire()
     assert wire.get("stdout_truncated") is None and wire.get("stderr_truncated") is None
 
 
@@ -231,16 +235,16 @@ def test_snapshot_and_end_carry_evidence_id(tmp_path: pathlib.Path) -> None:
     gate_tests._git_seed(tmp_path)
     harness = gate_tests._wf(verify=True, root=tmp_path)
     harness.resume_state_path = tmp_path / "snapshot.json"
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.final_verify_id = "verify-1"
     state.verify.verify_tree = harness.chain.tree_sha()
     state.verify.note_pass()
-    _loop_resume.save_resume_snapshot(harness, state, [], next_turn=1)
-    snap = _snapshot.load_session_snapshot(harness.resume_state_path)
+    loop_resume.save_resume_snapshot(harness, state, [], next_turn=1)
+    snap = loop_snapshot.load_session_snapshot(harness.resume_state_path)
     assert snap.final_verify_id == "verify-1"
     with mock.patch.object(loop.Harness, "emit") as emit:
         result = harness.finish(
-            state, _snapshot.End("finish_session", "done", checkpoint=False), turn=1
+            state, loop_snapshot.End("finish_session", "done", checkpoint=False), turn=1
         )
     end = next(c.kwargs for c in emit.call_args_list if c.args == ("session.end",))
     assert end["final_verify_id"] == "verify-1"
@@ -258,35 +262,37 @@ def test_unsuccessful_retry_replaces_an_earlier_final_pass(
     journal = tmp_path / "logs.jsonl"
     dispatcher = _dispatcher(repo, journal, "ask")
     harness = loop.Harness(
-        chain=_chain.RunChain(repo),
+        chain=run_chain.RunChain(repo),
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         dispatcher=dispatcher,
         provider=mock.MagicMock(),
         logger=lambda _: None,
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     result = results.ExecResult(
         returncode=0, stdout="pass", stderr="", duration_s=1, exec_failed=False
     )
     with (
         mock.patch.object(dispatcher, "_approve", return_value=True),
-        mock.patch.object(_command_tools, "run_argv_in_jail", return_value=result),
+        mock.patch.object(command_tools, "run_argv_in_jail", return_value=result),
     ):
         result = dispatcher.run_verify()
     harness.gate.note_result(state, gate_tests._turn(), result)
-    error = errors.ToolDeniedError if denied else errors.ToolError
+    error = tool_errors.ToolDeniedError if denied else tool_errors.ToolError
     with (
         mock.patch.object(dispatcher, "_approve", return_value=not denied),
         mock.patch.object(
-            _command_tools, "run_argv_in_jail", side_effect=errors.ToolError("jail unavailable")
+            command_tools, "run_argv_in_jail", side_effect=tool_errors.ToolError("jail unavailable")
         ),
         pytest.raises(error),
     ):
         dispatcher.run_verify()
     harness.resume_state_path = tmp_path / "snapshot.json"
-    _loop_resume.save_resume_snapshot(harness, state, [], next_turn=1)
-    snap = _snapshot.load_session_snapshot(harness.resume_state_path)
-    end = harness.finish(state, _snapshot.End("finish_session", "done", checkpoint=False), turn=1)
+    loop_resume.save_resume_snapshot(harness, state, [], next_turn=1)
+    snap = loop_snapshot.load_session_snapshot(harness.resume_state_path)
+    end = harness.finish(
+        state, loop_snapshot.End("finish_session", "done", checkpoint=False), turn=1
+    )
     assert end.verified == "unverified"
     latest = _events(journal)[-1]
     assert end.final_verify_id == snap.final_verify_id == latest["verify_id"]
@@ -295,7 +301,7 @@ def test_unsuccessful_retry_replaces_an_earlier_final_pass(
 def denied_rows(tmp_path: pathlib.Path) -> list[dict[str, Any]]:
     """Record a denied verification through the real dispatcher."""
     journal = tmp_path / "logs.jsonl"
-    with pytest.raises(errors.ToolDeniedError):
+    with pytest.raises(tool_errors.ToolDeniedError):
         _dispatcher(tmp_path, journal, "deny").dispatch("run_verify_command", {})
     return _events(journal)
 
@@ -336,9 +342,9 @@ def test_denied_attempt_transcript_names_outcome(tmp_path: pathlib.Path) -> None
 def test_non_run_end_omits_empty_tree(mode: Literal["ask", "plan", "agent"]) -> None:
     """Only run-mode ends carry an observed tree field."""
     harness = gate_tests._wf(verify=False, mode=mode)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     with mock.patch.object(loop.Harness, "emit") as emit:
-        harness.finish(state, _snapshot.End("finish_session", "done", checkpoint=False), turn=1)
+        harness.finish(state, loop_snapshot.End("finish_session", "done", checkpoint=False), turn=1)
     end = next(c.kwargs for c in emit.call_args_list if c.args == ("session.end",))
     assert "tree" not in end
 
@@ -348,4 +354,4 @@ def test_dispatcher_evidence_is_a_required_field() -> None:
     harness = gate_tests._wf(verify=False)
     harness.gate.dispatcher = mock.MagicMock(spec=[])
     with pytest.raises(AttributeError, match="last_verification"):
-        harness.gate.sync_evidence(_loop_state.LoopState(original_task="t", tool_calls=0).verify)
+        harness.gate.sync_evidence(loop_state.LoopState(original_task="t", tool_calls=0).verify)

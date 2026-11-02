@@ -22,7 +22,7 @@ import sys
 import tempfile
 from typing import Literal
 
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 _APPARMOR_PROFILE_PATH = "/etc/apparmor.d/agent6-jail"
 
@@ -80,10 +80,10 @@ def _run_priv(argv: list[str], *, what: str, required: bool = True) -> bool:
         rc = subprocess.run(full, check=False).returncode
     except OSError as exc:
         if required:
-            _common.error(f"could not {what}: {exc}")
+            common.error(f"could not {what}: {exc}")
         return False
     if rc != 0 and required:
-        _common.error(f"{what} failed (exit {rc}).")
+        common.error(f"{what} failed (exit {rc}).")
     return rc == 0
 
 
@@ -91,7 +91,7 @@ def _discard_failed_install() -> None:
     """Remove the partial file a failed copy left, so `status` does not report a profile."""
     _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="remove the failed install")
     if pathlib.Path(_APPARMOR_PROFILE_PATH).is_file():
-        _common.warn(
+        common.warn(
             f"{_APPARMOR_PROFILE_PATH} was left on disk after the failed install;"
             " remove it with `agent6 system apparmor remove`."
         )
@@ -135,7 +135,7 @@ def _cmd_system_apparmor(action: Literal["install", "remove", "status"]) -> int:
             )
         _run_priv(["rm", "-f", _APPARMOR_PROFILE_PATH], what="delete the profile")
         if pathlib.Path(_APPARMOR_PROFILE_PATH).is_file():
-            _common.error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
+            common.error(f"{_APPARMOR_PROFILE_PATH} is still present after removal.")
             return 1
         print(
             "Removed the agent6-jail AppArmor profile. Where the kernel restricts user namespaces,"

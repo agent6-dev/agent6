@@ -11,7 +11,8 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import event_log, review_records, terminal
+from agent6 import review_records, terminal
+from agent6.sessions import event_log
 from agent6.viewmodel import events
 
 Completion = Literal["unknown", "running", "complete", "inconclusive", "skipped"]

@@ -94,7 +94,7 @@ def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
     import inspect
     from importlib import resources
 
-    from agent6.ui.cli import _menu_input  # pyright: ignore[reportPrivateUsage]
+    from agent6.ui.cli import menu_input  # pyright: ignore[reportPrivateUsage]
     from agent6.ui.tui import composer
 
     assert [c for c, _ in composer.steer_suggestion_rows("/t", mode="steer")] == ["/task"]
@@ -102,7 +102,7 @@ def test_completion_only_fires_on_a_line_that_is_one_word() -> None:
         assert composer.steer_suggestion_rows(line, mode="steer") == [], line
 
     # The pause menu rings the bell instead of opening its menu.
-    guard = inspect.getsource(_menu_input._Reader.open_menu)
+    guard = inspect.getsource(menu_input._Reader.open_menu)
     assert '" " in self.line' in guard and 'startswith("/")' in guard
 
     # The web asks the same of the textarea's whole value.

@@ -16,14 +16,14 @@ from collections.abc import Callable, Mapping
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import event_log
-from agent6.app import _setup, providers
 from agent6.app import reporter as app_reporter
+from agent6.app import role_providers, session_setup
 from agent6.config import Config
 from agent6.harness import judge as harness_judge
 from agent6.providers import Provider, ProviderError, TranscriptSink
+from agent6.sessions import event_log
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import _session_status, format, listing
+from agent6.viewmodel import format, listing, session_status
 
 # Builds the reviewer provider the judge call uses.
 BuildProvider = Callable[
@@ -93,11 +93,11 @@ def rank(
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
         sink = TranscriptSink(transcript_dir)
-        budget = _setup.budget_tracker(cfg, max_usd=max_usd)
+        budget = session_setup.budget_tracker(cfg, max_usd=max_usd)
         try:
             provider: Provider = build_provider(cfg, sink, budget, events)
             if events is not None:
-                provider = providers.InstrumentedProvider(
+                provider = role_providers.InstrumentedProvider(
                     inner=provider,
                     role="judge",
                     model=reviewer.model,
@@ -177,7 +177,7 @@ def print_ranked_candidates(
         plan_total = sum(
             rows[c.session_id].plan_consumed for c in candidates if c.session_id in rows
         )
-        candidates_cell = _session_status.cost_cell(
+        candidates_cell = session_status.cost_cell(
             cand_total, partial=False, plan_consumed=plan_total, plan_used_percent=0.0
         ) or agent6_budget.format_usd(0.0)
         judge = outcome.judge_cost_usd

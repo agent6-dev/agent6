@@ -19,7 +19,7 @@ from typing import Literal
 
 import pydantic
 
-from agent6 import _pack_manifest, errors, paths, portable
+from agent6 import errors, pack_manifest, paths, portable
 
 Outcome = Literal["move", "keep", "conflict"]
 
@@ -41,7 +41,7 @@ class FileFacts:
 class ImportResult:
     """Report the files moved or kept and their original workspace."""
 
-    origin: _pack_manifest.Origin
+    origin: pack_manifest.Origin
     moved: tuple[pathlib.Path, ...]
     kept: tuple[pathlib.Path, ...]
 
@@ -81,7 +81,7 @@ def _files(root: pathlib.Path, *, exclude: tuple[str, ...] = ()) -> Iterator[pat
     Raises:
         PackError: A tree contains a link or special file.
     """
-    _pack_manifest.check_path(root)
+    pack_manifest.check_path(root)
     if not root.exists():
         return
     for path in sorted(root.iterdir()):
@@ -152,7 +152,7 @@ def _copy(source: pathlib.Path, target: pathlib.Path, *, secret: bool) -> None:
         temp.unlink(missing_ok=True)
 
 
-def pack(root: pathlib.Path) -> _pack_manifest.Manifest:
+def pack(root: pathlib.Path) -> pack_manifest.Manifest:
     """Copy this home's global and repository state into a private workspace pack.
 
     Args:
@@ -166,20 +166,20 @@ def pack(root: pathlib.Path) -> _pack_manifest.Manifest:
     """
     root = root.resolve()
     directory = root / ".agent6"
-    _pack_manifest.check_path(directory)
-    if directory.exists() and not _pack_manifest.is_own(
-        _pack_manifest.read(root).origin, paths.effective_user().home
+    pack_manifest.check_path(directory)
+    if directory.exists() and not pack_manifest.is_own(
+        pack_manifest.read(root).origin, paths.effective_user().home
     ):
         raise errors.PackError(f"{directory}: pack belongs to another origin; unpack first")
     try:
         base_path = paths.state_dir(root, allow_pack=True) / "pack-base.json"
-        _pack_manifest.check_path(base_path, regular=base_path.exists())
+        pack_manifest.check_path(base_path, regular=base_path.exists())
         bases = pydantic.TypeAdapter(
-            dict[_pack_manifest.PackName, _pack_manifest.Hash]
+            dict[pack_manifest.PackName, pack_manifest.Hash]
         ).validate_json(base_path.read_bytes() if base_path.exists() else b"{}")
         sources = {
             f"config/{name}": paths.global_config_dir() / name
-            for name in _pack_manifest.CONFIG_FILES
+            for name in pack_manifest.CONFIG_FILES
             if (paths.global_config_dir() / name).exists()
         }
         for area, source in (
@@ -200,18 +200,18 @@ def pack(root: pathlib.Path) -> _pack_manifest.Manifest:
             stage = pathlib.Path(stage_name)
             for area in ("config", "repo", "skills"):
                 (stage / area).mkdir(mode=0o700)
-            files: dict[str, _pack_manifest.PackedFile] = {}
+            files: dict[str, pack_manifest.PackedFile] = {}
             for name, source in sorted(sources.items()):
-                _pack_manifest.check_path(source, regular=True)
+                pack_manifest.check_path(source, regular=True)
                 target = stage / name
                 _copy(source, target, secret=name == "config/secrets.toml")
-                files[name] = _pack_manifest.PackedFile(
+                files[name] = pack_manifest.PackedFile(
                     sha256=_hash(target), mtime=_mtime(target), base=bases.get(name)
                 )
-            manifest = _pack_manifest.Manifest(
+            manifest = pack_manifest.Manifest(
                 version=1,
                 packed_at=datetime.datetime.now(datetime.UTC),
-                origin=_pack_manifest.Origin(
+                origin=pack_manifest.Origin(
                     host=socket.gethostname(),
                     home=str(paths.effective_user().home),
                     repo_id=paths.repo_id(root),
@@ -223,7 +223,7 @@ def pack(root: pathlib.Path) -> _pack_manifest.Manifest:
             for old in directory.iterdir():
                 if old == stage:
                     continue
-                _pack_manifest.check_path(old)
+                pack_manifest.check_path(old)
                 if old.is_dir():
                     shutil.rmtree(old)
                 else:
@@ -236,7 +236,7 @@ def pack(root: pathlib.Path) -> _pack_manifest.Manifest:
         raise errors.PackError(f"pack {directory}: {exc}") from exc
 
 
-def _preflight(root: pathlib.Path, manifest: _pack_manifest.Manifest) -> tuple[FileFacts, ...]:
+def _preflight(root: pathlib.Path, manifest: pack_manifest.Manifest) -> tuple[FileFacts, ...]:
     """Plan every import before moving any file.
 
     Args:
@@ -259,7 +259,7 @@ def _preflight(root: pathlib.Path, manifest: _pack_manifest.Manifest) -> tuple[F
     facts: list[FileFacts] = []
     for name in sorted(present):
         packed, home = directory / name, _home(root, name)
-        _pack_manifest.check_path(home)
+        pack_manifest.check_path(home)
         if home.exists() and not home.is_file():
             raise errors.PackError(f"{home}: expected a regular file")
         digest = _hash(packed)
@@ -330,7 +330,7 @@ def unpack(root: pathlib.Path) -> ImportResult:
         PackError: A conflict, invalid manifest or filesystem error prevents the import.
     """
     root = root.resolve()
-    manifest = _pack_manifest.read(root)
+    manifest = pack_manifest.read(root)
     try:
         with contextlib.ExitStack() as locks:
             # Config and secrets writers use the same target-keyed lock.
@@ -343,7 +343,7 @@ def unpack(root: pathlib.Path) -> ImportResult:
                 if name not in manifest.files:
                     continue
                 target = _home(root, name)
-                _pack_manifest.check_path(target)
+                pack_manifest.check_path(target)
                 paths.mkdir_for_real_user(target.parent)
                 if not locks.enter_context(portable.locked_file(target)):
                     raise errors.PackError(f"{target}: cannot take writer lock; nothing moved")

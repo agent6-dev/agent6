@@ -16,20 +16,19 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6 import event_log
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
 from agent6.harness import (
-    _chain,
-    _dag_focus,
-    _loop_state,
-    _loop_steer,
-    _operator,
-    _prompt_revision,
+    dag_focus,
     loop,
+    loop_state,
+    loop_steer,
+    operator_bridge,
+    prompt_revision,
+    run_chain,
 )
-from agent6.providers import types as providers_types
-from agent6.sessions import ipc
+from agent6.providers import provider_types
+from agent6.sessions import event_log, ipc
 from agent6.sessions import layout as sessions_layout
 
 _NOW = datetime.datetime(2026, 9, 16, tzinfo=datetime.UTC)
@@ -39,7 +38,7 @@ SPEC = "Add a --json flag\n\nSame fields as the table, keyed by name."
 def _workflow(curator: graph_curator.GraphCurator, sink: event_log.EventSink) -> loop.Harness:
     """A loop with only what the drain reads wired: the graph and the journal."""
     return loop.Harness(
-        chain=_chain.RunChain(
+        chain=run_chain.RunChain(
             pathlib.Path("/tmp"), ref=None, branch=None, fallback_parent=None, per_turn=False
         ),
         config=mock.MagicMock(),
@@ -48,12 +47,14 @@ def _workflow(curator: graph_curator.GraphCurator, sink: event_log.EventSink) ->
         logger=lambda _msg: None,
         curator=curator,
         events=sink,
-        bridge=_operator.OperatorBridge(take_requests=lambda: ipc.drain_requests(sink.path.parent)),
+        bridge=operator_bridge.OperatorBridge(
+            take_requests=lambda: ipc.drain_requests(sink.path.parent)
+        ),
     )
 
 
-def _state(root: str) -> _loop_state.LoopState:
-    return _loop_state.LoopState(original_task="t", tool_calls=0, root_task_id=root, system="")
+def _state(root: str) -> loop_state.LoopState:
+    return loop_state.LoopState(original_task="t", tool_calls=0, root_task_id=root, system="")
 
 
 def _run_dir(tmp_path: pathlib.Path) -> tuple[graph_curator.GraphCurator, event_log.EventSink, str]:
@@ -139,7 +140,7 @@ def _node(**kw: Any) -> models.TaskNode:
 
 def test_the_banner_gives_an_operator_task_its_full_text(tmp_path: pathlib.Path) -> None:
     del tmp_path
-    banner = _dag_focus.current_task_banner(
+    banner = dag_focus.current_task_banner(
         "01M2M10ABAH7YRMW5YXKY4MDEX", _node(created_by="user", rationale=SPEC)
     )
 
@@ -149,7 +150,7 @@ def test_the_banner_gives_an_operator_task_its_full_text(tmp_path: pathlib.Path)
 
 def test_the_banner_leaves_the_models_own_tasks_alone(tmp_path: pathlib.Path) -> None:
     del tmp_path
-    banner = _dag_focus.current_task_banner(
+    banner = dag_focus.current_task_banner(
         "01M2M10ABAH7YRMW5YXKY4MDEX", _node(rationale="my own note")
     )
 
@@ -166,7 +167,7 @@ def test_a_queued_task_inherits_prompt_revision(tmp_path: pathlib.Path) -> None:
         text="<revised_task>Add --json to `stats`, same fields as the table.</revised_task>"
     )
     wf = _workflow(curator, sink)
-    wf.revision = _prompt_revision.RevisionSettings(reviser=reviser, mode="interactive")
+    wf.revision = prompt_revision.RevisionSettings(reviser=reviser, mode="interactive")
 
     wf.operator_tasks.take(root)
 
@@ -182,9 +183,9 @@ def test_a_failed_revision_keeps_the_task_as_written(tmp_path: pathlib.Path) -> 
     curator, sink, root = _run_dir(tmp_path)
     ipc.queue_request(sink.path.parent, "task", SPEC)
     reviser = mock.MagicMock()
-    reviser.call.side_effect = providers_types.ProviderError("reviser down")
+    reviser.call.side_effect = provider_types.ProviderError("reviser down")
     wf = _workflow(curator, sink)
-    wf.revision = _prompt_revision.RevisionSettings(reviser=reviser, mode="auto")
+    wf.revision = prompt_revision.RevisionSettings(reviser=reviser, mode="auto")
 
     wf.operator_tasks.take(root)
 
@@ -202,9 +203,9 @@ def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: pathlib.Path) 
         taken.append(1)
         return [ipc.OperatorRequest("task", "add a --json flag")] if len(taken) == 1 else []
 
-    wf.bridge = _operator.OperatorBridge(take_requests=_take)
+    wf.bridge = operator_bridge.OperatorBridge(take_requests=_take)
 
-    result = _loop_steer.park_for_steer(
+    result = loop_steer.park_for_steer(
         wf,
         mock.MagicMock(),
         _state(root),

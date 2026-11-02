@@ -122,9 +122,9 @@ def test_a_bad_budget_flag_refuses_naming_the_flag(flag: str, value: float) -> N
     1 -- while `config set budget.max_usd -5` refuses cleanly at exit 2. The
     message named `budget.max_usd`, a key the operator never typed.
     """
-    from agent6.app import _setup  # pyright: ignore[reportPrivateUsage]
+    from agent6.app import session_setup  # pyright: ignore[reportPrivateUsage]
     from agent6.config import Config, ConfigError
 
     kwargs = {"max_usd": value} if flag == "--max-usd" else {"max_tokens_fallback": int(value)}
     with pytest.raises(ConfigError, match=flag):
-        _setup.BudgetOverrides(**kwargs).apply(Config())  # pyright: ignore[reportArgumentType]
+        session_setup.BudgetOverrides(**kwargs).apply(Config())  # pyright: ignore[reportArgumentType]

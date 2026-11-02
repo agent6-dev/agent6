@@ -21,12 +21,12 @@ import shlex
 from collections.abc import Sequence
 from typing import Protocol
 
-from agent6 import kinds, verify_infer
+from agent6 import kinds
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import errors as tools_errors
 from agent6.tools import policy as tools_policy
+from agent6.tools import tool_errors, verify_infer
 from agent6.vcs import git_read
 
 # The lines of the command's output a failure's summary carries.
@@ -257,7 +257,7 @@ def setup(cfg: Config, *, runner: SetupRunner, reporter: app_reporter.Reporter) 
         reporter.note(f"setup command: {line}")
         try:
             result = runner.run_setup(argv)
-        except tools_errors.ToolError as exc:
+        except tool_errors.ToolError as exc:
             return Prepared(f"the setup command did not run ({line}): {exc}", ran=False)
         tail = _output_tail(result)
         if result.returncode != 0:

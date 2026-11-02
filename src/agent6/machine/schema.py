@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The parse boundary of a `.asm.toml` machine file.
 
-Pydantic (`extra="forbid", frozen=True, strict=True`) catches the shape; `_semantics` enforces
+Pydantic (`extra="forbid", frozen=True, strict=True`) catches the shape; `semantics` enforces
 the cross-cutting rules. Every violation is a load-time error aggregated into MachineError,
 so `agent6 machine check` prints them all at once.
 """

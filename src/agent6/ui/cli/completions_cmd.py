@@ -19,7 +19,7 @@ import shlex
 from argcomplete import shell_integration
 
 from agent6 import errors, paths
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 SHELLS = ("bash", "zsh", "fish", "xonsh")
 _MARK_BEGIN = "# >>> agent6 completions >>>"
@@ -178,7 +178,7 @@ def _install_bash_zsh(shell: str, code: str) -> int:
             or existing.index(_MARK_END) < existing.index(_MARK_BEGIN)
         ):
             # agent6 edits only its one marker block. The operator must fix a mangled one.
-            _common.error(
+            common.error(
                 f"{rc} holds malformed agent6 completion markers"
                 f" ({_MARK_BEGIN} / {_MARK_END}); fix or remove them and rerun."
             )
@@ -222,7 +222,7 @@ def cmd_completions(shell_arg: str | None, *, print_only: bool) -> int:
     shell = shell_arg or detect_shell()
     if shell not in SHELLS:
         detected = f" (detected {shell!r})" if shell else ""
-        _common.error(
+        common.error(
             f"unsupported or unknown shell{detected}."
             f" Pass one of: agent6 completions {'|'.join(SHELLS)}"
         )

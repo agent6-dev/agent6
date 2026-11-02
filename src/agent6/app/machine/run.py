@@ -20,10 +20,10 @@ from collections.abc import Callable, Mapping
 import pydantic
 
 from agent6 import budget, errors, kinds, paths
-from agent6.app import _setup, _workdirs, confine, machine_agent, preflight, workspace_setup
+from agent6.app import confine, preflight, session_setup, workdirs, workspace_setup
 from agent6.app import frontend as app_frontend
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import _bundle, _preflight, _spend, _states, _workspace
+from agent6.app.machine import agent, bundle, crash_spend, host_preflight, state_configs, workspace
 from agent6.config import Config, ConfigError
 from agent6.harness import subrun
 from agent6.machine import (
@@ -49,10 +49,10 @@ from agent6.machine import (
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
 from agent6.sessions import layout, process
-from agent6.tools import _result_format
 from agent6.tools import policy as tools_policy
+from agent6.tools import result_format
 from agent6.vcs import git_ops, git_read
-from agent6.viewmodel import _machine_logs, machine_state
+from agent6.viewmodel import machine_logs, machine_state
 
 
 def _fail(
@@ -125,7 +125,7 @@ def machine_tool_runner(
     cwd: pathlib.Path,
     machine_id: str,
     clone_root: pathlib.Path,
-    states: Mapping[str, _states.StateConfig],
+    states: Mapping[str, state_configs.StateConfig],
     reporter: app_reporter.Reporter,
     *,
     tool_policy: ToolPolicyFactory,
@@ -171,9 +171,7 @@ def machine_tool_runner(
             raise EngineError(f"no config was resolved for state {state!r}")
         dest = clone_root / f"tool-{uuid.uuid4().hex[:12]}"
         try:
-            machine_agent.clone_at_machine_chain(
-                cwd, dest, git_read.machine_chain_ref_for(machine_id)
-            )
+            agent.clone_at_machine_chain(cwd, dest, git_read.machine_chain_ref_for(machine_id))
         except (subrun.SubrunError, errors.GitError) as exc:
             shutil.rmtree(dest, ignore_errors=True)
             raise jail.JailUnavailableError(f"machine tree clone failed: {exc}") from exc
@@ -181,7 +179,7 @@ def machine_tool_runner(
             # Setup runs the tree's code at the chain tip, which a run state can edit: it gets
             # the tool's policy with none of its pass_env, and the state's timeout_s.
             setup_policy = tool_policy(state, policy.argv, policy.timeout_s, ())
-            failed = _workspace.tool_setup_failure(
+            failed = workspace.tool_setup_failure(
                 resolved.config, _in_clone(setup_policy, dest, cwd), events_log, reporter
             )
             if failed is not None:
@@ -194,7 +192,7 @@ def machine_tool_runner(
 
 
 def machine_tool_policy_factory(
-    states: Mapping[str, _states.StateConfig],
+    states: Mapping[str, state_configs.StateConfig],
     cwd: pathlib.Path,
     *,
     protect_paths: tuple[pathlib.Path, ...],
@@ -222,7 +220,7 @@ def machine_tool_policy_factory(
     Returns:
         The builder.
     """
-    env_base = _result_format.passthrough_env()
+    env_base = result_format.passthrough_env()
     extra_rw: tuple[pathlib.Path, ...] = ()
     if data_dir is not None:
         # extra_rw_paths mount at their real locations on every isolation level.
@@ -256,7 +254,7 @@ def machine_tool_policy_factory(
             raise jail.JailUnavailableError(f"no config was resolved for state {state!r}")
         cfg, isolation = resolved.config, resolved.isolation
         if bundle_dir is not None:
-            argv = _bundle.anchored_argv(argv, bundle_dir, cwd)
+            argv = bundle.anchored_argv(argv, bundle_dir, cwd)
         env = {**env_base, **{k: os.environ[k] for k in pass_env if k in os.environ}}
         # A tool's processes die with its state, so its network is its own, never a shared one.
         network = tools_policy.resolve_network(cfg, isolation)
@@ -344,7 +342,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     except MachineError as exc:
         return _fail(reporter, path, list(exc.problems))
     # A security boundary: `load_machine` does not validate the bundle, so run does, like check.
-    bundle_problems = _bundle.validate_bundle(spec, path)
+    bundle_problems = bundle.validate_bundle(spec, path)
     if bundle_problems:
         return _fail(reporter, path, bundle_problems, "bundle")
     cwd = pathlib.Path.cwd()
@@ -357,13 +355,13 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     has_run_agent = any(s.mode == "run" for s in agent_states.values())
     has_tool_state = any(isinstance(s, ToolState) for s in spec.states.values())
     agent_runner: Callable[[AgentRequest, pathlib.Path | None], AgentExecResult] | None = None
-    env = _setup.detect_env()
+    env = session_setup.detect_env()
     # The machine's own file and scripts are read-only in every jail: no state rewrites them.
-    protect_paths = _preflight.machine_protect_paths(path, cwd, config_paths)
+    protect_paths = host_preflight.machine_protect_paths(path, cwd, config_paths)
     # Every machine resolves its configs: a pure wait/branch machine still reads snapshot_keep.
     # The three flags travel in them, to each agent state as its overlay and resolved isolation.
     try:
-        configs = _states.resolve_configs(
+        configs = state_configs.resolve_configs(
             spec,
             cwd,
             env,
@@ -372,7 +370,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             auto_approve=auto_approve,
             no_commands=no_commands,
         )
-    except _states.SandboxWidenedError as exc:
+    except state_configs.SandboxWidenedError as exc:
         for problem in exc.problems:
             reporter.refuse(problem)
         return 2
@@ -384,7 +382,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         return 2
     cfg = configs.machine.config
     # Every state's grants are judged against the regions any state may write.
-    shared_writes = _states.shared_write_regions(configs, cwd)
+    shared_writes = state_configs.shared_write_regions(configs, cwd)
     if any(
         state.mode == "run" and configs.states[name].config.sandbox.run_commands == "ask"
         for name, state in agent_states.items()
@@ -452,7 +450,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                 return 2
     snapshot_keep = cfg.machine.snapshot_keep
     # One clone base for the agent states' per-state clones and the tool states' per-call trees.
-    clone_root = _workdirs.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
+    clone_root = workdirs.subordinate_workdir_root(cfg, cwd, f"machine-{spec.machine}")
 
     def agent_config(name: str, state: AgentState) -> Config:
         """Return an agent state's config with its spend cap applied.
@@ -474,12 +472,12 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             reporter.error(str(exc))
             return 2
         # The allowlist is the operator's own: no overlay is merged into it.
-        denied = _preflight.machine_pass_env_refusal(configs.operator.config, spec.states)
+        denied = host_preflight.machine_pass_env_refusal(configs.operator.config, spec.states)
         if denied is not None:
             reporter.refuse(denied)
             return 2
         # The operator's own config refuses here as it would for a plain run; then each state's.
-        for label, resolved in _states.labelled_configs(configs):
+        for label, resolved in state_configs.labelled_configs(configs):
             refusal = confine.check_network_support(
                 resolved.config, resolved.isolation
             ) or confine.config_refusal(resolved.config, resolved.isolation, cwd)
@@ -490,7 +488,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             # A state can inherit roles besides its worker; the ceiling itself makes no calls.
             for name, state in agent_states.items():
                 state_cfg = agent_config(name, state)
-                missing = _setup.check_provider_keys(state_cfg)
+                missing = session_setup.check_provider_keys(state_cfg)
                 if missing is not None:
                     reporter.err(missing)
                     return 2
@@ -514,9 +512,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     reporter.error(str(exc))
                     return 2
                 commit_identity = git_read.CommitIdentity(name=name, email=email)
-            agent_runner = machine_agent.build_machine_agent_runner(
+            agent_runner = agent.build_machine_agent_runner(
                 {
-                    state_name: machine_agent.state_overlay(
+                    state_name: agent.state_overlay(
                         configs.states[state_name].config, configs.states[state_name].isolation
                     )
                     for state_name in agent_states
@@ -534,7 +532,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         # The machine's warnings print once; a state's own table adds, under its label, the
         # ones it does not inherit.
         inherited: set[str] = set()
-        for label, resolved in _states.labelled_configs(configs):
+        for label, resolved in state_configs.labelled_configs(configs):
             if resolved is configs.operator:
                 continue  # the ceiling runs nothing itself
             said = inherited if resolved is configs.machine else set(inherited)
@@ -580,7 +578,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             # A leftover stop marker would park this invocation at its first boundary.
             clear_stop_request(root)
             # Before the drive re-runs the state, which starts a fresh log over the crashed one.
-            _spend.book_crashed_attempt(journal, root)
+            crash_spend.book_crashed_attempt(journal, root)
             app_frontend.apply_spawned_away_default(root, app_frontend.approval_scopes(cfg))
             if not journal.exists():
                 # The chain ref outlives an archived instance dir; its tip is that instance's work.
@@ -603,7 +601,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                     )
                     return 2
                 write_bundle(root, path)
-            operator_hook = _preflight.build_machine_notify_hook(cfg, spec.machine, root)
+            operator_hook = host_preflight.build_machine_notify_hook(cfg, spec.machine, root)
 
             def surface_notify(kind: str, state: str, message: str, level: str) -> None:
                 """Show a notify here, where the foreground run is its own watcher, then hook.
@@ -702,7 +700,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     except (JournalError, EngineError) as exc:
         reporter.error(str(exc))
         return 1
-    spend, _ = _machine_logs.machine_spend(journal.read(), root, alive=False)
+    spend, _ = machine_logs.machine_spend(journal.read(), root, alive=False)
     spend_line = (
         f"spent {budget.format_usd(spend.usd, partial=spend.partial)}"
         f" (in={spend.input_tokens} tok, out={spend.output_tokens} tok)"

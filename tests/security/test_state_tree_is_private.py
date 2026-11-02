@@ -16,13 +16,14 @@ from collections.abc import Callable, Iterator
 
 import pytest
 
-from agent6 import event_log, memory, paths
+from agent6 import paths
+from agent6.context import memory
 from agent6.graph import storage
 from agent6.machine import journal
-from agent6.providers import types
-from agent6.sessions import ipc, layout, process
+from agent6.providers import provider_types
+from agent6.sessions import event_log, ipc, layout, process
 from agent6.tools import background
-from agent6.ui.cli import init
+from agent6.ui.cli import init_wizard
 
 
 def _session(state: pathlib.Path) -> pathlib.Path:
@@ -35,7 +36,7 @@ def _machine_lock(root: pathlib.Path) -> None:
 
 
 WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
-    "init": lambda repo, state: init.init_workspace(repo),
+    "init": lambda repo, state: init_wizard.init_workspace(repo),
     "memory add": lambda repo, state: memory.add(state, "note", "body"),
     "memory decision": lambda repo, state: memory.record_decision(
         state, question="q", answer="a", session="s1"
@@ -49,7 +50,7 @@ WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
     "event sink": lambda repo, state: event_log.EventSink(
         layout.SessionLayout(state, "s1").logs_path
     ).emit("x"),
-    "transcripts": lambda repo, state: types.TranscriptSink(
+    "transcripts": lambda repo, state: provider_types.TranscriptSink(
         layout.SessionLayout(state, "s1").transcripts_dir
     ),
     "background shells": lambda repo, state: background.BackgroundShells(_session(state)),

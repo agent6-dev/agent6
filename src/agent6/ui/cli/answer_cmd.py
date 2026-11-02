@@ -15,7 +15,7 @@ import sys
 
 from agent6.sessions import id, ipc
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.viewmodel import QuestionPrompt, pending_questions, session_is_live
 
 
@@ -77,7 +77,7 @@ def _write(
         )
         return 2
     if not ipc.write_question_answers(layout.session_dir, prompt.id, answers):
-        _common.refuse(f"{session_id}: {ipc.ANSWERED_ELSEWHERE}.")
+        common.refuse(f"{session_id}: {ipc.ANSWERED_ELSEWHERE}.")
         return 2
     given = f"answered {session_id} {prompt.id}: {', '.join(answers)}"
     if not session_is_live(layout.session_dir):
@@ -101,14 +101,14 @@ def _cmd_answer(target: str, answers: tuple[str, ...], question_id: str | None =
         The exit code: 0 when answered or printed, 2 on a refusal.
     """
     try:
-        layout = _common.resolve_session_layout(pathlib.Path.cwd(), target)
+        layout = common.resolve_session_layout(pathlib.Path.cwd(), target)
     except id.SessionIdError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     session_id = layout.session_id
     prompts = pending_questions(layout.session_dir)
     if not prompts:
-        _common.refuse(
+        common.refuse(
             f"{session_id} has no pending question (an approval is answered by attaching:"
             f" agent6 attach {session_id})."
         )
@@ -118,6 +118,6 @@ def _cmd_answer(target: str, answers: tuple[str, ...], question_id: str | None =
         return 0
     prompt = _select(prompts, question_id or "")
     if isinstance(prompt, str):
-        _common.refuse(f"{session_id}: {prompt}.")
+        common.refuse(f"{session_id}: {prompt}.")
         return 2
     return _write(layout, prompt, answers)

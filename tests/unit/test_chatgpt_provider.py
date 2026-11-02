@@ -17,22 +17,23 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import secret_store
-from agent6.app import _conversations
-from agent6.config import ChatGPTProviderEntry
+from agent6.app import conversation_ids
+from agent6.config import ChatGPTProviderEntry, secret_store
 from agent6.providers import (
     ProviderError,
-    _headers,
-    _oauth_protocol,
-    _responses,
-    _transport,
     chatgpt,
     oauth,
-    types,
+    oauth_protocol,
+    provider_types,
+    request_headers,
+    responses_codec,
+    transport,
 )
 
 # The route the fixture provider replays reasoning on.
-_ROUTE = _responses.replay_route("chatgpt", "https://chatgpt.com/backend-api/codex", "gpt-5-codex")
+_ROUTE = responses_codec.replay_route(
+    "chatgpt", "https://chatgpt.com/backend-api/codex", "gpt-5-codex"
+)
 
 
 def _replay(item: dict[str, Any]) -> dict[str, Any]:
@@ -45,7 +46,7 @@ def signed_in(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> oauth.
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant("AT0", "RT1", 3600), entry, now=time.time()
+        oauth_protocol.TokenGrant("AT0", "RT1", 3600), entry, now=time.time()
     )
     secret_store.save_oauth_grant("chatgpt", dataclasses.replace(grant, account_id="acct-1"))
     return oauth.OAuthCredential("chatgpt", entry)
@@ -143,7 +144,9 @@ def test_request_body_and_headers_speak_the_codex_dialect(
         return _FakeStreamResponse(status_code=200, lines=_happy_stream())
 
     tools = [
-        types.ToolDefinition(name="read_file", description="d", input_schema={"type": "object"})
+        provider_types.ToolDefinition(
+            name="read_file", description="d", input_schema={"type": "object"}
+        )
     ]
     history: list[dict[str, Any]] = [
         {"role": "user", "content": "task"},
@@ -216,10 +219,10 @@ def test_calls_use_the_context_conversation_id(
 ) -> None:
     """Both wire fields follow the call's context, not the adapter instance."""
     provider = _provider(signed_in, extra_body={"prompt_cache_key": "operator-key"})
-    context = _headers.RequestContext(
+    context = request_headers.RequestContext(
         session_id="conversation-1", is_first_turn=True, is_subagent=False, initiator="user"
     )
-    other = _headers.RequestContext(
+    other = request_headers.RequestContext(
         session_id="conversation-2", is_first_turn=True, is_subagent=False, initiator="user"
     )
     with mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())) as stream:
@@ -243,15 +246,15 @@ def test_resumed_conversation_keeps_both_wire_ids(
     signed_in: oauth.OAuthCredential, tmp_path: pathlib.Path
 ) -> None:
     """A fresh adapter sends the persisted conversation id in both wire fields."""
-    path = tmp_path / _conversations.FILE_NAME
-    conversations = _conversations.Conversations(path=path)
+    path = tmp_path / conversation_ids.FILE_NAME
+    conversations = conversation_ids.Conversations(path=path)
     context = conversations.context("worker", "chatgpt", initiator="user")
     with mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())) as stream:
         _provider(signed_in).call(
             system="s", messages=[{"role": "user", "content": "x"}], context=context
         )
         conversations.completed("worker", "chatgpt")
-        resumed = _conversations.Conversations(path=path)
+        resumed = conversation_ids.Conversations(path=path)
         _provider(signed_in).call(
             system="s",
             messages=[{"role": "user", "content": "continue"}],
@@ -267,9 +270,9 @@ def test_resumed_conversation_keeps_both_wire_ids(
     ] == [(context.session_id, context.session_id)] * 2
 
 
-@pytest.mark.parametrize("context", [None, _headers.RequestContext.initiated_by("user")])
+@pytest.mark.parametrize("context", [None, request_headers.RequestContext.initiated_by("user")])
 def test_a_call_without_a_conversation_sends_neither_wire_id(
-    signed_in: oauth.OAuthCredential, context: _headers.RequestContext | None
+    signed_in: oauth.OAuthCredential, context: request_headers.RequestContext | None
 ) -> None:
     """Missing and initiator-only contexts send no session header or cache key."""
     provider = _provider(signed_in, extra_body={"prompt_cache_key": "operator-key"})
@@ -350,7 +353,7 @@ def test_lenient_empty_tool_arguments_are_not_replaced_by_a_raw_sentinel() -> No
         "arguments": "{} </invoke>",
     }
 
-    response = _responses.parse_output_items(
+    response = responses_codec.parse_output_items(
         [item], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
     )
 
@@ -429,7 +432,7 @@ def test_response_done_raises_and_bills_a_failed_response(
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
     with (
-        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
         pytest.raises(ProviderError, match="failed after generation"),
     ):
@@ -446,7 +449,7 @@ def test_response_done_raises_and_bills_a_cancelled_response(
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
     with (
-        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
         pytest.raises(ProviderError, match="cancelled"),
     ):
@@ -497,7 +500,7 @@ def test_failed_event_usage_is_recorded(signed_in: oauth.OAuthCredential) -> Non
     no_preflight, _ = _usage_get({}, status=503)
 
     with (
-        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=_serve(lines)),
         pytest.raises(ProviderError, match="failed after generation"),
     ):
@@ -540,7 +543,7 @@ def test_401_refreshes_the_credential_once_and_retries(
 
         return R()
 
-    monkeypatch.setattr("agent6.providers._oauth_protocol.post_form", fake_refresh)
+    monkeypatch.setattr("agent6.providers.oauth_protocol.post_form", fake_refresh)
     seen_auth: list[str] = []
 
     def fake_stream(method: str, url: str, **kwargs: Any) -> _FakeStreamResponse:
@@ -566,7 +569,7 @@ def test_budgeted_call_requires_usage(signed_in: oauth.OAuthCredential) -> None:
     )
     no_preflight, _ = _usage_get({}, status=503)
     with (
-        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch(
             "httpx2.stream",
             side_effect=_serve(lines),
@@ -598,7 +601,7 @@ def test_malformed_usage_count_is_a_provider_error(
 @pytest.mark.parametrize("value", [-1, 1.5, True, {}, [], ""])
 def test_usage_counts_reject_non_integer_values(value: object) -> None:
     with pytest.raises(ProviderError, match=r"usage\.output_tokens"):
-        _responses.parse_output_items(
+        responses_codec.parse_output_items(
             [],
             usage={"input_tokens": 1, "output_tokens": value},
             stop_reason="end_turn",
@@ -608,7 +611,7 @@ def test_usage_counts_reject_non_integer_values(value: object) -> None:
 
 
 def test_usage_counts_accept_integer_strings() -> None:
-    response = _responses.parse_output_items(
+    response = responses_codec.parse_output_items(
         [],
         usage={
             "input_tokens": "10",
@@ -623,7 +626,7 @@ def test_usage_counts_accept_integer_strings() -> None:
 
 
 def test_responses_input_flattens_odd_content() -> None:
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {"role": "system", "content": "mapped to user"},
             {
@@ -642,12 +645,12 @@ def test_responses_input_flattens_odd_content() -> None:
         },
         {"type": "function_call_output", "call_id": "c", "output": "plain"},
     ]
-    assert _responses.tools_to_responses([])[0:0] == []
+    assert responses_codec.tools_to_responses([])[0:0] == []
 
 
 def test_responses_input_keeps_multiple_notices_separated() -> None:
     """Several harness notices in one turn stay separate text blocks."""
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {
                 "role": "user",
@@ -678,7 +681,7 @@ def test_responses_input_keeps_multiple_notices_separated() -> None:
 
 def test_responses_input_drops_blank_name_calls_and_their_results() -> None:
     """A blank-name tool_use is dropped together with its paired tool_result."""
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {
                 "role": "assistant",
@@ -716,7 +719,7 @@ def test_plan_usage_headers_feed_the_percent_budget(
 
     no_preflight, _ = _usage_get({}, status=503)
     with (
-        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=stream),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -747,7 +750,7 @@ def test_http_error_plan_headers_reach_the_budget(
         return response
 
     with (
-        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=stream),
         pytest.raises(ProviderError) as error,
     ):
@@ -880,14 +883,14 @@ def test_reasoning_items_are_captured_and_replayed_in_order() -> None:
         "name": "read_file",
         "arguments": '{"path": "x"}',
     }
-    got = _responses.parse_output_items(
+    got = responses_codec.parse_output_items(
         [reasoning, call], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
     )
     blocks = got.raw["content"]
     assert [b["type"] for b in blocks] == ["thinking", "tool_use"]
     assert blocks[0]["thinking"] == "plan" and blocks[0]["reasoning_replay"]["item"] == reasoning
 
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {"role": "assistant", "content": blocks},
             {
@@ -920,7 +923,7 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
         "summary": [{"type": "summary_text", "text": "then read"}],
     }
     call = {"type": "function_call", "call_id": "c1", "name": "read_file", "arguments": "{}"}
-    got = _responses.parse_output_items(
+    got = responses_codec.parse_output_items(
         [r1, note, r2, call], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
     )
     blocks = got.raw["content"]
@@ -928,7 +931,7 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
     assert got.text == "Looking at x." and blocks[0]["thinking"] == ""
     assert blocks[2]["thinking"] == "then read"
 
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {
                 "role": "assistant",
@@ -950,10 +953,10 @@ def test_interleaved_items_persist_and_replay_in_wire_order() -> None:
     ]
 
     # A final answer keeps its reasoning ahead of the message too.
-    final = _responses.parse_output_items(
+    final = responses_codec.parse_output_items(
         [r1, note], usage={}, stop_reason="end_turn", label="ChatGPT", route=_ROUTE
     )
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [{"role": "assistant", "content": final.raw["content"]}], route=_ROUTE
     )
     assert [i.get("id") or i["type"] for i in items] == ["rs_1", "message"]
@@ -969,14 +972,16 @@ def test_orphaned_reasoning_is_dropped_with_its_call() -> None:
         {"type": "thinking", "thinking": "", "reasoning_replay": _replay(item)},
         {"type": "tool_use", "id": "c1", "name": "", "input": {}},
     ]
-    items = _responses.responses_input([{"role": "assistant", "content": blocks}], route=_ROUTE)
+    items = responses_codec.responses_input(
+        [{"role": "assistant", "content": blocks}], route=_ROUTE
+    )
     assert items == []
 
 
 def test_reasoning_without_a_following_output_item_is_not_replayed() -> None:
     item = {"type": "reasoning", "id": "rs_orphan", "encrypted_content": "OPAQUE"}
 
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {
                 "role": "assistant",
@@ -993,7 +998,7 @@ def test_reasoning_without_a_following_output_item_is_not_replayed() -> None:
 
 
 def test_responses_input_drops_idless_tool_pairs() -> None:
-    items = _responses.responses_input(
+    items = responses_codec.responses_input(
         [
             {
                 "role": "assistant",
@@ -1179,7 +1184,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
         ),
     )
     with (
-        mock.patch.object(_transport, "http_request", side_effect=get),
+        mock.patch.object(transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=stream),
         pytest.raises(agent6_budget.BudgetExceededError, match="purchased"),
     ):
@@ -1194,7 +1199,7 @@ def test_preflight_refuses_a_credit_spending_run_before_its_first_call(
         ),
     )
     with (
-        mock.patch.object(_transport, "http_request", side_effect=get),
+        mock.patch.object(transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=stream),
     ):
         allowed.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -1214,7 +1219,7 @@ def test_the_budget_reads_the_plan_once_more_after_the_run(
     tracker = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=100, max_plan_points=-1)
     provider = _provider(signed_in, budget=tracker)
     with (
-        mock.patch.object(_transport, "http_request", side_effect=get),
+        mock.patch.object(transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=stream),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -1230,11 +1235,11 @@ def test_usage_reading_uses_the_capped_request(
     provider = _provider(signed_in)
     url = "https://chatgpt.com/backend-api/codex/usage"
     response = httpx2.Response(200, json=_USAGE_BODY, request=httpx2.Request("GET", url))
-    monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", cap)
+    monkeypatch.setattr(transport, "MAX_RESPONSE_BYTES", cap)
     with (
         mock.patch.object(httpx2, "get", return_value=response),
         mock.patch.object(httpx2, "stream", return_value=contextlib.nullcontext(response)),
-        mock.patch.object(_transport, "http_request", wraps=_transport.http_request) as request,
+        mock.patch.object(transport, "http_request", wraps=transport.http_request) as request,
     ):
         plan = provider.preflight()
     if cap == 16:
@@ -1265,13 +1270,13 @@ def test_preflight_failure_never_blocks(signed_in: oauth.OAuthCredential) -> Non
         ),
     )
     with (
-        mock.patch.object(_transport, "http_request", side_effect=get),
+        mock.patch.object(transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
     ):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert resp.text == "hello"
     with (
-        mock.patch.object(_transport, "http_request", side_effect=OSError("down")),
+        mock.patch.object(transport, "http_request", side_effect=OSError("down")),
         mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
     ):
         fresh = _provider(
@@ -1313,7 +1318,7 @@ def test_a_credential_fault_in_the_preflight_is_no_reading(
         ),
     )
     with (
-        mock.patch.object(_transport, "http_request", side_effect=get),
+        mock.patch.object(transport, "http_request", side_effect=get),
         mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())),
     ):
         resp = provider.call(system="s", messages=[{"role": "user", "content": "x"}])
@@ -1344,9 +1349,9 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
     provider = _provider(signed_in, budget=budget)
     no_preflight, _ = _usage_get({}, status=503)
     with (
-        mock.patch.object(_transport, "http_request", side_effect=no_preflight),
+        mock.patch.object(transport, "http_request", side_effect=no_preflight),
         mock.patch("httpx2.stream", side_effect=stream),
-        pytest.raises(types.ProviderError, match="no usage input tokens"),
+        pytest.raises(provider_types.ProviderError, match="no usage input tokens"),
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     snap = budget.snapshot()
@@ -1356,7 +1361,7 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
 
 def test_two_message_items_in_a_response_stay_separated() -> None:
     """Two message items in a response stay separated in the settled text."""
-    resp = _responses.parse_output_items(
+    resp = responses_codec.parse_output_items(
         [
             {"type": "message", "content": [{"type": "output_text", "text": "First message."}]},
             {"type": "reasoning", "summary": [{"text": "thinking"}]},
@@ -1471,7 +1476,7 @@ def test_a_stream_refusal_without_the_effort_param_is_not_adapted(
 def test_a_reasoning_item_replays_only_to_its_own_route() -> None:
     """An item made on another route, or a legacy item with no route, is dropped at replay."""
     item = {"type": "reasoning", "id": "rs_1", "encrypted_content": "A"}
-    other = _responses.replay_route("responses", "https://other.example/v1", "gpt-5-codex")
+    other = responses_codec.replay_route("responses", "https://other.example/v1", "gpt-5-codex")
     conversation = [
         {
             "role": "assistant",
@@ -1486,10 +1491,10 @@ def test_a_reasoning_item_replays_only_to_its_own_route() -> None:
             ],
         }
     ]
-    assert [i["type"] for i in _responses.responses_input(conversation, route=_ROUTE)] == [
+    assert [i["type"] for i in responses_codec.responses_input(conversation, route=_ROUTE)] == [
         "message"
     ]
-    assert [i["type"] for i in _responses.responses_input(conversation, route=other)] == [
+    assert [i["type"] for i in responses_codec.responses_input(conversation, route=other)] == [
         "reasoning",
         "message",
     ]
@@ -1509,7 +1514,7 @@ def test_the_chatgpt_profile_keeps_the_shared_reserved_body_keys(
         signed_in,
         extra_body={"previous_response_id": "r0", "max_output_tokens": 5, "metadata": {"a": 1}},
     )
-    with mock.patch("agent6.providers._stream.http_stream", side_effect=stream):
+    with mock.patch("agent6.providers.stream_lifecycle.http_stream", side_effect=stream):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     assert "previous_response_id" not in seen["body"] and "max_output_tokens" not in seen["body"]
     assert seen["body"]["metadata"] == {"a": 1} and seen["body"]["store"] is False

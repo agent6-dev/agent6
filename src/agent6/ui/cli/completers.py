@@ -13,19 +13,11 @@ from typing import Any
 
 from agent6 import paths
 from agent6.app import review_actions
-from agent6.config import (
-    Config,
-    ConfigError,
-    _layer_data,
-    _presets,
-    io,
-    layer,
-    write,
-)
+from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices as models_choices
 from agent6.sessions import id, layout, process
-from agent6.ui.cli import _common, config_secrets
-from agent6.viewmodel import _session_log, listing, machine_state
+from agent6.ui.cli import common, config_secrets
+from agent6.viewmodel import listing, machine_state, session_log
 
 
 def complete_finding_ids(prefix: str, **kw: Any) -> list[str]:
@@ -43,7 +35,7 @@ def complete_finding_ids(prefix: str, **kw: Any) -> list[str]:
     if not target:
         return []
     try:
-        saved = _common.resolve_session_layout(pathlib.Path.cwd(), target)
+        saved = common.resolve_session_layout(pathlib.Path.cwd(), target)
         view = review_actions.read_review(saved.session_dir)
     except (id.SessionIdError, OSError, review_actions.ReviewActionError):
         return []
@@ -104,7 +96,7 @@ def _complete_providers(prefix: str, **kw: object) -> list[str]:
 @_never_raises
 def _complete_presets(prefix: str, **kw: object) -> list[str]:
     """Return the built-in presets and the configured `[presets.*]` names."""
-    names = _presets.available_preset_names(pathlib.Path.cwd(), _explicit_config(kw))
+    names = layer_presets.available_preset_names(pathlib.Path.cwd(), _explicit_config(kw))
     return [n for n in names if n.startswith(prefix)]
 
 
@@ -172,11 +164,13 @@ def _config_enum_choices(
     except ConfigError:
         # A config that does not load still completes: the schema carries the choices.
         view = config_view.build_config_view(
-            _layer_data.EffectiveConfig(
+            layer_data.EffectiveConfig(
                 config=Config(),
                 sources={},
                 layers=(),
-                presets=tuple(_presets.available_preset_names(pathlib.Path.cwd(), config_paths)),
+                presets=tuple(
+                    layer_presets.available_preset_names(pathlib.Path.cwd(), config_paths)
+                ),
             )
         )
     out: dict[str, tuple[str, ...]] = {}
@@ -217,7 +211,7 @@ def _user_preset_names(config_paths: tuple[pathlib.Path, ...] = ()) -> list[str]
     try:
         return [
             p.name
-            for p in _presets.preset_catalog(pathlib.Path.cwd(), config_paths).presets
+            for p in layer_presets.preset_catalog(pathlib.Path.cwd(), config_paths).presets
             if p.origin != "built-in"
         ]
     except ConfigError:
@@ -374,7 +368,7 @@ def _complete_model_verb_values(
 def _complete_session_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the ids across every session bucket, what `--from` accepts."""
     return sorted(
-        d.name for d in _common.all_session_dirs(pathlib.Path.cwd()) if d.name.startswith(prefix)
+        d.name for d in common.all_session_dirs(pathlib.Path.cwd()) if d.name.startswith(prefix)
     )
 
 
@@ -383,7 +377,7 @@ def _complete_session_ports(prefix: str, parsed_args: object = None, **_kw: obje
     """Return the ports the session is listening on; only something inside its network sees them."""
     target = str(getattr(parsed_args, "target", "") or "")
 
-    layout = _common.resolve_or_newest_layout(pathlib.Path.cwd(), target)
+    layout = common.resolve_or_newest_layout(pathlib.Path.cwd(), target)
     if layout is None:
         return []
     return [
@@ -409,9 +403,9 @@ def _complete_answerable_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the sessions holding a question nobody has answered, live or ended."""
     return sorted(
         d.name
-        for d in _common.all_session_dirs(pathlib.Path.cwd())
+        for d in common.all_session_dirs(pathlib.Path.cwd())
         if d.name.startswith(prefix)
-        and _session_log.scan_session_log(d / layout.LOGS_NAME).pending_questions > 0
+        and session_log.scan_session_log(d / layout.LOGS_NAME).pending_questions > 0
     )
 
 
@@ -420,7 +414,7 @@ def _complete_live_session_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the live sessions, through the same gate the verbs reaching a running one use."""
     return sorted(
         d.name
-        for d in _common.all_session_dirs(pathlib.Path.cwd())
+        for d in common.all_session_dirs(pathlib.Path.cwd())
         if d.name.startswith(prefix) and listing.session_is_live(d)
     )
 
@@ -442,7 +436,7 @@ def _complete_exec_rest(prefix: str, parsed_args: argparse.Namespace, **_kw: obj
 @_never_raises
 def _complete_plan_session_ids(prefix: str, **_kw: object) -> list[str]:
     """Return the plan ids, for `plan show` and `plan edit`."""
-    plans = _common._plans_dir(pathlib.Path.cwd())
+    plans = common._plans_dir(pathlib.Path.cwd())
     if not plans.is_dir():
         return []
     return sorted(

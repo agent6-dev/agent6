@@ -4,7 +4,7 @@
 
 The pipeline is headless in `agent6.app.parallel`; this module supplies the `LaneRuntime`
 it drives (the detached spawn from `ui.spawn`, the reviewer provider and judging spinner
-from `_compare`) and the CLI-side preflight and refusals. `run.py` routes here.
+from `compare_ranking`) and the CLI-side preflight and refusals. `run.py` routes here.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import pathlib
 from collections.abc import Callable, Sequence
 
 from agent6 import directive, errors, paths, terminal
-from agent6.app import _setup, confine, parallel, preflight
+from agent6.app import confine, parallel, preflight, session_setup
 from agent6.app import lanes as app_lanes
 from agent6.config import Config, ConfigError
 from agent6.models import validate
@@ -21,7 +21,7 @@ from agent6.sandbox import detect, jail
 from agent6.sessions import id
 from agent6.ui import spawn as ui_spawn
 from agent6.ui import steer
-from agent6.ui.cli import _common, _compare, _interact
+from agent6.ui.cli import common, compare_ranking, interact
 from agent6.vcs import git_read
 
 
@@ -61,8 +61,8 @@ def lane_runtime() -> app_lanes.LaneRuntime:
 
     return app_lanes.LaneRuntime(
         spawn=spawn,
-        build_provider=_compare._reviewer_provider,
-        judging_status=_compare._judging_status,
+        build_provider=compare_ranking._reviewer_provider,
+        judging_status=compare_ranking._judging_status,
     )
 
 
@@ -103,7 +103,7 @@ def _sandbox_refusal(cfg: Config, origin: pathlib.Path) -> str | None:
         The host's refusal of the isolation, or None.
     """
     try:
-        env = _setup.detect_env()
+        env = session_setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         confine.warn_sandbox_gaps(isolation, env, cfg, root=origin)
     except (jail.JailUnavailableError, detect.IsolationUnavailableError) as exc:
@@ -148,18 +148,18 @@ def dispatch_parallel(
         _sandbox_refusal(cfg, origin),
     ):
         if err is not None:
-            _common.refuse(f"{err}")
+            common.refuse(f"{err}")
             return 2
     try:
         modified = git_read.modified_paths(origin)
     except errors.GitError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     if modified and cfg.git.dirty_tree == "ask":
         listed = "\n".join(f"    {terminal.printable_name(p)}" for p in modified[:10])
         more = f"\n    ... {len(modified) - 10} more" if len(modified) > 10 else ""
         n = len(modified)
-        _common.refuse(
+        common.refuse(
             f"{n} tracked {'file has' if n == 1 else 'files have'} uncommitted"
             f" changes:\n{listed}{more}\n"
             "Lanes clone committed HEAD, so those changes would not reach them. Commit or"
@@ -172,18 +172,18 @@ def dispatch_parallel(
     try:
         lanes = app_lanes.build_lane_specs(spec, cfg=cfg, origin=origin, fanout_id=fanout_id)
     except (ConfigError, directive.DirectiveError, app_lanes.ParallelError) as exc:
-        _common.refuse(f"{exc}")
+        common.refuse(f"{exc}")
         return 2
     # Before any clone or spawn: a typo refuses when a cache can check it, else warn and proceed.
     verdict = validate.validate_spec_models([ln.route for ln in lanes], cfg)
     if verdict.refused:
-        _common.refuse(f"{validate.refusal_message(verdict, directive=False)}")
+        common.refuse(f"{validate.refusal_message(verdict, directive=False)}")
         return 2
     if verdict.warned:
-        _common.warn(f"{validate.warning_message(verdict)}")
-    lane_away = _interact.lane_away_mode()
+        common.warn(f"{validate.warning_message(verdict)}")
+    lane_away = interact.lane_away_mode()
     if lane_away == "deny":
-        _common.warn(
+        common.warn(
             "no terminal to attach from: a lane's questions get empty answers and its"
             " fetch and MCP approvals are denied"
         )

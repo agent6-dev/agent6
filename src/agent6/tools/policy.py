@@ -17,7 +17,7 @@ from typing import Any, Literal
 from agent6 import kinds, paths
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
-from agent6.tools import _path_safety, _result_format
+from agent6.tools import path_safety, result_format
 
 # `full`'s default HOME: the launcher creates it inside the run's private /tmp tmpfs.
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
@@ -207,7 +207,7 @@ class DroppedGrant:
         # A link inside the region that leads out: what it held is not part of the region.
         still = (
             f" What it holds stays reachable as part of {self.region}."
-            if _path_safety.path_within(self.real, self.region)
+            if path_safety.path_within(self.real, self.region)
             else f" Grant {self.real} by its own path."
         )
         if self.shared:
@@ -365,9 +365,9 @@ def _dropped_by(
     others = tuple(
         w for w in regions if not (w == real and w != regions[0] and (writes or w in shared))
     )
-    region = next((w for w in others if any(_path_safety.path_within(p, w) for p in inside)), None)
+    region = next((w for w in others if any(path_safety.path_within(p, w) for p in inside)), None)
     links = () if region is not None else _link_dirs(path)
-    linked = next((w for w in regions if any(_path_safety.path_within(d, w) for d in links)), None)
+    linked = next((w for w in regions if any(path_safety.path_within(d, w) for d in links)), None)
     if region is None and linked is None:
         return None
     hit = region or linked or root
@@ -382,7 +382,7 @@ def workspace_for(
     *,
     memory_dir: pathlib.Path | None = None,
     grants: Grants | None = None,
-) -> _path_safety.Workspace:
+) -> path_safety.Workspace:
     """Build the in-process file boundary for a run.
 
     The tools are the front door of the file axis (an untrusted model reaches files through
@@ -408,7 +408,7 @@ def workspace_for(
     readable = tuple(real for _path, real in grants.read)
     writable = tuple(real for _path, real in grants.write)
     mem = (memory_dir.resolve(),) if memory_dir is not None else ()
-    return _path_safety.Workspace(
+    return path_safety.Workspace(
         root=root.resolve(),
         denied=tuple(p.resolve() for p in denied),
         # Write implies read, matching the grants the jail mounts.
@@ -503,7 +503,7 @@ def jail_policy(
     policy_kwargs: dict[str, Any] = {}
     if timeout_s is not None:
         policy_kwargs["timeout_s"] = timeout_s
-    env = _result_format.passthrough_env() if env_base is None else dict(env_base)
+    env = result_format.passthrough_env() if env_base is None else dict(env_base)
     # HOME is forced like PATH: the operator's HOME is not in the jail, and toolchains need a
     # writable cache root under it (go-build, CARGO_HOME, uv).
     persistent = persistent_jail_home(config, isolation, root, worktree_git_dir)

@@ -11,8 +11,7 @@ import pytest
 
 from agent6 import directive, errors
 from agent6.app import parallel, preflight
-from agent6.harness import _parallel_dispatch as pd
-from agent6.harness import subrun
+from agent6.harness import parallel_dispatch, subrun
 from agent6.vcs import git_ops, git_read
 
 
@@ -26,13 +25,13 @@ def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> subrun.
 
 
 def test_segment_lanes_expands_counts_and_models() -> None:
-    three = pd.segment_lanes(directive.Segment(task="t", spec="3"), limit=4)
+    three = parallel_dispatch.segment_lanes(directive.Segment(task="t", spec="3"), limit=4)
     assert [lt.model for lt in three] == [None, None, None]
-    lanes = pd.segment_lanes(directive.Segment(task="t", spec="m1,m2"), limit=4)
+    lanes = parallel_dispatch.segment_lanes(directive.Segment(task="t", spec="m1,m2"), limit=4)
     assert [lt.model for lt in lanes] == ["m1", "m2"]
     assert all(lt.task == "t" for lt in lanes)
     with pytest.raises(directive.DirectiveError):
-        pd.segment_lanes(directive.Segment(task="t", spec="0"), limit=4)
+        parallel_dispatch.segment_lanes(directive.Segment(task="t", spec="0"), limit=4)
 
 
 def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -47,61 +46,66 @@ def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
         "identity": None,
         "also_branch": None,
     }
-    assert pd.join_lane_result(
+    assert parallel_dispatch.join_lane_result(
         pathlib.Path("/r"), _res(ok=False, error="died"), **kw
-    ) == pd.LaneJoin("lane-1", "agent6/lane-1", "failed", "", "died")
+    ) == parallel_dispatch.LaneJoin("lane-1", "agent6/lane-1", "failed", "", "died")
 
     def _conflict(*_a: Any, **_k: Any) -> str | None:
         return None
 
     monkeypatch.setattr(git_ops, "chain_merge", _conflict)
-    assert pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw).status == "conflict"
+    assert (
+        parallel_dispatch.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw).status
+        == "conflict"
+    )
 
     def _boom(*_a: Any, **_k: Any) -> str | None:
         raise errors.GitError("fetch failed")
 
     monkeypatch.setattr(git_ops, "chain_merge", _boom)
-    j = pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw)
+    j = parallel_dispatch.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.detail) == ("failed", "fetch failed")
 
     def _clean(*_a: Any, **_k: Any) -> str | None:
         return "a" * 40
 
     monkeypatch.setattr(git_ops, "chain_merge", _clean)
-    j = pd.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw)
+    j = parallel_dispatch.join_lane_result(pathlib.Path("/r"), _res(ok=True), **kw)
     assert (j.status, j.sha) == ("joined", "a" * 40)
 
 
-def _join(status: Any, session_id: str = "lane-1", sha: str = "") -> pd.LaneJoin:
-    return pd.LaneJoin(
+def _join(status: Any, session_id: str = "lane-1", sha: str = "") -> parallel_dispatch.LaneJoin:
+    return parallel_dispatch.LaneJoin(
         session_id, f"agent6/{session_id}", status, sha, "boom" if status == "failed" else ""
     )
 
 
 def test_segment_stamp_reduces_lanes() -> None:
     # Single lane keeps the old shape: passed with the join sha, or failed.
-    assert pd.segment_stamp([_join("joined", sha="abc123def4567")]) == (
+    assert parallel_dispatch.segment_stamp([_join("joined", sha="abc123def4567")]) == (
         "passed",
         "lane-1 joined at abc123def456",
         "abc123def4567",
     )
-    status, note, sha = pd.segment_stamp([_join("failed")])
+    status, note, sha = parallel_dispatch.segment_stamp([_join("failed")])
     assert (status, sha) == ("failed", "")
     assert "lane-1 failed: boom" in note
     # Multi-lane: any join passes, recording the LAST joined sha; the note
     # names every lane. All-conflict fails (NodeStatus has no "blocked").
-    status, note, sha = pd.segment_stamp(
+    status, note, sha = parallel_dispatch.segment_stamp(
         [_join("joined", "a", sha="1111111111111"), _join("joined", "b", sha="2222222222222")]
     )
     assert (status, sha) == ("passed", "2222222222222")
     assert "a joined at" in note and "b joined at" in note
-    status, note, _sha = pd.segment_stamp([_join("conflict"), _join("conflict", "b")])
+    status, note, _sha = parallel_dispatch.segment_stamp(
+        [_join("conflict"), _join("conflict", "b")]
+    )
     assert status == "failed"
     assert "conflicted; merge manually" in note
 
 
 def test_summary_text_names_every_outcome() -> None:
-    text = pd.summary_text(
+    text = parallel_dispatch.summary_text(
         "p1",
         [
             _join("joined", "a", sha="abc123def4567"),
@@ -117,9 +121,12 @@ def test_summary_text_names_every_outcome() -> None:
 
 
 def test_lane_note_wordings() -> None:
-    assert pd.lane_note(_join("joined", sha="abc123def4567")) == "lane-1 joined at abc123def456"
-    assert pd.lane_note(_join("conflict")) == "lane-1 conflicted; merge manually"
-    assert pd.lane_note(_join("failed")) == "lane-1 failed: boom"
+    assert (
+        parallel_dispatch.lane_note(_join("joined", sha="abc123def4567"))
+        == "lane-1 joined at abc123def456"
+    )
+    assert parallel_dispatch.lane_note(_join("conflict")) == "lane-1 conflicted; merge manually"
+    assert parallel_dispatch.lane_note(_join("failed")) == "lane-1 failed: boom"
 
 
 def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
@@ -132,7 +139,7 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
     instructions (verbatim):" instead of the work. Pins ride the LaneTask; the task text stays the
     task.
     """
-    lanes = pd.segment_lanes(
+    lanes = parallel_dispatch.segment_lanes(
         directive.Segment(spec="2", task="refactor the model layer"),
         ["never touch schema files"],
         limit=4,
@@ -143,7 +150,7 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
         assert lane.pins == ("never touch schema files",)
 
     # No pins: nothing rides along.
-    plain = pd.segment_lanes(directive.Segment(spec="", task="do it"), limit=4)
+    plain = parallel_dispatch.segment_lanes(directive.Segment(spec="", task="do it"), limit=4)
     assert plain[0].task == "do it" and plain[0].pins == ()
 
 
@@ -223,7 +230,7 @@ def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
     Git is agent6's in a run and `.git` is read-only in the jail, so the line names the operator and
     tells the model to continue rather than run `git merge` itself.
     """
-    text = pd.summary_text("g", [_join("conflict")])
+    text = parallel_dispatch.summary_text("g", [_join("conflict")])
     assert "for the operator (`git merge " in text and "continue without it" in text
     assert "resolve" not in text
 

@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from agent6.config import Config
-from agent6.tools import dispatch, errors
+from agent6.tools import dispatch, tool_errors
 
 
 def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatcher:
@@ -213,7 +213,7 @@ def test_a_read_only_mode_cannot_background(tmp_path: pathlib.Path) -> None:
         use_jail_session=True,
     )
     try:
-        with pytest.raises(errors.ToolError, match="not available in ask mode"):
+        with pytest.raises(tool_errors.ToolError, match="not available in ask mode"):
             d.dispatch("run_command", {"argv": ["/bin/echo", "hi"], "background": True})
     finally:
         d.close()

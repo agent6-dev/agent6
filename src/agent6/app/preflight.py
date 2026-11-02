@@ -17,14 +17,14 @@ from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Literal
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, event_log, kinds, terminal, verify_infer
-from agent6.app import _setup, providers
+from agent6 import errors, kinds, terminal
 from agent6.app import reporter as app_reporter
+from agent6.app import role_providers, session_setup
 from agent6.config import Config, plan_metered
 from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink
-from agent6.sessions import ipc, manifest
-from agent6.tools import schema
+from agent6.sessions import event_log, ipc, manifest
+from agent6.tools import schema, verify_infer
 from agent6.vcs import git_read
 from agent6.viewmodel import format, listing
 
@@ -225,7 +225,7 @@ def git_preflight(
     Raises:
         SessionRefusedError: A check refused; the refusal is already reported.
     """
-    _setup.apply_git_ops_policy(cfg)
+    session_setup.apply_git_ops_policy(cfg)
     identity = git_read.CommitIdentity(name=cfg.git.commit.name, email=cfg.git.commit.email)
     # ask is read-only and may run outside a git repo.
     if mode == "ask":
@@ -543,7 +543,7 @@ def route_preflight(
     Returns:
         Whether the route can run.
     """
-    missing = _setup.check_provider_keys(cfg)
+    missing = session_setup.check_provider_keys(cfg)
     if missing is not None:
         reporter.err(missing)
         return False
@@ -619,7 +619,7 @@ def infer_verify_if_unset(
 
     The inferred command lives in memory only; runs never mutate config. Inference
     is layered cheapest first (AGENTS.md, repo signals, then a reviewer-role call
-    over the manifests), see `agent6.verify_infer`; nothing inferred means gateless.
+    over the manifests), see `agent6.tools.verify_infer`; nothing inferred means gateless.
     `drop_gate_if_unrunnable` runs after this and has the last word.
 
     Args:
@@ -649,11 +649,11 @@ def infer_verify_if_unset(
     agents_md = verify_infer.read_agents_md(cwd, hide)
 
     def _llm_call(context: str) -> str:
-        inner = providers.build_role_provider(
+        inner = role_providers.build_role_provider(
             cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, events=events
         )
         rm = cfg.models.resolve("reviewer")
-        provider = providers.InstrumentedProvider(
+        provider = role_providers.InstrumentedProvider(
             inner=inner,
             role="verify_inferer",
             model=rm.model if rm else "",

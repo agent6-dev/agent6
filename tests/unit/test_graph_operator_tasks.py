@@ -15,7 +15,7 @@ import pytest
 
 from agent6.graph import curator, models
 from agent6.sessions import layout
-from agent6.tools import _dag_tools, errors, schema
+from agent6.tools import dag_tools, schema, tool_errors
 
 
 def _curator(tmp_path: pathlib.Path) -> tuple[curator.GraphCurator, str]:
@@ -46,8 +46,8 @@ def test_the_model_cannot_retire_a_task_the_operator_queued(
     c, root = _curator(tmp_path)
     queued = _queued(c, root)
 
-    with pytest.raises(errors.ToolError, match="queued by the operator"):
-        _dag_tools.update_task(c, {"id": queued, "status": retirement})
+    with pytest.raises(tool_errors.ToolError, match="queued by the operator"):
+        dag_tools.update_task(c, {"id": queued, "status": retirement})
 
     assert c.nodes()[queued].status == "pending"
     assert c.update_status(models.UpdateStatusIntent(id=queued, new_status=retirement)).status == (
@@ -100,9 +100,9 @@ def test_add_task_offers_no_standing_flag(tmp_path: pathlib.Path) -> None:
     assert "standing" not in schema.DagAddTaskInput.TOOL_DESCRIPTION
     assert "standing" not in schema.DagAddTaskInput.model_fields
     with pytest.raises(pydantic.ValidationError):
-        _dag_tools.add_task(c, root, {"title": "keep hunting defects", "standing": True})
+        dag_tools.add_task(c, root, {"title": "keep hunting defects", "standing": True})
 
-    assert _dag_tools.add_task(c, root, {"title": "ordinary"}).to_wire()["status"] == "pending"
+    assert dag_tools.add_task(c, root, {"title": "ordinary"}).to_wire()["status"] == "pending"
 
 
 def test_a_new_sibling_lands_before_the_standing_goal(tmp_path: pathlib.Path) -> None:

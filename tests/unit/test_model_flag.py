@@ -11,7 +11,7 @@ import pathlib
 
 import pytest
 
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import Config
 from agent6.models import choices, validate
 
@@ -52,14 +52,14 @@ def test_the_flag_routes_the_modes_role(repo: pathlib.Path) -> None:
     Run and ask set the worker, plan the planner; the flag lands after the config layers and a
     preset, so it is what the session runs.
     """
-    planned = _setup.load_session_config(repo, (), mode="plan", model="openrouter/m").config
+    planned = session_setup.load_session_config(repo, (), mode="plan", model="openrouter/m").config
     assert planned.models.planner is not None
     assert (planned.models.planner.provider, planned.models.planner.model) == ("openrouter", "m")
     assert planned.models.worker is not None and planned.models.worker.model == "claude-x"
-    asked = _setup.load_session_config(repo, (), mode="ask", model="claude-y").config
+    asked = session_setup.load_session_config(repo, (), mode="ask", model="claude-y").config
     assert asked.models.worker is not None
     assert (asked.models.worker.provider, asked.models.worker.model) == ("anthropic", "claude-y")
-    no_review = _setup.load_session_config(
+    no_review = session_setup.load_session_config(
         repo, (), mode="run", preset="no_review", model="claude-z"
     ).config
     assert no_review.models.worker is not None and no_review.models.worker.model == "claude-z"
@@ -71,7 +71,7 @@ def test_route_choices_are_the_cached_listings_plus_the_configured_routes(
     cache = tmp_path / "xdg" / "cache" / "agent6" / "models"
     cache.mkdir(parents=True)
     (cache / "anthropic.json").write_text(json.dumps({"models": ["claude-a", "claude-x"]}))
-    cfg = _setup.load_session_config(repo, (), mode="ask").config
+    cfg = session_setup.load_session_config(repo, (), mode="ask").config
     assert choices.route_choices(cfg) == [
         "anthropic/claude-a",
         "anthropic/claude-x",
@@ -191,18 +191,18 @@ def test_a_refused_flag_route_names_the_flag_not_the_config(
             unknown=(model,), suggestions={model: ("claude-x",)}, can_validate=True
         )
 
-    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
     monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    flagged = _setup.load_session_config(repo, (), mode="run", model="claude-y").config
+    flagged = session_setup.load_session_config(repo, (), mode="run", model="claude-y").config
     assert (
         preflight.route_preflight(flagged, "worker", reporter=reporter, model_flag="claude-y")
         is False
     )
     assert said[-1].startswith("REFUSING: --model 'claude-y' is not in anthropic's model listing")
     assert "Closest: claude-x" in said[-1] and "config" not in said[-1]
-    configured = _setup.load_session_config(repo, (), mode="run").config
+    configured = session_setup.load_session_config(repo, (), mode="run").config
     assert preflight.route_preflight(configured, "worker", reporter=reporter) is False
     assert "models.worker.model 'claude-x'" in said[-1]
 
@@ -232,10 +232,10 @@ def test_a_refused_flag_names_the_modes_provider_when_role_ids_collide(
     def _refused(_cfg: Config, _role: str) -> validate.ModelValidation:
         return validate.ModelValidation(unknown=("claude-x",), suggestions={}, can_validate=True)
 
-    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
     monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
-    cfg = _setup.load_session_config(repo, (), mode="plan", model="claude-x").config
+    cfg = session_setup.load_session_config(repo, (), mode="plan", model="claude-x").config
     assert not preflight.route_preflight(
         cfg,
         "planner",
@@ -264,11 +264,13 @@ def test_a_refused_flag_names_a_provider_head_that_matches_nothing(
         model = cfg.models.resolve(role).model  # type: ignore[union-attr]
         return validate.ModelValidation(unknown=(model,), suggestions={}, can_validate=True)
 
-    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
     monkeypatch.setattr(validate, "validate_configured_model", _refused)
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    cfg = _setup.load_session_config(repo, (), mode="run", model="openrouterr/claude-x").config
+    cfg = session_setup.load_session_config(
+        repo, (), mode="run", model="openrouterr/claude-x"
+    ).config
     assert cfg.models.worker is not None and cfg.models.worker.provider == "anthropic"
     assert not preflight.route_preflight(
         cfg, "worker", reporter=reporter, model_flag="openrouterr/claude-x"
@@ -287,7 +289,7 @@ def test_a_fresh_run_records_its_model_flag(repo: pathlib.Path) -> None:
     from agent6.sessions import layout as sessions_layout
     from agent6.sessions import manifest as sessions_manifest
 
-    cfg = _setup.load_session_config(repo, (), mode="run", model="claude-y").config
+    cfg = session_setup.load_session_config(repo, (), mode="run", model="claude-y").config
     layout = sessions_layout.SessionLayout(state_dir=repo / "state", session_id="run-1")
     layout.session_dir.mkdir(parents=True)
     stamps.write_session_manifest(

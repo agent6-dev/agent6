@@ -26,8 +26,8 @@ from textual import widgets
 from agent6.app import stop as app_stop
 from agent6.sessions import ipc, manifest, process
 from agent6.ui import spawn
-from agent6.ui.tui import _dashboard_header, composer, modals, prompts
 from agent6.ui.tui import app as tui_app
+from agent6.ui.tui import composer, dashboard_header, modals, prompts
 from agent6.viewmodel import Question, QuestionPrompt, state
 from tests.tui._waits import answer_written, focus_answers, wait_for
 
@@ -1159,7 +1159,7 @@ def test_context_pct_readout_in_top_line_and_bar(tmp_path: pathlib.Path, monkeyp
     def _window(_provider: str, _model: str) -> int:
         return 100_000
 
-    monkeypatch.setattr("agent6.viewmodel._state_view.cached_context_window", _window)
+    monkeypatch.setattr("agent6.viewmodel.state_view.cached_context_window", _window)
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
@@ -1896,7 +1896,7 @@ def test_dashboard_does_not_call_a_dead_driverless_run_idle(
         async with app.run_test(size=(150, 40)) as pilot:
             await _show_dashboard(pilot)
             before = len(reads)
-            header = app._dash.query_one(_dashboard_header.RunHeader)  # pyright: ignore[reportPrivateUsage]
+            header = app._dash.query_one(dashboard_header.RunHeader)  # pyright: ignore[reportPrivateUsage]
             lines = {header._start_role() for _ in range(4)}  # pyright: ignore[reportPrivateUsage]
             assert lines == {"(unknown)"}
             assert len(reads) - before <= 1

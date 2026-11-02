@@ -6,11 +6,11 @@ import pathlib
 
 import pytest
 
-from agent6 import event_log, review_records
+from agent6 import review_records
 from agent6.app import review_actions
-from agent6.sessions import ipc, lock, process
+from agent6.sessions import event_log, ipc, lock, process
 from agent6.ui.cli import main
-from agent6.viewmodel import _session_log
+from agent6.viewmodel import session_log
 from tests import review_helpers
 
 
@@ -55,7 +55,7 @@ def test_idempotency_precedes_version_check_and_fixed_invents_no_verification(
     assert finding.status == "resolved"
     assert finding.resolution is not None and finding.resolution.verify_id is None
     assert finding.actions[-1].source == "cli"
-    assert _session_log.scan_session_log(saved.logs_path).last_verify_rc is None
+    assert session_log.scan_session_log(saved.logs_path).last_verify_rc is None
 
 
 def test_stale_version_and_cross_finding_request_reuse_are_conflicts(

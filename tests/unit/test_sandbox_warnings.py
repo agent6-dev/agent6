@@ -583,8 +583,8 @@ def test_a_run_start_prints_the_home_grant_warning(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A run, a resume and a fork started under a `$HOME` grant without a word about it."""
-    from agent6.app import _session, _setup
     from agent6.app import reporter as app_reporter
+    from agent6.app import session_parts, session_setup
 
     def _detected() -> detect.Environment:
         return _env(4)
@@ -593,12 +593,12 @@ def test_a_run_start_prints_the_home_grant_warning(
         return True
 
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(_setup, "detect_env", _detected)
+    monkeypatch.setattr(session_setup, "detect_env", _detected)
     workspace = tmp_path / "repo"
     workspace.mkdir()
     said: list[str] = []
     cfg = Config(sandbox=SandboxConfig(isolation="full", extra_read_paths=(str(tmp_path),)))
-    _session.select_isolation(
+    session_parts.select_isolation(
         cfg,
         cwd=workspace,
         confirm_unconfined=_confirmed,

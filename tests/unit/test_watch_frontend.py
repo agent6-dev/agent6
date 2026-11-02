@@ -22,7 +22,7 @@ from typing import Any
 import pytest
 
 from agent6.sessions import ipc, process
-from agent6.ui.cli import _interact, plan_watch
+from agent6.ui.cli import interact, plan_watch
 from agent6.viewmodel import tail
 
 pytestmark = pytest.mark.filterwarnings(
@@ -132,7 +132,7 @@ def test_open_prompt_at_attach_is_answered_and_written(
     def _yes(_prompt: str, *, standing: bool = True, until: object = None) -> str:
         return "yes"
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
+    monkeypatch.setattr(interact, "default_stdin_approver", _yes)
     process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     _write_log(
@@ -156,7 +156,7 @@ def test_already_answered_prompt_is_not_reasked(tmp_path: pathlib.Path, monkeypa
     def _forbidden(_p: object, *, standing: bool = True) -> str:
         raise AssertionError("must not prompt for an already-answered approval")
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _forbidden)
+    monkeypatch.setattr(interact, "default_stdin_approver", _forbidden)
     log = tmp_path / "logs.jsonl"
     _write_log(
         log,
@@ -180,7 +180,7 @@ def test_react_answers_a_new_live_question(tmp_path: pathlib.Path, monkeypatch: 
     def _beta(_qs: object, until: object = None) -> tuple[str, ...]:
         return ("beta",)
 
-    monkeypatch.setattr(_interact, "default_stdin_questioner", _beta)
+    monkeypatch.setattr(interact, "default_stdin_questioner", _beta)
     process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [{"type": "session.start"}]
@@ -211,7 +211,7 @@ def test_attach_replay_does_not_reask_an_answered_prompt(
         asked.append(prompt)
         return "yes"
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
+    monkeypatch.setattr(interact, "default_stdin_approver", _yes)
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [
         {"type": "session.start", "user_task": "t"},
@@ -245,8 +245,8 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
         asked.append("question")
         return ("a",)
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
-    monkeypatch.setattr(_interact, "default_stdin_questioner", _answer)
+    monkeypatch.setattr(interact, "default_stdin_approver", _yes)
+    monkeypatch.setattr(interact, "default_stdin_questioner", _answer)
     process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     leg1: list[dict[str, Any]] = [
@@ -285,7 +285,7 @@ def test_an_answer_that_lost_to_another_surface_is_reported(
     def _yes(_prompt: str, *, standing: bool = True, until: object = None) -> str:
         return "yes"
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _yes)
+    monkeypatch.setattr(interact, "default_stdin_approver", _yes)
     process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     event: dict[str, Any] = {"type": "approval.prompt", "id": "approval-1", "prompt": "run `ls`?"}
@@ -312,7 +312,7 @@ def test_an_unscoped_approval_offers_no_session_choice(
         seen.append(standing)
         return "no"
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _approver)
+    monkeypatch.setattr(interact, "default_stdin_approver", _approver)
     process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     history: list[dict[str, Any]] = [
@@ -450,7 +450,7 @@ def test_a_line_typed_as_the_prompt_closes_writes_no_answer(
         _append_log(log, {"type": "approval.answer", "id": "approval-1", "approved": True})
         return "no"
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _late_no)
+    monkeypatch.setattr(interact, "default_stdin_approver", _late_no)
     process.write_worker_pid(tmp_path, os.getpid())
     _write_log(log, [{"type": "session.start"}, _OPEN_APPROVAL])
     view = _view()
@@ -477,7 +477,7 @@ def test_a_prompt_whose_execution_ended_takes_no_answer(
         _append_log(log, {"type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf x"})
         return "yes"
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _late_yes)
+    monkeypatch.setattr(interact, "default_stdin_approver", _late_yes)
     process.write_worker_pid(tmp_path, os.getpid())
     _write_log(log, [{"type": "session.start"}, _OPEN_APPROVAL])
     view = _view()
@@ -497,7 +497,7 @@ def test_an_older_executions_answer_does_not_close_the_new_prompt(
     an answer no terminal offers.
     """
     asked: list[str] = []
-    monkeypatch.setattr(_interact, "default_stdin_approver", _typist("yes", asked))
+    monkeypatch.setattr(interact, "default_stdin_approver", _typist("yes", asked))
     process.write_worker_pid(tmp_path, os.getpid())
     log = tmp_path / "logs.jsonl"
     _write_log(
@@ -547,7 +547,7 @@ def test_two_open_prompts_each_close_on_their_own_answer(
         _append_log(log, {"type": "approval.answer", "id": "approval-2", "approved": True})
         return "yes"
 
-    monkeypatch.setattr(_interact, "default_stdin_approver", _approver)
+    monkeypatch.setattr(interact, "default_stdin_approver", _approver)
     process.write_worker_pid(tmp_path, os.getpid())
     _write_log(
         log,

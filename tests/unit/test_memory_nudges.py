@@ -15,14 +15,14 @@ from unittest import mock
 
 from agent6.config import Config
 from agent6.harness import (
-    _chain,
-    _conversation,
-    _finish_gates,
-    _guards,
-    _loop_state,
-    _nudges,
-    _verify_verdict,
+    finish_gates,
+    guards,
     loop,
+    loop_conversation,
+    loop_state,
+    nudges,
+    run_chain,
+    verify_verdict,
 )
 from agent6.tools import results
 
@@ -31,7 +31,7 @@ def _wf(**kw: Any) -> loop.Harness:
     kw.setdefault("state_dir", pathlib.Path("/tmp/state"))
     kw.setdefault("config", Config.model_validate({}))
     return loop.Harness(
-        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        chain=run_chain.RunChain(pathlib.Path("/tmp")),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None),
         logger=lambda _m: None,
@@ -39,21 +39,21 @@ def _wf(**kw: Any) -> loop.Harness:
     )
 
 
-def _state(**kw: Any) -> _loop_state.LoopState:
-    return _loop_state.LoopState(original_task="t", tool_calls=0, **kw)
+def _state(**kw: Any) -> loop_state.LoopState:
+    return loop_state.LoopState(original_task="t", tool_calls=0, **kw)
 
 
-def _turn(turn: int = 1, **kw: Any) -> _loop_state.TurnState:
-    return _loop_state.TurnState(
+def _turn(turn: int = 1, **kw: Any) -> loop_state.TurnState:
+    return loop_state.TurnState(
         number=turn,
         resp=mock.MagicMock(),
-        assistant=_conversation.AssistantMessage((), ()),
+        assistant=loop_conversation.AssistantMessage((), ()),
         **kw,
     )
 
 
 def _verify(
-    wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState, rc: int
+    wf: loop.Harness, state: loop_state.LoopState, turn: loop_state.TurnState, rc: int
 ) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state,
@@ -64,16 +64,14 @@ def _verify(
     )
 
 
-def _notice_texts(turn: _loop_state.TurnState) -> list[str]:
-    return [item.text for item in turn.tool_results if isinstance(item, _conversation.Notice)]
+def _notice_texts(turn: loop_state.TurnState) -> list[str]:
+    return [item.text for item in turn.tool_results if isinstance(item, loop_conversation.Notice)]
 
 
-def _flip(
-    wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState
-) -> str | None:
+def _flip(wf: loop.Harness, state: loop_state.LoopState, turn: loop_state.TurnState) -> str | None:
     """The flip advisory's text for this turn, as the advisor answers it."""
     ctx = wf._turn_context(state, turn=turn.number, execution_start=1)  # pyright: ignore[reportPrivateUsage]
-    nudge = _guards.memory_flip(turn, state, ctx)
+    nudge = guards.memory_flip(turn, state, ctx)
     return None if nudge is None else nudge.text
 
 
@@ -100,7 +98,7 @@ def test_flip_advisory_fires_once_at_first_red_green_flip() -> None:
     flip = _turn(2)
     _verify(wf, state, flip, rc=0)
     assert flip.verify_flipped_green is True
-    assert _flip(wf, state, flip) == _nudges.MEMORY_FLIP_NUDGE
+    assert _flip(wf, state, flip) == nudges.MEMORY_FLIP_NUDGE
     assert state.memory.flip_nudged is True
 
     # A second recovery does not re-nudge.
@@ -123,11 +121,11 @@ def test_flip_advisory_needs_a_prior_red_verify() -> None:
 def test_flip_advisory_suppressed_without_store_write_or_run_mode() -> None:
     for wf, state_kw in (
         (_wf(state_dir=None), {}),
-        (_wf(), {"memory": _guards.MemoryState(written=True)}),
+        (_wf(), {"memory": guards.MemoryState(written=True)}),
         (_wf(mode="ask"), {}),
     ):
         state = _state(
-            **state_kw, verify=_verify_verdict.VerifyVerdict(last_ok=False, ever_failed=True)
+            **state_kw, verify=verify_verdict.VerifyVerdict(last_ok=False, ever_failed=True)
         )
         flip = _turn(2)
         _verify(wf, state, flip, rc=0)
@@ -166,7 +164,7 @@ def test_memory_dir_patch_without_a_path_marks_memory_written() -> None:
     from the patch; a patch over the store and the workspace together is workspace work.
     """
 
-    def note(patch: str) -> tuple[_loop_state.LoopState, _loop_state.TurnState]:
+    def note(patch: str) -> tuple[loop_state.LoopState, loop_state.TurnState]:
         wf = _wf()
         state = _state()
         turn = _turn(1)
@@ -245,19 +243,19 @@ def test_a_finish_after_a_recovery_is_honoured_at_once() -> None:
     wf = _wf()
     state = _state()
     _verify(wf, state, _turn(1), rc=1)
-    flip = _turn(2, finish=_finish_gates.FinishCall("finish_session", "done"))
+    flip = _turn(2, finish=finish_gates.FinishCall("finish_session", "done"))
     _verify(wf, state, flip, rc=0)
     ctx = wf._turn_context(state, turn=2, execution_start=1)  # pyright: ignore[reportPrivateUsage]
     wf._turn_advisors(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
     wf._turn_finish_gates(state, flip, ctx)  # pyright: ignore[reportPrivateUsage]
     assert flip.finish is not None
-    assert _notice_texts(flip) == [_nudges.MEMORY_FLIP_NUDGE]
+    assert _notice_texts(flip) == [nudges.MEMORY_FLIP_NUDGE]
 
 
 def test_the_flip_advisory_follows_the_config_key() -> None:
     """`harness.memory_advisory = false` sends no advisory at a recovery; the default sends it."""
     assert Config.model_validate({}).harness.memory_advisory is True
-    for harness, sent in (({}, [_nudges.MEMORY_FLIP_NUDGE]), ({"memory_advisory": False}, [])):
+    for harness, sent in (({}, [nudges.MEMORY_FLIP_NUDGE]), ({"memory_advisory": False}, [])):
         wf = _wf(config=Config.model_validate({"harness": harness}))
         state = _state()
         _verify(wf, state, _turn(1), rc=1)

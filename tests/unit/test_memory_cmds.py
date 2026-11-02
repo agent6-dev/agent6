@@ -8,7 +8,8 @@ import pathlib
 
 import pytest
 
-from agent6 import memory, paths
+from agent6 import paths
+from agent6.context import memory
 from agent6.ui.cli import memory_cmds
 
 

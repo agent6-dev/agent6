@@ -18,8 +18,15 @@ import pathlib
 from collections.abc import Sequence
 
 from agent6 import directive as agent6_directive
-from agent6 import kinds, secret_store
-from agent6.config import ClaudeCodeProviderEntry, Config, ConfigError, RoleName, layer
+from agent6 import kinds
+from agent6.config import (
+    ClaudeCodeProviderEntry,
+    Config,
+    ConfigError,
+    RoleName,
+    layer,
+    secret_store,
+)
 from agent6.models import cache as models_cache
 from agent6.models import registry
 

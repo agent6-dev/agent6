@@ -13,24 +13,25 @@ import pathlib
 import sys
 import time
 
-from agent6 import errors, event_log, kinds, paths, portable
-from agent6 import skills as agent6_skills
-from agent6.app import _setup, frontend, preflight, reporter, run
+from agent6 import errors, kinds, paths, portable
+from agent6.app import frontend, preflight, reporter, run, session_setup
 from agent6.app import lanes as app_lanes
 from agent6.config import (
     Config,
 )
+from agent6.context import skills as agent6_skills
+from agent6.sessions import event_log
 from agent6.ui import btw, spawn, steer
 from agent6.ui.cli import (
-    _ask,
-    _common,
-    _console_view,
-    _interact,
-    _live,
-    _preflight,
-    _repl,
-    _steer,
-    _task_refs,
+    ask,
+    common,
+    console_render,
+    interact,
+    live,
+    preflight_prompts,
+    repl,
+    steer_tty,
+    task_refs,
 )
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.viewmodel import session_policy
@@ -97,13 +98,13 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         A new seam for one invocation.
     """
     # Late-bound: the approver and questioner are built before the view or steer state exists.
-    console_cell: list[_console_view.ConsoleView | None] = [None]
+    console_cell: list[console_render.ConsoleView | None] = [None]
     steer_cell: list[steer.SteerState | None] = [None]
 
     def attach_console_view(events: event_log.EventSink) -> None:
         """Create the console view on the run's event sink."""
         # The sink's path is the handle to the run dir, so the layout need not cross the protocol.
-        view = _console_view.ConsoleView(
+        view = console_render.ConsoleView(
             sys.stderr,
             policy=lambda: session_policy(events.path.parent).line(),
             session_id=events.path.parent.name,
@@ -123,21 +124,21 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         capabilities=frontend.FrontendCapabilities(
             can_ask=sys.stdin.isatty() or portable.has_controlling_tty()
         ),
-        should_spawn_tui=lambda tui, interactive, mode: _live.should_spawn_tui(
+        should_spawn_tui=lambda tui, interactive, mode: live.should_spawn_tui(
             tui=tui, interactive=interactive, mode=mode
         ),
-        stream_modes=lambda tui_enabled: _live.stream_modes(tui_enabled=tui_enabled),
+        stream_modes=lambda tui_enabled: live.stream_modes(tui_enabled=tui_enabled),
         attach_console_view=attach_console_view,
         close_console_view=close_console_view,
-        loop_logger=lambda mode: _live.loop_logger(mode, console_cell[0]),
-        tui_session=lambda session_dir, enabled: _live.tui_session(session_dir, enabled=enabled),
-        build_approver=lambda session_dir: _interact.build_approver(
+        loop_logger=lambda mode: live.loop_logger(mode, console_cell[0]),
+        tui_session=lambda session_dir, enabled: live.tui_session(session_dir, enabled=enabled),
+        build_approver=lambda session_dir: interact.build_approver(
             session_dir, console_cell, steer_cell
         ),
-        build_questioner=lambda session_dir: _interact.build_questioner(session_dir, console_cell),
+        build_questioner=lambda session_dir: interact.build_questioner(session_dir, console_cell),
         make_steer_state=lambda events, session_dir, facts: _remember_steer(
             steer_cell,
-            _steer.make_steer_state(
+            steer_tty.make_steer_state(
                 events,
                 session_dir,
                 console_cell[0],
@@ -157,20 +158,20 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
                 config_paths=config_paths,
             ),
         ),
-        confirm_unconfined_autorun=_preflight.confirm_unconfined_autorun,
-        confirm_run_on_run_branch=_preflight.confirm_run_on_run_branch,
-        prompt_detach_away_mode=_interact.prompt_detach_away_mode,
+        confirm_unconfined_autorun=preflight_prompts.confirm_unconfined_autorun,
+        confirm_run_on_run_branch=preflight_prompts.confirm_run_on_run_branch,
+        prompt_detach_away_mode=interact.prompt_detach_away_mode,
         # The choice reads stdin: with it redirected nobody can answer.
         select_revised_prompt=(
             (
-                lambda original, revised, questions: _steer.select_revised_prompt(
+                lambda original, revised, questions: steer_tty.select_revised_prompt(
                     original, revised, questions, console_cell[0]
                 )
             )
             if sys.stdin.isatty()
             else None
         ),
-        build_repl_hook=lambda cwd, budget, session_id, mcp_manager: _repl.build_repl_hook(
+        build_repl_hook=lambda cwd, budget, session_id, mcp_manager: repl.build_repl_hook(
             cwd,
             budget,
             session_id=session_id,
@@ -178,10 +179,10 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
             console_view=console_cell[0],
             steer_cell=steer_cell,
         ),
-        run_ask_repl=lambda wf, budget, layout, first_question: _ask.run_ask_repl(
+        run_ask_repl=lambda wf, budget, layout, first_question: ask.run_ask_repl(
             wf, budget, layout, first_question=first_question
         ),
-        save_ask_transcript=lambda layout, question, answer: _ask.save_ask_transcript(
+        save_ask_transcript=lambda layout, question, answer: ask.save_ask_transcript(
             layout, question=question, answer=answer
         ),
         build_coordinator_spawner=(
@@ -196,7 +197,7 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
                     runtime=cli_parallel.lane_runtime(),
                     max_usd=max_usd,
                     auto_approve=auto_approve,
-                    lane_away=_interact.lane_away_mode(),
+                    lane_away=interact.lane_away_mode(),
                 )
             )
         ),
@@ -248,7 +249,7 @@ def _compose_task(
         task = prefix + task
     if not seed_from:
         return ComposedTask(task)
-    seed = _ask.build_session_seed(pathlib.Path.cwd(), seed_from, latest=False)
+    seed = ask.build_session_seed(pathlib.Path.cwd(), seed_from, latest=False)
     if seed is None:
         raise errors.OperatorError(f"could not seed from {seed_from!r}")
     return ComposedTask(f"{seed.text}\n\n{task}" if task else seed.text, seed.source_session_id)
@@ -266,8 +267,8 @@ def _cmd_run(
     seed_from: str = "",
     source_session_id: str = "",
     skills: tuple[str, ...] = (),
-    budget_overrides: _setup.BudgetOverrides | None = None,
-    sandbox_overrides: _setup.SandboxOverrides | None = None,
+    budget_overrides: session_setup.BudgetOverrides | None = None,
+    sandbox_overrides: session_setup.SandboxOverrides | None = None,
     preset: str = "",
     parallel_spec: str = "",
     worktree: bool = False,
@@ -307,7 +308,7 @@ def _cmd_run(
     # The git wall first, so a scratch dir does not clear every other wall before hitting it.
     if mode != "ask" and not preflight.require_git_repo(pathlib.Path.cwd()):
         return 2
-    effective = _setup.load_session_config(
+    effective = session_setup.load_session_config(
         pathlib.Path.cwd(),
         config_paths,
         mode=mode,
@@ -322,20 +323,20 @@ def _cmd_run(
     try:
         composed = _compose_task(task, cfg, skills=skills, seed_from=seed_from)
     except errors.OperatorError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     task = composed.text
     source_session_id = composed.source_session_id or source_session_id
     role = kinds.session_kind(mode).role
 
     # `@path` references inline the files verbatim before the harness sees the task.
-    task = _task_refs.expand_task_file_refs(task, pathlib.Path.cwd())
+    task = task_refs.expand_task_file_refs(task, pathlib.Path.cwd())
 
     # `--parallel` routes after the config walls and before the single-run preflight; run mode only.
     if parallel_spec and mode == "run":
         # Depth 1: a subordinate lane (AGENT6_SUBRUN) must never itself fan out.
         if os.environ.get("AGENT6_SUBRUN"):
-            _common.refuse(
+            common.refuse(
                 "--parallel is unavailable inside a subordinate run (parallel dispatch is depth 1)."
             )
             return 2

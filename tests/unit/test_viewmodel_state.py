@@ -121,7 +121,7 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
     def _unknown(_provider: str, _model: str) -> int | None:
         return None
 
-    monkeypatch.setattr("agent6.viewmodel._state_view.cached_context_window", _known)
+    monkeypatch.setattr("agent6.viewmodel.state_view.cached_context_window", _known)
     s = viewmodel_state.initial_state()
     assert context_fill(s) is None  # no call yet
     for ev in (
@@ -138,7 +138,7 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
         s = viewmodel_state.apply_event(s, ev)
     assert context_fill(s) == 41
     assert session_state_as_dict(s)["context_pct"] == 41
-    monkeypatch.setattr("agent6.viewmodel._state_view.cached_context_window", _unknown)
+    monkeypatch.setattr("agent6.viewmodel.state_view.cached_context_window", _unknown)
     assert context_fill(s) is None  # an unknown window is not a percent
 
 
@@ -1208,7 +1208,7 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_commit_turns() -> No
 
 def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> None:
     """A queued question stays pending past a resume; only a waiting question blocks the run."""
-    from agent6.viewmodel import _state_view
+    from agent6.viewmodel import state_view
 
     queued = {
         "type": "question.prompt",
@@ -1226,8 +1226,8 @@ def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> Non
     state = viewmodel_state.fold_session(rows)
     (first,) = state.pending_questions
     assert first.id == "question-1" and not first.answered and first.wait is False
-    assert _state_view.status_facts(state).operator_blocked is False
-    facts = _state_view.status_facts(viewmodel_state.fold_session([*rows, waiting]))
+    assert state_view.status_facts(state).operator_blocked is False
+    facts = state_view.status_facts(viewmodel_state.fold_session([*rows, waiting]))
     assert facts.operator_blocked and facts.blocked_kind == "question"
     late = {
         "type": "question.answer",
@@ -1241,7 +1241,7 @@ def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> Non
         ("question-1", True, "late"),
         ("question-2", False, ""),
     ]
-    assert _state_view.status_facts(state).operator_blocked
+    assert state_view.status_facts(state).operator_blocked
 
 
 def test_a_questions_kind_is_one_word_on_every_surface() -> None:
@@ -1273,28 +1273,28 @@ def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pa
     """agent6's own start gate is pending while its asker lives and nobody's once it is gone."""
     import os
 
-    from agent6.app import _carried_questions
+    from agent6.app import resume_questions
     from agent6.sessions import process
-    from agent6.viewmodel import _session_log, _state_view
+    from agent6.viewmodel import session_log, state_view
 
     gate = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
     log = tmp_path / "logs.jsonl"
     log.write_text(json.dumps(gate) + "\n", encoding="utf-8")
     state = viewmodel_state.fold_session([gate])
     assert state.pending_questions[0].from_harness
-    assert _state_view.status_facts(state).pending_questions == 0
-    assert _session_log.scan_session_log(log).pending_questions == 0
+    assert state_view.status_facts(state).pending_questions == 0
+    assert session_log.scan_session_log(log).pending_questions == 0
     assert viewmodel_state.pending_questions(tmp_path) == ()
-    carried = _carried_questions.carried_questions(log)
+    carried = resume_questions.carried_questions(log)
     assert (carried.pending, carried.next_number) == ((), 1)
     process.write_worker_pid(tmp_path, os.getpid())
     assert [q.id for q in viewmodel_state.pending_questions(tmp_path)] == ["question-1"]
-    assert _carried_questions.carried_questions(log).pending == ()
+    assert resume_questions.carried_questions(log).pending == ()
 
 
 def test_a_reused_question_id_names_the_latest_question(tmp_path: pathlib.Path) -> None:
     """A journal from before ids ran across executions holds one pending question per id."""
-    from agent6.app import _carried_questions
+    from agent6.app import resume_questions
 
     rows = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -1308,6 +1308,6 @@ def test_a_reused_question_id_names_the_latest_question(tmp_path: pathlib.Path) 
     assert [(q.id, q.questions[0].question) for q in state.pending_questions] == [
         ("question-1", "new?")
     ]
-    carried = _carried_questions.carried_questions(log)
+    carried = resume_questions.carried_questions(log)
     assert [(q.id, q.questions[0].question) for q in carried.pending] == [("question-1", "new?")]
     assert carried.next_number == 2

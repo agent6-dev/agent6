@@ -14,7 +14,7 @@ import httpx2
 import pytest
 
 from agent6.config import load_config, validate_base_url
-from agent6.providers import _oauth_protocol, _stream, _transport, types
+from agent6.providers import oauth_protocol, provider_types, stream_lifecycle, transport
 
 
 @pytest.mark.parametrize(
@@ -81,19 +81,19 @@ def test_a_loopback_destination_ignores_the_ambient_proxy(
     monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
     monkeypatch.delenv("NO_PROXY", raising=False)  # an ambient exemption would mask the rule
     monkeypatch.delenv("no_proxy", raising=False)
-    resp = _transport.http_post(
+    resp = transport.http_post(
         f"{loopback_server}/v1/chat/completions",
         headers={"authorization": "Bearer t"},
         content=b"{}",
         timeout=5.0,
     )
     assert resp.status_code == 200
-    with _stream.http_stream(
+    with stream_lifecycle.http_stream(
         "POST", f"{loopback_server}/v1/chat/completions", headers={}, content=b"{}", timeout=5.0
     ) as streamed:
         assert streamed.status_code == 200
-    assert _transport.trust_env_for(loopback_server) is False
-    assert _transport.trust_env_for("https://models.example/v1") is True
+    assert transport.trust_env_for(loopback_server) is False
+    assert transport.trust_env_for("https://models.example/v1") is True
 
 
 def test_credential_requests_follow_no_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,9 +125,9 @@ def test_credential_requests_follow_no_redirect(monkeypatch: pytest.MonkeyPatch)
         return _Stream()
 
     monkeypatch.setattr(httpx2, "stream", fake_stream)
-    _oauth_protocol.post_form("https://login.example/token", {"a": "b"}, 5.0)
-    _oauth_protocol.post_json("https://login.example/device", {"a": "b"}, 5.0)
-    _oauth_protocol.revoke_tokens(
+    oauth_protocol.post_form("https://login.example/token", {"a": "b"}, 5.0)
+    oauth_protocol.post_json("https://login.example/device", {"a": "b"}, 5.0)
+    oauth_protocol.revoke_tokens(
         "https://login.example/revoke",
         "client",
         access_token="a",
@@ -158,9 +158,9 @@ def test_a_redirecting_token_endpoint_is_refused_without_a_second_request(
         calls.append(url)
         return _Redirect()
 
-    monkeypatch.setattr(_oauth_protocol, "post_form", fake_post)
-    with pytest.raises(types.ProviderError, match="redirect"):
-        _oauth_protocol.refresh_grant(
+    monkeypatch.setattr(oauth_protocol, "post_form", fake_post)
+    with pytest.raises(provider_types.ProviderError, match="redirect"):
+        oauth_protocol.refresh_grant(
             "https://login.example/token", "client", "RT", provider="p", label="p"
         )
     assert calls == ["https://login.example/token"]
@@ -183,8 +183,8 @@ def test_a_redirecting_model_endpoint_is_refused_without_a_second_request(
         calls.append(url)
         return _Redirect()
 
-    monkeypatch.setattr(_transport, "http_post", fake_post)
-    call = _transport.ProviderCall(
+    monkeypatch.setattr(transport, "http_post", fake_post)
+    call = transport.ProviderCall(
         api_label="OpenAI",
         api_format="openai",
         url="https://api.test/v1/chat/completions",
@@ -195,12 +195,12 @@ def test_a_redirecting_model_endpoint_is_refused_without_a_second_request(
         transcript_sink=None,
         budget=None,
         model="m",
-        facts=_transport._headers.RequestFacts(target="inference", model="m"),
+        facts=transport.request_headers.RequestFacts(target="inference", model="m"),
         build_headers=lambda _k, _f: {},
         adapt_400=lambda _s, _t, _b: False,
         adapt_attempts=1,
         require_metered=lambda _d: None,
-        parse=lambda _d: types.ProviderResponse(
+        parse=lambda _d: provider_types.ProviderResponse(
             text="",
             tool_uses=(),
             stop_reason="end_turn",
@@ -211,6 +211,6 @@ def test_a_redirecting_model_endpoint_is_refused_without_a_second_request(
             raw={},
         ),
     )
-    with pytest.raises(types.ProviderError, match="redirect"):
+    with pytest.raises(provider_types.ProviderError, match="redirect"):
         call.run()
     assert calls == ["https://api.test/v1/chat/completions"]

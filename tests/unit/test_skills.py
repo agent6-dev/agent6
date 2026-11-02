@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for agent6.skills (SKILL.md discovery, frontmatter parsing, states)."""
+"""Tests for agent6.context.skills (SKILL.md discovery, frontmatter parsing, states)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from agent6 import skills
+from agent6.context import skills
 
 
 def _write_skill(root: pathlib.Path, dirname: str, text: str) -> pathlib.Path:

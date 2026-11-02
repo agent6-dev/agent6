@@ -11,12 +11,12 @@ import re
 
 import pytest
 
-from agent6.harness import _prompt_blocks
+from agent6.harness import prompt_blocks
 from agent6.tools import schema
 
 
 def test_ask_gets_direct_answer_instructions() -> None:
-    text = _prompt_blocks.initial_instructions("ask", "ask", has_gate=True)
+    text = prompt_blocks.initial_instructions("ask", "ask", has_gate=True)
     assert "answer" in text.lower()
     for phantom in ("finish_session", "make edits", "run_verify_command"):
         assert phantom not in text
@@ -24,22 +24,20 @@ def test_ask_gets_direct_answer_instructions() -> None:
 
 def test_a_no_commands_run_is_not_told_to_run_verify() -> None:
     """`run_commands = "deny"` withholds the command tools and the verify gate with them."""
-    assert "run_verify_command" not in _prompt_blocks.initial_instructions(
+    assert "run_verify_command" not in prompt_blocks.initial_instructions(
         "run", "deny", has_gate=True
     )
-    assert "finish_session" in _prompt_blocks.initial_instructions("run", "deny", has_gate=True)
-    assert "run_verify_command" in _prompt_blocks.initial_instructions("run", "ask", has_gate=True)
-    assert "run_verify_command" in _prompt_blocks.initial_instructions(
-        "run", "allow", has_gate=True
-    )
+    assert "finish_session" in prompt_blocks.initial_instructions("run", "deny", has_gate=True)
+    assert "run_verify_command" in prompt_blocks.initial_instructions("run", "ask", has_gate=True)
+    assert "run_verify_command" in prompt_blocks.initial_instructions("run", "allow", has_gate=True)
 
 
 def test_a_gateless_run_is_not_told_to_run_verify() -> None:
     """A gateless run's header names no verify gate, however commands are configured."""
-    assert "run_verify_command" not in _prompt_blocks.initial_instructions(
+    assert "run_verify_command" not in prompt_blocks.initial_instructions(
         "run", "allow", has_gate=False
     )
-    assert "finish_session" in _prompt_blocks.initial_instructions("run", "allow", has_gate=False)
+    assert "finish_session" in prompt_blocks.initial_instructions("run", "allow", has_gate=False)
 
 
 @pytest.mark.parametrize("mode", ["run", "plan", "ask", "agent"])
@@ -52,7 +50,7 @@ def test_no_instruction_names_a_tool_outside_the_mode_surface(mode: str) -> None
     for rc in ("allow", "ask", "deny"):
         named = set(
             re.findall(
-                r"`([a-z_0-9.]+)`", _prompt_blocks.initial_instructions(mode, rc, has_gate=True)
+                r"`([a-z_0-9.]+)`", prompt_blocks.initial_instructions(mode, rc, has_gate=True)
             )
         )
         misfits = {n for n in named if n in all_tools and n not in permitted}

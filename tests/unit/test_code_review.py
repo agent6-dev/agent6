@@ -9,7 +9,7 @@ import dataclasses
 import pytest
 
 from agent6 import review_records
-from agent6.harness import code_review
+from agent6.harness import review_diff
 from agent6.providers import ProviderError, ProviderResponse, ToolDefinition
 
 
@@ -50,7 +50,7 @@ class _FakeProvider:
 
 def test_code_review_passes_diff_and_context() -> None:
     provider = _FakeProvider(response_text="LGTM with nits\n- [nit] foo")
-    out = code_review.review_diff(
+    out = review_diff.review_diff(
         provider,  # type: ignore[arg-type]
         diff="diff --git a/x b/x\n+pass\n",
         rules=review_records.ReviewRules(text="# project rules"),
@@ -68,17 +68,17 @@ def test_code_review_passes_diff_and_context() -> None:
 def test_code_review_sends_the_whole_large_diff() -> None:
     provider = _FakeProvider()
     huge = "start\n" + "x" * 200_000 + "\nend"
-    code_review.review_diff(provider, diff=huge)  # type: ignore[arg-type]
+    review_diff.review_diff(provider, diff=huge)  # type: ignore[arg-type]
     assert provider.last_user == f"REVIEW RULES (base tree):\nNo base rules exist.\n\nDIFF:\n{huge}"
 
 
 def test_code_review_rejects_empty_response() -> None:
     provider = _FakeProvider(response_text="   ")
-    with pytest.raises(code_review.CodeReviewError, match="empty"):
-        code_review.review_diff(provider, diff="diff")  # type: ignore[arg-type]
+    with pytest.raises(review_diff.CodeReviewError, match="empty"):
+        review_diff.review_diff(provider, diff="diff")  # type: ignore[arg-type]
 
 
 def test_code_review_wraps_provider_error() -> None:
     provider = _FakeProvider(raise_error=True)
-    with pytest.raises(code_review.CodeReviewError, match="provider call failed"):
-        code_review.review_diff(provider, diff="diff")  # type: ignore[arg-type]
+    with pytest.raises(review_diff.CodeReviewError, match="provider call failed"):
+        review_diff.review_diff(provider, diff="diff")  # type: ignore[arg-type]

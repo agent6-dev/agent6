@@ -10,16 +10,16 @@ from typing import Any, ClassVar
 
 import pytest
 
-from agent6 import event_log
 from agent6.config import Config
-from agent6.harness import _chain, _conversation, _loop_state, loop
+from agent6.harness import loop, loop_conversation, loop_state, run_chain
 from agent6.providers import (
     OpenAIProvider,
     ToolDefinition,
     TranscriptSink,
-    _openai_parse,
-    _openai_recovery,
+    openai_parse,
+    openai_recovery,
 )
+from agent6.sessions import event_log
 from agent6.tools import dispatch
 from tests.unit.turn_context import turn_context
 
@@ -75,7 +75,7 @@ def test_mixed_tag_and_fenced_calls_are_recovered_in_source_order() -> None:
         '```json\n{"name":"list_dir","arguments":{"path":"src"}}\n```'
     )
 
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
 
     assert calls == [
         {"name": "read_file", "input": {"path": "a.py"}},
@@ -97,7 +97,7 @@ def test_tagged_call_with_malformed_arguments_is_recovered_for_an_error(
 ) -> None:
     text = f'<tool_call>{{"name":"read_file","arguments":{arguments}}}</tool_call>'
 
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
 
     assert calls == [{"name": "read_file", "input": expected}]
     assert remaining == ""
@@ -106,7 +106,7 @@ def test_tagged_call_with_malformed_arguments_is_recovered_for_an_error(
 def test_tagged_unknown_tool_is_recovered_for_an_error() -> None:
     text = '<tool_call>{"name":"write_file","arguments":{"path":"a.py"}}</tool_call>'
 
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
 
     assert calls == [{"name": "write_file", "input": {"path": "a.py"}}]
     assert remaining == ""
@@ -114,25 +114,27 @@ def test_tagged_unknown_tool_is_recovered_for_an_error() -> None:
 
 def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: pathlib.Path) -> None:
     model_text = '<tool_call>{"name":"write_file","arguments":{"path":"a.py"}}</tool_call>'
-    response = _openai_parse.parse_response(_Response(model_text).json(), tool_names=_TOOLS)
-    conversation = _conversation.Conversation()
+    response = openai_parse.parse_response(_Response(model_text).json(), tool_names=_TOOLS)
+    conversation = loop_conversation.Conversation()
     conversation.notice("Write a.py")
     assistant = conversation.assistant(response.raw["content"])
     dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=Config())
     harness = loop.Harness(
-        chain=_chain.RunChain(tmp_path),
+        chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=OpenAIProvider(api_key="k", model="weak-model"),
         dispatcher=dispatcher,
         logger=lambda _: None,
     )
-    turn = _loop_state.TurnState(number=1, resp=response, assistant=assistant)
+    turn = loop_state.TurnState(number=1, resp=response, assistant=assistant)
 
     harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
-        _loop_state.LoopState(original_task="Write a.py", tool_calls=0), turn, turn_context()
+        loop_state.LoopState(original_task="Write a.py", tool_calls=0), turn, turn_context()
     )
 
-    results = [item for item in turn.tool_results if isinstance(item, _conversation.ToolResultItem)]
+    results = [
+        item for item in turn.tool_results if isinstance(item, loop_conversation.ToolResultItem)
+    ]
     assert len(results) == 1
     assert json.loads(results[0].content) == {"error": "Unknown tool: write_file"}
 
@@ -155,7 +157,7 @@ def test_unknown_tagged_call_returns_the_dispatcher_error(tmp_path: pathlib.Path
     ],
 )
 def test_tool_call_quoted_in_a_markdown_fence_stays_text(text: str) -> None:
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
 
     assert calls == []
     assert remaining == text
@@ -168,7 +170,7 @@ def test_tool_call_quoted_in_a_markdown_fence_stays_text(text: str) -> None:
 def test_tool_code_does_not_dispatch_with_arguments_it_dropped(call: str) -> None:
     text = f"```tool_code\n{call}\n```"
 
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
 
     assert calls == [{"name": "read_file", "input": {"_raw_arguments": call}}]
     assert remaining == ""
@@ -183,7 +185,7 @@ def test_call_markup_inside_an_argument_is_not_a_second_call(form: str) -> None:
     elif form == "tag":
         text = f"<tool_call>{text}</tool_call>"
 
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
 
     assert calls == [{"name": "read_file", "input": {"path": path}}]
     assert remaining == ""
@@ -203,14 +205,14 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
         request_bodies.append(json.loads(kwargs["content"]))
         return next(responses)
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     transcripts = tmp_path / "transcripts"
     provider = OpenAIProvider(
         api_key="k",
         model="weak-model",
         transcript_sink=TranscriptSink(transcripts),
     )
-    conversation = _conversation.Conversation()
+    conversation = loop_conversation.Conversation()
     conversation.notice("Read a.py")
     response = provider.call(
         system="system", messages=conversation.to_wire(), tools=_RECOVERY_TOOLS
@@ -222,18 +224,18 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     events = event_log.EventSink(journal)
     dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=Config(), events=events)
     harness = loop.Harness(
-        chain=_chain.RunChain(tmp_path),
+        chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=provider,
         dispatcher=dispatcher,
         events=events,
         logger=lambda _: None,
     )
-    turn = _loop_state.TurnState(number=1, resp=response, assistant=assistant)
+    turn = loop_state.TurnState(number=1, resp=response, assistant=assistant)
 
     assert (
         harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
-            _loop_state.LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
+            loop_state.LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
         )
         is None
     )
@@ -275,28 +277,28 @@ def test_malformed_recovered_call_returns_only_its_error(
     def fake_post(url: str, **kwargs: Any) -> _Response:
         return _Response(model_text)
 
-    monkeypatch.setattr("agent6.providers._transport.http_post", fake_post)
+    monkeypatch.setattr("agent6.providers.transport.http_post", fake_post)
     provider = OpenAIProvider(api_key="k", model="weak-model")
     response = provider.call(
         system="system",
         messages=[{"role": "user", "content": "Read a.py"}],
         tools=[_READ_FILE],
     )
-    conversation = _conversation.Conversation()
+    conversation = loop_conversation.Conversation()
     conversation.notice("Read a.py")
     assistant = conversation.assistant(response.raw["content"])
     dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=Config())
     harness = loop.Harness(
-        chain=_chain.RunChain(tmp_path),
+        chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=provider,
         dispatcher=dispatcher,
         logger=lambda _: None,
     )
-    turn = _loop_state.TurnState(number=1, resp=response, assistant=assistant)
+    turn = loop_state.TurnState(number=1, resp=response, assistant=assistant)
 
     harness._turn_dispatch_tools(  # pyright: ignore[reportPrivateUsage]
-        _loop_state.LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
+        loop_state.LoopState(original_task="Read a.py", tool_calls=0), turn, turn_context()
     )
 
     assert response.text == ""
@@ -308,7 +310,9 @@ def test_malformed_recovered_call_returns_only_its_error(
             "input": {"_raw_arguments": '{"path": "a.py'},
         }
     ]
-    results = [item for item in turn.tool_results if isinstance(item, _conversation.ToolResultItem)]
+    results = [
+        item for item in turn.tool_results if isinstance(item, loop_conversation.ToolResultItem)
+    ]
     assert len(results) == 1
     assert json.loads(results[0].content) == {
         "error": (
@@ -326,7 +330,7 @@ def test_an_unterminated_fence_hides_no_later_call() -> None:
     quiet.
     """
     tag = '<tool_call>{"name":"read_file","arguments":{"path":"a.py"}}</tool_call>'
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(
+    calls, remaining = openai_recovery.coerce_text_tool_calls(
         f"A sample:\n```\nsome code\n\n{tag}", _TOOLS
     )
     assert [c["name"] for c in calls] == ["read_file"]
@@ -340,14 +344,14 @@ def test_a_json_fence_showing_an_object_with_a_name_key_is_not_a_call() -> None:
     dispatched as a tool and cut out of the answer.
     """
     text = 'The manifest:\n\n```json\n{"name": "my-pkg", "version": "1.0.0"}\n```\n\nOK?'
-    assert _openai_recovery.coerce_text_tool_calls(text, _TOOLS) == ([], text)
+    assert openai_recovery.coerce_text_tool_calls(text, _TOOLS) == ([], text)
 
 
 def test_the_same_call_in_a_tag_and_a_fence_is_one_call() -> None:
     """A tag followed by the same object restated in a ```json fence dispatched twice."""
     call = '{"name":"read_file","arguments":{"path":"a.py"}}'
     text = f"<tool_call>{call}</tool_call>\nIn JSON that is:\n```json\n{call}\n```"
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
     assert remaining == "In JSON that is:"
 
@@ -359,7 +363,7 @@ def test_a_call_in_a_four_backtick_fence_is_recovered() -> None:
     otherwise a call in a longer fence reads as quoted inside itself.
     """
     text = '````json\n{"name":"read_file","arguments":{"path":"a.py"}}\n````'
-    calls, _ = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, _ = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
     assert [c["name"] for c in calls] == ["read_file"]
 
 
@@ -371,7 +375,7 @@ def test_arguments_that_are_not_an_object_are_marked_malformed_as_json() -> None
     object".
     """
     text = '<tool_call>{"name":"read_file","arguments":["a.py"]}</tool_call>'
-    (call,) = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)[0]
+    (call,) = openai_recovery.coerce_text_tool_calls(text, _TOOLS)[0]
     assert set(call["input"]) == {"_raw_arguments"}
     assert json.loads(call["input"]["_raw_arguments"]) == ["a.py"]
 
@@ -385,7 +389,7 @@ def test_a_fence_opened_inside_an_argument_quotes_nothing_after_it() -> None:
     xml = "<function=apply_edit><parameter=new_string>\n```python\nx = 1\n</parameter></function>"
     tag = '<tool_call>{"name":"read_file","arguments":{"path":"a"}}</tool_call>'
     text = f"{xml}\n{tag}\nexpected output:\n```\nok\n```"
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS | {"apply_edit"})
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS | {"apply_edit"})
     assert [c["name"] for c in calls] == ["apply_edit", "read_file"]
     assert remaining == "expected output:\n```\nok\n```"
 
@@ -397,7 +401,7 @@ def test_a_call_restated_in_a_second_fence_is_one_call() -> None:
     """
     call = '{"name":"read_file","arguments":{"path":"a.py"}}'
     text = f"first\n```json\n{call}\n```\nsecond\n```json\n{call}\n```"
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
     assert remaining == "first\n\nsecond"
 
@@ -414,7 +418,7 @@ def test_a_form_wrapped_in_a_tag_leaves_no_marker(inner: str) -> None:
 
     Qwen's template wraps its XML call in `<tool_call>` tags; the tag's markers go with the call.
     """
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(
+    calls, remaining = openai_recovery.coerce_text_tool_calls(
         f"ok\n<tool_call>\n{inner}\n</tool_call>\ndone", _TOOLS
     )
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
@@ -428,10 +432,10 @@ def test_an_unclosed_function_ends_at_its_last_closed_parameter() -> None:
     prose after it; a truncated last parameter still runs to the end.
     """
     text = "<function=read_file><parameter=path>a.py</parameter>\nAfter that I summarise."
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(text, _TOOLS)
+    calls, remaining = openai_recovery.coerce_text_tool_calls(text, _TOOLS)
     assert calls == [{"name": "read_file", "input": {"path": "a.py"}}]
     assert remaining == "After that I summarise."
     truncated = "<function=apply_edit><parameter=path>x</parameter><parameter=new_string>abc"
-    calls, remaining = _openai_recovery.coerce_text_tool_calls(truncated, _TOOLS | {"apply_edit"})
+    calls, remaining = openai_recovery.coerce_text_tool_calls(truncated, _TOOLS | {"apply_edit"})
     assert calls == [{"name": "apply_edit", "input": {"path": "x", "new_string": "abc"}}]
     assert remaining == ""

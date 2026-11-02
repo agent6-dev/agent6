@@ -14,10 +14,10 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import _session as app__session
-from agent6.app import _setup, machine_agent
+from agent6.app import session_parts, session_setup
+from agent6.app.machine import agent
 from agent6.app.machine import create as _create
-from agent6.config import Config, _layer_data, layer
+from agent6.config import Config, layer, layer_data
 from agent6.machine import (
     AgentExecResult,
     AgentRequest,
@@ -25,7 +25,7 @@ from agent6.machine import (
 )
 from agent6.sandbox import detect
 from agent6.ui.cli import main
-from agent6.viewmodel import _session_status
+from agent6.viewmodel import session_status
 
 VALID_MACHINE = """\
 machine = "greeter"
@@ -168,8 +168,8 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
         return "none"
 
     monkeypatch.setattr(layer, "load_effective", _load)
-    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(app__session, "select_isolation", _no_preflight)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(session_parts, "select_isolation", _no_preflight)
 
 
 def _stub_runner(
@@ -195,7 +195,7 @@ def _stub_runner(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
 
 
 def _write_draft(root: pathlib.Path, files: dict[str, str]) -> None:
@@ -232,7 +232,7 @@ def test_create_runs_the_authoring_agent_as_a_run_on_the_worker_model(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Greet the user"])
     assert code == 0
     assert captured, "runner was never invoked"
@@ -258,7 +258,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
     seen: list[int] = []
 
     def fake_build(
-        overlays: dict[str, machine_agent.StateOverlay],
+        overlays: dict[str, agent.StateOverlay],
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
@@ -272,7 +272,7 @@ def test_create_carries_an_effective_default_that_resets_the_global_layer(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
     assert seen == [Config().harness.max_turns]
 
@@ -291,7 +291,7 @@ def test_create_takes_the_budget_flags_run_takes(
     seen: list[tuple[float, float | None, float | None]] = []
 
     def fake_build(
-        overlays: dict[str, machine_agent.StateOverlay],
+        overlays: dict[str, agent.StateOverlay],
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
@@ -305,7 +305,7 @@ def test_create_takes_the_budget_flags_run_takes(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     argv = ["machine", "create", "--max-plan-points", "30", "--max-usd", "2", "Greet the user"]
     assert main(argv) == 0
     assert seen == [(30.0, 2.0, 30.0)]
@@ -417,7 +417,7 @@ def test_create_writes_watchable_event_log(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
 
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
@@ -798,7 +798,7 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The gate lints with `--fix` on a scratch copy and publishes ruff's repaired source."""
-    from agent6.app.machine import _scriptcheck as scriptcheck
+    from agent6.app.machine import scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
@@ -820,7 +820,7 @@ def test_create_publishes_the_bytes_the_lint_gate_passed(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Run a script"]) == 0
     written = (tmp_path / "scripts" / "run.py").read_text(encoding="utf-8")
     assert "import json" not in written, written
@@ -831,7 +831,7 @@ def test_create_retry_prompt_names_the_script_problem(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The problems go in the next attempt's prompt; the source stays in the workspace.
-    from agent6.app.machine import _scriptcheck as scriptcheck
+    from agent6.app.machine import scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
@@ -867,7 +867,7 @@ def test_create_retry_prompt_names_the_script_problem(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Run a script"])
     assert code == 0
     assert len(prompts) == 2
@@ -928,7 +928,7 @@ def test_create_attempts_share_one_budget_ledger(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "Run a script"])
     assert code == 1  # no valid draft, and no third full-budget attempt
     assert caps == [10.0, 4.0]
@@ -1026,7 +1026,7 @@ def test_create_rejects_lint_bad_script(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A machine whose script has a lint error is not written; the failure is a diagnostic."""
-    from agent6.app.machine import _scriptcheck as scriptcheck
+    from agent6.app.machine import scriptcheck
 
     if "ruff" not in scriptcheck.available_tools():
         pytest.skip("ruff not installed")
@@ -1173,12 +1173,12 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     def _killpg(_pgid: int, _sig: int) -> None:
         return None
 
-    monkeypatch.setattr(machine_agent.subprocess, "Popen", _popen)
-    monkeypatch.setattr(machine_agent.os, "getpgid", _getpgid)
-    monkeypatch.setattr(machine_agent.os, "killpg", _killpg)
+    monkeypatch.setattr(agent.subprocess, "Popen", _popen)
+    monkeypatch.setattr(agent.os, "getpgid", _getpgid)
+    monkeypatch.setattr(agent.os, "killpg", _killpg)
 
-    runner = machine_agent.build_machine_agent_runner(
-        {"": machine_agent.StateOverlay({}, "full")}, tmp_path, tmp_path / "tr"
+    runner = agent.build_machine_agent_runner(
+        {"": agent.StateOverlay({}, "full")}, tmp_path, tmp_path / "tr"
     )
     res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="agent"), events_log)
     assert res.reason == "timeout"
@@ -1203,7 +1203,7 @@ def test_create_failure_end_reason_names_the_failure(
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
     end = next(e for e in events if e["type"] == "session.end")
     assert end["all_passed"] is False
-    word, detail = _session_status.status_word(
+    word, detail = session_status.status_word(
         finished=True, all_passed=False, end_reason=end["reason"]
     )
     assert word == "failed"
@@ -1248,8 +1248,8 @@ def test_create_runs_the_shared_isolation_preflight(
         models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
     )
 
-    def _load(*_a: object, **_k: object) -> _layer_data.EffectiveConfig:
-        return _layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
+    def _load(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
+        return layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _keys_ok(*_a: object, **_k: object) -> None:
         return None
@@ -1269,8 +1269,8 @@ def test_create_runs_the_shared_isolation_preflight(
         return "full"
 
     monkeypatch.setattr(layer, "load_effective", _load)
-    monkeypatch.setattr(_setup, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(_setup, "detect_env", _env)
+    monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
+    monkeypatch.setattr(session_setup, "detect_env", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     assert main(["machine", "create", "a nightly loop"]) == 2
     err = capsys.readouterr().err
@@ -1302,7 +1302,7 @@ def test_a_structural_failure_still_reports_the_scripts_lint_problems(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     code = main(["machine", "create", "--max-attempts", "2", "Doomed draft"])
     assert code == 1
     retry_prompt = seen_prompts[1]
@@ -1325,7 +1325,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     seen: list[bool] = []
 
     def fake_build(
-        overlays: dict[str, machine_agent.StateOverlay],
+        overlays: dict[str, agent.StateOverlay],
         root: pathlib.Path,
         transcript_dir: pathlib.Path,
         **_kw: object,
@@ -1340,7 +1340,7 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user"]) == 0
     assert captured, "runner was never invoked"
     req, root, cfg = captured[0]
@@ -1447,7 +1447,7 @@ def test_an_operator_stop_ends_create_instead_of_retrying(
 
         return run
 
-    monkeypatch.setattr(machine_agent, "build_machine_agent_runner", fake_build)
+    monkeypatch.setattr(agent, "build_machine_agent_runner", fake_build)
     assert main(["machine", "create", "Greet the user", "--max-attempts", "3"]) == 1
     assert attempts == 1
     assert "no valid machine after 1 attempt(s)" in capsys.readouterr().err

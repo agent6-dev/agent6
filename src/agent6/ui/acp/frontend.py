@@ -16,11 +16,11 @@ import time
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import budget, event_log, kinds
+from agent6 import budget, kinds
 from agent6.app import frontend
 from agent6.config import Config
-from agent6.harness import _snapshot, loop
-from agent6.sessions import ipc, layout, process
+from agent6.harness import loop, loop_snapshot
+from agent6.sessions import event_log, ipc, layout, process
 from agent6.tools import operator_prompts
 from agent6.ui import keymap, steer
 
@@ -214,7 +214,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
 
     def _no_ask_repl(
         _wf: loop.Harness, _budget: budget.BudgetTracker, _layout: layout.SessionLayout, _task: str
-    ) -> _snapshot.SessionResult:
+    ) -> loop_snapshot.SessionResult:
         raise RuntimeError("the editor prompts an ACP session; the ask REPL is not used")
 
     claimed: list[pathlib.Path] = []

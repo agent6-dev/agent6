@@ -9,13 +9,13 @@ from typing import Any
 from unittest import mock
 
 from agent6.config import Config
-from agent6.harness import _chain, _conversation, _finish_gates, _loop_state, loop
+from agent6.harness import finish_gates, loop, loop_conversation, loop_state, run_chain
 
 
 def _wf(**kw: Any) -> loop.Harness:
     kw.setdefault("state_dir", pathlib.Path("/tmp/state"))
     return loop.Harness(
-        chain=_chain.RunChain(pathlib.Path("/tmp")),
+        chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None),
@@ -24,12 +24,12 @@ def _wf(**kw: Any) -> loop.Harness:
     )
 
 
-def _capture(tool_input: dict[str, Any]) -> _finish_gates.FinishCall:
+def _capture(tool_input: dict[str, Any]) -> finish_gates.FinishCall:
     wf = _wf()
-    turn = _loop_state.TurnState(
-        number=1, resp=mock.MagicMock(), assistant=_conversation.AssistantMessage((), ())
+    turn = loop_state.TurnState(
+        number=1, resp=mock.MagicMock(), assistant=loop_conversation.AssistantMessage((), ())
     )
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     wf._capture_finish(state, turn, "finish_session", tool_input)  # pyright: ignore[reportPrivateUsage]
     assert turn.finish is not None
     return turn.finish

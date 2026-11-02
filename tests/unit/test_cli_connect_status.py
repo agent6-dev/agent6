@@ -13,10 +13,10 @@ import tomllib
 import httpx2
 import pytest
 
-from agent6 import paths, secret_store
-from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry
-from agent6.providers import _oauth_protocol, _transport, oauth
-from agent6.ui.cli import _connect_status, main
+from agent6 import paths
+from agent6.config import ChatGPTProviderEntry, OpenAIProviderEntry, secret_store
+from agent6.providers import oauth, oauth_protocol, transport
+from agent6.ui.cli import connect_status, main
 
 
 @pytest.fixture
@@ -77,7 +77,7 @@ def test_status_probes_keys_and_command_tokens(
         return httpx2.Response(response, json={"data": {}}, request=httpx2.Request(method, url))
 
     monkeypatch.setattr(subprocess, "run", run)
-    monkeypatch.setattr(_transport, "http_request", request)
+    monkeypatch.setattr(transport, "http_request", request)
     assert main(["connect", "--status"]) == 0
     output = capsys.readouterr()
     assert output.out.splitlines()[1].endswith(expected)
@@ -123,7 +123,7 @@ def test_status_lists_with_bound_bearer_without_refresh_or_exchange(
         else OpenAIProviderEntry.model_validate(raw)
     )
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant("access-secret", "refresh-secret", 3600), entry, now=1000
+        oauth_protocol.TokenGrant("access-secret", "refresh-secret", 3600), entry, now=1000
     )
     grant = dataclasses.replace(
         grant,
@@ -150,7 +150,7 @@ def test_status_lists_with_bound_bearer_without_refresh_or_exchange(
             response, json={"data": [], "models": []}, request=httpx2.Request(method, url)
         )
 
-    monkeypatch.setattr(_transport, "http_request", request)
+    monkeypatch.setattr(transport, "http_request", request)
     assert main(["connect", "--status", "work"]) == 0
     output = capsys.readouterr()
     row = " ".join(output.out.splitlines()[1].split())
@@ -225,7 +225,7 @@ def test_status_skips_without_credentials_or_listing(
     def forbidden(*_args: object, **_kwargs: object) -> None:
         pytest.fail("a skipped provider must not send a request")
 
-    monkeypatch.setattr(_transport, "http_request", forbidden)
+    monkeypatch.setattr(transport, "http_request", forbidden)
     assert main(["connect", "--status"]) == 0
     assert capsys.readouterr().out.splitlines()[1].endswith(f"skipped: {reason}")
 
@@ -245,9 +245,9 @@ def test_status_token_life_uses_the_largest_two_units(
     """A token's life uses days and hours, hours and minutes, minutes, or expired."""
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     grant = oauth.stored_grant_for(
-        _oauth_protocol.TokenGrant("access-secret", "refresh-secret", remaining), entry, now=1000
+        oauth_protocol.TokenGrant("access-secret", "refresh-secret", remaining), entry, now=1000
     )
     secret_store.save_oauth_grant("work", grant)
     monkeypatch.setattr(time, "time", lambda: 1000.0)
-    _, state = _connect_status._credential_status("work", entry, secret_store.load_secrets())
+    _, state = connect_status._credential_status("work", entry, secret_store.load_secrets())
     assert state == f"ok {expected}"

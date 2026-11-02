@@ -23,31 +23,32 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import errors, event_log, evidence, kinds, memory, paths, skills
+from agent6 import errors, evidence, kinds, paths
 from agent6.config import Config
+from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
 from agent6.sandbox import jail, jail_session, tool_paths
-from agent6.sessions import ipc
+from agent6.sessions import event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
-    _arguments,
-    _command_tools,
-    _control_tools,
-    _dag_tools,
-    _fs_tools,
-    _nav_tools,
-    _result_format,
-    _skill_tools,
+    arguments,
     background,
+    command_tools,
+    control_tools,
+    dag_tools,
     fetch,
+    fs_tools,
     index,
     mcp_client,
+    nav_tools,
     operator_prompts,
+    result_format,
     results,
     schema,
     sessions,
+    skill_tools,
+    tool_errors,
 )
-from agent6.tools import errors as tools_errors
 from agent6.tools import policy as tools_policy
 from agent6.vcs import git_read
 
@@ -177,26 +178,26 @@ class ToolDispatcher:
         # Two threads racing the lazy open would leak a jail process and its namespaces.
         self._session_lock = threading.Lock()
         self._session_dir = session_dir
-        self._jail_access = _command_tools.JailAccess(
+        self._jail_access = command_tools.JailAccess(
             get_policy=self._jail_policy, get_session=self._run_session, net_for=self._net_for
         )
         self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {
-            schema.Agent6DocsInput.TOOL_NAME: _fs_tools.agent6_docs,
-            schema.ReadFileInput.TOOL_NAME: lambda raw: _fs_tools.read_file(self._ws, raw),
-            schema.ListDirInput.TOOL_NAME: lambda raw: _fs_tools.list_dir(self._ws, raw),
-            schema.OutlineInput.TOOL_NAME: lambda raw: _nav_tools.outline(
+            schema.Agent6DocsInput.TOOL_NAME: fs_tools.agent6_docs,
+            schema.ReadFileInput.TOOL_NAME: lambda raw: fs_tools.read_file(self._ws, raw),
+            schema.ListDirInput.TOOL_NAME: lambda raw: fs_tools.list_dir(self._ws, raw),
+            schema.OutlineInput.TOOL_NAME: lambda raw: nav_tools.outline(
                 self._ws, self.symbol_index, raw
             ),
-            schema.FindDefinitionInput.TOOL_NAME: lambda raw: _nav_tools.find_definition(
+            schema.FindDefinitionInput.TOOL_NAME: lambda raw: nav_tools.find_definition(
                 self._ws, self.symbol_index, raw
             ),
-            schema.FindReferencesInput.TOOL_NAME: lambda raw: _nav_tools.find_references(
+            schema.FindReferencesInput.TOOL_NAME: lambda raw: nav_tools.find_references(
                 self._ws, self.symbol_index, raw
             ),
-            schema.ApplyEditInput.TOOL_NAME: lambda raw: _fs_tools.apply_edit(
+            schema.ApplyEditInput.TOOL_NAME: lambda raw: fs_tools.apply_edit(
                 self._ws, self._config, self.extra_protect_paths, self._index, raw
             ),
-            schema.ApplyPatchInput.TOOL_NAME: lambda raw: _fs_tools.apply_patch(
+            schema.ApplyPatchInput.TOOL_NAME: lambda raw: fs_tools.apply_patch(
                 self._ws, self._config, self.extra_protect_paths, self._index, raw
             ),
             schema.RunVerifyInput.TOOL_NAME: self._run_verify,
@@ -206,20 +207,20 @@ class ToolDispatcher:
             schema.ReadBackgroundInput.TOOL_NAME: self._read_background,
             schema.StopBackgroundInput.TOOL_NAME: self._stop_background,
             schema.RunMetricInput.TOOL_NAME: self._run_metric,
-            schema.FinishSessionInput.TOOL_NAME: _control_tools.finish_session,
-            schema.FinishPlanningInput.TOOL_NAME: _control_tools.finish_planning,
+            schema.FinishSessionInput.TOOL_NAME: control_tools.finish_session,
+            schema.FinishPlanningInput.TOOL_NAME: control_tools.finish_planning,
             schema.AskUserInput.TOOL_NAME: self._ask_user,
             schema.ListFindingsInput.TOOL_NAME: self._list_findings,
-            schema.DagAddTaskInput.TOOL_NAME: lambda raw: _dag_tools.add_task(
+            schema.DagAddTaskInput.TOOL_NAME: lambda raw: dag_tools.add_task(
                 self._curator, self._run_root_node_id, raw
             ),
-            schema.DagUpdateTaskInput.TOOL_NAME: lambda raw: _dag_tools.update_task(
+            schema.DagUpdateTaskInput.TOOL_NAME: lambda raw: dag_tools.update_task(
                 self._curator, raw
             ),
-            schema.DagListTasksInput.TOOL_NAME: lambda raw: _dag_tools.list_tasks(
+            schema.DagListTasksInput.TOOL_NAME: lambda raw: dag_tools.list_tasks(
                 self._curator, raw
             ),
-            schema.UseSkillInput.TOOL_NAME: lambda raw: _skill_tools.use_skill(
+            schema.UseSkillInput.TOOL_NAME: lambda raw: skill_tools.use_skill(
                 self._ws, self.resolved_skills, raw
             ),
         }
@@ -335,7 +336,7 @@ class ToolDispatcher:
         """
         # The finish tools' `summary` is the human end-of-run statement: kept whole.
         max_chars = 2000 if name in ("finish_session", "finish_planning") else 200
-        preview = _result_format.truncate_args(raw_input, max_value_chars=max_chars)
+        preview = result_format.truncate_args(raw_input, max_value_chars=max_chars)
         # Concurrent review seats interleave events, and name-based pairing cross-stamps calls.
         cid = next(self._call_seq)
         self._emit("tool.call", name=name, args=preview, call_id=cid)
@@ -343,19 +344,19 @@ class ToolDispatcher:
         self._gating.call_id = cid
         try:
             result = self._dispatch_inner(name, raw_input)
-        except tools_errors.ToolError as exc:
+        except tool_errors.ToolError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
-        except tools_errors.OperatorCommandUnexecutableError as exc:
+        except tool_errors.OperatorCommandUnexecutableError as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
             raise
         except pydantic.ValidationError as exc:
-            message = _arguments.invalid_arguments(exc)
+            message = arguments.invalid_arguments(exc)
             self._emit("tool.result", name=name, ok=False, summary=message, call_id=cid)
-            raise tools_errors.ToolError(message) from exc
+            raise tool_errors.ToolError(message) from exc
         except Exception as exc:
             self._emit("tool.result", name=name, ok=False, summary=str(exc), call_id=cid)
-            raise tools_errors.ToolError(f"failed: {exc}") from exc
+            raise tool_errors.ToolError(f"failed: {exc}") from exc
         finally:
             self._gating.call_id = outer
         self._emit(
@@ -364,7 +365,7 @@ class ToolDispatcher:
             ok=True,
             summary=result.summary(),
             call_id=cid,
-            **_result_format.output_tails(name, result),
+            **result_format.output_tails(name, result),
         )
         return result
 
@@ -384,23 +385,23 @@ class ToolDispatcher:
         if name.startswith(mcp_client.MCP_TOOL_PREFIX):
             if not kinds.session_kind(self._mode).edits:
                 # An MCP tool cannot be classified as read-only, so every non-run mode refuses it.
-                raise tools_errors.ToolError(f"not available in {self._mode} mode (run mode only)")
+                raise tool_errors.ToolError(f"not available in {self._mode} mode (run mode only)")
             if self._mcp_manager is None:
-                raise tools_errors.ToolError("MCP is not configured")
+                raise tool_errors.ToolError("MCP is not configured")
             self._approve_mcp_call(name, raw_input)
             try:
                 return results.RawResult(self._mcp_manager.call(name, raw_input))
             except mcp_client.MCPError as exc:
-                raise tools_errors.ToolError(str(exc)) from exc
+                raise tool_errors.ToolError(str(exc)) from exc
         if name not in self._handlers:
-            raise tools_errors.ToolError(f"Unknown tool: {name}")
+            raise tool_errors.ToolError(f"Unknown tool: {name}")
         if name == schema.RunVerifyInput.TOOL_NAME and self.tool_is_withheld(name):
             return self.run_verify()  # records the denied attempt as evidence, then refuses
         if (refusal := self._tool_refusal(name)) is not None:
-            raise tools_errors.ToolError(refusal)
+            raise tool_errors.ToolError(refusal)
         if name not in schema.mode_tools(self._mode).permitted:
             # The backstop: a hallucinated name must not mutate the repo from a read-only mode.
-            raise tools_errors.ToolError(f"not available in {self._mode} mode")
+            raise tool_errors.ToolError(f"not available in {self._mode} mode")
         return self._run_handler(name, raw_input)
 
     def _run_handler(self, name: str, raw_input: dict[str, Any]) -> results.ToolResult:
@@ -424,7 +425,7 @@ class ToolDispatcher:
             raw_len = len(raw) if isinstance(raw, str) else 0
             if raw_len > 20_000:
                 # The arguments ran away to the output-token ceiling; "resend" would repeat that.
-                raise tools_errors.ToolError(
+                raise tool_errors.ToolError(
                     "the arguments were cut off mid-generation"
                     f" ({raw_len // 1000} KB, truncated before the JSON closed)."
                     " Do NOT resend the same call. Emit a much smaller call:"
@@ -432,14 +433,14 @@ class ToolDispatcher:
                     " under a couple hundred characters), and split broad work"
                     " into several small calls."
                 )
-            raise tools_errors.ToolError(
+            raise tool_errors.ToolError(
                 "the arguments were not a JSON object. Resend the call with a"
                 " single valid JSON object of arguments."
             )
         try:
             return self._handlers[name](raw_input)
         except pydantic.ValidationError as exc:
-            coerced = _arguments.coerce_stringified_args(raw_input, exc)
+            coerced = arguments.coerce_stringified_args(raw_input, exc)
             if coerced is None:
                 raise
             try:
@@ -531,9 +532,9 @@ class ToolDispatcher:
         server, _tool = mcp_client.split_tool_name(name)
         entry = self._config.mcp.servers.get(server)
         if entry is None:
-            raise tools_errors.ToolError(f"unknown MCP server in {name!r}")
+            raise tool_errors.ToolError(f"unknown MCP server in {name!r}")
         if self.mcp_denied(server):
-            raise tools_errors.ToolError(f"not available ({server!r} was denied for this session)")
+            raise tool_errors.ToolError(f"not available ({server!r} was denied for this session)")
         if entry.approve == "allow":
             return
         args = json.dumps(raw_input, ensure_ascii=False, sort_keys=True)
@@ -547,7 +548,7 @@ class ToolDispatcher:
                 f" ...[{len(args)} chars total; full payload: {full}]"
             )
         if not self._approve(f"Allow {name}: {args}", scope=f"{ipc.MCP_SCOPE_PREFIX}{server}"):
-            raise tools_errors.ToolDeniedError(
+            raise tool_errors.ToolDeniedError(
                 f"{name} not approved (set [mcp.servers.{server}].approve = 'allow' to stop asking)"
             )
 
@@ -559,7 +560,7 @@ class ToolDispatcher:
         finally:
             self.operator_wait_s += time.monotonic() - started
 
-    def _not_approved(self, name: str) -> tools_errors.ToolDeniedError:
+    def _not_approved(self, name: str) -> tool_errors.ToolDeniedError:
         """Return the refusal for an unapproved command.
 
         The gate cannot tell a human "no" from an unattended run's auto-deny, so the message
@@ -572,10 +573,10 @@ class ToolDispatcher:
             The error to raise.
         """
         if self._session_dir is not None and ipc.stop_request_pending(self._session_dir):
-            return tools_errors.ToolDeniedError(
+            return tool_errors.ToolDeniedError(
                 f"{name} not run: the run was asked to stop while awaiting approval"
             )
-        return tools_errors.ToolDeniedError(f"{name} not approved (sandbox.run_commands='ask')")
+        return tool_errors.ToolDeniedError(f"{name} not approved (sandbox.run_commands='ask')")
 
     def _run_verify(self, raw: dict[str, Any]) -> results.ExecResult:
         """Return the gate's outcome, run at the model's asking."""
@@ -631,19 +632,19 @@ class ToolDispatcher:
         started = time.monotonic()
         try:
             if self.command_policy() == "deny":
-                raise tools_errors.ToolDeniedError("not available (run_commands = 'deny')")
+                raise tool_errors.ToolDeniedError("not available (run_commands = 'deny')")
             if not self._config.harness.verify_command:
-                raise tools_errors.ToolError("no verify command configured")
+                raise tool_errors.ToolError("no verify command configured")
             self._approve_command("run_verify_command", argv)
-            res = _command_tools.run_argv_in_jail(
+            res = command_tools.run_argv_in_jail(
                 argv,
                 label="verify_command",
                 timeout_s=timeout_s,
                 access=self._jail_access,
             )
-        except (tools_errors.ToolError, KeyboardInterrupt) as exc:
+        except (tool_errors.ToolError, KeyboardInterrupt) as exc:
             outcome = "interrupted" if isinstance(exc, KeyboardInterrupt) else "unavailable"
-            if isinstance(exc, tools_errors.ToolDeniedError):
+            if isinstance(exc, tool_errors.ToolDeniedError):
                 outcome = "denied"
             record = dataclasses.replace(
                 record,
@@ -682,7 +683,7 @@ class ToolDispatcher:
         res = dataclasses.replace(res, command=argv, verification=record)
         self._emit("verify.end", **dataclasses.asdict(record))
         if res.exec_failed:
-            raise tools_errors.OperatorCommandUnexecutableError(
+            raise tool_errors.OperatorCommandUnexecutableError(
                 f"verify_command {list(argv)} could not be executed in the sandbox: "
                 f"{res.stderr}. The jail PATH is /usr/bin:/bin plus the standard bin "
                 "dirs that exist (/usr/local/bin, /usr/local/sbin, ~/.local/bin, "
@@ -724,7 +725,7 @@ class ToolDispatcher:
             ToolError: The jail is unavailable.
         """
         self._approve_command("setup_command", argv)
-        res, _timeout = _command_tools.run_argv_raw(
+        res, _timeout = command_tools.run_argv_raw(
             argv,
             label="setup_command",
             access=self._jail_access,
@@ -752,13 +753,13 @@ class ToolDispatcher:
         args = schema.RunCommandInput.model_validate(raw)
         self._approve_command("run_command", args.argv)
         if args.background:
-            return _command_tools.start_detached(
+            return command_tools.start_detached(
                 args.argv,
                 mode=self._mode,
                 get_background=self._background,
                 access=self._jail_access,
             )
-        return _command_tools.run_model_command(
+        return command_tools.run_model_command(
             args.argv,
             mode=self._mode,
             shells=self._shells,
@@ -807,7 +808,7 @@ class ToolDispatcher:
         Returns:
             The roster, with the command's output when the call gives an `id`.
         """
-        return _command_tools.read_background(
+        return command_tools.read_background(
             raw,
             get_background=self._background,
             checkin=self._config.harness.command_checkin_s,
@@ -823,7 +824,7 @@ class ToolDispatcher:
         Returns:
             The roster after the stop.
         """
-        return _command_tools.stop_background(raw, get_background=self._background)
+        return command_tools.stop_background(raw, get_background=self._background)
 
     def _background(self) -> background.BackgroundShells:
         """Return the background roster.
@@ -835,7 +836,7 @@ class ToolDispatcher:
             ToolError: No run directory was wired.
         """
         if self._shells is None:
-            raise tools_errors.ToolError("background commands need a run directory; none was wired")
+            raise tool_errors.ToolError("background commands need a run directory; none was wired")
         return self._shells
 
     def _fetch(self, raw: dict[str, Any]) -> results.FetchResult:
@@ -855,20 +856,20 @@ class ToolDispatcher:
         try:
             checked = fetch.check_url(args.url)
         except fetch.FetchRefusedError as exc:
-            raise tools_errors.ToolError(str(exc)) from exc
+            raise tool_errors.ToolError(str(exc)) from exc
         # The list is the standing approval; a GET can carry data out, so an unnamed host is the
         # operator's call. Nothing has resolved yet: the DNS query itself carries the name out.
         if not fetch.host_allowed(
             checked.host, self._config.sandbox.fetch_approved_hosts
         ) and not self._approve(f"Allow fetch: {checked.prompt()}"):
-            raise tools_errors.ToolDeniedError(
+            raise tool_errors.ToolDeniedError(
                 f"fetch not approved for {checked.host}"
                 " (add it to sandbox.fetch_approved_hosts to allow it)"
             )
         try:
             got = fetch.fetch_url(checked)
         except fetch.FetchRefusedError as exc:
-            raise tools_errors.ToolError(str(exc)) from exc
+            raise tool_errors.ToolError(str(exc)) from exc
         return results.FetchResult(
             url=got.url,
             status=got.status,
@@ -891,13 +892,13 @@ class ToolDispatcher:
         """
         args = schema.ReadSessionInput.model_validate(raw)
         if self._state_dir is None:
-            raise tools_errors.ToolError("read_session needs the project state dir; none was wired")
+            raise tool_errors.ToolError("read_session needs the project state dir; none was wired")
         lines = sessions.roster(self._state_dir, args.query).lines()
         if not args.id:
             return results.SessionsResult(sessions=lines)
         layout = sessions_layout.session_layout(self._state_dir, args.id)
         if layout is None:
-            raise tools_errors.ToolError(f"no session {args.id!r} in this project")
+            raise tool_errors.ToolError(f"no session {args.id!r} in this project")
         return results.SessionsResult(
             sessions=lines, conversation=sessions.conversation(layout, max_chars=args.max_chars)
         )
@@ -916,9 +917,7 @@ class ToolDispatcher:
         """
         args = schema.ListFindingsInput.model_validate(raw)
         if self._findings is None:
-            raise tools_errors.ToolError(
-                "list_findings needs the session's journal; none was wired"
-            )
+            raise tool_errors.ToolError("list_findings needs the session's journal; none was wired")
         listed = dataclasses.replace(
             self._findings(),
             session_id=self.session_id,
@@ -992,18 +991,18 @@ class ToolDispatcher:
         schema.RunMetricInput.model_validate(raw)
         metric_cfg = self._config.harness.metric
         if metric_cfg is None:
-            raise tools_errors.ToolError("no [harness.metric] configured")
+            raise tool_errors.ToolError("no [harness.metric] configured")
         argv = metric_cfg.command
         self._approve_command("run_metric_command", argv)
         self._emit("metric.start", cmd=list(argv))
-        outcome, timeout_s = _command_tools.run_argv_raw(
+        outcome, timeout_s = command_tools.run_argv_raw(
             argv,
             label="metric_command",
             timeout_s=self._config.harness.verify_timeout_s,
             access=self._jail_access,
         )
         if outcome.exec_failed:
-            raise tools_errors.OperatorCommandUnexecutableError(
+            raise tool_errors.OperatorCommandUnexecutableError(
                 f"metric_command {list(argv)} could not be executed in the sandbox: "
                 f"{outcome.stderr}. See run_verify_command's note: PATH is /usr/bin:/bin "
                 "plus the standard bin dirs; install the tool into one of those on the "
@@ -1011,10 +1010,10 @@ class ToolDispatcher:
                 "via sandbox.extra_read_paths."
             )
         # Scored from the unclipped outcome: the display clip's marker matches a loose pattern.
-        score = _result_format.parse_metric_score(
+        score = result_format.parse_metric_score(
             outcome.stdout, outcome.stderr, pattern=metric_cfg.pattern
         )
-        res = _result_format.exec_result(outcome, timeout_s=timeout_s)
+        res = result_format.exec_result(outcome, timeout_s=timeout_s)
         self._emit(
             "metric.end",
             cmd=list(argv),

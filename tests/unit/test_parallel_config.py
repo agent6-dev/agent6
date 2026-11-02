@@ -10,7 +10,7 @@ import tomllib
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import _workdirs, confine
+from agent6.app import confine, workdirs
 from agent6.config import Config, ParallelConfig, layer
 from agent6.harness import subrun
 
@@ -64,7 +64,7 @@ def test_lane_config_carries_the_protect_git_word(repo: pathlib.Path, word: str)
         lane=1, session_id="fan-l1", workdir=repo.parent / "lanes" / "lane-1", route=None
     )
 
-    config_path = _workdirs.write_lane_config(
+    config_path = workdirs.write_lane_config(
         origin.config, spec, explicit_leaves=origin.explicit_leaves
     )
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
@@ -91,7 +91,7 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
         lane=1, session_id="fan-l1", workdir=repo.parent / "lanes" / "lane-1", route=None
     )
 
-    config_path = _workdirs.write_lane_config(
+    config_path = workdirs.write_lane_config(
         origin.config, spec, explicit_leaves=origin.explicit_leaves
     )
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
@@ -118,7 +118,7 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
         route=kinds.ModelRoute("p", "lane-model"),
     )
 
-    config_path = _workdirs.write_lane_config(cfg, spec, explicit_leaves=origin.explicit_leaves)
+    config_path = workdirs.write_lane_config(cfg, spec, explicit_leaves=origin.explicit_leaves)
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 

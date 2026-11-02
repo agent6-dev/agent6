@@ -6,7 +6,7 @@ import json
 import pathlib
 
 from agent6 import terminal
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.viewmodel import receipt
 
 
@@ -20,7 +20,7 @@ def cmd_receipt(session_id: str, *, as_json: bool) -> int:
     Returns:
         Zero on inspection, or 2 when no session matches.
     """
-    saved = _common.resolve_target(session_id)
+    saved = common.resolve_target(session_id)
     if saved is None:
         return 2
     view = receipt.read_receipt(saved.session_dir, pathlib.Path.cwd())

@@ -17,7 +17,7 @@ import time
 import pytest
 
 from agent6.sessions import process
-from agent6.ui.cli import _live
+from agent6.ui.cli import live
 
 
 class _Dashboard:
@@ -57,9 +57,9 @@ def test_the_run_starts_once_the_dashboard_is_a_live_front_end(
     def _popen(*_a: object, **_k: object) -> _Dashboard:
         return _Dashboard(session_dir)
 
-    monkeypatch.setattr(_live.subprocess, "Popen", _popen)
+    monkeypatch.setattr(live.subprocess, "Popen", _popen)
     started = time.monotonic()
-    with _live.tui_session(session_dir, enabled=True):
+    with live.tui_session(session_dir, enabled=True):
         assert process.frontend_is_live(session_dir), "the block ran before the dashboard was up"
     assert time.monotonic() - started < 4.0, "the wait ends at the registration, not a deadline"
 
@@ -81,9 +81,9 @@ def test_a_dashboard_that_never_registers_does_not_hold_the_run(
     def _popen(*_a: object, **_k: object) -> _Gone:
         return _Gone(session_dir)
 
-    monkeypatch.setattr(_live.subprocess, "Popen", _popen)
+    monkeypatch.setattr(live.subprocess, "Popen", _popen)
     started = time.monotonic()
-    with _live.tui_session(session_dir, enabled=True):
+    with live.tui_session(session_dir, enabled=True):
         pass
     assert time.monotonic() - started < 2.0
 
@@ -115,7 +115,7 @@ def test_a_dashboard_slower_than_five_seconds_is_still_waited_for(
     def _popen(*_a: object, **_k: object) -> _Dashboard:
         return _Dashboard(session_dir)
 
-    monkeypatch.setattr(_live.subprocess, "Popen", _popen)
-    monkeypatch.setattr(_live, "time", _Clock())
-    with _live.tui_session(session_dir, enabled=True):
+    monkeypatch.setattr(live.subprocess, "Popen", _popen)
+    monkeypatch.setattr(live, "time", _Clock())
+    with live.tui_session(session_dir, enabled=True):
         assert process.frontend_is_live(session_dir), "the block ran before the dashboard was up"

@@ -29,36 +29,6 @@ Modules:
 
 from __future__ import annotations
 
-from agent6.viewmodel._session_log import (  # noqa: ICN003  # re-export
-    LogScan,
-    scan_session_log,
-)
-from agent6.viewmodel._session_status import (  # noqa: ICN003  # re-export
-    LIVE_STATUS_WORDS,
-    StatusFacts,
-    died_without_end,
-    produced_result,
-    status_for_session_dir,
-    status_word,
-    task_snippet,
-)
-from agent6.viewmodel._state_types import (  # noqa: ICN003  # re-export
-    ApprovalPrompt,
-    BudgetView,
-    CommitStep,
-    Question,
-    QuestionPrompt,
-    RoleCall,
-    SessionState,
-    TaskNodeView,
-    ToolCallView,
-    approval_parts,
-)
-from agent6.viewmodel._state_view import (  # noqa: ICN003  # re-export
-    context_fill,
-    session_state_as_dict,
-    status_facts,
-)
 from agent6.viewmodel.events import event_epoch  # noqa: ICN003  # re-export
 from agent6.viewmodel.listing import (  # noqa: ICN003  # re-export
     SessionSummary,
@@ -93,6 +63,19 @@ from agent6.viewmodel.machine_state import (  # noqa: ICN003  # re-export
     verb_answer,
 )
 from agent6.viewmodel.policy import session_policy  # noqa: ICN003  # re-export
+from agent6.viewmodel.session_log import (  # noqa: ICN003  # re-export
+    LogScan,
+    scan_session_log,
+)
+from agent6.viewmodel.session_status import (  # noqa: ICN003  # re-export
+    LIVE_STATUS_WORDS,
+    StatusFacts,
+    died_without_end,
+    produced_result,
+    status_for_session_dir,
+    status_word,
+    task_snippet,
+)
 from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
     MAX_LOG_TAIL,
     apply_event,
@@ -102,6 +85,23 @@ from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
     open_approval_of,
     pending_questions,
     task_tree_views,
+)
+from agent6.viewmodel.state_types import (  # noqa: ICN003  # re-export
+    ApprovalPrompt,
+    BudgetView,
+    CommitStep,
+    Question,
+    QuestionPrompt,
+    RoleCall,
+    SessionState,
+    TaskNodeView,
+    ToolCallView,
+    approval_parts,
+)
+from agent6.viewmodel.state_view import (  # noqa: ICN003  # re-export
+    context_fill,
+    session_state_as_dict,
+    status_facts,
 )
 from agent6.viewmodel.tail import LogTail, tail_events  # noqa: ICN003  # re-export
 from agent6.viewmodel.transcript import (  # noqa: ICN003  # re-export

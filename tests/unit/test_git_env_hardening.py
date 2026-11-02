@@ -11,10 +11,10 @@ import subprocess
 import pytest
 
 from agent6 import child_env
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import Config
-from agent6.ui.cli import _ask, review_cmds, sessions_cmds, skills_cmds
-from agent6.vcs import _git_command, git_policy, git_read
+from agent6.ui.cli import ask, review_cmds, sessions_cmds, skills_cmds
+from agent6.vcs import git_command, git_policy, git_read
 
 
 @pytest.fixture(autouse=True)
@@ -39,8 +39,8 @@ def _captured_git_envs(
         seen.append(env if isinstance(env, dict) else dict(os.environ))
         return real(*args, **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(_git_command.subprocess, "Popen", spy)
-    _git_command.run(tmp_path, "status", "--porcelain", check=False)
+    monkeypatch.setattr(git_command.subprocess, "Popen", spy)
+    git_command.run(tmp_path, "status", "--porcelain", check=False)
     return seen
 
 
@@ -48,7 +48,7 @@ def test_a_configured_provider_key_is_stripped_from_gits_environment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-secret-should-not-reach-git")
-    _setup.apply_git_ops_policy(
+    session_setup.apply_git_ops_policy(
         Config.model_validate(
             {
                 "providers": {
@@ -67,7 +67,7 @@ def test_a_variable_that_is_not_a_provider_key_is_left_alone(
 ) -> None:
     monkeypatch.setenv("GIT_SSH_COMMAND", "ssh -i /home/me/.ssh/id_ed25519")
     monkeypatch.setenv("SOME_OTHER_TOKEN", "not-a-configured-key")
-    _setup.apply_git_ops_policy(
+    session_setup.apply_git_ops_policy(
         Config.model_validate(
             {
                 "providers": {
@@ -86,7 +86,7 @@ def test_no_providers_configured_strips_nothing(
 ) -> None:
     """Keys living only in secrets.toml never enter the environment; a same-named var stays."""
     monkeypatch.setenv("ANTHROPIC_API_KEY", "from-the-shell")
-    _setup.apply_git_ops_policy(Config())
+    session_setup.apply_git_ops_policy(Config())
     for env in _captured_git_envs(monkeypatch, tmp_path):
         assert env.get("ANTHROPIC_API_KEY") == "from-the-shell"
 
@@ -140,18 +140,18 @@ def test_shell_git_dir_cannot_redirect_host_reads(
         (directory / "file").write_text(f"{directory.name}\n")
         subprocess.run(["git", "add", "."], cwd=directory, check=True)
         subprocess.run(["git", "commit", "-qm", "base"], cwd=directory, check=True)
-    head = _git_command.run(root, "rev-parse", "HEAD").stdout.strip()
-    _git_command.run(root, "config", "filter.local.clean", "cat")
+    head = git_command.run(root, "rev-parse", "HEAD").stdout.strip()
+    git_command.run(root, "config", "filter.local.clean", "cat")
     if reader == "ask":
         (root / "file").write_text("changed\n")
     monkeypatch.setenv("GIT_DIR", str(foreign / ".git"))
 
     if reader == "runner":
-        assert _git_command.run(root, "rev-parse", "HEAD").stdout.strip() == head
+        assert git_command.run(root, "rev-parse", "HEAD").stdout.strip() == head
     elif reader == "drivers":
         assert "filter.local.clean=" in git_policy.repo_driver_overrides(root)
     elif reader == "ask":
-        diff = _ask._git_diff_text(root, "HEAD")[1]
+        diff = ask._git_diff_text(root, "HEAD")[1]
         assert "-repo\n+changed" in diff
     elif reader == "review":
         assert review_cmds._is_checked_out("git", root, head)
@@ -170,7 +170,7 @@ def test_explicit_git_environment_overrides_still_reach_the_child(
     (tmp_path / "file").write_text("content\n")
     monkeypatch.setenv("GIT_INDEX_FILE", str(tmp_path / "shell-index"))
     index = tmp_path / "private-index"
-    _git_command.run(tmp_path, "add", "file", env_extra={"GIT_INDEX_FILE": str(index)})
+    git_command.run(tmp_path, "add", "file", env_extra={"GIT_INDEX_FILE": str(index)})
     assert index.is_file()
     assert not (tmp_path / "shell-index").exists()
     assert not (tmp_path / ".git/index").exists()

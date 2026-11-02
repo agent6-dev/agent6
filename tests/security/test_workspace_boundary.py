@@ -21,7 +21,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.config import Config
-from agent6.tools import dispatch, errors
+from agent6.tools import dispatch, tool_errors
 
 _SECRET = "AWS_SECRET_ACCESS_KEY=leaked-xyz"
 
@@ -46,7 +46,7 @@ def _dispatch(root: pathlib.Path, cfg: Config, tool: str, args: dict[str, Any]) 
 
 def test_read_file_refuses_a_hidden_path(tmp_path: pathlib.Path) -> None:
     (tmp_path / ".env").write_text(_SECRET, encoding="utf-8")
-    with pytest.raises(errors.ToolError, match="hidden from this run"):
+    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
         _dispatch(tmp_path, _hiding(tmp_path, ".env"), "read_file", {"path": ".env"})
 
 
@@ -77,7 +77,7 @@ def test_apply_edit_refuses_to_write_a_hidden_path(tmp_path: pathlib.Path) -> No
     """
     secret = tmp_path / ".env"
     secret.write_text(_SECRET, encoding="utf-8")
-    with pytest.raises(errors.ToolError, match="hidden from this run"):
+    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
         _dispatch(
             tmp_path,
             _hiding(tmp_path, ".env"),
@@ -116,7 +116,7 @@ def test_the_boundary_holds_at_every_isolation_level(
     (tmp_path / ".env").write_text(_SECRET, encoding="utf-8")
     d = _dispatcher(tmp_path, _hiding(tmp_path, ".env"), isolation)
     try:
-        with pytest.raises(errors.ToolError, match="hidden from this run"):
+        with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
             d.dispatch("read_file", {"path": ".env"})
     finally:
         d.close()
@@ -138,7 +138,7 @@ def test_agent6s_own_secrets_are_denied_when_the_workspace_contains_them(
     cfg_dir.mkdir(parents=True)
     (cfg_dir / "secrets.toml").write_text('[fake]\nKEY="fake-not-real"\n', encoding="utf-8")
 
-    with pytest.raises(errors.ToolError, match="hidden from this run"):
+    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
         _dispatch(root, Config(), "read_file", {"path": ".config/agent6/secrets.toml"})
 
 
@@ -158,7 +158,7 @@ def test_the_config_a_later_run_loads_cannot_be_written(
     conf = cfg_dir / "config.toml"
     conf.write_text('[sandbox]\nisolation = "full"\n', encoding="utf-8")
 
-    with pytest.raises(errors.ToolError, match="hidden from this run"):
+    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
         _dispatch(
             root,
             Config(),
@@ -274,7 +274,7 @@ def test_an_absolute_path_outside_every_grant_is_refused(
     outside.mkdir()
     (outside / "secret.txt").write_text("NOT granted\n", encoding="utf-8")
     path = "/etc/passwd" if target.startswith("/") else str(outside / "secret.txt")
-    with pytest.raises(errors.ToolError, match="Absolute"):
+    with pytest.raises(tool_errors.ToolError, match="Absolute"):
         _dispatch(root, _granting(read=sdk), "read_file", {"path": path})
 
 
@@ -286,7 +286,7 @@ def test_a_read_grant_is_not_writable(tmp_path: pathlib.Path) -> None:
     sdk.mkdir()
     target = sdk / "h.h"
     target.write_text("granted header\n", encoding="utf-8")
-    with pytest.raises(errors.ToolError, match="Absolute"):
+    with pytest.raises(tool_errors.ToolError, match="Absolute"):
         _dispatch(
             root,
             _granting(read=sdk),
@@ -332,7 +332,7 @@ def test_denied_beats_a_grant(tmp_path: pathlib.Path) -> None:
             }
         }
     )
-    with pytest.raises(errors.ToolError, match="hidden from this run"):
+    with pytest.raises(tool_errors.ToolError, match="hidden from this run"):
         _dispatch(root, cfg, "read_file", {"path": str(granted / "keys" / "id_rsa")})
 
 

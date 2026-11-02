@@ -153,21 +153,21 @@ def test_a_machine_instance_is_not_reachable_as_a_session(
     A session lookup that reached the INSTANCES dir would let `sessions rm` delete a running
     machine's state, so the buckets must never resolve there.
     """
-    from agent6.ui.cli import _common
+    from agent6.ui.cli import common
 
     monkeypatch.chdir(tmp_path)
     state = paths.state_dir(tmp_path)
     (state / "machines" / "tiny").mkdir(parents=True)
 
     with pytest.raises(Exception, match="no session matches"):
-        _common.resolve_session_layout(tmp_path, "tiny")
+        common.resolve_session_layout(tmp_path, "tiny")
 
 
 def test_a_machine_draft_is_reachable_as_a_session(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The converse: an authoring draft IS a session, so an id resolves to it."""
-    from agent6.ui.cli import _common
+    from agent6.ui.cli import common
 
     monkeypatch.chdir(tmp_path)
     state = paths.state_dir(tmp_path)
@@ -176,6 +176,6 @@ def test_a_machine_draft_is_reachable_as_a_session(
         "{}\n", encoding="utf-8"
     )
 
-    layout = _common.resolve_session_layout(tmp_path, "brave-oak-AAAAAA")
+    layout = common.resolve_session_layout(tmp_path, "brave-oak-AAAAAA")
     assert layout.subdir == "machines"
     assert layout.session_dir == sessions_layout.bucket_dir(state, "machines") / "brave-oak-AAAAAA"

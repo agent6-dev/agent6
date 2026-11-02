@@ -16,10 +16,9 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import event_log
 from agent6.app import btw
 from agent6.sandbox import jail
-from agent6.sessions import layout
+from agent6.sessions import event_log, layout
 from agent6.ui import spawn
 
 # A poll costs one status fold off the session dir.

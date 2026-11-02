@@ -13,15 +13,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 
-from agent6.providers import _headers
-from agent6.providers._claude_code_wire import CLAUDE_CODE_PERSIST_BYTES, result_text  # noqa: ICN003  # re-export
+from agent6.providers import request_headers
 from agent6.providers.anthropic import AnthropicProvider  # noqa: ICN003  # re-export
 from agent6.providers.chatgpt import ChatGPTProvider  # noqa: ICN003  # re-export
 from agent6.providers.claude_code import ClaudeCodeProvider  # noqa: ICN003  # re-export
+from agent6.providers.claude_code_wire import CLAUDE_CODE_PERSIST_BYTES, result_text  # noqa: ICN003  # re-export
 from agent6.providers.openai import OpenAIProvider  # noqa: ICN003  # re-export
-from agent6.providers.responses import ResponsesProvider  # noqa: ICN003  # re-export
-from agent6.providers.token_command import CommandToken  # noqa: ICN003  # re-export
-from agent6.providers.types import (  # noqa: ICN003  # re-export
+from agent6.providers.provider_types import (  # noqa: ICN003  # re-export
     ProviderAborted,
     ProviderError,
     ProviderInterrupted,
@@ -32,6 +30,8 @@ from agent6.providers.types import (  # noqa: ICN003  # re-export
     TranscriptSink,
     output_cap_truncated,
 )
+from agent6.providers.responses import ResponsesProvider  # noqa: ICN003  # re-export
+from agent6.providers.token_command import CommandToken  # noqa: ICN003  # re-export
 
 
 @runtime_checkable
@@ -56,7 +56,7 @@ class Provider(Protocol):
         thinking_delta_callback: Callable[[str], None] | None = ...,
         should_abort: Callable[[], bool] | None = ...,
         should_interrupt: Callable[[], bool] | None = ...,
-        context: _headers.RequestContext | None = ...,
+        context: request_headers.RequestContext | None = ...,
     ) -> ProviderResponse:
         """Make one model call.
 

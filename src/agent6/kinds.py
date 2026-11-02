@@ -3,7 +3,7 @@
 """Hold the internal value types: frozen dataclasses agent6 constructs itself.
 
 The pydantic models sit at the trust boundaries instead: `config.model`,
-`tools.schema`, `machine.spec`.
+`tools.schema`, `machine.schema`.
 """
 
 from __future__ import annotations

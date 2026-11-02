@@ -9,7 +9,7 @@ from typing import Any
 
 from agent6.app import stamps, undo
 from agent6.config import Config
-from agent6.harness import _snapshot
+from agent6.harness import loop_snapshot
 from agent6.sessions import layout as sessions_layout
 
 _WRAP = "OPERATOR STEERING (a mid-run instruction from the operator):\n"
@@ -41,7 +41,7 @@ def _layout(tmp_path: pathlib.Path, sid: str) -> sessions_layout.SessionLayout:
 def _checkpoint(
     layout: sessions_layout.SessionLayout, turn: int, messages: list[dict[str, Any]]
 ) -> None:
-    snap = _snapshot.SessionSnapshot(
+    snap = loop_snapshot.SessionSnapshot(
         system="s",
         messages=messages,
         tool_calls=0,

@@ -8,9 +8,8 @@ import pathlib
 import signal
 import threading
 
-from agent6 import secret_store
-from agent6.config import ConfigError, layer
-from agent6.ui.cli import _common
+from agent6.config import ConfigError, layer, secret_store
+from agent6.ui.cli import common
 from agent6.ui.telemetry import export
 
 
@@ -29,11 +28,11 @@ def cmd_export(config_paths: tuple[pathlib.Path, ...], session_id: str, *, follo
     try:
         cfg = layer.load_effective(pathlib.Path.cwd(), config_paths).config
     except ConfigError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     telemetry = cfg.telemetry
     if (telemetry.traces, telemetry.metrics, telemetry.logs) == ("none", "none", "none"):
-        _common.error(
+        common.error(
             "nothing is selected: set telemetry.traces, telemetry.metrics or telemetry.logs"
             " (`agent6 config show telemetry`)"
         )
@@ -41,7 +40,7 @@ def cmd_export(config_paths: tuple[pathlib.Path, ...], session_id: str, *, follo
     try:
         headers = secret_store.telemetry_headers(telemetry.headers) if telemetry.otlp else {}
     except secret_store.SecretsError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     stop = threading.Event()
     if follow:
@@ -59,7 +58,7 @@ def cmd_export(config_paths: tuple[pathlib.Path, ...], session_id: str, *, follo
             should_stop=stop.is_set,
         )
     except export.ExportError as exc:
-        _common.error(str(exc))
+        common.error(str(exc))
         return 2
     delivered = [
         f"{report.sessions} session{'' if report.sessions == 1 else 's'}",

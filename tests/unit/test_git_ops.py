@@ -13,7 +13,7 @@ from unittest import mock
 import pytest
 
 from agent6 import errors, kinds
-from agent6.vcs import _git_command, commit_message, git_ops, git_policy, git_read, review
+from agent6.vcs import commit_message, git_command, git_ops, git_policy, git_read, review
 
 
 def _init_repo(path: pathlib.Path) -> None:
@@ -429,19 +429,19 @@ def test_only_the_vcs_package_imports_the_runner() -> None:
             continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if (
-                (isinstance(node, ast.Name) and node.id == "_git_command")
-                or (isinstance(node, ast.Attribute) and node.attr == "_git_command")
+                (isinstance(node, ast.Name) and node.id == "git_command")
+                or (isinstance(node, ast.Attribute) and node.attr == "git_command")
                 or (
                     isinstance(node, ast.Import)
-                    and any(a.name == "agent6.vcs._git_command" for a in node.names)
+                    and any(a.name == "agent6.vcs.git_command" for a in node.names)
                 )
                 or (
                     isinstance(node, ast.ImportFrom)
                     and (
-                        node.module == "agent6.vcs._git_command"
+                        node.module == "agent6.vcs.git_command"
                         or (
                             node.module == "agent6.vcs"
-                            and any(a.name == "_git_command" for a in node.names)
+                            and any(a.name == "git_command" for a in node.names)
                         )
                     )
                 )
@@ -495,7 +495,7 @@ def gm_run_name(call: ast.Call) -> str | None:
     if (
         isinstance(func, ast.Attribute)
         and isinstance(func.value, ast.Name)
-        and func.value.id in {"_git_command", "subprocess"}
+        and func.value.id in {"git_command", "subprocess"}
         and func.attr in {"run", "spawn", "nul_fields", "Popen"}
     ):
         return func.attr
@@ -643,7 +643,7 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
     entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
-    real_run = _git_command.run
+    real_run = git_command.run
     raced = False
 
     def racing_run(
@@ -671,7 +671,7 @@ def test_restore_stash_raced_drop_puts_the_bystander_back(
             )
         return res
 
-    monkeypatch.setattr(_git_command, "run", racing_run)
+    monkeypatch.setattr(git_command, "run", racing_run)
     assert git_ops.restore_stash(tmp_path, entry) is True
     assert (tmp_path / "pre.txt").read_text(encoding="utf-8") == "pre-run work\n"
     listing = subprocess.run(
@@ -708,7 +708,7 @@ def test_raced_drop_failed_putback_raises_with_recovery(
     entry = git_read.find_stash(tmp_path, git_ops.auto_stash_message("sunny-otter-AAA111"))
     assert entry is not None
 
-    real_run = _git_command.run
+    real_run = git_command.run
     raced = False
 
     def racing_run(
@@ -740,7 +740,7 @@ def test_raced_drop_failed_putback_raises_with_recovery(
             )
         return res
 
-    monkeypatch.setattr(_git_command, "run", racing_run)
+    monkeypatch.setattr(git_command, "run", racing_run)
     with pytest.raises(errors.GitError) as excinfo:
         git_ops.restore_stash(tmp_path, entry)
     msg = str(excinfo.value)
@@ -763,8 +763,8 @@ def test_git_runs_under_a_pinned_locale(tmp_path: pathlib.Path) -> None:
             seen.update({k: v for k, v in env.items() if k in ("LC_ALL", "LANG")})  # pyright: ignore[reportUnknownArgumentType]
         return real(argv, **kwargs)  # pyright: ignore[reportArgumentType, reportCallIssue]
 
-    with mock.patch.object(_git_command.subprocess, "Popen", capture):
-        _git_command.run(tmp_path, "stash", "list", check=False)
+    with mock.patch.object(git_command.subprocess, "Popen", capture):
+        git_command.run(tmp_path, "stash", "list", check=False)
     assert seen.get("LC_ALL") == "C"
 
 
@@ -802,7 +802,7 @@ class _HungGit:
 
 def _hang_the_op_only(fake: _HungGit) -> object:
     """A Popen replacement that hangs only the git op, not the driver-neutralization enumeration."""
-    real = _git_command.subprocess.Popen
+    real = git_command.subprocess.Popen
 
     def fake_popen(*a: object, **k: object) -> object:
         argv = a[0] if a else k.get("args", [])
@@ -825,10 +825,10 @@ def test_timeout_terminates_first_and_leaves_a_survivor_lock(tmp_path: pathlib.P
     fake_popen = _hang_the_op_only(fake)
 
     with (
-        mock.patch.object(_git_command.subprocess, "Popen", fake_popen),
+        mock.patch.object(git_command.subprocess, "Popen", fake_popen),
         pytest.raises(errors.GitError, match="timed out"),
     ):
-        _git_command.run(tmp_path, "commit", "-m", "x", check=False)
+        git_command.run(tmp_path, "commit", "-m", "x", check=False)
     assert fake.calls == ["terminate"]  # graceful exit: never escalated to KILL
     assert lock.exists()  # a survivor lock after TERM is not ours to delete
 
@@ -843,10 +843,10 @@ def test_timeout_keeps_a_preexisting_index_lock(tmp_path: pathlib.Path) -> None:
     fake_popen = _hang_the_op_only(fake)
 
     with (
-        mock.patch.object(_git_command.subprocess, "Popen", fake_popen),
+        mock.patch.object(git_command.subprocess, "Popen", fake_popen),
         pytest.raises(errors.GitError, match="timed out"),
     ):
-        _git_command.run(tmp_path, "status", check=False)
+        git_command.run(tmp_path, "status", check=False)
     assert lock.exists()  # never ours to delete
 
 
@@ -863,10 +863,10 @@ def test_timeout_on_a_temporary_index_preserves_the_real_index_lock(
     index = str(tmp_path / "review-index")
     env_extra = {"GIT_INDEX_FILE": index}
     with (
-        mock.patch.object(_git_command.subprocess, "Popen", _hang_the_op_only(fake)),
+        mock.patch.object(git_command.subprocess, "Popen", _hang_the_op_only(fake)),
         pytest.raises(errors.GitError, match="timed out"),
     ):
-        _git_command.run(tmp_path, "add", "-N", ".", env_extra=env_extra)
+        git_command.run(tmp_path, "add", "-N", ".", env_extra=env_extra)
     assert lock.exists()
     assert lock.read_text(encoding="utf-8") == ("held by another git\n" if preexisting else "")
 
@@ -880,10 +880,10 @@ def test_timeout_clears_the_lock_its_own_child_created(tmp_path: pathlib.Path) -
     fake_popen = _hang_the_op_only(fake)
 
     with (
-        mock.patch.object(_git_command.subprocess, "Popen", fake_popen),
+        mock.patch.object(git_command.subprocess, "Popen", fake_popen),
         pytest.raises(errors.GitError, match="timed out"),
     ):
-        _git_command.run(tmp_path, "commit", "-m", "x", check=False)
+        git_command.run(tmp_path, "commit", "-m", "x", check=False)
     assert fake.calls == ["terminate", "kill"]  # TERM tried before KILL
     assert not lock.exists()  # the dead child's own lock is cleared
 
@@ -1966,7 +1966,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
     base = git_read.status(tmp_path).head_sha
     theirs = _lane_commit(tmp_path, base, "README.md", "run change\n")
     _commit_file(tmp_path, "README.md", "main change\n", "main edit")
-    real_run = _git_command.run
+    real_run = git_command.run
 
     def old_git(cwd: pathlib.Path, *args: str, **kw: object) -> kinds.CommandResult:
         if args[:1] == ("merge-tree",):
@@ -1980,7 +1980,7 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
             )
         return real_run(cwd, *args, **kw)  # pyright: ignore[reportArgumentType]
 
-    monkeypatch.setattr(_git_command, "run", old_git)
+    monkeypatch.setattr(git_command, "run", old_git)
     monkeypatch.setattr(git_policy, "installed_version", lambda: (2, 39, 0))
     with pytest.raises(errors.GitError) as caught:
         git_ops.plumb_merge(tmp_path, "main", theirs, method="merge", message=None, merge_base=base)
@@ -2017,7 +2017,7 @@ def test_a_failed_git_command_names_a_git_older_than_the_floor(
     request.addfinalizer(git_policy.installed_version.cache_clear)
 
     with pytest.raises(errors.GitError) as caught:
-        _git_command.run(tmp_path, "blame", "--porcelain", "HEAD", "--", "f")
+        git_command.run(tmp_path, "blame", "--porcelain", "HEAD", "--", "f")
 
     note = f"unsupported git version {version}: agent6 needs git 2.47 or newer\n"
     assert str(caught.value).startswith(note) is unsupported
@@ -2050,7 +2050,7 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     citation matched.
     """
     from agent6 import review_records
-    from agent6.harness import _panel
+    from agent6.harness import review_panel
 
     _init_repo(tmp_path)
     base = _rev(tmp_path, "HEAD")
@@ -2065,7 +2065,7 @@ def test_a_diff_carries_a_b_prefixes_whatever_the_diff_config_says(tmp_path: pat
     diff = git_read.diff_since(tmp_path, base)
     assert "diff --git a/README.md b/README.md" in diff
     assert "--- a/README.md" in diff and "+++ b/README.md" in diff
-    assert _panel.is_grounded(
+    assert review_panel.is_grounded(
         review_records.ReviewLocation(path="README.md", side="head", start_line=2, end_line=2),
         review.diff_hunks(diff),
     )

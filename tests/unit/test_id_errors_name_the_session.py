@@ -12,7 +12,7 @@ import pathlib
 import pytest
 
 from agent6.sessions import id, layout
-from agent6.ui.cli import _common  # pyright: ignore[reportPrivateUsage]
+from agent6.ui.cli import common  # pyright: ignore[reportPrivateUsage]
 
 
 def test_the_cross_bucket_resolver_says_session(
@@ -20,7 +20,7 @@ def test_the_cross_bucket_resolver_says_session(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     with pytest.raises(id.SessionIdError) as caught:
-        _common.resolve_session_layout(tmp_path, "nope-nope-NOPE00")
+        common.resolve_session_layout(tmp_path, "nope-nope-NOPE00")
     assert "no session matches" in str(caught.value), str(caught.value)
 
 

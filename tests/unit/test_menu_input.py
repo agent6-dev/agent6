@@ -15,7 +15,7 @@ import sys
 
 import pytest
 
-from agent6.ui.cli import _menu_input, _steer_menu, _terminal_guard
+from agent6.ui.cli import menu_input, steer_menu, terminal_guard
 
 
 def _chars(text: str) -> list[str]:
@@ -26,9 +26,9 @@ def _run(keys: list[str], history: list[str] | None = None) -> tuple[str, str]:
     """Drive menu_input with scripted keys; returns (line, everything written)."""
     out: list[str] = []
     it = iter(keys)
-    line = _menu_input.read_line(
+    line = menu_input.read_line(
         "P> ",
-        _steer_menu.MENU_COMMANDS,
+        steer_menu.MENU_COMMANDS,
         history if history is not None else [],
         read_key=lambda: next(it),
         write=out.append,
@@ -50,7 +50,7 @@ def test_tab_on_empty_line_previews_all_commands_and_cycles() -> None:
     line, out = _run(["tab", "enter"])
     assert line == "/status"  # first candidate selected
     # The menu rendered every command with its description.
-    assert "/detach" in out and _steer_menu.MENU_COMMANDS["/detach"] in out
+    assert "/detach" in out and steer_menu.MENU_COMMANDS["/detach"] in out
     assert "\x1b[7m" in out  # the selection is highlighted
     line, _ = _run(["tab", "tab", "enter"])
     assert line == "/tasks"  # second candidate
@@ -171,8 +171,8 @@ def test_byte_decoded_ctrl_c_cleans_the_terminal_once() -> None:
     out: list[str] = []
     keys = iter([*_chars("half typed"), "interrupt"])
     with pytest.raises(KeyboardInterrupt):
-        _menu_input.read_line(
-            "P> ", _steer_menu.MENU_COMMANDS, [], read_key=lambda: next(keys), write=out.append
+        menu_input.read_line(
+            "P> ", steer_menu.MENU_COMMANDS, [], read_key=lambda: next(keys), write=out.append
         )
     assert "".join(out).count("\r\n\x1b[J") == 1
 
@@ -183,7 +183,7 @@ def test_menu_rows_clamp_to_narrow_terminals(monkeypatch: pytest.MonkeyPatch) ->
     Rows stay one terminal row wide (wrapping breaks the cursor-up math): descriptions truncate, the
     command labels survive.
     """
-    monkeypatch.setattr("agent6.ui.cli._menu_input._width", lambda: 20)
+    monkeypatch.setattr("agent6.ui.cli.menu_input._width", lambda: 20)
     _, out = _run(["tab", "enter"])
     assert "/detach" in out  # labels intact
     for row in out.split("\r\n")[1:]:
@@ -199,8 +199,8 @@ def test_input_row_never_exceeds_the_terminal_width(monkeypatch: pytest.MonkeyPa
     breaks the cursor-up math, and every keystroke walks a garbled menu down the screen.
     """
     for width in (20, 50, 60, 67, 120):
-        monkeypatch.setattr("agent6.ui.cli._menu_input._width", lambda w=width: w)
-        r = _menu_input._Reader(_steer_menu.PROMPT, _steer_menu.MENU_COMMANDS, [])
+        monkeypatch.setattr("agent6.ui.cli.menu_input._width", lambda w=width: w)
+        r = menu_input._Reader(steer_menu.PROMPT, steer_menu.MENU_COMMANDS, [])
         r.line = "/status"
         r.cur = len(r.line)
         out: list[str] = []
@@ -214,7 +214,7 @@ def test_a_completed_piped_line_wins_when_the_prompt_is_superseded() -> None:
     r, w = os.pipe()
     try:
         os.write(w, b"typed here\n")
-        assert _menu_input.read_line_until(r, lambda: True) == "typed here"
+        assert menu_input.read_line_until(r, lambda: True) == "typed here"
     finally:
         os.close(r)
         os.close(w)
@@ -233,7 +233,7 @@ def test_a_partial_line_is_dropped_once_the_prompt_is_over() -> None:
     try:
         os.write(w, b"parti")
         thread = threading.Thread(
-            target=lambda: got.append(_menu_input.read_line_until(r, lambda: True))
+            target=lambda: got.append(menu_input.read_line_until(r, lambda: True))
         )
         thread.daemon = True
         thread.start()
@@ -253,8 +253,8 @@ def test_a_pasted_second_line_is_the_next_prompts() -> None:
     r, w = os.pipe()
     try:
         os.write(w, b"one\ntwo\n")
-        assert _menu_input.read_line_until(r, lambda: False) == "one"
-        assert _menu_input.read_line_until(r, lambda: False) == "two"
+        assert menu_input.read_line_until(r, lambda: False) == "one"
+        assert menu_input.read_line_until(r, lambda: False) == "two"
     finally:
         os.close(r)
         os.close(w)
@@ -278,9 +278,9 @@ def test_read_key_decodes_bytes_from_a_pipe() -> None:
         ]
         for raw, expected in cases:
             os.write(w, raw)
-            assert _menu_input._read_key(r) == expected, raw
+            assert menu_input._read_key(r) == expected, raw
         os.write(w, b"\x1b")  # bare Esc: resolved by the 30ms poll timing out
-        assert _menu_input._read_key(r) == "esc"
+        assert menu_input._read_key(r) == "esc"
     finally:
         os.close(r)
         os.close(w)
@@ -290,8 +290,8 @@ def test_unknown_escape_sequence_does_not_leak_bytes_into_the_line() -> None:
     r, w = os.pipe()
     try:
         os.write(w, b"\x1b[123456789~q")
-        assert _menu_input._read_key(r) == ""
-        assert _menu_input._read_key(r) == "char:q"
+        assert menu_input._read_key(r) == ""
+        assert menu_input._read_key(r) == "char:q"
     finally:
         os.close(r)
         os.close(w)
@@ -301,8 +301,8 @@ def test_multibyte_alt_chord_does_not_leak_continuation_bytes() -> None:
     r, w = os.pipe()
     try:
         os.write(w, b"\x1b" + "éq".encode())
-        assert _menu_input._read_key(r) == "esc"
-        assert _menu_input._read_key(r) == "char:q"
+        assert menu_input._read_key(r) == "esc"
+        assert menu_input._read_key(r) == "char:q"
     finally:
         os.close(r)
         os.close(w)
@@ -325,8 +325,8 @@ def test_a_character_split_across_reads_decodes_whole() -> None:
 
     try:
         threading.Thread(target=_slowly, daemon=True).start()
-        assert _menu_input._read_key(r) == "char:\u20ac"
-        assert _menu_input._read_key(r) == "char:q"
+        assert menu_input._read_key(r) == "char:\u20ac"
+        assert menu_input._read_key(r) == "char:q"
     finally:
         os.close(r)
         os.close(w)
@@ -341,9 +341,9 @@ def test_the_default_writer_reaches_the_terminal_under_the_guard(
     stream under the wrapper, or its menu loses its cursor-up and every render garbles.
     """
     raw = io.StringIO()
-    monkeypatch.setattr(sys, "stdout", _terminal_guard.ScrubbedStream(raw))
+    monkeypatch.setattr(sys, "stdout", terminal_guard.ScrubbedStream(raw))
     it = iter(["tab", "enter"])
-    _menu_input.read_line(
+    menu_input.read_line(
         "P> ", {"/a": "x\x1b]52;c;aGVsbG8=\x07y", "/b": "z"}, [], read_key=lambda: next(it)
     )
     out = raw.getvalue()

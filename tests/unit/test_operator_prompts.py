@@ -17,10 +17,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import event_log
 from agent6.config import Config
-from agent6.sessions import ipc
-from agent6.tools import dispatch, errors, operator_prompts, schema
+from agent6.sessions import event_log, ipc
+from agent6.tools import dispatch, operator_prompts, schema, tool_errors
 
 _SRC = pathlib.Path(__file__).resolve().parents[2] / "src" / "agent6"
 
@@ -72,7 +71,7 @@ def test_an_approval_is_journaled_with_the_call_it_gates(tmp_path: pathlib.Path)
     session_dir = tmp_path / "run"
     events = _sink(session_dir)
     d = _dispatcher(session_dir, events, _prompts(session_dir, events, approver=_deny))
-    with pytest.raises(errors.ToolDeniedError):
+    with pytest.raises(tool_errors.ToolDeniedError):
         d.dispatch("run_command", {"argv": ["ls"]})
     (call,) = _of(session_dir, "tool.call")
     (prompt,) = _of(session_dir, "approval.prompt")
@@ -134,7 +133,7 @@ def test_concurrent_seats_each_name_their_own_call(tmp_path: pathlib.Path) -> No
     with futures.ThreadPoolExecutor(max_workers=2) as pool:
         seats = [pool.submit(d.dispatch, "run_command", {"argv": ["ls", arg]}) for arg in "ab"]
         for seat in seats:
-            with pytest.raises(errors.ToolDeniedError):
+            with pytest.raises(tool_errors.ToolDeniedError):
                 seat.result(timeout=30)
     stamped = {" ".join(e["args"]["argv"]): e["call_id"] for e in _of(session_dir, "tool.call")}
     assert named == {f"Allow run_command: {argv}": cid for argv, cid in stamped.items()}
@@ -151,7 +150,7 @@ def test_a_verify_the_harness_runs_gates_no_call(tmp_path: pathlib.Path) -> None
     events = _sink(session_dir)
     prompts = _prompts(session_dir, events, approver=_deny)
     d = _dispatcher(session_dir, events, prompts)
-    with pytest.raises(errors.ToolDeniedError):
+    with pytest.raises(tool_errors.ToolDeniedError):
         d.run_verify()
     prompts.ask((schema.UserQuestion(question="stash?", options=("stash", "cancel")),))
     (approval,) = _of(session_dir, "approval.prompt")

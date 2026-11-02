@@ -11,10 +11,9 @@ from collections.abc import Callable
 import pytest
 
 from agent6 import paths
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import _session_prompt as prompt_mod
-from agent6.ui.cli import entry, resume
+from agent6.ui.cli import entry, resume, session_prompt
 
 
 def _seed_session(
@@ -67,7 +66,7 @@ def test_follow_up_executions_run_under_the_invocations_flags(
 
     layout = _seed_session(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
     seen: list[dict[str, object]] = []
 
     def fake_resume(_cfg: pathlib.Path | None, session_id: str, **kw: object) -> int:
@@ -81,15 +80,15 @@ def test_follow_up_executions_run_under_the_invocations_flags(
     assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
     (execution,) = seen
     assert execution["steer"] == "and a test"
-    assert execution["budget_overrides"] == _setup.BudgetOverrides.from_args(args)
-    assert execution["sandbox_overrides"] == _setup.SandboxOverrides.from_args(args)
+    assert execution["budget_overrides"] == session_setup.BudgetOverrides.from_args(args)
+    assert execution["sandbox_overrides"] == session_setup.SandboxOverrides.from_args(args)
 
 
 def test_free_text_becomes_the_next_execution_then_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     """Each follow-up answer becomes the next turn's operator instruction, as `--steer` does."""
     calls = _seen_resumes(monkeypatch)
     answers = iter(["now add the tests", "  ", "/exit"])
-    rc = prompt_mod.end_of_session_prompt(
+    rc = session_prompt.end_of_session_prompt(
         rc=0, session_id="runny-one-AAAAAA", ask=lambda _p: next(answers)
     )
     assert rc == 0
@@ -102,7 +101,7 @@ def test_a_malformed_directive_re_prompts_instead_of_spending_a_execution(
     """A bare `/pin` at "next:" is refused by name and asked again, never run as an execution."""
     calls = _seen_resumes(monkeypatch)
     answers = iter(["/pin", "/pin keep the API stable", "/exit"])
-    rc = prompt_mod.end_of_session_prompt(
+    rc = session_prompt.end_of_session_prompt(
         rc=0, session_id="runny-one-AAAAAA", ask=lambda _p: next(answers)
     )
     assert rc == 0
@@ -115,7 +114,7 @@ def test_exit_leaves_the_session_resumable(
 ) -> None:
     """/exit ends the prompting, never the session; the printed line picks it back up."""
     _seen_resumes(monkeypatch)
-    rc = prompt_mod.end_of_session_prompt(
+    rc = session_prompt.end_of_session_prompt(
         rc=3, session_id="runny-one-AAAAAA", ask=lambda _p: "/exit"
     )
     assert rc == 3
@@ -129,7 +128,7 @@ def test_eof_ends_like_exit(monkeypatch: pytest.MonkeyPatch) -> None:
     def eof(_p: str) -> str:
         raise EOFError
 
-    assert prompt_mod.end_of_session_prompt(rc=0, session_id="r-AAAAAA", ask=eof) == 0
+    assert session_prompt.end_of_session_prompt(rc=0, session_id="r-AAAAAA", ask=eof) == 0
     assert not calls
 
 
@@ -146,7 +145,7 @@ def test_a_failing_execution_stops_the_loop(monkeypatch: pytest.MonkeyPatch) -> 
         asked.append(prompt)
         return "keep going"
 
-    assert prompt_mod.end_of_session_prompt(rc=0, session_id="r-AAAAAA", ask=ask) == 2
+    assert session_prompt.end_of_session_prompt(rc=0, session_id="r-AAAAAA", ask=ask) == 2
     assert len(asked) == 1
 
 
@@ -159,14 +158,14 @@ def test_no_terminal_ends_the_session_as_before(
     # A real session dir, so the tty guard is the only short-circuit; patch what `cli` imports.
     layout = _seed_session(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: False)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: False)
     called: list[str] = []
 
     def spy(**_kw: object) -> int:
         called.append("asked")
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
     assert entry._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0
     assert not called
 
@@ -188,9 +187,9 @@ def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
     Reading the terminal from a background process group raises SIGTTIN and suspends the job; the
     same shape blocks forever wherever a tty is allocated with nobody at it.
     """
-    monkeypatch.setattr(prompt_mod.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(prompt_mod.sys.stdin, "fileno", lambda: 0)
-    monkeypatch.setattr(prompt_mod.os, "getpgrp", lambda: 4242)
+    monkeypatch.setattr(session_prompt.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(session_prompt.sys.stdin, "fileno", lambda: 0)
+    monkeypatch.setattr(session_prompt.os, "getpgrp", lambda: 4242)
 
     def owner_is(pgrp: int) -> Callable[[int], int]:
         def tcgetpgrp(_fd: int) -> int:
@@ -198,11 +197,11 @@ def test_a_backgrounded_run_is_not_stopped_by_the_prompt(
 
         return tcgetpgrp
 
-    monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", owner_is(1717))
-    assert not prompt_mod.prompting_is_possible(), "prompted from a background process group"
+    monkeypatch.setattr(session_prompt.os, "tcgetpgrp", owner_is(1717))
+    assert not session_prompt.prompting_is_possible(), "prompted from a background process group"
 
-    monkeypatch.setattr(prompt_mod.os, "tcgetpgrp", owner_is(4242))
-    assert prompt_mod.prompting_is_possible(), "the foreground job must still prompt"
+    monkeypatch.setattr(session_prompt.os, "tcgetpgrp", owner_is(4242))
+    assert session_prompt.prompting_is_possible(), "the foreground job must still prompt"
 
 
 def test_a_refused_runs_discarded_id_ends_quietly(
@@ -210,7 +209,7 @@ def test_a_refused_runs_discarded_id_ends_quietly(
 ) -> None:
     """A refusal discards its husk, and the follow-up prompt ends with the refusal's exit code."""
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
     assert entry._prompt_for_the_next_input(_run_args(), 2, "gone-run-QQQQQQ") == 2  # pyright: ignore[reportPrivateUsage]
 
 
@@ -227,7 +226,7 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
 
     def _resumed(*_a: object, **_k: object) -> int:
         return 0
@@ -239,7 +238,7 @@ def test_a_resumed_execution_ends_by_asking_like_a_fresh_one(
         asked.append(str(kw["session_id"]))
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
     args = _run_args(session_id="resumed-run", force=False, tui=False, preset="", steer="")
     assert entry._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == (["resumed-run-AAAAAA"] if asks else [])
@@ -252,7 +251,7 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
     """A follow-up stays with the selected session when a concurrent session becomes newest."""
     selected = _seed_session(tmp_path, monkeypatch, session_id="resumed-run-AAAAAA")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
 
     def fake_resume(*_args: object, **_kwargs: object) -> int:
         _seed_session(tmp_path, monkeypatch, session_id="resumed-run-BBBBBB")
@@ -265,7 +264,7 @@ def test_resume_prompt_stays_on_the_session_selected_at_dispatch(
         prompted.append(str(kwargs["session_id"]))
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
     args = _run_args(session_id=target, force=False, tui=False, preset="", steer="")
     assert entry._dispatch_resume(args) == 0  # pyright: ignore[reportPrivateUsage]
     assert prompted == [selected.session_id]
@@ -277,7 +276,7 @@ def test_a_refused_execution_does_not_prompt_on_an_existing_session(
     """A refused run whose explicit id points at an older session gets no follow-up prompt."""
     layout = _seed_session(tmp_path, monkeypatch, session_id="existing-run-AAAAAA")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
 
     def refused(*_args: object, **_kwargs: object) -> int:
         return 2
@@ -288,7 +287,7 @@ def test_a_refused_execution_does_not_prompt_on_an_existing_session(
     def must_not_prompt(**_kwargs: object) -> int:
         pytest.fail("prompted after a refused execution")
 
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", must_not_prompt)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", must_not_prompt)
     common = {
         "session_id": layout.session_id,
         "tui": False,
@@ -335,7 +334,7 @@ def test_a_execution_that_undoes_or_detaches_ends_the_asking(
         asked.append(prompt)
         return "/undo" if len(asked) == 1 else pytest.fail("asked again after the undo")
 
-    rc = prompt_mod.end_of_session_prompt(
+    rc = session_prompt.end_of_session_prompt(
         rc=0, session_id=layout.session_id, session_dir=layout.session_dir, ask=ask
     )
     assert rc == 0 and len(asked) == 1
@@ -352,12 +351,12 @@ def test_a_detached_run_is_not_followed_by_the_prompt(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
 
     def _must_not_prompt(**_kw: object) -> int:
         pytest.fail("prompted")
 
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", _must_not_prompt)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", _must_not_prompt)
     args = _run_args()
     assert entry._prompt_for_the_next_input(args, 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
 
@@ -382,14 +381,14 @@ def test_a_parked_start_is_not_followed_by_the_prompt(
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
     asked: list[str] = []
 
     def spy(**_kw: object) -> int:
         asked.append("asked")
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
     assert entry._prompt_for_the_next_input(_run_args(), 2, layout.session_id) == 2  # pyright: ignore[reportPrivateUsage]
     assert asked == []
 
@@ -403,14 +402,14 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
         fh.write('{"type": "session.undone", "new_session_id": "fork-BBBBBB"}\n')
         fh.write('{"type": "session.end", "reason": "undone", "all_passed": false}\n')
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
     asked: list[str] = []
 
     def spy(**_kw: object) -> int:
         asked.append("asked")
         return 0
 
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.end_of_session_prompt", spy)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.end_of_session_prompt", spy)
     assert entry._prompt_for_the_next_input(_run_args(), 0, layout.session_id) == 0  # pyright: ignore[reportPrivateUsage]
     assert asked == []
 
@@ -426,7 +425,7 @@ def test_a_lone_slash_word_is_refused_not_sent_as_a_task(
     """
     calls = _seen_resumes(monkeypatch)
     answers = iter(["/shells", "/cost", "now add the tests", "/exit"])
-    rc = prompt_mod.end_of_session_prompt(
+    rc = session_prompt.end_of_session_prompt(
         rc=0, session_id="runny-one-AAAAAA", ask=lambda _p: next(answers)
     )
     assert rc == 0
@@ -489,7 +488,7 @@ def _plan_harness(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> li
         return 0
 
     monkeypatch.setattr(run, "_cmd_run", fake_cmd_run)
-    monkeypatch.setattr("agent6.ui.cli._session_prompt.prompting_is_possible", lambda: True)
+    monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
     monkeypatch.setattr("builtins.input", lambda p="": (asked.append(p), "/exit")[1])
     return asked
 

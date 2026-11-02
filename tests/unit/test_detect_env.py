@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.sandbox import detect
 
 
@@ -39,14 +39,14 @@ def test_detect_env_does_not_probe_where_there_is_no_sandbox(
 ) -> None:
     """A non-Linux host has no jail to ask."""
     monkeypatch.setattr(detect, "environment", lambda: _env(False, sandbox=False))
-    monkeypatch.setattr(_setup, "namespaces_work", _fail_probe)
-    assert _setup.detect_env().detected_isolation == "none"
+    monkeypatch.setattr(session_setup, "namespaces_work", _fail_probe)
+    assert session_setup.detect_env().detected_isolation == "none"
 
 
 def test_detect_env_keeps_userns_when_the_jail_agrees(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(_setup, "namespaces_work", lambda: True)
-    assert _setup.detect_env().userns_supported is True
+    monkeypatch.setattr(session_setup, "namespaces_work", lambda: True)
+    assert session_setup.detect_env().userns_supported is True
 
 
 def test_detect_env_drops_to_partial_when_the_jail_cannot_do_full(
@@ -58,8 +58,8 @@ def test_detect_env_drops_to_partial_when_the_jail_cannot_do_full(
     jail's `mount`.
     """
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(_setup, "namespaces_work", lambda: False)
-    env = _setup.detect_env()
+    monkeypatch.setattr(session_setup, "namespaces_work", lambda: False)
+    env = session_setup.detect_env()
     assert env.userns_supported is False
     assert env.detected_isolation == "partial"
 
@@ -67,8 +67,8 @@ def test_detect_env_drops_to_partial_when_the_jail_cannot_do_full(
 def test_detect_env_upgrades_to_full_via_jail_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     # The AppArmor-isolation case: unshare blocked, but the jail binary can userns.
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(_setup, "namespaces_work", lambda: True)
-    assert _setup.detect_env().userns_supported is True
+    monkeypatch.setattr(session_setup, "namespaces_work", lambda: True)
+    assert session_setup.detect_env().userns_supported is True
 
 
 def test_detect_env_refuses_over_a_binary_it_cannot_run(
@@ -78,7 +78,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
 
     A 0644 or wrong-architecture AGENT6_JAIL_BIN is not "userns supported: False".
     """
-    from agent6.app import _session, preflight
+    from agent6.app import preflight, session_parts
     from agent6.app import reporter as app_reporter
     from agent6.config import Config
     from agent6.sandbox import jail
@@ -90,11 +90,11 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
     jail.namespaces_work.cache_clear()
     try:
         with pytest.raises(jail.JailUnavailableError, match=re.escape(str(fake))):
-            _setup.detect_env()
+            session_setup.detect_env()
         said: list[str] = []
         reporter = app_reporter.Reporter(out=said.append, err=said.append)
         with pytest.raises(preflight.SessionRefusedError):
-            _session.select_isolation(
+            session_parts.select_isolation(
                 Config(),
                 cwd=tmp_path,
                 confirm_unconfined=lambda _level, _cfg: True,
@@ -107,14 +107,14 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
 
 def test_detect_env_stays_partial_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(_setup, "namespaces_work", lambda: False)
-    assert _setup.detect_env().userns_supported is False
+    monkeypatch.setattr(session_setup, "namespaces_work", lambda: False)
+    assert session_setup.detect_env().userns_supported is False
 
 
 def test_detect_env_skips_probe_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(False, sandbox=False))
-    monkeypatch.setattr(_setup, "namespaces_work", _fail_probe)  # not consulted
-    assert _setup.detect_env().userns_supported is False
+    monkeypatch.setattr(session_setup, "namespaces_work", _fail_probe)  # not consulted
+    assert session_setup.detect_env().userns_supported is False
 
 
 def test_degrade_reason_full_strength_is_none() -> None:

@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 from agent6.ui.cli import parser as cli_parser
 
 
@@ -126,14 +126,14 @@ def test_fork_carries_the_same_sandbox_flags_as_its_siblings() -> None:
     A fork without `--no-run` continues a run, so it is a paid command and takes `--auto-approve`
     like the rest.
     """
-    from agent6.app import _setup
+    from agent6.app import session_setup
 
     parser = cli_parser.build_parser()
     args = parser.parse_args(["fork", "--auto-approve", "some-session-id"])
-    assert _setup.SandboxOverrides.from_args(args).auto_approve is True
+    assert session_setup.SandboxOverrides.from_args(args).auto_approve is True
 
     args = parser.parse_args(["fork", "--no-commands", "some-session-id"])
-    assert _setup.SandboxOverrides.from_args(args).no_commands is True
+    assert session_setup.SandboxOverrides.from_args(args).no_commands is True
 
 
 def test_get_completion_offers_no_key_get_rejects(
@@ -328,9 +328,9 @@ def test_a_leaf_without_the_flag_keeps_what_a_group_collected() -> None:
     root = argparse.ArgumentParser(prog="x")
     root.add_argument("--config", action="append", type=pathlib.Path, default=None)
     group = root.add_subparsers(dest="command", required=True).add_parser("group")
-    _common._add_config_flag(group)
+    common._add_config_flag(group)
     leaf = group.add_subparsers(dest="verb", required=True).add_parser("leaf")
-    _common._add_config_flag(leaf)
+    common._add_config_flag(leaf)
     args = root.parse_args(["--config", "a.toml", "group", "--config", "b.toml", "leaf"])
     assert cli_parser.config_files(args) == (pathlib.Path("a.toml"), pathlib.Path("b.toml"))
 

@@ -13,10 +13,10 @@ import contextlib
 import pathlib
 import shutil
 
-from agent6 import budget, errors, event_log, kinds, paths, portable
-from agent6.app import _session, _setup, _workdirs, machine_agent, preflight
+from agent6 import budget, errors, kinds, paths, portable
+from agent6.app import preflight, session_parts, session_setup, workdirs
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import _bundle, _scriptcheck
+from agent6.app.machine import agent, bundle, scriptcheck
 from agent6.config import ConfigError, layer
 from agent6.machine import (
     AgentRequest,
@@ -26,7 +26,7 @@ from agent6.machine import (
     dry_run,
     load_machine,
 )
-from agent6.sessions import id, layout, process
+from agent6.sessions import event_log, id, layout, process
 from agent6.vcs import git_ops, git_read
 
 _CREATE_TIMEOUT_S = 900.0
@@ -74,7 +74,7 @@ def _check_bundle(path: pathlib.Path) -> tuple[MachineSpec | None, list[str]]:
         spec = load_machine(path)
     except MachineError as exc:
         return None, list(exc.problems)
-    bundle_problems = _bundle.validate_bundle(spec, path)
+    bundle_problems = bundle.validate_bundle(spec, path)
     if bundle_problems:
         return None, bundle_problems
     return spec, []
@@ -162,7 +162,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     output: pathlib.Path | None,
     max_attempts: int,
     config_paths: tuple[pathlib.Path, ...] = (),
-    budget_overrides: _setup.BudgetOverrides | None = None,
+    budget_overrides: session_setup.BudgetOverrides | None = None,
 ) -> int:
     """Draft, validate and write a machine.
 
@@ -191,13 +191,13 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     except ConfigError as exc:
         reporter.error(str(exc))
         return 2
-    missing = _setup.check_provider_keys(cfg)
+    missing = session_setup.check_provider_keys(cfg)
     if missing is not None:
         reporter.err(missing)
         return 2
     try:
         # A create session withholds the command tools: an unconfined autorun needs no confirmation.
-        isolation = _session.select_isolation(
+        isolation = session_parts.select_isolation(
             cfg,
             cwd=cwd,
             confirm_unconfined=lambda _isolation, _cfg: True,
@@ -220,7 +220,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
     # An empty repo of its own beside the other subordinate trees: the jail masks the state dir.
-    workspace = _workdirs.subordinate_workdir_root(cfg, cwd, scratch.name)
+    workspace = workdirs.subordinate_workdir_root(cfg, cwd, scratch.name)
     try:
         workspace.mkdir(parents=True)
         git_ops.init_repo(workspace)
@@ -248,9 +248,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         reporter.error(str(exc))
         events.emit("session.end", reason="no_git_identity", turns=0, all_passed=False)
         return 2
-    runner = machine_agent.build_machine_agent_runner(
+    runner = agent.build_machine_agent_runner(
         # The authoring agent is no state: its requests carry the empty name.
-        {"": machine_agent.StateOverlay(overlay, isolation)},
+        {"": agent.StateOverlay(overlay, isolation)},
         workspace,
         scratch / "agent_transcripts",
         commit_identity=git_read.CommitIdentity(name=name, email=email),
@@ -322,7 +322,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 # Lint the scripts now, so one attempt reveals every problem class.
                 problems = [
                     *problems,
-                    *_scriptcheck.lint_and_typecheck(
+                    *scriptcheck.lint_and_typecheck(
                         workspace / "scripts",
                         fix=True,
                         ruff_config_from=output.parent if output is not None else cwd,
@@ -332,14 +332,14 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
             # Lint, type-check, offline-test and dry-run; a failure is the next attempt's input.
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
-            problems = _scriptcheck.lint_and_typecheck(
+            problems = scriptcheck.lint_and_typecheck(
                 workspace / "scripts",
                 fix=True,
                 ruff_config_from=output.parent if output is not None else cwd,
             )
             # ruff --fix rewrote the workspace copies: publish what validated.
             candidate_scripts = _read_scripts(workspace)
-            offline = _scriptcheck.run_offline_tests(workspace, isolation)
+            offline = scriptcheck.run_offline_tests(workspace, isolation)
             problems.extend(offline.problems)
             if offline.skipped:
                 reporter.err(
@@ -416,7 +416,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         reporter.out(payload.removesuffix("\n"))
         return 1
     # A pre-existing symlink under scripts/ can make the published bundle differ: check it.
-    out_problems = _bundle.validate_bundle(spec, target)
+    out_problems = bundle.validate_bundle(spec, target)
     if out_problems:
         events.emit("session.end", reason="bundle_invalid", turns=attempt, all_passed=False)
         reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")

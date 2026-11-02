@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The manifest.json shape and its one reader; `app.manifest` is the writer.
+"""The manifest.json shape and its one reader; `app.stamps` is the writer.
 
 Every field defaults and unknown keys are ignored, so a partial or foreign-keyed manifest
 renders what it carries: lenience for damage, not a compatibility promise (the shape is

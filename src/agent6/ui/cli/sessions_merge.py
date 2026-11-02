@@ -15,13 +15,13 @@ import sys
 from typing import Literal
 
 from agent6 import errors, paths
-from agent6.app import _workdirs, fork_worktrees, merge, resume
+from agent6.app import fork_worktrees, merge, resume, workdirs
 from agent6.config import Config, ConfigError, layer
 from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.sessions import process
-from agent6.ui.cli import _common, sessions_cmds
+from agent6.ui.cli import common, sessions_cmds
 from agent6.vcs import commit_message, git_ops, git_read
 from agent6.viewmodel import listing, scan_session_log, tail_events, worker_models
 
@@ -112,7 +112,7 @@ def _plan_merge(  # noqa: PLR0911
         return res
     layout, manifest = res
     if refusal := _not_mergeable_now(layout, manifest.session_id):
-        _common.refuse(refusal)
+        common.refuse(refusal)
         return 2
     ref = sessions_cmds._commits_ref(cwd, manifest)
     if (
@@ -132,12 +132,12 @@ def _plan_merge(  # noqa: PLR0911
         else ""
     )
     if unmergeable:
-        _common.refuse(unmergeable)
+        common.refuse(unmergeable)
         return 2
     run_branch = ref.head_ref
     target = into or manifest.base_branch
     if not target or target == run_branch:
-        _common.error(
+        common.error(
             "no target branch (manifest has no base_branch); pass --into <branch>."
             if not target
             else f"target {target!r} is the run branch itself; pass --into <other-branch>."
@@ -146,13 +146,13 @@ def _plan_merge(  # noqa: PLR0911
     try:
         cfg = layer.load_effective(cwd, config_paths).config
     except ConfigError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     # An orphaned lane (its coordinator died before importing it) is adopted: fetched, then merged.
     try:
-        adopted = _workdirs.adopt_orphan_lane(cwd, cfg, layout, manifest)
+        adopted = workdirs.adopt_orphan_lane(cwd, cfg, layout, manifest)
     except subrun.SubrunError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     if adopted is not None:
         print(f"[agent6] {adopted}")
@@ -165,7 +165,7 @@ def _plan_merge(  # noqa: PLR0911
             # Not a failure: there is no work to land.
             print("[agent6] nothing to merge: this run committed nothing.")
             return 0
-        _common.error(
+        common.error(
             f"run ref {run_branch!r} no longer exists; its commits survive at"
             f" {git_read.chain_ref_for(manifest.session_id)}."
         )
@@ -176,7 +176,7 @@ def _plan_merge(  # noqa: PLR0911
             if not into and target == git_read.DETACHED_HEAD
             else f"target branch {target!r} does not exist"
         )
-        _common.error(f"{why}; pass --into <existing-branch>.")
+        common.error(f"{why}; pass --into <existing-branch>.")
         return 2
     identity = git_read.CommitIdentity(
         name=cfg.git.commit.name,
@@ -192,7 +192,7 @@ def _plan_merge(  # noqa: PLR0911
     try:
         git_read.verify_git_identity(cwd, identity)  # refuse cleanly before mutating anything
     except errors.GitError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     return _MergePlan(
         layout=layout,
@@ -280,7 +280,7 @@ def _cmd_merge(
         warn=lambda m: print(f"[agent6] {m}", file=sys.stderr),
     )
     if outcome.status == "error":
-        _common.error(f"{outcome.error}")
+        common.error(f"{outcome.error}")
         return 1
     if outcome.status == "conflict":
         print(
@@ -453,7 +453,7 @@ def _prune_branch(
     sha = git_read.branch_tip_sha(cwd, br)
     if sha is not None and git_ops.force_delete_squash_merged_branch(cwd, br):
         print(f"[agent6] deleted {br} (squash-merged into {stamp.into})")
-        print(_common.sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
+        print(common.sgr(f"          undelete: git branch {br} {sha[:12]}", "2"))
         return True
     print(f"[agent6] kept {br} (squash-merged into {stamp.into}; git refused the delete)")
     return False
@@ -482,13 +482,13 @@ def _cmd_prune(
     """
     cwd = fork_worktrees.sweep_checkout(pathlib.Path.cwd())
     if not git_read.is_git_repo(cwd):
-        _common.error("not a git repository")
+        common.error("not a git repository")
         return 2
     branches = git_read.list_run_branches(cwd)
     try:
         current = git_read.status(cwd).branch
     except errors.GitError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     repo_state = paths.state_dir(cwd)
     deleted = squashed_deleted = merged_kept = live_kept = 0
@@ -568,7 +568,7 @@ def _sweep_workdirs(
     except ConfigError as exc:
         print(f"[agent6] workdir sweep skipped (config unreadable: {exc})", file=sys.stderr)
         return "", False
-    clones_swept, clones_kept = _workdirs.sweep_fanout_clones(
+    clones_swept, clones_kept = workdirs.sweep_fanout_clones(
         cwd,
         cfg,
         note_keep=lambda path, why: print(f"[agent6] kept fan-out clones at {path} ({why})"),
@@ -578,7 +578,7 @@ def _sweep_workdirs(
         print(f"[agent6] removed {fork_id}'s worktree ({why})")
     for fork_id, why in worktrees_kept:
         print(f"[agent6] kept {fork_id}'s worktree ({why})")
-    _common.note_removed_cwd(cwd)
+    common.note_removed_cwd(cwd)
     note = (
         f"; fan-out clones: swept {clones_swept}, kept {clones_kept}"
         if clones_swept or clones_kept
@@ -634,5 +634,5 @@ def _prune_chain_refs(
         print(f"[agent6] deleted {ref} ({how} into {stamp.into})")
         if state.verdict == "squashed":
             # A chain ref has no reflog: the sha is the only way back.
-            print(_common.sgr(f"          undelete: git update-ref {ref} {sha[:12]}", "2"))
+            print(common.sgr(f"          undelete: git update-ref {ref} {sha[:12]}", "2"))
     return refs_deleted, kept

@@ -12,9 +12,10 @@ from unittest import mock
 
 import pytest
 
-from agent6 import budget, memory
+from agent6 import budget
 from agent6.app import finalize, reporter
-from agent6.harness import _chain, _conversation, _loop_state, _snapshot
+from agent6.context import memory
+from agent6.harness import loop_conversation, loop_snapshot, loop_state, run_chain
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import results
 from agent6.vcs import git_read
@@ -58,13 +59,13 @@ def test_run_chain_left_out_names_ignored_and_start_untracked_paths(
     repo = _repo(tmp_path)
     for rel in ("data/rates.json", "notes.txt", "new.py"):
         (repo / rel).write_text("x\n", encoding="utf-8")
-    chain = _chain.RunChain(
+    chain = run_chain.RunChain(
         repo, ref="refs/agent6/t/head", untracked_at_start=frozenset({"notes.txt"})
     )
     paths = ("data/rates.json", "data/units.json", "notes.txt", "new.py")
     assert chain.left_out(paths) == (("data/rates.json",), ("notes.txt",))
     # A run that never commits leaves nothing out of its commits.
-    assert _chain.RunChain(repo).left_out(paths) == ((), ())
+    assert run_chain.RunChain(repo).left_out(paths) == ((), ())
 
 
 def _dispatch_edit(
@@ -90,17 +91,17 @@ def _dispatch_edit(
     wf = test_harness._wf(  # pyright: ignore[reportPrivateUsage]
         repo, mode="run", dispatcher=dispatcher, events=events
     )
-    wf.chain = _chain.RunChain(
+    wf.chain = run_chain.RunChain(
         repo, ref="refs/agent6/t/head", fallback_parent="HEAD", untracked_at_start=untracked
     )
     wf.state_dir = state_dir
-    turn = _loop_state.TurnState(
+    turn = loop_state.TurnState(
         number=3,
         resp=test_harness._resp(""),  # pyright: ignore[reportPrivateUsage]
-        assistant=_conversation.AssistantMessage(
+        assistant=loop_conversation.AssistantMessage(
             raw_content=(),
             tool_uses=(
-                _conversation.ToolUse(id="tu1", name="apply_edit", input={"path": tool_path}),
+                loop_conversation.ToolUse(id="tu1", name="apply_edit", input={"path": tool_path}),
             ),
         ),
     )
@@ -110,7 +111,7 @@ def _dispatch_edit(
         turn_context(),
     )
     item = turn.tool_results[0]
-    assert isinstance(item, _conversation.ToolResultItem)
+    assert isinstance(item, loop_conversation.ToolResultItem)
     return json.loads(item.content), events.events
 
 
@@ -213,7 +214,7 @@ def _end_footer(
     }
     layout.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     finalize.print_session_end(
-        _snapshot.SessionResult(
+        loop_snapshot.SessionResult(
             completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
         ),
         layout=layout,

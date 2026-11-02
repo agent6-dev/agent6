@@ -3,7 +3,7 @@
 """The system-prompt text of the harness.
 
 The prompt base for each mode, the context-block templates the worker prompt is assembled
-from, and the helpers that pick a block variant. `agent6.harness._prompt_blocks` owns the
+from, and the helpers that pick a block variant. `agent6.harness.prompt_blocks` owns the
 assembly (`build_system_prompt`).
 """
 

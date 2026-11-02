@@ -18,11 +18,10 @@ import types
 from typing import Any
 from unittest import mock
 
-from agent6 import event_log
 from agent6.graph import curator as graph_curator
-from agent6.harness import _chain, _operator, loop
-from agent6.providers import types as providers_types
-from agent6.sessions import ipc
+from agent6.harness import loop, operator_bridge, run_chain
+from agent6.providers import provider_types
+from agent6.sessions import event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import results
 
@@ -45,9 +44,9 @@ def _repo(path: pathlib.Path) -> str:
     ).stdout.strip()
 
 
-def _tool_call(name: str, args: dict[str, Any], call_id: str) -> providers_types.ProviderResponse:
+def _tool_call(name: str, args: dict[str, Any], call_id: str) -> provider_types.ProviderResponse:
     block = {"type": "tool_use", "id": call_id, "name": name, "input": args}
-    return providers_types.ProviderResponse(
+    return provider_types.ProviderResponse(
         text="",
         tool_uses=({"id": call_id, "name": name, "input": args},),
         stop_reason="tool_use",
@@ -73,7 +72,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
     dispatcher = mock.MagicMock(last_verification=None)
     dispatcher.dispatch.return_value = results.RawResult({"content": "hi\n"})
 
-    def _turn(*_args: Any, **_kwargs: Any) -> providers_types.ProviderResponse:
+    def _turn(*_args: Any, **_kwargs: Any) -> provider_types.ProviderResponse:
         """Between the turns the operator writes to all three bridges."""
         if provider.call.call_count == 1:
             ipc.queue_request(session_dir, "task", "Add a --json flag to the stats report")
@@ -86,7 +85,7 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
     provider.call.side_effect = _turn
 
     wf = loop.Harness(
-        chain=_chain.RunChain(repo, ref="refs/agent6/bridges", fallback_parent=head),
+        chain=run_chain.RunChain(repo, ref="refs/agent6/bridges", fallback_parent=head),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file="", decompose="off", revise_prompt="off"),
@@ -108,7 +107,9 @@ def test_a_running_turn_takes_the_task_the_retirement_and_the_goal(tmp_path: pat
         logger=lambda _m: None,
         events=events,
         curator=curator,
-        bridge=_operator.OperatorBridge(take_requests=lambda: ipc.drain_requests(session_dir)),
+        bridge=operator_bridge.OperatorBridge(
+            take_requests=lambda: ipc.drain_requests(session_dir)
+        ),
         max_turns=3,
     )
 

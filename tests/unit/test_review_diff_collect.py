@@ -16,7 +16,7 @@ import subprocess
 import pytest
 
 from agent6.ui.cli import review_cmds  # pyright: ignore[reportPrivateUsage]
-from agent6.vcs import _git_command, git_read, review
+from agent6.vcs import git_command, git_read, review
 
 
 def _git(root: pathlib.Path, *args: str) -> str:
@@ -583,7 +583,7 @@ def test_review_commands_do_not_expand_paths_per_repository_file(
     (repo / "tracked.py").write_text("changed\n")
     if committed:
         _git(repo, "commit", "-qam", "change")
-    spawn = _git_command.spawn
+    spawn = git_command.spawn
 
     def bounded_spawn(
         cwd: pathlib.Path,
@@ -608,7 +608,7 @@ def test_review_commands_do_not_expand_paths_per_repository_file(
                 assert count < 40, f"{args[0]} received {count} pathspecs"
         return spawn(cwd, args, env_extra, stdin_text, repo=repo)
 
-    monkeypatch.setattr(_git_command, "spawn", bounded_spawn)
+    monkeypatch.setattr(git_command, "spawn", bounded_spawn)
     compared = review.comparison(
         repo, base="HEAD~1" if committed else "", head="HEAD", paths=selected
     )

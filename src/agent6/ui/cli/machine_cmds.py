@@ -32,16 +32,16 @@ from agent6.machine import (
 )
 from agent6.sessions import layout, process
 from agent6.ui import notify
-from agent6.ui.cli import _common, machine_check, plan_watch
+from agent6.ui.cli import common, machine_check, plan_watch
 from agent6.viewmodel import (
     MachineState,
-    _machine_logs,
-    _machine_watch,
     armed_wait,
     event_epoch,
     fold_machine,
     format,
+    machine_logs,
     machine_state,
+    machine_watch,
     machine_word_for_dir,
 )
 
@@ -63,7 +63,7 @@ def _cmd_machine_list() -> int:
     rows: list[tuple[str, str, str, str, str, str, str]] = []
     for m in machines:
         styled, plain = (
-            _common.styled_status(m.status, m.reason, color=color) if m.status else ("-", "-")
+            common.styled_status(m.status, m.reason, color=color) if m.status else ("-", "-")
         )
         rows.append(
             (
@@ -196,7 +196,7 @@ def _existing_machine_root(machine_id: str, cwd: pathlib.Path) -> pathlib.Path |
     root = machine_instance_root(machine_id, cwd)
     if root is not None and root.is_dir():
         return root
-    _common.error(
+    common.error(
         f"no machine instance {machine_id!r} in repo {cwd}.{_no_instance_hint(machine_id, cwd)}"
     )
     return None
@@ -224,11 +224,11 @@ def _cmd_machine_replay(machine_id: str) -> int:
     try:
         result = drive(spec, journal, None, live=False)
     except (JournalError, EngineError) as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 1
     print(
         f"{result.status.upper()}: {spec.machine} replayed to {result.state!r}"
-        f" after {_common.plural(result.transitions, 'transition')} ({result.reason})"
+        f" after {common.plural(result.transitions, 'transition')} ({result.reason})"
     )
     return 0 if result.status in ("ok", "incomplete") else 1
 
@@ -277,13 +277,13 @@ def _cmd_machine_status(machine_id: str) -> int:
         events = journal.read()
         snapshot = journal.latest_snapshot()
     except (JournalError, EngineError) as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 1
     ms = fold_machine(spec, events)
     pending, pending_note = _armed_wait_tolerant(root, ms)
 
     alive = process.worker_is_alive(root)
-    spend, inflight_state = _machine_logs.machine_spend(events, root, alive=alive)
+    spend, inflight_state = machine_logs.machine_spend(events, root, alive=alive)
     # machine_word_for_dir owns running/waiting/stopped for every surface; parked beats alive.
     word = machine_word_for_dir(ms, root)
 
@@ -298,7 +298,7 @@ def _cmd_machine_status(machine_id: str) -> int:
             + (
                 f" (an approval open in {blocked_in}: answer it in the TUI machine view"
                 " or the web page)"
-                if alive and (blocked_in := _machine_logs.newest_agent_execution(root).blocked_in)
+                if alive and (blocked_in := machine_logs.newest_agent_execution(root).blocked_in)
                 else ""
             )
         )
@@ -357,7 +357,7 @@ def _cmd_machine_poke(
     # An ended machine consumes no signals, so the wake reply would be a lie: refuse.
     ok, refusal = machine_state.verb_answer(root, machine_id, "poke")
     if not ok or refusal:
-        _common.refuse(f"{refusal}")
+        common.refuse(f"{refusal}")
         return 2
     journal = MachineJournal(root)
     if message is not None:
@@ -366,14 +366,14 @@ def _cmd_machine_poke(
         try:
             payload = json.loads(data)
         except json.JSONDecodeError as exc:
-            _common.error(f"--data is not valid JSON: {exc}")
+            common.error(f"--data is not valid JSON: {exc}")
             return 2
     else:
         payload = None
     try:
         journal.poke(payload)
     except JournalError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 1
     carried = "" if payload is None else " (with payload)"
     print(f"poked {machine_id}: it will wake on its next signal check{carried}")
@@ -399,7 +399,7 @@ def _cmd_machine_stop(machine_id: str) -> int:
         return 2
     ok, answer = machine_state.verb_answer(root, machine_id, "stop")
     if not ok:
-        _common.refuse(f"{answer}")
+        common.refuse(f"{answer}")
         return 2
     if answer:
         print(f"[agent6] {answer}", file=sys.stderr)
@@ -479,7 +479,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
     try:
         ms = fold_machine(spec, journal.read())
     except JournalError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 1
     print(_render_overview(ms), flush=True)
     if ms.ended is not None:
@@ -495,7 +495,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
         f"agent6 machine poke {machine_id} [--message TEXT]",
         file=sys.stderr,
     )
-    cursor = _machine_watch.MachineWatchCursor(seen_steps=len(ms.transitions))
+    cursor = machine_watch.MachineWatchCursor(seen_steps=len(ms.transitions))
     cursor.seed_notifications(ms)  # history already rendered by the overview
     anchor: float | None = None
     try:
@@ -504,7 +504,7 @@ def _cmd_machine_watch(machine_id: str) -> int:  # noqa: PLR0911, PLR0912
                 ms = fold_machine(spec, journal.read())
             except JournalError as exc:
                 # The same degradation `machine status` gives a corrupt journal, never a traceback.
-                _common.error(f"{exc}")
+                common.error(f"{exc}")
                 return 1
             for t in cursor.new_transitions(ms):
                 print(f"  {t.line}", flush=True)

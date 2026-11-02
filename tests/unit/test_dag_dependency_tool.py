@@ -16,9 +16,9 @@ import pytest
 from agent6.config import Config, load_config
 from agent6.graph import curator as graph_curator
 from agent6.graph import models
-from agent6.harness import _toolset
+from agent6.harness import toolset
 from agent6.sessions import layout
-from agent6.tools import dispatch, errors, schema
+from agent6.tools import dispatch, schema, tool_errors
 
 _VALID_TOML = """
 [agent6]
@@ -57,7 +57,7 @@ def test_no_separate_dependency_tool_and_both_carriers_expose_depends_on(
     """No mode lists an `add_dependency` tool; both carriers' schemas expose `depends_on`."""
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
     for mode in ("run", "plan", "ask", "machine", "agent"):
-        names = {t.name for t in _toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
+        names = {t.name for t in toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "add_dependency" not in names, mode
     assert "depends_on" in schema.DagAddTaskInput.model_json_schema()["properties"]
     assert "depends_on" in schema.DagUpdateTaskInput.model_json_schema()["properties"]
@@ -109,7 +109,7 @@ def test_update_task_with_neither_status_nor_edges_refuses(tmp_path: pathlib.Pat
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
     d.set_run_root_node_id(root.id)
     a = d.dispatch("add_task", {"title": "first"}).to_wire()
-    with pytest.raises(errors.ToolError, match="status and/or depends_on"):
+    with pytest.raises(tool_errors.ToolError, match="status and/or depends_on"):
         d.dispatch("update_task", {"id": a["id"]})
 
 
@@ -124,14 +124,14 @@ def test_update_task_surfaces_cycle_rejection(tmp_path: pathlib.Path) -> None:
     d.set_run_root_node_id(root.id)
     a = d.dispatch("add_task", {"title": "first"}).to_wire()
     b = d.dispatch("add_task", {"title": "second", "depends_on": [a["id"]]}).to_wire()
-    with pytest.raises(errors.ToolError, match="cycle"):
+    with pytest.raises(tool_errors.ToolError, match="cycle"):
         d.dispatch("update_task", {"id": a["id"], "depends_on": [b["id"]]})
 
 
 def test_depends_on_ids_validate_at_the_schema(tmp_path: pathlib.Path) -> None:
     cur = _curator(tmp_path)
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path), curator=cur)
-    with pytest.raises(errors.ToolError):
+    with pytest.raises(tool_errors.ToolError):
         d.dispatch("update_task", {"id": _B, "depends_on": ["short"]})
     assert not cur.nodes()  # rejected at the schema, never reached the curator
 
@@ -246,7 +246,7 @@ def test_update_task_refuses_a_note_without_a_status(tmp_path: pathlib.Path) -> 
 
     The graph records a note on a status change only.
     """
-    from agent6.tools import _dag_tools
+    from agent6.tools import dag_tools
 
     curator = graph_curator.GraphCurator(
         layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
@@ -257,5 +257,5 @@ def test_update_task_refuses_a_note_without_a_status(tmp_path: pathlib.Path) -> 
             draft=models.TaskNodeDraft(title="root", depends_on=(), created_by="planner"),
         )
     )
-    with pytest.raises(errors.ToolError, match="a note rides along with a status"):
-        _dag_tools.update_task(curator, {"id": root.id, "note": "worth remembering"})
+    with pytest.raises(tool_errors.ToolError, match="a note rides along with a status"):
+        dag_tools.update_task(curator, {"id": root.id, "note": "worth remembering"})

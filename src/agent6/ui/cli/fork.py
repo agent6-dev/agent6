@@ -13,11 +13,11 @@ import sys
 import time
 
 from agent6 import kinds
-from agent6.app import _setup, fork, preflight, resume
+from agent6.app import fork, preflight, resume, session_setup
 from agent6.config import Config
 from agent6.sessions import id
-from agent6.ui.cli import _common, run
-from agent6.viewmodel import _session_log, listing
+from agent6.ui.cli import common, run
+from agent6.viewmodel import listing, session_log
 
 
 def _cmd_fork(
@@ -28,8 +28,8 @@ def _cmd_fork(
     new_session_id: str = "",
     no_run: bool = False,
     tui: bool = False,
-    budget_overrides: _setup.BudgetOverrides | None = None,
-    sandbox_overrides: _setup.SandboxOverrides | None = None,
+    budget_overrides: session_setup.BudgetOverrides | None = None,
+    sandbox_overrides: session_setup.SandboxOverrides | None = None,
     steer: str = "",
 ) -> int:
     """Create a session cloned from a source at a checkpoint, then continue it.
@@ -52,7 +52,7 @@ def _cmd_fork(
         The exit code; 2 when the flags conflict or the source already finished.
     """
     if no_run and steer.strip():
-        _common.error(
+        common.error(
             "--steer seeds the immediate continuation, which --no-run skips."
             " Drop --no-run, or start the fork later with `agent6 resume <id> --steer ...`."
         )
@@ -61,17 +61,17 @@ def _cmd_fork(
     if at_turn is None:
         # `resume` cannot see a finished parent from the child's empty log, so it is read here.
         try:
-            source = _common.resolve_or_newest_layout(pathlib.Path.cwd(), source_session_id)
+            source = common.resolve_or_newest_layout(pathlib.Path.cwd(), source_session_id)
         except id.SessionIdError:
             source = None
         if source is not None:
             # The child has no saved answer of its own, so one on the source is no new work here.
-            scan = _session_log.scan_session_log(source.logs_path)
+            scan = session_log.scan_session_log(source.logs_path)
             source_finished = listing.needs_new_work(
                 finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
             )
         if source is not None and source_finished and not no_run and not steer.strip():
-            _common.error(
+            common.error(
                 f"run {source.session_id!r} already finished (the agent called"
                 " finish_session), so a fork of its last turn has nothing to do."
                 ' Give the fork new work with --steer "<what to do next>",'

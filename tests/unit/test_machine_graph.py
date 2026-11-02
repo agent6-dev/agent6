@@ -7,14 +7,14 @@ from __future__ import annotations
 import pathlib
 import re
 
-from agent6.machine import _semantics, graph
+from agent6.machine import graph, semantics
 from tests.unit.test_machine_model import VALID_MACHINE
 
 
 def _spec(tmp_path: pathlib.Path):  # type: ignore[no-untyped-def]
     path = tmp_path / "m.asm.toml"
     path.write_text(VALID_MACHINE, encoding="utf-8")
-    return _semantics.load_machine(path)
+    return semantics.load_machine(path)
 
 
 def test_mermaid_has_entry_and_terminal(tmp_path: pathlib.Path) -> None:
@@ -51,4 +51,4 @@ def test_documented_graph_is_the_rendered_one(tmp_path: pathlib.Path) -> None:
     example = [b for b in blocks if 'machine = "item-classifier"' in b][-1]
     path = tmp_path / "item-classifier.asm.toml"
     path.write_text(example, encoding="utf-8")
-    assert graph.render_mermaid(_semantics.load_machine(path)) == diagram.group(1)
+    assert graph.render_mermaid(semantics.load_machine(path)) == diagram.group(1)

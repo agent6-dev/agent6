@@ -20,21 +20,21 @@ import sys
 import pydantic
 
 from agent6 import kinds, paths
-from agent6.app import _setup, confine
+from agent6.app import confine, session_setup
 from agent6.config import (
     Config,
     MCPServerEntry,
-    _layer_data,
     io,
     is_cleartext_url,
     is_loopback_url,
+    layer_data,
     mcp_server_name_refusal,
     write,
 )
 from agent6.config import layer as config_layer
 from agent6.sandbox import detect, jail
 from agent6.tools import mcp_client
-from agent6.ui.cli import _common
+from agent6.ui.cli import common
 
 # Long enough for a cold `npx` to fetch and boot a server; the per-run default stays 10s.
 _PROBE_TIMEOUT_S = 60.0
@@ -117,7 +117,7 @@ def _cleartext_token_go_ahead(url: str, token_env: str) -> bool:
     """
     if not (token_env and is_cleartext_url(url) and not is_loopback_url(url)):
         return True
-    _common.warn(
+    common.warn(
         f"{url} is plaintext http to a non-loopback host: the token"
         f" from ${token_env} will be readable on the network path."
     )
@@ -147,7 +147,7 @@ def _report_no_answer(
         isolation: The isolation the probe ran under.
         failure: The probe's failure text.
     """
-    _common.error(f"{name} did not answer: {failure}")
+    common.error(f"{name} did not answer: {failure}")
     if command and shutil.which(command[0]) is None:
         head = command[0]
         what = (
@@ -198,7 +198,7 @@ def cmd_mcp_add(
         name=name, command=command, url=url, token_env=token_env, pass_env=pass_env, cfg=cfg
     )
     if refusal:
-        _common.error(f"{refusal}")
+        common.error(f"{refusal}")
         return 2
     if not _cleartext_token_go_ahead(url, token_env):
         print("nothing was written to config.", file=sys.stderr)
@@ -220,21 +220,21 @@ def cmd_mcp_add(
             f"{'.'.join(str(part) for part in issue['loc']) or 'entry'}: {issue['msg']}"
             for issue in exc.errors()
         )
-        _common.error(f"{name}: {detail}")
+        common.error(f"{name}: {detail}")
         return 2
-    env = _setup.detect_env()
+    env = session_setup.detect_env()
     isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
     if command and isolation == "none":
         # No jail, no read-only workspace to probe under: the entry is written unproved, said so.
-        _common.warn(
-            f"{name} not probed: no jail ({_setup.no_jail_cause(cfg, env)}); a run starts "
+        common.warn(
+            f"{name} not probed: no jail ({session_setup.no_jail_cause(cfg, env)}); a run starts "
             "it unconfined."
         )
     elif command and (
         refusal := confine.config_refusal(cfg, isolation, pathlib.Path.cwd(), mcp_network=False)
     ):
         # A run would refuse this config, so no probe runs under a policy the run never builds.
-        _common.warn(f"{name} not probed: a run would refuse: {refusal}")
+        common.warn(f"{name} not probed: a run would refuse: {refusal}")
     else:
         rc = _prove(cfg, name, entry, isolation)
         if rc is not None:
@@ -254,7 +254,7 @@ def cmd_mcp_add(
         pathlib.Path.cwd(), f"mcp.servers.{name}", fields, to_repo=to_repo
     )
     if written is not None:
-        _common.error(f"{written}")
+        common.error(f"{written}")
         return 2
     print(f"\n{_written_line(effective, name, to_repo)}")
     # The master switch is a security default: named, never flipped on the operator's behalf.
@@ -280,11 +280,11 @@ def _prove(
         The exit code when the server gave no proof, else None.
     """
     try:
-        spec = _setup.mcp_server_spec(
+        spec = session_setup.mcp_server_spec(
             cfg, pathlib.Path.cwd(), isolation, name, entry, readonly=True
         )
     except jail.JailUnavailableError as exc:
-        _common.error(f"{exc}")
+        common.error(f"{exc}")
         return 2
     print(f"[agent6] {_describe(spec)} ...", file=sys.stderr)
     tools, failure = _probe(spec)
@@ -292,7 +292,7 @@ def _prove(
         _report_no_answer(name, list(entry.command), isolation, failure)
         return 1
     if not tools:
-        _common.error(f"{name} started but exposed no tools; nothing was written.")
+        common.error(f"{name} started but exposed no tools; nothing was written.")
         return 1
     print(f"\n{name}: {mcp_client.tool_count(len(tools))}")
     for tool in tools:
@@ -307,7 +307,7 @@ def _repo_flag(to_repo: bool) -> str:
     return "--repo " if to_repo else ""
 
 
-def _layers_holding(effective: _layer_data.EffectiveConfig, name: str) -> set[str]:
+def _layers_holding(effective: layer_data.EffectiveConfig, name: str) -> set[str]:
     """Return the config layers whose own file declares `[mcp.servers.<name>]`."""
     return {
         layer.name
@@ -316,7 +316,7 @@ def _layers_holding(effective: _layer_data.EffectiveConfig, name: str) -> set[st
     }
 
 
-def _written_line(effective: _layer_data.EffectiveConfig, name: str, to_repo: bool) -> str:
+def _written_line(effective: layer_data.EffectiveConfig, name: str, to_repo: bool) -> str:
     """Return where the entry went, and what that means beside the other layer's entry.
 
     The repo layer wins over the global one.
@@ -374,16 +374,16 @@ def cmd_mcp_remove(
             if other in holders
             else "agent6 mcp list shows the configured servers"
         )
-        _common.error(f"no {name!r} in the {target} config ({elsewhere}).")
+        common.error(f"no {name!r} in the {target} config ({elsewhere}).")
         return 2
     res = write.unset_config_table(pathlib.Path.cwd(), f"mcp.servers.{name}", to_repo=to_repo)
     if res.error is not None:
-        _common.error(f"removing {name} left an invalid config:\n{res.error}")
+        common.error(f"removing {name} left an invalid config:\n{res.error}")
         return 2
     if not res.removed:
         # A dotted key or inline table the line surgery cannot delete: still live, and said so.
         path = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
-        _common.error(
+        common.error(
             f"{name} is not written as a [mcp.servers.{name}] table in {path};"
             " it lives in a dotted key or an inline table, which this verb does not"
             " rewrite. Edit that file by hand."

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The two folds over one session log agree on the facts they share.
 
-`viewmodel._session_log.scan_session_log` folds `logs.jsonl` for the listings and
+`viewmodel.session_log.scan_session_log` folds `logs.jsonl` for the listings and
 `viewmodel.state.fold_session` folds the same log for the viewers, each with
 its own rules for the resume-then-end-again shape and the budget banking.
 Two readers of one stream drift; this folds every fixture both ways.
@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from agent6.viewmodel import _session_log, status_facts
+from agent6.viewmodel import session_log, status_facts
 from agent6.viewmodel import state as viewmodel_state
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_session_logs.jsonl"
@@ -175,7 +175,7 @@ def _shared_facts(
 ) -> tuple[dict[str, Any], ...]:
     log = tmp_path / "logs.jsonl"
     log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    scan = _session_log.scan_session_log(log)
+    scan = session_log.scan_session_log(log)
     state = viewmodel_state.fold_session(events)
     listing: dict[str, Any] = {
         "task": scan.task_label.task,
@@ -309,7 +309,7 @@ def test_the_folds_agree_that_a_queued_question_blocks_nothing(tmp_path: pathlib
     for events, blocked in ((rows, False), ([*rows, waiting], True)):
         log = tmp_path / "logs.jsonl"
         log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-        scan = _session_log.scan_session_log(log).status_facts()
+        scan = session_log.scan_session_log(log).status_facts()
         viewer = status_facts(viewmodel_state.fold_session(events))
         assert (scan.operator_blocked, scan.blocked_kind) == (
             blocked,

@@ -14,11 +14,11 @@ import pathlib
 from collections.abc import Sequence
 from typing import Any
 
-from agent6 import __version__, event_log, kinds, portable, task_text
+from agent6 import __version__, kinds, portable, task_text
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
+from agent6.sessions import event_log, manifest
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import manifest
 from agent6.tools import policy as tools_policy
 
 _LEVELS: dict[str, kinds.IsolationLevel] = {"full": "full", "partial": "partial", "none": "none"}

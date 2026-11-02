@@ -13,7 +13,7 @@ import pytest
 
 from agent6.config import AnthropicProviderEntry, OpenAIProviderEntry
 from agent6.models import cache
-from agent6.providers import _transport
+from agent6.providers import transport
 
 
 class _FakeResp:
@@ -35,7 +35,7 @@ def _patch_get(monkeypatch: pytest.MonkeyPatch, resp_or_exc: Any) -> list[str]:
             raise resp_or_exc
         return resp_or_exc
 
-    monkeypatch.setattr(_transport, "http_request", _get)
+    monkeypatch.setattr(transport, "http_request", _get)
     return urls
 
 
@@ -54,11 +54,11 @@ def test_key_probe_uses_the_capped_request(monkeypatch: pytest.MonkeyPatch, cap:
     response = httpx2.Response(
         200, json={"data": [{"id": "m1"}]}, request=httpx2.Request("GET", url)
     )
-    monkeypatch.setattr(_transport, "MAX_RESPONSE_BYTES", cap)
+    monkeypatch.setattr(transport, "MAX_RESPONSE_BYTES", cap)
     with (
         mock.patch.object(httpx2, "get", return_value=response),
         mock.patch.object(httpx2, "stream", return_value=contextlib.nullcontext(response)),
-        mock.patch.object(_transport, "http_request", wraps=_transport.http_request) as request,
+        mock.patch.object(transport, "http_request", wraps=transport.http_request) as request,
     ):
         result = cache.probe_provider_key(entry, "AT", timeout_s=7.0)
     if cap == 16:

@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import _session, providers
+from agent6.app import role_providers, session_parts
 from agent6.providers import ProviderResponse
 from agent6.sessions import manifest as sessions_manifest
 from agent6.ui.cli import cli_main
@@ -109,7 +109,7 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     _git(repo, "add", "a.py", "b.py")
     _git(repo, "commit", "-q", "-m", "seed")
     monkeypatch.chdir(repo)
-    monkeypatch.setattr(_session, "select_isolation", _none_isolation)
+    monkeypatch.setattr(session_parts, "select_isolation", _none_isolation)
     return repo
 
 
@@ -119,7 +119,7 @@ def _run(monkeypatch: pytest.MonkeyPatch, session_id: str, script: list[_Step]) 
     def _factory(*_a: Any, **_k: Any) -> _Scripted:
         return prov
 
-    monkeypatch.setattr(providers, "build_role_provider", _factory)
+    monkeypatch.setattr(role_providers, "build_role_provider", _factory)
     assert cli_main(["run", "--session-id", session_id, "t"]) == 0
 
 

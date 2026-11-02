@@ -7,7 +7,7 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
-from agent6.harness import _chain
+from agent6.harness import run_chain
 from agent6.vcs import git_read
 
 
@@ -31,7 +31,7 @@ def test_the_chain_keeps_hidden_paths_out_of_its_commits_diffs_and_dirty_checks(
     _git(repo, "commit", "-q", "-m", "init")
     base = _git(repo, "rev-parse", "HEAD")
     hidden = git_read.hidden_in_repo(repo, (str(repo / "secrets"), str(repo / ".env")))
-    chain = _chain.RunChain(
+    chain = run_chain.RunChain(
         repo, ref="refs/agent6/test/head", fallback_parent=base, base_sha=base, hidden=hidden
     )
     (repo / "secrets" / "deep").mkdir(parents=True)

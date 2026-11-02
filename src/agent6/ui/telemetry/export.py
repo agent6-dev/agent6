@@ -30,7 +30,7 @@ from agent6 import __version__, paths, portable
 from agent6.config import TelemetryConfig
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
-from agent6.ui.telemetry import _otlp, _prometheus
+from agent6.ui.telemetry import otlp, prometheus
 from agent6.viewmodel import (
     listing,
     tail,
@@ -378,11 +378,11 @@ class _Session:
                 continue
             if records:
                 body = (
-                    _otlp.traces_body(self.spans, self.resource)
+                    otlp.traces_body(self.spans, self.resource)
                     if signal == "traces"
-                    else _otlp.logs_body(self.logs, self.resource)
+                    else otlp.logs_body(self.logs, self.resource)
                 )
-                if not self.destination.send(_otlp.path_for(signal), body):
+                if not self.destination.send(otlp.path_for(signal), body):
                     continue  # the destination is off now; its cursor stays where it was
                 if signal == "traces":
                     self.sent_spans += len(records)
@@ -442,7 +442,7 @@ def prometheus_text(cwd: pathlib.Path) -> str:
         for session in root.journals():
             for _emitted in session.read(closing=True):
                 pass
-    return _prometheus.exposition(telemetry_metrics.merge_snapshots(s.metrics() for s in sessions))
+    return prometheus.exposition(telemetry_metrics.merge_snapshots(s.metrics() for s in sessions))
 
 
 def export(
@@ -543,11 +543,11 @@ class _MetricsSink:
             firsts = [s.fold.first_ns for s in sessions if s.fold.first_ns is not None]
             now_ns = time.time_ns()
             start_ns = min(firsts) if firsts else now_ns
-            body = _otlp.metrics_body(snapshot, self._resource, start_ns=start_ns, now_ns=now_ns)
-            if self._destination.send(_otlp.METRICS_PATH, body):
+            body = otlp.metrics_body(snapshot, self._resource, start_ns=start_ns, now_ns=now_ns)
+            if self._destination.send(otlp.METRICS_PATH, body):
                 self.posts += 1
         if self._config.metrics == "prometheus":
             target = pathlib.Path(self._config.prometheus_file)
             # The mode rides the temp file into the rename; nothing touches the destination path.
-            portable.atomic_write(target, _prometheus.exposition(snapshot), mode=TEXTFILE_MODE)
+            portable.atomic_write(target, prometheus.exposition(snapshot), mode=TEXTFILE_MODE)
             self.written = self._config.prometheus_file

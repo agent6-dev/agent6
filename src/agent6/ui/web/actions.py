@@ -28,11 +28,11 @@ from agent6.machine import (
     write_stop_request,
 )
 from agent6.sessions import ipc, layout, manifest, process
-from agent6.ui import directives, spawn
+from agent6.ui import directive_actions, spawn
 from agent6.ui.web import model
 from agent6.viewmodel import (
-    _machine_logs,
     listing,
+    machine_logs,
     machine_state,
     open_approval,
     pending_questions,
@@ -197,7 +197,7 @@ def steer(
     session_dir = _live_session_dir(cwd, session_id)
     if isinstance(session_dir, tuple):
         return session_dir
-    return directives.submit_composer_line(session_dir, text, config_paths=config_paths)
+    return directive_actions.submit_composer_line(session_dir, text, config_paths=config_paths)
 
 
 def fork_run(
@@ -396,7 +396,7 @@ def _machine_state_dir(cwd: pathlib.Path, name: str, state: str = "") -> pathlib
             return None
         target = machine_dir / "states" / state
         return target if target.is_dir() else None
-    log = _machine_logs.newest_state_log(machine_dir)
+    log = machine_logs.newest_state_log(machine_dir)
     return log.parent if log is not None else None
 
 
@@ -475,7 +475,7 @@ def _state_dir_for_verb(
     agent_state = _machine_state_dir(cwd, name, state)
     if agent_state is None:
         return False, f"no active agent state for machine {name!r}"
-    newest = _machine_logs.newest_state_log(machine_dir)
+    newest = machine_logs.newest_state_log(machine_dir)
     if newest is not None and agent_state != newest.parent:
         return False, (
             f"machine {name!r} has moved on from {agent_state.name} to {newest.parent.name}:"

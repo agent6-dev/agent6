@@ -193,7 +193,7 @@ def test_a_btw_still_thinking_when_the_watcher_gives_up_is_said_so(
 
     The give-up lands on the journal as its own block, naming how to read the answer later.
     """
-    from agent6 import event_log
+    from agent6.sessions import event_log
     from agent6.ui import btw as ui_btw
 
     d = _ask_dir(tmp_path, "quiet-fox-AAAAAA", events=[{"type": "session.start"}])

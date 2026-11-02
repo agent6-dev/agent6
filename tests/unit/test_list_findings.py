@@ -9,12 +9,13 @@ import pathlib
 
 import pytest
 
-from agent6 import event_log, paths, review_records
-from agent6.app import _session, review_actions
+from agent6 import paths, review_records
+from agent6.app import review_actions, session_parts
 from agent6.config import Config, RoleModel
-from agent6.harness import _toolset
+from agent6.harness import toolset
+from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import dispatch, errors, operator_prompts, results, schema
+from agent6.tools import dispatch, operator_prompts, results, schema, tool_errors
 from tests import review_helpers
 
 
@@ -29,13 +30,13 @@ def test_list_findings_is_a_run_tool_only(tmp_path: pathlib.Path) -> None:
     wired = functools.partial(results.FindingsResult, findings=())
     for mode in ("plan", "ask", "machine"):
         d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), mode=mode, findings=wired)
-        with pytest.raises(errors.ToolError, match="not available in"):
+        with pytest.raises(tool_errors.ToolError, match="not available in"):
             d.dispatch("list_findings", {})
 
 
 def test_a_dispatcher_without_a_reader_refuses_the_tool(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), mode="run")
-    with pytest.raises(errors.ToolError, match="none was wired"):
+    with pytest.raises(tool_errors.ToolError, match="none was wired"):
         d.dispatch("list_findings", {})
 
 
@@ -57,7 +58,7 @@ def test_the_worker_lists_open_findings_and_resolved_ones_with_all(tmp_path: pat
         mode="run",
         findings=functools.partial(review_actions.findings_result, saved.session_dir),
     )
-    assert "list_findings" in {t.name for t in _toolset.tool_definitions(d, mode="run")}
+    assert "list_findings" in {t.name for t in toolset.tool_definitions(d, mode="run")}
     listed = d.dispatch("list_findings", {})
     assert isinstance(listed, results.FindingsResult)
     assert listed.to_wire() == {
@@ -87,7 +88,7 @@ def test_a_session_before_its_first_review_says_so(tmp_path: pathlib.Path) -> No
     """An unreviewed session answers no findings and says why; a missing journal is an error."""
     saved = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "fresh-run")
     saved.ensure()
-    with pytest.raises(errors.ToolError, match="no session journal"):
+    with pytest.raises(tool_errors.ToolError, match="no session journal"):
         review_actions.findings_result(saved.session_dir)
     sink = event_log.EventSink(saved.logs_path)
     sink.emit("session.start", user_task="t", mode="run")
@@ -109,7 +110,7 @@ def test_a_pre_existing_line_is_tagged_without_lowering_severity(tmp_path: pathl
 def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathlib.Path) -> None:
     """A run's findings and command descriptions name its session, without changing bare tools."""
     saved = review_helpers.reviewed_session(tmp_path)
-    tools = _session.build_session_tools(
+    tools = session_parts.build_session_tools(
         Config(),
         cwd=tmp_path,
         state_dir=paths.state_dir(tmp_path),
@@ -127,7 +128,7 @@ def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathl
     assert [f.id for f in listed.findings] == ["f1", "f2"]
     assert listed.session_id == saved.session_id  # the id the steer command the model names takes
     assert listed.to_wire()["session_id"] == saved.session_id
-    definitions = {tool.name: tool for tool in _toolset.tool_definitions(tools.dispatcher)}
+    definitions = {tool.name: tool for tool in toolset.tool_definitions(tools.dispatcher)}
     description = definitions["list_findings"].description
     assert "`agent6 steer review-run --finding <id>`" in description
     assert "`agent6 sessions resolve review-run <id>`" in description
@@ -135,7 +136,7 @@ def test_the_run_lifecycle_wires_the_session_journal_to_the_tool(tmp_path: pathl
     assert "<session_id>" not in description
 
     bare = dispatch.ToolDispatcher(root=tmp_path, config=Config())
-    bare_definitions = {tool.name: tool for tool in _toolset.tool_definitions(bare)}
+    bare_definitions = {tool.name: tool for tool in toolset.tool_definitions(bare)}
     assert (
         "`agent6 steer <session_id> --finding <id>`"
         in bare_definitions["list_findings"].description

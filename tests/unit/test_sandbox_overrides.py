@@ -14,7 +14,7 @@ import argparse
 
 import pytest
 
-from agent6.app import _setup
+from agent6.app import session_setup
 from agent6.config import Config
 from agent6.sandbox import detect
 
@@ -24,14 +24,14 @@ def _args(**kw: bool) -> argparse.Namespace:
 
 
 def test_from_args_reads_both_flags() -> None:
-    o = _setup.SandboxOverrides.from_args(_args(disable_sandbox=True, auto_approve=True))
+    o = session_setup.SandboxOverrides.from_args(_args(disable_sandbox=True, auto_approve=True))
     assert o.disable_sandbox is True
     assert o.auto_approve is True
 
 
 def test_from_args_defaults_false_when_flags_absent() -> None:
     # Commands that do not offer the flags (or an older namespace) get False.
-    o = _setup.SandboxOverrides.from_args(_args())
+    o = session_setup.SandboxOverrides.from_args(_args())
     assert o.disable_sandbox is False
     assert o.auto_approve is False
 
@@ -39,14 +39,14 @@ def test_from_args_defaults_false_when_flags_absent() -> None:
 def test_apply_flag_path_forces_none_and_auto_approve() -> None:
     cfg = Config()
     assert cfg.sandbox.isolation == "auto"
-    out = _setup.SandboxOverrides(disable_sandbox=True, auto_approve=True).apply(cfg)
+    out = session_setup.SandboxOverrides(disable_sandbox=True, auto_approve=True).apply(cfg)
     assert out.sandbox.isolation == "none"
     assert out.sandbox.run_commands == "allow"
 
 
 def test_apply_noop_when_no_flags() -> None:
     cfg = Config()
-    assert _setup.SandboxOverrides().apply(cfg) is cfg
+    assert session_setup.SandboxOverrides().apply(cfg) is cfg
 
 
 def _linux_env() -> detect.Environment:
@@ -76,10 +76,13 @@ def test_overrides_render_as_the_flags_that_set_them() -> None:
     execution that drops them runs under the config's defaults (an `--auto-approve` run detaches and
     waits on its first approval; a `--max-usd` cap falls back to the config's).
     """
-    sandbox = _setup.SandboxOverrides(disable_sandbox=True, auto_approve=True)
-    budget = _setup.BudgetOverrides(max_usd=0.25, max_tokens_fallback=1000)
+    sandbox = session_setup.SandboxOverrides(disable_sandbox=True, auto_approve=True)
+    budget = session_setup.BudgetOverrides(max_usd=0.25, max_tokens_fallback=1000)
     assert sandbox.argv() == ["--disable-sandbox", "--auto-approve"]
     assert budget.argv() == ["--max-usd", "0.25", "--max-tokens-fallback", "1000"]
-    assert _setup.override_flags(budget, sandbox, None) == [*budget.argv(), *sandbox.argv()]
-    assert _setup.override_flags(None, None, None) == []
-    assert _setup.SandboxOverrides().argv() == [] and _setup.BudgetOverrides().argv() == []
+    assert session_setup.override_flags(budget, sandbox, None) == [*budget.argv(), *sandbox.argv()]
+    assert session_setup.override_flags(None, None, None) == []
+    assert (
+        session_setup.SandboxOverrides().argv() == []
+        and session_setup.BudgetOverrides().argv() == []
+    )

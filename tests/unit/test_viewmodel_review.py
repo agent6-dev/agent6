@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from agent6 import review_records
-from agent6.viewmodel import _session_log, _state_view, state
+from agent6.viewmodel import session_log, state, state_view
 
 
 def _target(**changes: Any) -> review_records.ReviewTarget:
@@ -106,7 +106,7 @@ def test_repeated_observation_preserves_resolution_and_history(tmp_path: pathlib
     live = state.fold_session(rows).review
     log = tmp_path / "logs.jsonl"
     log.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
-    assert _session_log.scan_session_log(log).review == live
+    assert session_log.scan_session_log(log).review == live
     assert live.version == 4
     finding = live.findings[0]
     assert len(finding.observations) == 2
@@ -129,7 +129,7 @@ def test_line_origin_follows_the_latest_observation_without_changing_merge_polic
     result = state.fold_session([first])
     assert result.review.findings[0].line_origin.kind == "pre_existing"
     assert result.review.merge_guard.open_block_ids == ("f1",)
-    wire = _state_view.session_state_as_dict(result)["review"]
+    wire = state_view.session_state_as_dict(result)["review"]
     assert wire["findings"][0]["line_origin"] == first["findings"][0]["line_origin"]
     later = _panel("p2")
     later["findings"][0]["line_origin"] = dict(kind="changed", reason="Changed lines.")
@@ -199,7 +199,7 @@ def test_corrupt_new_evidence_keeps_its_reason(tmp_path: pathlib.Path) -> None:
     result = state.fold_session([row]).review
     assert result.merge_guard.read_failure
     assert "repository" in result.merge_guard.read_failure
-    assert _session_log.scan_session_log(log).review == result
+    assert session_log.scan_session_log(log).review == result
     assert state.fold_session(
         [row, _panel("clean", findings=False)]
     ).review.merge_guard.read_failure
@@ -209,14 +209,14 @@ def test_unreadable_journal_tail_cannot_certify_a_review(tmp_path: pathlib.Path)
     """Keep a torn finding record from making an earlier clean panel look authoritative."""
     log = tmp_path / "logs.jsonl"
     log.write_text(json.dumps(_panel(findings=False)) + '\n{"type":"loop.review.panel",')
-    view = _session_log.scan_session_log(log).review
+    view = session_log.scan_session_log(log).review
     assert view.read_failure
     assert view.for_comparison(_target()).freshness == "unknown"
 
 
 def test_a_panel_row_with_an_unknown_field_is_unreadable_evidence(tmp_path: pathlib.Path) -> None:
     """Unknown fields on a panel row were ignored; the row is refused and both readers say so."""
-    from agent6.harness import _review_history
+    from agent6.harness import review_history
 
     enveloped = {**_panel(), "ts": "2026-10-25T00:00:00+00:00"}
     assert not state.fold_session([enveloped]).review.read_failure
@@ -225,15 +225,15 @@ def test_a_panel_row_with_an_unknown_field_is_unreadable_evidence(tmp_path: path
     assert failure and "unexpected" in failure
     log = tmp_path / "logs.jsonl"
     log.write_text(json.dumps(enveloped) + "\n")
-    assert len(_review_history.load_panels(log)) == 1
+    assert len(review_history.load_panels(log)) == 1
     log.write_text(json.dumps(unknown) + "\n")
-    with pytest.raises(_review_history.ReviewHistoryError, match="unexpected"):
-        _review_history.load_panels(log)
+    with pytest.raises(review_history.ReviewHistoryError, match="unexpected"):
+        review_history.load_panels(log)
 
 
 def test_wire_contains_structured_findings_and_counts() -> None:
     result = state.fold_session([_panel()])
-    wire = json.loads(json.dumps(_state_view.session_state_as_dict(result)))
+    wire = json.loads(json.dumps(state_view.session_state_as_dict(result)))
     review = wire.get("review")
     assert review is not None
     assert review["open_counts"]["block"] == 1

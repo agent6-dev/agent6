@@ -15,7 +15,7 @@ from typing import Any
 from unittest import mock
 
 from agent6.config import Config
-from agent6.harness import _chain, _conversation, _loop_state, _nudges, loop
+from agent6.harness import loop, loop_conversation, loop_state, nudges, run_chain
 from agent6.tools import results
 
 NOTICE_HEAD = "[harness verify] The gate was red at the last verify and green at this one;"
@@ -23,22 +23,22 @@ EVENT = "loop.test_only_green.notice"
 
 
 def test_is_test_path_conventions() -> None:
-    assert _nudges.is_test_path("tests/test_a.py")
-    assert _nudges.is_test_path("pkg/a_test.py")
-    assert _nudges.is_test_path("pkg/tests/conftest.py")
-    assert not _nudges.is_test_path("pkg/testing_utils.py")
-    assert not _nudges.is_test_path("src/app.py")
+    assert nudges.is_test_path("tests/test_a.py")
+    assert nudges.is_test_path("pkg/a_test.py")
+    assert nudges.is_test_path("pkg/tests/conftest.py")
+    assert not nudges.is_test_path("pkg/testing_utils.py")
+    assert not nudges.is_test_path("src/app.py")
 
 
 def test_the_notice_states_the_world_and_caps_its_list() -> None:
     """World state only, the `[harness verify]` prefix, no advice; twelve paths then a count."""
-    text = _nudges.test_only_green_notice([f"tests/test_{i:02d}.py" for i in range(15)])
+    text = nudges.test_only_green_notice([f"tests/test_{i:02d}.py" for i in range(15)])
     assert text.startswith(NOTICE_HEAD)
     assert "tests/test_00.py, " in text
     assert text.endswith("tests/test_11.py (+3 more).")
     assert "tests/test_12.py" not in text
     assert "Confirm" not in text and "usually wrong" not in text
-    assert _nudges.test_only_green_notice(["tests/test_a.py"]).endswith(
+    assert nudges.test_only_green_notice(["tests/test_a.py"]).endswith(
         " every file changed in between is a test file: tests/test_a.py."
     )
 
@@ -60,7 +60,7 @@ Emitted = list[tuple[str, dict[str, Any]]]
 
 def _wf(root: pathlib.Path) -> tuple[loop.Harness, Emitted]:
     wf = loop.Harness(
-        chain=_chain.RunChain(root),
+        chain=run_chain.RunChain(root),
         config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None),
@@ -82,12 +82,12 @@ def _exec(rc: int) -> results.ExecResult:
     )
 
 
-def _turn(turn: int) -> _loop_state.TurnState:
-    return _loop_state.TurnState(number=turn, resp=mock.MagicMock(), assistant=mock.MagicMock())
+def _turn(turn: int) -> loop_state.TurnState:
+    return loop_state.TurnState(number=turn, resp=mock.MagicMock(), assistant=mock.MagicMock())
 
 
 def _edit(
-    wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState, rel: str
+    wf: loop.Harness, state: loop_state.LoopState, turn: loop_state.TurnState, rel: str
 ) -> None:
     """Apply an edit through the real path: the file changes on disk, then the loop notes it."""
     (wf.chain.root / rel).write_text("y = 2\n", encoding="utf-8")
@@ -98,8 +98,8 @@ def _edit(
 
 def _command(
     wf: loop.Harness,
-    state: _loop_state.LoopState,
-    turn: _loop_state.TurnState,
+    state: loop_state.LoopState,
+    turn: loop_state.TurnState,
     *,
     writes: tuple[str, ...] = (),
 ) -> None:
@@ -113,15 +113,15 @@ def _command(
 
 
 def _verify(
-    wf: loop.Harness, state: _loop_state.LoopState, turn: _loop_state.TurnState, rc: int
+    wf: loop.Harness, state: loop_state.LoopState, turn: loop_state.TurnState, rc: int
 ) -> None:
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "run_verify_command", _exec(rc), {}
     )
 
 
-def _notices(turn: _loop_state.TurnState) -> list[str]:
-    return [n.text for n in turn.tool_results if isinstance(n, _conversation.Notice)]
+def _notices(turn: loop_state.TurnState) -> list[str]:
+    return [n.text for n in turn.tool_results if isinstance(n, loop_conversation.Notice)]
 
 
 def _fired(emitted: Emitted) -> list[dict[str, Any]]:
@@ -137,7 +137,7 @@ def test_a_source_edit_then_red_then_a_test_edit_then_green_is_noticed(
     test file changes before the green.
     """
     wf, emitted = _wf(_repo(tmp_path))
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(1)
     _edit(wf, state, turn, "src/mod.py")
     _verify(wf, state, turn, 1)
@@ -155,7 +155,7 @@ def test_a_source_edit_then_red_then_a_test_edit_then_green_is_noticed(
 def test_a_command_that_wrote_a_source_file_withholds_the_notice(tmp_path: pathlib.Path) -> None:
     """A source file changed by run_command in the window makes the claim false, so none is made."""
     wf, emitted = _wf(_repo(tmp_path))
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(1)
     _verify(wf, state, turn, 1)
     turn2 = _turn(2)
@@ -169,7 +169,7 @@ def test_a_command_that_wrote_a_source_file_withholds_the_notice(tmp_path: pathl
 
 def test_source_and_test_edits_withhold_the_notice(tmp_path: pathlib.Path) -> None:
     wf, emitted = _wf(_repo(tmp_path))
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(1)
     _verify(wf, state, turn, 1)
     turn2 = _turn(2)
@@ -183,7 +183,7 @@ def test_source_and_test_edits_withhold_the_notice(tmp_path: pathlib.Path) -> No
 
 def test_a_green_after_no_edits_has_no_notice(tmp_path: pathlib.Path) -> None:
     wf, emitted = _wf(_repo(tmp_path))
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(1)
     _verify(wf, state, turn, 1)
     turn2 = _turn(2)
@@ -196,7 +196,7 @@ def test_the_notice_is_withheld_when_git_cannot_say(tmp_path: pathlib.Path) -> N
     """With no repository under the root nothing is claimed, whatever the edit tools reported."""
     (tmp_path / "tests").mkdir()
     wf, emitted = _wf(tmp_path)
-    state = _loop_state.LoopState(original_task="t", tool_calls=0)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(1)
     _verify(wf, state, turn, 1)
     turn2 = _turn(2)

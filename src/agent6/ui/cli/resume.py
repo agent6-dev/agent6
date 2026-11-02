@@ -10,7 +10,7 @@ from __future__ import annotations
 import pathlib
 import time
 
-from agent6.app import _setup, resume
+from agent6.app import resume, session_setup
 from agent6.ui.cli import run
 
 
@@ -20,8 +20,8 @@ def _cmd_resume(
     *,
     force: bool,
     tui: bool = False,
-    budget_overrides: _setup.BudgetOverrides | None = None,
-    sandbox_overrides: _setup.SandboxOverrides | None = None,
+    budget_overrides: session_setup.BudgetOverrides | None = None,
+    sandbox_overrides: session_setup.SandboxOverrides | None = None,
     preset: str = "",
     steer: str = "",
     interactive: bool = False,

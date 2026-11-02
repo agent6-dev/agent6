@@ -49,8 +49,8 @@ Fold review evidence and operator history for every session reader.
 | `open_block_ids` | `tuple[str, ...]` | `()` |
 | `read_failure` | `str | None` | `None` |
 
-- **Written by:** viewmodel/{_session_log, state}
-- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{_state_types, _state_view, _transcript_text, log_line, receipt, review_queue, telemetry, transcript}
+- **Written by:** viewmodel/{session_log, state}
+- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{log_line, receipt, review_queue, state_types, state_view, telemetry, transcript, transcript_text}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (3 test files exercise it)
 
 ## Review records
@@ -174,27 +174,27 @@ Define immutable review evidence and validate review boundary payloads.
 | `reason` | `Reason | None` | `None` |
 | `resume` | `bool` | `False` |
 
-- **Written by:** app/review_actions, harness/{_panel, _review_history, _review_seat, _reviewer}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
-- **Read by:** harness/{_chain, _context, _loop_state, code_review}, ui/acp/review, ui/cli/review_cmds, ui/tui/{_diff_pane, review}, vcs/_review_rules, viewmodel/review
+- **Written by:** app/review_actions, harness/{review_gate, review_history, review_panel, review_seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
+- **Read by:** harness/{loop_state, repo_context, review_diff, run_chain}, ui/acp/review, ui/cli/review_cmds, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
 - **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (20 test files exercise it)
 
 ## Conversation
 
-[`agent6.harness._conversation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_conversation.py) &middot; mutable container + 5 frozen turn types
+[`agent6.harness.loop_conversation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop_conversation.py) &middot; mutable container + 5 frozen turn types
 
 The loop-owned conversation: typed messages over the provider wire.
 
 **Conversation** &mdash; The history as frozen messages plus the rolling cache-mark pair.
 
 - **Written by:** harness/loop
-- **Read by:** harness/{_compaction, _compaction_window, _compactor, _loop_resume, _loop_state, _loop_steer, _operator, _parallel_dispatch, _provider_call, _review_seat, _snapshot, _standing, _verify_gate}
+- **Read by:** harness/{compaction_driver, compaction_rules, compaction_window, loop_resume, loop_snapshot, loop_state, loop_steer, operator_bridge, parallel_dispatch, provider_call, review_seat, standing_goal, verify_gate}
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (29 test files exercise it)
 
 ## SessionManifest
 
 [`agent6.sessions.manifest`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py) &middot; pydantic model + 10 nested models
 
-The manifest.json shape and its one reader; `app.manifest` is the writer.
+The manifest.json shape and its one reader; `app.stamps` is the writer.
 
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
@@ -230,12 +230,12 @@ The manifest.json shape and its one reader; `app.manifest` is the writer.
 | `fanout` | `FanoutStamp | None` | `None` |
 
 - **Written by:** app/stamps
-- **Read by:** app/{_execution, _merge_message, _parallel_results, _resume_chain, _setup, _workdirs, compare, finalize, fork, fork_worktrees, lanes, merge, parallel, preflight, resume, run, stop, undo, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{_ask, _steer_menu, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, stop_cmd}, ui/tui/{_dashboard_header, _diff_pane, app}, ui/web/{actions, model}, viewmodel/{_session_status, _state_view, format, listing, policy, receipt, wire}
+- **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, session_setup, stop, undo, workdirs, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane}, ui/web/{actions, model}, viewmodel/{format, listing, policy, receipt, session_status, state_view, wire}
 - **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (27 test files exercise it)
 
 ## SessionSnapshot
 
-[`agent6.harness._snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/_snapshot.py) &middot; pydantic model + 1 nested models
+[`agent6.harness.loop_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop_snapshot.py) &middot; pydantic model + 1 nested models
 
 Hold a session's end and the snapshot a resume re-enters.
 
@@ -278,7 +278,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `base_sha` | `str` | `''` |
 
 - **Written by:** harness/loop
-- **Read by:** app/{_execution, finalize, fork, frontend, resume, undo}, harness/{_advice, _finish_gates, _guards, _loop_resume, _loop_state, _loop_steer, _metric, _verify_gate}, ui/acp/frontend, ui/cli/_ask
+- **Read by:** app/{execution, finalize, fork, frontend, resume, undo}, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, verify_gate}, ui/acp/frontend, ui/cli/ask
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (29 test files exercise it)
 
 ## ToolResult family
@@ -291,8 +291,8 @@ Typed tool-handler results.
 
 Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaResult`, `ListDirResult`, `OutlineResult`, `DefinitionsResult`, `ReferencesResult`, `EditResult`, `PatchResult`, `PreviewResult`, `FetchResult`, `ExecResult`, `MetricResult`, `FinishSessionResult`, `FinishPlanningResult`, `AnswersResult`, `AddTaskResult`, `UpdateTaskResult`, `ListTasksResult`, `SkillResult`, `RawResult`, `BackgroundResult`, `SessionsResult`, `FindingsResult`
 
-- **Written by:** tools/{_command_tools, _control_tools, _dag_tools, _edit_diag, _fs_tools, _nav_tools, _skill_tools, dispatch}
-- **Read by:** app/review_actions, harness/{_guards, _memory_touch, _metric_sampler, _review_seat, _toolset, _verify_gate, loop}, tools/_result_format
+- **Written by:** tools/{command_tools, control_tools, dag_tools, dispatch, edit_diag, fs_tools, nav_tools, skill_tools}
+- **Read by:** app/review_actions, harness/{guards, loop, memory_touch, metric_sampler, review_seat, toolset, verify_gate}, tools/result_format
 - **Guarded by:** [test_tool_result_wire.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_wire.py), [test_tool_result_summaries.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_tool_result_summaries.py) (32 test files exercise it)
 
 ## Event union
@@ -304,7 +304,7 @@ Type the logs.jsonl event families the session fold consumes.
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionStranded`, `SessionUndone`, `RawEvent`
 
 - **Written by:** viewmodel/events
-- **Read by:** harness/run_review, ui/acp/updates, ui/cli/{_console_view, _repl, machine_cmds, plan_watch}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, _session_log, _state_view, _transcript_text, log_line, review, state, transcript}
+- **Read by:** harness/review_session, ui/acp/updates, ui/cli/{console_render, machine_cmds, plan_watch, repl}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, log_line, review, session_log, state, state_view, transcript, transcript_text}
 - **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (7 test files exercise it)
 
 ## MachineSpec
@@ -326,8 +326,8 @@ The parse boundary of a `.asm.toml` machine file.
 | `states` | `dict[str, StateSpec]` | required |
 | `config` | `dict[str, Any]` | `factory` |
 
-- **Written by:** machine/_semantics
-- **Read by:** app/machine/{_bundle, _preflight, _states, create, run}, machine/{__init__, _contracts, _execution, dryrun, engine, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{_sse, actions, server}, viewmodel/machine_state
+- **Written by:** machine/semantics
+- **Read by:** app/machine/{bundle, create, host_preflight, run, state_configs}, machine/{__init__, contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine_state
 - **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (13 test files exercise it)
 
 ## JournalEvent
@@ -339,7 +339,7 @@ The append-only journal, the snapshots and the single-writer lock of one machine
 Members: `MachineBegin`, `StepEvent`, `MachineNotify`, `MachineEnd`, `AttemptSpend`
 
 - **Written by:** machine/{engine, journal}
-- **Read by:** app/machine/{_spend, run}, machine/{__init__, _contracts, _execution, dryrun, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{_machine_logs, machine_state, wire}
+- **Read by:** app/machine/{crash_spend, run}, machine/{__init__, contracts, dryrun, execution, live_world}, ui/cli/{machine_cmds, watch}, ui/tui/machines, ui/web/actions, viewmodel/{machine_logs, machine_state, wire}
 - **Guarded by:** [golden_journal.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_journal.jsonl) (13 test files exercise it)
 
 ## TaskNode
@@ -370,17 +370,17 @@ The task-graph nodes and the intents that mutate them.
 | `graph_version` | `int` | `0` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** graph/{order, replay}, harness/{_advice, _compactor, _dag_focus, _guards, _operator_tasks, _parallel_dispatch, loop}, tools/{_dag_tools, schema}, viewmodel/state
+- **Read by:** graph/{order, replay}, harness/{advice, compaction_driver, dag_focus, guards, loop, operator_tasks, parallel_dispatch}, tools/{dag_tools, schema}, viewmodel/state
 - **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (20 test files exercise it)
 
 ## Run/machine wire snapshot
 
-[`agent6.viewmodel._state_view`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/_state_view.py) &middot; 
+[`agent6.viewmodel.state_view`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py) &middot; 
 
 Render session status, context usage, and the wire snapshot.
 
 **session_state_as_dict** &mdash; Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
-- **Written by:** viewmodel/{_state_view, machine_state}
-- **Read by:** ui/acp/updates, ui/cli/_steer_menu, ui/tui/app, ui/web/{_sse, model}, viewmodel/{__init__, wire}
+- **Written by:** viewmodel/{machine_state, state_view}
+- **Read by:** ui/acp/updates, ui/cli/steer_menu, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
 - **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (8 test files exercise it)
