@@ -168,7 +168,7 @@ def warn_unscoped_sockets(
     shares_host_sockets = isolation == "partial" or (
         isolation == "full" and tools_policy.resolve_network(cfg, isolation) == "host"
     )
-    if shares_host_sockets and 0 < env.landlock_abi < 6:
+    if shares_host_sockets and env.landlock_abi < 6:
         reporter.warn(
             "abstract unix sockets stay reachable from jailed commands: this kernel's Landlock"
             f" ABI {env.landlock_abi} has no socket scope (ABI 6, Linux 6.12), so a command can"

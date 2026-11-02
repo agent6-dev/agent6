@@ -395,7 +395,12 @@ def test_a_plain_partial_run_neither_warns_nor_refuses(
 
 @pytest.mark.parametrize(
     ("isolation", "network", "abi", "reachable"),
-    [("partial", "host", 5, True), ("full", "host", 5, True), ("full", "session", 5, False)],
+    [
+        ("partial", "host", 5, True),
+        ("full", "host", 5, True),
+        ("full", "host", 0, True),
+        ("full", "session", 5, False),
+    ],
 )
 def test_unscoped_abstract_sockets_are_warned_where_the_host_network_is_shared(
     tmp_path: pathlib.Path,
