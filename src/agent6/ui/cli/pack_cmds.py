@@ -16,8 +16,10 @@ def cmd_pack() -> int:
         Zero after writing the pack.
 
     Raises:
-        PackError: The directory is not a git checkout, `.agent6` is tracked or not ignored,
-            or the pack or its gitignore entry cannot be written.
+        PackError: The directory is not a git checkout; `.agent6` is tracked, not ignored or
+            holds another origin's pack; a run, exec or machine of the checkout is live; a path
+            is a link or special file; or the pack or its gitignore entry cannot be written.
+        GitError: Git cannot inspect the repository.
     """
     root = paths.project_root(pathlib.Path.cwd(), allow_pack=True)
     if not (root / ".git").exists():
