@@ -66,6 +66,17 @@
     "args_full": "path=src/x.py"
   },
   {
+    "kind": "verify",
+    "body": "verify: ✗ exit 1 · 1.7s",
+    "name": "run_verify_command",
+    "arg": "pytest -x -q",
+    "ok": false,
+    "detail": "✗ exit 1 · 1.7s",
+    "tail": "1 failed",
+    "call_id": "verify:1",
+    "args_full": ""
+  },
+  {
     "kind": "commit",
     "body": "",
     "name": "",
