@@ -49,7 +49,7 @@ WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
     "frontend claim": lambda repo, state: process.register_frontend(_session(state), os.getpid()),
     "event sink": lambda repo, state: event_log.EventSink(
         layout.SessionLayout(state, "s1").logs_path
-    ).emit("x"),
+    ).emit("session.stranded"),
     "transcripts": lambda repo, state: provider_types.TranscriptSink(
         layout.SessionLayout(state, "s1").transcripts_dir
     ),

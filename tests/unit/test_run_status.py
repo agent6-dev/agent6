@@ -989,7 +989,11 @@ def test_a_start_event_is_never_readable_before_the_pid_file(
 
     monkeypatch.setattr(event_log.EventSink, "emit", spy)
     process.emit_session_start(
-        event_log.EventSink(sdir / "logs.jsonl"), sdir, "session.start", mode="run"
+        event_log.EventSink(sdir / "logs.jsonl"),
+        sdir,
+        "session.start",
+        mode="run",
+        user_task="task",
     )
     assert pid_present_at_emit == [True]
 

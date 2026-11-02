@@ -20,29 +20,29 @@ def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
 
 def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.emit("session.start", task="do a thing")
-    sink.emit("step.start", index=1, title="hello")
+    sink.emit("loop.note", text="do a thing")
+    sink.emit("loop.tool.call", turn=1, name="read_file")
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 2
-    assert lines[0]["type"] == "session.start"
-    assert lines[0]["task"] == "do a thing"
+    assert lines[0]["type"] == "loop.note"
+    assert lines[0]["text"] == "do a thing"
     assert "ts" in lines[0]
-    assert lines[1]["type"] == "step.start"
-    assert lines[1]["index"] == 1
+    assert lines[1]["type"] == "loop.tool.call"
+    assert lines[1]["turn"] == 1
 
 
 def test_emit_creates_parent_dir(tmp_path: pathlib.Path) -> None:
     target = tmp_path / "nested" / "deeper" / "logs.jsonl"
     sink = event_log.EventSink(target)
-    sink.emit("hello")
+    sink.emit("session.stranded")
     assert target.is_file()
 
 
 def test_durable_events_have_unique_ids(tmp_path: pathlib.Path) -> None:
     """Give identical durable payloads distinct identities without timestamp ordering."""
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.emit("loop.review.panel", panel_id="p")
-    sink.emit("loop.review.panel", panel_id="p")
+    sink.emit("loop.note", text="same")
+    sink.emit("loop.note", text="same")
     rows = _read_lines(sink.path)
     assert all(row.get("event_id") for row in rows)
     assert rows[0]["event_id"] != rows[1]["event_id"]
@@ -57,14 +57,18 @@ def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
 
     bad = Bad()
     bad.self_ref = bad  # type: ignore[attr-defined]
-    sink.emit("ok", x=1, p=tmp_path / "a", weird=bad)
+    sink.emit(
+        "tool.call", name="example", args={"x": 1, "p": tmp_path / "a", "weird": bad}, call_id=1
+    )
     lines = _read_lines(tmp_path / "logs.jsonl")
     assert len(lines) == 1
-    assert lines[0]["x"] == 1
-    p_value = lines[0]["p"]
+    args = lines[0]["args"]
+    assert isinstance(args, dict)
+    assert args["x"] == 1
+    p_value = args["p"]
     assert isinstance(p_value, str)
     assert p_value.endswith("/a")
-    weird = lines[0]["weird"]
+    weird = args["weird"]
     assert isinstance(weird, str) and "Bad" in weird  # repr'd, not dropped
 
 
@@ -82,9 +86,9 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> No
     seen: list[dict[str, object]] = []
     sink.subscribe(seen.append)
     with pytest.raises(event_log.EventWriteError, match="unwritable"):
-        sink.emit("session.end", reason="finish_session", all_passed=True)
+        sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
     assert seen == []
-    sink.emit("role.text_delta", text="still live")  # ephemeral: must not raise
+    sink.emit("role.text_delta", role="worker", text="still live")  # ephemeral: must not raise
     assert [e["type"] for e in seen] == ["role.text_delta"]
 
 
@@ -104,11 +108,11 @@ def test_delta_events_flush_but_do_not_fsync(
     monkeypatch.setattr(os, "fsync", _fake_fsync)
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
 
-    sink.emit("role.thinking_delta", text="reasoning")
-    sink.emit("role.text_delta", text="answer")
+    sink.emit("role.thinking_delta", role="worker", text="reasoning")
+    sink.emit("role.text_delta", role="worker", text="answer")
     assert synced == []  # no fsync for the deltas
 
-    sink.emit("tool.call", name="read_file")
+    sink.emit("tool.call", name="read_file", args={}, call_id=1)
     assert len(synced) == 1  # a durable event fsyncs
 
     # all three are on disk regardless (flush, not fsync, makes them readable)
@@ -127,15 +131,15 @@ def test_emit_survives_lone_surrogate(tmp_path: pathlib.Path) -> None:
     import json
 
     sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.emit("session.start", user_task="caf\udce9")
-    sink.emit("tool.call", args={"summary": "done \ud83d"})
+    sink.emit("loop.note", text="caf\udce9")
+    sink.emit("tool.call", name="finish_session", args={"summary": "done \ud83d"}, call_id=1)
     lines = [
         json.loads(line)
         for line in (tmp_path / "logs.jsonl").read_text(encoding="utf-8").splitlines()
         if line
     ]
-    assert [e["type"] for e in lines] == ["session.start", "tool.call"]
-    assert "?" in lines[0]["user_task"]  # the surrogate was replaced, not dropped
+    assert [e["type"] for e in lines] == ["loop.note", "tool.call"]
+    assert "?" in lines[0]["text"]  # the surrogate was replaced, not dropped
 
 
 def test_a_value_that_merely_answers_isoformat_encodes_as_its_repr(tmp_path: pathlib.Path) -> None:
@@ -170,7 +174,7 @@ def test_the_log_dir_is_created_once_not_per_event(
 
     monkeypatch.setattr(agent6_paths, "mkdir_for_real_user", counting)
     sink = event_log.EventSink(tmp_path / "run" / "logs.jsonl")
-    sink.emit("session.start")
-    sink.emit("loop.tool.call", name="read_file")
+    sink.emit("loop.note", text="ready")
+    sink.emit("loop.tool.call", name="read_file", turn=1)
     assert calls == [tmp_path / "run"]
     assert (tmp_path / "run" / "logs.jsonl").read_text(encoding="utf-8").count("\n") == 2

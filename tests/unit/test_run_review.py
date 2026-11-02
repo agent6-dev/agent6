@@ -148,11 +148,20 @@ def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
 
     layout = _write_session(repo, events=[])
     sink = event_log.EventSink(layout.logs_path)
-    sink.emit("session.start", mode="run")
+    sink.emit("session.start", mode="run", user_task="fix the parser", execution_id="first")
     prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
     answer = prompts.ask((schema.UserQuestion(question="keep the public API?"),))
     assert answer.status == "unanswered"
-    sink.emit("loop.resume.start")
+    sink.emit(
+        "loop.resume.start",
+        session_id=layout.session_id,
+        mode="run",
+        user_task="fix the parser",
+        steer="",
+        turn=2,
+        messages=1,
+        execution_id="second",
+    )
     prompts = operator_prompts.OperatorPrompts(journal=sink.emit, session_dir=layout.session_dir)
     later = prompts.ask((schema.UserQuestion(question="allow the migration?"),))
     assert later.status == "unanswered"

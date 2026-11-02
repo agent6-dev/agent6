@@ -226,22 +226,23 @@ def test_receipt_compares_recorded_panel_with_end_tree(tmp_path: pathlib.Path) -
 
     saved = review_helpers.reviewed_session(tmp_path)
     sink = event_log.EventSink(saved.logs_path)
-    sink.emit("session.end", tree="ht")
+    sink.emit("session.end", tree="ht", reason="finish_session", turns=1, all_passed=True)
     view = receipt.read_receipt(saved.session_dir, tmp_path)
     assert view.review.freshness == "current"
-    sink.emit("session.end", tree="other")
+    sink.emit("session.end", tree="other", reason="finish_session", turns=1, all_passed=True)
     assert receipt.read_receipt(saved.session_dir, tmp_path).review.freshness == "stale"
 
 
 def test_historical_baseline_marks_only_its_observation(tmp_path: pathlib.Path) -> None:
     """An id-less baseline event never relabels every earlier verification as baseline."""
-    from agent6.sessions import event_log
     from agent6.viewmodel import receipt
 
-    sink = event_log.EventSink(tmp_path / "logs.jsonl")
-    sink.emit("verify.end", cmd=["true"], exit_code=0)
-    sink.emit("verify.end", cmd=["false"], exit_code=1)
-    sink.emit("loop.baseline", ok=False)
+    (tmp_path / "logs.jsonl").write_text(
+        '{"type":"verify.end","cmd":["true"],"exit_code":0}\n'
+        '{"type":"verify.end","cmd":["false"],"exit_code":1}\n'
+        '{"type":"loop.baseline","ok":false}\n',
+        encoding="utf-8",
+    )
     view = receipt.read_receipt(tmp_path, tmp_path)
     assert [record.baseline for record in view.verifications] == [False, True]
 
@@ -362,8 +363,23 @@ def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.P
         tree_before="tree",
         tree_after="tree",
         stdout_tail="the retained output",
+        stderr_tail="",
+        scoped=False,
+        selected_paths=[],
+        outcome="passed",
+        duration_s=1.0,
+        timeout_s=10.0,
+        baseline=False,
+        reason="",
     )
-    sink.emit("session.end", final_verify_id="v", tree="tree")
+    sink.emit(
+        "session.end",
+        reason="finish_session",
+        turns=1,
+        all_passed=True,
+        final_verify_id="v",
+        tree="tree",
+    )
     with sink.path.open("ab") as stream:
         stream.write(b'{"type":"loop.resume.start","user_task":"\xe2\x82')
     view = receipt.read_receipt(tmp_path, tmp_path)

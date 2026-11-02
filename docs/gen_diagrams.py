@@ -3,7 +3,7 @@
 """Generate docs/architecture.md from docs/architecture_template.md.
 
 Two markers expand from the current source: `<!-- diagram: NAME -->` becomes a
-mermaid block and `<!-- generated: NAME -->` becomes a line of text. A diagram
+mermaid block and `<!-- generated: NAME -->` becomes generated text or a table. A diagram
 carries a shape (the layer chain, the stage order, the gate chain); names that
 only need listing are listed. Regenerate with `uv run python
 docs/gen_diagrams.py`; pinned by tests/unit/test_gen_diagrams.py.
@@ -19,6 +19,8 @@ import re
 import subprocess
 import sys
 import tempfile
+
+from agent6.sessions import event_schema
 
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "docs" / "architecture_template.md"
@@ -302,7 +304,20 @@ def _tool_names() -> str:
     return ", ".join(f"`{name}`" for name in _handler_names())
 
 
+def _journal_events() -> str:
+    """Return the journal's event table in registry order."""
+    rows = ["| Event | Meaning | Fields |", "| --- | --- | --- |"]
+    for spec in event_schema.EVENTS:
+        fields = ", ".join(
+            f"`{field.name}` ({field.kind}{'' if field.required else ', optional'})"
+            for field in spec.fields
+        )
+        rows.append(f"| `{spec.type}` | {spec.meaning} | {fields} |")
+    return "\n".join(rows)
+
+
 _BLOCKS = {
+    "journal-events": _journal_events,
     "layering": _layering_mermaid,
     "run-lifecycle": _run_lifecycle_mermaid,
     "tool-dispatch": _dispatch_mermaid,

@@ -30,8 +30,8 @@ from agent6.app import resume as resume_mod
 from agent6.config import layer, layer_data
 from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
+from agent6.sessions import event_log, process
 from agent6.sessions import layout as sessions_layout
-from agent6.sessions import process
 from agent6.ui.cli import resume as cli_resume  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import run as cli_run
 from agent6.vcs import git_read
@@ -659,8 +659,16 @@ def test_a_parked_resumes_detach_leaves_the_pid_with_the_spawned_child(
     child = subprocess.Popen(["sleep", "60"])
     try:
 
-        def _execution(*_a: object, events: object, **_k: object) -> execution.ExecutionEnd:
-            events.emit("session.start", session_id="parked-DETACH", mode="run", user_task="t")  # type: ignore[attr-defined]
+        def _execution(
+            *_a: object, events: event_log.EventSink, **_k: object
+        ) -> execution.ExecutionEnd:
+            events.emit(
+                "session.start",
+                session_id="parked-DETACH",
+                mode="run",
+                user_task="t",
+                execution_id="execution",
+            )
             return execution.ExecutionEnd(0, detach_requested=True)
 
         monkeypatch.setattr(execution, "run_execution", _execution)

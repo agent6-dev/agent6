@@ -119,11 +119,19 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         for observation in findings
     )
     sink = event_log.EventSink(saved.logs_path)
-    sink.emit("session.start", session_id=saved.session_id, mode="run", task="Review parser")
+    sink.emit(
+        "session.start",
+        session_id=saved.session_id,
+        mode="run",
+        user_task="Review parser",
+        execution_id="execution",
+    )
     sink.emit(
         "loop.review.start",
         panel_id="panel",
         execution_id="execution",
+        turn=1,
+        trigger="before_finish",
         target=dataclasses.asdict(target),
         seats=[],
         rules_complete=True,
@@ -151,5 +159,5 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         n_abstain=0,
         completion="complete",
     )
-    sink.emit("session.end", reason="finish_session", turns=1)
+    sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
     return saved

@@ -305,7 +305,7 @@ Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommi
 
 - **Written by:** viewmodel/events
 - **Read by:** harness/review_session, ui/acp/updates, ui/cli/{console_render, machine_cmds, plan_watch, repl}, ui/tui/{app, conversation, machines}, viewmodel/{__init__, log_line, review, session_log, state, state_view, transcript, transcript_text}
-- **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (7 test files exercise it)
+- **Guarded by:** [golden_session_logs.jsonl](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_logs.jsonl) (8 test files exercise it)
 
 ## MachineSpec
 

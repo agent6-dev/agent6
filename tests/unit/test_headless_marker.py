@@ -17,7 +17,7 @@ def test_a_degraded_jail_is_said_once_on_the_headless_log(tmp_path: pathlib.Path
     lines: list[str] = []
     sink.subscribe(functools.partial(execution.headless_marker, log=lines.append))
     sink.emit("jail.degraded", detail="agent6-jail: mount /proc: EPERM\n  continuing without it")
-    sink.emit("loop.turn.start", turn=1)
+    sink.emit("loop.tool.call", turn=1, name="read_file")
     assert lines == [
         "[agent6] sandbox degraded: agent6-jail: mount /proc: EPERM continuing without it"
     ]

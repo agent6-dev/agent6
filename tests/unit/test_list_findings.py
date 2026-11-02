@@ -91,11 +91,12 @@ def test_a_session_before_its_first_review_says_so(tmp_path: pathlib.Path) -> No
     with pytest.raises(tool_errors.ToolError, match="no session journal"):
         review_actions.findings_result(saved.session_dir)
     sink = event_log.EventSink(saved.logs_path)
-    sink.emit("session.start", user_task="t", mode="run")
+    sink.emit("session.start", user_task="t", mode="run", execution_id="execution")
     listed = review_actions.findings_result(saved.session_dir)
     assert listed.to_wire() == {"findings": [], "note": "No review panel has run."}
     assert listed.summary() == "0 open"
-    sink.emit("loop.review.panel", blocked=False)
+    with saved.logs_path.open("a", encoding="utf-8") as stream:
+        stream.write('{"type":"loop.review.panel","blocked":false}\n')
     assert review_actions.findings_result(saved.session_dir).note.startswith("Legacy review")
 
 

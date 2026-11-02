@@ -234,6 +234,10 @@ path = "agent6.sessions.event_log"
 depends_on = ["agent6.paths"]
 
 [[modules]]
+path = "agent6.sessions.event_schema"
+depends_on = []
+
+[[modules]]
 path = "agent6.ui.tui"
 # agent6.app: /undo forks in-process (app.fork), like ui.acp and ui.web.
 # agent6.vcs.git_read: one branch-tips snapshot per hub poll (the unmerged mark).

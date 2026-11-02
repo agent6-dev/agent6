@@ -3,7 +3,7 @@
 """Append structured events to a session's journal.
 
 One JSON object per line in `logs.jsonl`, so a front-end follows a run by
-tailing one file. Append-only, with no reads, rotation or schema validation.
+tailing one file. Append-only, with no reads, rotation or production schema validation.
 Each durable event is written, flushed and fsynced, and fails loudly: the
 journal is the read model every surface trusts. Streaming deltas only flush
 and stay best-effort; the transcripts keep the lossless copy.
@@ -28,6 +28,8 @@ from agent6 import paths
 _EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
 # The fields `emit` adds around a payload; a reader validating a payload strips them.
 ENVELOPE_KEYS = frozenset({"ts", "type", "event_id"})
+# Tests install the registry checker; production writes stay unchecked.
+CHECK: Callable[[str, Mapping[str, object]], None] | None = None
 
 
 def payload(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -77,6 +79,8 @@ class EventSink:
             EventWriteError: A durable event could not be serialized or written; the
                 live view never shows an event the record lost.
         """
+        if CHECK is not None:
+            CHECK(event_type, fields)
         ephemeral = event_type in _EPHEMERAL_EVENTS
         payload: dict[str, Any] = {
             "ts": datetime.datetime.now(datetime.UTC).isoformat(timespec="microseconds"),

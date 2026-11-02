@@ -358,8 +358,8 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
         layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), str(kw["session_id"]))
         layout.ensure()
         events = event_log.EventSink(layout.logs_path)
-        events.emit("session.start", mode="run", user_task="t")
-        events.emit("session.end", reason="finish_session", all_passed=True)
+        events.emit("session.start", mode="run", user_task="t", execution_id="execution")
+        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         raise RuntimeError("the finalizer exploded")
 
     monkeypatch.setattr(run, "run_task", _dies_after_end)
@@ -770,7 +770,13 @@ def test_cancelled_permission_replies_are_ignored_over_stdio(
             journal=events.emit,
             session_dir=layout.session_dir,
         )
-        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit(
+            "session.start",
+            session_id=layout.session_id,
+            mode="run",
+            user_task="t",
+            execution_id="execution",
+        )
         events.emit("tool.call", name="run_command", args={"argv": ["true"]}, call_id=1)
         answers.append(prompts.approve("Allow true?", scope="command", call_id=1))
         events.emit("tool.result", name="run_command", ok=False, summary="denied", call_id=1)
@@ -1044,8 +1050,8 @@ def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
         layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), str(kw["session_id"]))
         layout.ensure()
         events = event_log.EventSink(layout.logs_path)
-        events.emit("session.start", mode="run", user_task="t")
-        events.emit("session.end", reason="max_turns", all_passed=False)
+        events.emit("session.start", mode="run", user_task="t", execution_id="execution")
+        events.emit("session.end", reason="max_turns", turns=1, all_passed=False)
         (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
         return 1
 
@@ -1134,7 +1140,13 @@ def test_a_gated_call_reads_pending_on_the_wire(
             journal=events.emit,
             session_dir=layout.session_dir,
         )
-        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit(
+            "session.start",
+            session_id=layout.session_id,
+            mode="run",
+            user_task="t",
+            execution_id="execution",
+        )
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
@@ -1239,7 +1251,13 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
         layout = _layout(str(kw["session_id"]))
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = event_log.EventSink(layout.logs_path)
-        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit(
+            "session.start",
+            session_id=layout.session_id,
+            mode="run",
+            user_task="t",
+            execution_id="execution",
+        )
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=False, summary="no", call_id=1)
         events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
@@ -1248,7 +1266,16 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
 
     def _resume_task(_config_path: object, session_id: str, **_kw: Any) -> int:
         events = event_log.EventSink(_layout(session_id).logs_path)
-        events.emit("loop.resume.start", session_id=session_id, mode="run", turn=2)
+        events.emit(
+            "loop.resume.start",
+            session_id=session_id,
+            mode="run",
+            turn=2,
+            user_task="t",
+            steer="",
+            messages=1,
+            execution_id="resumed",
+        )
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=True, summary="ok", call_id=1)
         events.emit("session.end", reason="finish_session", turns=2, all_passed=True)
@@ -1426,7 +1453,13 @@ def test_the_runs_notices_reach_the_editor(
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = event_log.EventSink(layout.logs_path)
-        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit(
+            "session.start",
+            session_id=layout.session_id,
+            mode="run",
+            user_task="t",
+            execution_id="execution",
+        )
         events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         reporter = kw["reporter"]
         assert isinstance(reporter, app_reporter.Reporter)
@@ -1488,7 +1521,13 @@ def test_the_editor_gets_each_ending_fact_once(
         )
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         events = event_log.EventSink(layout.logs_path)
-        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit(
+            "session.start",
+            session_id=layout.session_id,
+            mode="run",
+            user_task="t",
+            execution_id="execution",
+        )
         events.emit("budget.update", usd_total=0.0028)
         events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
         reporter = kw["reporter"]
@@ -1599,7 +1638,13 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
             journal=events.emit,
             session_dir=layout.session_dir,
         )
-        events.emit("session.start", session_id=layout.session_id, mode="run", user_task="t")
+        events.emit(
+            "session.start",
+            session_id=layout.session_id,
+            mode="run",
+            user_task="t",
+            execution_id="execution",
+        )
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.call", name="read_file", args={"path": "x"}, call_id=2)
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
@@ -1865,7 +1910,14 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
     log = tmp_path / "logs.jsonl"
     sink = event_log.EventSink(log)
     sink.emit("tool.call", name="apply_edit", args={"path": "src/x.py"}, call_id=1)
-    sink.emit("tool.result", name="apply_edit", call_id=1, ok=True, paths=["src/x.py", "src/x.py"])
+    sink.emit(
+        "tool.result",
+        name="apply_edit",
+        call_id=1,
+        ok=True,
+        summary="edited",
+        paths=["src/x.py", "src/x.py"],
+    )
     sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
@@ -1991,9 +2043,25 @@ def test_the_tail_sends_the_title_the_commands_and_the_usage(tmp_path: pathlib.P
     )
     tail.start()
     sink = event_log.EventSink(log)
-    sink.emit("session.start", session_id="run-x", user_task="Fix it", mode="run")
-    sink.emit("role.call", role="worker", model="m", provider="p")
-    sink.emit("role.result", role="worker", ok=True, tokens_in=10, cache_read=0, cache_creation=0)
+    sink.emit(
+        "session.start",
+        session_id="run-x",
+        user_task="Fix it",
+        mode="run",
+        execution_id="execution",
+    )
+    sink.emit("role.call", role="worker", model="m", provider="p", model_call_id="call")
+    sink.emit(
+        "role.result",
+        role="worker",
+        model="m",
+        provider="p",
+        model_call_id="call",
+        ok=True,
+        tokens_in=10,
+        cache_read=0,
+        cache_creation=0,
+    )
     sink.emit("budget.update", usd_total=0.0, usd_partial=True)
     for _ in range(100):
         if len(sent) >= 3:

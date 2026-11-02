@@ -548,44 +548,14 @@ An append failure on anything but the streaming deltas stops the run loudly (`Ev
 The `logs.jsonl` vocabulary is the data contract for any external viewer.
 [Data contracts](data-contracts.md) owns the typed event union the fold parses these into.
 
-| Event | Notable fields |
-| --- | --- |
-| `session.start` | `user_task` |
-| `loop.resume.start` | the execution a `resume` opens: `session_id`, `mode`, `turn`, `messages` |
-| `loop.resume.interrupted` | the resumed execution found a turn its predecessor died in: `turn`, and `tools`, the calls that never returned and are not re-run |
-| `tool.call` / `.result` | `name`, `args` (preview), `ok`, `summary`; a pair for every dispatched tool, including one a guard rejects (`ok=false` with the reason), so no call is unaccounted for. Execution tools also carry capped `stdout_tail` / `stderr_tail`; a `run_command` ended by an immediate operator stop carries `stopped_by_operator: true` |
-| `verify.start` / `.end` | `verify_id`, `execution_id`, command, scope, selected paths, timeout and `tree_before`; end adds `tree_after`, outcome, exit code, duration, 2,000-character stdout and stderr tails and nullable truncation flags |
-| `loop.decision.recorded` / `loop.decision.unrecorded` | an operator ruling appended to `decisions.md` (`question`, `answer`, clipped), or one the harness could not write / found missing at finish (`error` or `missing`) |
-| `loop.verify_inferred` | `command` (argv, `[]` if none), `source` (`resumed`: an adopted gate carried into a new execution; `agents_md`; a repo signal: `verify.sh`, `package.json`, `Makefile:<target>`, `pyproject`, `Cargo.toml`, `go.mod` or `test_*.py`; `llm`; `none`; `disabled`; `unadopted`), and `adopted_at` when a gateless run adopts one mid-run or drops an adopted gate that cannot run (`command: []`, `source: unadopted`) |
-| `role.call` | `role`, `model`, `provider`, `model_call_id` (shared with its result), `seat_index` under a review panel |
-| `role.result` | `role`, `model`, `provider`, `model_call_id`, `seat_index` under a review panel, `ok`, `text`, `tokens_in`, `tokens_out`, `cache_read`, `cache_creation`, `stop_reason`; a failure carries `error` (the reason, clipped) instead |
-| `provider.request` | one HTTP attempt of a model call: `role`, `provider`, `model`, `request_id` (fresh per attempt, the `{request_id}` header fact), `target` (`inference`); never a header value |
-| `provider.auth` | `provider` (entry name), `kind` (`refresh`, `exchange`, `recovery`), `outcome` (`success`, `failure`); no other payload fields |
-| `role.text_delta` | streamed assistant text chunk |
-| `role.thinking_delta` | streamed reasoning chunk |
-| `session.steer_requested` | `source` (`"sigint"`): mid-run Ctrl-C |
-| `session.undone` | `/undo`: the message taken back and the fork that continues from it |
-| `btw.opened` / `.answered` | a `/btw` side question and its answer block |
-| `command.backgrounded` | a `run_command` handed back at its check-in as a background job (`id`, `pid`, `seconds`), not one ended by an immediate stop |
-| `metric.start` / `.end` | `cmd` (argv); the end adds `exit_code`, `duration_s`, `*_tail`, `score` |
-| `jail.degraded` | `detail`: the sandbox came up weaker than asked, or a process survived the sweep at the run's jail session or a spawned MCP server's close |
-| `workspace.setup` | the setup command of a session's own worktree or clone finished: `cmd` (argv), `exit_code`, `duration_s`, `exec_failed`, `stdout_tail` and `stderr_tail` (up to 2,000 characters each); once it succeeds, the manifest's `workspace_set_up` keeps a resume from running it again |
-| `mcp.server_unavailable` | a configured MCP server that did not start; the run continues without it |
-| `budget.update` | input/output token totals, the cached read and creation totals, and the fallback cap, plus `usd_total`, `usd_partial`, `usd_cap`, `tokens_unmetered`, and the plan meter (`plan_used_percent`, `plan_consumed`, `plan_cap`, `plan_resets_at`) |
-| `approval.prompt` / `.answer` | `id`, `prompt`, `standing`, `call_id` (the gated tool call; null for a verify the harness runs itself) / `id`, `approved`, `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `session`, `headless`, `acp`) |
-| `question.prompt` / `.answer` | `id`, `questions` (each `question`, `options`), `call_id` (null for the dirty-tree start question), `wait` (false for a queued question, answered later) / `id`, `answers` (aligned to the questions; an unanswered one is `""`), `source` (`stdin`, `frontend`, `await-frontend`, `away-deny`, `headless-default`, `headless`, `acp`, `late`: a queued question's answers taken at a turn boundary, in a park or at a resume's opening), `unseen` (nobody could answer and nothing is queued; the listings count these for the current execution): the `ask_user` tool and the start question |
-| `diff.updated` | what a chain commit changed: `sha` and its `patch`, capped at 8000 bytes; every fold counts commits and shows the latest diff from this event alone |
-| `graph.update` | the task DAG after this turn: `nodes` (title, status, parent_id, children, created_by, standing), `cursor` |
-| `loop.task.queued` | a task the operator added to a live run (`/task`): `id`, `title` |
-| `loop.standing.set` | the standing goal the operator set mid-run (`/standing`): `id`, `title` |
-| `loop.task.retired` | a task the operator dropped from the graph (`/retire`): `id`, `title` |
-| `loop.request.refused` | a `/task`, `/standing` or `/retire` the run could not apply: `kind`, `text`, `error` |
-| `loop.*` | agent progress: `loop.auto_commit`, `loop.compact.*`, `loop.edit.left_out`, `loop.metric.*`, `loop.parallel.dispatched` / `.joined` / `.failed` / `.compared`, `loop.review.*`, `loop.operator.presence` (each observed presence change; model notices coalesce at turn boundaries), `loop.question.delivered` (queued questions' answers delivered, `ids`), `loop.steer.*` |
-| `loop.budget` | per-turn usage heartbeat; the fold keeps only its timestamp (the idle anchor) and reads totals from `budget.update` |
-| `loop.review.finding.*` / `loop.review.fix.*` | `resolved` / `reopened` retain the reason and disposition; `requested` retains the target and delivery action; `submitted` names the destination execution; `failed` retains the delivery error. Each carries the finding ID, request ID, source and resulting review version |
-| `loop.review.*` | `start` (panel and execution IDs, trigger, target, resolved seats), `seat` (indexed full grounded verdict, summary, verbatim risk, error), `panel` (target, finding observations, injected IDs, blocking decision, completion), `skipped` (identity, reason), and the finish gate's rejections |
-| `session.end` | `reason`, `turns`, `all_passed` (true = final tree observed verify-green, or a plan or ask that finished clean; false = not green; null = a run no verify command gated), `scoped` (true = the gate that judged the tree ran scoped to the tests nearest the diff; a verify-green end carries it), `verified` (the gate's word for the final tree, on every end the loop writes: `passed`, `failed`, `unverified` or `not_applicable`; `sessions show` prints it and `sessions merge` warns on `failed` and `unverified`), `final_verify_id` (the final observation, including unsuccessful attempts), `tree` (a run's end the loop reached: the tree id of the working tree it left, with no commit made for it), `summary` (the end sentence; on a `setup_command_failed` end, the failure diagnostic and output tail, including the no-route-out line when it applies); every exit path writes `reason`, `turns` and `all_passed` |
-| `session.stranded` | written after `session.end` when a finished run left its edits uncommitted and no commit landed (exit `5`); the status every surface prints then reads `not committed` |
+`sessions/event_schema.py` owns the event names, meanings and payload fields below.
+The test suite checks every in-process `EventSink.emit` against it; production writes are unchecked.
+`ts`, `type` and durable `event_id` belong to the sink's envelope, not these payloads.
+Optional fields may be absent or null.
+Kinds describe JSON values: tuples serialize as lists, and integers also satisfy `float`, but booleans do not.
+Historical reads remain tolerant through `parse_event` and `RawEvent`.
+
+<!-- generated: journal-events -->
 
 Every approval publishes as `approval.prompt`; one a standing answer covers journals only its `approval.answer`, with source `session`.
 

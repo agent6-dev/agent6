@@ -259,7 +259,9 @@ def test_a_reader_sees_what_the_assistant_said_in_a_real_journal(tmp_path: pathl
         encoding="utf-8",
     )
     events = event_log.EventSink(d / "logs.jsonl")
-    events.emit("session.start", user_task="how do I convert h264")
+    events.emit(
+        "session.start", user_task="how do I convert h264", mode="ask", execution_id="execution"
+    )
     inner = mock.MagicMock()
     inner.call.return_value = types.SimpleNamespace(
         text="use ffmpeg -c:v libx265",

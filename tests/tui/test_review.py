@@ -136,6 +136,8 @@ def test_selected_finding_shows_its_own_panels_rules(
         "loop.review.start",
         panel_id="later",
         execution_id="execution",
+        turn=2,
+        trigger="before_finish",
         target=start["target"],
         seats=[],
         rule_sources=[],
@@ -312,13 +314,19 @@ def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
     from agent6.ui.tui import review
 
     saved = review_helpers.reviewed_session(tmp_path)
-    event_log.EventSink(saved.logs_path).emit(
-        "verify.end",
-        cmd=["pytest"],
-        exit_code=1,
-        stdout_tail="failed <literal>",
-        stderr_tail="error",
-    )
+    with saved.logs_path.open("a", encoding="utf-8") as stream:
+        stream.write(
+            json.dumps(
+                {
+                    "type": "verify.end",
+                    "cmd": ["pytest"],
+                    "exit_code": 1,
+                    "stdout_tail": "failed <literal>",
+                    "stderr_tail": "error",
+                }
+            )
+            + "\n"
+        )
 
     async def scenario() -> None:
         app = textual_app.App[None]()
