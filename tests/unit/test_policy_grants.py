@@ -21,7 +21,11 @@ def _host_cfg() -> Config:
 def test_the_host_network_grants_the_resolver_and_trust_store_files(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
 ) -> None:
-    """Host networking grants existing resolver and trust-store paths, including link targets."""
+    """A jail on the host network had no resolver file and no CA store, so no name resolved.
+
+    The grants cover the resolver and trust-store paths that exist, a symlink's target included,
+    and never a missing one.
+    """
     hosts, trust, target, resolv, missing = (
         tmp_path / name for name in ("hosts", "ssl", "resolver", "resolv.conf", "missing")
     )
@@ -214,7 +218,11 @@ def test_a_dropped_link_that_leads_out_of_its_region_names_the_targets_own_path(
 def test_a_dropped_write_grant_is_no_region_for_the_others(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
 ) -> None:
-    """A dropped alias does not shadow a grant of its target's child."""
+    """An alias dropped for a link in the workspace shadowed a grant of its target's child.
+
+    `/data/subdir` was dropped as "inside /data, which jailed commands write", a region the
+    run never held.
+    """
     host_tmp = tmp_path / "host-tmp"
     host_tmp.mkdir()
     monkeypatch.setattr(policy, "HOST_TMP", host_tmp)
