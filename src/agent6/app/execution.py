@@ -674,6 +674,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         # The caller releases the worker lock, then hands the run to `detach_to_background`.
         return ExecutionEnd(0, detach_requested=True)
 
+    harness_gate = cfg.harness.verify_when != "never"
     if mode == "ask":
         # stdout gets the answer alone, for a pipe; when the stream (on stderr) and stdout are
         # the one terminal, the stream showed it. The REPL already printed and saved each turn.
@@ -683,7 +684,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             frontend.save_ask_transcript(layout, inputs.ask_transcript_task, result.summary)
             reporter.err(f"\n[agent6] answer saved to {layout.session_dir / 'transcript.md'}")
         reporter.err(budget.format_summary())
-        return ExecutionEnd(finalize.session_exit_code(result))
+        return ExecutionEnd(finalize.session_exit_code(result, harness_gate=harness_gate))
 
     stranded = finalize.stranded_edits(result, layout, cwd, hidden=hidden)
     if stranded:
@@ -707,4 +708,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         verified=result.verified,
         reporter=reporter,
     )
-    return ExecutionEnd(finalize.session_exit_code(result, stranded=stranded))
+    return ExecutionEnd(
+        finalize.session_exit_code(result, harness_gate=harness_gate, stranded=stranded)
+    )

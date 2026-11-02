@@ -159,7 +159,7 @@ def test_a_budget_stop_prints_its_detail_once(
     )
     out = capsys.readouterr().out
     assert out.count("5 unmetered tokens >= 5") == 1
-    assert _finalize.session_exit_code(result) == 3
+    assert _finalize.session_exit_code(result, harness_gate=True) == 3
 
 
 def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
@@ -197,7 +197,7 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
         " when the tree stopped changing."
     ) in out
     assert "  if the task is unfinished:  agent6 resume r-settled" in out
-    assert _finalize.session_exit_code(result) == 0
+    assert _finalize.session_exit_code(result, harness_gate=True) == 0
 
 
 @pytest.mark.parametrize(
@@ -281,7 +281,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
     assert "the verify gate ran out its 300s limit (harness.verify_timeout_s)" in out
     assert "agent6 config set --repo harness.verify_timeout_s <seconds>" in out
     assert "check out the base commit" not in out
-    assert _finalize.session_exit_code(result) == 4
+    assert _finalize.session_exit_code(result, harness_gate=True) == 4
 
 
 def _end_output(

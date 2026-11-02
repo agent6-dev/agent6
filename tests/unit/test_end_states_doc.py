@@ -20,15 +20,23 @@ from agent6.viewmodel import format, session_status
 
 _USAGE = pathlib.Path(__file__).resolve().parents[2] / "docs" / "usage.md"
 
-# A gate state an end can stand over: its name, then `all_passed`, `gate_red`, `gate_timed_out`
-# and the `verified` word the loop writes for it.
-_Gate = tuple[str, bool | None, bool, bool, loop_snapshot.Verification]
-_GREEN: _Gate = ("gate green", True, False, False, "passed")
-_NO_GATE: _Gate = ("no gate", None, False, False, "not_applicable")
-_RED: _Gate = ("gate red", False, True, False, "failed")
-_TIMED_OUT: _Gate = ("gate timed out", False, True, True, "failed")
-_UNVERIFIED: _Gate = ("unverified", False, False, False, "unverified")
-_NOT_GREEN = (_RED, _TIMED_OUT, _UNVERIFIED)
+# A gate state an end can stand over: its name, then `all_passed`, `gate_red`, `gate_timed_out`,
+# the `verified` word the loop writes for it, and whether the harness runs the gate itself.
+_Gate = tuple[str, bool | None, bool, bool, loop_snapshot.Verification, bool]
+_GREEN: _Gate = ("gate green", True, False, False, "passed", True)
+_NO_GATE: _Gate = ("no gate", None, False, False, "not_applicable", False)
+_RED: _Gate = ("gate red", False, True, False, "failed", True)
+_TIMED_OUT: _Gate = ("gate timed out", False, True, True, "failed", True)
+_UNVERIFIED: _Gate = ("unverified under a harness gate", False, False, False, "unverified", True)
+_UNJUDGED: _Gate = (
+    "unverified with the harness gate off",
+    False,
+    False,
+    False,
+    "unverified",
+    False,
+)
+_NOT_GREEN = (_RED, _TIMED_OUT, _UNVERIFIED, _UNJUDGED)
 _ANY_GATE = (_GREEN, _NO_GATE, *_NOT_GREEN)
 
 # The ends built `completed=True`, each with the gate states it can stand over. Every other
@@ -41,7 +49,7 @@ _COMPLETED: dict[str, tuple[_Gate, ...]] = {
     "metric_plateau": _ANY_GATE,
     "verify_settled": (_GREEN,),
     "settled": (*_NOT_GREEN, _NO_GATE),
-    "interactive_stop": (_UNVERIFIED,),
+    "interactive_stop": (_UNVERIFIED, _UNJUDGED),
     "ask_repl_empty": (_NO_GATE,),
     "gate_stale": _NOT_GREEN,
     "gate_red_at_base": (_RED,),
@@ -59,7 +67,7 @@ def _row(reason: loop_snapshot.SessionEndReason) -> str:
     gates = _COMPLETED.get(reason, (_UNVERIFIED,))
     labels: list[str] = []
     exits: dict[int, list[str]] = {}
-    for name, all_passed, gate_red, gate_timed_out, verified in gates:
+    for name, all_passed, gate_red, gate_timed_out, verified, harness_gate in gates:
         word, detail = session_status.status_word(
             finished=True,
             all_passed=all_passed,
@@ -78,7 +86,9 @@ def _row(reason: loop_snapshot.SessionEndReason) -> str:
             tool_calls=0,
             verified=verified,
         )
-        code = _OTHER_EXITS.get(reason, finalize.session_exit_code(result))
+        code = _OTHER_EXITS.get(
+            reason, finalize.session_exit_code(result, harness_gate=harness_gate)
+        )
         exits.setdefault(code, []).append(name)
     headline = (
         "none: no end is recorded"

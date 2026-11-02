@@ -542,7 +542,7 @@ def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
     stopped = loop_snapshot.SessionResult(
         completed=False, reason="steer_abort", summary="", turns=1, tool_calls=1
     )
-    assert runner.stop_reason(finalize.session_exit_code(stopped)) == "cancelled"
+    assert runner.stop_reason(finalize.session_exit_code(stopped, harness_gate=True)) == "cancelled"
 
 
 def test_the_turn_cap_uses_acps_specific_stop_reason() -> None:

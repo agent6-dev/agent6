@@ -1121,6 +1121,20 @@ def _pin_gate(repo: pathlib.Path, extra: str = "") -> None:
     )
 
 
+def test_a_default_run_whose_gate_the_model_never_ran_exits_zero_and_reads_unverified(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With the harness gate off (the default), nothing judged the tree, so nothing is wrong."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _pin_gate(repo)
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+
+    assert cli_main(["run", "--session-id", "wt-UNJ01", "add new.txt"]) == 0
+
+    out = capsys.readouterr().out
+    assert "unverified" in out, out
+
+
 def test_a_gate_on_an_untracked_path_with_no_setup_command_refuses_before_anything_is_created(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

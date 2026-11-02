@@ -126,7 +126,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 The verify command is the success gate.
 
 - Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
-- By default the model runs it (`run_verify_command`) and the harness never does: an end that no run of the gate covers reads `unverified`. `harness.verify_when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
+- By default the model runs it (`run_verify_command`) and the harness never does: an end that no run of the gate covers reads `unverified` and exits 0, since the harness judged nothing. `harness.verify_when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
 - With `harness.verify_at_start = true`, a fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a red finish over a red base reads `finished · gate red at base`, which says red at the start and red at the finish, the failures not compared (`harness.verify_at_start = false` for a gate too slow to run twice).
 - Under `finish` or `turn`, a red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
 - The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, a red base says the gate was red there too, and a gate that changed on resume says that nothing is known about this gate at the base.
@@ -324,16 +324,16 @@ Every end has one reason (`end_reason` in `agent6 sessions show --json` and `ses
 
 | End reason | Headline | Exit code |
 |---|---|---|
-| `finish_session` | `passed`, `finished`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate), `4` (gate red, gate timed out, unverified) |
+| `finish_session` | `passed`, `finished`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate, unverified with the harness gate off), `4` (gate red, gate timed out, unverified under a harness gate) |
 | `finish_planning` | `planned` | `0` |
 | `answered` | `answered` | `0` |
-| `silent_finish` | `finished · no finish call`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate), `4` (gate red, gate timed out, unverified) |
+| `silent_finish` | `finished · no finish call`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate, unverified with the harness gate off), `4` (gate red, gate timed out, unverified under a harness gate) |
 | `went_quiet` | `failed · went quiet` | `1` |
 | `budget_exhausted` | `failed · budget exhausted` | `3` |
 | `provider_error` | `failed · provider error` | `1` |
-| `metric_plateau` | `finished · metric plateau`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate), `4` (gate red, gate timed out, unverified) |
+| `metric_plateau` | `finished · metric plateau`, `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `0` (gate green, no gate, unverified with the harness gate off), `4` (gate red, gate timed out, unverified under a harness gate) |
 | `verify_settled` | `finished · settled` | `0` |
-| `settled` | `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `4` (gate red, gate timed out, unverified), `0` (no gate) |
+| `settled` | `finished · gate red`, `finished · gate timed out`, `finished · unverified` | `4` (gate red, gate timed out, unverified under a harness gate), `0` (unverified with the harness gate off, no gate) |
 | `no_progress` | `failed · no progress` | `1` |
 | `tool_error_stuck` | `failed · tool error stuck` | `1` |
 | `verify_command_unexecutable` | `failed · verify command unexecutable` | `1` |
@@ -350,7 +350,7 @@ Every end has one reason (`end_reason` in `agent6 sessions show --json` and `ses
 | `plan_unreadable` | `failed · plan unreadable` | `1` |
 | `max_turns` | `failed · max turns` | `1` |
 | `ask_repl_empty` | none: no end is recorded | `0` |
-| `gate_stale` | `finished · gate stale` | `4` |
+| `gate_stale` | `finished · gate stale` | `4` (gate red, gate timed out, unverified under a harness gate), `0` (unverified with the harness gate off) |
 | `gate_red_at_base` | `finished · gate red at base` | `4` |
 | `lanes_ranked` | `finished · lanes ranked` | `0` |
 | `no_lane_result` | `failed · no lane result` | `1` |

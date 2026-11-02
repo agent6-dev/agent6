@@ -37,7 +37,8 @@ from agent6.viewmodel import (
 
 # The run stopped at its budget; resumable from its snapshot once the cap is raised.
 _EXIT_BUDGET_EXHAUSTED = 3
-# The agent finished but the gate was red or unverified; the fan-out and a BLOCK verdict too.
+# The agent finished but the gate was red, or unverified under a harness gate; the fan-out and a
+# BLOCK verdict too.
 EXIT_VERIFY_FAILED = 4
 # The agent finished green but no commit landed and the edits sit uncommitted.
 EXIT_NO_COMMIT_LANDED = 5
@@ -45,25 +46,31 @@ EXIT_NO_COMMIT_LANDED = 5
 EXIT_OPERATOR_STOP = 130
 
 
-def session_exit_code(result: loop_snapshot.SessionResult, *, stranded: bool = False) -> int:
+def session_exit_code(
+    result: loop_snapshot.SessionResult, *, harness_gate: bool, stranded: bool = False
+) -> int:
     """Map a finished run to its process exit code.
 
-    An unverified finish exits 4 like a red one, so a worker cannot pass by never
-    running the gate; a red gate outranks stranded edits. An operator stop exits 130
-    whatever the gate said, so a script tells it from a crash.
+    A non-zero exit says something went wrong. A red gate is wrong; an unverified finish is
+    wrong only under a harness gate (`harness.verify_when` other than `never`), where the
+    harness promised a verdict it could not give; with the harness gate off, the model's own
+    verification is its business and an unverified finish exits 0, still labelled
+    `unverified`. A red gate outranks stranded edits. An operator stop exits 130 whatever
+    the gate said, so a script tells it from a crash.
 
     Args:
         result: The session's result.
+        harness_gate: Whether the harness runs the gate itself (`verify_when` is not `never`).
         stranded: Whether the edits sit uncommitted with no commit landed.
 
     Returns:
-        0 for a green or gateless finish, 130 an operator stop, 3 budget, 4 not green,
-        5 stranded, 1 else.
+        0 for a green, gateless or unjudged finish, 130 an operator stop, 3 budget, 4 red or
+        unverified under a harness gate, 5 stranded, 1 else.
     """
     if result.reason in session_status.OPERATOR_STOPS:
         return EXIT_OPERATOR_STOP
     if result.completed:
-        if result.verified in ("failed", "unverified"):
+        if result.verified == "failed" or (result.verified == "unverified" and harness_gate):
             return EXIT_VERIFY_FAILED
         return EXIT_NO_COMMIT_LANDED if stranded else 0
     if result.reason == "budget_exhausted":

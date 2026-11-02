@@ -203,7 +203,7 @@ With the per-call transcripts, an interrupted run replays deterministically up t
 A turn's tool calls and each result that returned are recorded in `turn_in_flight.json` while they dispatch.
 A resume after a death there runs none of the turn's calls again: the model gets the results that returned, and one line for each other call saying it was interrupted and not re-run.
 
-**The harness runs the gate only when asked** (`[harness].verify_when`, default `never`: the model's own `run_verify_command` calls are the verification, and an end no run of the gate covers reads `unverified`).
+**The harness runs the gate only when asked** (`[harness].verify_when`, default `never`: the model's own `run_verify_command` calls are the verification, and an end no run of the gate covers reads `unverified` and exits 0).
 
 - Under `finish`, when `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
 - A denied approval withholds the gate for the rest of the execution, and the execution ends unverified.

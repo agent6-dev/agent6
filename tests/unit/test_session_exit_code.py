@@ -4,7 +4,8 @@
 
 docs/usage.md documents a budget-exhausted run as exit 3 (resumable: raise the cap
 and `agent6 resume`), a finish over a red verify as exit 4 and an operator stop as
-exit 130; everything else completed=False is exit 1, a clean or ungated finish is 0.
+exit 130; everything else completed=False is exit 1, a clean or ungated finish is 0, and so
+is an unverified finish when the harness runs no gate of its own.
 """
 
 from __future__ import annotations
@@ -36,17 +37,30 @@ def _result(
 
 
 def test_exit_code_success_is_zero() -> None:
-    assert finalize.session_exit_code(_result(completed=True, reason="finish_session")) == 0
+    assert (
+        finalize.session_exit_code(
+            _result(completed=True, reason="finish_session"), harness_gate=True
+        )
+        == 0
+    )
 
 
 def test_exit_code_budget_exhausted_is_three() -> None:
     # The documented "raise the cap and resume" signal.
-    assert finalize.session_exit_code(_result(completed=False, reason="budget_exhausted")) == 3
+    assert (
+        finalize.session_exit_code(
+            _result(completed=False, reason="budget_exhausted"), harness_gate=True
+        )
+        == 3
+    )
 
 
 def test_exit_code_other_failures_are_one() -> None:
     for reason in ("provider_error", "max_turns", "went_quiet", "no_progress", "crashed"):
-        assert finalize.session_exit_code(_result(completed=False, reason=reason)) == 1
+        assert (
+            finalize.session_exit_code(_result(completed=False, reason=reason), harness_gate=True)
+            == 1
+        )
 
 
 def test_exit_code_operator_stop_is_130() -> None:
@@ -55,17 +69,22 @@ def test_exit_code_operator_stop_is_130() -> None:
     A script could not tell `agent6 stop` from a broken run.
     """
     for reason in ("steer_abort", "steer_exit", "interrupted"):
-        assert finalize.session_exit_code(_result(completed=False, reason=reason)) == 130
+        assert (
+            finalize.session_exit_code(_result(completed=False, reason=reason), harness_gate=True)
+            == 130
+        )
     # The stop at the commit hook is a completed end, and the operator's stop whatever the gate.
     for verified in get_args(loop_snapshot.Verification):
         stopped = _result(completed=True, reason="interactive_stop", verified=verified)
-        assert finalize.session_exit_code(stopped, stranded=True) == 130
+        assert finalize.session_exit_code(stopped, stranded=True, harness_gate=True) == 130
     # One owner: exactly the ends the listing words "stopped" exit 130.
     for reason in get_args(loop_snapshot.SessionEndReason):
         word, _detail = session_status.status_word(
             finished=True, all_passed=False, end_reason=reason
         )
-        code = finalize.session_exit_code(_result(completed=False, reason=reason))
+        code = finalize.session_exit_code(
+            _result(completed=False, reason=reason), harness_gate=True
+        )
         assert (code == 130) == (word == "stopped"), reason
 
 
@@ -77,12 +96,14 @@ def test_exit_code_finish_over_a_red_verify_is_four() -> None:
     """
     assert (
         finalize.session_exit_code(
-            _result(completed=True, reason="finish_session", verified="failed")
+            _result(completed=True, reason="finish_session", verified="failed"), harness_gate=True
         )
         == 4
     )
     assert (
-        finalize.session_exit_code(_result(completed=True, reason="settled", verified="failed"))
+        finalize.session_exit_code(
+            _result(completed=True, reason="settled", verified="failed"), harness_gate=True
+        )
         == 4
     )
 
@@ -91,20 +112,20 @@ def test_exit_code_stale_gate_finish_is_four() -> None:
     """A stale-gate finish exits 4, as a red finish does, whatever its headline reads."""
     for verified in ("failed", "unverified"):
         stale = _result(completed=True, reason="gate_stale", verified=verified)
-        assert finalize.session_exit_code(stale) == 4
+        assert finalize.session_exit_code(stale, harness_gate=True) == 4
 
 
 def test_exit_code_verified_finish_is_zero() -> None:
     # Green, and gateless (nothing to verify) -- both are exit 0.
     assert (
         finalize.session_exit_code(
-            _result(completed=True, reason="finish_session", verified="passed")
+            _result(completed=True, reason="finish_session", verified="passed"), harness_gate=True
         )
         == 0
     )
     assert (
         finalize.session_exit_code(
-            _result(completed=True, reason="settled", verified="not_applicable")
+            _result(completed=True, reason="settled", verified="not_applicable"), harness_gate=True
         )
         == 0
     )
@@ -120,7 +141,9 @@ def test_harness_end_labels_do_not_change_exit_codes(
 ) -> None:
     """A harness end keeps exit 0 for green or absent gates and 4 for not-green gates."""
     assert (
-        finalize.session_exit_code(_result(completed=True, reason=reason, verified=verified))
+        finalize.session_exit_code(
+            _result(completed=True, reason=reason, verified=verified), harness_gate=True
+        )
         == code
     )
 
@@ -133,7 +156,8 @@ def test_exit_code_unverified_finish_is_four() -> None:
     """
     assert (
         finalize.session_exit_code(
-            _result(completed=True, reason="finish_session", verified="unverified")
+            _result(completed=True, reason="finish_session", verified="unverified"),
+            harness_gate=True,
         )
         == 4
     )
@@ -177,12 +201,12 @@ def test_exit_code_stranded_edits_are_five() -> None:
     outranks 5; an unstranded finish stays 0.
     """
     ok = _result(completed=True, reason="finish_session", verified="passed")
-    assert finalize.session_exit_code(ok, stranded=True) == 5
-    assert finalize.session_exit_code(ok, stranded=False) == 0
+    assert finalize.session_exit_code(ok, stranded=True, harness_gate=True) == 5
+    assert finalize.session_exit_code(ok, stranded=False, harness_gate=True) == 0
     red = _result(completed=True, reason="finish_session", verified="failed")
-    assert finalize.session_exit_code(red, stranded=True) == 4
+    assert finalize.session_exit_code(red, stranded=True, harness_gate=True) == 4
     broke = _result(completed=False, reason="provider_error")
-    assert finalize.session_exit_code(broke, stranded=True) == 1
+    assert finalize.session_exit_code(broke, stranded=True, harness_gate=True) == 1
 
 
 def test_stranded_edits_reads_git_reality(tmp_path: pathlib.Path) -> None:
@@ -306,3 +330,18 @@ def test_stranded_edits_reads_the_run_record_not_its_branch(tmp_path: pathlib.Pa
             assert finalize.stranded_edits(result, layout, repo) is False  # no chain to commit to
     finally:
         os.chdir(old)
+
+
+@pytest.mark.parametrize("reason", ["finish_session", "silent_finish", "settled"])
+def test_an_unverified_finish_exits_four_only_under_a_harness_gate(
+    reason: loop_snapshot.SessionEndReason,
+) -> None:
+    """Non-zero is for something wrong: with the gate off, nothing judged the tree."""
+    unverified = _result(completed=True, reason=reason, verified="unverified")
+    assert finalize.session_exit_code(unverified, harness_gate=True) == 4
+    assert finalize.session_exit_code(unverified, harness_gate=False) == 0
+
+
+def test_a_red_finish_exits_four_whatever_the_gate_policy() -> None:
+    red = _result(completed=True, reason="finish_session", verified="failed")
+    assert finalize.session_exit_code(red, harness_gate=False) == 4
