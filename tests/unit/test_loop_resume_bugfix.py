@@ -1563,7 +1563,11 @@ def test_resume_restates_execution_local_gate_availability(
     config = Config.model_validate(
         {
             "sandbox": {"run_commands": policy},
-            "harness": {"verify_command": ["true"]},
+            "harness": {
+                "verify_command": ["true"],
+                "verify_when": "finish",
+                "verify_at_start": True,
+            },
         }
     )
     provider = mock.MagicMock()
@@ -1621,7 +1625,15 @@ def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathl
         "run_verify_command not run: the run was asked to stop while awaiting approval."
     )
     wf = _wf(
-        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify_command": ["true"],
+                    "verify_when": "finish",
+                    "verify_at_start": True,
+                }
+            }
+        ),
         dispatcher=dispatcher,
         resume_state_path=path,
     )
