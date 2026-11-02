@@ -167,8 +167,9 @@ class _ProviderBase(pydantic.BaseModel):
         default="",
         description=(
             "provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); "
-            'required for `deployment = "vertex"` or `"azure"`; ChatGPT sign-in also '
-            "connected to its fixed OAuth authority"
+            'required for `deployment = "vertex"` or `"azure"` and for `api_format = "responses"`; '
+            "a ChatGPT sign-in also dials its fixed OAuth authority, and a configured `oauth` "
+            "table its issuer and exchange endpoints"
         ),
     )
     auth_style: AuthStyle = pydantic.Field(

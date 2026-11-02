@@ -47,6 +47,45 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
     raise AssertionError(f"no positional {dest!r}")
 
 
+@pytest.mark.parametrize(
+    ("command", "phrases"),
+    [
+        (("connect",), ("How ChatGPT or a provider", "a configured issuer needs a fixed port")),
+        (("connect",), ("newly saved key or configured-issuer sign-in",)),
+        (("mcp", "add"), ("If no jail is in force, or a run would refuse the config",)),
+        (("web",), ("non-loopback `--host`", "a non-loopback `[web].host` needs")),
+        (("run",), ("Without a terminal the run continues in CLI mode", "cannot be used with -i")),
+        (("plan", "run"), ("Without a terminal the plan continues in CLI mode",)),
+        (
+            ("sessions", "compare"),
+            ("reviewer model judges their changes", "a missing or failed judge falls back"),
+        ),
+        (
+            ("sessions", "remove"),
+            ("this repository (outside one, this directory)", "Asks of other repositories remain"),
+        ),
+    ],
+    ids=[
+        "connect-flow",
+        "connect-verify",
+        "mcp-probe",
+        "web-bind",
+        "run-tui",
+        "plan-tui",
+        "compare-judge",
+        "remove-asks",
+    ],
+)
+def test_help_states_the_current_scope(command: tuple[str, ...], phrases: tuple[str, ...]) -> None:
+    """Help names the supported scope rather than promising a broader operation."""
+    parser = cli_parser.build_parser()
+    for name in command:
+        parser = _find(parser, name)
+    text = " ".join(parser.format_help().split())
+    for phrase in phrases:
+        assert phrase in text
+
+
 def test_resume_interactive_help_matches_run() -> None:
     """Resume -i and run -i share one hook, so their help is one string."""
     parser = cli_parser.build_parser()

@@ -215,8 +215,9 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         action=argparse.BooleanOptionalAction,
         default=None,
         help=(
-            "Test a newly saved key or sign-in against the provider (default: on). Use"
-            " --no-verify for a local or offline provider that does not offer a model list."
+            "Test a newly saved key or configured-issuer sign-in against the provider"
+            " (default: on). Use --no-verify for a local or offline provider that does not"
+            " offer a model list."
         ),
     )
     connect_p.add_argument(
@@ -224,10 +225,11 @@ def _add_connect_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         choices=("auto", "browser", "device", "paste"),
         default=None,
         help=(
-            "How a provider with a [providers.<name>.oauth] table signs in. browser: open the"
-            " sign-in page and take the redirect on a local listener. device: show a code to enter"
-            " on any device. paste: paste the callback URL by hand (needs a fixed port in"
-            " oauth.redirect_uri). Default: auto, which is browser when a GUI browser is"
+            "How ChatGPT or a provider with a [providers.<name>.oauth] table signs in."
+            " browser: open the sign-in page and take the redirect on a local listener."
+            " device: show a code to enter on any device. paste: paste the callback URL by hand"
+            " (a configured issuer needs a fixed port in oauth.redirect_uri)."
+            " Default: auto, which is browser when a GUI browser is"
             " available, else device when the issuer offers it, else paste."
         ),
     )

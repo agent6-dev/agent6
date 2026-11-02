@@ -15,9 +15,9 @@ def _add_mcp_server_parsers(mcp_sub: argparse._SubParsersAction[argparse.Argumen
         mcp_sub,
         "add",
         help=(
-            "Add an MCP server. agent6 starts it and shows its tools before saving it. If"
-            " sandboxing is unavailable, a server started by a command is saved without testing"
-            " it and gets a warning."
+            "Add an MCP server. agent6 starts it and shows its tools before saving it. If no jail"
+            " is in force, or a run would refuse the config, a server started by a command is"
+            " saved without testing it and gets a warning."
         ),
     )
     add.add_argument(

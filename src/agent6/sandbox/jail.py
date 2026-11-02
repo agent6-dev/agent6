@@ -459,10 +459,9 @@ def require_jail_binary() -> pathlib.Path:
     binary = locate_jail_binary()
     if binary is None:
         raise JailBinaryError(
-            "agent6-jail binary not found. Install agent6 from a built wheel"
-            " (which bundles the binary), or build from source with"
-            " `cargo build --release --locked --manifest-path src/agent6/jail/Cargo.toml`,"
-            f" or set {_ENV_VAR}=/path/to/agent6-jail."
+            "agent6-jail binary not found. Install agent6 from a built wheel,"
+            " run `uv sync --reinstall-package agent6` in a source checkout with cargo on PATH,"
+            f" or set {_ENV_VAR} to a `cargo build` output."
         )
     return binary
 

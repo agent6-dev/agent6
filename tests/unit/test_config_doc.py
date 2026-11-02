@@ -14,6 +14,9 @@ import pathlib
 import sys
 import types
 
+import pydantic
+import pytest
+
 from agent6.config import layer
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -60,6 +63,51 @@ def test_every_leaf_reaches_the_page() -> None:
 
     missing = sorted(path for path in gen.leaves() if not documented(path))
     assert not missing, f"config leaves with no row on the page: {missing}"
+
+
+@pytest.mark.parametrize(
+    ("path", "section", "phrase"),
+    [
+        ("providers", "providers", "provider endpoints by name"),
+        (
+            "providers.<name>.extra_headers",
+            "providers.<name>",
+            "no secrets, config file not `0600`",
+        ),
+        (
+            "providers.<name>.oauth",
+            "providers.<name>",
+            'requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`',
+        ),
+        ("models.worker", "models", "machine agent states"),
+    ],
+)
+def test_model_fields_keep_their_own_descriptions(path: str, section: str, phrase: str) -> None:
+    """Walking model fields must not discard the containing field's constraints."""
+    gen = _load_generator()
+    rows = gen.leaves()
+    assert path in rows
+    assert phrase in rows[path][1]
+    assert phrase in gen.render(f"<!-- config-table: {section} -->")
+    page = gen.render((_ROOT / "docs/config_template.md").read_text(encoding="utf-8"))
+    assert phrase in page
+
+
+def test_model_field_defaults_render_as_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A described model with a default factory has a serializable table default."""
+
+    class Section(pydantic.BaseModel):
+        count: int = pydantic.Field(default=3, description="The count.")
+
+    class Config(pydantic.BaseModel):
+        section: Section = pydantic.Field(default_factory=Section, description="The section.")
+
+    gen = _load_generator()
+    monkeypatch.setattr(gen.config_model, "Config", Config)
+    assert gen.leaves() == {
+        "section": ('`{"count": 3}`', "The section."),
+        "section.count": ("`3`", "The count."),
+    }
 
 
 def test_layer_table_names_the_config_file_layer_as_config_show_does(

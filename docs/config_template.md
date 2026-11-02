@@ -70,7 +70,7 @@ Provider names must match `[A-Za-z0-9_-]+`: one or more ASCII letters, digits, h
 Three orthogonal choices describe an HTTP backend: **`api_format`** (the wire dialect), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env`, `token_command` or `oauth`).
 A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
-<!-- config-table: providers.<name> -->
+<!-- config-table: providers providers.<name> -->
 
 ### Request headers
 
@@ -256,8 +256,10 @@ It runs outside the jail with your environment (operator-only); non-zero exit, t
 
 ## `[models.<role>]`
 
-Role routing. **`worker`** drives `run`/`resume`; **`planner`** drives `plan`; **`reviewer`** drives `review`, the in-loop review panel, the context summariser and gister, and the prompt reviser.
-`planner`/`reviewer` fall back to `worker`.
+Role routing:
+
+<!-- config-table: models -->
+
 Cross-vendor mixes are fine.
 
 <!-- the three roles are the same shape, so the table is rendered once -->

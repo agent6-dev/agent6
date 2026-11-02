@@ -428,8 +428,8 @@ def _prune_branch(
 ) -> bool:
     """Act on one run branch's classification.
 
-    A proven squash is force-deleted with the undelete hint (the commit survives in the
-    reflog until GC); the rest are kept and the reason said.
+    A proven squash is force-deleted with the undelete hint (its tip sha, restorable until
+    gc prunes the unreachable commit); the rest are kept and the reason said.
 
     Args:
         cwd: The repo.

@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 review`: the freeform review and the adversarial panel.
 
-`save_review` is the one writer of `<state-dir>/reviews/`, shared with `sessions review`.
+`save_review` writes the rendered reviews in `<state-dir>/reviews/`, shared with `sessions review`.
 """
 
 from __future__ import annotations
@@ -80,8 +80,8 @@ def _review_range(base: str, head: str) -> str:
 def save_review(reviews_dir: pathlib.Path, *, label: str, body: str) -> pathlib.Path:
     """Write one rendered review under the reviews dir, beside the provider transcripts.
 
-    The file is `<utc-stamp>-review.md`: a `# review: <label>` line, then the body. A later
-    session working on a module finds its review by searching the directory.
+    The file is `<utc-stamp>-review.md`: a `# review: <label>` line, then the body.
+    The operator finds a module's review by searching the directory.
 
     Args:
         reviews_dir: The `<state-dir>/reviews/` directory.

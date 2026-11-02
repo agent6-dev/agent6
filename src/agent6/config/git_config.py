@@ -56,7 +56,8 @@ class GitCommitSquashConfig(pydantic.BaseModel):
 class GitCommitConfig(pydantic.BaseModel):
     """The commit identity, the provenance trailer and the per-kind message styles.
 
-    `name` and `email` unset mean the project's own `git config` identity; a run with
+    `name` and `email` unset read `GIT_COMMITTER_NAME` and `GIT_COMMITTER_EMAIL`, then
+    the project's own `git config` identity; a run with
     neither an override nor a resolvable identity refuses at startup.
     """
 
@@ -66,9 +67,9 @@ class GitCommitConfig(pydantic.BaseModel):
         default=None,
         description=(
             "author and committer name for agent6 commits; also passed as `GIT_AUTHOR_NAME` and "
-            '`GIT_COMMITTER_NAME` to jailed `git commit` under `git.control = "model"`; repo\'s '
-            "own `git config` identity when unset; startup refused without a resolvable "
-            "identity"
+            '`GIT_COMMITTER_NAME` to jailed `git commit` under `git.control = "model"`; '
+            "`GIT_COMMITTER_NAME`, then the repo's own `git config` identity, when unset; "
+            "startup refused without a resolvable identity"
         ),
     )
     email: str | None = pydantic.Field(
@@ -183,9 +184,9 @@ class GitConfig(pydantic.BaseModel):
             "each editing turn committed to the run's detached chain through a temp index; HEAD "
             "never moved; index and working tree touched only with the run's own branch checked "
             "out; `git.commit_per_turn = false`: no agent6 commits, work only in the worktree, "
-            "degraded resume-from-git, `sessions diff`/`merge` and `/parallel` dispatch from a "
-            "changed tree; machine run states require true because only the committed chain "
-            "leaves a clone"
+            "degraded resume-from-git and `sessions diff`/`merge`; `/parallel` dispatch from a "
+            "changed tree refused; machine run states require true because only the committed "
+            "chain leaves a clone"
         ),
     )
     merge_method: Literal["tasks", "squash", "merge", "ff_only"] = pydantic.Field(

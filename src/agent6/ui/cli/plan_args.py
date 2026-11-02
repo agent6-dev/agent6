@@ -55,7 +55,8 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         help=(
             "Show the planning session in the full-screen terminal interface instead of"
             " command-line output. Ctrl+D switches between the conversation and dashboard."
-            " Requires a terminal. You can also start the plan from `agent6 tui`."
+            " Without a terminal the plan continues in CLI mode."
+            " You can also start the plan from `agent6 tui`."
         ),
     )
     common._add_budget_flags(plan_run)

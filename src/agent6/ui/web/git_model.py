@@ -136,7 +136,10 @@ def _resolve(
     if rev == git_history.WORKTREE:
         if worktree_ok:
             return rev
-        raise GitRequestError(f"{rev} names the working tree: it is only a diff or compare head")
+        raise GitRequestError(
+            f"{rev} names the working tree: a file or tree read, or a diff or compare head,"
+            " never a commit or a base"
+        )
     if rev == git_read.EMPTY_TREE:
         if tree_ok:
             return rev

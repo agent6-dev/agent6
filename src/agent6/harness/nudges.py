@@ -202,7 +202,7 @@ PLAN_NUDGE_AFTER_TURNS = 12
 # Only subtasks gate; the always-pending root would deadlock.
 TASK_FINISH_PATIENCE = 3
 
-# Settled completion (run mode): idle turns after a green verify or a gateless editing step.
+# Settled completion (run mode): idle turns after a green verify or an editing step.
 VERIFY_SETTLED_NUDGE_AFTER = 3
 
 
@@ -237,7 +237,6 @@ STAGNATION_NUDGE_GATELESS = (
 )
 
 # A non-metric run gets one wrap-up directive when the budget runs low.
-# A worker that never re-runs verify leaves the settled detector unable to engage.
 RUN_BUDGET_NUDGE_BELOW = 0.25
 
 RUN_BUDGET_NUDGE = (

@@ -15,6 +15,17 @@ from agent6 import kinds
 from agent6.sandbox import jail
 
 
+def test_missing_launcher_names_installation_and_the_cargo_output_override(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("AGENT6_JAIL_BIN", str(tmp_path / "missing"))
+    with pytest.raises(jail.JailBinaryError) as caught:
+        jail.require_jail_binary()
+    text = str(caught.value)
+    assert "uv sync --reinstall-package agent6" in text
+    assert "AGENT6_JAIL_BIN to a `cargo build` output" in text
+
+
 def test_an_unusable_launcher_binary_is_refused_with_the_remedy(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

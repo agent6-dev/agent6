@@ -137,10 +137,10 @@ def gate_refusal(
 
 
 def session_needs_setup(session_dir: pathlib.Path) -> bool:
-    """Return whether the session's own worktree or clone has not run its setup command.
+    """Return whether the session's own worktree or clone still needs setup.
 
-    The manifest holds the state, so a resume never runs the command again and a fork's new
-    worktree does.
+    The manifest records a setup that left the workspace ready, so a resume after one skips
+    the command and a fork's new worktree runs it.
 
     Args:
         session_dir: The session directory.

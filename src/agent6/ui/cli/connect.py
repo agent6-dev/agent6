@@ -40,9 +40,8 @@ from agent6.ui.cli import common, connect_oauth, connect_status
 def _prompt_api_key(name: str) -> str:
     """Prompt for an API key without leaking it.
 
-    On Python 3.14+ each keystroke is masked with `*`; on 3.12 and 3.13 input stays hidden
-    and a summary prints the key's length, which still tells a garbled paste from a clean
-    one. The key itself is never logged.
+    On a terminal each keystroke shows as `*`; off one, a summary prints the key's length.
+    The key itself is never logged.
 
     Args:
         name: The provider name, for the prompt.
@@ -50,7 +49,7 @@ def _prompt_api_key(name: str) -> str:
     Returns:
         The key as entered.
     """
-    prompt = f"API key for {name} (input hidden, blank for none): "
+    prompt = f"API key for {name} (input masked, blank for none): "
     try:
         api_key = common.read_secret(prompt).strip()
     except EOFError:
@@ -328,7 +327,7 @@ def _sign_in(
         name: The provider name.
         entry: The provider as the config holds it.
         flow: The `--flow` value.
-        verify: Use the grant once after storing it.
+        verify: Use a configured-issuer grant once after storing it.
 
     Returns:
         The exit code.
@@ -558,8 +557,8 @@ def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int
     Args:
         name: The provider name.
         api_format: The format the prompt settled.
-        flow: The `--flow` value for a configured issuer.
-        verify: Use the key or grant once after storing it.
+        flow: The `--flow` value for ChatGPT or a configured issuer.
+        verify: Use the key or configured-issuer grant once after storing it.
 
     Returns:
         The exit code.
@@ -621,9 +620,9 @@ def _cmd_connect(
     Args:
         provider: The provider name or preset.
         to_repo: Write the block to the repo config instead of the global one.
-        verify: Use the key or grant once after storing it; None defaults to on.
+        verify: Use the key or configured-issuer grant once after storing it; None defaults to on.
         logout: Remove the credentials instead.
-        flow: How a configured issuer signs in; None defaults to auto.
+        flow: How ChatGPT or a configured issuer signs in; None defaults to auto.
         status: List local credential state and free live checks instead.
         config_paths: Explicit config overlays for the status listing.
 

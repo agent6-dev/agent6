@@ -40,9 +40,10 @@ class RoleModel(pydantic.BaseModel):
         ge=0.0,
         le=2.0,
         description=(
-            "sampling temperature pinned on every call, `temperature = 0.0` to `2.0`; stable "
-            "tool use at `temperature = 0.0`; TOML omission: `temperature = 0.0`; provider "
-            "default only through `temperature=None` in the Python API"
+            "sampling temperature, `temperature = 0.0` to `2.0`, sent where the wire accepts "
+            "one (not with Anthropic thinking or on `chatgpt` or `claude_code`, dropped for "
+            "the run after a 400 naming it); `extra_body.temperature` wins; TOML omission: "
+            "`temperature = 0.0`"
         ),
     )
     # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
@@ -53,8 +54,8 @@ class RoleModel(pydantic.BaseModel):
             "reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; "
             "top tiers where offered by the model, collapsed to Anthropic's highest; unset: "
             '`effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, '
-            'as printed by `agent6 config show`; no effort sent with `api_format = "chatgpt"`, '
-            '`"responses"` or `"claude_code"`, leaving the model\'s own default'
+            'none sent with `api_format = "chatgpt"`, `"responses"` or `"claude_code"` '
+            "(the model's default), as printed by `agent6 config show`"
         ),
     )
 
@@ -206,7 +207,7 @@ class HarnessConfig(pydantic.BaseModel):
             "pathless pytest gate over budget (harness call or model's `run_verify_command`): "
             "retry on test files nearest the run's diff, harness gates scoped until a full gate "
             "passes; `finish_session` over scoped green: `passed · scoped gate`; model's "
-            "`run_command` unbounded (see `harness.command_checkin_s`); cap on each gate call, "
+            "`run_command` handed back by `harness.command_checkin_s`; cap on each gate call, "
             "not cached work; `go test` may pass from a cache filled by the model's "
             "`run_command`; Go test cache disabled by `go test -count=1`"
         ),
@@ -262,7 +263,7 @@ class HarnessConfig(pydantic.BaseModel):
         ge=0,
         description=(
             "consecutive turns with no edit, commit or memory write and an unchanged tree "
-            "before a plain run ends after green verify or a gateless editing step; verify runs "
+            "before a plain run ends after a green verify or an editing step; verify runs "
             "neutral; streak reset by progress or operator steer; "
             "`harness.verify_settled_stop_after = 0`: stop disabled, nudge at three idle turns "
             "retained"
@@ -297,7 +298,8 @@ class HarnessConfig(pydantic.BaseModel):
             "seconds before the model's `run_command` returns as a background job; no timeout "
             "or kill, command still running; response: `returncode: null`, `still_running: "
             "true`, `background_id`; model options: wait with `read_background`, stop the job "
-            "or carry on; `harness.command_checkin_s = 0`: hand-back disabled"
+            "or carry on; `harness.command_checkin_s = 0`: hand-back disabled, command killed "
+            "at 600 s; also killed at 600 s without background tools (such as in `ask`)"
         ),
     )
     standing_patience: int = pydantic.Field(

@@ -94,8 +94,8 @@ class JailBuildHook(BuildHookInterface):
         cargo = shutil.which("cargo")
         if cargo is None:
             print(
-                "[hatch_build] cargo not on PATH, skipping; the agent6-jail "
-                "binary must be built separately (see SECURITY.md)",
+                "[hatch_build] cargo not on PATH, skipping; install a Rust toolchain and rebuild, "
+                "or set AGENT6_JAIL_BIN (see docs/installation.md)",
                 file=sys.stderr,
             )
             self._maybe_mark_platform_wheel(build_data, dest)

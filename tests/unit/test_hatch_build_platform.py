@@ -38,6 +38,26 @@ def _load_hook_module() -> types.ModuleType:
     return module
 
 
+def test_missing_cargo_warning_points_to_source_install_instructions(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    mod = _load_hook_module()
+    monkeypatch.setattr(mod.sys, "platform", "linux")
+
+    def no_cargo(name: str) -> None:
+        return None
+
+    monkeypatch.setattr(mod.shutil, "which", no_cargo)
+    monkeypatch.delenv("AGENT6_SKIP_JAIL_BUILD", raising=False)
+    monkeypatch.delenv("AGENT6_JAIL_BIN", raising=False)
+    hook = mod.JailBuildHook.__new__(mod.JailBuildHook)
+    hook.__dict__["root"] = str(_ROOT)
+    hook.initialize("standard", {})
+    text = capsys.readouterr().err
+    assert "install a Rust toolchain and rebuild, or set AGENT6_JAIL_BIN" in text
+    assert "docs/installation.md" in text
+
+
 def test_a_non_linux_host_never_invokes_cargo(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:

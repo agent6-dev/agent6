@@ -97,10 +97,13 @@ graph TD
     n_drop_gate_if_unrunnable["drop_gate_if_unrunnable"]
     n_pin_gate["pin_gate"]
     n_build_session_tools["build_session_tools"]
+    n_wf_resume["wf.resume"]
+    n_wf_run["wf.run"]
     n_finalize_auto_merge["finalize_auto_merge"]
     n_session_exit_code["session_exit_code"]
     n_print_session_end["print_session_end"]
     n_fire_notify_hook["fire_notify_hook"]
+    n_end_auto_stash["end_auto_stash"]
     n_run_task --> n_session_config
     n_session_config --> n_headless_approval_refusal
     n_headless_approval_refusal --> n_route_preflight
@@ -112,10 +115,13 @@ graph TD
     n_infer_verify_if_unset --> n_drop_gate_if_unrunnable
     n_drop_gate_if_unrunnable --> n_pin_gate
     n_pin_gate --> n_build_session_tools
-    n_build_session_tools --> n_finalize_auto_merge
+    n_build_session_tools --> n_wf_resume
+    n_wf_resume --> n_wf_run
+    n_wf_run --> n_finalize_auto_merge
     n_finalize_auto_merge --> n_session_exit_code
     n_session_exit_code --> n_print_session_end
     n_print_session_end --> n_fire_notify_hook
+    n_fire_notify_hook --> n_end_auto_stash
 ```
 
 ## A run

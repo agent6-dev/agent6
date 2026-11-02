@@ -419,7 +419,10 @@ def act(
         text = ""
         if action.action == "fix":
             if not action.resume:
-                raise ReviewActionError("Resume to fix requires confirmation; pass --resume")
+                raise ReviewActionError(
+                    "Resume to fix requires confirmation: `--resume` on the CLI,"
+                    ' `"resume": true` over HTTP'
+                )
             if resume is None:
                 raise ReviewActionError("resume is unavailable on this surface")
             text = _steer_text(view, finding)

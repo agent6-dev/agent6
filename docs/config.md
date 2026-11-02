@@ -75,18 +75,21 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` (the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key). |
-| `deployment` | `"direct"` | `direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format only): the URL shape and where the model name and API version go. |
-| `base_url` | per (format, deployment) | provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `deployment = "vertex"` or `"azure"`; ChatGPT sign-in also connected to its fixed OAuth authority |
-| `auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). |
-| `api_key_env` | none | environment variable holding the API key; precedence over `secrets.toml`; unset for a key stored by `agent6 connect` or an unauthenticated local endpoint |
-| `token_command` | `[]` | argv command printing a short-lived bearer token to stdout; re-run after `token_command_ttl_s` and once after a `401` or `403`; precedence over `api_key_env` |
-| `token_command_ttl_s` | `300.0` | Seconds a `token_command` token is reused before the command runs again. |
-| `extra_body` | `{}` | provider-specific JSON merged last into every request body; precedence for tuning keys (`max_tokens`, `temperature`); agent6-owned structural keys filtered out (messages, model, stream, tools, tool choice, response shape); JSON-shaped values only, TOML dates and times refused; OpenRouter routing options here |
-| `extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
-| `http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
-| `prompt_caching` | `true` | prompt caching for `api_format = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
-| `binary` | `"claude"` | executable for `api_format = "claude_code"` only; a name on PATH or an absolute path |
+| `providers` | `{}` | provider endpoints by name (`[providers.<name>]`), referenced by `[models.*]` roles; names: one or more ASCII letters, digits, `-` or `_`; written by `agent6 connect` |
+| `<name>.api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` (the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key). |
+| `<name>.deployment` | `"direct"` | `direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format only): the URL shape and where the model name and API version go. |
+| `<name>.base_url` | per (format, deployment) | provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `deployment = "vertex"` or `"azure"` and for `api_format = "responses"`; a ChatGPT sign-in also dials its fixed OAuth authority, and a configured `oauth` table its issuer and exchange endpoints |
+| `<name>.auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). |
+| `<name>.api_key_env` | none | environment variable holding the API key; precedence over `secrets.toml`; unset for a key stored by `agent6 connect` or an unauthenticated local endpoint |
+| `<name>.token_command` | `[]` | argv command printing a short-lived bearer token to stdout; re-run after `token_command_ttl_s` and once after a `401` or `403`; precedence over `api_key_env` |
+| `<name>.token_command_ttl_s` | `300.0` | Seconds a `token_command` token is reused before the command runs again. |
+| `<name>.extra_headers` | `{}` | extra HTTP headers: a literal string rides every API request; a template table (`template`, `targets`, `when`) renders from request facts for the request classes it names; no secrets, config file not `0600` |
+| `<name>.extra_body` | `{}` | provider-specific JSON merged last into every request body; precedence for tuning keys (`max_tokens`, `temperature`); agent6-owned structural keys filtered out (messages, model, stream, tools, tool choice, response shape); JSON-shaped values only, TOML dates and times refused; OpenRouter routing options here |
+| `<name>.extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
+| `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
+| `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
+| `<name>.prompt_caching` | `true` | prompt caching for `api_format = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
+| `<name>.binary` | `"claude"` | executable for `api_format = "claude_code"` only; a name on PATH or an absolute path |
 
 ### Request headers
 
@@ -134,6 +137,7 @@ A stored grant is bound to the entry's transport settings (`api_format`, `deploy
 | `authorization_params` | `{}` | static, non-secret authorization parameters (an audience, a prompt); never `client_id`, `state`, `redirect_uri`, `response_type`, `scope` or a PKCE parameter |
 | `request_encoding` | `"form"` | how the device and token requests are encoded |
 | `refresh_skew_s` | `60.0` | seconds before an expiry the grant is refreshed, capped at half the issued lifetime |
+| `exchange` | none | one second exchange of the issuer's bearer for the model endpoint's token |
 | `exchange.endpoint` | *(required)* | the exact URL the issuer's bearer is sent to for the model endpoint's token |
 | `exchange.method` | `"POST"` | the request method; `GET` sends `parameters` as the query |
 | `exchange.request_encoding` | `"form"` | how a `POST` body is encoded |
@@ -295,8 +299,14 @@ It runs outside the jail with your environment (operator-only); non-zero exit, t
 
 ## `[models.<role>]`
 
-Role routing. **`worker`** drives `run`/`resume`; **`planner`** drives `plan`; **`reviewer`** drives `review`, the in-loop review panel, the context summariser and gister, and the prompt reviser.
-`planner`/`reviewer` fall back to `worker`.
+Role routing:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `worker` | none | model for `agent6 run`, `ask`, run resumes, machine agent states and the model-written squash message |
+| `reviewer` | none | model for `agent6 review`, `sessions review`, the `sessions compare` and `--parallel` judge, verify-command inference, the in-loop review panel, context summariser and gister, and prompt reviser; fallback to `models.worker` when unset |
+| `planner` | none | model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset |
+
 Cross-vendor mixes are fine.
 
 <!-- the three roles are the same shape, so the table is rendered once -->
@@ -304,8 +314,8 @@ Cross-vendor mixes are fine.
 |---|---|---|
 | `provider` | *(required)* | A `[providers.<name>]` entry, by name. |
 | `model` | *(required)* | Model id as that provider names it (`agent6 model` lists them). |
-| `temperature` | `0.0` | sampling temperature pinned on every call, `temperature = 0.0` to `2.0`; stable tool use at `temperature = 0.0`; TOML omission: `temperature = 0.0`; provider default only through `temperature=None` in the Python API |
-| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, as printed by `agent6 config show`; no effort sent with `api_format = "chatgpt"`, `"responses"` or `"claude_code"`, leaving the model's own default |
+| `temperature` | `0.0` | sampling temperature, `temperature = 0.0` to `2.0`, sent where the wire accepts one (not with Anthropic thinking or on `chatgpt` or `claude_code`, dropped for the run after a 400 naming it); `extra_body.temperature` wins; TOML omission: `temperature = 0.0` |
+| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, none sent with `api_format = "chatgpt"`, `"responses"` or `"claude_code"` (the model's default), as printed by `agent6 config show` |
 
 ## `[sandbox]`
 
@@ -336,7 +346,7 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 | `auto_stash_pop` | `false` | pre-run stash applied over the working tree at run or resume end, even over the run's uncommitted work; worktree sessions restored in their own directory without a branch switch; stash dropped only after a clean apply; failed apply: stash preserved, restore command printed, conflicts visible in `git status`; no `reset --hard`; requires `git.dirty_tree = "stash"` |
 | `control` | `"agent6"` | git ownership during a run; `git.control = "agent6"`: each editing turn on the run's own commit chain and branch, HEAD untouched; `git.control = "model"`: model-managed commits and branches, no per-turn chain or run branch, `sessions diff`/`merge`, `/undo` and `fork` refused; with model control: `sandbox.protect_git = "auto"` disabled, `sandbox.protect_git = "on"` refused |
 | `branch_per_run` | `true` | visible `agent6/<run-id>` branch advanced to the run's chain tip; `git.branch_per_run = false`: only the hidden `refs/agent6/<run-id>/head` ref; forced on for `--parallel` lanes, whose work is imported by branch |
-| `commit_per_turn` | `true` | each editing turn committed to the run's detached chain through a temp index; HEAD never moved; index and working tree touched only with the run's own branch checked out; `git.commit_per_turn = false`: no agent6 commits, work only in the worktree, degraded resume-from-git, `sessions diff`/`merge` and `/parallel` dispatch from a changed tree; machine run states require true because only the committed chain leaves a clone |
+| `commit_per_turn` | `true` | each editing turn committed to the run's detached chain through a temp index; HEAD never moved; index and working tree touched only with the run's own branch checked out; `git.commit_per_turn = false`: no agent6 commits, work only in the worktree, degraded resume-from-git and `sessions diff`/`merge`; `/parallel` dispatch from a changed tree refused; machine run states require true because only the committed chain leaves a clone |
 | `merge_method` | `"tasks"` | method for `agent6 sessions merge` to land a run on its base; `git.merge_method = "tasks"`: one commit per task, each consecutive range of checkpoints that worked on one task graph subtask squashed under that subtask's title (checkpoints outside any subtask take the `[git.commit.squash]` message, so a run that never decomposed lands as one commit); `git.merge_method = "squash"`: one commit; `git.merge_method = "merge"`: a merge commit keeping per-step history; `git.merge_method = "ff_only"`: fast-forward only; consolidation only, per-turn commits always on the run's chain; `sessions merge -m` lands one commit with that message |
 | `auto_merge` | `false` | automatic merge into the base branch only for end reason `finish_session` with a passed or absent verify gate; other ends: no auto-merge, reason printed; hidden chain ref merged with `git.branch_per_run = false`; conflict: nothing moved, instructions printed |
 | `auto_prune` | `false` | run branch deleted after auto-merge only when `git branch -d` allows it (`git.merge_method = "merge"` or `"ff_only"`); squash-merged branch: `-D` command printed, never force-deleted; requires `git.auto_merge = true`; no action without a run branch |
@@ -351,7 +361,7 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `name` | none | author and committer name for agent6 commits; also passed as `GIT_AUTHOR_NAME` and `GIT_COMMITTER_NAME` to jailed `git commit` under `git.control = "model"`; repo's own `git config` identity when unset; startup refused without a resolvable identity |
+| `name` | none | author and committer name for agent6 commits; also passed as `GIT_AUTHOR_NAME` and `GIT_COMMITTER_NAME` to jailed `git commit` under `git.control = "model"`; `GIT_COMMITTER_NAME`, then the repo's own `git config` identity, when unset; startup refused without a resolvable identity |
 | `email` | none | author and committer email for agent6 commits; also passed as `GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_EMAIL` to jailed `git commit` under `git.control = "model"`; the `GIT_COMMITTER_*` variables, then the repo's own `git config` identity, when unset; startup refused without a resolvable identity |
 | `trailer` | `""` | git trailer line (`Key: value`) on every agent6 commit, such as `"Assisted-by: agent6:{model}"` or `"Co-authored-by: agent6:{model} <noreply@agent6.dev>"`; `{model}`: the code-writing model, several joined with `, `; no trailer when empty |
 
@@ -366,7 +376,7 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 | Field | Default | Meaning |
 |---|---|---|
-| `preset` | `"none"` | selected preset; `preset = "none"`: no preset, stop preset lookup; `preset = "no_review"`: panel off; `preset = "review"`: three seats able to block the finish; `preset = "deep_review"`: five repo-scope seats able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: per resumed execution; empty string refused |
+| `preset` | `"none"` | selected preset; `preset = "none"`: no preset, stop preset lookup; `preset = "no_review"`: panel off; `preset = "review"`: three seats able to block the finish; `preset = "deep_review"`: five repo-scope seats able to block the finish; custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: per run; `resume --preset`: from that resume on, recorded for later resumes; empty string refused |
 
 ### Presets
 
@@ -407,18 +417,19 @@ reviewers = [
 |---|---|---|
 | `verify_command` | `[]` | step-success command as argv, no shell (pipeline form: `["sh", "-c", "a && b"]`); explicit value: pinned gate; unset: inferred and printed per run; inference order: AGENTS.md `## Verify command` block or inline `Verify:` line, root `verify.sh`, repo manifests and loose `test_*.py` files, then a model call over those manifests; AGENTS.md commands joined with `&&`, one per line, no multiline `for` or `if`; commands with a first word absent from sandbox PATH skipped and named; files under `sandbox.hide_paths` treated as absent; a plain-command package.json test script run directly when its runner is on sandbox PATH but `npm` is not; no inferred gate: gateless start, adoption of the first gate from a recognizable project created mid-run; `$ ` and `> ` prompts stripped; in a fence containing a `$ ` prompt or opening with a `> ` prompt: only prompted lines and their continuations treated as commands |
 | `verify_infer` | `true` | verify-command inference when `harness.verify_command` is unset (AGENTS.md fence, repo signals, model call); mid-run adoption for a gateless run creating a recognizable project; adopted gate dropped and never re-adopted if unable to run (exit 127 or missing module named by `-m`); `harness.verify_infer = false`: no inference or adoption, run stays gateless; explicit `harness.verify_command` unaffected |
-| `verify_timeout_s` | `600.0` | seconds per `harness.verify_command` or `harness.metric.command` call before kill and failure; run ending over a gate killed here: `finished · gate timed out`; pathless pytest gate over budget (harness call or model's `run_verify_command`): retry on test files nearest the run's diff, harness gates scoped until a full gate passes; `finish_session` over scoped green: `passed · scoped gate`; model's `run_command` unbounded (see `harness.command_checkin_s`); cap on each gate call, not cached work; `go test` may pass from a cache filled by the model's `run_command`; Go test cache disabled by `go test -count=1` |
+| `verify_timeout_s` | `600.0` | seconds per `harness.verify_command` or `harness.metric.command` call before kill and failure; run ending over a gate killed here: `finished · gate timed out`; pathless pytest gate over budget (harness call or model's `run_verify_command`): retry on test files nearest the run's diff, harness gates scoped until a full gate passes; `finish_session` over scoped green: `passed · scoped gate`; model's `run_command` handed back by `harness.command_checkin_s`; cap on each gate call, not cached work; `go test` may pass from a cache filled by the model's `run_command`; Go test cache disabled by `go test -count=1` |
 | `max_turns` | `200` | loop turns per execution before stop reason `max_turns`; `harness.max_turns = -1`: unlimited; fresh allowance on resume |
 | `went_quiet_max_nudges` | `4` | Empty turns (no text, no tool call) re-asked per streak, reasoning-starvation bursts included; 0 ends the run on the first. |
 | `loop_guard_kill_threshold` | `10` | The same (tool, args) call this many times in a row ends the run as `loop_guard_killed` (the notice fires from three, every other turn); 0 leaves the notice alone. |
-| `verify_settled_stop_after` | `12` | consecutive turns with no edit, commit or memory write and an unchanged tree before a plain run ends after green verify or a gateless editing step; verify runs neutral; streak reset by progress or operator steer; `harness.verify_settled_stop_after = 0`: stop disabled, nudge at three idle turns retained |
+| `verify_settled_stop_after` | `12` | consecutive turns with no edit, commit or memory write and an unchanged tree before a plain run ends after a green verify or an editing step; verify runs neutral; streak reset by progress or operator steer; `harness.verify_settled_stop_after = 0`: stop disabled, nudge at three idle turns retained |
 | `stagnation_notice_after_s` | `300.0` | wall-clock seconds without the run's own edit or verify before one notice (recall spirals: few calls, long reasoning); `harness.stagnation_notice_after_s = 0`: disabled; clock from the first turn after the start gate, excluding operator wait time |
 | `memory_advisory` | `true` | one notice per run at the first red-to-green verify with no repo-memory write, inviting a durable repo fact; cost about two turns on a short fix; `harness.memory_advisory = false`: no notice, memory still readable and writable by the model |
-| `command_checkin_s` | `900.0` | seconds before the model's `run_command` returns as a background job; no timeout or kill, command still running; response: `returncode: null`, `still_running: true`, `background_id`; model options: wait with `read_background`, stop the job or carry on; `harness.command_checkin_s = 0`: hand-back disabled |
+| `command_checkin_s` | `900.0` | seconds before the model's `run_command` returns as a background job; no timeout or kill, command still running; response: `returncode: null`, `still_running: true`, `background_id`; model options: wait with `read_background`, stop the job or carry on; `harness.command_checkin_s = 0`: hand-back disabled, command killed at 600 s; also killed at 600 s without background tools (such as in `ask`) |
 | `standing_patience` | `-1` | consecutive fruitless standing-goal re-entries (no executed tool call) before soft ends are honoured; `harness.standing_patience = -1`: no end from fruitless rounds alone, only budget, turn cap or operator stop; `harness.standing_patience = 0`: end on the first fruitless round; `harness.standing_patience = N`: escalating nudges for N fruitless re-entries, then soft ends honoured; streak reset by a round landing work |
 | `verify_when` | `"never"` | when the harness runs `harness.verify_command` itself; `harness.verify_when = "never"`: only the model's own `run_verify_command` calls, and the end reads `unverified` when no run of the gate covers the final tree; `harness.verify_when = "finish"`: `finish_session` over a tree no verdict covers, a red result returned to the model `harness.verify_retries` times; `harness.verify_when = "turn"`: also after each editing turn; the tool is available in every mode; no gate without a verify command |
 | `verify_at_start` | `false` | one `harness.verify_command` call before a fresh run's first turn to record pre-existing gate failure; red output in the first request; a red finish over a red base: `finished · gate red at base` (red at the start and at the finish, the failures not compared); cost: one gate call per fresh run, worth it for a fast gate beside a suite that is already red; needs `harness.verify_when = "finish"` or `"turn"` and `sandbox.run_commands` other than `"deny"`; recorded baseline kept on resume |
 | `verify_retries` | `2` | red finish certifications returned to the model with gate output before the finish stands as `finished · gate red`, never passed; `harness.verify_retries = 0`: end on the first red; pre-existing red not returned unless made green during this run |
+| `metric` | none | optional score beside the pass/fail gate (benchmark, size or count); run after every committed edit, trend shown to the model; unset: `run_metric_command` still listed, calls refused with `harness.metric` named |
 
 ### `[harness.metric]` (optional)
 
@@ -664,11 +675,13 @@ Anything else that reaches an unconfined process is still a way out, so name the
 | Field | Default | Meaning |
 |---|---|---|
 | `enabled` | `false` | Master switch for MCP servers: `false` means no `mcp__*` tools reach the model, whatever `[mcp.servers]` lists. |
+| `servers` | `{}` | MCP servers by name (`[mcp.servers.<name>]`); their tools reach the model as `mcp__<name>__<tool>` in run mode when `enabled` is on. |
 | `servers.<name>.command` | `[]` | argv of a spawned stdio MCP server; jailed like a command, plus `sandbox` grants; exactly one of `command` or `url` required |
 | `servers.<name>.url` | `""` | operator-run http(s) MCP endpoint; connection only, environment and confinement outside agent6's control; exactly one of `command` or `url` required |
 | `servers.<name>.token_env` | `""` | bearer-token environment variable for a `url` server, named rather than inlined, never logged; token readable on the wire over plaintext `http://` to a non-loopback host; approval in `mcp add`, warning on every run starting it |
 | `servers.<name>.enabled` | `true` | `false` withholds this server's tools from the model without deleting the entry. |
 | `servers.<name>.pass_env` | `[]` | Environment variables a spawned server needs, by name; everything else is agent6's curated base environment. |
+| `servers.<name>.sandbox` | none | extra grants for a spawned server beyond a jailed command's sandbox; unset: exactly that sandbox; `url` server: operator's process, confinement at its launch site |
 | `servers.<name>.approve` | `"ask"` | approval policy for this server's tools; `approve = "ask"`: prompt before each call with the model's arguments; `approve = "allow"`: no prompt; session answer "allow all": this server only for the run, not command tools or sibling servers; "deny all": tools withdrawn from the next turn; `--auto-approve`: `approve = "allow"` for the run; no deny mode, tools withheld with `enabled = false` |
 | `servers.<name>.startup_timeout_s` | `10.0` | Seconds the server gets to answer `initialize` and `tools/list` before it is given up on. |
 | `servers.<name>.call_timeout_s` | `60.0` | Seconds one `tools/call` may take before it fails; a spawned server is restarted after a timeout. |

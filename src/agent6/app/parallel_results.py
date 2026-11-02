@@ -216,9 +216,10 @@ def import_lanes(
 ) -> ImportedLanes:
     """Import each finished lane into the origin and build the candidate briefs.
 
-    A lane that failed to start, is still running or refused its import is recorded
-    as failed and keeps its clone, state and symlink; an imported lane without a
-    result is recorded as failed too, its work safe in the origin.
+    A lane that failed to start is recorded as failed and keeps what it created.
+    One still running or whose import was refused is also recorded as failed and keeps its
+    clone, state and symlink.
+    An imported lane without a result is recorded as failed too, its work safe in the origin.
 
     Args:
         results: The spawned lanes.

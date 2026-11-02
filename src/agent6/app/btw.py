@@ -6,9 +6,8 @@ A btw is an ask session seeded with the run's context. The run never waits for i
 prints into the conversation view between a header and a footer, never into the run's own
 transcript. It has no follow-up thread: the operator resumes it like any other ask.
 
-It is not in-process (two loops sharing one dispatcher would race on tools) and not a plain
-subprocess under `full` (it would inherit the run's empty netns). It spawns the way a
-`/parallel` lane does: through the host launcher when the run is netns-isolated, else directly.
+It is not in-process (two loops sharing one dispatcher would race on tools).
+It spawns as a detached `agent6` process.
 """
 
 from __future__ import annotations

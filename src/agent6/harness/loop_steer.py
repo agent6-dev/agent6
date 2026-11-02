@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Apply steering at execution boundaries."""
+"""Apply steering at turn and execution boundaries."""
 
 from __future__ import annotations
 

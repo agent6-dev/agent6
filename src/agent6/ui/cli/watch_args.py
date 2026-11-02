@@ -117,8 +117,8 @@ def _add_web_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--allow-non-loopback",
         action="store_true",
         help=(
-            "Opt in to a non-loopback bind for this invocation; otherwise"
-            " [web].allow_non_loopback must be true."
+            "Opt in to a non-loopback `--host` for this invocation; a non-loopback `[web].host`"
+            " needs `[web].allow_non_loopback = true`."
         ),
     )
     web_p.add_argument(

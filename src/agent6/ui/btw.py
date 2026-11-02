@@ -2,9 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Run a `/btw` side question for every composer: spawn it, deliver the answer.
 
-`app.btw` owns the session; this owns what only a front-end can do: spawning
-through the run's escape from its namespace, and landing the answer in the
-run's journal.
+`app.btw` owns the session; this owns what only a front-end can do: spawning it detached,
+and landing the answer in the run's journal.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ _GIVE_UP_S = 900.0
 
 
 def direct_launch(cwd: pathlib.Path, argv: list[str], env_extra: dict[str, str]) -> str:
-    """Spawn `agent6 <argv>` detached, for a run with no namespace to escape.
+    """Spawn `agent6 <argv>` detached.
 
     Args:
         cwd: The child's working directory.

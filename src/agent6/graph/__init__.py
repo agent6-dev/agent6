@@ -4,9 +4,9 @@
 
 The curator owns the graph files in the session dir (graph.jsonl, graph/*.md, cursor.json);
 the worker, the planner and the operator's steering all mutate through the one in-process
-`GraphCurator`. The session dir lives outside the workspace, so a jailed command never
-reaches it; the `worker.lock` flock keeps one writer, and the curator's own per-mutation
-flock guards against a concurrent operator-CLI read or write of the same files.
+`GraphCurator`. The `worker.lock` flock keeps one writer, and the per-mutation flock also
+serialises fork's copy. The session dir lives under the state base, which the jail masks
+under `full`.
 """
 
 from __future__ import annotations

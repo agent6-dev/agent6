@@ -139,8 +139,8 @@ def no_progress(
 class SettledGuard:
     """The verify-settled completion's counters.
 
-    Once the run reached a good state (a green verify, or an editing step on a
-    gateless run), idle turns count: one nudge at `VERIFY_SETTLED_NUDGE_AFTER`,
+    Once the run has a green verify or an editing step, idle turns count:
+    one nudge at `VERIFY_SETTLED_NUDGE_AFTER`,
     the stop at `harness.verify_settled_stop_after` unless disabled.
 
     Attributes:
@@ -149,7 +149,7 @@ class SettledGuard:
         idle: Consecutive turns with no edit, no commit, no memory write and an
             unchanged tree.
         nudged: The one settled nudge went out.
-        gateless_ever_edited: A gateless run took an editing step. Persisted.
+        gateless_ever_edited: An editing step did not end with a green verify. Persisted.
     """
 
     tree: str = ""

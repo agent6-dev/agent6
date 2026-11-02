@@ -158,8 +158,9 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         action="store_true",
         help=(
             "Show the run in the full-screen terminal interface instead of command-line"
-            " output. Ctrl+D switches between the conversation and dashboard. Requires a"
-            " terminal and cannot be used with -i. You can also start the run from `agent6 tui`."
+            " output. Ctrl+D switches between the conversation and dashboard."
+            " Without a terminal the run continues in CLI mode; cannot be used with -i."
+            " You can also start the run from `agent6 tui`."
         ),
     )
     common._add_budget_flags(run_p)

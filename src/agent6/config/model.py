@@ -56,19 +56,23 @@ class ModelsConfig(pydantic.BaseModel):
 
     worker: harness_config.RoleModel | None = pydantic.Field(
         default=None,
-        description="The `(provider, model)` driving `agent6 run`/`resume`.",
+        description=(
+            "model for `agent6 run`, `ask`, run resumes, machine agent states and the "
+            "model-written squash message"
+        ),
     )
     reviewer: harness_config.RoleModel | None = pydantic.Field(
         default=None,
         description=(
-            "model for `agent6 review`, the in-loop review panel, context summariser and "
-            "gister, and prompt reviser; fallback to `models.worker` when unset"
+            "model for `agent6 review`, `sessions review`, the `sessions compare` and "
+            "`--parallel` judge, verify-command inference, the in-loop review panel, context "
+            "summariser and gister, and prompt reviser; fallback to `models.worker` when unset"
         ),
     )
     planner: harness_config.RoleModel | None = pydantic.Field(
         default=None,
         description=(
-            "model for `agent6 plan` (planning pass); fallback to `models.worker` when unset"
+            "model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset"
         ),
     )
 
@@ -195,7 +199,8 @@ class Config(pydantic.BaseModel):
             '"no_review"`: panel off; `preset = "review"`: three seats able to block the '
             'finish; `preset = "deep_review"`: five repo-scope seats able to block the finish; '
             "custom preset: `[presets.<name>]`; overrides at the selecting layer; `--preset`: "
-            "per run; `resume --preset`: per resumed execution; empty string refused"
+            "per run; `resume --preset`: from that resume on, recorded for later resumes; "
+            "empty string refused"
         ),
     )
 

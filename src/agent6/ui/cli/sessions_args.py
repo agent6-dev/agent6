@@ -168,8 +168,9 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         sessions_sub,
         "compare",
         help=(
-            "Rank two or more finished sessions by verification result and cost. A configured"
-            " reviewer model also judges their changes. Session ids create a fresh report; one"
+            "Rank two or more finished sessions: the reviewer model judges their changes,"
+            " and a missing or failed judge falls back to verification result and cost."
+            " Session ids create a fresh report; one"
             " fan-out id prints its saved report. This is the report `run --parallel`"
             " prints when it ends. Nothing is merged."
         ),
@@ -236,8 +237,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         "--asks",
         action="store_true",
         help=(
-            "Delete every ask saved from the current directory instead of one session. Cannot"
-            " be used with a session id. Asks from other directories remain."
+            "Delete every ask saved in this repository (outside one, this directory) instead of"
+            " one session. Cannot be used with a session id. Asks of other repositories remain."
         ),
     )
 

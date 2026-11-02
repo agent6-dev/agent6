@@ -480,10 +480,10 @@ def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
 
 
 def resume_blocker(session_dir: pathlib.Path) -> str:
-    """Return why a bare `agent6 resume` would refuse the session, or "" when it can start.
+    """Return why the session's state cannot be resumed at all, or "".
 
-    The resume command is printed only where it would work: a coordinator has no loop, a
-    lane's tree is no checkout's once its clone is gone, a worktree run whose worktree is
+    A coordinator has no loop, a lane's tree is no checkout's once its clone is gone,
+    a worktree run whose worktree is
     gone continues through `fork`, and a run that never reached a turn has no snapshot.
 
     Args:
@@ -491,7 +491,7 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
 
     Returns:
         The reason, naming the `agent6 fork` command when one continues the run; "" when
-        the resume can start.
+        no such state blocker applies.
     """
     if is_fanout(session_dir):
         return "a fan-out coordinator is not resumable"

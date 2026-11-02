@@ -146,7 +146,7 @@ def _calls_in_order(
     Args:
         rel_path: The file.
         func: The calling function.
-        tier: The functions that count.
+        tier: The functions that count, qualified when their receiver matters.
         own_body_only: Leave nested functions' bodies out; a closure's calls happen
             when it is called.
 
@@ -164,9 +164,9 @@ def _calls_in_order(
 
     class V(ast.NodeVisitor):
         def visit_Call(self, node: ast.Call) -> None:
-            name = node.func.attr if isinstance(node.func, ast.Attribute) else None
-            if isinstance(node.func, ast.Name):
-                name = node.func.id
+            name = ast.unparse(node.func)
+            if name not in members and isinstance(node.func, ast.Attribute):
+                name = node.func.attr
             if name in members and name not in seen:
                 seen.append(name)
             self.generic_visit(node)
@@ -192,7 +192,9 @@ _RUN_LIFECYCLE_TIER = (
     "write_session_manifest",
     "build_session_providers",
     "build_session_tools",
-    "finalize_auto_stash",
+    "wf.resume",
+    "wf.run",
+    "end_auto_stash",
     "finalize_auto_merge",
     "print_session_end",
     "fire_notify_hook",
@@ -207,7 +209,11 @@ _DISPATCH_TIER = (
 
 
 def _run_lifecycle_mermaid() -> str:
-    """Return `run_task`'s stages as one chain, the execution body spliced in at the hand-off."""
+    """Return `run_task`'s stages with the execution body spliced in at the hand-off.
+
+    Raises:
+        SystemExit: A lifecycle tier member matched no calls.
+    """
     outer = _calls_in_order(
         "src/agent6/app/run.py",
         "run_task",
@@ -222,6 +228,8 @@ def _run_lifecycle_mermaid() -> str:
     )
     body = [stage for name in execution for stage in (gate if name == "gate" else [name])]
     stages = [stage for name in outer for stage in (body if name == "run_execution" else [name])]
+    if missing := set(_RUN_LIFECYCLE_TIER) - set(stages):
+        raise SystemExit(f"run-lifecycle tier matched no calls: {', '.join(sorted(missing))}")
     lines = ["graph TD", '    n_run_task["run_task"]']
     lines += [f'    {_nid(name)}["{name}"]' for name in stages]
     chain = ["run_task", *stages]

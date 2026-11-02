@@ -31,9 +31,9 @@ def _cmd_web(
 ) -> int:
     """Serve the web UI.
 
-    A non-loopback bind is gated the same whether it comes from `[web].host` (refused at
-    config load) or `--host` (refused here): both need `--allow-non-loopback` or
-    `[web].allow_non_loopback = true`. Prefer `tailscale serve` in front of a loopback bind.
+    A non-loopback `[web].host` needs `[web].allow_non_loopback = true` at config load.
+    `--allow-non-loopback` opts in a non-loopback `--host` for this invocation.
+    Prefer `tailscale serve` in front of a loopback bind.
 
     Args:
         target: The session id or prefix, or machine name to open first.

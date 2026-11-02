@@ -90,6 +90,39 @@ def test_a_tier_member_named_like_a_keyword_is_safe(tmp_path: pathlib.Path) -> N
     assert '["call"]' in diagram and '["end"]' in diagram
 
 
+def test_run_lifecycle_includes_the_loop_and_finally_stash_cleanup() -> None:
+    """The lifecycle must show the loop hand-off and the cleanup run from finally."""
+    gen = _load_generator()
+    diagram = gen._run_lifecycle_mermaid()
+    stages = re.findall(r'^    n_\w+\["([^"]+)"\]$', diagram, re.M)
+    assert "end_auto_stash" in stages
+    assert stages.index("build_session_tools") < stages.index("wf.resume")
+    assert stages.index("wf.resume") < stages.index("wf.run")
+    assert stages.index("wf.run") < stages.index("finalize_auto_merge")
+    assert stages[-1] == "end_auto_stash"
+
+
+def test_lifecycle_refuses_an_unmatched_tier_member(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stale tier name must fail generation rather than silently omit a stage."""
+    gen = _load_generator()
+    monkeypatch.setattr(gen, "_RUN_LIFECYCLE_TIER", (*gen._RUN_LIFECYCLE_TIER, "missing_stage"))
+    with pytest.raises(SystemExit, match=r"run-lifecycle tier matched no calls:.*missing_stage"):
+        gen._run_lifecycle_mermaid()
+
+
+def test_qualified_loop_calls_do_not_match_another_objects_run(tmp_path: pathlib.Path) -> None:
+    gen = _load_generator()
+    source = tmp_path / "calls.py"
+    source.write_text(
+        "def execute():\n    other.run()\n    wf.resume()\n    wf.run()\n    wf.run()\n",
+        encoding="utf-8",
+    )
+    assert gen._calls_in_order(str(source), "execute", ("wf.run", "wf.resume")) == [
+        "wf.resume",
+        "wf.run",
+    ]
+
+
 def test_the_generator_never_spawns_uv() -> None:
     """The layering diagram invokes tach from the running interpreter's environment, never `uv`.
 

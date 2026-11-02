@@ -143,7 +143,7 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
                 session_dir,
                 console_cell[0],
                 facts,
-                # The CLI has a terminal, so `/btw` launches directly, unlike a confined lane.
+                # The CLI has a terminal, so `/btw` launches directly.
                 btw.make_btw_runner(
                     session_dir.name,
                     launch=btw.direct_launch,

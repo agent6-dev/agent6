@@ -196,8 +196,10 @@ def test_crash_after_request_never_retries_delivery(
 def test_finished_fix_requires_explicit_resume_and_a_destination(tmp_path: pathlib.Path) -> None:
     saved = review_helpers.reviewed_session(tmp_path)
     request = review_records.FindingAction(request_id="fix", expected_version=1, action="fix")
-    with pytest.raises(review_actions.ReviewActionError, match="Resume to fix"):
-        review_actions.act(saved.session_dir, "f1", request, source="cli")
+    for source in ("cli", "web"):
+        with pytest.raises(review_actions.ReviewActionError, match="Resume to fix") as caught:
+            review_actions.act(saved.session_dir, "f1", request, source=source)
+        assert '`--resume` on the CLI, `"resume": true` over HTTP' in str(caught.value)
     with pytest.raises(review_actions.ReviewActionError, match="resume"):
         review_actions.act(
             saved.session_dir, "f1", request.model_copy(update={"resume": True}), source="cli"

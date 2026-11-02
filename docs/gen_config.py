@@ -59,7 +59,8 @@ def _sections_of(annotation: object) -> list[type[pydantic.BaseModel]]:
 def leaves() -> dict[str, tuple[str, str]]:
     """Return each schema field's rendered default and description in model order.
 
-    A `dict[str, Section]` field is one section spelled `<name>`, documented once.
+    Described model fields keep their own row before their children.
+    A `dict[str, Section]` field has one section spelled `<name>`, documented once.
     Other mappings keep one field row with their empty default, not runtime entry rows.
     """
     out: dict[str, tuple[str, str]] = {}
@@ -67,23 +68,15 @@ def leaves() -> dict[str, tuple[str, str]]:
     def walk(model: type[pydantic.BaseModel], prefix: str) -> None:
         for name, field in model.model_fields.items():
             path = f"{prefix}{name}"
-            if typing.get_origin(field.annotation) is dict:
-                entries = _sections_of(typing.get_args(field.annotation)[1])
-                # Model-valued mappings document their fields under a placeholder name.
-                if entries:
-                    for entry in entries:
-                        walk(entry, f"{path}.<name>.")
-                    continue
             nested = _sections_of(field.annotation)
-            if nested and typing.get_origin(field.annotation) in (list, tuple):
+            if field.description or not nested:
                 out[path] = (_default_cell(path, field), field.description or "")
-                for entry in nested:
-                    walk(entry, f"{path}.<entry>.")
-                continue
+            origin = typing.get_origin(field.annotation)
+            suffix = (
+                ".<name>." if origin is dict else ".<entry>." if origin in (list, tuple) else "."
+            )
             for section in nested:
-                walk(section, f"{path}.")
-            if not nested:
-                out[path] = (_default_cell(path, field), field.description or "")
+                walk(section, f"{path}{suffix}")
 
     walk(config_model.Config, "")
     return out
@@ -100,6 +93,8 @@ def _default_cell(path: str, field: object) -> str:
     value = factory() if factory is not None else default
     if value is None:
         return "none"
+    if isinstance(value, pydantic.BaseModel):
+        value = value.model_dump(mode="json")
     return f"`{json.dumps(list(value) if isinstance(value, tuple) else value)}`"
 
 
