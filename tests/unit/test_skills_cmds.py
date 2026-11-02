@@ -48,6 +48,32 @@ def _installed(tmp_path: pathlib.Path, name: str) -> pathlib.Path:
     return tmp_path / "data" / "agent6" / "skills" / name
 
 
+@pytest.mark.parametrize("action", ["always", "disable", "enable"])
+@pytest.mark.parametrize("repo", [False, True])
+def test_skill_state_writes_preserve_config_symlinks(
+    env: pathlib.Path, action: str, repo: bool
+) -> None:
+    """Skill state changes write through the config link into the dotfiles target."""
+    _write_skill_file(_installed(env, "tidy") / "SKILL.md", "tidy")
+    target = cli_skills_cmds._state_target(repo)  # pyright: ignore[reportPrivateUsage]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    real = env / "dotfiles.toml"
+    real.write_text('[skills.state]\ntidy = "disabled"\n', encoding="utf-8")
+    target.symlink_to(real)
+    if action == "disable":
+        real.write_text('[skills.state]\ntidy = "always"\n', encoding="utf-8")
+        assert cli_skills_cmds._cmd_skills_disable("tidy", repo=repo) == 0
+    else:
+        assert cli_skills_cmds._cmd_skills_enable("tidy", always=action == "always", repo=repo) == 0
+    assert target.is_symlink()
+    text = real.read_text(encoding="utf-8")
+    if action == "enable":
+        assert "tidy" not in text
+    else:
+        value = "disabled" if action == "disable" else "always"
+        assert f'tidy = "{value}"' in text
+
+
 class TestInstall:
     @pytest.mark.parametrize("name", ["Upper", "tail-", "two--parts", "x" * 65])
     def test_install_name_rule_refused(self, env: pathlib.Path, name: str) -> None:

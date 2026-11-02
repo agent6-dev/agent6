@@ -65,8 +65,13 @@ def test_a_server_that_answers_is_written_with_its_tools_shown(
     assert entry.enabled is True
 
 
+@pytest.mark.parametrize(("setting", "value"), [("home", "tmp"), ("network", "session")])
 def test_a_config_a_run_refuses_is_written_unprobed(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    setting: str,
+    value: str,
 ) -> None:
     """Under a config a run refuses (`home = "tmp"` below `full`), the entry lands unprobed.
 
@@ -79,7 +84,7 @@ def test_a_config_a_run_refuses_is_written_unprobed(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path.parent / f"{tmp_path.name}-cfg"))
     cfg = tmp_path.parent / f"{tmp_path.name}-cfg" / "agent6" / "config.toml"
     cfg.parent.mkdir(parents=True)
-    cfg.write_text('[sandbox]\nhome = "tmp"\n', encoding="utf-8")
+    cfg.write_text(f'[sandbox]\n{setting} = "{value}"\n', encoding="utf-8")
 
     def _partial(_requested: str, _env: object) -> str:
         return "partial"
@@ -96,7 +101,9 @@ def test_a_config_a_run_refuses_is_written_unprobed(
     )
 
     assert rc == 0
-    assert "not probed: a run would refuse: sandbox.home = 'tmp'" in capsys.readouterr().err
+    assert (
+        f"not probed: a run would refuse: sandbox.{setting} = {value!r}" in capsys.readouterr().err
+    )
     assert layer.load_effective(tmp_path).config.mcp.servers["browser"].enabled is True
 
 

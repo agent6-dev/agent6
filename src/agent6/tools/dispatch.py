@@ -130,6 +130,7 @@ class ToolDispatcher:
         self.verify_tree: Callable[[], str] = self._verification_tree
         self.execution_id: str | None = None
         self.last_verification: evidence.VerificationEvidence | None = None
+        self.verify_withheld = False
         self._config = config
         # Memory files are read and edited with the ordinary tools, in-process only.
         mem = memory.memory_dir(state_dir) if state_dir is not None else None
@@ -260,11 +261,15 @@ class ToolDispatcher:
 
     def tool_is_withheld(self, name: str) -> bool:
         """Return whether the model is denied the tool, extras included."""
-        return name in _COMMAND_TOOLS and self.command_policy() == "deny"
+        return (name in _COMMAND_TOOLS and self.command_policy() == "deny") or (
+            name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld
+        )
 
     def _tool_refusal(self, name: str) -> str | None:
         """Return why a built-in tool is withheld right now, or None when it is offered."""
         if self.tool_is_withheld(name):
+            if name == schema.RunVerifyInput.TOOL_NAME and self.verify_withheld:
+                return "not available (verify gate withheld for the rest of the run after denial)"
             return "not available (run_commands = 'deny')"
         # `fetch` is redundant when a jailed command already has the network.
         if (
@@ -631,8 +636,8 @@ class ToolDispatcher:
         )
         started = time.monotonic()
         try:
-            if self.command_policy() == "deny":
-                raise tool_errors.ToolDeniedError("not available (run_commands = 'deny')")
+            if refusal := self._tool_refusal(schema.RunVerifyInput.TOOL_NAME):
+                raise tool_errors.ToolDeniedError(refusal)
             if not self._config.harness.verify_command:
                 raise tool_errors.ToolError("no verify command configured")
             self._approve_command("run_verify_command", argv)
@@ -645,6 +650,7 @@ class ToolDispatcher:
         except (tool_errors.ToolError, KeyboardInterrupt) as exc:
             outcome = "interrupted" if isinstance(exc, KeyboardInterrupt) else "unavailable"
             if isinstance(exc, tool_errors.ToolDeniedError):
+                self.verify_withheld = True
                 outcome = "denied"
             record = dataclasses.replace(
                 record,

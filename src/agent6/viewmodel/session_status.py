@@ -197,7 +197,12 @@ def status_word(
     if end_reason in own_word:
         word, detail = own_word[end_reason]
         # A harness end over edits no commit holds exits 5; the label says so too.
-        if stranded and end_reason in ("silent_finish", "metric_plateau", "verify_settled"):
+        if stranded and end_reason in (
+            "silent_finish",
+            "metric_plateau",
+            "verify_settled",
+            "settled",
+        ):
             detail = f"{detail} · not committed"
         return word, detail
     # A clean finish whose work no commit holds says so before anything else.

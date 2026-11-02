@@ -55,7 +55,7 @@ def _wf(validator: Any) -> loop.Harness:
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate({}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
         logger=lambda _m: None,
         mode="run",
         finish_validator=validator,

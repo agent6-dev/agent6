@@ -56,8 +56,13 @@ _COMPLETED: dict[str, tuple[_Gate, ...]] = {
     "lanes_ranked": (_GREEN, _NO_GATE),
 }
 # Exit codes another owner decides: `execution` for the operator's undo and detach, the
-# fan-out for its own verdict.
-_OTHER_EXITS = {"undone": 0, "detached": 0, "no_lane_passed": finalize.EXIT_VERIFY_FAILED}
+# fan-out for its own verdict, and the CLI for a closed output pipe.
+_OTHER_EXITS: dict[str, dict[int, list[str]]] = {
+    "undone": {0: []},
+    "detached": {0: []},
+    "no_lane_passed": {finalize.EXIT_VERIFY_FAILED: []},
+    "interrupted": {130: [], 141: ["closed output pipe"]},
+}
 # Ends that write no session.end, so no surface shows a headline for them.
 _NO_HEADLINE = frozenset({"detached", "ask_repl_empty"})
 
@@ -86,10 +91,9 @@ def _row(reason: loop_snapshot.SessionEndReason) -> str:
             tool_calls=0,
             verified=verified,
         )
-        code = _OTHER_EXITS.get(
-            reason, finalize.session_exit_code(result, harness_gate=harness_gate)
-        )
+        code = finalize.session_exit_code(result, harness_gate=harness_gate)
         exits.setdefault(code, []).append(name)
+    exits = _OTHER_EXITS.get(reason, exits)
     headline = (
         "none: no end is recorded"
         if reason in _NO_HEADLINE
@@ -98,7 +102,10 @@ def _row(reason: loop_snapshot.SessionEndReason) -> str:
     codes = (
         f"`{next(iter(exits))}`"
         if len(exits) == 1
-        else ", ".join(f"`{code}` ({', '.join(names)})" for code, names in exits.items())
+        else ", ".join(
+            f"`{code}`" + (f" ({', '.join(names)})" if names else "")
+            for code, names in exits.items()
+        )
     )
     return f"| `{reason}` | {headline} | {codes} |"
 
@@ -121,6 +128,13 @@ def test_the_end_state_table_matches_the_code() -> None:
     assert end_states_table() in _USAGE.read_text(encoding="utf-8"), (
         "docs/usage.md is stale; paste the table printed by:"
         " uv run python tests/unit/test_end_states_doc.py"
+    )
+
+
+def test_interrupted_row_names_the_closed_output_pipe_exit() -> None:
+    """An interrupted run can leave through the CLI's closed-pipe exit."""
+    assert _row("interrupted") == (
+        "| `interrupted` | `stopped` | `130`, `141` (closed output pipe) |"
     )
 
 

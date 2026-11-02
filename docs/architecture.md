@@ -216,7 +216,8 @@ A resume after a death there runs none of the turn's calls again: the model gets
     - A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
     - A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
     - `0` disables the stop, but the nudge at three idle turns still fires without announcing a stop; over a red gate the model must fix, the nudge is withheld while a finish would still go back.
-    - Over a green gate the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
+    - Over a green gate of the run's own, the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
+    - A settled end whose only green was the base's carries `verified = "unverified"` and `all_passed = false`: an unverified end.
     - Over a red gate it returns under the same cap, counted apart from the model's own finishes.
 
 **Per-turn commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).

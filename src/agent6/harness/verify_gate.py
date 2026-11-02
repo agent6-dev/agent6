@@ -387,18 +387,15 @@ class VerifyGate:
             )
         )
 
-    def may_run(self, *, withheld: bool) -> bool:
+    def may_run(self) -> bool:
         """Return whether anyone may run a verify command in this run.
 
         `run_commands = "deny"` and a denied gate withhold it from the harness as from the model.
 
-        Args:
-            withheld: Whether an approval withheld the gate.
-
         Returns:
             True when the gate may run.
         """
-        return self.dispatcher.command_policy() != "deny" and not withheld
+        return self.dispatcher.command_policy() != "deny" and not self.dispatcher.verify_withheld
 
     def command(self, verdict: verify_verdict.VerifyVerdict) -> tuple[str, ...]:
         """Return the command in force: the configured one, else the adopted one, else ()."""
@@ -413,7 +410,7 @@ class VerifyGate:
         Returns:
             The one answer the harness gate, the per-turn commit, the nudges and the prompt read.
         """
-        return bool(self.command(verdict)) and self.may_run(withheld=verdict.withheld)
+        return bool(self.command(verdict)) and self.may_run()
 
     def start_baseline(self, state: loop_state.LoopState) -> list[loop_conversation.Notice]:
         """Run the gate on the unedited tree before a fresh run's first turn; record the baseline.
@@ -439,7 +436,7 @@ class VerifyGate:
         try:
             result = self.dispatcher.run_verify()
         except tool_errors.ToolDeniedError as exc:
-            verdict.withheld = True
+            self.dispatcher.verify_withheld = True
             return [loop_conversation.Notice(gate_withheld_notice("[harness verify] start", exc))]
         except tool_errors.ToolError:
             return []
@@ -501,7 +498,7 @@ class VerifyGate:
             scope = self.scope_paths(state.verify) if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)
         except tool_errors.ToolDeniedError as exc:
-            state.verify.withheld = True
+            self.dispatcher.verify_withheld = True
             turn.tool_results.append(
                 loop_conversation.Notice(gate_withheld_notice(f"[harness verify] {why}", exc))
             )
@@ -566,7 +563,7 @@ class VerifyGate:
         try:
             result = self.dispatcher.run_verify(extra_argv=scope)
         except tool_errors.ToolDeniedError as exc:
-            state.verify.withheld = True
+            self.dispatcher.verify_withheld = True
             turn.tool_results.append(
                 loop_conversation.Notice(gate_withheld_notice("[verify] scoped re-run", exc))
             )

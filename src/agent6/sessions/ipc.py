@@ -206,7 +206,11 @@ TIMESTAMP_SLACK_S = 0.01
 
 
 def clear_pending_answers(
-    session_dir: pathlib.Path, *, started_at: float, keep_questions: Collection[str] = ()
+    session_dir: pathlib.Path,
+    *,
+    started_at: float,
+    keep_questions: Collection[str] = (),
+    keep_steer: bool = False,
 ) -> None:
     """Drop the bridge state an execution inherits, at its start; best-effort.
 
@@ -214,7 +218,8 @@ def clear_pending_answers(
     answers), and the stop and compact markers (an instant re-stop) go; only files older
     than the start, less `TIMESTAMP_SLACK_S`: one written since belongs to the execution
     that is starting. The answer to a question still pending in the journal stays: the new
-    execution delivers it. Front-end claims need no sweep: `frontend_is_live` prunes dead
+    execution delivers it. `keep_steer` preserves the steer answer and request too.
+    Front-end claims need no sweep: `frontend_is_live` prunes dead
     ones, and a live watcher's must survive so its modals stay wired up.
 
     Args:
@@ -222,9 +227,12 @@ def clear_pending_answers(
         started_at: This execution's start as `time.time()`; ACP passes its turn's start,
             a machine's crash recovery passes now.
         keep_questions: The ids of the questions still pending.
+        keep_steer: Preserve an unread steer after setup failed before the loop started.
     """
     answer_dirs = (session_dir / APPROVAL_DIR_NAME, session_dir / QUESTION_DIR_NAME)
-    markers = (STEER_ANSWER_FILE, STEER_REQUEST_FILE, STOP_REQUEST_FILE, COMPACT_REQUEST_FILE)
+    markers = (STOP_REQUEST_FILE, COMPACT_REQUEST_FILE)
+    if not keep_steer:
+        markers += (STEER_ANSWER_FILE, STEER_REQUEST_FILE)
     answers = (
         f
         for d in answer_dirs

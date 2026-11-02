@@ -442,7 +442,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     )
     tools = types.SimpleNamespace(
         curator=None,
-        dispatcher=mock.MagicMock(last_verification=None),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
         compact_drop_at_chars=1,
         compact_summarise_at_chars=1,
         keep_recent_chars=1,

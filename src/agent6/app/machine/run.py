@@ -483,9 +483,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             return 2
         # The operator's own config refuses here as it would for a plain run; then each state's.
         for label, resolved in state_configs.labelled_configs(configs):
-            refusal = confine.check_network_support(
-                resolved.config, resolved.isolation
-            ) or confine.config_refusal(resolved.config, resolved.isolation, cwd)
+            refusal = confine.startup_refusal(resolved.config, resolved.isolation, cwd)
             if refusal is not None:
                 reporter.refuse(f"{label}{refusal}")
                 return 2

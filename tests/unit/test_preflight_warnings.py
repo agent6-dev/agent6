@@ -33,6 +33,10 @@ def test_a_run_that_cannot_be_asked_refuses_instead_of_hanging(
     assert refusal is not None
     assert "would wait forever" in refusal
     assert "--auto-approve" in refusal  # the fix is named
+    assert (
+        "no commands: sandbox.run_commands = 'deny' (or --no-commands on run, resume and fork)"
+        in refusal
+    )
 
 
 def test_a_clamped_session_kind_names_the_flag_not_the_config_value() -> None:

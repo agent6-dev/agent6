@@ -46,7 +46,9 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
         ),
     )
     # Gate presence reads the command policy first: a gate someone may run.
-    wf.dispatcher = types.SimpleNamespace(last_verification=None, command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(
+        last_verification=None, verify_withheld=False, command_policy=lambda: "allow"
+    )  # pyright: ignore[reportAttributeAccessIssue]
     return wf
 
 
@@ -106,7 +108,7 @@ def _start_wf(
     wf = _wf()
     wf.mode = "run"
     wf.config.harness.verify_when = when  # pyright: ignore[reportAttributeAccessIssue]
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.command_policy.return_value = policy
     dispatcher.run_verify.return_value = _verify(rc)
     wf.dispatcher = dispatcher
@@ -167,7 +169,7 @@ def test_a_red_start_gate_past_the_base_reaches_the_model_and_records_no_baselin
     wf = _wf(clean=False)
     wf.mode = "run"
     wf.config.harness.verify_when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = _verify(1)
     wf.dispatcher = dispatcher
@@ -242,7 +244,7 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     """
     wf = _wf()
     wf.mode = "run"
-    wf.dispatcher = mock.MagicMock()
+    wf.dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     wf.dispatcher.command_policy.return_value = "ask"
     wf.config.harness.verify_when = "finish"
     wf.config.harness.verify_retries = 2
@@ -324,7 +326,9 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             verify_infer=True,
         ),
     )
-    wf.dispatcher = types.SimpleNamespace(last_verification=None, command_policy=lambda: "allow")  # pyright: ignore[reportAttributeAccessIssue]
+    wf.dispatcher = types.SimpleNamespace(
+        last_verification=None, verify_withheld=False, command_policy=lambda: "allow"
+    )  # pyright: ignore[reportAttributeAccessIssue]
     state = _state()
     state.verify.baseline_ok = False
     state.verify.last_ok = False

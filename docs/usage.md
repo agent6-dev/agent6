@@ -340,7 +340,7 @@ Every end has one reason (`end_reason` in `agent6 sessions show --json` and `ses
 | `setup_command_failed` | `failed · setup command failed` | `1` |
 | `loop_guard_killed` | `failed · loop guard killed` | `1` |
 | `interactive_stop` | `stopped` | `130` |
-| `interrupted` | `stopped` | `130` |
+| `interrupted` | `stopped` | `130`, `141` (closed output pipe) |
 | `crashed` | `failed · crashed` | `1` |
 | `steer_abort` | `stopped` | `130` |
 | `steer_exit` | `stopped` | `130` |
@@ -537,6 +537,7 @@ The reversal needs its own checks; the original receipt does not certify a merge
 - The command runs in the run's own sandbox, under the isolation, network and grants of every command of that run; with no route out it has to work offline ([the offline recipe](security.md#4-commands-and-environment)).
 - Machine clones follow the [state setup and failure rules](state-machines.md#agent) and [setup approval policy](security.md#4-commands-and-environment).
 - For run, fork and lane sessions, the command and output tail are printed when it ends; a nonzero exit ends the session `failed · setup command failed` before any turn (exit `1`).
+    - A fork's unread steer survives the setup failure and reaches the worker on a bare resume.
   For a run or lane, no turn ran, so `agent6 resume` has nothing to continue: start the run again once the command works.
 - A fan-out prints each lane's setup line when it imports the lane, and a failed lane's output in the failed lanes block; `agent6 sessions show <id>` keeps the command, and a failed setup's output, after the workspace is gone.
 - The files it leaves untracked stay out of the run's commits.

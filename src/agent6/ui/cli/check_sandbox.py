@@ -386,9 +386,7 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
         cfg, root, memory_dir=memory.memory_dir(agent6_paths.state_dir(root)), grants=grants
     )
     # The same ladder every run applies: an explicit knob this host cannot honour refuses.
-    refusal = confine.check_network_support(cfg, selected) or confine.config_refusal(
-        cfg, selected, ws.root
-    )
+    refusal = confine.startup_refusal(cfg, selected, ws.root)
     if refusal is not None:
         detail = f"a run would refuse: {refusal}"
         check_render.result("FAIL", "a run would refuse", refusal)

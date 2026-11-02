@@ -318,8 +318,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         layout.session_dir,
         started_at=started_at,
         keep_questions=[request.id for request in carried.pending],
+        keep_steer=scan.end_reason == "setup_command_failed",
     )
-    # Seeded after the clear, which drops steer files.
     if steer.strip() and not ipc.submit_steer(layout.session_dir, steer.strip()):
         reporter.error("could not write the initial steer request")
         lock.release_single_writer(worker_lock_fd)
@@ -485,7 +485,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             )
             return 2
         if workspace_setup.session_needs_setup(layout.session_dir):
-            cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter)
+            cfg = workspace_setup.infer_if_unset(cfg, repo, reporter=reporter, at=resume_base_sha)
 
         # Needs the config: the away grant is per scope, one per configured MCP server.
         app_frontend.settle_away_mode(

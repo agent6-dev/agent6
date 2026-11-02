@@ -89,6 +89,36 @@ def test_every_writer_keeps_the_link_not_just_config_set(
     assert link.is_symlink(), "`config fill` replaced the dotfiles symlink"
 
 
+@pytest.mark.parametrize("destination", ["global", "machine", "repo"])
+def test_config_fix_preserves_the_link_while_removing_invalid_entries(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, destination: str
+) -> None:
+    """Config repair keeps symlinks and repairs several invalid entries in one file."""
+    from agent6.ui import cli
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    if destination == "machine":
+        link = tmp_path / "linked.asm.toml"
+    elif destination == "repo":
+        link = paths.repo_config_path(tmp_path)
+    else:
+        link = paths.global_config_path()
+    link.parent.mkdir(parents=True, exist_ok=True)
+    real = tmp_path / "dotfiles.toml"
+    prefix = "config." if destination == "machine" else ""
+    real.write_text(
+        f'[{prefix}sandbox]\nrun_commands = "maybe"\n[{prefix}unknown]\nvalue = "bad"\n',
+        encoding="utf-8",
+    )
+    link.symlink_to(real)
+    args = ["--machine-file", str(link)] if destination == "machine" else []
+    assert cli.main(["config", "fix", *args]) == 0
+    assert link.is_symlink()
+    text = real.read_text(encoding="utf-8")
+    assert "run_commands" not in text and "unknown" not in text
+
+
 def test_a_symlink_whose_target_does_not_exist_yet_is_created(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

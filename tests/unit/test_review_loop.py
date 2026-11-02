@@ -94,7 +94,7 @@ def _seat(provider: Any, focus: str = "security", model: str = "m1") -> review_g
 
 
 def _disp() -> mock.MagicMock:
-    d = mock.MagicMock(last_verification=None)
+    d = mock.MagicMock(last_verification=None, verify_withheld=False)
     d.dispatch.return_value = results.RawResult(
         {"ok": True}
     )  # JSON-serializable (finish_session is dispatched)

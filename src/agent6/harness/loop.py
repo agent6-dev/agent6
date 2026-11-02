@@ -1191,11 +1191,7 @@ class Harness:
             )
             turn.committed = bool(sha)
             # Adoption fills an absent command; a configured gate nobody may run stays as is.
-            if (
-                sha
-                and not self.gate.command(state.verify)
-                and self.gate.may_run(withheld=state.verify.withheld)
-            ):
+            if sha and not self.gate.command(state.verify) and self.gate.may_run():
                 self.gate.maybe_adopt(state, turn)
         except (errors.GitError, OSError) as exc:
             self.checkpoints.report_failure(exc, commit_subject, turn=turn.number)
@@ -1742,6 +1738,8 @@ class Harness:
         if roots:
             self._pass_pending_root_tasks()
         verified = self.gate.verification(state.verify)
+        if end.reason == "settled" and verified == "passed":
+            verified = "unverified"
         # The tree a run leaves: at its next start, what differs from it changed outside the run.
         tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
         left = {"final_verify_id": state.verify.final_verify_id, **({"tree": tree} if tree else {})}

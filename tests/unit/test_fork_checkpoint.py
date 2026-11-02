@@ -100,7 +100,7 @@ def _wf(
             ),
         ),
         "provider": mock.MagicMock(),
-        "dispatcher": mock.MagicMock(last_verification=None),
+        "dispatcher": mock.MagicMock(last_verification=None, verify_withheld=False),
         "logger": _silent,
     }
     defaults.update(kw)
@@ -353,7 +353,7 @@ def _seed_source_run(
                 "session_id": session_id,
                 "mode": mode,
                 "user_task": "do the thing",
-                "base_sha": "basesha000",
+                "base_sha": head_sha,
                 "base_branch": "main",
                 "run_branch": f"agent6/{session_id}",
                 "harness": {
@@ -735,7 +735,7 @@ def test_fork_clones_state_writes_lineage_and_branch(
     assert manifest["parent_session_id"] == "sunny-otter-AAAA11"
     assert manifest["forked_from_turn"] == 3
     assert manifest["forked_from_sha"] == head
-    assert manifest["base_sha"] == "basesha000"
+    assert manifest["base_sha"] == head
     assert manifest["base_branch"] == "main"
     assert manifest["run_branch"] == "agent6/brave-yak-BBBB22"
 

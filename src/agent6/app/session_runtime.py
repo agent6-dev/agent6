@@ -110,7 +110,7 @@ def select_isolation(
         reporter.refuse(str(exc))
         raise preflight.SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
-    cfg_err = confine.config_refusal(cfg, selected, cwd, worktree_git_dir=worktree_git_dir)
+    cfg_err = confine.startup_refusal(cfg, selected, cwd, worktree_git_dir=worktree_git_dir)
     if cfg_err is not None:
         reporter.refuse(cfg_err)
         raise preflight.SessionRefusedError(2)
@@ -125,10 +125,6 @@ def select_isolation(
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)
     if not confirm_unconfined(selected, cfg):
         reporter.note("aborted.")
-        raise preflight.SessionRefusedError(2)
-    net_err = confine.check_network_support(cfg, selected)
-    if net_err is not None:
-        reporter.refuse(net_err)
         raise preflight.SessionRefusedError(2)
     budget_err = preflight.budget_preflight(cfg, reporter=reporter)
     if budget_err is not None:

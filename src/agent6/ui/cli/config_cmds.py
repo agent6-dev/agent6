@@ -665,7 +665,6 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
     _read_machine_overlay(machine)
     removed: list[layer.InvalidEntry] = []
     stuck: list[layer.InvalidEntry] = []
-    touched: set[pathlib.Path] = set()
     diag = layer.find_invalid_entries(repo_root, machine=machine)
     while diag.removable:
         progressed = False
@@ -677,11 +676,12 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
                 if _entry_is_stale(entry):
                     continue
                 try:
-                    ok = (
-                        io.remove_toml_table(target, entry.file_key)
-                        if entry.is_table
-                        else io.remove_toml_leaf(target, entry.file_key)
-                    )
+                    unset = write.unset_config_table if entry.is_table else write.unset_config_value
+                    result = unset(repo_root, entry.file_key, target=target)
+                    if result.error:
+                        common.error(result.error)
+                        return 2
+                    ok = result.removed
                 except ConfigError:
                     # A leaf inside an inline table or dotted key: the surgery cannot carve it out.
                     ok = False
@@ -689,15 +689,12 @@ def _cmd_config_fix(*, machine: pathlib.Path | None) -> int:
                 stuck.append(entry)
                 continue
             progressed = True
-            touched.add(target)
             removed.append(entry)
         if not progressed:
             # Nothing this pass could delete; re-diagnosing the same set would loop forever.
             break
         stuck = []
         diag = layer.find_invalid_entries(repo_root, machine=machine)
-    for path in touched:
-        paths.chown_to_real_user(path)
     for entry in removed:
         what = (
             f"[{entry.leaf}] (whole table)"

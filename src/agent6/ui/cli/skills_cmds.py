@@ -25,7 +25,7 @@ import tomllib
 import httpx2
 
 from agent6 import errors, paths
-from agent6.config import ConfigError, io, layer
+from agent6.config import ConfigError, io, layer, write
 from agent6.context import skills as agent6_skills
 from agent6.context.skills import Skill, resolve_states  # noqa: ICN003  # re-export
 from agent6.tools import http_body
@@ -777,19 +777,19 @@ def _cmd_skills_enable(
     if not (not always and _state_map(config_paths).get(name)):
         _require_known(name, pathlib.Path.cwd(), config_paths)
     target = _state_target(repo)
-    paths.mkdir_for_real_user(target.parent)
     key = io.render_key(("skills", "state", name))
-    try:
-        if always:
-            io.upsert_toml_leaf(target, key, "always")
-            print(f'Set {key} = "always" in {target}')
-        # Absent means enabled; removing the key keeps the config free of no-op entries.
-        elif io.remove_toml_leaf(target, key) if target.is_file() else False:
+    if always:
+        if err := write.set_config_value(pathlib.Path.cwd(), key, "always", to_repo=repo):
+            raise errors.OperatorError(err)
+        print(f'Set {key} = "always" in {target}')
+    else:
+        result = write.unset_config_value(pathlib.Path.cwd(), key, to_repo=repo)
+        if result.error:
+            raise errors.OperatorError(result.error)
+        if result.removed:
             print(f"Unset {key} in {target} (enabled is the default)")
         else:
             print(f"{name} is already enabled (no state entry in {target})")
-    finally:
-        paths.chown_to_real_user(target)
     return 0
 
 
@@ -811,12 +811,10 @@ def _cmd_skills_disable(
     """
     _require_known(name, pathlib.Path.cwd(), config_paths)
     target = _state_target(repo)
-    paths.mkdir_for_real_user(target.parent)
-    try:
-        io.upsert_toml_leaf(target, io.render_key(("skills", "state", name)), "disabled")
-    finally:
-        paths.chown_to_real_user(target)
-    print(f'Set {io.render_key(("skills", "state", name))} = "disabled" in {target}')
+    key = io.render_key(("skills", "state", name))
+    if err := write.set_config_value(pathlib.Path.cwd(), key, "disabled", to_repo=repo):
+        raise errors.OperatorError(err)
+    print(f'Set {key} = "disabled" in {target}')
     return 0
 
 

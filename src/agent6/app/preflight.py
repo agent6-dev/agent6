@@ -490,7 +490,9 @@ def headless_approval_refusal(
     return (
         "sandbox.run_commands = 'ask' needs someone to answer, and this run has no"
         f" TUI and no away-mode. Every command{gate} would wait forever.\n"
-        f"  - unattended: {unattended}, or 'deny' to withhold commands entirely\n"
+        f"  - unattended: {unattended}\n"
+        "  - no commands: sandbox.run_commands = 'deny'"
+        " (or --no-commands on run, resume and fork)\n"
         "  - attended: start it from a terminal, or set an away-mode"
         f" (AGENT6_DETACHED_AWAY={'|'.join(ipc.AWAY_MODES)}) so an absent operator's "
         "intent is known"

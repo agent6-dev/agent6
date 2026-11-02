@@ -39,6 +39,7 @@ class _StubDispatcher:
 
     dag_available = True
     last_verification = None
+    verify_withheld = False
 
     def available_tool_names(self) -> tuple[str, ...]:
         return ()

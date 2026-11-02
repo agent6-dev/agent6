@@ -84,7 +84,7 @@ def test_the_auto_metric_says_it_runs_after_each_committed_edit() -> None:
     from agent6.tools import tool_errors
 
     lines: list[str] = []
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.dispatch.side_effect = tool_errors.ToolError("no score")
     sampler = metric_sampler.MetricSampler(
         settings=MetricConfig(command=("true",), pattern="(\\d+)", goal="minimize"),

@@ -144,7 +144,7 @@ def _configured_context(
         chain=run_chain.RunChain(tmp_path),
         config=config.Config.model_validate({"harness": {"verify_settled_stop_after": stop_after}}),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
         logger=lambda _line: None,
         mode="run",
     )
@@ -221,7 +221,7 @@ def test_a_memory_store_write_restarts_the_idle_streak() -> None:
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=config.Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
         logger=lambda _line: None,
         state_dir=pathlib.Path("/tmp/state"),
     )
@@ -291,7 +291,7 @@ def _steered(tmp_path: pathlib.Path, text: str | None) -> loop_state.LoopState:
         chain=run_chain.RunChain(tmp_path),
         config=config.Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
         logger=lambda _line: None,
         mode="run",
         bridge=operator_bridge.OperatorBridge(

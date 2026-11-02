@@ -17,6 +17,7 @@ import shlex
 import subprocess
 import time
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -995,6 +996,49 @@ def test_a_fork_starts_not_set_up_and_runs_the_setup_command_in_its_own_worktree
     assert (forked.worktree / ".setup-ran").read_text(encoding="utf-8") == "ran\n"
     assert sessions_manifest.read_manifest(_run_dir(repo, "wt-FORK06")).workspace_set_up
     assert len(_setup_events(repo, "wt-FORK06")) == 1
+
+
+def test_bare_resume_delivers_a_forks_steer_after_setup_failed(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A setup failure cannot discard the fork's unread instruction on bare resume."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "steer-parent", "task"]) == 0
+    _with_setup(repo, '["sh", "-c", "exit 3"]')
+    provider = _script(monkeypatch)
+    steer = "add a regression test for the parser"
+    assert cli_main(["fork", "steer-parent", "--session-id", "steer-child", "--steer", steer]) == 1
+    assert provider.calls == 0
+    assert "resume with:  agent6 resume steer-child" in capsys.readouterr().out
+    session_dir = _run_dir(repo, "steer-child")
+    old = time.time() - 60
+    for name in (ipc.STEER_ANSWER_FILE, ipc.STEER_REQUEST_FILE):
+        os.utime(session_dir / name, (old, old))
+    _with_setup(repo, '["true"]')
+    with mock.patch.object(provider, "call", wraps=provider.call) as called:
+        assert cli_main(["resume", "steer-child"]) == 0
+    assert steer in json.dumps(called.call_args.kwargs["messages"])
+    assert not (session_dir / ipc.STEER_ANSWER_FILE).exists()
+
+
+def test_resume_infers_setup_from_the_sessions_base_commit(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork's late setup reads its base, not the origin's edited AGENTS.md."""
+    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
+    _commit_agents_md(repo, "echo base > .setup-ran")
+    _script(monkeypatch, _edit("new.txt", "one\n"))
+    assert cli_main(["run", "--worktree", "--session-id", "setup-parent", "task"]) == 0
+    assert cli_main(["fork", "setup-parent", "--session-id", "setup-child", "--no-run"]) == 0
+    (repo / "AGENTS.md").write_text(
+        "## Setup command\n```sh\necho dirty > .setup-ran\n```\n", encoding="utf-8"
+    )
+    _script(monkeypatch)
+    assert cli_main(["resume", "setup-child", "--steer", "continue"]) == 0
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "setup-child")).worktree
+    assert worktree is not None
+    assert (worktree / ".setup-ran").read_text(encoding="utf-8") == "base\n"
 
 
 def test_a_failed_setup_leaves_the_workspace_not_set_up(

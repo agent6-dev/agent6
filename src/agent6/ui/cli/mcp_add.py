@@ -224,17 +224,17 @@ def cmd_mcp_add(
         return 2
     env = detect.probed_environment()
     isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
-    if command and isolation == "none":
+    if command and (
+        refusal := confine.startup_refusal(cfg, isolation, pathlib.Path.cwd(), mcp_network=False)
+    ):
+        # A run would refuse this config, so no probe runs under a policy the run never builds.
+        common.warn(f"{name} not probed: a run would refuse: {refusal}")
+    elif command and isolation == "none":
         # No jail, no read-only workspace to probe under: the entry is written unproved, said so.
         common.warn(
             f"{name} not probed: no jail ({session_setup.no_jail_cause(cfg, env)}); a run starts "
             "it unconfined."
         )
-    elif command and (
-        refusal := confine.config_refusal(cfg, isolation, pathlib.Path.cwd(), mcp_network=False)
-    ):
-        # A run would refuse this config, so no probe runs under a policy the run never builds.
-        common.warn(f"{name} not probed: a run would refuse: {refusal}")
     else:
         rc = _prove(cfg, name, entry, isolation)
         if rc is not None:

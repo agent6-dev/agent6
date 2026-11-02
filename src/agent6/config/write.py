@@ -1020,7 +1020,11 @@ class UnsetResult:
 
 
 def unset_config_table(
-    repo_root: pathlib.Path, table: str, *, to_repo: bool = False
+    repo_root: pathlib.Path,
+    table: str,
+    *,
+    to_repo: bool = False,
+    target: pathlib.Path | None = None,
 ) -> UnsetResult:
     """Remove a whole `[table]` with its subtables.
 
@@ -1031,6 +1035,7 @@ def unset_config_table(
         repo_root: The repo.
         table: The table name.
         to_repo: The repo layer instead of the global one.
+        target: An exact file to repair, including a machine overlay; None uses the layer.
 
     Returns:
         Whether the table was present, and the revalidation error if removing it broke the
@@ -1040,9 +1045,13 @@ def unset_config_table(
         ConfigError: The target does not parse.
         OperatorError: The target cannot be written.
     """
-    if refusal := _provider_key_refusal(table):
+    if target is None and (refusal := _provider_key_refusal(table)):
         return UnsetResult(removed=False, error=refusal)
-    target = _write_target(repo_root, to_repo=to_repo)
+    target = (
+        resolved_write_path(target)
+        if target is not None
+        else _write_target(repo_root, to_repo=to_repo)
+    )
     if not target.is_file():
         return UnsetResult(removed=False)
     with writing_config(target) as held:
@@ -1058,7 +1067,11 @@ def unset_config_table(
 
 
 def unset_config_value(
-    repo_root: pathlib.Path, dotted_key: str, *, to_repo: bool = False
+    repo_root: pathlib.Path,
+    dotted_key: str,
+    *,
+    to_repo: bool = False,
+    target: pathlib.Path | None = None,
 ) -> UnsetResult:
     """Remove one leaf, so it reverts to the next layer or the built-in default.
 
@@ -1066,6 +1079,7 @@ def unset_config_value(
         repo_root: The repo.
         dotted_key: The key.
         to_repo: The repo layer instead of the global one.
+        target: An exact file to repair, including a machine overlay; None uses the layer.
 
     Returns:
         Whether the leaf was set in the file, and the revalidation error if removing it
@@ -1075,9 +1089,13 @@ def unset_config_value(
         ConfigError: The target does not parse, or the key's ancestor is not a plain table.
         OperatorError: The target cannot be written.
     """
-    if refusal := _provider_key_refusal(dotted_key):
+    if target is None and (refusal := _provider_key_refusal(dotted_key)):
         return UnsetResult(removed=False, error=refusal)
-    target = _write_target(repo_root, to_repo=to_repo)
+    target = (
+        resolved_write_path(target)
+        if target is not None
+        else _write_target(repo_root, to_repo=to_repo)
+    )
     if not target.is_file():
         return UnsetResult(removed=False)
     with writing_config(target) as held:

@@ -74,8 +74,9 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
     assert [(check.name, check.status) for check in checks] == [("mcp.remote", "PASS")]
 
 
+@pytest.mark.parametrize(("setting", "value"), [("home", "tmp"), ("network", "session")])
 def test_mcp_check_applies_the_runs_config_refusals_before_a_probe(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, setting: str, value: str
 ) -> None:
     """A config a run refuses (`home = "tmp"` below `full`) is reported, and no server starts.
 
@@ -94,7 +95,7 @@ def test_mcp_check_applies_the_runs_config_refusals_before_a_probe(
     monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_unexpected_start))
     cfg = Config.model_validate(
         {
-            "sandbox": {"home": "tmp"},
+            "sandbox": {setting: value},
             "mcp": {"enabled": True, "servers": {"files": {"command": ["server"]}}},
         }
     )
@@ -102,7 +103,7 @@ def test_mcp_check_applies_the_runs_config_refusals_before_a_probe(
     checks = check_cmds._doctor_check_mcp(cfg)  # pyright: ignore[reportPrivateUsage]
 
     assert [(check.name, check.status) for check in checks] == [("mcp", "FAIL")]
-    assert "sandbox.home = 'tmp' requires sandbox.isolation = 'full'" in checks[0].detail
+    assert f"sandbox.{setting} = {value!r} requires sandbox.isolation = 'full'" in checks[0].detail
 
 
 def test_mcp_check_reports_a_session_network_refusal(

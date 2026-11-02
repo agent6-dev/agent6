@@ -13,6 +13,7 @@ from unittest import mock
 
 import pytest
 
+from agent6.app import finalize
 from agent6.config import Config
 from agent6.harness import (
     finish_gates,
@@ -38,7 +39,7 @@ def _wf(
         chain=run_chain.RunChain(root),
         config=Config.model_validate(data),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
         logger=lambda _m: None,
         mode=mode,
     )
@@ -113,6 +114,37 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
     assert _verified(_wf(verify=True), last_ok=None) == "unverified"
     # Gateless: nothing ever gated this run, so there is no verdict to claim.
     assert _verified(_wf(verify=False), last_ok=None) == "not_applicable"
+
+
+def test_settled_stranded_edits_are_labelled_not_committed() -> None:
+    """A settled end labels edits that no commit holds."""
+    assert session_status.status_word(
+        finished=True, all_passed=False, end_reason="settled", stranded=True
+    ) == ("finished", "unverified · not committed")
+
+
+def test_settled_base_only_green_is_unverified(tmp_path: pathlib.Path) -> None:
+    """A settled end cannot claim the base's green as the run's pass."""
+    wf = _wf(verify=True, root=tmp_path)
+    emitted = mock.MagicMock()
+    wf.events = emitted
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    state.verify.note_baseline(ok=True)
+    ctx = wf._turn_context(state, turn=3, execution_start=1)  # pyright: ignore[reportPrivateUsage]
+    from agent6.harness import guards
+
+    end = guards.settled_end(state, ctx)
+    result = wf.finish(state, end, turn=3)
+    assert result.reason == "settled"
+    assert result.verified == "unverified"
+    event = next(c.kwargs for c in emitted.emit.call_args_list if c.args == ("session.end",))
+    assert event["verified"] == "unverified"
+    assert event["all_passed"] is False
+    assert finalize.session_exit_code(result, harness_gate=True) == 4
+    assert finalize.session_exit_code(result, harness_gate=False) == 0
+    assert session_status.status_word(
+        finished=True, all_passed=event["all_passed"], end_reason=result.reason
+    ) == ("finished", "unverified")
 
 
 def test_a_gateless_end_and_its_verdict_agree() -> None:
@@ -383,7 +415,7 @@ def _harness_wf(
     data: dict[str, Any] = {
         "harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
     }
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
@@ -526,6 +558,61 @@ def test_run_commands_deny_withholds_the_gate_from_the_harness_too() -> None:
     assert turn.finish == finish_gates.FinishCall("finish_session", "done")
 
 
+@pytest.mark.parametrize("caller", ["baseline", "finish", "model", "scoped"])
+def test_denied_verify_is_withheld_from_harness_and_model(
+    tmp_path: pathlib.Path, caller: str
+) -> None:
+    """One denied verification removes the tool and prevents another approval prompt."""
+    from agent6.harness import toolset
+    from agent6.tools import dispatch, tool_errors
+
+    cfg = Config.model_validate(
+        {
+            "sandbox": {"run_commands": "ask"},
+            "harness": {
+                "verify_command": ["pytest"],
+                "verify_when": "finish",
+                "verify_at_start": True,
+            },
+        }
+    )
+    prompts = mock.MagicMock()
+    prompts.approve.return_value = False
+    dispatcher = dispatch.ToolDispatcher(root=tmp_path, config=cfg, prompts=prompts)
+    wf = loop.Harness(
+        chain=run_chain.RunChain(tmp_path),
+        config=cfg,
+        provider=mock.MagicMock(),
+        dispatcher=dispatcher,
+        logger=lambda _m: None,
+    )
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    assert "run_verify_command" in {
+        t.name for t in toolset.tool_definitions(dispatcher, mode="run")
+    }
+    if caller == "baseline":
+        wf.gate.start_baseline(state)
+    elif caller == "finish":
+        wf.gate.harness_verify(state, _turn(finishing=True))
+    elif caller == "scoped":
+        with mock.patch.object(type(wf.gate), "scope_paths", return_value=("tests/test_demo.py",)):
+            wf.gate.scoped_followup(state, _turn())
+    else:
+        with pytest.raises(tool_errors.ToolDeniedError):
+            dispatcher.dispatch("run_verify_command", {})
+    assert dispatcher.tool_is_withheld("run_verify_command")
+    assert "run_verify_command" not in {
+        t.name for t in toolset.tool_definitions(dispatcher, mode="run")
+    }
+    assert not wf.gate.present(state.verify)
+    assert wf.gate.verification(state.verify) == "unverified"
+    prompts.approve.return_value = True
+    with pytest.raises(tool_errors.ToolDeniedError, match="withheld"):
+        dispatcher.dispatch("run_verify_command", {})
+    wf.gate.harness_verify(state, _turn(finishing=True))
+    assert prompts.approve.call_count == 1
+
+
 def test_a_denied_gate_is_withheld_for_the_run_and_the_finish_stands() -> None:
     """A gate not approved under `ask` is withheld for the rest of the run, and the finish stands.
 
@@ -609,7 +696,7 @@ def _scoped_wf(
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("")
     data: dict[str, Any] = {"harness": {"verify_command": command, "verify_when": when}}
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.command_policy.return_value = "allow"
     wf = loop.Harness(
         chain=run_chain.RunChain(root),
@@ -820,7 +907,7 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
-    assert state.verify.withheld is True
+    assert dispatcher.verify_withheld is True
     assert (
         "[verify] scoped re-run: not run: run_verify_command not approved."
         " The gate is withheld for the rest of the run; the run ends unverified."
@@ -841,7 +928,7 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     """
     from agent6.tools import results
 
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.return_value = results.ExecResult(
         returncode=1, stdout="1 failed", stderr="", duration_s=1.0, exec_failed=False
@@ -882,7 +969,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
 
     A withheld or denied gate is not the model's to fix, and bouncing the end told it to.
     """
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.command_policy.return_value = policy
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
@@ -897,7 +984,7 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_edit()
     state.verify.note_fail("sig")
-    state.verify.withheld = withheld
+    dispatcher.verify_withheld = withheld
     state.verify.note_edit()
     turn = loop_state.TurnState(number=7, resp=mock.MagicMock(), assistant=mock.MagicMock())
 

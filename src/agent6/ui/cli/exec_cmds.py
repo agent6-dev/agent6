@@ -240,9 +240,7 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
     try:
         env = detect.probed_environment()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
-        refusal = confine.check_network_support(cfg, isolation) or confine.config_refusal(
-            cfg, isolation, cwd
-        )
+        refusal = confine.startup_refusal(cfg, isolation, cwd)
         if refusal is not None:
             common.refuse(refusal)
             return 2

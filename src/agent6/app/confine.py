@@ -620,6 +620,31 @@ def check_workspace_packs(workspace: pathlib.Path) -> str | None:
     return "\n".join(refusals) or None
 
 
+def startup_refusal(
+    cfg: Config,
+    isolation: kinds.IsolationLevel,
+    workspace: pathlib.Path,
+    *,
+    worktree_git_dir: pathlib.Path | None = None,
+    mcp_network: bool = True,
+) -> str | None:
+    """Return the first network or config refusal a run applies before starting.
+
+    Args:
+        cfg: The resolved config.
+        isolation: The resolved isolation level.
+        workspace: The workspace.
+        worktree_git_dir: The linked worktree's git dir, when present.
+        mcp_network: Include per-server network checks; MCP diagnostics report them separately.
+
+    Returns:
+        The refusal, or None when the run may start.
+    """
+    return check_network_support(cfg, isolation) or config_refusal(
+        cfg, isolation, workspace, worktree_git_dir=worktree_git_dir, mcp_network=mcp_network
+    )
+
+
 def config_refusal(
     cfg: Config,
     isolation: kinds.IsolationLevel,
@@ -630,8 +655,7 @@ def config_refusal(
 ) -> str | None:
     """Return the first refusal for a config this host cannot honor, else None.
 
-    The one list every lifecycle runs, so a check cannot land in one and not another. The
-    network check stays per lifecycle: a machine runs it once per state.
+    `startup_refusal` runs these checks after the run's network check.
 
     Args:
         cfg: The resolved config.

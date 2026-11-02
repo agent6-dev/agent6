@@ -87,7 +87,7 @@ def seed_carryover(
         carry_verify_verdict(harness, state, resume_from)
         if resume_from.verify_withheld and harness.dispatcher.command_policy() == "deny":
             # The correction waits for an execution with the gate: keep it pending.
-            state.verify.withheld = True
+            harness.dispatcher.verify_withheld = True
         harness.emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
         elided, gists = compaction_rules.count_elisions(conversation)
         harness.emit("loop.compact.restored", elided=elided, gists=gists)
@@ -229,7 +229,7 @@ def save_resume_snapshot(
         edited_since_verify=state.verify.edited_since,
         baseline_ok=state.verify.baseline_ok,
         verify_scoped=state.verify.scoped,
-        verify_withheld=state.verify.withheld,
+        verify_withheld=harness.dispatcher.verify_withheld,
         memory_written=state.memory.written,
         memory_flip_nudged=state.memory.flip_nudged,
         standing_tools_mark=state.standing.tools_mark,

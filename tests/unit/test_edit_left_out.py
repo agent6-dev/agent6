@@ -85,7 +85,7 @@ def _dispatch_edit(
         tool_path: The path the model gave the edit tool.
         state_dir: The run's state directory, whose memory store a write may address.
     """
-    dispatcher = mock.MagicMock(last_verification=None)
+    dispatcher = mock.MagicMock(last_verification=None, verify_withheld=False)
     dispatcher.dispatch.return_value = result
     events = _Events()
     wf = test_harness._wf(  # pyright: ignore[reportPrivateUsage]

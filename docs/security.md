@@ -120,7 +120,7 @@ It drops a control sequence inside text the model influenced (a file name, a com
 Every tool call that allows the model to run arbitrary commands (`run_command`, `run_verify_command`, `run_metric_command`, backgrounded commands, and spawned MCP servers without `unconfined = true`) runs in a jail at the effective isolation level.
 
 `agent6 check mcp` and `agent6 mcp add` start a spawned MCP server under that jail with the repository bound read-only.
-`check mcp` applies the run's refusals first and leaves a server it cannot hold that way unstarted: `unconfined = true`, a write grant (the server's `extra_write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
+`check mcp` applies the run's network and config refusals first and leaves a server it cannot hold that way unstarted: `unconfined = true`, a write grant (the server's `extra_write_paths`, `sandbox.extra_write_paths`, `sandbox.extra_device_paths`), or no jail at all.
 `mcp add` probes under the same jail, and skips the probe only when there is no jail at all or a run would refuse the config, saying so.
 It is the operator's own invocation naming the server they are adding.
 
