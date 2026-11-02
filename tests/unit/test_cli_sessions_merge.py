@@ -1426,7 +1426,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
     # Every lane commit is now in the origin: prune sweeps the fan-out dir.
     assert main(["sessions", "prune", "--delete-squashed"]) == 0
     out = capsys.readouterr().out
-    assert "fan-out clones: swept 1" in out
+    assert "clone groups: swept 1" in out
     assert not (workdir / "fan").exists()
 
 

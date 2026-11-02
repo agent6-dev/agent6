@@ -20,6 +20,7 @@ depends_on = []
 # coordinator dispatch + candidate-ranking core. The front-end injects the
 # presentation, process-spawn, and run-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
+# machine.check shares bundle, config and jail-PATH checks with create and the CLI.
 # execution drains review_actions through sessions.ipc at the worker steer boundary.
 # run and resume share session_runtime; execution, session_runtime and role_providers
 # use conversation_state for persisted conversation ids and completed-call counts.
@@ -590,7 +591,7 @@ path = "agent6.config.harness_config"
 depends_on = ["agent6.config.validation"]
 
 [[modules]]
-# The surface models: skills, machine, web, notify, parallel.
+# The surface models: skills, machine, web, telemetry, notify, parallel, workspace.
 path = "agent6.config.surface_config"
 depends_on = ["agent6.config.validation"]
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import datetime
+import itertools
 import math
 import pathlib
 import tomllib
@@ -978,7 +979,7 @@ def _validate_branch(name: str, state: schema.BranchState, env: _Env) -> list[st
 
 
 def _validate_predicate(name: str, source: str, env: _Env) -> list[str]:
-    """Return a predicate's problems: its grammar, its references and its `len()` arguments."""
+    """Return a predicate's grammar, reference, length and scalar comparison problems."""
     try:
         predicate = machine_predicate.parse_predicate(source)
     except machine_predicate.PredicateError as exc:
@@ -995,7 +996,49 @@ def _validate_predicate(name: str, source: str, env: _Env) -> list[str]:
                 )
             problems.append(f"state {name!r}: predicate {source!r}: {error}")
     problems.extend(_predicate_len_problems(name, source, predicate.tree.body, env))
+    for node in ast.walk(predicate.tree.body):
+        if not isinstance(node, ast.Compare):
+            continue
+        types = [_predicate_operand_type(part, env) for part in (node.left, *node.comparators)]
+        for left, right in itertools.pairwise(types):
+            if (
+                isinstance(left, schema.ScalarT)
+                and isinstance(right, schema.ScalarT)
+                and left != right
+            ):
+                problems.append(
+                    f"state {name!r}: predicate {source!r}: cannot compare"
+                    f" {schema.type_str(left)} and {schema.type_str(right)}"
+                )
     return problems
+
+
+def _predicate_operand_type(node: ast.expr, env: _Env) -> schema.TypeRef | None:
+    """Resolve a predicate operand's type.
+
+    Args:
+        node: An operand in a grammar-validated predicate.
+        env: The resolved declarations.
+
+    Returns:
+        The declared or inferred type, or None when it is not known.
+    """
+    if isinstance(node, (ast.Name, ast.Attribute)):
+        resolved, _error = _resolve_ref_type(machine_predicate.as_reference(node), env, None)
+        return resolved
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, bool, int, float)):
+        return schema.ScalarT(type(node.value).__name__)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+        return schema.ScalarT("int" if node.func.id == "len" else "bool")
+    if isinstance(node, ast.UnaryOp):
+        return (
+            schema.ScalarT("bool")
+            if isinstance(node.op, ast.Not)
+            else _predicate_operand_type(node.operand, env)
+        )
+    if isinstance(node, (ast.Compare, ast.BoolOp)):
+        return schema.ScalarT("bool")
+    return None
 
 
 def _predicate_len_problems(name: str, source: str, body: ast.expr, env: _Env) -> list[str]:

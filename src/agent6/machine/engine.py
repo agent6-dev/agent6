@@ -302,7 +302,7 @@ def _rebuild_from_journal(eng: _EngineState, events: list[Any]) -> None:
             blackboard = execution.reduce(spec, state_spec, event.fact, blackboard)
         except execution.STATE_RUNTIME_ERRORS as exc:
             raise contracts.EngineError(
-                f"cannot replay journaled step at state {state!r}: {exc}"
+                f"cannot replay journaled step at state {state!r}: {exc}.{remedy}"
             ) from exc
         if isinstance(event.fact, machine_journal.AgentFact):
             spent_usd += event.fact.usd

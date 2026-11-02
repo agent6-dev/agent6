@@ -80,23 +80,24 @@ def uncommitted_refusal(path: pathlib.Path, cwd: pathlib.Path) -> str | None:
 
     Args:
         path: The `.asm.toml`, checked with its sibling `scripts/` when one exists.
-        cwd: The repository.
+        cwd: A directory inside the repository, or outside git to skip the check.
 
     Returns:
         The refusal naming the first uncommitted piece, or None.
     """
-    if not git_read.is_git_repo(cwd):
+    root = git_read.toplevel(cwd)
+    if root is None:
         return None
     scripts = path.parent / "scripts"
     pieces = [(path, "machine")] + ([(scripts, "scripts bundle")] if scripts.exists() else [])
     for piece, label in pieces:
         try:
             # Resolving the entry itself would turn a retargeted symlink into its clean target.
-            rel = (piece.parent.resolve() / piece.name).relative_to(cwd.resolve()).as_posix()
+            rel = (piece.parent.resolve() / piece.name).relative_to(root.resolve()).as_posix()
         except ValueError:
             continue
         try:
-            dirty = git_read.paths_dirty(cwd, (rel,))
+            dirty = git_read.paths_dirty(root, (rel,))
         except errors.GitError as exc:
             # A review-discipline gate, not a security boundary: fail open, never silently.
             print(

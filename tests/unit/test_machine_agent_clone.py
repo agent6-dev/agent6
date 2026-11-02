@@ -601,23 +601,60 @@ def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
     assert not any((tmp_path / "clones").glob("state-*"))
 
 
-def test_import_failure_keeps_the_clone_and_routes_failed(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("proof", ["absent", "loose", "reachable", "live"])
+def test_prune_handles_a_machine_clone_after_failed_import(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    proof: str,
 ) -> None:
-    """A state whose commits did not land routes failed; the clone is kept for adopt and prune."""
-    origin = _origin(tmp_path)
-    monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
+    """Prune removes an imported machine clone only when its work is reachable and it is idle."""
+    import os
 
-    def _boom(*_a: object, **_k: object) -> None:
+    from agent6 import paths
+    from agent6.app import workdirs
+    from agent6.sessions import layout, process
+    from agent6.ui.cli import main
+
+    origin = _origin(tmp_path)
+    monkeypatch.chdir(origin)
+    monkeypatch.setattr(agent.subprocess, "Popen", _fake_popen)
+    group = workdirs.subordinate_workdir_root(Config(), origin, "machine-m1")
+    instance = layout.machines_root(paths.state_dir(origin)) / "m1"
+    runner = agent.build_machine_agent_runner(
+        _OVERLAYS,
+        origin,
+        instance / "agent_transcripts",
+        machine_id="m1",
+        clone_root=group,
+    )
+
+    def fail_import(*_args: object, **_kwargs: object) -> None:
         raise errors.GitError("refs locked")
 
-    monkeypatch.setattr(git_ops, "fetch_branch", _boom)
-    runner = _runner(origin, tmp_path)
-    r = runner(_req(0), None)
-    assert r.reason.startswith("import of")
-    assert r.payload is None
-    assert git_read.chain_tip(origin, CHAIN) is None  # nothing landed
-    assert list((tmp_path / "clones").glob("state-*"))  # evidence kept
+    with monkeypatch.context() as patch:
+        patch.setattr(git_ops, "fetch_branch", fail_import)
+        result = runner(_req(0), None)
+    assert result.reason.startswith("import of")
+    assert result.payload is None
+    clone = group / "state-0000"
+    assert clone.is_dir()
+    assert git_read.chain_tip(origin, CHAIN) is None
+    if proof != "absent":
+        _git(origin, "fetch", str(clone), CHAIN if proof == "loose" else f"{CHAIN}:{CHAIN}")
+    if proof == "live":
+        instance.mkdir(parents=True, exist_ok=True)
+        process.write_worker_pid(instance, os.getpid())
+    capsys.readouterr()
+
+    assert main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    swept = proof == "reachable"
+    assert clone.exists() is not swept
+    assert f"clone groups: swept {int(swept)}, kept {int(not swept)}" in out
+    if not swept:
+        assert str(group) in out
+        assert ("live machine" if proof == "live" else "commits this repo cannot reach") in out
 
 
 class _Finishes:

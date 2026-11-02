@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The surface models.
 
-`[skills]`, `[machine]`, `[web]`, `[notify]`, `[parallel]` and `[workspace]`.
+`[skills]`, `[machine]`, `[web]`, `[telemetry]`, `[notify]`, `[parallel]` and `[workspace]`.
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ class MachineConfig(pydantic.BaseModel):
 
     model_config = validation.MODEL_CONFIG
 
-    # Old snapshots are an audit convenience, not state: recovery reads the latest only.
+    # `machine status` reads the latest snapshot; recovery folds the journal.
     snapshot_keep: int = pydantic.Field(
         ge=0,
         default=5,
@@ -118,7 +118,8 @@ class MachineConfig(pydantic.BaseModel):
         description=(
             "operator environment variable names allowed in a machine `tool` state's own "
             "`pass_env`; startup refused for a state naming an unlisted variable; global/repo "
-            "config only, machine `[config]` overlay refused; provider `api_key_env` variables "
+            "config or a `--config FILE` layer; machine `[config]` overlay refused; "
+            "provider `api_key_env` variables "
             "never allowed"
         ),
     )

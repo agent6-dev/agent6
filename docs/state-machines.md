@@ -186,6 +186,8 @@ Where a run state's work lands:
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
 - the hub's machine card shows supervision state only; a run state is not a session in the [review queue](usage.md#the-review-queue)
 - a state's clone is removed as it lands
+- `sessions prune` sweeps leftover `machine-*/state-*` clones when their chain tips are reachable in the origin
+  A live machine or unreachable work keeps the group, with a note.
 - the chain ref (`refs/agent6/machine-<id>/head`) and visible branch (`agent6/machine-<id>`) outlive the instance dir
     - a fresh instance refuses while either tip is not in HEAD, naming the merge and delete remedies
     - once HEAD contains both tips, it drops any chain ref and starts from HEAD
@@ -345,6 +347,8 @@ when = [
 
 - `when` is ordered; the first matching `if` wins; a final `else = true` is required (total function, no stuck state)
 - the predicate grammar is restricted and non-Turing-complete ([Execution semantics](#5-execution-semantics)): comparisons, `and`/`or`/`not`, membership, `len()`, `has()`, literals, blackboard references
+- comparisons between two known scalar types require the same type; `int` versus `str`, `bool` or `float` fails at load
+  JSON and unknown operand types keep their runtime checks.
 - `has()` tests presence: the guard an `optional` record field needs before a read (`has(out.score) and out.score > 0` is safe; `and` short-circuits)
 
 #### `terminal`
@@ -694,6 +698,8 @@ A leading `~` marks dollar totals that omit unpriced usage; the `run` and `statu
 `machine check` names each problem with its state and rule (``state 'act': branch is not total (no final `else`)``).
 It warns when a `tool` state's binary is not on the jail's PATH.
 
+`machine test` prints the same jail-PATH warnings and sandbox and environment notes as `check`.
+It runs mock tests at the machine's resolved isolation level.
 `machine test` runs each `scripts/**/*_test.py` as `python3 <file>`, not through test discovery; a nonzero exit fails the script.
 Plain assertions can run at top level; a file using `unittest.TestCase` must call `unittest.main()` after all test definitions, usually under `if __name__ == "__main__":`.
 The verdict counts script files that ran and files skipped, not individual test cases.
@@ -719,7 +725,8 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
     - the OK line names the files it replaced
 - each attempt is watchable: a draft dir under the state dir carries the prompt, the transcript, and a `logs.jsonl` the TUI/web follow live
     - the CLI streams in the foreground; the TUI and web start detached and follow the dir
-- the [Security considerations](#9-security-considerations) invariant holds: `create` publishes into the working tree only; the operator reviews and commits; `machine run` refuses an uncommitted bundle
+- `create` publishes a draft for review; `machine run` checks for uncommitted bundle pieces inside the cwd's git work tree, including when started from a subdirectory
+  Pieces outside that tree skip this review check; a git error warns and continues.
 
 ---
 

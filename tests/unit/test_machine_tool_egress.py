@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app.machine import StateConfig, machine_protect_paths, run, validate_bundle
 from agent6.config import Config
 from agent6.machine import (
@@ -22,6 +22,7 @@ from agent6.machine import (
     live_world,
     load_machine,
 )
+from agent6.sandbox import jail
 
 # A two-tool machine: the first tool opts into the network, the second does not.
 NET_MACHINE = """
@@ -157,22 +158,17 @@ def test_engine_names_the_state_of_each_tool_call(tmp_path: pathlib.Path) -> Non
 # LiveWorld builds each call's policy from its state's config; the bounds are checked at startup.
 
 
-@dataclasses.dataclass
-class _FakeJailResult:
-    returncode: int = 0
-    stdout: str = ""
-    stderr: str = ""
-
-
-def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
     """Capture every JailPolicy run_tool builds, without forking a real jail."""
-    seen: list[Any] = []
+    seen: list[kinds.JailPolicy] = []
 
-    def fake_run_in_jail(policy: Any) -> _FakeJailResult:
+    def fake_run_in_jail(policy: kinds.JailPolicy) -> kinds.CommandResult:
         seen.append(policy)
-        return _FakeJailResult()
+        return kinds.CommandResult(policy.argv, 0, "", "", 0.0)
 
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
+    monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
+    # Fake command results must not fill the real namespace probe's process-wide cache.
+    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
     return seen
 
 
@@ -441,9 +437,10 @@ def test_machine_check_passes_with_valid_bundle(
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "fetch.sh").write_text("#!/bin/sh\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    # The fetch state asks for the host network, so the operator's own config must grant it.
-    assert main(["machine", "check", str(f)]) == 1
+    # An explicit ceiling does not depend on whether auto resolves to session or host here.
     paths.global_config_path().parent.mkdir(parents=True, exist_ok=True)
+    paths.global_config_path().write_text('[sandbox]\nnetwork = "none"\n', encoding="utf-8")
+    assert main(["machine", "check", str(f)]) == 1
     paths.global_config_path().write_text('[sandbox]\nnetwork = "host"\n', encoding="utf-8")
     assert main(["machine", "check", str(f)]) == 0
 

@@ -109,8 +109,8 @@ def forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
     if "preset" in data:
         raise validation.ConfigError(
             f"top-level `preset` selects a config preset only from the global/repo"
-            f" config or the --preset flag, not the {layer_name} config; use"
-            f" --preset <name> or set it in your repo/global config."
+            f" config or the --preset flag, not the {layer_name} config; set it in the global"
+            " or repo config (or pass `--preset` to run, resume or plan)."
         )
 
 

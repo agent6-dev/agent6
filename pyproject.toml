@@ -170,6 +170,7 @@ banned-from = [
     "agent6.app.lanes",
     "agent6.app.machine.agent",
     "agent6.app.machine.bundle",
+    "agent6.app.machine.check",
     "agent6.app.machine.crash_spend",
     "agent6.app.machine.create",
     "agent6.app.machine.host_preflight",

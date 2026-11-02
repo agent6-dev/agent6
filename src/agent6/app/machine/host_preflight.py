@@ -23,7 +23,7 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
 
     Args:
         cfg: The operator's config: the allowlist is its `[machine].pass_env`, from the global
-            or repo config, never the machine's file.
+            or repo config or a `--config FILE` layer, never the machine's file.
         states: The machine's states, by name.
 
     Returns:
@@ -39,8 +39,8 @@ def machine_pass_env_refusal(cfg: Config, states: Mapping[str, StateSpec]) -> st
         return None
     return (
         f"{'; '.join(asks)}. [machine].pass_env does not allow these environment"
-        " variables; list them there, in the global or repo config (never a machine"
-        " overlay), to pass them."
+        " variables; list them there, in the global or repo config or a `--config FILE`"
+        " layer (never a machine overlay), to pass them."
     )
 
 

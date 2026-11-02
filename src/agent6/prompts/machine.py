@@ -101,8 +101,8 @@ grammar. Terminal states end the machine.
   An agent state may write ONLY [vars.agent] vars.
   By default an agent state is a READ-ONLY structured-output judge (classify /
   score / decide -> a finish_session result; it cannot edit the repo). For a state
-  that must do real coding work, add `mode = "run"` to give it the full edit /
-  verify / commit tool set.
+  that must do real coding work, add `mode = "run"` to give it the full edit and
+  verify tool set; the harness commits its edits.
 
 ### branch: route on predicates (MUST be total)
     [states.check]

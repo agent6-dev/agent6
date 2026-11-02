@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """`agent6 sessions merge/prune`: land a run's chain on its base, and clean up what landed.
 
-Prune removes the branches, chain refs, fan-out clones and fork worktrees already merged.
+Prune removes merged branches and chain refs, imported clones and merged fork worktrees.
 """
 
 from __future__ import annotations
@@ -552,7 +552,7 @@ def _cmd_prune(
 def _sweep_workdirs(
     cwd: pathlib.Path, state: pathlib.Path, config_paths: tuple[pathlib.Path, ...]
 ) -> tuple[str, bool]:
-    """Sweep the fan-out clones and fork worktrees under `[workspace].base_dir`.
+    """Sweep fan-out and machine clones and fork worktrees under `[workspace].base_dir`.
 
     Prints each keep and each worktree removal.
 
@@ -572,7 +572,7 @@ def _sweep_workdirs(
     clones_swept, clones_kept = workdirs.sweep_fanout_clones(
         cwd,
         cfg,
-        note_keep=lambda path, why: print(f"[agent6] kept fan-out clones at {path} ({why})"),
+        note_keep=lambda path, why: print(f"[agent6] kept clone group at {path} ({why})"),
     )
     worktrees_removed, worktrees_kept = fork_worktrees.sweep_fork_worktrees(cwd, state)
     for fork_id, why in worktrees_removed:
@@ -581,7 +581,7 @@ def _sweep_workdirs(
         print(f"[agent6] kept {fork_id}'s worktree ({why})")
     common.note_removed_cwd(cwd)
     note = (
-        f"; fan-out clones: swept {clones_swept}, kept {clones_kept}"
+        f"; clone groups: swept {clones_swept}, kept {clones_kept}"
         if clones_swept or clones_kept
         else ""
     )

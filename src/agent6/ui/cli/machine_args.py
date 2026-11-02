@@ -53,7 +53,7 @@ def _add_machine_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "test",
         help=(
             "Simulate a machine offline: everything `check` does, plus run the"
-            " bundle's scripts/*_test.py mocks in a no-network jail, plus a pure"
+            " bundle's scripts/**/*_test.py mocks in a no-network jail, plus a pure"
             " dry-run (synthesized facts, branch routing against a fixture)."
             " No provider calls, no real network."
         ),

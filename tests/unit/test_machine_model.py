@@ -389,6 +389,60 @@ def test_predicate_toml_boolean_literal_hints_python_form(tmp_path: pathlib.Path
     assert any("True/False/None" in p for p in problems)
 
 
+@pytest.mark.parametrize(
+    ("predicate", "left", "right"),
+    [
+        ("poll_secs == '300'", "int", "str"),
+        ("poll_secs < 'five'", "int", "str"),
+        ("'300' != poll_secs", "str", "int"),
+        ("poll_secs == cursor", "int", "str"),
+        ("verdict.confidence >= 'high'", "float", "str"),
+        ("len(pending) == '0'", "int", "str"),
+        ("has(verdict.label) == 1", "bool", "int"),
+        ("poll_secs == True", "int", "bool"),
+        ("poll_secs == 300.0", "int", "float"),
+        ("0 < poll_secs < '500'", "int", "str"),
+        ("-poll_secs < '-5'", "int", "str"),
+        ("not (poll_secs == '300')", "int", "str"),
+    ],
+)
+def test_predicate_rejects_mismatched_scalar_operands(
+    tmp_path: pathlib.Path, predicate: str, left: str, right: str
+) -> None:
+    """Scalar comparisons reject incompatible types at load, not after choosing a branch."""
+    body = VALID_MACHINE.replace("len(pending) == 0", predicate)
+    problems = _problems(tmp_path, body)
+    assert any(
+        "state 'have_items': predicate" in p and f"cannot compare {left} and {right}" in p
+        for p in problems
+    )
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "poll_secs == 300",
+        "-poll_secs < +5",
+        "verdict.confidence >= 0.5",
+        "verdict.label == cursor",
+        "has(verdict.label) == True",
+        "poll_secs in [1, 300]",
+        "'x' in cursor",
+        "poll_secs == None",
+        "payload == 5",
+        "5 == payload",
+    ],
+)
+def test_predicate_accepts_matching_scalars_and_skips_unknown_or_json_types(
+    tmp_path: pathlib.Path, predicate: str
+) -> None:
+    """JSON and unknown operand types stay runtime checks; matching scalars still load."""
+    body = VALID_MACHINE.replace("len(pending) == 0", predicate).replace(
+        "[vars.code]", '[vars.code]\npayload = { type = "json", default = {} }'
+    )
+    semantics.load_machine(_write(tmp_path, body))
+
+
 def test_predicate_len_of_int_rejected_at_load(tmp_path: pathlib.Path) -> None:
     # `len(poll_secs)` on an int is a guaranteed PredicateError; caught at load.
     body = VALID_MACHINE.replace("len(pending) == 0", "len(poll_secs) == 0")

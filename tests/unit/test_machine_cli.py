@@ -681,6 +681,34 @@ def test_uncommitted_refusal_tracks_git_state(tmp_path: pathlib.Path) -> None:
     assert machine_run.uncommitted_refusal(f, tmp_path) is not None  # modified again
 
 
+@pytest.mark.parametrize("dirty_piece", ["machine", "scripts"])
+def test_run_checks_the_whole_repository_from_a_subdirectory(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    dirty_piece: str,
+) -> None:
+    """A dirty sibling bundle refuses from a subdirectory just as it does from the root."""
+    _git_init(tmp_path)
+    bundle = tmp_path / "machines"
+    scripts = bundle / "scripts"
+    scripts.mkdir(parents=True)
+    machine = bundle / "tiny.asm.toml"
+    machine.write_text(TINY, encoding="utf-8")
+    helper = scripts / "helper.py"
+    helper.write_text("# helper\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "machines"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "bundle"], check=True)
+    changed = machine if dirty_piece == "machine" else helper
+    changed.write_text(changed.read_text(encoding="utf-8") + "\n# edited\n", encoding="utf-8")
+    subdir = tmp_path / "subdir"
+    subdir.mkdir()
+    monkeypatch.chdir(subdir)
+    assert main(["machine", "run", "../machines/tiny.asm.toml"]) == 2
+    assert "has uncommitted changes" in capsys.readouterr().err
+    assert not (paths.state_dir(subdir) / "machines" / "tiny" / "journal.jsonl").exists()
+
+
 def test_uncommitted_refusal_checks_the_machine_symlink_not_its_target(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -1687,8 +1715,12 @@ def test_check_validates_the_config_overlay_run_will_merge(
     assert main(["machine", "test", str(f)]) == 1
 
 
+@pytest.mark.parametrize("verb", ["check", "test"])
 def test_check_warns_on_binaries_unreachable_in_the_jail(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    verb: str,
 ) -> None:
     # The probe covers tool-state command[0] and literal subprocess argv in bundle scripts.
     monkeypatch.chdir(tmp_path)
@@ -1704,7 +1736,7 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
         "    return 0\n",
         encoding="utf-8",
     )
-    code = main(["machine", "check", str(f)])
+    code = main(["machine", verb, str(f)])
     out = capsys.readouterr()
     assert code == 0  # advisory: the operator may install the tool later
     assert "OK:" in out.out
@@ -1712,6 +1744,64 @@ def test_check_warns_on_binaries_unreachable_in_the_jail(
     assert "`definitely-not-a-binary-xyz` ([states.lint] command)" in out.err
     assert "`also-missing-tool-abc` (scripts/helper.py)" in out.err
     assert "python3" not in out.err  # reachable binaries stay quiet
+
+
+@pytest.mark.parametrize("verb", ["check", "test"])
+def test_offline_validation_prints_sandbox_and_pass_env_notes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    verb: str,
+) -> None:
+    """Check and test disclose machine sandbox, state sandbox and requested environment names."""
+    monkeypatch.chdir(tmp_path)
+    machine = tmp_path / "notes.asm.toml"
+    machine.write_text(
+        TOOL_PROBE_MACHINE.replace('kind = "tool"', 'kind = "tool"\npass_env = ["TOKEN"]')
+        + '\n[config.sandbox]\nrun_commands = "deny"\n'
+        + '\n[states.lint.config.sandbox]\nrun_commands = "ask"\n',
+        encoding="utf-8",
+    )
+    assert main(["machine", verb, str(machine)]) == 0
+    out = capsys.readouterr().out
+    assert "[config] sets the sandbox of every state: run_commands = 'deny'" in out
+    assert "[states.lint] sets its own sandbox: run_commands = 'ask'" in out
+    assert "receives the environment variable(s) TOKEN when [machine].pass_env allows them" in out
+
+
+def test_machine_test_uses_the_resolved_isolation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An explicit none skips offline mocks even when the host supports full isolation."""
+    from agent6.app.machine import scriptcheck
+
+    monkeypatch.chdir(tmp_path)
+    config = tmp_path / "operator.toml"
+    config.write_text('[sandbox]\nisolation = "none"\n', encoding="utf-8")
+    machine = tmp_path / "tiny.asm.toml"
+    machine.write_text(TINY, encoding="utf-8")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "noop_test.py").write_text('"""Offline mock."""\n', encoding="utf-8")
+
+    def environment() -> detect.Environment:
+        return detect.Environment(
+            in_container=False,
+            container_signals=(),
+            kernel=detect.KernelInfo(raw="6.14.0", major=6, minor=14),
+            userns_supported=True,
+            landlock_abi=4,
+            seccomp_arch_supported=True,
+            sandbox_available=True,
+        )
+
+    def unexpected_jail(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("offline mocks must not run when the config resolves to none")
+
+    monkeypatch.setattr(detect, "probed_environment", environment)
+    monkeypatch.setattr(scriptcheck, "run_in_jail", unexpected_jail)
+    assert main(["--config", str(config), "machine", "test", str(machine)]) == 0
+    assert "1 offline script test not run (no sandbox)" in capsys.readouterr().out
 
 
 def test_machine_stop_marks_a_running_worker_and_notes_a_dead_one(

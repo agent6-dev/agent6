@@ -16,15 +16,13 @@ import shutil
 from agent6 import budget, errors, kinds, paths, portable
 from agent6.app import preflight, session_runtime, session_setup, workdirs
 from agent6.app import reporter as app_reporter
-from agent6.app.machine import agent, bundle, scriptcheck
+from agent6.app.machine import agent, bundle, check, scriptcheck
 from agent6.config import ConfigError, layer
 from agent6.machine import (
     AgentRequest,
-    MachineError,
     MachineSpec,
     build_authoring_prompt,
     dry_run,
-    load_machine,
 )
 from agent6.sessions import event_log, id, layout, lock, process
 from agent6.vcs import git_ops, git_read
@@ -66,18 +64,6 @@ def _machine_file(workspace: pathlib.Path) -> tuple[pathlib.Path | None, str]:
         names = ", ".join(p.name for p in found)
         return None, f"Write ONE machine file; the workspace holds {len(found)}: {names}."
     return found[0], ""
-
-
-def _check_bundle(path: pathlib.Path) -> tuple[MachineSpec | None, list[str]]:
-    """Return the parsed machine and no problems, or None and why the file or bundle is invalid."""
-    try:
-        spec = load_machine(path)
-    except MachineError as exc:
-        return None, list(exc.problems)
-    bundle_problems = bundle.validate_bundle(spec, path)
-    if bundle_problems:
-        return None, bundle_problems
-    return spec, []
 
 
 def _read_scripts(workspace: pathlib.Path) -> dict[str, str]:
@@ -131,7 +117,7 @@ def _attempt_reason(problems: list[str]) -> str:
 def _discard_workspace(workspace: pathlib.Path, reporter: app_reporter.Reporter) -> None:
     """Remove a drafting workspace whose bundle is published, with its per-repo state dir.
 
-    The prune sweep knows fan-out clones and fork worktrees; a drafting workspace is neither.
+    The prune sweep knows lane and machine clones and fork worktrees, not drafting workspaces.
 
     Args:
         workspace: The drafting workspace.
@@ -319,8 +305,10 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                 break
             continue
         candidate_scripts = _read_scripts(workspace)
-        candidate_spec, problems = _check_bundle(candidate_path)
-        if candidate_spec is None:
+        try:
+            checked = check.check_bundle(candidate_path, cwd, config_paths=config_paths)
+        except check.CheckError as exc:
+            problems = exc.problems
             if candidate_scripts:
                 # Lint the scripts now, so one attempt reveals every problem class.
                 problems = [
@@ -332,6 +320,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
                     ),
                 ]
         else:
+            candidate_spec = checked.spec
+            for warning in checked.warnings:
+                reporter.err(f"[agent6] WARNING: {warning}")
             # Lint, type-check, offline-test and dry-run; a failure is the next attempt's input.
             reporter.err("machine create: linting + offline-testing scripts...")
             events.emit("loop.note", text="linting + offline-testing the draft")
@@ -435,7 +426,11 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         f"OK: wrote draft to {target} ({spec.machine}, {len(spec.states)} states)"
         f"{scripts_note}{replaced_note}."
     )
-    reporter.err("Review and commit it; `machine run` only accepts committed machines.")
+    if git_read.is_git_repo(target.parent):
+        reporter.err(
+            "Review and commit the bundle; `machine run` checks it for uncommitted changes"
+            " when run from this repository."
+        )
     # A failure keeps the workspace: the draft in it is what the operator reads.
     _discard_workspace(workspace, reporter)
     return 0

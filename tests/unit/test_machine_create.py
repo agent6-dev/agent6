@@ -335,6 +335,34 @@ def test_create_keeps_one_plan_point_ledger_across_attempts(
     assert "40 plan points (in=" in err
 
 
+@pytest.mark.parametrize("in_git", [False, True])
+def test_create_commit_guidance_applies_only_to_a_target_in_git(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    in_git: bool,
+) -> None:
+    """The commit hint describes run's repository check, not a rule for non-git bundles."""
+    from agent6.vcs import git_ops
+
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    target = tmp_path / "output"
+    target.mkdir()
+    if in_git:
+        git_ops.init_repo(target)
+    _stub_runner(
+        monkeypatch,
+        [(_draft(VALID_MACHINE), AgentExecResult(payload=None, reason="finish_session"))],
+    )
+    assert main(["machine", "create", "Greet", "-o", str(target / "draft.asm.toml")]) == 0
+    err = capsys.readouterr().err
+    assert "only accepts committed machines" not in err
+    assert ("Review and commit the bundle" in err) is in_git
+    if in_git:
+        assert "when run from this repository" in err
+
+
 def test_create_writes_default_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -521,6 +549,61 @@ def test_create_retries_then_succeeds(
     # both attempts' spend summed
     assert "spent $0.04 (in=0 tok, out=0 tok)" in out.err
     assert "attempt 2/3" in out.err
+
+
+@pytest.mark.parametrize(
+    ("extra", "diagnostic"),
+    [
+        ('\n[config.harness]\nnonsense_key = "x"\n', "nonsense_key"),
+        ('\n[config.sandbox]\nrun_commands = "allow"\n', "wider than your config"),
+    ],
+)
+def test_create_retries_config_problems_before_publishing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    extra: str,
+    diagnostic: str,
+) -> None:
+    """A draft that fails check's config gate feeds the next attempt, not the output file."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    prompts: list[str] = []
+
+    def build(
+        overlays: object, root: pathlib.Path, transcript_dir: pathlib.Path, **_kw: object
+    ) -> Callable[[AgentRequest, object], AgentExecResult]:
+        def run(request: AgentRequest, _events_log: object = None) -> AgentExecResult:
+            prompts.append(request.prompt)
+            assert not (tmp_path / "greeter.asm.toml").exists()
+            _write_draft(root, _draft(VALID_MACHINE + (extra if len(prompts) == 1 else "")))
+            return AgentExecResult(payload=None, reason="finish_session")
+
+        return run
+
+    monkeypatch.setattr(agent, "build_machine_agent_runner", build)
+    assert main(["machine", "create", "Greet", "--max-attempts", "2"]) == 0
+    assert len(prompts) == 2
+    assert diagnostic in prompts[1]
+    assert main(["machine", "check", str(tmp_path / "greeter.asm.toml")]) == 0
+
+
+def test_create_reports_the_shared_jail_path_warnings(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The create gate reports missing tool binaries just as check does."""
+    monkeypatch.chdir(tmp_path)
+    _stub_preflight(monkeypatch)
+    _stub_runner(
+        monkeypatch,
+        [
+            (
+                _draft(VALID_MACHINE.replace('"echo"', '"missing-machine-tool-xyz"')),
+                AgentExecResult(payload=None, reason="finish_session"),
+            )
+        ],
+    )
+    assert main(["machine", "create", "Greet"]) == 0
+    assert "`missing-machine-tool-xyz` ([states.say] command)" in capsys.readouterr().err
 
 
 def test_create_refuses_to_overwrite_default_path(

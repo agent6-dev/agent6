@@ -155,12 +155,11 @@ def sweep_fanout_clones(
     *,
     note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> tuple[int, int]:
-    """Delete fan-out clone dirs whose every tip the origin already reaches.
+    """Delete idle fan-out and machine clone groups whose tips the origin reaches.
 
-    A clone holding a commit the origin lacks, or a live lane, keeps its whole
-    group dir: it may be the only copy. A clone with no lane session record is kept because
-    a spawn timeout can leave a live child before its first write. Only a dir holding
-    `lane-*` clones is a group; a fork's worktree or an operator's dir is left alone.
+    Unreachable commits keep the group: it may be the only copy. A lane with no session
+    record stays because a spawn timeout can leave a live child before its first write.
+    Groups hold `lane-*` clones or `machine-*/state-*` clones; fork worktrees stay separate.
 
     Args:
         origin: The repository.
@@ -175,8 +174,18 @@ def sweep_fanout_clones(
         return 0, 0
     swept = kept = 0
     for fanout in sorted(p for p in base.iterdir() if p.is_dir()):
-        clones = [c for c in sorted(fanout.glob("lane-*")) if (c / ".git").is_dir()]
+        machine_id = (
+            fanout.name.removeprefix("machine-") if fanout.name.startswith("machine-") else ""
+        )
+        pattern = "state-*" if machine_id else "lane-*"
+        clones = [c for c in sorted(fanout.glob(pattern)) if (c / ".git").is_dir()]
         if not clones:
+            continue
+        if machine_id and process.worker_is_alive(
+            sessions_layout.machines_root(paths.state_dir(origin)) / machine_id
+        ):
+            kept += 1
+            note_keep(fanout, "live machine; stop it before pruning")
             continue
         why = ""
         for clone in clones:
@@ -184,8 +193,14 @@ def sweep_fanout_clones(
                 tips = [git_read.chain_tip(clone, br) for br in git_read.list_run_branches(clone)]
                 # A machine-state clone's work rides its chain ref, not a branch.
                 tips += [sha for _ref, sha in git_read.list_chain_refs(clone)]
-                if not tips and (why := lane_keep_reason(clone)):
-                    break
+                if not tips:
+                    why = (
+                        "no machine chain ref; review this clone before removing it"
+                        if machine_id
+                        else lane_keep_reason(clone)
+                    )
+                    if why:
+                        break
                 # Reachability, not existence: a loose object is one `git gc` from gone.
                 if any(
                     tip is not None
@@ -193,7 +208,7 @@ def sweep_fanout_clones(
                     and not recorded_merged(origin, clone, tip)
                     for tip in tips
                 ):
-                    why = "commits this repo cannot reach; merge or archive the lane first"
+                    why = "commits this repo cannot reach; merge or archive the clone first"
                     break
             except errors.GitError as exc:
                 why = (

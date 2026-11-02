@@ -8,22 +8,13 @@ render. No provider calls, no real network.
 
 from __future__ import annotations
 
-import ast
 import pathlib
-import shutil
 import sys
 import tomllib
 from typing import Any
 
 from agent6 import errors
-from agent6.app.machine import (
-    SandboxWidenedError,
-    lint_and_typecheck,
-    resolve_configs,
-    run_offline_tests,
-    validate_bundle,
-)
-from agent6.config import ConfigError
+from agent6.app.machine import check, scriptcheck
 from agent6.machine import (
     AgentState,
     DryRunReport,
@@ -36,7 +27,6 @@ from agent6.machine import (
     render_dot,
     render_mermaid,
 )
-from agent6.sandbox import detect, tool_paths
 from agent6.ui.cli import common
 
 
@@ -58,110 +48,26 @@ def _fail(path: pathlib.Path, problems: list[str], label: str = "") -> int:
     return 1
 
 
-def _load_validated(
-    path: pathlib.Path, *, config_paths: tuple[pathlib.Path, ...] = ()
-) -> tuple[MachineSpec | None, list[str], str]:
-    """Load a machine file and validate its bundle and config overlays, as `machine run` does.
-
-    The shared front half of `check` and `test`, so a bad overlay key, or a sandbox key set
-    wider than the operator's config, fails here rather than first at run.
-
-    Args:
-        path: The machine file.
-        config_paths: The `--config` files in command-line order, if any.
-
-    Returns:
-        `(spec, problems, label)`; the spec is None when validation failed, and the label
-        names the failing stage for the FAIL header.
-    """
-    try:
-        spec = load_machine(path)
-    except MachineError as exc:
-        return None, list(exc.problems), ""
-    bundle_problems = validate_bundle(spec, path)
-    if bundle_problems:
-        return None, bundle_problems, "bundle"
-    try:
-        resolve_configs(
-            spec, pathlib.Path.cwd(), detect.probed_environment(), config_paths=config_paths
-        )
-    except SandboxWidenedError as exc:
-        return None, exc.problems, "config"
-    except (ConfigError, detect.IsolationUnavailableError) as exc:
-        return None, [str(exc)], "config"
-    return spec, [], ""
-
-
-_SUBPROCESS_CALLS = frozenset({"run", "Popen", "call", "check_call", "check_output"})
-
-
-def _script_binaries(scripts_dir: pathlib.Path) -> dict[str, str]:
-    """Return the literal first-argv string of each subprocess call in the bundle's scripts.
-
-    Best effort: dynamic argv is invisible to this scan, so absence proves nothing; only a
-    hit feeds the reachability warning.
-
-    Args:
-        scripts_dir: The bundle's scripts directory.
-
-    Returns:
-        Each binary mapped to one script that calls it.
-    """
-    out: dict[str, str] = {}
-    for py in sorted(scripts_dir.glob("*.py")) if scripts_dir.is_dir() else []:
-        try:
-            tree = ast.parse(py.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError):
-            continue  # the script linter owns reporting unparseable scripts
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            func = node.func
-            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-            if name not in _SUBPROCESS_CALLS or not node.args:
-                continue
-            first_arg = node.args[0]
-            if isinstance(first_arg, ast.List) and first_arg.elts:
-                head = first_arg.elts[0]
-                if isinstance(head, ast.Constant) and isinstance(head.value, str):
-                    out.setdefault(head.value, py.name)
-    return out
-
-
-def _tool_reachability_warnings(spec: MachineSpec, path: pathlib.Path) -> list[str]:
-    """Return a warning for each binary the machine execs that the jail PATH does not resolve.
-
-    Tool-state `command[0]` plus literal subprocess argv in bundle scripts. Offline
-    validation mocks subprocess, so without this probe a machine passes check and test
-    and dies on its first real state. Advisory: the operator may install the tool later.
-
-    Args:
-        spec: The machine.
-        path: The machine file.
-
-    Returns:
-        The warnings, sorted by binary name.
-    """
-    search = tool_paths.jail_search_path()
-    sources: dict[str, str] = {}
-    for name, state in spec.states.items():
-        if isinstance(state, ToolState):
-            sources.setdefault(state.command[0], f"[states.{name}] command")
-    for binary, script in _script_binaries(path.parent / "scripts").items():
-        sources.setdefault(binary, f"scripts/{script}")
-    return [
-        f"`{binary}` ({src}) does not resolve on the jail PATH; that state"
-        " will fail at run time. Install it into a standard bin dir"
-        " (~/.local/bin, /usr/local/bin), or use an absolute path in the"
-        " state's command."
-        for binary, src in sorted(sources.items())
-        if "/" not in binary and shutil.which(binary, path=search) is None
-    ]
-
-
 def _leaves(table: dict[str, Any]) -> str:
     """Return an overlay table's leaves as `key = value` pairs on one line."""
     return ", ".join(f"{key} = {value!r}" for key, value in table.items())
+
+
+def _print_notes(checked: check.CheckedBundle) -> None:
+    """Print the shared warnings and sandbox and environment notes."""
+    spec = checked.spec
+    for warning in checked.warnings:
+        common.warn(warning)
+    if sandbox := spec.config.get("sandbox"):
+        print(f"[config] sets the sandbox of every state: {_leaves(sandbox)}")
+    for name, state in spec.states.items():
+        if isinstance(state, (AgentState, ToolState)) and (sandbox := state.config.get("sandbox")):
+            print(f"[states.{name}] sets its own sandbox: {_leaves(sandbox)}")
+        if isinstance(state, ToolState) and state.pass_env:
+            print(
+                f"[states.{name}] receives the environment variable(s)"
+                f" {', '.join(state.pass_env)} when [machine].pass_env allows them"
+            )
 
 
 def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, ...] = ()) -> int:
@@ -174,24 +80,15 @@ def _cmd_machine_check(path: pathlib.Path, *, config_paths: tuple[pathlib.Path, 
     Returns:
         The exit code, 1 on FAIL.
     """
-    spec, problems, label = _load_validated(path, config_paths=config_paths)
-    if spec is None:
-        return _fail(path, problems, label)
-    script_problems = lint_and_typecheck(path.parent / "scripts")
+    try:
+        checked = check.check_bundle(path, pathlib.Path.cwd(), config_paths=config_paths)
+    except check.CheckError as exc:
+        return _fail(path, exc.problems, exc.label)
+    spec = checked.spec
+    script_problems = scriptcheck.lint_and_typecheck(path.parent / "scripts")
     if script_problems:
         return _fail(path, script_problems, "scripts")
-    for warning in _tool_reachability_warnings(spec, path):
-        common.warn(warning)
-    if sandbox := spec.config.get("sandbox"):
-        print(f"[config] sets the sandbox of every state: {_leaves(sandbox)}")
-    for name, state in spec.states.items():
-        if isinstance(state, (AgentState, ToolState)) and (sandbox := state.config.get("sandbox")):
-            print(f"[states.{name}] sets its own sandbox: {_leaves(sandbox)}")
-        if isinstance(state, ToolState) and state.pass_env:
-            print(
-                f"[states.{name}] receives the environment variable(s)"
-                f" {', '.join(state.pass_env)} when [machine].pass_env allows them"
-            )
+    _print_notes(checked)
     print(f"OK: {path} ({spec.machine}, {len(spec.states)} states)")
     return 0
 
@@ -215,14 +112,17 @@ def _cmd_machine_test(
     Raises:
         OperatorError: The fixture is not valid TOML.
     """
-    spec, problems, label = _load_validated(path, config_paths=config_paths)
-    if spec is None:
-        return _fail(path, problems, label)
-    script_problems = lint_and_typecheck(path.parent / "scripts")
-    offline = run_offline_tests(path.parent, detect.probed_environment().detected_isolation)
+    try:
+        checked = check.check_bundle(path, pathlib.Path.cwd(), config_paths=config_paths)
+    except check.CheckError as exc:
+        return _fail(path, exc.problems, exc.label)
+    spec = checked.spec
+    script_problems = scriptcheck.lint_and_typecheck(path.parent / "scripts")
+    offline = scriptcheck.run_offline_tests(path.parent, checked.configs.machine.isolation)
     script_problems.extend(offline.problems)
     if script_problems:
         return _fail(path, script_problems, "scripts")
+    _print_notes(checked)
     fixture: dict[str, Any] | None = None
     if blackboard is not None:
         try:

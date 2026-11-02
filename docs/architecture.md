@@ -552,6 +552,7 @@ An `/undo` fork adds no worktree: it keeps the undone session's checkout.
 `agent6 machine` runs a journaled reducer ([machine/engine.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/engine.py)): each impure step's result is validated and appended before the new blackboard replaces the old, so a restart after a crash replays the journal to rebuild state and continues live from the last completed step, and `machine replay` reproduces the same path offline with no world at all.
 [machine/journal.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/machine/journal.py) owns one instance directory, `<state-dir>/machines/<id>/`: the source the run started from, `journal.jsonl`, the snapshots, and the single-writer lock.
 That is a different place from the `sessions/machines/` bucket, where `machine create` authoring sessions live.
+`app/machine/check.py` owns the bundle, config and jail-PATH checks shared by `machine check`, `test` and the create gate.
 [State machines](state-machines.md) has the spec and the state kinds.
 
 ## Events

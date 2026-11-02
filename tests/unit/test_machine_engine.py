@@ -1755,6 +1755,32 @@ def test_a_captured_lone_surrogate_never_reaches_the_blackboard(tmp_path: pathli
     _Payload(task=captured).model_dump_json()  # the sink that raised
 
 
+@pytest.mark.parametrize("live", [False, True])
+def test_a_failed_replay_reduction_names_the_fresh_start_remedy(
+    tmp_path: pathlib.Path, live: bool
+) -> None:
+    """A corrupt tool capture keeps its error and the archive command on replay and resume."""
+    journal, f = _load(tmp_path, COUNTER)
+    spec = semantics.load_machine(f)
+    journal.ensure_dirs()
+    journal.begin(machine="counter", version=1)
+    journal.append(
+        machine_journal.StepEvent(
+            ts="t",
+            seq=0,
+            state="scan",
+            label="ok",
+            goto="check",
+            fact=machine_journal.ToolFact(exit_code=0, stdout="not json", timed_out=False),
+        )
+    )
+    with pytest.raises(contracts.EngineError, match="cannot replay journaled step") as exc:
+        machine_engine.drive(spec, journal, FakeWorld({}), live=live)
+    assert "tool stdout is not valid JSON" in str(exc.value)
+    assert "To start fresh, archive the instance directory" in str(exc.value)
+    assert f"mv -- {journal.root} " in str(exc.value)
+
+
 def test_replay_rejects_a_diverged_state_seq_or_fact_kind(tmp_path: pathlib.Path) -> None:
     """The fold verifies each step's state, seq and fact kind against the replayed position."""
     base = [
