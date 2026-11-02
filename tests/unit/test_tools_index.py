@@ -430,15 +430,31 @@ def test_symbol_is_frozen_dataclass() -> None:
         s.name = "y"  # type: ignore[misc]
 
 
-@pytest.mark.needs_grammar(language="python")
-def test_outline_names_why_it_has_no_symbols(tmp_path: pathlib.Path) -> None:
+def test_outline_names_why_it_has_no_symbols(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A file no grammar covers, or outside the indexed workspace, is refused with its cause.
 
-    `symbols: []` was the one thing the model acts on, stated wrongly.
+    `symbols: []` was the one thing the model acts on, stated wrongly. The granted path lives
+    under /tmp, which a run below `full` isolation drops, so the probe is pinned at `full`.
     """
     from agent6.config import Config
+    from agent6.sandbox import detect
     from agent6.tools import dispatch, tool_errors
 
+    monkeypatch.setattr(
+        detect,
+        "probed_environment",
+        lambda: detect.Environment(
+            in_container=False,
+            container_signals=(),
+            kernel=detect.KernelInfo(raw="7.0.0", major=7, minor=0),
+            userns_supported=True,
+            landlock_abi=4,
+            seccomp_arch_supported=True,
+            sandbox_available=True,
+        ),
+    )
     (tmp_path / "notes.md").write_text("# heading\n", encoding="utf-8")
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config())
     with pytest.raises(tool_errors.ToolError, match=r"no parser for \.md"):
