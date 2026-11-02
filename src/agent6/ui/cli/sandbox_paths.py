@@ -389,7 +389,7 @@ def command_rows(
         for path, resource in (
             (pathlib.Path("/proc"), "process filesystem"),
             (_DEV_SHM, "host shared memory"),
-            (_DEV_PTS, "host terminals; no pseudo-terminal under partial"),
+            (_DEV_PTS, "host terminals"),
         ):
             unavailable = access(path) == "--"
             note = resource + (" unavailable" if unavailable else " available")
