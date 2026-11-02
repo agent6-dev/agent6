@@ -37,7 +37,7 @@ Restart the shell afterwards.
 
 One command installs tab-completion.
 
-- detects your shell, or takes the name of one
+- detects your shell
 - rerunning is safe and refreshes it
 
 ```sh
@@ -57,7 +57,7 @@ agent6 check                # sandbox (isolation, boundaries, probes), config (p
 
 `agent6 check sandbox` runs the jail through live probes and reports the isolation level a run will use on your kernel.
 `agent6 check verify` infers a gate or checks its first executable without running it.
-For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolchains) and test the gate with `agent6 exec --new`.
+For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolchains).
 
 ## Requirements
 
@@ -69,13 +69,13 @@ For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolcha
 - Unprivileged user namespaces for `full` `sandbox.isolation`
 - A Rust toolchain to build from source (the PyPI wheels bundle `agent6-jail`)
 
-The jail uses Landlock, seccomp, and user namespaces, and its seccomp filter exists for x86_64 and aarch64.
+The jail uses Landlock, seccomp, and user namespaces.
 
 - On other architectures and on macOS, `sandbox.isolation = "auto"` resolves to `none`: commands run as ordinary subprocesses behind a startup warning, and an explicit `full` or `partial` refuses.
 - On Windows, use WSL.
 - Unprivileged user namespaces are on by default on Ubuntu, Debian, and most cloud images
-    - Ubuntu 24.04+ blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (remove reverts)
-- Without user namespaces `sandbox.isolation = "auto"` falls back to `partial` (Landlock, seccomp, `NO_NEW_PRIVS`), and to `none` on a kernel with no Landlock.
+    - Ubuntu 24.04+ blocks them (`kernel.apparmor_restrict_unprivileged_userns = 1`): set it to 0, or `agent6 system apparmor install` (`agent6 system apparmor remove` reverts it)
+- Without user namespaces `sandbox.isolation = "auto"` falls back to `partial`, and to `none` on a kernel with no Landlock.
 
 The [security model](security.md) describes what each isolation level enforces.
 
