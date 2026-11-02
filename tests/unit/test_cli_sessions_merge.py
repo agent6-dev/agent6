@@ -236,6 +236,7 @@ def test_a_resumed_runs_squash_names_the_task_and_its_continuation(
     message = _git(tmp_path, "log", "-1", "--format=%B", "main")
     assert message.splitlines()[0] == "implement the thing"
     assert "continued: do more" in message
+    assert "- add a" in message, "the step bullets stay beside the continuation"
 
 
 def test_runs_merge_with_no_id_names_the_live_run(

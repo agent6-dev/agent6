@@ -5,6 +5,7 @@
   "mode": "run",
   "start_ts": "2026-07-16T00:00:00.000000+00:00",
   "user_task": "add a feature",
+  "continued_task": "",
   "base_sha": "0000000000000000000000000000000000000000",
   "base_branch": "master",
   "run_branch": "agent6/r-fresh01",

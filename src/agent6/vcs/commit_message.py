@@ -52,7 +52,12 @@ _TURN_SUBJECT_RE = re.compile(r"^agent6 turn \d+:\s*", re.IGNORECASE)
 
 
 def condense_commit_message(
-    rows: tuple[CommitRow, ...], *, subject: str, summary: str = "", fit: bool = True
+    rows: tuple[CommitRow, ...],
+    *,
+    subject: str,
+    summary: str = "",
+    continued: str = "",
+    fit: bool = True,
 ) -> str:
     """Fold per-step commits into one message that reads as a single authored commit.
 
@@ -60,11 +65,13 @@ def condense_commit_message(
         rows: The commits, oldest first.
         subject: The run's task, headlined to its first clause.
         summary: The summary the run finished on, "" when it did not finish.
+        continued: The latest resume steer, "" when the run was never steered.
         fit: Cut the headline to the subject limit; False leaves the cut to the caller.
 
     Returns:
-        The headline, then the summary whole, else the distinct per-step subjects as
-        bullets with the `agent6 turn N:` prefix and checkpoint noise stripped.
+        The headline, a `continued: <steer>` paragraph when there is one, then the summary
+        whole, else the distinct per-step subjects as bullets with the `agent6 turn N:`
+        prefix and checkpoint noise stripped.
     """
     bullets: list[str] = []
     seen: set[str] = set()
@@ -76,10 +83,12 @@ def condense_commit_message(
         bullets.append(s)
     clause = _first_clause(subject)
     headline = (_fit(clause) if fit else clause) or (bullets[0] if bullets else "agent6 run")
-    if summary.strip():
-        return f"{headline}\n\n{summary.strip()}"
     parts = [headline]
-    if bullets:
+    if continued.strip():
+        parts += ["", f"continued: {continued.strip()}"]
+    if summary.strip():
+        parts += ["", summary.strip()]
+    elif bullets:
         parts.append("")
         parts.extend(f"- {b}" for b in bullets)
     return "\n".join(parts)

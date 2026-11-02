@@ -44,19 +44,19 @@ def squash_message(
         return "\n".join(parts) if rows else None
     task = manifest.user_task or "agent6 run"
     summary = finish_summaries[-1] if finish_summaries else ""
-    if manifest.continued_task:
-        # A resumed run lands its continuation too; the subject stays the task's.
-        summary = f"continued: {manifest.continued_task}\n\n{summary}".strip()
+    continued = manifest.continued_task
     if style == "conventional":
         # The prefix goes on the uncut clause, so the subject is cut once.
         whole = commit_message.condense_commit_message(
-            rows, subject=task, summary=summary, fit=False
+            rows, subject=task, summary=summary, continued=continued, fit=False
         ).splitlines()
         subject = commit_message.conventional_commit_subject(
             git_read.range_name_status(cwd, base_sha, run_branch), summary=whole[0]
         )
         return "\n".join([subject, *whole[1:]])
-    base_msg = commit_message.condense_commit_message(rows, subject=task, summary=summary)
+    base_msg = commit_message.condense_commit_message(
+        rows, subject=task, summary=summary, continued=continued
+    )
     if style == "model":
         msg = model_squash_message(
             cwd,
@@ -65,6 +65,7 @@ def squash_message(
             base_sha=base_sha,
             run_branch=run_branch,
             task=task,
+            continued=continued,
             finish_summaries=finish_summaries,
             transcript_dir=transcript_dir,
             budget=budget,
@@ -84,6 +85,7 @@ def model_squash_message(
     base_sha: str,
     run_branch: str,
     task: str,
+    continued: str = "",
     finish_summaries: tuple[str, ...] = (),
     transcript_dir: pathlib.Path | None,
     budget: agent6_budget.BudgetTracker | None,
@@ -99,6 +101,7 @@ def model_squash_message(
         base_sha: The commit the run started from.
         run_branch: The run's branch or chain ref.
         task: The run's task.
+        continued: The latest resume steer, "" when the run was never steered.
         finish_summaries: Completed executions' summaries, subordinate to the diff.
         transcript_dir: Where the call is transcribed; None skips the call.
         budget: The run's tracker when auto_merge runs inside a run, so the call spends the
@@ -158,7 +161,9 @@ def model_squash_message(
             provider,
             system=system,
             user=(
-                f"Task: {task}\nFinish summaries (execution order):\n{summaries}\n"
+                f"Task: {task}\n"
+                + (f"Continued: {continued}\n" if continued else "")
+                + f"Finish summaries (execution order):\n{summaries}\n"
                 f"Per-step subjects:\n{steps}\nChanged files (status\tpath):\n{files}\n"
                 f"Base-to-tip diff ({base_sha}..{run_branch}):\n{diff}"
             ),

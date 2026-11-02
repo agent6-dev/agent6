@@ -1189,6 +1189,12 @@ def test_a_steer_that_resumes_a_run_is_its_continuation(
     assert rc == 0
     resumed = sessions_manifest.read_manifest(session_dir)
     assert (resumed.user_task, resumed.continued_task) == ("t", "do more")
+    if not ended:  # a finished run resumes only with new work
+        rc = resume_mod.resume_task(
+            (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer=""
+        )
+        assert rc == 0
+        assert sessions_manifest.read_manifest(session_dir).continued_task == ""
 
 
 def test_resume_refuses_a_fan_out_coordinator(

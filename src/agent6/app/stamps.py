@@ -403,6 +403,7 @@ def stamp_fork_task(session_dir: pathlib.Path, steer: str, *, source_dir: pathli
 def stamp_continuation(session_dir: pathlib.Path, steer: str) -> None:
     """Record the steer as the run's latest continuation; the task stays as the run began.
 
+    An empty steer clears it, as the journal's label clears its own on an unsteered resume.
     An unreadable manifest is left alone rather than failing the resume.
     """
     with contextlib.suppress(manifest.ManifestError, OSError):
