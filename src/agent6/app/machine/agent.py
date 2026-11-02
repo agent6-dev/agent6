@@ -505,7 +505,10 @@ def run_one(
         else operator_bridge.OperatorBridge(),
         finish_validator=_finish_validator(r),
     )
-    result = wf.run(_task_with_contract(r))
+    result = wf.run(
+        _task_with_contract(r),
+        operator_task=r.operator_task if r.operator_task is not None else r.prompt,
+    )
     payload = result.finish_payload if result.reason == "finish_session" else None
     return _result(result.reason, payload, budget)
 

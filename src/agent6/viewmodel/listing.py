@@ -389,7 +389,7 @@ def summary_row(
     return {
         "session_id": s.session_id,
         "mode": s.mode,
-        "task_clipped": s.task_label.task,
+        "task": s.task_label.task,
         "task_line": s.task_label.line(),
         "continued_task": s.task_label.continued_task,
         "status": s.status,

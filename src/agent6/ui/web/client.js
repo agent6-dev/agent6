@@ -497,7 +497,7 @@ const QUEUE_LEVEL = { needs_answer: 'warn', blocked: 'error', unverified: 'warn'
 
 function paintSession(r, it, g) {
   it.onclick = () => location.hash = '#/session/' + encodeURIComponent(r.session_id);
-  taskTitle(g, r.task_line || r.task_clipped || '(no task)');
+  taskTitle(g, r.task_line || firstLine(r.task, 200) || '(no task)');
   const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
   g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${cost}`));
@@ -594,7 +594,7 @@ function machinesCard(machines) {
 function draftsCard(drafts) {
   return listCard('Machine drafts', drafts, '', (d, it, g) => {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
-    taskTitle(g, d.task_line || d.task_clipped || d.session_id);
+    taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id);
     g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${esc(d.when)}`));
     it.appendChild(pill(d.level, d.label || d.status)); // keep the reason (failed · provider_error)
   });
@@ -678,7 +678,7 @@ function firstLine(s, n) { const t = String(s == null ? '' : s).split('\n')[0]; 
 // `box` is the scroll container, `body` the host the items render into.
 function makeConv(url, box, body) {
   const conv = {
-    items: [], open: new Set(),
+    items: [], open: new Map(),
     detail: recall('a6-detail', '') || 'collapsed',
     timer: null,
     finished: false, // set by setLive: an ended run/machine gets past-tense empty text
@@ -701,13 +701,13 @@ function makeConv(url, box, body) {
     itemsHost.innerHTML = '';
     let shown = 0;
     conv.items.forEach((it, i) => {
-      if ((it.kind === 'thinking' || it.kind === 'tool') && conv.detail === 'hidden' && !conv.open.has(i)) return;
-      const expanded = conv.detail === 'expanded' || conv.open.has(i);
+      if ((it.kind === 'thinking' || it.kind === 'tool') && conv.detail === 'hidden' && !conv.open.get(i)) return;
+      const expanded = conv.open.get(i) ?? (conv.detail === 'expanded');
       const lines = expanded && it.full ? it.full : it.lines;
       const div = el('div', 'ci' + (it.full ? ' exp' : ''));
       if (it.full) {
         div.title = expanded ? 'click to collapse' : 'click to expand';
-        div.onclick = () => { if (conv.open.has(i)) conv.open.delete(i); else conv.open.add(i); paintItems(); };
+        div.onclick = () => { conv.open.set(i, !expanded); paintItems(); };
       }
       for (const line of lines) {
         const ln = el('div');

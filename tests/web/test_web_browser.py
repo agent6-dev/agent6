@@ -105,6 +105,88 @@ def open_page(browser: Browser) -> Iterator[Callable[[int], tuple[Page, list[str
             context.close()
 
 
+def test_expanded_task_keeps_the_full_operator_words(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """A task headline expands to every line, including literal markup and its long tail."""
+    from playwright.sync_api import expect
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "whole-task-AAA111"
+    session.mkdir(parents=True)
+    words = "Keep <file>this example</file>. " + "full words " * 600 + "\nLAST PROMPT LINE"
+    steer = "Continue " + "steer words " * 600 + "\nLAST STEER LINE"
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": words},
+        {"type": "loop.steer.injected", "text": steer},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    item = page.locator(".ci").filter(has=page.locator(".s-task")).first
+    expect(item).to_have_attribute("title", "click to expand")
+    assert "LAST PROMPT LINE" not in item.inner_text()
+    item.click()
+    expect(item).to_contain_text("LAST PROMPT LINE")
+    assert words in item.inner_text().replace("\n  ", "\n")
+    item = page.locator(".ci").filter(has=page.locator(".s-operator")).first
+    expect(item).to_have_attribute("title", "click to expand")
+    item.click()
+    expect(item).to_contain_text("LAST STEER LINE")
+    assert steer in item.inner_text().replace("\n  ", "\n")
+    assert not errors
+
+
+@pytest.mark.parametrize("expanded", [False, True])
+def test_every_tool_expands_to_whole_arguments(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    *,
+    expanded: bool,
+) -> None:
+    """Long commands and no-argument calls expand and collapse at either global detail level."""
+    from playwright.sync_api import expect
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "whole-tool-AAA111"
+    session.mkdir(parents=True)
+    words = "script " * 900 + "LAST SCRIPT BYTE"
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "Show commands"},
+        {"type": "tool.call", "name": "run_command", "args": {"argv": ["sh", "-c", words]}},
+        {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"},
+        {"type": "tool.call", "name": "run_verify_command", "args": {}},
+        {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit 0"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    page, errors = open_page(port)
+    level = "expanded" if expanded else "collapsed"
+    page.add_init_script(f"localStorage.setItem('a6-detail', '{level}')")
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    command = page.locator(".ci").filter(has=page.locator(".s-call")).first
+    expect(command).to_have_attribute(
+        "title", "click to collapse" if expanded else "click to expand"
+    )
+    if expanded:
+        command.click()
+    assert "LAST SCRIPT BYTE" not in command.inner_text()
+    command.click()
+    expect(command).to_contain_text("LAST SCRIPT BYTE")
+    assert words in command.inner_text()
+    command.click()
+    assert "LAST SCRIPT BYTE" not in command.inner_text()
+    verify = page.locator(".ci").filter(has=page.locator(".s-verify")).first
+    expect(verify).to_have_class(re.compile(r"\bexp\b"))
+    if expanded:
+        verify.click()
+    verify.click()
+    expect(verify).to_contain_text("arguments: (none)")
+    assert not errors
+
+
 @pytest.mark.parametrize("asks", [False, True])
 def test_removal_controls_reach_the_cli(
     git_port: int,

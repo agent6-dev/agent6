@@ -626,11 +626,15 @@ def test_bridge_spawner_argv_ends_options_before_task(
     subcommand.
     """
     captured: list[list[str]] = []
+    words = "Keep <file>literal</file>. " + "detail " * 800
 
     def fake_spawn(
         argv: list[str], workdir: pathlib.Path, **_k: object
     ) -> tuple[pathlib.Path, str]:
         captured.append(list(argv))
+        env = _k["env"]
+        assert isinstance(env, dict)
+        assert pathlib.Path(str(env["AGENT6_OPERATOR_TASK_FILE"])).read_text() == words
         return workdir, ""
 
     cfg = Config()
@@ -638,10 +642,17 @@ def test_bridge_spawner_argv_ends_options_before_task(
         lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
     )
     app_lanes.bridge_spawner(
-        spec, "--allow-root pwn", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=2.0,
-        fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
+        spec,
+        "--allow-root pwn",
+        operator_task=words,
+        explicit_leaves=frozenset(),
+        cfg=cfg,
+        origin=origin,
+        max_usd=2.0,
+        fanout_id="fan",
+        runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         coordinator="co",
-    )  # fmt: skip
+    )
 
     argv = captured[-1]
     assert argv[:1] == ["run"]  # the exe is prepended inside the injected spawn

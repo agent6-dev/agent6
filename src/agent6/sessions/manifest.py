@@ -270,7 +270,7 @@ class SessionManifest(pydantic.BaseModel):
         mode: The session mode. No default: it is the privilege gate's only input, and a
             manifest that lost the key must not read as the more-privileged `run`.
         start_ts: When the session started.
-        user_task: The task, truncated for display; `parked_task` holds it verbatim.
+        user_task: A 4000-character fallback for listings whose journal is missing.
         base_sha: The commit the run's un-landed work starts from: where it started, or the
             commit a resume continued from after its work landed.
         base_branch: The branch that commit was on.
@@ -283,6 +283,7 @@ class SessionManifest(pydantic.BaseModel):
         budget: The caps the run's or a resume's `--max-*` flags set.
         parked_task: The verbatim task of a run submitted but never started; `agent6 resume`
             starts it fresh and its manifest rewrite clears this.
+        parked_operator_task: The parked task before composition, when recorded.
         parked_reason: Why it was parked: the checkout was busy, or the tree was dirty and
             the operator chose to wait.
         source_session_id: The `run --from` source, which contributes context but not this
@@ -324,6 +325,7 @@ class SessionManifest(pydantic.BaseModel):
     policy: PolicyStamp = PolicyStamp()
     budget: BudgetStamp = BudgetStamp()
     parked_task: str = ""
+    parked_operator_task: str | None = None
     parked_reason: str = ""
     source_session_id: str | None = None
     parent_session_id: str | None = None

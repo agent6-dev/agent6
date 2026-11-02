@@ -5028,7 +5028,6 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) ->
     """resume() loads snapshot, calls provider once, finishes via silent_finish."""
     import json
 
-    from agent6 import task_text
     from agent6.sessions import event_log
 
     snap_path = tmp_path / "loop_state.json"
@@ -5058,7 +5057,7 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) ->
     result = wf.resume(steer=steer)
     start = json.loads((tmp_path / "logs.jsonl").read_text().splitlines()[0])
     assert start["type"] == "loop.resume.start"
-    assert start["steer"] == task_text.task_display_text(steer)
+    assert start["steer"] == steer
     assert start["user_task"] == "go"
 
     assert result.completed is True
@@ -7784,7 +7783,7 @@ def test_session_start_carries_the_operators_words_under_a_seed() -> None:
         "## Run task\nhow many functions?\n</prior-run>\n\n"
         "add a module docstring to calc.py"
     )
-    wf.run(composed)
+    wf.run(composed, operator_task="add a module docstring to calc.py")
     start = next(e for e in events if e["type"] == "session.start")
     assert start["user_task"] == "add a module docstring to calc.py"
 

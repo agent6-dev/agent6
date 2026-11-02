@@ -1679,7 +1679,7 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     assert summary.task_label.task == "create README.md only"
     assert summary.task_label.continued_task == ""
     payload = session_state_as_dict(viewmodel_state.fold_session(journal), dst.session_dir)
-    assert payload["user_task"] == payload["task_line"] == "create README.md only"
+    assert payload["task"] == payload["task_line"] == "create README.md only"
     assert payload["continued_task"] == ""
 
 

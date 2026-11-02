@@ -643,7 +643,7 @@ def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> 
             {
                 "type": "session.start",
                 "mode": "run",
-                "user_task": task_text.task_display_text(composed),
+                "user_task": task_text.operator_task_text(composed)[: task_text.TASK_DISPLAY_CHARS],
             },
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
@@ -661,7 +661,7 @@ def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> 
     s = summarize_session_dir(rd)
     assert (s.mode, s.task_label.task, s.status) == (
         "run",
-        task_text.task_display_text(composed),
+        task_text.operator_task_text(composed)[: task_text.TASK_DISPLAY_CHARS],
         "passed",
     )
 
@@ -1681,9 +1681,15 @@ def test_unsteered_resume_keeps_one_task_line(tmp_path: pathlib.Path, task: str)
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     summary = listing.summarize_session_dir(tmp_path)
-    assert summary.task_label.task == task_text.task_display_text(task)
+    assert (
+        summary.task_label.task
+        == task_text.operator_task_text(task)[: task_text.TASK_DISPLAY_CHARS]
+    )
     assert summary.task_label.continued_task == ""
-    assert summary.task_label.line(300) == task_text.task_display_text(task).splitlines()[0]
+    assert (
+        summary.task_label.line(300)
+        == task_text.operator_task_text(task)[: task_text.TASK_DISPLAY_CHARS].splitlines()[0]
+    )
 
 
 def test_a_short_task_prefix_is_not_the_journal_clip() -> None:
@@ -1712,7 +1718,7 @@ def test_empty_start_does_not_claim_the_task(tmp_path: pathlib.Path, manifest_ta
     assert folded.task_label.task == "original task"
     assert folded.task_label.continued_task == "latest work"
     payload = session_state_as_dict(folded, tmp_path)
-    assert payload["user_task"] == "original task"
+    assert payload["task"] == "original task"
     assert payload["continued_task"] == "latest work"
     assert "original_task" not in payload
 
@@ -1722,7 +1728,9 @@ def test_manifest_and_journal_use_the_same_task_derivation() -> None:
     from agent6 import task_text
 
     raw = "<prior-run>context</prior-run>\n  " + "x" * 240 + "\n---\n"
-    label = session_status.TaskLabel(task_text.task_display_text(raw)).fallback(raw)
+    label = session_status.TaskLabel(
+        task_text.operator_task_text(raw)[: task_text.TASK_DISPLAY_CHARS]
+    ).fallback(raw)
     assert label == session_status.TaskLabel("x" * task_text.TASK_DISPLAY_CHARS)
 
 
@@ -1748,24 +1756,24 @@ def test_ask_repl_questions_are_not_continuations(tmp_path: pathlib.Path) -> Non
 
 
 @pytest.mark.parametrize("started", [False, True])
-def test_task_clip_is_the_same_before_and_after_start(
+def test_old_journals_keep_their_clip_and_missing_journals_use_the_manifest(
     tmp_path: pathlib.Path, *, started: bool
 ) -> None:
-    """Manifest fallback and journal start expose the same clipped task in both folds."""
+    """A manifest fallback stays whole; a clipped old journal is never reconstructed."""
     from agent6 import task_text
     from agent6.viewmodel import state
 
     task = "<prior-run>context</prior-run>\n" + "x" * 240
-    clipped = task_text.task_display_text(task)
+    clipped = task_text.operator_task_text(task)[: task_text.TASK_DISPLAY_CHARS]
     (tmp_path / "manifest.json").write_text(json.dumps({"mode": "run", "user_task": task}))
     journal = [{"type": "session.start", "user_task": clipped}] if started else []
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     summary = listing.summarize_session_dir(tmp_path)
     row = listing.summary_row(summary)
-    assert row["task_clipped"] == "x" * task_text.TASK_DISPLAY_CHARS
-    assert "task" not in row
+    assert row["task"] == "x" * (200 if started else 240)
+    assert "task_clipped" not in row
     payload = session_state_as_dict(state.fold_session(journal), tmp_path)
-    assert payload["user_task"] == row["task_clipped"]
+    assert payload["task"] == row["task"]
 
 
 def test_unsteered_resume_clears_previous_continuation(tmp_path: pathlib.Path) -> None:

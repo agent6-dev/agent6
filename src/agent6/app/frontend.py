@@ -184,7 +184,8 @@ class SessionFrontend:
         Callable[[int, str], kinds.AutoCommitDirective],
     ]
     run_ask_repl: Callable[
-        [loop.Harness, budget.BudgetTracker, layout.SessionLayout, str], loop_snapshot.SessionResult
+        [loop.Harness, budget.BudgetTracker, layout.SessionLayout, str, str | None],
+        loop_snapshot.SessionResult,
     ]
     save_ask_transcript: Callable[[layout.SessionLayout, str, str], None]
     build_coordinator_spawner: Callable[

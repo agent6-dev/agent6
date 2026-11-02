@@ -75,17 +75,20 @@ def test_memory_tool_paths_keep_the_filename_on_every_surface() -> None:
 
 
 def test_session_start_opens_the_conversation_with_the_task() -> None:
-    """The shared fold supplies the clipped task headline on every conversation surface."""
+    """The task keeps its full body and clips only the collapsed rendering."""
     from agent6.viewmodel import transcript, transcript_style
 
     task = "x" * 230 + "\nsecond line"
     items = fold_transcript([{"type": "session.start", "user_task": task}])
     assert len(items) == 1
     assert items[0].kind == "task"
-    assert items[0].body == session_status.task_snippet(task, max_chars=200)
+    assert items[0].body == task
     assert transcript_style.item_lines(items[0], detail="hidden") == [
-        [(f"{transcript.DONE} {items[0].body}", "task")]
+        [(f"{transcript.DONE} {session_status.task_snippet(task, max_chars=200)}", "task")]
     ]
+    expanded = transcript_style.item_lines(items[0], detail="expanded")
+    assert task.splitlines()[0] in expanded[0][0][0]
+    assert "second line" in expanded[1][0][0]
     assert fold_transcript([{"type": "session.start", "user_task": ""}]) == []
 
 
@@ -379,11 +382,11 @@ def test_operator_steer_text_becomes_an_operator_item() -> None:
     items = fold.feed({"type": "loop.steer.injected", "chars": 9, "text": "try it\nagain"})
     assert [i.kind for i in items] == ["operator"]
     assert items[0].body == "try it\nagain"
-    # Rendered at every detail level, glyph + the operator's own words.
     for level in ("hidden", "collapsed", "expanded"):
         lines = transcript_style.item_lines(items[0], detail=level)
         flat = "".join(chunk for line in lines for chunk, _ in line)
-        assert f"{transcript.OPERATOR} try it" in flat and "again" in flat
+        assert f"{transcript.OPERATOR} try it" in flat
+        assert ("again" in flat) == (level == "expanded")
     # An old log without the text field adds no item.
     assert fold.feed({"type": "loop.steer.injected", "chars": 9}) == []
 

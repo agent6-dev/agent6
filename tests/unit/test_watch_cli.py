@@ -58,13 +58,27 @@ def test_watch_run_json_snapshot(
         tmp_path,
         "willing-glen-001",
         [
-            {"type": "session.start", "user_task": "demo"},
+            {"type": "session.start", "mode": "run", "user_task": "demo\n" + "words " * 900},
+            {"type": "budget.update", "usd_total": 0.25},
             {"type": "tool.call", "name": "grep", "args": {"q": "x"}},
         ],
     )
     assert main(["attach", "willing-glen-001", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["user_task"] == "demo"
+    assert out["task"] == "demo\n" + "words " * 900
+    assert "user_task" not in out and "task_clipped" not in out
+    assert out["budget"]["cost_usd"] == 0.25
+    assert "usd_total" not in out["budget"]
+    for command in (
+        ["sessions", "list", "--json"],
+        ["sessions", "show", "willing-glen-001", "--json"],
+    ):
+        assert main(command) == 0
+        result = json.loads(capsys.readouterr().out)
+        row = result[0] if isinstance(result, list) else result
+        assert row["task"] == out["task"]
+        assert row["cost_usd"] == 0.25
+        assert "user_task" not in row and "task_clipped" not in row
     assert out["tool_calls"][0]["name"] == "grep"
 
 
@@ -81,6 +95,8 @@ def test_watch_machine_json_snapshot(
     assert main(["attach", "tiny", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert out["machine"] == "tiny"
+    assert out["spend"]["cost_usd"] == 0.0
+    assert "usd" not in out["spend"]
     assert out["current"] == "done"
     assert out["ended"]["status"] == "ok"
 

@@ -174,11 +174,14 @@ class Harness:
 
     # ---- run / resume entry --------------------------------------------------
 
-    def run(self, user_task: str) -> loop_snapshot.SessionResult:
+    def run(
+        self, user_task: str, *, operator_task: str | None = None
+    ) -> loop_snapshot.SessionResult:
         """Drive a fresh execution of the loop to its end.
 
         Args:
             user_task: The task, with any seed digest or skill block prepended.
+            operator_task: The words before composition; None means `user_task` is uncomposed.
 
         Returns:
             How the execution ended.
@@ -189,11 +192,12 @@ class Harness:
         self.bridge.steer_reset()  # an execution starts with no armed Ctrl-C
         if self.mode == "plan" and self.plan_output_path is None:
             raise ValueError("Harness(mode='plan') requires plan_output_path to be set")
-        # Every headline reads this field: the operator's own words, without a seed or skill block.
+        if operator_task is None:
+            operator_task = user_task
         self._emit_start(
             "session.start",
             session_id=self.session_id,
-            user_task=task_text.task_display_text(user_task),
+            user_task=operator_task,
             mode=self.mode,
         )
         self.log("LOOP: LOAD_CONTEXT")
@@ -263,7 +267,7 @@ class Harness:
             start_turn=1,
             root_task_id=root_id,
             original_task=effective_task,
-            operator_task=user_task,
+            operator_task=operator_task,
         )
 
     def _prepare_rulings_file(self) -> None:
@@ -312,8 +316,9 @@ class Harness:
         self._emit_start(
             "loop.resume.start",
             session_id=self.session_id,
-            user_task=task_text.task_display_text(snapshot.original_task),
-            steer=task_text.task_display_text(steer),
+            user_task=snapshot.operator_task
+            or task_text.operator_task_text(snapshot.original_task),
+            steer=steer,
             mode=self.mode,
             turn=snapshot.next_turn,
             messages=len(snapshot.messages),
@@ -1110,7 +1115,7 @@ class Harness:
             return
         plan_md = finish_gates.with_original_task(
             finish.plan_markdown,
-            task_text.operator_task_text(state.operator_task or state.original_task),
+            state.operator_task or task_text.operator_task_text(state.original_task),
         )
         try:
             paths.mkdir_for_real_user(self.plan_output_path.parent)

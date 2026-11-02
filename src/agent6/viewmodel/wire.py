@@ -255,7 +255,7 @@ def machine_snapshot(
         events, machine_dir, alive=process.worker_is_alive(machine_dir)
     )
     d["spend"] = {
-        "usd": spend.usd,
+        "cost_usd": spend.usd,
         "usd_partial": spend.partial,
         "text": budget.format_usd(spend.usd, partial=spend.partial),
         "input_tokens": spend.input_tokens,

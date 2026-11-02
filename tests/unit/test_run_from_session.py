@@ -193,3 +193,63 @@ def test_a_seeded_asks_manifest_records_its_resolved_source(
     prompt = json.dumps(provider.messages)
     assert "source run task" in prompt
     assert "what should I do next?" in prompt
+
+
+@pytest.mark.parametrize("continuation", ["resume", "fork"])
+def test_journal_keeps_operator_words_before_composition(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    continuation: str,
+) -> None:
+    """File expansion and a literal file example never replace or clip the journal's words."""
+    repo, _provider = _setup(tmp_path, monkeypatch)
+    (repo / "notes.md").write_text("context from disk")
+    words = "Read @notes.md and keep this literal <file>example</file>.\n" + "detail " * 800
+    session_id = "whole-prompt-AAA111"
+    assert cli_main(["run", "--session-id", session_id, words]) == 0
+    session = paths.state_dir(repo) / "sessions" / "runs" / session_id
+    rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
+    assert next(row for row in rows if row["type"] == "session.start")["user_task"] == words
+    snapshot = json.loads((session / "loop_state.json").read_text())
+    assert "context from disk" in snapshot["original_task"]
+    assert snapshot["operator_task"] == words
+    steer = "Keep <file>this example</file> too.\n" + "follow-up " * 600
+    args = [continuation, session_id, "--steer", steer]
+    if continuation == "fork":
+        args += ["--session-id", "whole-fork-BBB222"]
+    assert cli_main(args) == 0
+    if continuation == "fork":
+        session = session.parent / "whole-fork-BBB222"
+    rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
+    start = next(row for row in rows if row["type"] == "loop.resume.start")
+    assert start["user_task"] == words
+    assert start["steer"] == steer
+    assert next(row for row in rows if row["type"] == "loop.steer.injected")["text"] == steer
+    capsys.readouterr()
+    assert cli_main(["sessions", "show", session.name]) == 0
+    shown = capsys.readouterr().out.replace("\n" + " " * 12, "\n")
+    assert steer in shown
+    if continuation == "resume":
+        assert words in shown
+
+
+def test_parked_submission_keeps_words_before_file_expansion(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A submission parked before its first journal event retains the original prompt."""
+    from agent6.sessions import lock
+
+    repo, _provider = _setup(tmp_path, monkeypatch)
+    words = "Read @tracked.txt and keep <file>example</file>.\n" + "detail " * 800
+    session_id = "parked-words-AAA111"
+    held = lock.acquire_repo_writer(paths.state_dir(repo), repo, "busy-run")
+    assert held is not None
+    try:
+        assert cli_main(["run", "--session-id", session_id, words]) == 2
+    finally:
+        lock.release_single_writer(held)
+    assert cli_main(["resume", session_id]) == 0
+    session = paths.state_dir(repo) / "sessions" / "runs" / session_id
+    rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
+    assert next(row for row in rows if row["type"] == "session.start")["user_task"] == words

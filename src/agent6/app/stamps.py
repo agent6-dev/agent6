@@ -80,6 +80,7 @@ def write_session_manifest(
     session_id: str,
     source_session_id: str | None = None,
     user_task: str,
+    operator_task: str | None = None,
     base_sha: str,
     base_branch: str,
     run_branch: str | None,
@@ -106,6 +107,7 @@ def write_session_manifest(
         session_id: The new session's id.
         source_session_id: The session whose context `--from` seeded into this one.
         user_task: The operator's task.
+        operator_task: The words before composition, when available.
         base_sha: The commit the run started from.
         base_branch: The branch the run started from.
         run_branch: The branch the start cut, when one was.
@@ -141,8 +143,9 @@ def write_session_manifest(
         # `fork` and `resume` act on session_mode(), never on this string.
         mode=mode,
         start_ts=datetime.datetime.now(tz=datetime.UTC).isoformat(timespec="microseconds"),
-        # The display twin of the operator's words; the verbatim engine copy is in the snapshot.
-        user_task=task_text.operator_task_text(user_task)[:4000],
+        user_task=(
+            operator_task if operator_task is not None else task_text.operator_task_text(user_task)
+        )[:4000],
         base_sha=base_sha,
         base_branch=base_branch,
         run_branch=run_branch,
@@ -208,28 +211,38 @@ def parallel_lineage() -> manifest.ParallelLineage | None:
     return manifest.ParallelLineage(group=group, lane=int(lane), coordinator=coordinator)
 
 
-def stamp_parked(session_dir: pathlib.Path, *, task: str, reason: str) -> None:
+def stamp_parked(
+    session_dir: pathlib.Path, *, task: str, reason: str, operator_task: str | None = None
+) -> None:
     """Record that the run was submitted and never started; `unpark` replaces the stamp.
 
     Args:
         session_dir: The run.
         task: The verbatim task a resume starts fresh.
+        operator_task: The words before composition, when available.
         reason: Why the run waits.
     """
     m = manifest.read_manifest(session_dir)
     write_manifest(
         session_dir / manifest.MANIFEST_NAME,
-        m.model_copy(update={"parked_task": task, "parked_reason": reason, "run_branch": None}),
+        m.model_copy(
+            update={
+                "parked_task": task,
+                "parked_operator_task": operator_task,
+                "parked_reason": reason,
+                "run_branch": None,
+            }
+        ),
     )
 
 
-def parked_stamp(session_dir: pathlib.Path) -> tuple[str, str] | None:
-    """Return a parked submission's (task, reason), or None without a manifest or a park."""
+def parked_stamp(session_dir: pathlib.Path) -> tuple[str, str, str | None] | None:
+    """Return a parked submission's (task, reason, operator_task), or None without a park."""
     try:
         m = manifest.read_manifest(session_dir)
     except manifest.ManifestError:
         return None
-    return (m.parked_task, m.parked_reason) if m.parked_task else None
+    return (m.parked_task, m.parked_reason, m.parked_operator_task) if m.parked_task else None
 
 
 def unpark(session_dir: pathlib.Path, *, run_branch: str | None) -> None:
@@ -249,7 +262,14 @@ def unpark(session_dir: pathlib.Path, *, run_branch: str | None) -> None:
         return
     write_manifest(
         session_dir / manifest.MANIFEST_NAME,
-        m.model_copy(update={"parked_task": "", "parked_reason": "", "run_branch": run_branch}),
+        m.model_copy(
+            update={
+                "parked_task": "",
+                "parked_operator_task": None,
+                "parked_reason": "",
+                "run_branch": run_branch,
+            }
+        ),
     )
 
 

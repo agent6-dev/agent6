@@ -29,6 +29,7 @@ from agent6.viewmodel import (
     listing,
     scan_session_log,
     summarize_session_dir,
+    tail,
 )
 
 
@@ -350,7 +351,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                 {
                     "session_id": target.name,
                     "mode": mode_display,
-                    "task_clipped": summary.task_label.task,
+                    "task": summary.task_label.task,
                     "continued_task": summary.task_label.continued_task,
                     "task_line": summary.task_label.line(),
                     "model": model,
@@ -406,8 +407,22 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
 
     pid_note = _pid_note(pid, alive=alive, finished=scan.finished)
     print(f"session:    {target.name}  (mode={mode_display or '?'})")
-    if task := summary.task_label.line():
-        print("task:       " + task.replace("\n", "\n" + " " * 12))
+    for prefix, task in [
+        ("task:       ", summary.task_label.task),
+        *(
+            ("            continued: ", words)
+            for words in (
+                [
+                    str(event.get("text", ""))
+                    for event in tail.tail_events(layout.logs_path, follow=False)
+                    if event.get("type") == "loop.steer.injected"
+                ]
+                or [summary.task_label.continued_task]
+            )
+            if words
+        ),
+    ]:
+        print(prefix + task.replace("\n", "\n" + " " * 12))
     _print_lineage(manifest)
     _print_parallel_compare(manifest)
     _print_fanout(manifest, lanes, lane_manifests)

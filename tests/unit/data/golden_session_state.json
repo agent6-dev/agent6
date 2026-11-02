@@ -38,7 +38,7 @@
     {
       "name": "run_command",
       "args_preview": "argv=ls /nope",
-      "args_full": "argv=ls /nope",
+      "args_full": "argv=['ls', '/nope']",
       "result_summary": "exit=2",
       "ok": false,
       "task_id": "n1",
@@ -91,7 +91,6 @@
     "output_total": 0,
     "cache_read_total": 0,
     "cache_creation_total": 0,
-    "usd_total": 0.004841036,
     "usd_prior_executions": 0.004841036,
     "usd_partial": false,
     "usd_cap": 0.0,
@@ -102,6 +101,7 @@
     "plan_prior_executions": 0.0,
     "plan_cap": 0.0,
     "plan_resets_at": 0.0,
+    "cost_usd": 0.004841036,
     "usd_text": "$0.0048"
   },
   "pending_approvals": [
@@ -222,7 +222,7 @@
   "live": null,
   "status": "passed",
   "status_label": "passed",
-  "user_task": "# Fix the bug\n\nRestore the thing.",
+  "task": "# Fix the bug\n\nRestore the thing.",
   "continued_task": "",
   "task_line": "Fix the bug",
   "dead_state": "",

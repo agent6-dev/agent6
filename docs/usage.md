@@ -222,8 +222,14 @@ The tokens and the points against `max_plan_points` on `sessions show` are the l
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
 
 `sessions show` and the conversation's last line print the sentence the run ended on.
-`sessions show --json` and `sessions list --json` return the original label clipped to 200 characters in `task_clipped`, the latest resume steer (also clipped to 200 characters) in `continued_task`, and their display text in `task_line`, including a newline followed by `continued: <steer>` when the run has a continuation.
+`sessions show --json`, `sessions list --json` and `attach --json` return the full original words in `task`, the latest resume steer in `continued_task`, and their headlines in `task_line`.
+Each headline clips at 200 characters; a continuation adds a newline followed by `continued: <steer>`.
 An unsteered resume clears `continued_task`.
+The journal stores the operator's words before context blocks are composed around them.
+Old journals retain their clipped text; missing journals use the manifest's 4000-character fallback.
+The web and TUI conversation expand the opening task to its full text; `sessions show` prints the task and each injected steer whole.
+Spend uses `cost_usd`: on listing and show rows, in a session snapshot's `budget`, and in a machine snapshot's `spend`.
+`ps --json` keeps `id` for both sessions and machines, with `mode` identifying the kind.
 
 `agent6 exec` runs your own command on your own stdio.
 

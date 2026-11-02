@@ -213,7 +213,11 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         return lambda _turn, _summary: "continue"
 
     def _no_ask_repl(
-        _wf: loop.Harness, _budget: budget.BudgetTracker, _layout: layout.SessionLayout, _task: str
+        _wf: loop.Harness,
+        _budget: budget.BudgetTracker,
+        _layout: layout.SessionLayout,
+        _task: str,
+        _operator_task: str | None = None,
     ) -> loop_snapshot.SessionResult:
         raise RuntimeError("the editor prompts an ACP session; the ask REPL is not used")
 

@@ -1190,8 +1190,7 @@ def test_status_prints_the_task_and_names_a_plans_page(
 ) -> None:
     """The show page prints the task, and a plan's show names its plans page.
 
-    The text render prints the headline every listing shows (a TASK.md's heading marks dropped); the
-    JSON keeps the whole task.
+    Text and JSON keep the whole task, including heading marks and body lines.
     """
     d = _make_run(
         tmp_path,
@@ -1200,10 +1199,10 @@ def test_status_prints_the_task_and_names_a_plans_page(
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
-    assert "task:       add a flag\n" in out and "more" not in out
+    assert "task:       # add a flag\n            more\n" in out
     assert "plan:" not in out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-    assert json.loads(capsys.readouterr().out)["task_clipped"] == "# add a flag\nmore"
+    assert json.loads(capsys.readouterr().out)["task"] == "# add a flag\nmore"
 
     (d / "manifest.json").write_text(json.dumps({"mode": "plan"}))
     (d / "plan.md").write_text("# Plan\n", encoding="utf-8")

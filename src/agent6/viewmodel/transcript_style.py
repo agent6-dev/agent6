@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from agent6.viewmodel import transcript
+from agent6.viewmodel import session_status, transcript
 
 StyleName = Literal[
     "thinking",
@@ -53,26 +53,28 @@ def _tool_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[Line
 
     Args:
         item: The tool item.
-        expanded: Show the whole detail and tail rather than a clipped first line.
+        expanded: Show every argument and the whole detail and tail.
 
     Returns:
-        The lines; an in-flight call is its head alone, marked running.
+        The lines; an in-flight call is marked running.
     """
     head_style: StyleName = "verify" if item.name == "run_verify_command" else "call"
     head: Line = [(f"{transcript.CALL} {item.name}", head_style)]
     if item.arg:
         head.append((f"  {item.arg}", "arg"))
+    lines: list[Line] = [head]
+    if expanded:
+        lines.extend(
+            [(f"  {ln}", "arg")] for ln in f"arguments: {item.args_full or '(none)'}".split("\n")
+        )
     if item.ok is None:
         head.append((f"  · {item.detail or 'running'}", "more"))
-        return [head]
+        return lines
     glyph: StyleName = "ok" if item.ok else "fail"
     detail_lines = item.detail.split("\n")
     long = len(detail_lines) > 1 or len(detail_lines[0]) > DETAIL_CLIP
     if expanded and long:
-        lines: list[Line] = [
-            head,
-            [(f"  {transcript.RESULT} ", glyph), (detail_lines[0], "detail")],
-        ]
+        lines.append([(f"  {transcript.RESULT} ", glyph), (detail_lines[0], "detail")])
         lines.extend([(f"      {ln}", "detail")] for ln in detail_lines[1:])
     else:
         reason = detail_lines[0]
@@ -82,7 +84,7 @@ def _tool_lines(item: transcript.TranscriptItem, *, expanded: bool) -> list[Line
         extra = len(detail_lines) - 1
         if extra:
             result.append((f"  (+{extra} more line{'' if extra == 1 else 's'})", "more"))
-        lines = [head, result]
+        lines.append(result)
     if item.tail:
         if expanded:
             lines.extend([(f"    {ln}", "tail")] for ln in item.tail.split("\n"))
@@ -139,9 +141,20 @@ def item_lines(item: transcript.TranscriptItem, *, detail: DetailLevel) -> list[
     elif item.kind == "tool":
         lines.extend(_tool_lines(item, expanded=detail == "expanded"))
     elif item.kind == "task":
-        lines.append([(f"{transcript.DONE} {item.body}", "task")])
+        body = (
+            item.body
+            if detail == "expanded"
+            else session_status.task_snippet(item.body, max_chars=200)
+        )
+        body_lines = body.split("\n")
+        lines.append([(f"{transcript.DONE} {body_lines[0]}", "task")])
+        lines.extend([(f"  {ln}", "task")] for ln in body_lines[1:])
     elif item.kind == "operator":
-        body_lines = item.body.split("\n")
+        body_lines = (
+            item.body
+            if detail == "expanded"
+            else session_status.task_snippet(item.body, max_chars=200)
+        ).split("\n")
         lines.append([(f"{transcript.OPERATOR} ", "operator"), (body_lines[0], "operator")])
         lines.extend([(f"  {ln}", "operator")] for ln in body_lines[1:])
     elif item.kind == "commit":

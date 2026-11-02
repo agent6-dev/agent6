@@ -439,7 +439,9 @@ def test_create_writes_watchable_event_log(
         **kw: object,
     ) -> Callable[[AgentRequest, object], AgentExecResult]:
         def run(_request: AgentRequest, events_log: object = None) -> AgentExecResult:
-            captured_log.append(events_log)  # events_log is now per CALL, not per build
+            assert _request.operator_task == "Greet the user"
+            assert _request.prompt != _request.operator_task
+            captured_log.append(events_log)
             _write_draft(root, _draft(VALID_MACHINE))
             return AgentExecResult(payload=None, reason="finish_session", usd=0.0)
 

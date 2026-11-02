@@ -53,21 +53,20 @@ def _as_list(value: Any) -> list[Any]:
     return list(value) if isinstance(value, (list, tuple)) else []
 
 
-def render_args(args: dict[str, Any], *, max_value: int = 80) -> str:
+def render_args(args: dict[str, Any], *, max_value: int | None = 80) -> str:
     """Render an args dict as `k=v, ...`.
 
     Args:
         args: The tool call's args.
-        max_value: The characters each value keeps; the inline row uses the default,
-            the detail view a generous cap.
+        max_value: The inline value cap; None renders every value without abbreviation.
 
     Returns:
         The pairs joined by ", ".
     """
     pairs: list[str] = []
     for k, v in args.items():
-        s = _render_arg_value(k, v)
-        if len(s) > max_value:
+        s = (v if isinstance(v, str) else repr(v)) if max_value is None else _render_arg_value(k, v)
+        if max_value is not None and len(s) > max_value:
             s = s[:max_value] + "…"
         pairs.append(f"{k}={s}")
     return ", ".join(pairs)

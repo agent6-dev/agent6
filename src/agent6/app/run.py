@@ -55,6 +55,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     *,
     frontend: app_frontend.SessionFrontend,
     started_at: float,
+    operator_task: str | None = None,
     session_id: str = "",
     source_session_id: str | None = None,
     interactive: bool = False,
@@ -83,6 +84,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     Args:
         cfg: The run's config, overrides applied.
         task: The task text.
+        operator_task: The words before composition; None means `task` is uncomposed.
         frontend: The surface's seam: console, confirms, approvals, questions.
         started_at: The instant this execution began; the stale-state clear keeps
             bridge markers written since.
@@ -111,6 +113,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     Returns:
         The process exit code.
     """
+    if operator_task is None:
+        operator_task = task
     role = kinds.session_kind(mode).role
     repo = pathlib.Path.cwd()
     # The run's checkout: the repository, or the worktree `worktree` adds below.
@@ -393,6 +397,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             session_id=effective_session_id,
             source_session_id=source_session_id,
             user_task=task,
+            operator_task=operator_task,
             base_sha=base_sha,
             base_branch=base_branch,
             run_branch=run_branch,
@@ -408,11 +413,15 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             budget=budget_overrides.stamp() if budget_overrides is not None else None,
         )
         if parked is not None:
-            stamps.stamp_parked(layout.session_dir, task=parked[0], reason=parked[1])
+            stamps.stamp_parked(
+                layout.session_dir, task=parked[0], reason=parked[1], operator_task=parked[2]
+            )
 
         def _park(reason: str, detail: str, *, hint: str = "") -> int:
             # `reason` is the short cause listings show; `detail` is the sentence read now.
-            stamps.stamp_parked(layout.session_dir, task=task, reason=reason)
+            stamps.stamp_parked(
+                layout.session_dir, task=task, reason=reason, operator_task=operator_task
+            )
             reporter.err(
                 f"PARKED: {detail}. Your task is saved as run {effective_session_id!r}:\n"
                 f"    agent6 resume {effective_session_id}    (starts it)"
@@ -541,6 +550,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 tui_enabled=tui_enabled,
                 interactive=interactive,
                 task=task,
+                operator_task=operator_task,
                 gate=_gate,
                 chain_branch=run_branch,
                 base_sha=base_sha,

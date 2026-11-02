@@ -1,13 +1,14 @@
 [
   {
     "kind": "task",
-    "body": "Fix the bug",
+    "body": "# Fix the bug\n\nRestore the thing.",
     "name": "",
     "arg": "",
     "ok": null,
     "detail": "",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   },
   {
     "kind": "thinking",
@@ -17,7 +18,8 @@
     "ok": null,
     "detail": "",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   },
   {
     "kind": "text",
@@ -27,7 +29,8 @@
     "ok": null,
     "detail": "",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   },
   {
     "kind": "tool",
@@ -37,7 +40,8 @@
     "ok": true,
     "detail": "4773 bytes",
     "tail": "",
-    "call_id": "read_file"
+    "call_id": "read_file",
+    "args_full": "path=src/x.py"
   },
   {
     "kind": "tool",
@@ -47,7 +51,8 @@
     "ok": false,
     "detail": "exit=2",
     "tail": "ls: /nope: No such file",
-    "call_id": "run_command"
+    "call_id": "run_command",
+    "args_full": "argv=['ls', '/nope']"
   },
   {
     "kind": "tool",
@@ -57,7 +62,8 @@
     "ok": true,
     "detail": "applied=1",
     "tail": "",
-    "call_id": "apply_patch"
+    "call_id": "apply_patch",
+    "args_full": "path=src/x.py"
   },
   {
     "kind": "commit",
@@ -67,7 +73,8 @@
     "ok": null,
     "detail": "29251c4be62e · 3 lines",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   },
   {
     "kind": "operator",
@@ -77,7 +84,8 @@
     "ok": null,
     "detail": "",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   },
   {
     "kind": "marker",
@@ -87,7 +95,8 @@
     "ok": null,
     "detail": "",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   },
   {
     "kind": "marker",
@@ -97,7 +106,8 @@
     "ok": null,
     "detail": "",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   },
   {
     "kind": "done",
@@ -107,6 +117,7 @@
     "ok": true,
     "detail": "2s · 0 tools · 0 commits",
     "tail": "",
-    "call_id": ""
+    "call_id": "",
+    "args_full": ""
   }
 ]

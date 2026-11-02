@@ -54,12 +54,11 @@ class TaskLabel:
             task: The manifest's task text.
 
         Returns:
-            This label when it holds a task, else a label holding `task` in the journal's
-            display form.
+            This label when it holds a task, else a label holding the manifest's task.
         """
-        return self if self.task else TaskLabel(task_text.task_display_text(task))
+        return self if self.task else TaskLabel(task_text.operator_task_text(task))
 
-    def line(self, max_chars: int | None = None) -> str:
+    def line(self, max_chars: int | None = 200) -> str:
         """Return each task clipped once at the caller's width.
 
         Args:
@@ -75,7 +74,7 @@ class TaskLabel:
         return line
 
 
-def task_snippet(text: str, max_chars: int | None = None) -> str:
+def task_snippet(text: str, max_chars: int | None = 200) -> str:
     """Return a task's one-line summary for a listing.
 
     Args:

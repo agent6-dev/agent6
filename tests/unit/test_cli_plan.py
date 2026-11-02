@@ -77,9 +77,8 @@ def test_from_plan_title_strips_the_prefix_before_marking_a_cut(length: int) -> 
     title = "x" * length
     plan = f"# Plan: {title}\n\n1. implement"
     task = entry._from_plan_task(plan, "plan-id")
-    assert task.splitlines()[0] == (
-        "Execute the prepared plan: " + session_status.task_snippet(title, max_chars=80)
-    )
+    assert task.splitlines()[0] == "Execute the prepared plan: " + title
+    assert entry._plan_title(plan) == session_status.task_snippet(title, max_chars=80)
     assert plan in task
 
 

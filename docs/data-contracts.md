@@ -230,6 +230,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 | `policy` | `PolicyStamp` | `PolicyStamp()` |
 | `budget` | `BudgetStamp` | `BudgetStamp()` |
 | `parked_task` | `str` | `''` |
+| `parked_operator_task` | `str | None` | `None` |
 | `parked_reason` | `str` | `''` |
 | `source_session_id` | `str | None` | `None` |
 | `parent_session_id` | `str | None` | `None` |

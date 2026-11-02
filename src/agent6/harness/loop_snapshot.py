@@ -181,10 +181,8 @@ class SessionSnapshot(pydantic.BaseModel):
         tool_calls: The tool calls made so far.
         next_turn: The turn the snapshot's provider call runs.
         root_task_id: The task graph's root, when the run has one.
-        original_task: The exact task text the run launched with; the manifest holds a
-            truncated display twin.
-        operator_task: The operator's words as given, which a plan's `## Original task` holds;
-            `original_task` is the revised text when `revise_prompt` is on.
+        original_task: The composed task, revised when prompt revision is enabled.
+        operator_task: The words before composition or revision; absent in old snapshots.
         base_sha: The base the run's work starts from, which `baseline_ok` describes; a resume
             whose work landed moves it.
         verify_command: The gate the run resolved, () when gateless; a resume reuses it rather

@@ -320,7 +320,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         keep_questions=[request.id for request in carried.pending],
         keep_steer=scan.end_reason == "setup_command_failed",
     )
-    if steer.strip() and not ipc.submit_steer(layout.session_dir, steer.strip()):
+    if steer.strip() and not ipc.submit_steer(layout.session_dir, steer):
         reporter.error("could not write the initial steer request")
         lock.release_single_writer(worker_lock_fd)
         return 2
@@ -359,6 +359,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             return run.run_task(
                 cfg,
                 saved_task,
+                operator_task=manifest.parked_operator_task,
                 frontend=frontend,
                 started_at=started_at,
                 session_id=session_id,
@@ -781,7 +782,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 prompts=prompts,
                 # The follow-up this execution answered, not the original task.
                 ask_transcript_task=steer.strip() or manifest.user_task,
-                resume_steer=steer.strip(),
+                resume_steer=steer,
                 budget_overrides=budget_overrides,
                 sandbox_overrides=sandbox_overrides,
                 resuming=True,

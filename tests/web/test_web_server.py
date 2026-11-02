@@ -202,7 +202,7 @@ def test_hub_lists_runs(server: tuple[web_server.WebServer, int], tmp_path: path
     assert ids == {"run-a", "run-b"}
     by_id = {r["session_id"]: r for r in hub["sessions"]}
     assert by_id["run-b"]["status"] == "passed"
-    assert by_id["run-b"]["task_clipped"] == "task b"
+    assert by_id["run-b"]["task"] == "task b"
 
 
 def test_hub_orders_the_review_queue_and_remembers_activity(
@@ -861,7 +861,7 @@ def test_draft_snapshot_folds_the_draft_log(
     )
     status, body, _ = _get(port, "/api/draft/brave-otter")
     assert status == 200
-    assert json.loads(body)["user_task"] == "author a fixer machine"
+    assert json.loads(body)["task"] == "author a fixer machine"
     # traversal rejected
     assert _get(port, "/api/draft/..")[0] == 404
 
@@ -983,7 +983,7 @@ def test_sse_run_streams_snapshot(
         assert resp.status == 200
         assert "text/event-stream" in resp.getheader("Content-Type", "")
         snap = _read_until(resp, lambda s: s.get("finished") is True)
-        assert snap["user_task"] == "streamed"
+        assert snap["task"] == "streamed"
     finally:
         conn.close()
 
@@ -1075,7 +1075,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
                 + "\n"
             )
         snap = _read_until(resp, lambda s: s.get("finished") is False)
-        assert snap["user_task"] == "execution one"
+        assert snap["task"] == "execution one"
         # The frame carries a server-computed idle age, so the browser needs no clock agreement.
         age = snap["last_event_age_s"]
         assert isinstance(age, (int, float)) and 0 <= age < 60

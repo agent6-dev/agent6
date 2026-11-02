@@ -43,7 +43,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: pathlib.Path) -> None:
     )
     (s,) = model.hub_payload(tmp_path)["sessions"]
     assert s["mode"] == "run"
-    assert s["task_clipped"] == "the task"
+    assert s["task"] == "the task"
     assert s["status"] == "passed"
     assert s["cost_usd"] == 0.0123
     assert s["usd_partial"] is False
@@ -139,7 +139,29 @@ def test_run_summary_survives_torn_utf8_tail(tmp_path: pathlib.Path) -> None:
     head = json.dumps({"type": "session.start", "mode": "run", "user_task": "torn tail"}).encode()
     (d / "logs.jsonl").write_bytes(head + b"\n" + full[:cut])
     (s,) = model.hub_payload(tmp_path)["sessions"]
-    assert s["task_clipped"] == "torn tail"
+    assert s["task"] == "torn tail"
+
+
+def test_every_tool_item_has_complete_expanded_arguments() -> None:
+    """Short results, pending calls and no-argument tools all have an expanded form."""
+    words = "script " * 900 + "LAST SCRIPT BYTE"
+    for name, args in (
+        ("run_command", {"argv": ["python", "-c", words], "background": True}),
+        ("apply_edit", {"path": "a.py", "edits": [{"new_string": words}]}),
+        ("run_verify_command", {}),
+    ):
+        for settled in (False, True):
+            events: list[dict[str, object]] = [{"type": "tool.call", "name": name, "args": args}]
+            if settled:
+                events.append({"type": "tool.result", "name": name, "ok": True, "summary": "ok"})
+            (item,) = model.conversation_items(events)
+            assert item["kind"] == "tool"
+            full = "\n".join("".join(text for text, _ in line) for line in item["full"])
+            assert "arguments:" in full
+            if args:
+                assert words in full
+            else:
+                assert "(none)" in full
 
 
 def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> None:
@@ -185,7 +207,7 @@ def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None
 
 
 def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: pathlib.Path) -> None:
-    """The wire's `user_task` is filled from the manifest when the fold has no session.start.
+    """The wire's `task` is filled from the manifest when the fold has no session.start.
 
     One task field; the client coalesces nothing.
     """
@@ -196,7 +218,7 @@ def test_run_snapshot_resolves_the_task_from_the_manifest(tmp_path: pathlib.Path
         encoding="utf-8",
     )
     snap = session_snapshot(d)
-    assert snap["user_task"] == "queued work"
+    assert snap["task"] == "queued work"
     assert "fallback_task" not in snap
 
 
@@ -212,7 +234,7 @@ def test_run_snapshot_carries_the_one_line_task_the_listings_show(tmp_path: path
         json.dumps({"mode": "run", "user_task": task}), encoding="utf-8"
     )
     snap = session_snapshot(d)
-    assert snap["user_task"] == "# Fix the parser\n\nbody"
+    assert snap["task"] == "# Fix the parser\n\nbody"
     assert snap["task_line"] == "Fix the parser"
 
 
@@ -394,7 +416,7 @@ def test_hub_payload_lists_machine_drafts(tmp_path: pathlib.Path) -> None:
     hub = model.hub_payload(tmp_path)
     (s,) = hub["drafts"]
     assert s["session_id"] == "breezy-fern-AB12CD"
-    assert s["task_clipped"] == "author a triage machine"
+    assert s["task"] == "author a triage machine"
 
 
 def test_hub_and_lookup_skip_husk_run_dirs(tmp_path: pathlib.Path) -> None:
@@ -864,7 +886,7 @@ def test_the_hub_row_and_the_cli_json_row_are_one_shape(
     from agent6.ui.cli import sessions_cmds  # pyright: ignore[reportPrivateUsage]
 
     monkeypatch.chdir(tmp_path)
-    task = "a task whose full text must survive both JSON surfaces " + "x" * 100
+    task = "a task whose full text must survive both JSON surfaces\n" + "x" * 5000
     _run(
         tmp_path,
         "r1",
@@ -890,7 +912,7 @@ def test_the_hub_row_carries_the_one_line_task_the_cli_table_shows(
     _run(tmp_path, "r2", [{"type": "session.start", "mode": "run", "user_task": task}])
 
     (row,) = model.hub_payload(tmp_path)["sessions"]
-    assert row["task_clipped"] == task
+    assert row["task"] == task
     assert row["task_line"] == session_status.task_snippet(task) == "Fix the parser"
 
 
@@ -978,7 +1000,8 @@ reason = "routed"
         )
     )
     snap = machine_snapshot(tmp_path)
-    assert snap["spend"] == {"usd": 0.0, "usd_partial": False} or snap["spend"]["usd"] == 0.0
+    assert snap["spend"]["cost_usd"] == 0.0
+    assert "usd" not in snap["spend"]
 
     start = page.CLIENT_JS.index("const sp = m.spend || {};")
     line = page.CLIENT_JS[
@@ -1032,5 +1055,5 @@ def test_hub_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
         json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
-    assert row["task_clipped"] == "original task"
+    assert row["task"] == "original task"
     assert row["task_line"] == "original task\ncontinued: do more"

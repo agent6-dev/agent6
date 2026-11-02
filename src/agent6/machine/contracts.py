@@ -40,6 +40,7 @@ class AgentRequest(pydantic.BaseModel):
 
     Attributes:
         prompt: The rendered prompt.
+        operator_task: The authoring task before composition; None uses the state's prompt.
         timeout_s: The wall-clock cap.
         effort: The reasoning effort the `machine create` authoring agent runs at, or None; a
             state sets its own in its `config` table.
@@ -57,6 +58,7 @@ class AgentRequest(pydantic.BaseModel):
 
     prompt: str
     timeout_s: float
+    operator_task: str | None = None
     effort: str | None = None
     max_usd: float | None = None
     remaining_usd: float | None = None

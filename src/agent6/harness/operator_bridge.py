@@ -183,7 +183,7 @@ class Steering:
         ):
             return None
         self.log(f"  injecting steering instruction ({len(steer_text)} chars)")
-        self.emit("loop.steer.injected", chars=len(steer_text), text=steer_text)
+        self.emit("loop.steer.injected", chars=len(text), text=text)
         asked = loop_conversation.last_assistant_prose(conversation)
         if question := nudges.ending_question(asked):
             self.record_decision(state, question, steer_text)

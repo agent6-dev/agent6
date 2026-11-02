@@ -68,6 +68,7 @@ class ExecutionInputs:
         tui_enabled: Whether the TUI owns the terminal.
         interactive: Whether an operator is at the terminal.
         task: The task a fresh execution runs; None resumes the snapshot.
+        operator_task: The words before composition; None means `task` is uncomposed.
         gate: The gate step: a fresh execution infers one, a resumed one reuses the snapshot's;
             both drop an unrunnable gate and pin the result. Runs once the budget exists.
         chain_branch: The chain the execution's commits advance.
@@ -106,6 +107,7 @@ class ExecutionInputs:
     undo_forker: Callable[[], tuple[str, str] | None]
     prompts: operator_prompts.OperatorPrompts
     ask_transcript_task: str | None
+    operator_task: str | None = None
     budget_overrides: session_setup.BudgetOverrides | None = None
     sandbox_overrides: session_setup.SandboxOverrides | None = None
     standing_goal: str = ""
@@ -575,9 +577,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     elif inputs.task is None:
                         result = wf.resume(steer=inputs.resume_steer)
                     elif mode == "ask" and inputs.interactive:
-                        result = frontend.run_ask_repl(wf, budget, layout, inputs.task)
+                        result = frontend.run_ask_repl(
+                            wf, budget, layout, inputs.task, inputs.operator_task
+                        )
                     else:
-                        result = wf.run(inputs.task)
+                        result = wf.run(inputs.task, operator_task=inputs.operator_task)
                     # Settled now, not at teardown: a viewer left open reads `/shells` meanwhile.
                     dispatcher.settle_background()
                 except (KeyboardInterrupt, Exception) as exc:

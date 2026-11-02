@@ -293,7 +293,7 @@ def test_plan_tree_maximizes_to_full_width(tmp_path: pathlib.Path) -> None:
 def test_tool_row_enter_opens_detail_with_full_args(tmp_path: pathlib.Path) -> None:
     """Enter on a tool-calls row opens a read-only detail modal carrying the full arg value."""
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
-    long_val = "abc/" * 100  # 400 chars, well past the 80-char preview + 90-char column
+    long_val = "abc/" * 1500 + "LAST ARGUMENT BYTE"
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(tmp_path)

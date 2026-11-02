@@ -50,7 +50,7 @@ _REQUEST_BYTES = (
     '"events_log":"/state/machines/m/i/states/0002-review/logs.jsonl",'
     '"protect_paths":["/work/repo/m.asm.toml"],"shared_writes":["/srv/outbox"],'
     '"commit_identity":{"name":"Machine Bot","email":"bot@example.com","trailer":null},'
-    '"request":{"prompt":"review the queue","timeout_s":600.0,'
+    '"request":{"prompt":"review the queue","timeout_s":600.0,"operator_task":null,'
     '"effort":"low","max_usd":1.5,"remaining_usd":0.75,"max_plan_points":null,"mode":"run",'
     '"state_name":"review","step_seq":2,"output_schema":"verdict",'
     '"schemas":{"verdict":{"ok":{"type":"bool","optional":false,"enum":null},'
@@ -115,7 +115,7 @@ def test_defaulted_request_omits_nothing() -> None:
     assert minimal.model_dump_json() == (
         '{"cwd":"/w","root":"/w","overlay":{},"isolation":"none","transcript_dir":"/t",'
         '"events_log":null,"protect_paths":[],"shared_writes":[],"commit_identity":null,'
-        '"request":{"prompt":"p","timeout_s":1.0,'
+        '"request":{"prompt":"p","timeout_s":1.0,"operator_task":null,'
         '"effort":null,"max_usd":null,"remaining_usd":null,"max_plan_points":null,"mode":"agent","state_name":"",'
         '"step_seq":0,'
         '"output_schema":null,"schemas":{}}}'

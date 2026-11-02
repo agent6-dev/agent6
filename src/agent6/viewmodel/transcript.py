@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from agent6 import budget, evidence, kinds, terminal
 from agent6.viewmodel import events as viewmodel_events
-from agent6.viewmodel import format, review, session_status, transcript_text
+from agent6.viewmodel import format, log_line, review, session_status, transcript_text
 
 # Text characters, not graphics, so every terminal font renders them.
 CALL = "→"
@@ -75,7 +75,7 @@ def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
         field = _OPERATOR_TEXT.get(str(event.get("type", "")))
         if field is None:
             continue
-        text = str(event.get(field, "")).strip()
+        text = str(event.get(field, ""))
         if text and (not out or out[-1] != text):
             out.append(text)
     return out
@@ -91,6 +91,7 @@ class TranscriptItem:
         name: The tool's name; the status label for `done`.
         arg: The tool's salient argument (a path, a pattern, a command); the end reason
             for `done`, which says whose sentence the body is.
+        args_full: Every tool argument without abbreviation, for the expanded item.
         ok: The tool or run outcome; None while in flight or when not applicable.
         detail: The tool result's summary, the verify badge or the commit and done
             metadata; for a call in flight, why it waits ("awaiting approval").
@@ -107,6 +108,7 @@ class TranscriptItem:
     detail: str = ""
     tail: str = ""
     call_id: str = ""
+    args_full: str = ""
 
 
 def _pending_key(event: dict[str, Any], name: str) -> int | str:
@@ -325,14 +327,14 @@ class TranscriptFold:
         if aside is not None:
             kind, field = aside
             out = self._flush_message()
-            body = str(event.get(field, "")).strip()
+            body = str(event.get(field, ""))
             if body:
                 out.append(TranscriptItem(kind, body=body))
             return out
         if etype in viewmodel_events.SESSION_START_EVENTS:
             out = self.settle_open_calls("the run ended")
             if etype == "session.start":
-                task = session_status.task_snippet(str(event.get("user_task", "")), max_chars=200)
+                task = str(event.get("user_task", ""))
                 if task:
                     out.append(TranscriptItem("task", body=task))
             return out
@@ -415,7 +417,11 @@ class TranscriptFold:
             first, _preview = self._pending.pop(key)
             out.append(dataclasses.replace(first, ok=False, detail="no result (superseded)"))
         pending = TranscriptItem(
-            "tool", name=name, arg=transcript_text.salient_arg(args), call_id=str(key)
+            "tool",
+            name=name,
+            arg=transcript_text.salient_arg(args),
+            call_id=str(key),
+            args_full=terminal.scrub_terminal_controls(log_line.render_args(args, max_value=None)),
         )
         self._pending[key] = (pending, transcript_text.call_preview(name, args))
         self._verify = None

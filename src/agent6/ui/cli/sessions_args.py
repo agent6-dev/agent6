@@ -49,7 +49,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         dest="list_json",
         action="store_true",
         help=(
-            "Print a JSON array. Each row has session_id, mode, task_clipped, continued_task,"
+            "Print a JSON array. Each row has session_id, mode, task (full text), continued_task,"
             " task_line, status, reason,"
             " end_reason, label, level, mtime, when, cost_usd, usd_partial, plan_consumed,"
             " plan_cap, cost, model, model_from_flag, id_cell, unmerged, verify_ok, winner, lane,"
@@ -87,7 +87,10 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     sessions_show.add_argument(
         "--json",
         action="store_true",
-        help="Print the status as one JSON object for scripts and monitoring.",
+        help=(
+            "Print one JSON object with task (full text), continued_task, task_line (headline),"
+            " cost_usd and the session's status and progress."
+        ),
     )
 
     sessions_diff = common._sub(

@@ -228,7 +228,7 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             tc = state_types.ToolCallView(
                 name=name,
                 args_preview=log_line.render_args(raw_args),
-                args_full=log_line.render_args(raw_args, max_value=4000),
+                args_full=log_line.render_args(raw_args, max_value=None),
                 ok=None,
                 task_id=state.cursor_task_id,
                 call_id=cid,

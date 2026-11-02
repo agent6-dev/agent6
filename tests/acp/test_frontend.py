@@ -240,7 +240,7 @@ def test_the_ask_repl_is_refused_rather_than_faked() -> None:
     """Two prompt loops reading the same stdin is not something to paper over."""
     front, _asked = _frontend()
     with pytest.raises(RuntimeError, match="the editor prompts"):
-        front.run_ask_repl(None, None, None, "q")  # pyright: ignore[reportArgumentType]
+        front.run_ask_repl(None, None, None, "q", None)  # pyright: ignore[reportArgumentType]
 
 
 def test_steer_hooks_consume_a_seeded_resume_steer(tmp_path: pathlib.Path) -> None:

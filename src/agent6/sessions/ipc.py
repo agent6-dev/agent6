@@ -149,7 +149,7 @@ def drain_requests(session_dir: pathlib.Path) -> list[OperatorRequest]:
         with contextlib.suppress(OSError):
             path.unlink()
         if text.strip():
-            out.append(OperatorRequest(cast("RequestKind", path.suffix[1:]), text.strip()))
+            out.append(OperatorRequest(cast("RequestKind", path.suffix[1:]), text))
     return out
 
 

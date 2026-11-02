@@ -282,7 +282,7 @@ def conversation_items(
     """Fold events into rendered conversation items.
 
     Each item carries its `kind`, the collapsed `lines` as `[text, style]` spans from
-    the shared renderer, and `full` only when the expanded rendering differs.
+    the shared renderer, and `full` for every tool, task and steer or when expansion differs.
 
     Args:
         events: The session's events.
@@ -296,7 +296,7 @@ def conversation_items(
         collapsed = transcript_style.item_lines(item, detail="collapsed")
         expanded = transcript_style.item_lines(item, detail="expanded")
         entry: dict[str, Any] = {"kind": item.kind, "lines": collapsed}
-        if expanded != collapsed:
+        if item.kind in ("tool", "task", "operator") or expanded != collapsed:
             entry["full"] = expanded
         out.append(entry)
     return out

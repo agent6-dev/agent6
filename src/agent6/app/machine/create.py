@@ -284,6 +284,7 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         result = runner(
             AgentRequest(
                 prompt=prompt,
+                operator_task=task,
                 timeout_s=_CREATE_TIMEOUT_S,
                 mode="run",
                 effort="off",

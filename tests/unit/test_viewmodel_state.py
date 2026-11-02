@@ -25,6 +25,25 @@ from agent6.viewmodel import (
 from agent6.viewmodel import state as viewmodel_state
 
 
+def test_expanded_tool_args_are_uncapped_and_keep_nested_values() -> None:
+    """Detail arguments retain long values, every edit and every question option."""
+    words = "full argument " * 500 + "LAST ARGUMENT BYTE"
+    args = {
+        "path": "notes.txt",
+        "new_string": words,
+        "edits": [{"old_string": "old", "new_string": words, "kind": "replace"}],
+        "questions": [{"question": "First?", "options": ["yes", "no"]}, {"question": words}],
+    }
+    state = viewmodel_state.fold_session(
+        [{"type": "tool.call", "name": "apply_edit", "args": args}]
+    )
+    call = state.tool_calls[0]
+    assert words in call.args_full
+    assert "old_string" in call.args_full and "options" in call.args_full
+    assert "LAST ARGUMENT BYTE" not in call.args_preview
+    assert len(log_line.render_args({"new_string": words})) < 100
+
+
 def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
     """`session_state_as_dict` stamps `needs_new_work` from the fold's end facts.
 
@@ -564,7 +583,7 @@ def test_run_state_as_dict_is_json_serializable() -> None:
         ]
     )
     d = session_state_as_dict(state)
-    assert d["user_task"] == "t"
+    assert d["task"] == "t"
     assert d["tool_calls"][0]["name"] == "grep"  # tuple -> list, dataclass -> dict
     json.dumps(d)  # the wire form must serialize
 
@@ -583,7 +602,7 @@ def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: pathlib.Path) 
     )
     d = session_state_as_dict(viewmodel_state.fold_session([]), session_dir)
     assert d["session_id"] == "sunny-otter-K4Q7B2"
-    assert d["user_task"] == "queued work"
+    assert d["task"] == "queued work"
     assert d["live"] is False  # no worker: the dir word is not live
 
 
@@ -1145,7 +1164,7 @@ def test_the_snapshot_keeps_the_folded_original_task(tmp_path: pathlib.Path) -> 
         viewmodel_state.initial_state(), {"type": "session.start", "user_task": "the first task"}
     )
     d = session_state_as_dict(s, session_dir)
-    assert d["user_task"] == "the first task"
+    assert d["task"] == "the first task"
     assert d["task_line"] == "the first task"
 
 
@@ -1172,7 +1191,7 @@ def test_task_identity_survives_missing_or_invalid_manifest(
         ]
     )
     payload = session_state_as_dict(folded, tmp_path)
-    assert payload["user_task"] == payload["task_line"] == "original task"
+    assert payload["task"] == payload["task_line"] == "original task"
     assert payload["continued_task"] == ""
 
 

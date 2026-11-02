@@ -86,6 +86,33 @@ def test_conversation_opens_with_the_task_and_policy_line(tmp_path: pathlib.Path
     asyncio.run(scenario())
 
 
+def test_expanded_conversation_keeps_full_tasks_and_steers(tmp_path: pathlib.Path) -> None:
+    """The detail toggle reveals whole prompts rather than only their headlines."""
+    words = "Keep <file>literal</file>. " + "words " * 900 + "\nLAST PROMPT LINE"
+    steer = "Continue with " + "details " * 900 + "\nLAST STEER LINE"
+
+    async def scenario() -> None:
+        app = _hosted(
+            tmp_path / "run",
+            [
+                {"type": "session.start", "user_task": words},
+                {"type": "loop.steer.injected", "text": steer},
+            ],
+        )
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, conversation.ConversationScreen)
+            assert "LAST PROMPT LINE" not in _body_text(app)
+            assert "LAST STEER LINE" not in _body_text(app)
+            screen.action_cycle_detail()
+            await pilot.pause()
+            body = _body_text(app).replace("\n  ", "\n")
+            assert words in body and steer in body
+
+    asyncio.run(scenario())
+
+
 def test_conversation_screen_cycles_detail_level(tmp_path: pathlib.Path) -> None:
     async def scenario() -> None:
         app = _hosted(tmp_path / "run", _EVENTS)

@@ -131,6 +131,7 @@ def bridge_spawner(
     spec: subrun.LaneSpec,
     task: str,
     *,
+    operator_task: str | None = None,
     pins: Sequence[str] = (),
     cfg: Config,
     explicit_leaves: frozenset[str],
@@ -150,6 +151,7 @@ def bridge_spawner(
         spec: The lane.
         task: The lane's task.
         pins: The coordinator's pins, passed out of band of the task.
+        operator_task: The words before composition; None means `task` is uncomposed.
         cfg: The origin's effective config.
         explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
@@ -214,6 +216,9 @@ def bridge_spawner(
         # Resolved in the origin, where the repo signals are; the lane stamps the same origin.
         "AGENT6_LANE_VERIFY_ORIGIN": verify_origin,
     }
+    operator_path = config_path.with_suffix(".task.txt")
+    operator_path.write_text(operator_task if operator_task is not None else task, encoding="utf-8")
+    markers["AGENT6_OPERATOR_TASK_FILE"] = str(operator_path)
     session_dir, err = runtime.spawn(
         argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
     )

@@ -179,8 +179,8 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
             console_view=console_cell[0],
             steer_cell=steer_cell,
         ),
-        run_ask_repl=lambda wf, budget, layout, first_question: ask.run_ask_repl(
-            wf, budget, layout, first_question=first_question
+        run_ask_repl=lambda wf, budget, layout, first_question, operator_task: ask.run_ask_repl(
+            wf, budget, layout, first_question=first_question, operator_task=operator_task
         ),
         save_ask_transcript=lambda layout, question, answer: ask.save_ask_transcript(
             layout, question=question, answer=answer
@@ -260,6 +260,7 @@ def _cmd_run(  # noqa: PLR0911
     task: str,
     *,
     session_id: str = "",
+    operator_task: str | None = None,
     interactive: bool = False,
     tui: bool = False,
     decompose: bool = False,
@@ -286,6 +287,7 @@ def _cmd_run(  # noqa: PLR0911
         config_paths: The `--config` files in command-line order, if any.
         task: The task as typed.
         session_id: A session id to use; "" allocates one.
+        operator_task: The words before composition; None means `task` is uncomposed.
         interactive: Stay attached for a conversation.
         tui: Open the dashboard.
         decompose: Plan first, overriding config.
@@ -305,6 +307,10 @@ def _cmd_run(  # noqa: PLR0911
     Returns:
         The exit code; 2 on a refusal.
     """
+    if source := os.environ.pop("AGENT6_OPERATOR_TASK_FILE", ""):
+        operator_task = pathlib.Path(source).read_text(encoding="utf-8")
+    elif operator_task is None:
+        operator_task = task
     # The git wall first, so a scratch dir does not clear every other wall before hitting it.
     if mode != "ask" and not preflight.require_git_repo(pathlib.Path.cwd()):
         return 2
@@ -352,6 +358,7 @@ def _cmd_run(  # noqa: PLR0911
             cfg,
             task,
             parallel_spec,
+            operator_task=operator_task,
             explicit_leaves=explicit_leaves,
             cwd=pathlib.Path.cwd(),
             max_usd=budget_overrides.max_usd if budget_overrides is not None else None,
@@ -364,6 +371,7 @@ def _cmd_run(  # noqa: PLR0911
         task,
         frontend=session_frontend(config_paths),
         started_at=time.time(),
+        operator_task=operator_task,
         session_id=session_id,
         source_session_id=source_session_id or None,
         interactive=interactive,

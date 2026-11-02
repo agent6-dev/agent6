@@ -28,7 +28,7 @@ from agent6.ui.cli import parser as cli_parser
 from agent6.viewmodel import session_status
 
 
-def _plan_title(plan_md: str) -> str:
+def _plan_title(plan_md: str, max_chars: int | None = 80) -> str:
     """Return the plan's first line, without its Plan prefix, with a mark when clipped."""
     title = "(untitled plan)"
     for raw in plan_md.splitlines():
@@ -38,12 +38,12 @@ def _plan_title(plan_md: str) -> str:
             break
     if title.lower().startswith("plan:"):
         title = title[len("plan:") :].strip() or title
-    return session_status.task_snippet(title, max_chars=80)
+    return session_status.task_snippet(title, max_chars=max_chars)
 
 
 def _from_plan_task(plan_md: str, session_id: str) -> str:
     """Return the task for `run --from <plan>`, the plan's title first so listings show it."""
-    title = _plan_title(plan_md)
+    title = _plan_title(plan_md, max_chars=None)
     return f'Execute the prepared plan: {title}\n\n<plan id="{session_id}">\n{plan_md}\n</plan>'
 
 
@@ -258,6 +258,7 @@ def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
         args.config,
         task,
         session_id=session_id,
+        operator_task=args.task or task.split("\n", 1)[0],
         interactive=args.interactive,
         tui=args.tui,
         decompose=args.decompose,
@@ -452,6 +453,7 @@ def _dispatch_ask(args: argparse.Namespace) -> int:
         args.config,
         question,
         mode="ask",
+        operator_task=args.task,
         interactive=repl,
         source_session_id=source_session_id,
         budget_overrides=session_setup.BudgetOverrides.from_args(args),

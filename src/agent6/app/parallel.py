@@ -19,7 +19,7 @@ import functools
 import pathlib
 from collections.abc import Sequence
 
-from agent6 import errors, kinds, task_text
+from agent6 import errors, kinds
 from agent6.app import compare as app_compare
 from agent6.app import (
     lane_watch,
@@ -58,6 +58,7 @@ def run_parallel(
     lane_away: ipc.AwayMode = "wait",
     pins: Sequence[str] = (),
     spec: str = "",
+    operator_task: str | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
     """Run the lanes to completion, import them, and print a ranked comparison.
@@ -81,6 +82,7 @@ def run_parallel(
         lane_away: Every lane's away-mode.
         pins: The pins every lane starts with.
         spec: The `--parallel` argument as typed, stamped on the manifest.
+        operator_task: The words before composition; None means `task` is uncomposed.
         reporter: Receives the notes and the report.
 
     Returns:
@@ -91,6 +93,7 @@ def run_parallel(
         KeyboardInterrupt: The operator interrupted past the await; the end is journaled
             first.
     """
+    operator_task = task if operator_task is None else operator_task
     if not lanes:
         reporter.error("no lanes to run")
         return 2
@@ -127,6 +130,7 @@ def run_parallel(
         layout,
         session_id=fanout_id,
         user_task=task,
+        operator_task=operator_task,
         base_sha=base_sha,
         base_branch=origin_status.branch,
         run_branch=None,
@@ -134,16 +138,17 @@ def run_parallel(
         fanout=sessions_manifest.FanoutStamp(lanes=len(lanes), spec=spec),
     )
     events = event_log.EventSink(layout.logs_path)
-    display_task = task_text.task_display_text(task)
     process.emit_session_start(
         events,
         layout.session_dir,
         "session.start",
         session_id=fanout_id,
-        user_task=display_task,
+        user_task=operator_task,
         mode="run",
     )
-    events.emit("loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[display_task])
+    events.emit(
+        "loop.parallel.dispatched", group=fanout_id, lanes=len(lanes), tasks=[operator_task]
+    )
     configured_gate = bool(cfg.harness.verify_command)
     if spawner is None:
         # A clone lacks the untracked signals verify inference reads in the origin.
@@ -175,6 +180,7 @@ def run_parallel(
             verify_origin=verify_origin,
             explicit_leaves=explicit_leaves,
             runtime=runtime,
+            operator_task=operator_task,
         )
     try:
         return _drive_fanout(

@@ -107,11 +107,13 @@ def session_state_as_dict(
 
     Returns:
         The state's fields with tuples as lists, plus the computed `context_pct`,
-        `needs_new_work`, `open_approval`, `status`, `status_label`, `task_line`,
+        `needs_new_work`, `open_approval`, `status`, `status_label`, the full `task`, `task_line`,
         `dead_state`, `operator_blocked`, the rendered budget text, approval parts and
         step labels, and `log_tail` as plain strings.
+        Spend is `budget.cost_usd`; journal event fields keep their stored names.
     """
     d = dataclasses.asdict(state)
+    d["budget"]["cost_usd"] = d["budget"].pop("usd_total")
     d["review"] = review.as_dict(state.review)
     d["context_pct"] = context_fill(state)
     d["needs_new_work"] = listing.needs_new_work(
@@ -178,7 +180,7 @@ def session_state_as_dict(
     )
     label = state.task_label.fallback(fallback_task)
     d.pop("task_label")
-    d["user_task"] = label.task
+    d["task"] = label.task
     d["continued_task"] = label.continued_task
     d["task_line"] = label.line()
     d["dead_state"] = format.dead_run_note(word, reason)[0]

@@ -148,9 +148,11 @@ def test_ask_repl_multi_turn_carries_context(
     class _FakeWf:
         def __init__(self) -> None:
             self.calls: list[str] = []
+            self.words: list[str] = []
 
-        def run(self, q: str) -> loop_snapshot.SessionResult:
+        def run(self, q: str, *, operator_task: str) -> loop_snapshot.SessionResult:
             self.calls.append(q)
+            self.words.append(operator_task)
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="silent_finish",
@@ -181,6 +183,7 @@ def test_ask_repl_multi_turn_carries_context(
     result = ask.run_ask_repl(wf, _FakeBudget(), layout, first_question="first question")  # type: ignore[arg-type]
 
     assert wf.calls[0] == "first question"  # turn 1 verbatim
+    assert wf.words == ["first question", "a follow-up"]
     # turn 2 carried the prior Q&A as context
     assert "a follow-up" in wf.calls[1]
     assert "answer-1" in wf.calls[1]

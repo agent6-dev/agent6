@@ -109,7 +109,7 @@ def test_runs_list_json_carries_the_row_facts(
     assert [r["session_id"] for r in rows] == ["fan-l2"]
     row = rows[0]
     assert row["winner"] is True
-    assert (row["mode"], row["status"], row["task_clipped"]) == ("run", "passed", "fan-l2")
+    assert (row["mode"], row["status"], row["task"]) == ("run", "passed", "fan-l2")
     assert row["end_reason"] == "finish_session"
     # The one listing row shape, shared with `/api/hub` (viewmodel.summary_row).
     assert set(row) == {
@@ -133,7 +133,7 @@ def test_runs_list_json_carries_the_row_facts(
         "mtime",
         "when",
         "winner",
-        "task_clipped",
+        "task",
         "task_line",
         "continued_task",
         "lanes",
@@ -611,7 +611,7 @@ def test_the_json_row_carries_the_journal_task(
     assert main(["sessions", "list", "--json"]) == 0
 
     (row,) = json.loads(capsys.readouterr().out)
-    assert row["task_clipped"] == task
+    assert row["task"] == task
 
 
 def _fan_out(runs: pathlib.Path) -> None:
@@ -778,5 +778,5 @@ def test_continued_run_keeps_its_label(
     ) == 0
     data = json.loads(capsys.readouterr().out)
     payload = data if show else data[0]
-    assert payload["task_clipped"] == "original-task"
+    assert payload["task"] == "original-task"
     assert payload["task_line"] == "original-task\ncontinued: do more"

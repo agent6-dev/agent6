@@ -306,6 +306,7 @@ def run_ask_repl(
     layout: sessions_layout.SessionLayout,
     *,
     first_question: str,
+    operator_task: str | None = None,
 ) -> loop_snapshot.SessionResult:
     """Run a multi-turn ask, each follow-up re-entering the loop with the prior Q&A as context.
 
@@ -313,7 +314,8 @@ def run_ask_repl(
         wf: The harness, with its provider, jail and budget set up once.
         budget: The budget tracker.
         layout: The ask's layout.
-        first_question: The question the command line carried.
+        first_question: The composed question the command line carried.
+        operator_task: The first question before composition, when available.
 
     Returns:
         The last turn's result.
@@ -327,12 +329,14 @@ def run_ask_repl(
     result: loop_snapshot.SessionResult | None = None
     while True:
         if pending:
+            words = operator_task if operator_task is not None else pending
             question = pending
             pending = ""
         else:
             try:
                 with steer_tty.idle_prompt_sigint():
-                    question = input("\nask> ").strip()
+                    question = input("\nask> ")
+                    words = question
             except (EOFError, KeyboardInterrupt):
                 print(file=sys.stderr)
                 break
@@ -354,7 +358,7 @@ def run_ask_repl(
             )
         else:
             augmented = question
-        result = wf.run(augmented)
+        result = wf.run(augmented, operator_task=words)
         print(result.summary, flush=True)
         conversation.append((question, result.summary))
         save_ask_repl_transcript(layout, conversation)

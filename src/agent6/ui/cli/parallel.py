@@ -121,6 +121,7 @@ def dispatch_parallel(
     max_usd: float | None = None,
     auto_approve: bool = False,
     pins: Sequence[str] = (),
+    operator_task: str | None = None,
 ) -> int:
     """Preflight and route `agent6 run --parallel`.
 
@@ -130,6 +131,7 @@ def dispatch_parallel(
     Args:
         cfg: The effective config.
         task: The task text.
+        operator_task: The words before composition; None means `task` is uncomposed.
         spec: The `--parallel` lane spec.
         explicit_leaves: The dotted leaves the origin's config layers set.
         cwd: The origin repo.
@@ -193,6 +195,7 @@ def dispatch_parallel(
         return parallel.run_parallel(
             task,
             lanes,
+            operator_task=operator_task,
             cfg=cfg,
             explicit_leaves=explicit_leaves,
             origin=origin,

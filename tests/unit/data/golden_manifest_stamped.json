@@ -37,6 +37,7 @@
     "max_plan_points": null
   },
   "parked_task": "",
+  "parked_operator_task": null,
   "parked_reason": "",
   "source_session_id": null,
   "parent_session_id": "r-parent",
