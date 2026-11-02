@@ -125,8 +125,8 @@ jobs:
           /tmp/pw/bin/python docs/screenshots/make_cover.py
 
       - name: Regenerate the architecture and format references
-        # Built from the current source (tach module graph + AST callgraph), so
-        # the published page matches the commit being deployed.
+        # Built from the current source (the tach module graph, the AST callgraph and
+        # the serializers' docstrings), so the published pages match the deployed commit.
         run: |
           uv run python docs/gen_diagrams.py
           uv run python docs/gen_formats.py
