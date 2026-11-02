@@ -121,8 +121,7 @@ class HarnessStamp(pydantic.BaseModel):
 
 
 class BudgetStamp(pydantic.BaseModel):
-    """The caps `--max-usd`, `--max-tokens-fallback` and `--max-plan-points` set; a resume
-    without the flag runs under the recorded cap again.
+    """The caps the budget flags set; a resume without the flag runs under the recorded cap.
 
     A cap set in config is not recorded: a resume reads it from config.
 

@@ -2707,7 +2707,7 @@ Source: [`agent6.sessions.manifest.PolicyStamp`](https://github.com/agent6-dev/a
 
 ### BudgetStamp
 
-**Support: public.** The caps `--max-usd`, `--max-tokens-fallback` and `--max-plan-points` set; a resume without the flag runs under the recorded cap again.
+**Support: public.** The caps the budget flags set; a resume without the flag runs under the recorded cap.
 
 Source: [`agent6.sessions.manifest.BudgetStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 
