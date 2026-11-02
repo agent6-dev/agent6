@@ -426,5 +426,5 @@ def test_a_url_server_adds_no_partial_grant_region(tmp_path: pathlib.Path) -> No
     cfg = Config.model_validate(
         {"mcp": {"enabled": True, "servers": {"remote": {"url": "http://127.0.0.1:9/mcp"}}}}
     )
-    regions = confine._partial_grant_regions(cfg, tmp_path)
+    regions = confine._grant_regions(cfg, tmp_path, "partial")
     assert not [source for _, source in regions if "mcp.servers.remote" in source]
