@@ -38,7 +38,7 @@ agent6 web: secret: amber-acorn-agile-alder-alert-arrow (type it once per browse
 - On another device, open the server's address and type the six words into the sign-in form.
   Capitals, spaces and hyphens between the words do not matter, so `Amber acorn agile alder alert arrow` from a phone keyboard signs in.
 - A browser signs in once and stays signed in.
-  It keeps a keyed digest of the secret, never the secret, in storage scoped to this server's address and port, so a page another local server serves (a preview a run forwards, say) never receives it, as it would a cookie.
+  It keeps a keyed digest of the secret, never the secret, in storage scoped to this server's address and port.
 - Each launch mints a new secret, and every browser signs in again.
 
 Set your own secret, at least 12 characters after lowercasing and joining words with single hyphens, to keep browsers signed in across restarts:
@@ -51,22 +51,21 @@ agent6 web --secret 'a phrase of your own'        # the flag wins over the varia
 
 - With your own secret the printed URL carries no secret, and the terminal names where it was set, never its value.
 - A `--secret` value shows in the process list (`ps`); `AGENT6_WEB_SECRET` keeps it out.
-- A secret under 12 characters after that normalization refuses to start.
 - Anyone who can read the terminal, or your environment, has the secret.
 
 ## Pages
 
-Every page docks its text entry at the bottom, like a chat: Enter sends, Shift+Enter inserts a newline.
-Buttons do what the CLI command of the same name does, and prompts are answered inline on every page that shows a run.
+Every page with a composer docks it at the bottom, like a chat: Enter sends, Shift+Enter inserts a newline.
+Buttons do what the matching CLI command does, and prompts are answered inline on every page that shows a run.
 A question the model queued, or an ended run's, keeps its box: the answer reaches the run at its next turn, or at its resume.
 
 - **Sessions page**: every session (mode, status, last activity, cost), a fan-out's lanes folded under its row, in [review queue](usage.md#the-review-queue) order under group headings with each row's reason; **Activity** orders by last activity instead, a choice the browser remembers
     - the composer starts a run, plan or ask under a chosen preset and model (the model box shows what the config resolves; a pick overrides it)
     - `more…` holds **Prune merged runs** (`sessions prune`, or with `--delete-squashed` after a confirm) and **Clear saved asks**
-- **Machines page**: instances, `machine create` drafts, and cards that run an authored machine file; the composer creates a new one
+- **Machines page**: instances, `machine create` drafts, and buttons that run an authored machine file; the composer creates a new one
 - **Session view** (live over SSE): the conversation, the same folded transcript the CLI and TUI render, with the turn in flight streaming underneath; a detail toggle cycles collapsed, expanded, hidden
     - a resizable drawer holds the run's context: overview, plan.md, run review, findings, task graph, budget, tool calls, background shells, latest commit diff, event log
-    - the Latest commit widget selects any per-step commit (cumulative toggle) and the other widgets follow it; a model-controlled run has no chain and says so
+    - the Latest commit widget selects any per-step commit (cumulative toggle) and the budget and task graph follow it; a run under `git.control = "model"` has no chain and says so
     - the composer steers a live run or resumes an ended one under the preset and model picked above it, and takes the [steer directives](usage.md#follow-and-steer-a-run); Ctrl+Enter sends a live steer as `/now`, Ctrl-R searches past messages
     - buttons: stop now or after the step, compact, fork (a new run at the latest checkpoint, started from its composer), merge, delete history, run a finished plan (`run --from`), and review (`sessions review`, minutes; refused while the run is live)
     - "Allow all" on a prompt appears only where it would grant more than the one call
@@ -85,7 +84,6 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
       **Unset** still drops only the selected leaf.
     - **Add reviewer…** appends to the ordered `review.reviewers` list through a form for `focus`, `provider`, `model`, `effort` and `temperature`.
       Focus is required; set provider and model together or leave both blank.
-      Save to global config by default, or choose repo config.
     - The `review.reviewers` edit overlay lists reviewers by position and focus, with a **Remove** button for each.
       Removal confirms the position and saves the remaining roster to its source layer (global or repo).
       Removing the last reviewer writes `[]`, so a lower layer's roster stays hidden.
@@ -95,7 +93,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - **Refs ▾** filters the walk: tick a whole group (branches, remotes, tags, agent6 run refs) or single refs; the `refs/agent6/*` chain refs are off until ticked
     - a **Working tree · N uncommitted files** row tops the graph while the tree is dirty: tracked changes against HEAD, staged or not, plus untracked files `.gitignore` does not exclude; click it for the list, each file opening its diff like a commit's
     - the page reads the repository once per visit; **↻** re-reads the refs, the graph and the working-tree row, and nothing polls
-    - click a commit for its message, author, committer, parents and the files it changed from its first parent (a merge shows its diff from the first parent, a root commit its files against the empty tree), each file with its status (A, M, D, R `old → new`) and line counts, or `binary`
+    - click a commit for its message, author, committer, parents and the files it changed from its first parent (a root commit shows its files against the empty tree), each file with its status (A, M, D, R `old → new`) and line counts, or `binary`
     - **list | tree** above every file list: the tree groups the files under their folders, a folder row showing how many files it holds with their summed counts and folding them on a click; the choice is kept per browser
     - click a file and its unified diff fills the page: **‹ files** returns to the list, **‹** and **›** step through the files; a patch over 256 KiB is cut at that size and offers the whole patch on a click, a binary file says so
     - the diff header offers four modes, the choice kept per browser: **inline** (the unified patch), **split** (old and new side by side, a deletion beside the addition that replaces it, context on both sides; at phone width it shows inline and says so), **old** and **new** (the file at the base or the head, highlighted, with its deleted or added lines marked); every line carries its line numbers
@@ -103,12 +101,11 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - **Compare** takes two revisions, base and head, each from a picker that searches branch and tag names, commit shas and commit messages as you type (Enter keeps free text as the revision for the server to verify); the head picker offers **working tree** first; **⇄** swaps them
     - the compare lists the files that differ between the two, as `git diff base head` does, so a commit against its parent reads like that commit's own diff; a commit's **Set as base** and **Set as head** put it in the pickers
     - limits: 500 commits a page at most, 2000 files a list, 256 KiB a patch unless opened whole, 20 MiB an image, 30 refs and 30 commits a search; each list says when it was cut
-- **Files page**: the files at one revision, read-only; it reads the repository `agent6 web` was started in and writes nothing
+- **Files page**: the files at one revision; it reads the repository `agent6 web` was started in and writes nothing
     - the revision picker at the top is the compare pickers' search, with **working tree** as its first choice; HEAD to start (the working tree in a repository with no commits yet)
     - the files as a folder tree with a filter box: a folder row shows how many files it holds and their size and folds them on a click; a tree over 200 files starts folded; at a commit the committed files, in the working tree the tracked files plus untracked ones `.gitignore` does not exclude
     - working-tree badges use `H` for tracked, `A` for untracked and `M` for tracked files with uncommitted changes; a folder shows `M` if any child is modified, else `A` if any is untracked, else `H`, with the counts in its tooltip
     - commit revisions have no state badges
-    - changing the revision clears the selected file and drops late content and errors from that selection
     - click a file: text with line numbers and highlighting (cut at 1 MiB, the whole file on a click), an image as itself, a binary file as its size; a symlink or submodule entry says so
     - **blame** beside a text file's title adds each line's last commit, author and UTC date beside the gutter; click a commit to open it in Git, or toggle blame off to keep only the source
     - working-tree blame includes staged and unstaged content; lines without a commit read **not committed**
@@ -126,8 +123,7 @@ Start a machine on the Machines page and watch the current state stream, answeri
 The Findings card's **Receipt** button opens Testing, Review, Risk and How to revert from the [recorded session evidence](usage.md#session-receipts).
 Expand stdout or stderr to read a verification attempt's retained output.
 **Ask a run to revert** fills the Sessions page's new-work composer with a proposed task; it does not submit the task or run a git command.
-`GET /api/session/<id>/receipt` returns the same derived receipt as JSON under the server's existing authentication.
-Reading it makes no provider call and reruns no tests.
+`GET /api/session/<id>/receipt` returns the same derived receipt as JSON.
 
 ## Links
 
@@ -140,7 +136,7 @@ Reading it makes no provider call and reruns no tests.
 
 ## Highlighting
 
-Source text on the Git and Files pages is highlighted with the tree-sitter language pack agent6 ships (371 languages).
+Source text on the Git and Files pages is highlighted with the tree-sitter language pack agent6 ships (372 languages).
 A language's grammar downloads into `~/.cache/tree-sitter-language-pack/` the first time a file in it is shown, as the outline tools do; offline, a file in a language not yet cached shows as plain text.
 A plain text file, a file over 512 KiB, or one whose parse runs past a second shows uncoloured.
 
@@ -152,7 +148,7 @@ A plain text file, a file over 512 KiB, or one whose parse runs past a second sh
 ## Notifications and installing (PWA)
 
 The page installs as an app (phone home-screen icon or desktop window).
-**🔔 Notifications** on a machine view grants permission; `machine.notify` and a machine's end then pop OS notifications, except on a backgrounded phone.
+**🔔 Notifications** on a machine view grants permission; `machine.notify` and a machine's end then pop OS notifications on desktop.
 For a phone not open on the page, point [`[machine.notify].on_event`](config.md#machinenotify-optional) at a push service.
 
 ## The HTTP API
@@ -177,18 +173,18 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
 - `GET /metrics` answers Prometheus text when `web.metrics_route = "on"` and `telemetry.metrics = "prometheus"`, with the web secret as the bearer, not the sign-in token ([telemetry export](usage.md#telemetry-export))
-- reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,resume_defaults}`, `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>` , `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
+- reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,resume_defaults}`, `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>`, `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
 - git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name or resolved sha>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
     - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **↻** starts from live refs
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
     - `WORKTREE` names the working tree as the `head` of a compare or diff (an untracked file diffs against nothing); as a `base` or a commit it answers `422`
     - `/api/git/worktree` lists the uncommitted files against HEAD (`base`, `files`, `truncated`): tracked changes with git's letters and counts, then untracked files as `A` with their line count, `.gitignore` honoured
-    - `/api/git/tree?rev=` lists the files at a revision or in the working tree (`rev` resolved, `files` as `{path, size, kind, state}` with `kind` one of `file`, `symlink` and `submodule`, `truncated`), 20000 files at most; the working tree is the index plus the untracked files `.gitignore` keeps, a tracked file gone from disk left out; only mode `160000` entries are submodules, including unpopulated gitlinks; `state` is `tracked`, `untracked` or `modified` for `WORKTREE`, empty at a commit
+    - `/api/git/tree?rev=` lists the files at a revision or in the working tree (`rev` resolved, `files` as `{path, size, kind, state}` with `kind` one of `file`, `symlink` and `submodule`, `truncated`), 20000 files at most; the working tree is the index plus the untracked files `.gitignore` does not exclude, a tracked file gone from disk left out; only mode `160000` entries are submodules, including unpopulated gitlinks; `state` is `tracked`, `untracked` or `modified` for `WORKTREE`, empty at a commit
     - `/api/git/text?rev=&path=` returns a file's text at a revision or in the working tree (`rev` resolved, `path`, `digest`, `text`, `lines`, `binary`, `truncated`, `max_bytes`, `language`, `spans`): the text is cut at 1 MiB on a line boundary unless `whole=1`, a binary file has `text` empty and `binary` true, a file over 20 MiB answers `413`; `language` is the tree-sitter language pack's name for the path ("" when it has none) and `spans` its highlight spans per line as `[start, end, class]`, empty when the text is over 512 KiB, the grammar is not cached and cannot be fetched, or the parse ran past a second
-    - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
+    - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
     - `/api/git/blame?rev=&path=` returns `rev`, `path`, `digest`, `lines` as `{line, sha, author, date}`, `binary`, `truncated` and `max_bytes`; its caps and refusals match `/api/git/text`, including `whole=1`
-    - blame dates are UTC ISO 8601; working-tree blame uses checked file bytes against the index, with an empty `sha` and `date` and author `not committed` for uncommitted lines
-    - blob, text and blame share a working-tree reader that refuses ancestor and leaf symlinks, paths resolving outside the repository, and non-regular files; descriptor-relative nonblocking opens prevent a FIFO from blocking the request
+    - blame dates are UTC ISO 8601; working-tree blame uses checked file bytes against HEAD, with an empty `sha` and `date` and author `not committed` for uncommitted lines
+    - blob, text and blame share a working-tree reader that refuses ancestor and leaf symlinks, paths resolving outside the repository, and non-regular files
     - a revision or path starting with `-`, an unknown revision, a graph ref neither listed in `/api/git/refs` nor a verified full sha, or a path in neither tree answers `422`
 - writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/session/<id>/findings/<fid>/{fix,resolve,reopen}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
 - roster writes: `/api/config/reviewer` takes the five form fields as strings (only `focus` is required) and `repo` (default `false`); `/api/config/reviewer/remove` takes a zero-based integer `index` and `repo`
@@ -198,21 +194,23 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 Session snapshots and streams use the hub's status label, including the mode and the `unmerged` mark on ended runs.
 Idle session streams refresh disk-backed state (shell results, the merge mark) on each heartbeat and send a frame when it changed.
 Heartbeats run every 15 seconds, including after the run ends.
+
 A run or draft `/diff` without `sha` returns its latest journaled commit, or 422 with `no commit yet`.
 With `cumulative=1`, the patch covers the chain through that commit.
 
 ## Finding actions API
 
 `GET /api/session/<id>/findings` returns the shared review evidence and its `version`, with open finding rows.
+`?status=all` includes resolved rows.
+
 The run's **Findings** card shows open severity counts, status and severity filters, and resolution history.
 Fix submits stored evidence through the steer bridge; **Resume to fix** asks for confirmation before resuming a stopped session.
 Resolve and Reopen require a reason.
 The card shows the panel's worker-finish decision separately from the open-block merge rule.
 Merge is disabled for open block findings or unreadable evidence, and the server enforces the same rule on direct requests.
-`?status=all` includes resolved rows.
 
 `POST /api/session/<id>/findings/<finding-id>/{fix,resolve,reopen}` calls the same application path as the [CLI finding actions](usage.md#session-findings).
-Every body includes `request_id` and `expected_version` from the read response.
+Every body includes a `request_id` you choose and `expected_version` from the read response.
 
 - Fix takes `{"request_id":"fix-1","expected_version":3}`.
   `"resume":true` confirms **Resume to fix** for a stopped session.
@@ -222,11 +220,10 @@ Every body includes `request_id` and `expected_version` from the read response.
 - A completed action returns its `status`, `message`, `request_id`, `finding_id`, and resulting `version`.
   A queued live action returns 202; repeat its request ID to read the result without resending it.
 - Unknown records return 404, stale versions and conflicting actions return 409, and invalid action fields return 422.
-  Authentication and request body limits match the other session routes.
 
-These routes return JSON evidence, not HTML.
 `GET /api/git/findings?base=<revision>&head=<revision>` returns recorded findings and whether both displayed trees match each observation.
-Working-tree comparisons have no immutable match.
+Working-tree comparisons match no observation.
+
 `GET /api/reviews/<panel_id>` returns the recorded target and changed files.
 Its `/diff?path=<path>` and `/file?side=<base-or-head>&path=<path>` routes read those trees, not the checkout.
 The diff route accepts either path of a rename.
@@ -242,13 +239,13 @@ Compare links retain `panel`, `finding`, `path` and `side` query parameters acro
 
 The **Pre-existing line** badge opens the mapped lines in the recorded base file.
 The adjacent **Blame** links open their attribution commits.
-Its tooltip describes line evidence, not the age of the defect; the [severity and merge rules](usage.md#session-findings) stay the same.
+The badge's tooltip describes line evidence, not the age of the defect; the [severity and merge rules](usage.md#session-findings) stay the same.
 Finding routes include `line_origin` on each observation and the latest evidence on each finding.
 Finding text and operator reasons render as text, never HTML.
 
 ## Code-review rule sources
 
-The Findings panel and reviewed comparison show rule completeness, source paths, blob IDs and supplied byte counts.
+The Findings card and reviewed comparison show rule completeness, source paths, blob IDs and supplied byte counts.
 A source link opens the recorded base-tree file, not the current checkout.
 See [Code-review rules](usage.md#code-review-rules) for discovery and limits.
 
@@ -263,4 +260,4 @@ tailscale serve --bg 7658 # HTTPS + WireGuard, reachable on your tailnet
 ```
 
 - the tailnet decides who reaches the server and `tailscale serve` terminates HTTPS; each browser still [signs in](#sign-in) with the secret
-- a non-loopback bind sends the secret and the token over plain HTTP, where anyone on the network path can read them and then drive the agent, so it refuses without either opt-in: `[web].allow_non_loopback = true` or `--allow-non-loopback`, whether the host comes from [`[web].host`](config.md#web) or `--host`
+- a non-loopback bind sends the secret and the token over plain HTTP, where anyone on the network path can read them and then drive the agent, so it refuses without an opt-in: [`[web].allow_non_loopback = true`](config.md#web), or `--allow-non-loopback` for a host given with `--host`
