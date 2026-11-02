@@ -435,6 +435,7 @@ class VerifyGate:
         self.emit("loop.verify_harness", why="start", turn=0)
         try:
             result = self.dispatcher.run_verify()
+            state.stagnation.harness_gate_s += result.duration_s
         except tool_errors.ToolDeniedError as exc:
             self.dispatcher.verify_withheld = True
             return [loop_conversation.Notice(gate_withheld_notice("[harness verify] start", exc))]
@@ -497,6 +498,7 @@ class VerifyGate:
         try:
             scope = self.scope_paths(state.verify) if state.verify.scoped else ()
             result = self.dispatcher.run_verify(extra_argv=scope)
+            state.stagnation.harness_gate_s += result.duration_s
         except tool_errors.ToolDeniedError as exc:
             self.dispatcher.verify_withheld = True
             turn.tool_results.append(
@@ -562,6 +564,7 @@ class VerifyGate:
         self.emit("loop.verify_scoped", paths=list(scope), turn=turn.number)
         try:
             result = self.dispatcher.run_verify(extra_argv=scope)
+            state.stagnation.harness_gate_s += result.duration_s
         except tool_errors.ToolDeniedError as exc:
             self.dispatcher.verify_withheld = True
             turn.tool_results.append(

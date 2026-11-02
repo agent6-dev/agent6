@@ -314,11 +314,14 @@ class StagnationGuard:
         started_monotonic: The execution's start on the monotonic clock.
         wait_at_start: The operator time the dispatcher had counted when the window opened,
             the start gate's approval included; only the time waited since is the model's.
+        harness_gate_s: The seconds the harness's own gate runs took inside the window; its
+            time, not the model's.
         nudged: The one notice went out.
     """
 
     started_monotonic: float = dataclasses.field(default_factory=_now)
     wait_at_start: float = 0.0
+    harness_gate_s: float = 0.0
     nudged: bool = False
 
 
@@ -442,8 +445,9 @@ def stagnation(
 ) -> advice.Nudge | None:
     """Notice once when `stagnation_notice_after_s` passed with no edit and no verify.
 
-    Time blocked on the operator is not the model's, and a gateless run's
-    notice names no gate. The start gate's baseline is no verify of the run's own.
+    Time blocked on the operator, and time the harness's own gate runs take, is not the
+    model's; a gateless run's notice names no gate. The start gate's baseline is no verify of
+    the run's own.
 
     Args:
         turn: The turn whose tools ran.
@@ -463,7 +467,7 @@ def stagnation(
         and not (state.verify.ever_passed or state.verify.ever_failed)
     ):
         return None
-    elapsed = _now() - guard.started_monotonic
+    elapsed = _now() - guard.started_monotonic - guard.harness_gate_s
     if elapsed >= after:
         elapsed -= ctx.operator_wait_s() - guard.wait_at_start
     if elapsed < after:

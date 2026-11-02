@@ -8,6 +8,7 @@ the worker the result has not changed.
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 import pathlib
 import subprocess
@@ -711,6 +712,57 @@ def test_stagnation_ignores_the_start_gates_time(
     wf.run("investigate")
     assert gates[0] == 124
     assert _stagnation_blocks(_final_messages(provider)) == []
+
+
+def test_stagnation_ignores_the_finish_gates_time(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A finish gate that outlasted the knob fired the notice when its red result came back."""
+    clock = [0.0]
+    monkeypatch.setattr(guards, "time", types.SimpleNamespace(monotonic=lambda: clock[0]))
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    provider = mock.MagicMock()
+    provider.call.side_effect = itertools.repeat(
+        _resp_with_tool("finish_session", {"summary": "done"})
+    )
+    gates: list[int] = []
+
+    def run_verify(**_kw: object) -> results.ExecResult:
+        clock[0] += 1.0  # the gate alone outlasts the knob
+        gates.append(1)
+        return results.ExecResult(
+            returncode=1,
+            stdout="F.........\n1 failed, 9 passed in 12.3s\n",
+            stderr="",
+            duration_s=12.3,
+            exec_failed=False,
+        )
+
+    dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0, verify_withheld=False)
+    dispatcher.dispatch.return_value = results.RawResult({"content": "x"})
+    dispatcher.command_policy.return_value = "allow"
+    dispatcher.run_verify.side_effect = run_verify
+    wf = _build_wf(repo, provider, dispatcher)
+    # A base the gate can compare the clean tree with: its red is the base's, no verify of the
+    # run's own, so only the window's accounting keeps the notice quiet.
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    wf.chain = dataclasses.replace(wf.chain, base_sha=head)
+    wf.config.harness.verify_command = ("true",)
+    wf.config = _knobs(
+        wf.config,
+        verify_when="finish",
+        verify_at_start=False,
+        verify_retries=1,
+        stagnation_notice_after_s=0.9,
+    )
+    logged: list[str] = []
+    wf.logger = logged.append
+    result = wf.run("check the gate")
+    assert gates and result.reason == "gate_red_at_base"
+    assert not [line for line in logged if "stagnation:" in line], logged
 
 
 def test_stagnation_notice_suppressed_by_an_edit(tmp_path: pathlib.Path) -> None:
