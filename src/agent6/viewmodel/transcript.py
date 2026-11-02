@@ -76,7 +76,7 @@ def operator_inputs(events: Iterable[dict[str, Any]]) -> list[str]:
         if field is None:
             continue
         text = str(event.get(field, ""))
-        if text and (not out or out[-1] != text):
+        if text.strip() and (not out or out[-1] != text):
             out.append(text)
     return out
 
