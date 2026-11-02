@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-behaviour models.
 
-`[harness]` with its metric, `[review]`, `[context]`, `[prompt]` and `[budget]`.
+`[harness]` with its metric, `[review]`, `[compaction]`, `[prompt]` and `[budget]`.
 """
 
 from __future__ import annotations
@@ -355,8 +355,8 @@ class HarnessConfig(pydantic.BaseModel):
     )
 
 
-class ContextConfig(pydantic.BaseModel):
-    """`[context]` section: tiered context-compaction thresholds."""
+class CompactionConfig(pydantic.BaseModel):
+    """`[compaction]` section: tiered context-compaction thresholds."""
 
     model_config = validation.MODEL_CONFIG
 
@@ -367,8 +367,8 @@ class ContextConfig(pydantic.BaseModel):
         description=(
             "tier-1 threshold in accumulated tool-result characters (about 4 per token); above "
             "it: oldest results replaced by short, re-fetchable placeholders; unset: about 45% "
-            "of the model's context window; explicit thresholds: both `context.drop_at_chars` "
-            "and `context.summarise_at_chars` required"
+            "of the model's context window; explicit thresholds: both `compaction.drop_at_chars` "
+            "and `compaction.summarise_at_chars` required"
         ),
     )
     summarise_at_chars: int | None = pydantic.Field(
@@ -377,7 +377,7 @@ class ContextConfig(pydantic.BaseModel):
         description=(
             "tier-2 threshold in whole-context characters; above it: elided history summarized, "
             "conversation restarted on the summary, task DAG preserved; unset: model's window "
-            "minus a 16k-token reserve; required above `context.drop_at_chars`"
+            "minus a 16k-token reserve; required above `compaction.drop_at_chars`"
         ),
     )
     keep_recent_chars: int = pydantic.Field(
@@ -385,15 +385,16 @@ class ContextConfig(pydantic.BaseModel):
         default=80_000,
         description=(
             "characters of newest history kept verbatim after the summary on a tier-2 restart; "
-            "`context.keep_recent_chars = 0`: none"
+            "`compaction.keep_recent_chars = 0`: none"
         ),
     )
     keep_thinking_turns: int = pydantic.Field(
         default=-1,
         description=(
             "thinking retained at tier 1 for the newest N assistant turns with "
-            "`context.keep_thinking_turns = N` (`N >= 1`); `context.keep_thinking_turns = -1`: "
-            "all thinking; `context.keep_thinking_turns = 0`: invalid, newest signed thinking "
+            "`compaction.keep_thinking_turns = N` (`N >= 1`); "
+            "`compaction.keep_thinking_turns = -1`: "
+            "all thinking; `compaction.keep_thinking_turns = 0`: invalid, newest signed thinking "
             "block needed by an in-flight tool call; less replay for Anthropic's signed blocks "
             "and ChatGPT's reasoning items; no thinking re-sent on the OpenAI wire"
         ),
@@ -414,7 +415,7 @@ class ContextConfig(pydantic.BaseModel):
         description=(
             "large `read_file` results replaced at tier 1 by model-written gists before bare "
             "placeholders; gists also dropped under continued pressure to keep the byte bound; "
-            "`context.elision_gists = false`: bare placeholders directly"
+            "`compaction.elision_gists = false`: bare placeholders directly"
         ),
     )
 
@@ -437,7 +438,7 @@ class ContextConfig(pydantic.BaseModel):
         return v
 
     @pydantic.model_validator(mode="after")
-    def _check_compaction_thresholds(self) -> ContextConfig:
+    def _check_compaction_thresholds(self) -> CompactionConfig:
         """Refuse thresholds that are half set or do not escalate.
 
         Returns:
@@ -450,22 +451,22 @@ class ContextConfig(pydantic.BaseModel):
         drop, summarise = self.drop_at_chars, self.summarise_at_chars
         if (drop is None) != (summarise is None):
             raise ValueError(
-                "set both context.drop_at_chars and"
+                "set both compaction.drop_at_chars and"
                 " summarise_at_chars, or NEITHER (neither == adaptive,"
                 " sized from the worker model's context window). Both at once:"
-                " agent6 config set context"
+                " agent6 config set compaction"
                 " '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'"
             )
         if drop is not None and summarise is not None and summarise <= drop:
             raise ValueError(
-                "context.summarise_at_chars"
+                "compaction.summarise_at_chars"
                 f" ({summarise}) must be greater than"
                 f" drop_at_chars ({drop}): tier-2"
                 " summarise must escalate above tier-1 elision."
             )
         if summarise is not None and summarise <= self.keep_recent_chars:
             raise ValueError(
-                f"context.summarise_at_chars ({summarise}) must be greater than"
+                f"compaction.summarise_at_chars ({summarise}) must be greater than"
                 f" keep_recent_chars ({self.keep_recent_chars}): the verbatim tail"
                 " alone would re-trigger tier 2 after every restart."
             )

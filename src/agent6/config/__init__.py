@@ -12,7 +12,7 @@ from agent6.config import validation
 from agent6.config.git_config import GitCommitConfig, GitConfig  # noqa: ICN003  # re-export
 from agent6.config.harness_config import (  # noqa: ICN003  # re-export
     BudgetConfig,
-    ContextConfig,
+    CompactionConfig,
     EffortLevel,
     HarnessConfig,
     MetricConfig,
@@ -70,9 +70,9 @@ __all__ = [
     "BudgetConfig",
     "ChatGPTProviderEntry",
     "ClaudeCodeProviderEntry",
+    "CompactionConfig",
     "Config",
     "ConfigError",
-    "ContextConfig",
     "EffortLevel",
     "GitCommitConfig",
     "GitConfig",

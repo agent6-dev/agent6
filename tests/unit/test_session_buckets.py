@@ -150,7 +150,7 @@ def test_a_machine_instance_is_not_reachable_as_a_session(
 ) -> None:
     """`machines` names two things, and only the path separates them.
 
-    A session lookup that reached the INSTANCES dir would let `sessions rm` delete a running
+    A session lookup that reached the INSTANCES dir would let `sessions remove` delete a running
     machine's state, so the buckets must never resolve there.
     """
     from agent6.ui.cli import common

@@ -1770,7 +1770,7 @@ def test_a_fork_records_the_untracked_files_of_its_own_checkout(
 def test_a_refused_fork_leaves_no_chain_ref_behind(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions rm` keeps a run's branch, so forking onto a reused id hits the branch refusal."""
+    """`sessions remove` keeps the branch, so a fork reusing the id hits the branch refusal."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)

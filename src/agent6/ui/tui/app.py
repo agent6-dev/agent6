@@ -641,7 +641,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                     [
                         *spawn.agent6_argv(self.config_paths),
                         "sessions",
-                        "rm",
+                        "remove",
                         "--",
                         self.session_dir.name,
                     ],

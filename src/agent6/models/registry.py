@@ -31,7 +31,7 @@ __all__ = [
 # Claude minor ids fall back to their family-major key; specific entries win.
 # The table wins over the live cache; Anthropic's listing reports no window.
 BUNDLED_CONTEXT_WINDOWS: dict[str, int] = {
-    # The 4.x window is 200k with a 1M beta opt-in: pin [context] when enabling that beta.
+    # The 4.x window is 200k with a 1M beta opt-in: pin [compaction] when enabling that beta.
     "claude-fable-5": 1_000_000,
     "claude-opus-5": 1_000_000,
     "claude-sonnet-5": 1_000_000,
@@ -122,8 +122,8 @@ def compaction_thresholds(
     Args:
         provider_name: The provider's config name.
         model_id: The model id.
-        drop_override: The configured `context.drop_at_chars`, or None.
-        summarise_override: The configured `context.summarise_at_chars`, or None.
+        drop_override: The configured `compaction.drop_at_chars`, or None.
+        summarise_override: The configured `compaction.summarise_at_chars`, or None.
 
     Returns:
         The two thresholds in chars.
@@ -215,11 +215,11 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
     drop, summarise = compaction_thresholds(
         rm.provider,
         rm.model,
-        drop_override=cfg.context.drop_at_chars,
-        summarise_override=cfg.context.summarise_at_chars,
+        drop_override=cfg.compaction.drop_at_chars,
+        summarise_override=cfg.compaction.summarise_at_chars,
     )
-    out["context.drop_at_chars"] = drop
-    out["context.summarise_at_chars"] = summarise
+    out["compaction.drop_at_chars"] = drop
+    out["compaction.summarise_at_chars"] = summarise
     if cfg.prompt.decompose == "auto":
         out["prompt.decompose"] = "on" if decompose_default(rm.model) else "off"
     return out

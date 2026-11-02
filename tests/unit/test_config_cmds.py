@@ -1109,13 +1109,13 @@ def test_config_unset_repairs_a_config_that_no_longer_loads(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     # Valid at 0.0.29; a later invariant refuses it (summarise > keep_recent).
     (cfg_home / "agent6" / "config.toml").write_text(
-        "[agent6]\nconfig_version = 1\n\n[context]\ndrop_at_chars = 30000\n"
+        "[agent6]\nconfig_version = 1\n\n[compaction]\ndrop_at_chars = 30000\n"
         "summarise_at_chars = 60000\n",
         encoding="utf-8",
     )
 
     rc = cc._cmd_config_unset(  # pyright: ignore[reportPrivateUsage]
-        "context.summarise_at_chars", repo=False, machine=None
+        "compaction.summarise_at_chars", repo=False, machine=None
     )
 
     assert rc == 0

@@ -482,7 +482,7 @@ def test_record_use_keeps_who_wrote_and_who_read(tmp_path: pathlib.Path) -> None
     # A write of a fact the record never saw created (hand-written, or older
     # than the record) is an edit: no creation is claimed.
     assert use["older"] == memory.MemoryUse(writes=(memory.Touch("run-d", "1970-01-01 04:00Z"),))
-    # A deletion ends the entry, as `memory rm` does; alone, it still writes.
+    # A deletion ends the entry, as `memory remove` does; alone, it still writes.
     memory.record_use(
         tmp_path, session="run-e", wrote=(), read={"older": 1}, deleted=("older",), when=18000.0
     )
@@ -496,7 +496,7 @@ def test_record_use_keeps_who_wrote_and_who_read(tmp_path: pathlib.Path) -> None
     assert memory.use_path(tmp_path) == tmp_path / "memory-use.json"
 
 
-def test_operator_add_and_rm_keep_the_use_record_in_step(tmp_path: pathlib.Path) -> None:
+def test_operator_add_and_remove_keep_the_use_record_in_step(tmp_path: pathlib.Path) -> None:
     memory.add(tmp_path, "quirk", "The build needs FOO=1.")
     use = memory.read_use(tmp_path)
     assert use["quirk"].writers == ("operator",)
@@ -598,7 +598,7 @@ def test_carry_back_lands_a_lanes_use_record(tmp_path: pathlib.Path) -> None:
 
 
 def test_carry_back_deletion_drops_provenance_before_recreation(tmp_path: pathlib.Path) -> None:
-    """An imported deletion ends the fact's provenance, as `memory rm` does.
+    """An imported deletion ends the fact's provenance, as `memory remove` does.
 
     Left in place, the origin's record kept naming the fact's writers and readers after the
     file was gone, and a lane that later recreated the name inherited them.

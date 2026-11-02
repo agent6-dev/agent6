@@ -751,7 +751,7 @@ def add(state_dir: pathlib.Path, name: str, body: str) -> pathlib.Path:
 
 
 def remove(state_dir: pathlib.Path, name: str) -> None:
-    """Delete a fact file for `agent6 memory rm`.
+    """Delete a fact file for `agent6 memory remove`.
 
     Args:
         state_dir: The repo's state dir.

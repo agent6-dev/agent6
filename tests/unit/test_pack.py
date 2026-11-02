@@ -303,11 +303,12 @@ def test_unpack_serializes_a_writer_between_preflight_and_move(
     if kind == "secrets":
         target = secret_store.save_secret("test", "packed")
     elif kind == "config":
-        assert write.set_config_value(other, "context.summary_max_tokens", "1000") is None
+        assert write.set_config_value(other, "compaction.summary_max_tokens", "1000") is None
         target = paths.global_config_path()
     else:
         assert (
-            write.set_config_value(root, "context.summary_max_tokens", "1000", to_repo=True) is None
+            write.set_config_value(root, "compaction.summary_max_tokens", "1000", to_repo=True)
+            is None
         )
         target = paths.repo_config_path(root)
     pack.pack(root)
@@ -326,10 +327,10 @@ def test_unpack_serializes_a_writer_between_preflight_and_move(
         if kind == "secrets":
             secret_store.save_secret("test", "concurrent")
         elif kind == "config":
-            assert write.set_config_value(other, "context.summary_max_tokens", "2000") is None
+            assert write.set_config_value(other, "compaction.summary_max_tokens", "2000") is None
         else:
             with write.writing_config(target):
-                portable.atomic_write(target, "[context]\nsummary_max_tokens = 2000\n")
+                portable.atomic_write(target, "[compaction]\nsummary_max_tokens = 2000\n")
 
     preflight = pack._preflight  # pyright: ignore[reportPrivateUsage]
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:

@@ -509,7 +509,7 @@ def test_attach_raw_returns_when_the_run_dir_is_deleted_mid_follow(
 def test_attach_to_a_husk_names_the_crash_not_a_missing_id(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Attach on a husk says why it refuses, naming the crash and the `sessions rm` remedy.
+    """Attach on a husk says why it refuses, naming the crash and the `sessions remove` remedy.
 
     It reported "no run or machine matches", the wording for an id that does not exist.
     """
@@ -518,5 +518,5 @@ def test_attach_to_a_husk_names_the_crash_not_a_missing_id(
     assert main(["attach", "husky-one-AAAAAA"]) == 2
     err = capsys.readouterr().err
     assert "crashed before it ever started" in err
-    assert "sessions rm husky-one-AAAAAA" in err
+    assert "sessions remove husky-one-AAAAAA" in err
     assert "no run or machine matches" not in err

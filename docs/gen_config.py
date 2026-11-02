@@ -38,8 +38,8 @@ _PRESETS_MARKER = "<!-- presets-table -->"
 
 # Fields whose default is resolved at runtime, so only the page can say what it becomes.
 _RUNTIME_DEFAULTS = {
-    "context.drop_at_chars": "_adaptive_",
-    "context.summarise_at_chars": "_adaptive_",
+    "compaction.drop_at_chars": "_adaptive_",
+    "compaction.summarise_at_chars": "_adaptive_",
     "sandbox.memory_limit_mib": "`0` (off)",
     "providers.<name>.base_url": "per (format, deployment)",
     "providers.<name>.auth_style": "per (format, deployment)",

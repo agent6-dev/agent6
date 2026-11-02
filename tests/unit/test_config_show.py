@@ -17,6 +17,21 @@ from agent6.ui.cli import main
 from agent6.viewmodel import config_view
 
 
+def test_config_show_uses_compaction_keys(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Config show exposes compaction defaults and their origins under the editable section."""
+    monkeypatch.chdir(tmp_path)
+    assert main(["config", "show", "--json"]) == 0
+    settings = json.loads(capsys.readouterr().out)
+    assert settings["compaction.summary_max_tokens"]["value"] == 2048
+    assert settings["compaction.summary_max_tokens"]["source"] == "default"
+    assert not any(key.startswith("context.") for key in settings)
+
+    assert main(["config", "show"]) == 0
+    assert "[compaction]" in capsys.readouterr().out
+
+
 def test_a_top_level_scalar_is_not_dressed_as_a_table(tmp_path: pathlib.Path) -> None:
     """`preset` is a bare top-level key, not a `[preset]` table.
 

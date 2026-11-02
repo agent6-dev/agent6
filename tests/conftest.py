@@ -46,7 +46,7 @@ def pytest_configure(config: pytest.Config) -> None:
 def pytest_sessionstart(session: pytest.Session) -> None:
     """Detach the session from its controlling terminal, as CI and the gate unit have none.
 
-    A test that reaches a `/dev/tty` prompt (`sessions rm` without `--yes`) then gets the
+    A test that reaches a `/dev/tty` prompt (`sessions remove` without `--yes`) then gets the
     headless path instead of waiting on the developer's keyboard. A pty test forks its own
     session leader, which takes the pty as its terminal unaffected.
     """

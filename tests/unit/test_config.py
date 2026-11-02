@@ -15,6 +15,7 @@ from agent6.config import (
     Config,
     ConfigError,
     OpenAIProviderEntry,
+    layer,
     load_config,
 )
 
@@ -636,14 +637,14 @@ max_tokens_fallback = 100000
 def test_compaction_defaults(tmp_path: pathlib.Path) -> None:
     # The default None means adaptive, sized from the worker model's context window.
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.context.drop_at_chars is None
-    assert cfg.context.summarise_at_chars is None
-    assert cfg.context.summary_max_tokens == 2048
+    assert cfg.compaction.drop_at_chars is None
+    assert cfg.compaction.summarise_at_chars is None
+    assert cfg.compaction.summary_max_tokens == 2048
 
 
 def test_compaction_both_or_neither(tmp_path: pathlib.Path) -> None:
     # A lone threshold is ambiguous, so the loader rejects setting only one.
-    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 100000\n"
+    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 100000\n"
     with pytest.raises(ConfigError) as exc:
         load_config(_write(tmp_path, body))
     assert "BOTH" in str(exc.value) or "NEITHER" in str(exc.value)
@@ -652,26 +653,43 @@ def test_compaction_both_or_neither(tmp_path: pathlib.Path) -> None:
 def test_compaction_thresholds_overridable(tmp_path: pathlib.Path) -> None:
     body = (
         _VALID_TOML
-        + "\n[context]\n"
+        + "\n[compaction]\n"
         + "drop_at_chars = 100000\n"
         + "summarise_at_chars = 300000\n"
         + "summary_max_tokens = 1024\n"
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.context.drop_at_chars == 100000
-    assert cfg.context.summarise_at_chars == 300000
-    assert cfg.context.summary_max_tokens == 1024
+    assert cfg.compaction.drop_at_chars == 100000
+    assert cfg.compaction.summarise_at_chars == 300000
+    assert cfg.compaction.summary_max_tokens == 1024
+
+
+@pytest.mark.parametrize("layered", [False, True])
+@pytest.mark.parametrize("new_table", ["", "[compaction]\nsummary_max_tokens = 1024\n"])
+@pytest.mark.parametrize("old_settings", ["", "summary_max_tokens = 512\n"])
+def test_compaction_refuses_the_old_table_with_a_migration_hint(
+    tmp_path: pathlib.Path, layered: bool, new_table: str, old_settings: str
+) -> None:
+    """Both loaders refuse the old table, even beside the new one, and name its replacement."""
+    old_section = "context"
+    path = _write(tmp_path, f"{new_table}[{old_section}]\n{old_settings}")
+    with pytest.raises(ConfigError, match=r"\[compaction\]") as exc:
+        if layered:
+            layer.load_effective(tmp_path, (path,))
+        else:
+            load_config(path)
+    assert "extra_forbidden" in str(exc.value)
 
 
 def test_compaction_threshold_must_be_positive(tmp_path: pathlib.Path) -> None:
-    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 0\n"
+    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 0\n"
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
 
 
 def test_compaction_summarise_must_exceed_drop(tmp_path: pathlib.Path) -> None:
     # Inverted ordering (tier-2 <= tier-1) makes tier-2 unreachable; the loader rejects it.
-    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 300000\nsummarise_at_chars = 200000\n"
+    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 300000\nsummarise_at_chars = 200000\n"
     with pytest.raises(ConfigError) as exc:
         load_config(_write(tmp_path, body))
     assert "must be greater than" in str(exc.value)
@@ -682,7 +700,7 @@ def test_compaction_summarise_must_exceed_the_verbatim_tail(tmp_path: pathlib.Pa
 
     The tail alone would re-trigger it.
     """
-    body = _VALID_TOML + "\n[context]\ndrop_at_chars = 20000\nsummarise_at_chars = 40000\n"
+    body = _VALID_TOML + "\n[compaction]\ndrop_at_chars = 20000\nsummarise_at_chars = 40000\n"
     with pytest.raises(ConfigError, match="keep_recent_chars"):
         load_config(_write(tmp_path, body))
 

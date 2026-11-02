@@ -628,7 +628,7 @@ def prune_sessions(
 def remove_session(
     cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
-    """Delete one run's history through `agent6 sessions rm`; the branch is prune's.
+    """Delete one run's history through `agent6 sessions remove`; the branch is prune's.
 
     Args:
         cwd: The repository.
@@ -639,12 +639,12 @@ def remove_session(
         Whether the CLI succeeded, and its message; a live run is refused.
     """
     return spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--", session_id], cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "remove", "--", session_id], cwd
     )
 
 
 def remove_asks(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> tuple[bool, str]:
-    """Clear every saved ask through `agent6 sessions rm --asks`.
+    """Clear every saved ask through `agent6 sessions remove --asks`.
 
     Args:
         cwd: The repository.
@@ -654,7 +654,7 @@ def remove_asks(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) 
         Whether the CLI succeeded, and its message.
     """
     return spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--asks", "--yes"], cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "remove", "--asks", "--yes"], cwd
     )
 
 

@@ -210,7 +210,7 @@ class GitConfig(pydantic.BaseModel):
             "instructions printed"
         ),
     )
-    # The hidden chain ref stays as the run's record until `sessions rm`.
+    # The hidden chain ref stays as the run's record until `sessions remove`.
     auto_prune: bool = pydantic.Field(
         default=False,
         description=(

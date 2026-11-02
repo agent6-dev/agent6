@@ -160,7 +160,7 @@ def test_config_page_adaptive_value_shown(repo: pathlib.Path) -> None:
             await pilot.pause()
             screen = app.screen
             assert isinstance(screen, config_page.ConfigScreen)
-            ctx = screen.query_one("#tbl-context", widgets.DataTable)
+            ctx = screen.query_one("#tbl-compaction", widgets.DataTable)
             # Adaptive compaction shows its resolved number tagged "(adaptive)".
             cells = [str(ctx.get_row_at(r)[1]) for r in range(ctx.row_count)]
             assert any("(adaptive)" in c for c in cells)

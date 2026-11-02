@@ -467,7 +467,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.app.push_screen(
             modals.ConfirmModal(
                 f"Delete run {session_id}'s history?",
-                "Runs `agent6 sessions rm`: removes its transcripts, events and manifest from"
+                "Runs `agent6 sessions remove`: removes its transcripts, events and manifest from"
                 " the state dir. The run branch and its commits are kept.",
                 confirm_label="Delete",
             ),
@@ -541,7 +541,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         return cb
 
     def action_clear_asks(self) -> None:
-        """Run `agent6 sessions rm --asks` after a confirm."""
+        """Run `agent6 sessions remove --asks` after a confirm."""
 
         def cb(confirmed: bool | None) -> None:
             if not confirmed:
@@ -553,7 +553,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.app.push_screen(
             modals.ConfirmModal(
                 "Clear this directory's saved asks?",
-                "Runs `agent6 sessions rm --asks`: removes every saved `agent6 ask` transcript"
+                "Runs `agent6 sessions remove --asks`: removes every saved `agent6 ask` transcript"
                 " for this directory. Asks run elsewhere are untouched.",
                 confirm_label="Clear",
             ),
@@ -647,9 +647,9 @@ def _run_merge_cli(
 def _run_delete_cli(
     repo_cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
-    """Return whether `agent6 sessions rm` succeeded on the session, and its output."""
+    """Return whether `agent6 sessions remove` succeeded on the session, and its output."""
     ok, msg = spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--", session_id], repo_cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "remove", "--", session_id], repo_cwd
     )
     return ok, msg or ("removed" if ok else "could not remove")
 
@@ -668,9 +668,9 @@ def _run_prune_cli(
 def _run_clear_asks_cli(
     repo_cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[bool, str]:
-    """Return whether `agent6 sessions rm --asks` succeeded, and its output."""
+    """Return whether `agent6 sessions remove --asks` succeeded, and its output."""
     ok, msg = spawn.run_cli_capture(
-        [*spawn.agent6_argv(config_paths), "sessions", "rm", "--asks", "--yes"], repo_cwd
+        [*spawn.agent6_argv(config_paths), "sessions", "remove", "--asks", "--yes"], repo_cwd
     )
     return ok, msg or ("saved asks cleared" if ok else "could not clear the saved asks")
 

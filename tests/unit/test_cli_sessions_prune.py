@@ -22,7 +22,7 @@ from agent6.vcs import git_ops, git_read
 def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run as CI does, with no controlling terminal: `rm` without `--yes` asks on one."""
+    """Run as CI does, with no controlling terminal: `remove` without `--yes` asks on one."""
     monkeypatch.setattr("agent6.portable.has_controlling_tty", lambda: False)
 
 
@@ -450,10 +450,10 @@ def test_runs_dir_prints_the_state_dir(
     assert "\n" not in printed
 
 
-def test_runs_rm_deletes_history_but_refuses_a_live_run(
+def test_runs_remove_deletes_history_but_refuses_a_live_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`rm` deletes history but refuses a live run, whose worker would keep writing."""
+    """`remove` deletes history but refuses a live run, whose worker would keep writing."""
     import os
 
     repo = tmp_path / "repo"
@@ -471,7 +471,7 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
 
-    assert main(["sessions", "rm", "live-run"]) == 2
+    assert main(["sessions", "remove", "live-run"]) == 2
     err = capsys.readouterr().err
     assert "still live" in err and "agent6 stop live-run-AAAA11" in err
     assert live.is_dir()
@@ -479,20 +479,20 @@ def test_runs_rm_deletes_history_but_refuses_a_live_run(
     # session.end precedes the worker's finalizer; the pid remains the deletion gate until then.
     with (live / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
-    assert main(["sessions", "rm", "live-run"]) == 2
+    assert main(["sessions", "remove", "live-run"]) == 2
     err = capsys.readouterr().err
     assert "still live" in err and "agent6 stop live-run-AAAA11" in err
     assert live.is_dir()
 
-    assert main(["sessions", "rm", "dead-run"]) == 0
+    assert main(["sessions", "remove", "dead-run"]) == 0
     assert "removed dead-run-BBBB22" in capsys.readouterr().out
     assert not dead.exists()
 
 
-def test_runs_rm_names_the_kept_branch(
+def test_runs_remove_names_the_kept_branch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`rm` never deletes the visible branch, and says so.
+    """`remove` never deletes the visible branch, and says so.
 
     Only prune's kept-list owns branch deletion.
     """
@@ -530,7 +530,7 @@ def test_runs_rm_names_the_kept_branch(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "rm", "gone-run-CCCC33"]) == 0
+    assert main(["sessions", "remove", "gone-run-CCCC33"]) == 0
     out = capsys.readouterr().out
     assert "branch agent6/gone-run-CCCC33 kept" in out
     assert "prune" in out
@@ -550,10 +550,10 @@ def test_runs_rm_names_the_kept_branch(
     assert br.returncode == 0  # the branch survives
 
 
-def test_rm_names_the_sha_when_the_chain_was_the_only_anchor(
+def test_remove_names_the_sha_when_the_chain_was_the_only_anchor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """With no visible branch, `rm` names the chain ref's sha: a chain ref has no reflog."""
+    """With no visible branch, `remove` names the chain ref's sha: a chain ref has no reflog."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
@@ -571,24 +571,24 @@ def test_rm_names_the_sha_when_the_chain_was_the_only_anchor(
         encoding="utf-8",
     )
 
-    assert main(["sessions", "rm", "loose-run111"]) == 0
+    assert main(["sessions", "remove", "loose-run111"]) == 0
 
     out = capsys.readouterr().out
     assert f"git branch <name> {head[:12]}" in out, out
 
 
-def test_runs_rm_asks_clears_the_bucket(
+def test_runs_remove_asks_clears_the_bucket(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`rm asks` clears the bucket; mixing it with a run id is refused."""
+    """`remove asks` clears the bucket; mixing it with a run id is refused."""
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
     asks = paths.state_dir(repo) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
-    assert main(["sessions", "rm", "some-id", "--asks"]) == 2
-    assert main(["sessions", "rm", "--asks", "--yes"]) == 0
+    assert main(["sessions", "remove", "some-id", "--asks"]) == 2
+    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert "removed 2 asks" in capsys.readouterr().out
     assert not asks.exists()
 
@@ -785,7 +785,7 @@ def test_prune_with_nothing_at_all_says_so(
     assert "nothing to prune" in capsys.readouterr().out
 
 
-def test_rm_reports_a_deletion_failure_instead_of_success(
+def test_remove_reports_a_deletion_failure_instead_of_success(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A deletion failure is rc 1 naming the error; the session dir and its ref stay untouched."""
@@ -802,7 +802,7 @@ def test_rm_reports_a_deletion_failure_instead_of_success(
     )
     runs.chmod(0o500)  # the parent refuses the unlink
     try:
-        rc = main(["sessions", "rm", "stuck-run"])
+        rc = main(["sessions", "remove", "stuck-run"])
     finally:
         runs.chmod(0o700)
     assert rc == 1
@@ -817,7 +817,7 @@ def _fork_with_worktree(
     """A fork session as `create_fork` leaves it.
 
     A linked worktree of the repo under `[workspace].base_dir` and a manifest naming it
-    (`record=False`: the worktree of a session whose record `sessions rm` deleted).
+    (`record=False`: the worktree of a session whose record `sessions remove` deleted).
     """
     from agent6.app import workdirs
     from agent6.config import Config
@@ -960,10 +960,10 @@ def test_prune_leaves_a_worktree_no_manifest_records_alone(
     assert "my-experiment" not in out and "fork-forgot11's worktree" not in out
 
 
-def test_rm_removes_the_worktree_its_manifest_records(
+def test_remove_removes_the_worktree_its_manifest_records(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions rm <fork>` removes the worktree with the record, and says so.
+    """`sessions remove <fork>` removes the worktree with the record, and says so.
 
     The note sits beside the chain ref's, which must not overwrite it.
     """
@@ -975,7 +975,7 @@ def test_rm_removes_the_worktree_its_manifest_records(
     worktree = _fork_with_worktree(tmp_path, "fork-gone11", merged=False)
     _git(tmp_path, "update-ref", git_read.chain_ref_for("fork-gone11"), "HEAD")
 
-    assert main(["sessions", "rm", "fork-gone11"]) == 0
+    assert main(["sessions", "remove", "fork-gone11"]) == 0
     out = capsys.readouterr().out
     assert not worktree.exists()
     assert str(worktree) not in _git(tmp_path, "worktree", "list", "--porcelain")
@@ -1047,7 +1047,7 @@ def test_a_worktree_stays_while_any_session_naming_it_still_needs_it(
     assert "kept fork-live0011's worktree (live)" in out
 
     _git(tmp_path, "update-ref", git_read.chain_ref_for("fork-parent11"), "HEAD")
-    assert main(["sessions", "rm", "fork-parent11"]) == 0
+    assert main(["sessions", "remove", "fork-parent11"]) == 0
     out = capsys.readouterr().out
     assert (shared / "wip.txt").exists()
     assert "removed fork-parent11 and its chain ref" in out
@@ -1104,10 +1104,10 @@ def test_prune_keeps_a_merged_worktree_that_holds_uncommitted_work(
     assert "no commit has" in out
 
 
-def test_rm_removes_a_record_whose_worktree_is_already_gone(
+def test_remove_removes_a_record_whose_worktree_is_already_gone(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`rm` removes a record whose worktree is already gone.
+    """`remove` removes a record whose worktree is already gone.
 
     The dirt probe runs git with cwd=worktree, so a missing directory must not raise first.
     """
@@ -1120,16 +1120,16 @@ def test_rm_removes_a_record_whose_worktree_is_already_gone(
     _git(tmp_path, "worktree", "remove", "--force", str(worktree))
     assert not worktree.exists()
 
-    assert main(["sessions", "rm", "fork-swept11"]) == 0
+    assert main(["sessions", "remove", "fork-swept11"]) == 0
 
     assert "removed fork-swept11" in capsys.readouterr().out
     assert not (paths.state_dir(tmp_path) / "sessions" / "runs" / "fork-swept11").exists()
 
 
-def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
+def test_remove_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`rm` refuses a fork whose worktree holds work no commit has: the record is what names it."""
+    """`remove` keeps the record that names a fork with uncommitted work."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     (tmp_path / "README.md").write_text("base\n", encoding="utf-8")
@@ -1138,7 +1138,7 @@ def test_rm_refuses_a_fork_whose_worktree_holds_work_no_commit_has(
     worktree = _fork_with_worktree(tmp_path, "fork-hold111", merged=True)
     (worktree / "notes.md").write_text("hours of untracked notes\n", encoding="utf-8")
 
-    assert main(["sessions", "rm", "fork-hold111"]) == 2
+    assert main(["sessions", "remove", "fork-hold111"]) == 2
 
     err = capsys.readouterr().err
     assert "notes.md" in err and str(worktree) in err
@@ -1289,10 +1289,10 @@ def test_delete_squashed_counts_a_chain_ref_whose_merge_commit_the_base_lost_by_
     assert "1 squash-merged" not in out
 
 
-def test_rm_says_why_a_worktree_it_could_not_remove_stays(
+def test_remove_says_why_a_worktree_it_could_not_remove_stays(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`rm` says why a worktree it could not remove stays, in the same words prune uses."""
+    """`remove` says why a worktree it could not remove stays, in the same words prune uses."""
     monkeypatch.chdir(tmp_path)
     _git(tmp_path, "init", "-q", "-b", "main")
     _git(tmp_path, "config", "user.email", "t@t")
@@ -1303,7 +1303,7 @@ def test_rm_says_why_a_worktree_it_could_not_remove_stays(
     wt = _fork_with_worktree(tmp_path, "fork-stuck001", merged=True)
     wt.chmod(0o500)  # clean, and no file in it will unlink
     try:
-        assert main(["sessions", "rm", "fork-stuck001"]) == 0
+        assert main(["sessions", "remove", "fork-stuck001"]) == 0
     finally:
         wt.chmod(0o700)
     out = capsys.readouterr().out

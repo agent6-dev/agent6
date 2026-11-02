@@ -488,9 +488,9 @@ def run_one(
             summarise_at_chars=compact_summarise,
             tool_result_cap_bytes=session_runtime.tool_result_cap_bytes(cfg, "worker"),
             keep_recent_chars=keep_recent,
-            keep_thinking_turns=cfg.context.keep_thinking_turns,
-            elision_gists=cfg.context.elision_gists,
-            summary_max_tokens=cfg.context.summary_max_tokens,
+            keep_thinking_turns=cfg.compaction.keep_thinking_turns,
+            elision_gists=cfg.compaction.elision_gists,
+            summary_max_tokens=cfg.compaction.summary_max_tokens,
             summariser=summariser_provider,
         ),
         bridge=operator_bridge.OperatorBridge(

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions list/diff/commits/stop/dir/rm`: the run-branch read side.
+"""`agent6 sessions list/diff/commits/stop/dir/remove`: the run-branch read side.
 
 `merge` and `prune` are `sessions_merge`, `compare` is `sessions_compare`.
 """
@@ -507,7 +507,7 @@ def _cmd_sessions_dir(session_id: str = "") -> int:
     return 0
 
 
-def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
+def _remove_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     """Clear this directory's asks bucket.
 
     Args:
@@ -533,7 +533,7 @@ def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
         gone
         and not yes
         and not steer_tty.delete_confirmed(
-            f"sessions rm --asks will delete {count} saved from {cwd}", "Delete them?"
+            f"sessions remove --asks will delete {count} saved from {cwd}", "Delete them?"
         )
     ):
         return 0
@@ -548,7 +548,7 @@ def _rm_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
     return 0
 
 
-def _rm_refusal(
+def _remove_refusal(
     layout: sessions_layout.SessionLayout, worktree: pathlib.Path | None, tips: tuple[str, ...]
 ) -> str:
     """Return why this record cannot be deleted, or "".
@@ -577,8 +577,8 @@ def _rm_refusal(
     )
 
 
-def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str:
-    """Return the lines naming what `sessions rm` is about to delete.
+def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str:
+    """Return the lines naming what `sessions remove` is about to delete.
 
     Args:
         cwd: The checkout git is read from.
@@ -591,7 +591,7 @@ def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str
     summary = summarize_session_dir(layout.session_dir, branch_tips=tips)
     task = summary.task_label.line(100).replace("\n", "\n" + " " * 11)
     lines = [
-        f"sessions rm will delete {layout.session_id}",
+        f"sessions remove will delete {layout.session_id}",
         f"  task:    {task}",
         f"  state:   {format.status_label(summary.status, summary.reason)}",
     ]
@@ -602,7 +602,7 @@ def _rm_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) -> str
     return "\n".join(lines)
 
 
-def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
+def _cmd_sessions_remove(*, session_id: str, asks: bool, yes: bool) -> int:
     """Delete run history from the state dir, with the run's chain ref and a fork's worktree.
 
     The chain ref (`refs/agent6/<id>/head`) is the gc anchor: meaningless once the record is
@@ -625,10 +625,10 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
         refusal.
     """
     if asks:
-        return _rm_asks(pathlib.Path.cwd(), session_id, yes=yes)
+        return _remove_asks(pathlib.Path.cwd(), session_id, yes=yes)
     cwd = fork_worktrees.sweep_checkout(pathlib.Path.cwd())
     try:
-        # rm is the surface that deletes a husk, so it resolves one.
+        # remove is the surface that deletes a husk, so it resolves one.
         layout = common.resolve_or_newest_layout(cwd, session_id, allow_husk=True)
     except id.SessionIdError as exc:
         common.error(f"{exc}")
@@ -640,7 +640,7 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
             common.refuse(
                 "no session id and no controlling terminal to confirm deleting "
                 f"{layout.session_id}; pass the id "
-                f"(`agent6 sessions rm {layout.session_id}`) or use --yes."
+                f"(`agent6 sessions remove {layout.session_id}`) or use --yes."
             )
         return 2
     worktree: pathlib.Path | None = None
@@ -659,19 +659,19 @@ def _cmd_sessions_rm(*, session_id: str, asks: bool, yes: bool) -> int:
     )
     landed = git_read.chain_tip(cwd, git_read.chain_ref_for(layout.session_id)) or ""
     tips = (landed,) if landed else ()
-    reason = _rm_refusal(layout, worktree if not sharing else None, tips)
+    reason = _remove_refusal(layout, worktree if not sharing else None, tips)
     if not reason and not yes:
-        if not steer_tty.delete_confirmed(_rm_preview(cwd, layout), "Delete it?"):
+        if not steer_tty.delete_confirmed(_remove_preview(cwd, layout), "Delete it?"):
             return 0
         # A resume from another terminal while the question stood makes the session live again.
-        reason = _rm_refusal(layout, worktree if not sharing else None, tips)
+        reason = _remove_refusal(layout, worktree if not sharing else None, tips)
     if reason:
         common.refuse(f"{reason}")
         return 2
-    return _rm_session(cwd, layout, worktree, sharing, tips)
+    return _remove_session(cwd, layout, worktree, sharing, tips)
 
 
-def _rm_session(
+def _remove_session(
     cwd: pathlib.Path,
     layout: sessions_layout.SessionLayout,
     worktree: pathlib.Path | None,

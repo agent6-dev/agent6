@@ -118,7 +118,7 @@ A session is one conversation in one directory.
 
 ## Not implemented
 
-- `session/delete`: the operator removes a run's record (`agent6 sessions rm`).
+- `session/delete`: the operator removes a run's record (`agent6 sessions remove`).
 - Mid-run steering: ACP has no message for a prompt while the previous prompt is running.
   A session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.

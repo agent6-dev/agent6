@@ -676,8 +676,8 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         )
     if args.sessions_command == "dir":
         return sessions_cmds._cmd_sessions_dir(args.session_id)
-    if args.sessions_command == "rm":
-        return sessions_cmds._cmd_sessions_rm(
+    if args.sessions_command == "remove":
+        return sessions_cmds._cmd_sessions_remove(
             session_id=args.session_id, asks=args.asks, yes=args.yes
         )
     if args.sessions_command == "transcript":
@@ -899,8 +899,8 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
         return memory_cmds._cmd_memory_list()
     if args.memory_command == "show":
         return memory_cmds._cmd_memory_show(args.name)
-    if args.memory_command == "rm":
-        return memory_cmds._cmd_memory_rm(args.name, yes=args.yes)
+    if args.memory_command == "remove":
+        return memory_cmds._cmd_memory_remove(args.name, yes=args.yes)
     if args.memory_command == "decisions":
         return memory_cmds._cmd_memory_decisions()
     raise AssertionError("unreachable")  # pragma: no cover -- memory subparser is required

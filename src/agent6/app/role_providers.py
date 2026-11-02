@@ -65,8 +65,8 @@ def resolve_compaction_thresholds(
     Returns:
         The `(drop_at_chars, summarise_at_chars, keep_recent_chars)` triple.
     """
-    drop_override = cfg.context.drop_at_chars
-    summarise_override = cfg.context.summarise_at_chars
+    drop_override = cfg.compaction.drop_at_chars
+    summarise_override = cfg.compaction.summarise_at_chars
     provider = rm.provider if rm is not None else ""
     model = rm.model if rm is not None else ""
     drop, summarise = models_registry.compaction_thresholds(
@@ -87,12 +87,12 @@ def resolve_compaction_thresholds(
             src += f"; family fallback from {key}"
         # Thresholds compaction will fire at, not a compaction that happened.
         log(f"compaction thresholds: drop at {drop:,} chars, summarise at {summarise:,} [{src}]")
-    keep = cfg.context.keep_recent_chars
+    keep = cfg.compaction.keep_recent_chars
     if summarise_override is None and keep > summarise // 2:
         keep = summarise // 2
         if log is not None:
             log(
-                f"context.keep_recent_chars {cfg.context.keep_recent_chars:,} ->"
+                f"compaction.keep_recent_chars {cfg.compaction.keep_recent_chars:,} ->"
                 f" {keep:,} chars: half this model's tier-2 threshold, so a restart"
                 " shrinks the context instead of re-triggering on its own tail"
             )

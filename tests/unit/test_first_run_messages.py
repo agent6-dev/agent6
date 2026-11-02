@@ -23,7 +23,7 @@ _EMPTY_STATE = [
     ["sessions", "commits"],
     ["sessions", "merge"],
     ["stop"],
-    ["sessions", "rm"],
+    ["sessions", "remove"],
     ["attach"],
     ["resume"],
     ["fork"],

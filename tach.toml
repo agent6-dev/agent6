@@ -585,7 +585,7 @@ path = "agent6.config.git_config"
 depends_on = ["agent6.config.validation"]
 
 [[modules]]
-# The loop-behaviour models: harness, review, context, prompt, budget.
+# The loop-behaviour models: harness, review, compaction, prompt, budget.
 path = "agent6.config.harness_config"
 depends_on = ["agent6.config.validation"]
 

@@ -158,8 +158,8 @@ class Config(pydantic.BaseModel):
     review: harness_config.ReviewConfig = pydantic.Field(
         default_factory=harness_config.ReviewConfig
     )
-    context: harness_config.ContextConfig = pydantic.Field(
-        default_factory=harness_config.ContextConfig
+    compaction: harness_config.CompactionConfig = pydantic.Field(
+        default_factory=harness_config.CompactionConfig
     )
     prompt: harness_config.PromptConfig = pydantic.Field(
         default_factory=harness_config.PromptConfig
@@ -638,6 +638,8 @@ def _format_validation_error(
         msg = issue["msg"]
         if issue["type"] == "union_tag_not_found" and loc.startswith("providers."):
             msg = _MISSING_API_FORMAT
+        elif issue["type"] == "extra_forbidden" and loc == "context":
+            msg = "rename the context table to [compaction]; keep its keys and values"
         lines.append(f"  - {loc}: {msg} (type={issue['type']})")
         if locate is not None and (where := locate(loc, issue["type"])):
             lines.append(where)

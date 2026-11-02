@@ -243,7 +243,7 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - a re-entry round landing no executed tool call escalates the nudge; `[harness].standing_patience` bounds the streak (`-1` default: never self-ends; landed work resets)
 - an interactive run parks the same way on a quiet turn: the conversation waits on the steer bridge; any composer or the pause menu continues it in place
 
-**Context compaction has two tiers**, thresholds in `[context]`.
+**Context compaction has two tiers**, thresholds in `[compaction]`.
 
 - tier 1, `drop_at_chars`: the oldest tool results become placeholders naming the elided call; reads of recently-edited files elide last
 - a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
@@ -260,8 +260,8 @@ A fact file is `<name>.md` under the name rule, a regular file; any other entry 
 - the worker writes through the ordinary edit tools under a narrow grant, in-process only; the jail never mounts it
 - run mode writes; plan and ask read; machine modes see none
 - models never write unprompted, so the loop sends one advisory per run, when verify first recovers green with nothing recorded; `[harness].memory_advisory = false` turns it off
-- `agent6 memory add/list/show/rm` is the operator surface over the same files
-- `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory rm`); `memory list` prints it under each entry, so a stale or never-read fact is visible where it is pruned
+- `agent6 memory add/list/show/remove` is the operator surface over the same files
+- `<state-dir>/memory-use.json`, harness-written at each execution's end: per fact, the write that created it (when the record saw it), every write as a (session, when) touch in order, and its reads (count, last reader), the entry gone once the fact is deleted (by the model or `memory remove`); `memory list` prints it under each entry, so a stale or never-read fact is visible where it is pruned
 
 Outside the store, `<state-dir>/decisions.md` holds the operator's rulings beside `memory-use.json`.
 The harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; an identical ruling already on file is recorded once.
@@ -529,7 +529,7 @@ The source run and the operator's checkout are never mutated (except by `/undo`)
 `agent6 resume <new>` runs the execution in that worktree; the repository's state dir and config apply there.
 The jail's rules for the recorded `worktree_git_dir` are in [Security](security.md#2-sandbox).
 The worktree's checkout lock is removed with the worktree.
-The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions rm <new>` removes it with the record.
+The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions remove <new>` removes it with the record.
 An unstarted fork keeps its branch, chain ref and worktree even when its tip is reachable from the checkout's HEAD.
 The manifest is the only thing that names a worktree as agent6's.
 A worktree two sessions name (an `/undo` fork and its source) stays while either still needs it.

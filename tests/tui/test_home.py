@@ -1051,7 +1051,7 @@ def test_the_hub_table_names_its_columns_like_the_cli(tmp_path: pathlib.Path) ->
 def test_delete_action_confirms_then_shells_out(
     tmp_path: pathlib.Path, monkeypatch: object
 ) -> None:
-    """`d` opens a confirm modal; confirming runs `agent6 sessions rm` for the selected run."""
+    """`d` opens a confirm modal; confirming runs `agent6 sessions remove` for the selected run."""
     import asyncio
 
     from textual import widgets

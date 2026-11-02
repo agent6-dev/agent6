@@ -105,6 +105,40 @@ def open_page(browser: Browser) -> Iterator[Callable[[int], tuple[Page, list[str
             context.close()
 
 
+@pytest.mark.parametrize("asks", [False, True])
+def test_removal_controls_reach_the_cli(
+    git_port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    asks: bool,
+) -> None:
+    """Delete and Clear saved asks invoke the accepted CLI verb and remove the saved record."""
+    from playwright.sync_api import expect
+
+    session_id = "remove-run-AAAAAA"
+    mode = "ask" if asks else "run"
+    bucket = paths.state_dir(tmp_path) / "sessions" / ("asks" if asks else "runs")
+    session = bucket / session_id
+    session.mkdir(parents=True)
+    rows = [
+        {"type": "session.start", "mode": mode, "user_task": "Remove this record"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    page, errors = open_page(git_port)
+    route = "#/" if asks else f"#/session/{session_id}"
+    page.goto(f"http://127.0.0.1:{git_port}/{route}")
+    button = page.get_by_role("button", name="Clear saved asks" if asks else "Delete", exact=True)
+    expect(button).to_be_enabled()
+    page.once("dialog", lambda dialog: dialog.accept())
+    endpoint = "/api/sessions/rm_asks" if asks else f"/api/session/{session_id}/rm"
+    with page.expect_response(lambda response: response.url.endswith(endpoint)) as response:
+        button.click()
+    assert response.value.ok, response.value.text()
+    assert not session.exists()
+    assert not errors
+
+
 def test_the_hub_opens_as_a_review_queue_and_remembers_activity(
     port: int, tmp_path: pathlib.Path, open_page: Callable[[int], tuple[Page, list[str]]]
 ) -> None:

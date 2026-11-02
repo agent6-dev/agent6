@@ -171,7 +171,7 @@ def delete_confirmed(what: str, question: str) -> bool:
     """Return whether a delete goes ahead, asking first on the controlling terminal.
 
     The question goes to the terminal itself, so a redirected stdin or stdout does not skip
-    it and piped input is never read as the answer. `sessions rm` and `memory rm` ask here.
+    it and piped input is never read as the answer. `sessions remove` and `memory remove` ask here.
 
     Args:
         what: The lines naming what will go.

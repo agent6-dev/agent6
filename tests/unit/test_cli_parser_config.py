@@ -158,6 +158,35 @@ def _subcommands(parser: argparse.ArgumentParser) -> dict[str, argparse.Argument
     return {}
 
 
+@pytest.mark.parametrize("group", ["memory", "sessions"])
+def test_remove_parses_with_confirmation_flags(group: str) -> None:
+    """Removal uses the same verb with its existing positional and confirmation flags."""
+    parser = cli_parser.build_parser()
+    for flag in ("--yes", "-y"):
+        args = parser.parse_args(
+            cli_parser._inject_default_verb([group, "remove", flag, "chosen-item"])
+        )
+        assert getattr(args, f"{group}_command") == "remove"
+        assert args.yes is True
+        assert getattr(args, "name" if group == "memory" else "session_id") == "chosen-item"
+    if group == "sessions":
+        args = parser.parse_args([group, "remove", "--asks", "--yes"])
+        assert args.asks is True and args.yes is True
+
+
+@pytest.mark.parametrize("group", ["memory", "sessions"])
+def test_remove_has_no_short_alias(group: str, capsys: pytest.CaptureFixture[str]) -> None:
+    """The short spelling is refused at parse time and help names the accepted verb."""
+    parser = cli_parser.build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(cli_parser._inject_default_verb([group, "rm", "chosen-item"]))
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "invalid choice: 'rm'" in err and "remove" in err
+    verbs = _subcommands(_subcommands(parser)[group])
+    assert "remove" in verbs and "rm" not in verbs
+
+
 @pytest.mark.parametrize("verb", ["set", "unset"])
 def test_config_secret_is_a_write_target_not_a_verb(verb: str) -> None:
     """Secret writes keep the config verb set and the positional key and value shape."""

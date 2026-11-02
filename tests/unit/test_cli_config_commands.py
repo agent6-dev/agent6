@@ -47,7 +47,7 @@ def _global_toml(tmp_path: pathlib.Path) -> dict[str, object]:
     [
         ("workspace.setup_command", '["sh", "-c", "echo hi"]'),
         ("git.commit.name", r'"A \"quoted\" name"'),
-        ("context", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"),
+        ("compaction", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"),
     ],
 )
 def test_config_set_echo_keeps_the_written_toml(
@@ -768,11 +768,11 @@ def test_coauthor_is_gone(iso: pathlib.Path, capsys: pytest.CaptureFixture[str])
     assert "trailer" in capsys.readouterr().err  # the did-you-mean points at it
 
 
-def test_the_paired_context_thresholds_are_settable_together(iso: pathlib.Path) -> None:
-    """The paired context thresholds move together in one validated inline-table upsert."""
+def test_the_paired_compaction_thresholds_are_settable_together(iso: pathlib.Path) -> None:
+    """The paired compaction thresholds move together in one validated inline-table upsert."""
     inline = "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
-    assert _run(["config", "set", "context", inline]) == 0
-    ctx = _global_toml(iso)["context"]
+    assert _run(["config", "set", "compaction", inline]) == 0
+    ctx = _global_toml(iso)["compaction"]
     assert isinstance(ctx, dict)
     assert ctx == {"drop_at_chars": 200000, "summarise_at_chars": 400000}
 
@@ -781,9 +781,9 @@ def test_setting_one_threshold_names_the_command_that_works(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Setting one threshold alone refuses and names the inline-table command that works."""
-    assert _refuse(["config", "set", "context.drop_at_chars", "200000"]) == 2
+    assert _refuse(["config", "set", "compaction.drop_at_chars", "200000"]) == 2
     err = capsys.readouterr().err
-    assert "config set context '{ drop_at_chars =" in err
+    assert "config set compaction '{ drop_at_chars =" in err
     assert "summarise_at_chars =" in err
 
 
@@ -867,14 +867,14 @@ def test_a_preset_leaf_with_a_valid_sibling_can_be_changed(iso: pathlib.Path) ->
     config = iso / "g" / "agent6" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        "[presets.demo.context]\ndrop_at_chars = 100000\nsummarise_at_chars = 200000\n",
+        "[presets.demo.compaction]\ndrop_at_chars = 100000\nsummarise_at_chars = 200000\n",
         encoding="utf-8",
     )
 
-    assert _run(["config", "set", "presets.demo.context.drop_at_chars", "120000"]) == 0
-    context = _global_toml(iso)["presets"]
-    assert isinstance(context, dict)
-    assert context["demo"]["context"] == {  # type: ignore[index]
+    assert _run(["config", "set", "presets.demo.compaction.drop_at_chars", "120000"]) == 0
+    presets = _global_toml(iso)["presets"]
+    assert isinstance(presets, dict)
+    assert presets["demo"]["compaction"] == {  # type: ignore[index]
         "drop_at_chars": 120000,
         "summarise_at_chars": 200000,
     }

@@ -508,7 +508,7 @@ class MemoryState:
         """Fold one write of a fact.
 
         A delete ends the fact for this execution, its reads so far with it, so
-        its entry goes at the execution's end as `memory rm` drops it; a create
+        its entry goes at the execution's end as `memory remove` drops it; a create
         after that starts it afresh.
 
         Args:

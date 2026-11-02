@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 sessions rm` confirms on a terminal or requires an id or `--yes` without one."""
+"""`agent6 sessions remove` confirms on a terminal or requires an id or `--yes` without one."""
 
 from __future__ import annotations
 
@@ -120,17 +120,17 @@ def reap(pid: int) -> int:
 
 
 @pytest.mark.parametrize(("typed", "deleted"), [(b"n\n", False), (b"\n", False), (b"y\n", True)])
-def test_a_bare_rm_on_a_terminal_names_the_session_and_asks(
+def test_a_bare_remove_on_a_terminal_names_the_session_and_asks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, typed: bytes, deleted: bool
 ) -> None:
-    """A bare `sessions rm` on a terminal deleted the newest session with no question.
+    """A bare `sessions remove` on a terminal deleted the newest session with no question.
 
     It names the session it resolved to, its task, its state and its unmerged commits, and
     deletes on `y` alone.
     """
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
-    pid, master = cli_under_pty(["sessions", "rm"])
+    pid, master = cli_under_pty(["sessions", "remove"])
     try:
         asked = read_pty(master, b"[y/N]: ")
         assert asked.endswith("[y/N]: "), asked
@@ -148,13 +148,13 @@ def test_a_bare_rm_on_a_terminal_names_the_session_and_asks(
 
 
 @pytest.mark.parametrize("flag", ["--yes", "-y"])
-def test_rm_yes_deletes_on_a_terminal_without_asking(
+def test_remove_yes_deletes_on_a_terminal_without_asking(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, flag: str
 ) -> None:
     """`--yes` and `-y` skip the question."""
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
-    pid, master = cli_under_pty(["sessions", "rm", flag, _ID])
+    pid, master = cli_under_pty(["sessions", "remove", flag, _ID])
     try:
         out = read_pty(master, b"\x00", seconds=10.0)
         assert reap(pid) == 0
@@ -165,15 +165,15 @@ def test_rm_yes_deletes_on_a_terminal_without_asking(
     assert not layout.session_dir.exists()
 
 
-def test_rm_asks_on_a_terminal_before_clearing_the_asks(
+def test_remove_asks_on_a_terminal_before_clearing_the_asks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`sessions rm --asks` on a terminal names how many asks go and where from, then asks."""
+    """`sessions remove --asks` on a terminal names how many asks go and where from, then asks."""
     monkeypatch.chdir(tmp_path)
     asks = paths.state_dir(tmp_path) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
         (asks / name).mkdir(parents=True)
-    pid, master = cli_under_pty(["sessions", "rm", "--asks"])
+    pid, master = cli_under_pty(["sessions", "remove", "--asks"])
     try:
         asked = read_pty(master, b"[y/N]: ")
         assert "2 asks" in asked and str(tmp_path) in asked, asked
@@ -188,14 +188,14 @@ def test_rm_asks_on_a_terminal_before_clearing_the_asks(
 def test_a_redirected_stdout_does_not_skip_the_question(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`sessions rm > log` at a terminal deleted the newest session with no question.
+    """`sessions remove > log` at a terminal deleted the newest session with no question.
 
     The question goes to the terminal itself, whatever stdin and stdout are.
     """
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
     log = tmp_path / "out.log"
-    pid, master = cli_under_pty(["sessions", "rm"], stdout=log)
+    pid, master = cli_under_pty(["sessions", "remove"], stdout=log)
     try:
         asked = read_pty(master, b"[y/N]: ")
         assert asked.endswith("[y/N]: "), asked
@@ -208,30 +208,30 @@ def test_a_redirected_stdout_does_not_skip_the_question(
     assert "nothing was deleted" in log.read_text(encoding="utf-8")
 
 
-def test_rm_without_a_terminal_refuses_without_an_id(
+def test_remove_without_a_terminal_refuses_without_an_id(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A bare `sessions rm` without a terminal must not delete an unnamed session."""
+    """A bare `sessions remove` without a terminal must not delete an unnamed session."""
     monkeypatch.chdir(tmp_path)
     layout = _ended_unmerged_run(tmp_path)
     chain_tip = git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID))
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
 
     def never(*_args: object, **_kwargs: object) -> str | None:
-        raise AssertionError("rm asked with no terminal")
+        raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "rm"]) == 2
+    assert main(["sessions", "remove"]) == 2
     out = capsys.readouterr()
     assert "no controlling terminal" in out.err
-    assert f"agent6 sessions rm {_ID}" in out.err
+    assert f"agent6 sessions remove {_ID}" in out.err
     assert "--yes" in out.err
     assert "removed" not in out.out
     assert layout.session_dir.exists()
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) == chain_tip
 
 
-def test_rm_with_an_id_without_a_terminal_deletes_without_asking(
+def test_remove_with_an_id_without_a_terminal_deletes_without_asking(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """An explicit session id allows scripts to delete without a terminal or a question."""
@@ -240,17 +240,17 @@ def test_rm_with_an_id_without_a_terminal_deletes_without_asking(
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
 
     def never(*_args: object, **_kwargs: object) -> str | None:
-        raise AssertionError("rm asked with no terminal")
+        raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "rm", _ID]) == 0
+    assert main(["sessions", "remove", _ID]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) is None
 
 
 @pytest.mark.parametrize("flag", ["--yes", "-y"])
-def test_rm_yes_without_a_terminal_deletes_without_asking(
+def test_remove_yes_without_a_terminal_deletes_without_asking(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -262,19 +262,19 @@ def test_rm_yes_without_a_terminal_deletes_without_asking(
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
 
     def never(*_args: object, **_kwargs: object) -> str | None:
-        raise AssertionError("rm asked with no terminal")
+        raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "rm", flag]) == 0
+    assert main(["sessions", "remove", flag]) == 0
     assert f"removed {_ID}" in capsys.readouterr().out
     assert not layout.session_dir.exists()
     assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID)) is None
 
 
-def test_rm_asks_without_a_terminal_refuses_without_yes(
+def test_remove_asks_without_a_terminal_refuses_without_yes(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions rm --asks` names no session, so a script must say `--yes` to clear them."""
+    """`sessions remove --asks` names no session, so a script must say `--yes` to clear them."""
     monkeypatch.chdir(tmp_path)
     asks = paths.state_dir(tmp_path) / "sessions" / "asks"
     for name in ("ask-one", "ask-two"):
@@ -282,18 +282,18 @@ def test_rm_asks_without_a_terminal_refuses_without_yes(
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
 
     def never(*_args: object, **_kwargs: object) -> str | None:
-        raise AssertionError("rm asked with no terminal")
+        raise AssertionError("remove asked with no terminal")
 
     monkeypatch.setattr(steer_tty, "tty_prompt", never)
-    assert main(["sessions", "rm", "--asks"]) == 2
+    assert main(["sessions", "remove", "--asks"]) == 2
     err = capsys.readouterr().err
     assert "no controlling terminal" in err and "2 asks" in err and "--yes" in err
     assert asks.is_dir()
-    assert main(["sessions", "rm", "--asks", "--yes"]) == 0
+    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
     assert not asks.exists()
 
 
-def test_rm_refuses_a_session_that_went_live_while_the_question_stood(
+def test_remove_refuses_a_session_that_went_live_while_the_question_stood(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A resume from another terminal during the `[y/N]` question makes the session live again."""
@@ -307,6 +307,6 @@ def test_rm_refuses_a_session_that_went_live_while_the_question_stood(
         return True
 
     monkeypatch.setattr(steer_tty, "delete_confirmed", _resumed_meanwhile)
-    assert main(["sessions", "rm", _ID]) == 2
+    assert main(["sessions", "remove", _ID]) == 2
     assert "still live" in capsys.readouterr().err
     assert layout.session_dir.exists()

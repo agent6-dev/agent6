@@ -681,7 +681,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/btw.py`: spawns `agent6 ask` detached for `/btw` (every composer).
   Argv is the agent6 exe plus the question the operator typed, with `--` before it.
 - `ui/spawn.py`: the shared front-end spawn helper.
-  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`), and captures `sessions merge` / `prune` / `rm` / `review` and `config set` / `unset`.
+  Spawns the agent6 CLI detached for run and machine launches (`machine create` and `machine run`), and captures `sessions merge` / `prune` / `remove` / `review` and `config set` / `unset`.
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template

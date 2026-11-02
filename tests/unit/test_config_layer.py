@@ -227,9 +227,9 @@ def test_build_config_view_unset_nested_section_is_typed_table(repo: pathlib.Pat
 
 def test_build_config_view_adaptive_resolution(repo: pathlib.Path) -> None:
     view = config_view.build_config_view(
-        layer.load_effective(repo), resolved={"context.drop_at_chars": 999_999}
+        layer.load_effective(repo), resolved={"compaction.drop_at_chars": 999_999}
     )
-    s = _by_key(view)["context.drop_at_chars"]
+    s = _by_key(view)["compaction.drop_at_chars"]
     assert s.value is None  # raw: unset -> adaptive
     assert s.effective_value == 999_999
     assert s.is_adaptive is True
@@ -256,7 +256,7 @@ def test_render_show_json_is_full_view(repo: pathlib.Path) -> None:
 
 def test_render_show_text_marks_adaptive(repo: pathlib.Path) -> None:
     text = config_view.render_show(
-        layer.load_effective(repo), resolved={"context.drop_at_chars": 471859}
+        layer.load_effective(repo), resolved={"compaction.drop_at_chars": 471859}
     )
     assert "(adaptive)" in text and "471859" in text
 
@@ -408,11 +408,11 @@ def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(
 def test_setting_a_section_keeps_its_other_leaves_and_comments(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    """`config set context '{ ... }'` keeps the table's other leaves and comments."""
+    """`config set compaction '{ ... }'` keeps the table's other leaves and comments."""
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
-        "[context]\n# my tuning\nkeep_recent_chars = 50000\nsummary_max_tokens = 4096\n",
+        "[compaction]\n# my tuning\nkeep_recent_chars = 50000\nsummary_max_tokens = 4096\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -420,7 +420,7 @@ def test_setting_a_section_keeps_its_other_leaves_and_comments(
     repo_root.mkdir()
 
     err = write.set_config_value(
-        repo_root, "context", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
+        repo_root, "compaction", "{ drop_at_chars = 200000, summarise_at_chars = 400000 }"
     )
 
     assert err is None, err
@@ -482,7 +482,7 @@ def test_written_value_error_catches_a_section_wide_rule(tmp_path: pathlib.Path)
     about this write.
     """
     for key, value in (
-        ("context.drop_at_chars", 200_000),  # pair: both or neither
+        ("compaction.drop_at_chars", 200_000),  # pair: both or neither
         ("git.auto_stash_pop", True),  # needs auto_stash
         ("web.host", "0.0.0.0"),  # non-loopback needs the opt-in
     ):

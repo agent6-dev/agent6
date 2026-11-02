@@ -273,7 +273,7 @@ def resolve_session_layout(
     Args:
         repo_root: The repo.
         query: The id or prefix.
-        allow_husk: Accept a session with no manifest and no log, for `sessions rm`.
+        allow_husk: Accept a session with no manifest and no log, for `sessions remove`.
 
     Returns:
         The session's layout.
@@ -287,7 +287,7 @@ def resolve_session_layout(
     if not allow_husk and is_session_husk(layout.session_dir):
         raise id.SessionIdError(
             f"session {layout.session_id} crashed before it ever started (no log, nothing"
-            f" to resume); `agent6 sessions rm {layout.session_id}` removes it"
+            f" to resume); `agent6 sessions remove {layout.session_id}` removes it"
         )
     return layout
 

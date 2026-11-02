@@ -1843,7 +1843,7 @@ def test_a_name_that_does_not_print_as_it_is_prints_escaped_on_one_line() -> Non
 
 
 def test_a_kept_worktree_names_its_uncommitted_files_on_one_line(tmp_path: pathlib.Path) -> None:
-    """A newline in a name `sessions prune` or `rm` prints would forge a line of its own."""
+    """A newline in a name `sessions prune` or `remove` prints would forge a line of its own."""
     from agent6.app import fork_worktrees
 
     _init_repo(tmp_path)

@@ -151,7 +151,7 @@ def worktree_owners(
 
 
 def sweep_checkout(cwd: pathlib.Path) -> pathlib.Path:
-    """Return the checkout `sessions prune` and `sessions rm` run git from.
+    """Return the checkout `sessions prune` and `sessions remove` run git from.
 
     Args:
         cwd: The directory the verb runs in.

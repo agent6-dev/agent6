@@ -112,6 +112,31 @@ def test_merge_and_config_argv_end_options_before_values(
     assert captured[-1][1:] == ["config", "set", "--repo", "--", "sandbox.protect_git", "-1"]
 
 
+@pytest.mark.parametrize("asks", [False, True])
+def test_removal_actions_delete_records_through_the_cli(tmp_path: pathlib.Path, asks: bool) -> None:
+    """Web removal invokes the installed CLI without relying on an obsolete verb alias."""
+    from tests.unit import test_git_history
+
+    test_git_history._git(tmp_path, "init", "-q", "-b", "main")
+    session_id = "remove-run-AAAAAA"
+    mode = "ask" if asks else "run"
+    bucket = paths.state_dir(tmp_path) / "sessions" / ("asks" if asks else "runs")
+    session = bucket / session_id
+    session.mkdir(parents=True)
+    (session / "logs.jsonl").write_text(
+        f'{{"type": "session.start", "mode": "{mode}"}}\n'
+        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n'
+    )
+
+    ok, message = (
+        actions.remove_asks(tmp_path) if asks else actions.remove_session(tmp_path, session_id)
+    )
+
+    assert ok, message
+    assert "removed" in message
+    assert not session.exists()
+
+
 @pytest.mark.parametrize(
     "argv",
     [

@@ -193,7 +193,7 @@ agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
 agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (a mechanical ranking when it is unavailable or fails), or a fan-out's saved verdict; --rejudge
 agent6 sessions prune         # delete merged agent6/* branches and worktrees, report the rest; squash and tasks merges (`tasks` is the default) need --delete-squashed
-agent6 sessions rm [<id>]     # delete one run's history; asks [y/N] on a controlling terminal, otherwise requires an id or --yes; --yes skips the question, --asks clears saved asks
+agent6 sessions remove [<id>] # delete one run's history; asks [y/N] on a controlling terminal, otherwise requires an id or --yes; --yes skips the question, --asks clears saved asks
 agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
 agent6 exec ID -- <command>   # a command inside the run's jail and network, on your terminal or pipe
 agent6 exec --new [<command>] # a command, or your shell, in a fresh sandbox built from the config; no run needed
@@ -283,7 +283,7 @@ agent6 fork <session-id> --at-turn 7 # a new run from turn 7; --steer seeds it, 
 
 State is snapshotted before each model call and checkpointed per turn.
 
-- `fork` continues a copy of a run from a turn in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `rm` treat it like any run ([session state](architecture.md#session-state-on-disk))
+- `fork` continues a copy of a run from a turn in its own git worktree ([isolated workspaces](#isolated-workspaces)); the original run and your checkout stay as they are, and `sessions merge`, `prune` and `remove` treat it like any run ([session state](architecture.md#session-state-on-disk))
   A plan or ask fork stays read-only in the current checkout.
   `sessions prune` keeps a fork that has not started: its branch, chain ref and worktree stay.
 - `--at-turn 0` on a run that is itself a fork picks the seed it started from, before anything it did; the fork line says so
@@ -582,7 +582,7 @@ agent6 web [target]                                  # the browser UI on 127.0.0
 agent6 acp                                           # speak the Agent Client Protocol on stdio (see acp.md)
 agent6 check [section]                               # sandbox (isolation, boundaries, probes), config (provider keys), MCP, verify
 agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
-agent6 memory add|list|show|rm                       # the index renders each fact's first non-empty line
+agent6 memory add|list|show|remove                   # the index renders each fact's first non-empty line
 agent6 memory decisions                              # the operator rulings the harness recorded
 agent6 skills install|update|list                    # skills from a repo, a directory or a SKILL.md URL
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove

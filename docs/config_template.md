@@ -41,7 +41,7 @@ It can be empty or absent when the global config supplies a provider and model.
   `get` accepts a whole mapping or one entry and prints each entry with its own origin.
   `set` and `unset` accept a whole mapping or one entry, such as `skills.state.alpha`.
   Every edit is re-validated; an invalid edit is rolled back when the config lock is held.
-  A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
+  A sibling pair that must move together is set as one inline table: `agent6 config set compaction '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
 - Writes are atomic; failure to take the config lock does not block the write, but concurrent edits can lose updates.
   An invalid edit without the lock is reported as "kept as written".
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
@@ -368,11 +368,11 @@ A finding grounds on the path, side and lines it cites against the diff; an ungr
 A `block` holds only when its seat's verdict is `block` and its category is one of `security`, `sandbox-bypass`, `off-topic-edit`, `data-loss`, `verify-uncovered-correctness` (the last only when verify passed); otherwise it reads as `warn`, which cannot stall the run.
 Findings injected in an earlier round or execution neither repeat nor count toward a later panel's gate while the blob they cite is unchanged.
 
-## `[context]`
+## `[compaction]`
 
 Tiered context compaction (approximate chars; tokens ≈ chars/4).
 
-<!-- config-table: context -->
+<!-- config-table: compaction -->
 
 ## `[prompt]`
 

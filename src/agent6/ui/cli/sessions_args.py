@@ -215,9 +215,9 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         help_text=f"{common.SESSION_ID}. Default: this repository's session history directory.",
     )
 
-    sessions_rm = common._sub(
+    sessions_remove = common._sub(
         sessions_sub,
-        "rm",
+        "remove",
         help=(
             "Delete a session's saved history, internal commit reference, and worktree."
             " Its git branch, if present, remains. On a controlling terminal it shows the"
@@ -225,14 +225,14 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " terminal, pass a session id or --yes to delete a session without asking."
         ),
     )
-    common._add_session_id(sessions_rm, completers._complete_session_ids)
-    sessions_rm.add_argument(
+    common._add_session_id(sessions_remove, completers._complete_session_ids)
+    sessions_remove.add_argument(
         "-y",
         "--yes",
         action="store_true",
         help="Delete without asking.",
     )
-    sessions_rm.add_argument(
+    sessions_remove.add_argument(
         "--asks",
         action="store_true",
         help=(

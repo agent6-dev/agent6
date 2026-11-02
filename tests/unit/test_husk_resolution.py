@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A husk session refuses at the resolver; only `sessions rm` still names one."""
+"""A husk session refuses at the resolver; only `sessions remove` still names one."""
 
 from __future__ import annotations
 
@@ -26,12 +26,12 @@ def test_an_explicit_husk_id_refuses_with_the_remedy(tmp_path: pathlib.Path) -> 
     _husk(tmp_path)
     with pytest.raises(id.SessionIdError, match="crashed before it ever started"):
         common.resolve_session_layout(tmp_path, "husky-one-AAAAAA")
-    with pytest.raises(id.SessionIdError, match="sessions rm"):
+    with pytest.raises(id.SessionIdError, match="sessions remove"):
         common.resolve_session_layout(tmp_path, "husky")  # by prefix too
 
 
-def test_rm_still_resolves_a_husk(tmp_path: pathlib.Path) -> None:
-    """Cleanup must keep working: rm is the surface that deletes exactly this."""
+def test_remove_still_resolves_a_husk(tmp_path: pathlib.Path) -> None:
+    """Cleanup must keep working: remove is the surface that deletes exactly this."""
     d = _husk(tmp_path)
     layout = common.resolve_session_layout(tmp_path, "husky-one-AAAAAA", allow_husk=True)
     assert layout.session_dir == d

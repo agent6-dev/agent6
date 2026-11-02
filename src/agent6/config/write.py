@@ -583,7 +583,7 @@ def set_config_value(
 ) -> str | None:
     """Set one leaf in the global or repo config.
 
-    A section's own value (`config set context '{ a = 1, b = 2 }'`) is written per leaf so
+    A section's own value (`config set compaction '{ a = 1, b = 2 }'`) is written per leaf so
     its siblings and comments survive; a dict-typed leaf is one value and is replaced.
 
     Args:

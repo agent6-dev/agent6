@@ -30,7 +30,7 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
     "history": ("search", frozenset({"search"})),
     "telemetry": ("export", frozenset({"export"})),
     "skills": ("list", frozenset({"install", "update", "list", "enable", "disable", "remove"})),
-    "memory": ("list", frozenset({"add", "list", "show", "rm", "decisions"})),
+    "memory": ("list", frozenset({"add", "list", "show", "remove", "decisions"})),
     "mcp": ("list", frozenset({"add", "list", "remove", "serve"})),
     "config": (
         "show",
@@ -53,10 +53,10 @@ _DEFAULT_VERBS: dict[str, tuple[str, frozenset[str]]] = {
                 "merge",
                 "prune",
                 "receipt",
+                "remove",
                 "reopen",
                 "resolve",
                 "review",
-                "rm",
                 "show",
                 "transcript",
             }
@@ -533,16 +533,16 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     common._sub(mem_sub, "list", help="Print the rendered memory index.")
     mem_show = common._sub(mem_sub, "show", help="Print one memory file.")
     mem_show.add_argument("name", help="Memory name.")
-    mem_rm = common._sub(
+    mem_remove = common._sub(
         mem_sub,
-        "rm",
+        "remove",
         help=(
             "Delete a memory file. On a terminal it shows the memory and"
             " asks [y/N] first; with no terminal it deletes without asking."
         ),
     )
-    mem_rm.add_argument("name", help="Memory name.")
-    mem_rm.add_argument("-y", "--yes", action="store_true", help="Delete without asking.")
+    mem_remove.add_argument("name", help="Memory name.")
+    mem_remove.add_argument("-y", "--yes", action="store_true", help="Delete without asking.")
     common._sub(
         mem_sub,
         "decisions",

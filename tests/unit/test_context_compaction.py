@@ -749,16 +749,16 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
     from agent6.config import Config
     from agent6.harness import loop, loop_state
 
-    context = {} if keep_messages is None else {"keep_thinking_turns": keep_messages}
+    compaction = {} if keep_messages is None else {"keep_thinking_turns": keep_messages}
     if retained is None:
         with pytest.raises(
             pydantic.ValidationError, match=r"keep_thinking_turns.*>= 1.*-1.*all thinking"
         ):
-            Config.model_validate({"context": context})
+            Config.model_validate({"compaction": compaction})
         return
-    cfg = Config.model_validate({"context": context})
+    cfg = Config.model_validate({"compaction": compaction})
     if keep_messages is None:
-        assert cfg.context.keep_thinking_turns == -1
+        assert cfg.compaction.keep_thinking_turns == -1
         assert compaction_window.CompactionSettings().keep_thinking_turns == -1
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
@@ -769,7 +769,7 @@ def test_tier1_thinking_retention_uses_minus_one_for_unlimited(
         compaction=compaction_window.CompactionSettings(
             drop_at_chars=1500,
             summarise_at_chars=10**9,
-            keep_thinking_turns=cfg.context.keep_thinking_turns,
+            keep_thinking_turns=cfg.compaction.keep_thinking_turns,
             elision_gists=False,
         ),
     )

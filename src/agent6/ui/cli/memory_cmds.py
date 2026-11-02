@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 memory add/list/show/rm/decisions` commands.
+"""`agent6 memory add/list/show/remove/decisions` commands.
 
 Store refusals (a bad name, an unreadable store) raise `MemoryStoreError`, an
 `OperatorError` the cli_main boundary presents; no per-command arms.
@@ -128,7 +128,7 @@ def _cmd_memory_decisions() -> int:
     return 0
 
 
-def _cmd_memory_rm(name: str, *, yes: bool = False) -> int:
+def _cmd_memory_remove(name: str, *, yes: bool = False) -> int:
     """Delete a memory file, asking first on a terminal.
 
     Args:
@@ -146,7 +146,7 @@ def _cmd_memory_rm(name: str, *, yes: bool = False) -> int:
             # `remove` reports the missing file.
             first = None
         if first is not None and not steer_tty.delete_confirmed(
-            f"memory rm will delete {name}\n  {first[0][:100] if first else '(an empty file)'}",
+            f"memory remove will delete {name}\n  {first[0][:100] if first else '(an empty file)'}",
             "Delete it?",
         ):
             return 0

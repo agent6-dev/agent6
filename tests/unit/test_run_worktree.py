@@ -49,7 +49,7 @@ from agent6.viewmodel import listing
 def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run as CI does, with no controlling terminal: `rm` without `--yes` asks on one."""
+    """Run as CI does, with no controlling terminal: `remove` without `--yes` asks on one."""
     monkeypatch.setattr("agent6.portable.has_controlling_tty", lambda: False)
 
 
@@ -398,10 +398,10 @@ def test_a_worktree_run_resumed_after_its_merge_shows_only_its_unlanded_work(
     assert _git(repo, "diff", "--name-only", landed, "main").split() == ["two.txt"]
 
 
-def test_rm_removes_the_worktree_with_the_record(
+def test_remove_removes_the_worktree_with_the_record(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`sessions rm <id>` takes an unmerged worktree run's worktree with its history."""
+    """`sessions remove <id>` takes an unmerged worktree run's worktree with its history."""
     repo = _repo(tmp_path, monkeypatch)
     _script(monkeypatch, _edit("new.txt", "made by the run\n"))
     assert cli_main(["run", "--worktree", "--session-id", "wt-GONE01", "add new.txt"]) == 0
@@ -409,7 +409,7 @@ def test_rm_removes_the_worktree_with_the_record(
     assert worktree is not None
     capsys.readouterr()
 
-    assert cli_main(["sessions", "rm", "wt-GONE01"]) == 0
+    assert cli_main(["sessions", "remove", "wt-GONE01"]) == 0
     assert "its worktree" in capsys.readouterr().out
     assert not worktree.exists()
     assert _nothing_was_created(repo, "wt-GONE01")
@@ -443,7 +443,7 @@ def test_prune_typed_in_a_worktree_removes_it_and_finishes_the_sweep(
     assert _worktrees(repo) == [str(repo)]
 
 
-def test_rm_typed_in_the_worktree_removes_the_chain_ref_too(
+def test_remove_typed_in_the_worktree_removes_the_chain_ref_too(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Rm removed the record and the worktree, then crashed before the chain ref."""
@@ -455,7 +455,7 @@ def test_rm_typed_in_the_worktree_removes_the_chain_ref_too(
     capsys.readouterr()
     monkeypatch.chdir(worktree)
 
-    assert cli_main(["sessions", "rm", "wt-SELF01"]) == 0
+    assert cli_main(["sessions", "remove", "wt-SELF01"]) == 0
     out, err = capsys.readouterr()
     assert "removed wt-SELF01, its worktree and its chain ref" in out
     assert f"this shell's directory is gone; cd {repo}" in err

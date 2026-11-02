@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 memory` CLI: add/list/show/rm over the file-per-fact store."""
+"""`agent6 memory` CLI: add/list/show/remove over the file-per-fact store."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from agent6.ui.cli import memory_cmds
 def _no_controlling_terminal(  # pyright: ignore[reportUnusedFunction]
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Run as CI does, with no controlling terminal: `rm` without `--yes` asks on one."""
+    """Run as CI does, with no controlling terminal: `remove` without `--yes` asks on one."""
     monkeypatch.setattr("agent6.portable.has_controlling_tty", lambda: False)
 
 
@@ -35,13 +35,15 @@ def test_list_empty_is_actionable(env: pathlib.Path, capsys: pytest.CaptureFixtu
     assert "memory" in out  # names the dir
 
 
-def test_add_list_show_rm_roundtrip(env: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_add_list_show_remove_roundtrip(
+    env: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert memory_cmds._cmd_memory_add("build-quirk", "Needs FOO=1.\nMore detail.") == 0
     assert memory_cmds._cmd_memory_list() == 0
     assert "build-quirk: Needs FOO=1." in capsys.readouterr().out
     assert memory_cmds._cmd_memory_show("build-quirk") == 0
     assert capsys.readouterr().out == "Needs FOO=1.\nMore detail.\n"
-    assert memory_cmds._cmd_memory_rm("build-quirk") == 0
+    assert memory_cmds._cmd_memory_remove("build-quirk") == 0
     capsys.readouterr()
     assert memory_cmds._cmd_memory_list() == 0
     assert "no memories" in capsys.readouterr().out

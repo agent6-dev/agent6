@@ -236,22 +236,24 @@ def test_config_list_edit_value_completion_omits_scalar_choices(
     assert offered == []
 
 
+@pytest.mark.parametrize("section", ["sandbox", "compaction"])
 def test_config_show_completion_offers_accepted_section_prefixes(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, section: str
 ) -> None:
-    """`config show` completion offers a whole section, so `sand` completes to `sandbox`."""
+    """`config show` completion offers editable sections and their leaves."""
     import argparse
 
     monkeypatch.chdir(tmp_path)
     offered = completers._complete_config_keys(  # pyright: ignore[reportPrivateUsage]
-        prefix="sand",
+        prefix=section[:4],
         parsed_args=argparse.Namespace(config_command="show", config=None),
         action=object(),
         settable=False,
         sections=True,
     )
 
-    assert "sandbox" in offered
+    assert section in offered
+    assert any(key.startswith(section + ".") for key in offered)
 
 
 def test_machine_overlay_key_completion_omits_operator_only_leaves(

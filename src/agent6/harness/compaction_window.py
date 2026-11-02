@@ -123,7 +123,7 @@ def message_chars(message: loop_conversation.Message) -> int:
     )
 
 
-# The verbatim tail a tier-2 restart keeps, about 20k tokens; `[context]
+# The verbatim tail a tier-2 restart keeps, about 20k tokens; `[compaction]
 # keep_recent_chars` overrides.
 KEEP_RECENT_CHARS = 80_000
 
