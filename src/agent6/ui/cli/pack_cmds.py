@@ -19,6 +19,8 @@ def cmd_pack() -> int:
         PackError: The pack or its gitignore entry cannot be written.
     """
     root = paths.project_root(pathlib.Path.cwd(), allow_pack=True)
+    if not (root / ".git").exists():
+        raise errors.PackError(f"{root} is not a git checkout; a pack carries a checkout's state")
     try:
         ignore = root / ".gitignore"
         text = ignore.read_text(encoding="utf-8") if ignore.exists() else ""

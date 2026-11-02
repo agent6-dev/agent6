@@ -124,3 +124,14 @@ def test_subdirectory_resolves_pack_at_project_root(
     assert _invoke(["pack"]) == 0
     assert (tmp_path / ".agent6/pack.json").is_file()
     assert not (sub / ".agent6").exists()
+
+
+def test_pack_outside_a_checkout_names_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Outside a git checkout, pack refuses in its own words rather than git's."""
+    monkeypatch.chdir(tmp_path)
+    assert _invoke(["pack"]) != 0
+    out = capsys.readouterr()
+    assert "not a git checkout" in out.err + out.out
+    assert "fatal:" not in out.err + out.out
