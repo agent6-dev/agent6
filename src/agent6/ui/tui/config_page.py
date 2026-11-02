@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+import re
 from collections.abc import Iterable, Iterator
 from typing import ClassVar
 
@@ -29,9 +30,7 @@ except ImportError as e:  # pragma: no cover - clear runtime message
 from agent6 import errors
 from agent6.app import confine
 from agent6.config import ConfigError, io, layer, notices, write
-from agent6.models import cache
-from agent6.models import choices as models_choices
-from agent6.ui.tui import config_forms, menubar, modals, screen_chrome
+from agent6.ui.tui import config_forms, config_model, menubar, modals, screen_chrome
 from agent6.viewmodel import config_view
 
 
@@ -679,6 +678,18 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
             return
 
+        role = re.fullmatch(
+            r"models\.(planner|worker|reviewer)(?:\.(provider|model))?", setting.key
+        )
+        if role is not None and self._eff is not None:
+            self.app.push_screen(
+                config_model.ModelModal(
+                    self.repo_root, self._eff, role[1], setting.source, self.config_paths
+                ),
+                self._form_closed,
+            )
+            return
+
         def _done(result: tuple[str, str, bool] | None) -> None:
             if result is None:
                 return
@@ -704,18 +715,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 )
                 self._reload()
 
-        # A model-id field gets a typeahead over the provider's models, cached now and live after.
-        eff = self._eff
-        provider = models_choices.model_role_provider(eff, setting.key) if eff is not None else None
-        if provider is not None and eff is not None:
-            modal = config_forms.EditModal(
-                setting,
-                typeahead=cache.cached_models(provider),
-                fetch=lambda: models_choices.config_value_choices(eff, setting.key),
-            )
-        else:
-            modal = config_forms.EditModal(setting)
-        self.app.push_screen(modal, _done)
+        self.app.push_screen(config_forms.EditModal(setting), _done)
 
     def action_reset(self) -> None:
         """Unset the selected setting."""

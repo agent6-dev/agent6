@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import pathlib
-from collections.abc import Callable
 from typing import ClassVar
 
 try:
@@ -31,7 +30,7 @@ def _provider_preset_base_url(key: str) -> str:
     return ""
 
 
-class _FormModal[ResultT](textual_screen.ModalScreen[ResultT]):
+class FormModal[ResultT](textual_screen.ModalScreen[ResultT]):
     """The form modals' shared keys: one vertical arrow chain, and left and right over the actions.
 
     An activated ActionItem dispatches to `action_<id>`.
@@ -58,7 +57,7 @@ class _FormModal[ResultT](textual_screen.ModalScreen[ResultT]):
         getattr(self, f"action_{event.action}")()
 
 
-class EditModal(_FormModal[tuple[str, str, bool] | None]):
+class EditModal(FormModal[tuple[str, str, bool] | None]):
     """Edit one setting: a chooser for choices and bools, a text box otherwise.
 
     The result is `(action, value, to_repo)` with the action "save" or "unset", or
@@ -81,37 +80,14 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     """
     )
 
-    def __init__(
-        self,
-        setting: config_view.ConfigSetting,
-        *,
-        typeahead: list[str] | None = None,
-        fetch: Callable[[], list[str]] | None = None,
-    ) -> None:
+    def __init__(self, setting: config_view.ConfigSetting) -> None:
         super().__init__()
         self._setting = setting
         self._done = False
-        # For a big open list (model ids): the cached suggestions now, a blocking fetch after.
-        self._typeahead = typeahead
-        self._fetch = fetch
 
     def on_mount(self) -> None:
-        """Focus the value field and start the suggestion fetch."""
+        """Focus the value field."""
         self.query_one("#edit-value").focus()
-        if self._fetch is not None:
-            self.run_worker(self._fetch_worker, thread=True)
-
-    def _fetch_worker(self) -> None:
-        """Fetch the live suggestions off the UI thread."""
-        models = self._fetch() if self._fetch else []
-        if models:
-            self.app.call_from_thread(self._apply_suggestions, models)
-
-    def _apply_suggestions(self, models: list[str]) -> None:
-        """Replace the typeahead's suggestions."""
-        field = self.query("#edit-value").first()
-        if isinstance(field, forms.TypeaheadField):
-            field.set_suggestions(models)
 
     def compose(self) -> app.ComposeResult:
         """Yield the title, the description, the value field, the target and the actions."""
@@ -142,14 +118,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
                     else config_view.format_value(raw)
                 )
             )
-            if self._typeahead is not None:
-                yield forms.TypeaheadField(
-                    "" if s.value is None else current,
-                    self._typeahead,
-                    id="edit-value",
-                    classes="edit-gap",
-                )
-            elif s.choices is not None:
+            if s.choices is not None:
                 yield forms.ChoiceField(
                     tuple(s.choices),
                     current,
@@ -190,11 +159,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
     def _new_value(self) -> str:
         """Return the field's value as the TOML text the writer takes."""
         field = self.query_one("#edit-value")
-        value = (
-            field.value
-            if isinstance(field, (forms.ChoiceField, forms.TypeaheadField, textual_widgets.Input))
-            else ""
-        )
+        value = field.value if isinstance(field, (forms.ChoiceField, textual_widgets.Input)) else ""
         return io.format_toml_value(value) if self._setting.py_type == "str" else value
 
     @textual.on(textual_widgets.Input.Submitted)
@@ -226,7 +191,7 @@ class EditModal(_FormModal[tuple[str, str, bool] | None]):
             self.action_cancel()
 
 
-class ReviewerModal(_FormModal[None]):
+class ReviewerModal(FormModal[None]):
     """Append one reviewer through the validated list writer."""
 
     BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
@@ -316,7 +281,7 @@ class ReviewerModal(_FormModal[None]):
         self.dismiss(None)
 
 
-class RemoveReviewerModal(_FormModal[None]):
+class RemoveReviewerModal(FormModal[None]):
     """Choose a position and confirm removal from the displayed roster's source layer."""
 
     BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
@@ -386,7 +351,7 @@ class RemoveReviewerModal(_FormModal[None]):
         self.dismiss(None)
 
 
-class EntryModal(_FormModal[None]):
+class EntryModal(FormModal[None]):
     """Add a named entry through a registry-driven form.
 
     Choosers for the fixed-choice fields, inputs for the free ones; a blank field

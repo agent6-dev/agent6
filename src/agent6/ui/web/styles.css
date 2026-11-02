@@ -272,12 +272,20 @@ button.mini { min-height: 26px; padding: 2px 10px; font-size: 12px; border-radiu
 .cfg-bar { margin-bottom: 8px; }
 .cfg-bar input.filter { flex: 1 1 auto; width: auto; min-width: 0; }
 .cfg-bar button { flex: none; white-space: nowrap; }
+.cfg-bar button[aria-pressed=true] { border-color: var(--accent); color: var(--accent); }
 .cfg { width: 100%; border-collapse: collapse; font-size: 13px; }
 .cfg td, .cfg th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 .cfg .key { font-family: var(--mono); word-break: break-all; }
 .cfg .val { font-family: var(--mono); word-break: break-word; }
 .cfg tr.mod .key { color: var(--accent); }
 .cfg .src { color: var(--muted); white-space: nowrap; }
+.cfg-combo { position: relative; }
+.cfg-options { max-height: 220px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--surface2); }
+.cfg-options[hidden] { display: none; }
+.cfg-option, .cfg-catalog { padding: 6px 10px; overflow-wrap: anywhere; }
+.cfg-option { cursor: pointer; font-family: var(--mono); }
+.cfg-option:hover, .cfg-option[aria-selected=true] { background: var(--surface); color: var(--accent); }
+.cfg-option[aria-selected=true] { outline: 1px solid var(--accent); outline-offset: -1px; }
 input.filter {
   width: 100%; font: inherit; color: var(--text); background: var(--surface2);
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-height: 42px;

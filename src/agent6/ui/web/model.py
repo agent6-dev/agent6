@@ -408,7 +408,11 @@ def config_payload(
 
 
 def config_suggestions(
-    cwd: pathlib.Path, key: str, config_paths: tuple[pathlib.Path, ...] = ()
+    cwd: pathlib.Path,
+    key: str,
+    config_paths: tuple[pathlib.Path, ...] = (),
+    *,
+    provider: str | None = None,
 ) -> list[str]:
     """Return value suggestions for one open-text config leaf.
 
@@ -416,6 +420,7 @@ def config_suggestions(
         cwd: The repository.
         key: The leaf's dotted key.
         config_paths: The `--config` files in command-line order.
+        provider: The model editor's unsaved provider choice, restricted to configured names.
 
     Returns:
         The preset names for `preset`; for any other key, what `config_value_choices`
@@ -427,6 +432,12 @@ def config_suggestions(
         eff = layer.load_effective(cwd, config_paths)
     except ConfigError:
         return []
+    if provider is not None and re.fullmatch(r"models\.(planner|worker|reviewer)\.model", key):
+        return (
+            choices.provider_model_choices(eff.config, provider)
+            if provider in eff.config.providers
+            else []
+        )
     return choices.config_value_choices(eff, key)
 
 

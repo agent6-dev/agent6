@@ -1741,6 +1741,26 @@ def test_config_suggest_endpoint(server: tuple[web_server.WebServer, int]) -> No
     assert json.loads(body) == {"values": []}
 
 
+def test_config_suggest_endpoint_accepts_the_selected_provider(
+    server: tuple[web_server.WebServer, int], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unsaved provider choice reaches the live listing through the HTTP query."""
+    from agent6.models import cache
+
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n')
+
+    def listing(provider: str, *_: object) -> list[str]:
+        return [provider + "-live"]
+
+    monkeypatch.setattr(cache, "list_models", listing)
+    _, port = server
+    status, body, _ = _get(port, "/api/config/suggest/models.worker.model?provider=b")
+    assert status == 200
+    assert json.loads(body) == {"values": ["b-live"]}
+
+
 def test_steer_compact_directive_routes_to_compact_request(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:

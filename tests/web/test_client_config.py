@@ -34,7 +34,10 @@ class Element {
   }
   set innerHTML(value) { this.children = []; }
   setAttribute(name, value) { this[name] = value; }
-  focus() { document.activeElement = this; }
+  getAttribute(name) { return this[name]; }
+  focus() { document.activeElement = this; this.onfocus?.(); }
+  removeAttribute(name) { delete this[name]; }
+  scrollIntoView() {}
   remove() {
     this.parent.children = this.parent.children.filter(child => child !== this);
     this.isConnected = false;
@@ -46,6 +49,7 @@ const document = {
   createDocumentFragment: () => el('fragment'), createTextNode: text => el('text', '', text),
   addEventListener() {}, removeEventListener() {},
 };
+const window = {scrollX: 0, scrollY: 0, scrollTo(x, y) { this.scrollX = x; this.scrollY = y; }};
 const view = document.body.appendChild(el('main'));
 let activeOverlayClose = null, routeGen = 0, token = '', accept = false;
 const writes = [], confirmations = [], notices = [];
@@ -65,7 +69,7 @@ async function request(path, body) {
   if (!response.ok) throw new Error(result.error);
   return result;
 }
-const getJSON = path => request(path);
+let getJSON = path => request(path);
 const postJSON = (path, body) => { writes.push({path, body}); return request(path, body); };
 const all = root => [root, ...root.children.flatMap(all)];
 const button = (text, root = document.body) => {
@@ -84,9 +88,11 @@ async function run() {
   await renderConfig();
   const bar = all(view).find(e => e.className === 'row cfg-bar');
   assert.deepEqual(bar.children.map(e => e.textContent), [
-    '', 'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…',
+    '', 'Modified only', 'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…',
   ]);
   assert.equal(bar.children[0].placeholder, 'filter settings…');
+  bar.children[0].value = 'providers.';
+  bar.children[0].oninput();
 
   await button('Add provider…').onclick();
   assert.equal(field('api_format').tag, 'select');
@@ -112,6 +118,10 @@ async function run() {
   assert.equal(writes.at(-1).path, '/api/config/entry');
   assert.equal(writes.at(-1).body.repo, false);
   assert.ok(row('providers.openrouter.base_url'));
+  const refreshedBar = all(view).find(e => e.className === 'row cfg-bar');
+  assert.equal(refreshedBar.children[0].value, 'providers.');
+  assert.equal(row('sandbox.network').style.display, 'none');
+  refreshedBar.children[0].value = ''; refreshedBar.children[0].oninput();
 
   await button('Add MCP server…').onclick();
   assert.equal(field('command').tag, 'input');
@@ -171,6 +181,89 @@ async function run() {
   assert.ok(notices.at(-1).text.includes(
     'note: --config ' + flagPath + ' overrides providers.masked.base_url while that flag is used.'
   ));
+  const search = () => all(view).find(e => e.className === 'filter');
+  search().value = 'sandbox.'; search().oninput();
+  await postJSON('/api/config', {key: 'sandbox.run_commands', value: '"ask"'});
+  await renderConfig();
+  search().value = 'sandbox.'; search().oninput();
+  button('Modified only').onclick();
+  assert.equal(row('sandbox.run_commands').style.display, '');
+  assert.equal(row('sandbox.network').style.display, 'none');
+  assert.equal(row('providers.masked.base_url').style.display, 'none');
+  button('Modified only').onclick();
+  window.scrollY = 140;
+  row('sandbox.run_commands').onclick();
+  all(overlay()).find(e => e.tag === 'select').value = 'allow';
+  await button('Save', overlay()).onclick();
+  assert.equal(row('sandbox.run_commands').children[1].textContent, 'allow');
+  assert.equal(search().value, 'sandbox.');
+  assert.equal(document.activeElement, row('sandbox.run_commands'));
+  assert.equal(window.scrollY, 140);
+  row('sandbox.run_commands').onclick();
+  await button('Unset', overlay()).onclick();
+  assert.equal(row('sandbox.run_commands').children[1].textContent, 'ask');
+  assert.equal(search().value, 'sandbox.');
+  assert.equal(document.activeElement, row('sandbox.run_commands'));
+  await postJSON('/api/config/entry', {
+    table: 'providers', name: 'b', fields: {api_format: 'openai', base_url: 'http://localhost:2'},
+  });
+  await postJSON('/api/config', {
+    key: 'models.worker',
+    value: '{provider = "masked", model = "old", effort = "high", temperature = 0.4}',
+  });
+  await renderConfig();
+  let resolveOld;
+  getJSON = path => path.includes('/api/config/suggest/')
+    ? path.includes('provider=masked') ? new Promise(resolve => { resolveOld = resolve; })
+      : Promise.resolve({values: ['alpha', 'beta']})
+    : request(path);
+  row('models.worker.provider').onclick();
+  const provider = all(overlay()).find(e => e.id === 'cfg-provider');
+  const model = all(overlay()).find(e => e.role === 'combobox');
+  assert.ok(provider && model, 'provider and model share one editor');
+  provider.value = 'b'; provider.onchange();
+  assert.equal(model.value, '');
+  model.focus();
+  await Promise.resolve(); await Promise.resolve();
+  resolveOld({values: ['stale']}); await Promise.resolve(); await Promise.resolve();
+  const options = () => all(overlay()).filter(e => e.role === 'option');
+  assert.deepEqual(options().map(e => e.textContent), ['alpha', 'beta']);
+  const press = key => model.onkeydown({key, preventDefault() {}, stopPropagation() {}});
+  const count = writes.length;
+  press('ArrowDown'); press('ArrowDown'); press('ArrowUp'); press('Enter');
+  assert.equal(model.value, 'alpha'); assert.equal(writes.length, count);
+  model.value = 'outside'; model.oninput();
+  assert.equal(options().length, 0);
+  assert.ok(all(overlay()).some(e => e.role === 'status' && e.textContent.includes('No matches')));
+  press('Escape'); assert.equal(model['aria-expanded'], 'false');
+  await button('Save', overlay()).onclick();
+  const updated = await getJSON('/api/config');
+  assert.equal(updated['models.worker.provider'].value, 'b');
+  assert.equal(updated['models.worker.model'].value, 'outside');
+  assert.equal(updated['models.worker.effort'].value, 'high');
+  assert.equal(updated['models.worker.temperature'].value, 0.4);
+  getJSON = path => path.includes('/api/config/suggest/')
+    ? Promise.resolve({values: []}) : request(path);
+  row('models.worker.model').onclick();
+  all(overlay()).find(e => e.role === 'combobox').focus();
+  await Promise.resolve(); await Promise.resolve();
+  assert.ok(all(overlay()).some(e =>
+    e.role === 'status' && e.textContent.includes('Catalog empty or unavailable')));
+  await button('Cancel', overlay()).onclick();
+  getJSON = path => path.includes('/api/config/suggest/')
+    ? Promise.reject(new Error('offline')) : request(path);
+  row('models.worker.model').onclick();
+  all(overlay()).find(e => e.role === 'combobox').focus();
+  await Promise.resolve(); await Promise.resolve();
+  assert.ok(all(overlay()).some(e =>
+    e.role === 'status' && e.textContent.includes('Catalog unavailable')));
+  await button('Cancel', overlay()).onclick();
+  row('sandbox.run_commands').onclick();
+  const saving = button('Save', overlay()).onclick();
+  routeGen++; activeOverlayClose();
+  view.innerHTML = ''; const other = view.appendChild(el('div', '', 'another page'));
+  await saving;
+  assert.equal(view.children[0], other);
 }
 run().catch(error => { console.error(error); process.exitCode = 1; });
 """
@@ -191,7 +284,7 @@ run().catch(error => { console.error(error); process.exitCode = 1; });
             check=False,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=90,
         )
     finally:
         srv.shutdown()

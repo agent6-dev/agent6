@@ -569,6 +569,29 @@ def test_config_suggestions_providers_and_models(
     assert model.config_suggestions(tmp_path, "models.nosuch.model") == []
 
 
+def test_model_suggestions_use_the_unsaved_provider(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model editor lists the selected provider without first writing it."""
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nprovider = "a"\nmodel = "old"\n'
+    )
+    before = cfg.read_text()
+
+    def listing(provider: str, *_: object) -> list[str]:
+        return [provider + "-live"]
+
+    monkeypatch.setattr(models_cache, "list_models", listing)
+    assert model.config_suggestions(tmp_path, "models.worker.model", provider="b") == ["b-live"]
+    assert model.config_suggestions(tmp_path, "models.planner.model", provider="b") == ["b-live"]
+    assert model.config_suggestions(tmp_path, "models.worker.model", provider="unknown") == []
+    assert cfg.read_text() == before
+
+
 def test_config_suggestions_parallel_models_pseudo_key(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

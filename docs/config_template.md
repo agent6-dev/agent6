@@ -29,6 +29,7 @@ It can be empty or absent when the global config supplies a provider and model.
   Enter writes the shown value unless the target already holds it.
   An existing block's format wins over a preset's.
 - `agent6 model <role> [provider/]model [--effort off|low|medium|high|xhigh|max]`: a model id alone keeps the role's provider; a configured provider name alone opens a model picker on a terminal, or lists its models without one.
+  A model change preserves the target layer's other role settings; only an explicit `--effort` replaces effort.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.

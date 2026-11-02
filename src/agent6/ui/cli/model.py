@@ -278,7 +278,7 @@ def _cmd_model(
     )
     # The shared edit path re-validates and rolls back, so a bad route never breaks config.toml.
     for r in roles:
-        err = write.set_config_table(pathlib.Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
+        err = write.set_config_leaves(pathlib.Path.cwd(), f"models.{r}", fields, to_repo=to_repo)
         if err is not None:
             common.refuse(f"{provider}/{model} would make the config invalid:\n{err}")
             return 2

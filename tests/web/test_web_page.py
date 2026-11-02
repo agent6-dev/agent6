@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "73cbbf587e582df8c66f655e0849149b940897668ab80dcbfd48ee63d883054c"
+PAGE_SHA256 = "78072a76e8409508a4a8b5da9bc3394037bf89640f8af503e7875f92600ef679"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -318,6 +318,7 @@ function el(tag, cls, text = '') {
       this.children.splice(this.children.indexOf(before), 0, child); child.parent = this;
     },
     setAttribute(key, value) { this[key] = value; },
+    getAttribute(key) { return this[key]; },
     remove() {
       this.isConnected = false; this.parent.children = this.parent.children.filter(c => c !== this);
     },
@@ -327,6 +328,7 @@ function el(tag, cls, text = '') {
 const document = {
   body: el('body'), activeElement: null, addEventListener() {}, removeEventListener() {},
 };
+const window = {scrollX: 0, scrollY: 0, scrollTo() {}};
 const view = el('div'); document.body.appendChild(view);
 const boot = () => {}, setCrumb = () => {}, esc = String, toast = () => {};
 const actionable = (node, action) => { node.onclick = action; };

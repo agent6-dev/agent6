@@ -102,6 +102,8 @@ The View menu's Full log opens the structural events of the run's log, formatted
 
 The config page shows every setting, its effective value, and the layer that set it: `default`, `preset`, `global`, `repo`, or `flag` (a `--config FILE`).
 `/` filters by name.
+Editing a role's provider or model opens one Model editor with a provider chooser and live model suggestions; unlisted model ids are accepted.
+Save writes both fields while keeping the target layer's other role settings.
 
 The Edit menu and Ctrl+P palette offer entry forms:
 

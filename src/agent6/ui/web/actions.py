@@ -666,7 +666,7 @@ def set_config(
     repo: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
-    """Set one config leaf through `agent6 config set`, which validates key and value.
+    """Set a config leaf or update a section through the validated `agent6 config set` writer.
 
     Args:
         cwd: The repository.

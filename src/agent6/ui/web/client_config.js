@@ -1,22 +1,42 @@
 // --- config ------------------------------------------------------------------
-async function renderConfig(gen) {
+async function renderConfig(gen = routeGen, readState = () => ({})) {
+  if (gen !== routeGen) return;
   setCrumb('config');
   const [data, registry] = await Promise.all([getJSON('/api/config'), getJSON('/api/config/entry_tables')]);
-  if (gen !== undefined && gen !== routeGen) return; // superseded: don't paint
+  if (gen !== routeGen) return;
+  const state = readState();
   view.innerHTML = '';
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Config'));
   // The filter and entry actions share a row, in the TUI config page's words.
   const bar = el('div', 'row cfg-bar');
   const filter = el('input', 'filter'); filter.placeholder = 'filter settings…'; filter.type = 'search';
+  filter.value = state.filter || '';
   bar.appendChild(filter);
+  let modified = state.modified || false;
+  const modifiedBtn = el('button', null, 'Modified only');
+  modifiedBtn.setAttribute('aria-pressed', String(modified));
+  modifiedBtn.onclick = () => {
+    modified = !modified;
+    modifiedBtn.setAttribute('aria-pressed', String(modified));
+    filter.oninput();
+  };
+  bar.appendChild(modifiedBtn);
+  const refresh = () => {
+    if (gen !== routeGen || !card.isConnected) return;
+    return renderConfig(gen, () => ({
+      filter: filter.value, modified, x: window.scrollX, y: window.scrollY,
+      key: document.activeElement?.getAttribute('data-key'),
+      filtering: document.activeElement === filter,
+    }));
+  };
   for (const table of registry.tables) {
     const addBtn = el('button', null, 'Add ' + table.label + '…');
-    addBtn.onclick = () => addEntry(table);
+    addBtn.onclick = () => addEntry(table, refresh);
     bar.appendChild(addBtn);
   }
   const reviewerBtn = el('button', null, 'Add reviewer…');
-  reviewerBtn.onclick = () => addReviewer();
+  reviewerBtn.onclick = () => addReviewer(refresh);
   bar.appendChild(reviewerBtn);
   card.appendChild(bar);
   const tbl = el('table', 'cfg');
@@ -33,12 +53,23 @@ async function renderConfig(gen) {
     // per-key payload the editor overlay shows it in.
     tr.title = s.description ? plainDescription(s.description) : 'click to edit';
     tr.style.cursor = 'pointer';
-    actionable(tr, () => editConfig(k, s, registry.tables), 'edit ' + k);
-    tbl.appendChild(tr); rows.push([k.toLowerCase(), tr]);
+    tr.setAttribute('data-key', k);
+    actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
+    tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified]);
   }
   card.appendChild(tbl);
-  filter.oninput = () => { const q = filter.value.toLowerCase(); for (const [key, tr] of rows) tr.style.display = key.includes(q) ? '' : 'none'; };
+  filter.oninput = () => {
+    const q = filter.value.toLowerCase();
+    for (const [key, tr, isModified] of rows) {
+      tr.style.display = key.includes(q) && (!modified || isModified) ? '' : 'none';
+    }
+  };
   view.appendChild(card);
+  filter.oninput();
+  const focused = rows.find(([, tr]) => tr.getAttribute('data-key') === state.key && tr.style.display !== 'none');
+  if (state.filtering || (state.key && !focused)) filter.focus({preventScroll: true});
+  else if (focused) focused[1].focus({preventScroll: true});
+  if (state.y !== undefined) window.scrollTo(state.x, state.y);
 }
 // A leaf's description is the docs table cell: markdown-lite. Backtick spans
 // render as code; `**bold**` is dropped (the terminal renderers do the same).
@@ -54,7 +85,7 @@ function descriptionNode(text) {
 }
 
 // A blank field writes nothing, preserving an existing entry's value.
-function addEntry(table) {
+function addEntry(table, refresh) {
   const back = el('div', 'overlay');
   const opener = document.activeElement;
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
@@ -103,8 +134,9 @@ function addEntry(table) {
   row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back);
   const close = () => {
+    if (!back.isConnected) return;
     activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus();
+    if (opener && opener.isConnected) opener.focus({preventScroll: true});
   };
   activeOverlayClose = close;
   function onKey(e) { if (e.key === 'Escape') close(); }
@@ -120,14 +152,16 @@ function addEntry(table) {
         fields: Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value])),
         repo: repoCb.checked,
       });
-      toast(d.message || 'added'); close(); await renderConfig();
+      toast(d.message || 'added'); close(); await refresh();
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
 }
 
-async function addReviewer() {
+async function addReviewer(refresh) {
+  const gen = routeGen;
   let choices;
   try { choices = await getJSON('/api/config/reviewer_choices'); } catch (e) { toast(e.message, true); return; }
+  if (gen !== routeGen) return;
   const opener = document.activeElement;
   const back = el('div', 'overlay'), box = el('div', 'card');
   box.style.width = 'min(560px, 92vw)';
@@ -152,8 +186,9 @@ async function addReviewer() {
   row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back);
   const close = () => {
+    if (!back.isConnected) return;
     activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus();
+    if (opener && opener.isConnected) opener.focus({preventScroll: true});
   };
   activeOverlayClose = close;
   function onKey(e) { if (e.key === 'Escape') close(); }
@@ -166,22 +201,94 @@ async function addReviewer() {
     try {
       const body = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.value]));
       const result = await postJSON('/api/config/reviewer', {...body, repo: repo.checked});
-      toast(result.message); close(); renderConfig();
+      toast(result.message); close(); await refresh();
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
 }
 
-// A proper editor overlay (not a browser prompt): choices and booleans get a
-// select, everything else a text field, with the default, source, and type
-// shown; "set for this repo" writes the per-repo config instead of the global.
-function editConfig(key, s, tables) {
+// Suggestions guide text entry; catalog membership is not validation.
+function configCombobox(current) {
+  const element = el('div', 'cfg-combo'), field = el('input', 'field');
+  field.value = current; field.autocomplete = 'off';
+  field.setAttribute('role', 'combobox');
+  field.setAttribute('aria-autocomplete', 'list');
+  field.setAttribute('aria-expanded', 'false');
+  const list = el('div', 'cfg-options'); list.id = 'cfg-model-options'; list.hidden = true;
+  list.setAttribute('role', 'listbox'); list.setAttribute('aria-label', 'Model suggestions');
+  field.setAttribute('aria-controls', list.id);
+  element.appendChild(field); element.appendChild(list);
+  let values = [], matches = [], query = '', index = -1, request = 0, message = 'Loading models…';
+  const close = () => {
+    list.hidden = true; field.setAttribute('aria-expanded', 'false');
+    field.removeAttribute('aria-activedescendant');
+  };
+  const choose = value => { field.value = value; query = value; index = -1; close(); };
+  const paint = () => {
+    list.innerHTML = '';
+    matches = values.filter(value => value.toLowerCase().includes(query.toLowerCase()));
+    field.removeAttribute('aria-activedescendant');
+    if (!matches.length) {
+      const status = el('div', 'cfg-catalog sub muted', message || 'No matches. You can save the typed model id.');
+      status.setAttribute('role', 'status'); list.appendChild(status);
+    }
+    matches.forEach((value, i) => {
+      const option = el('div', 'cfg-option', value); option.id = list.id + '-' + i;
+      option.setAttribute('role', 'option'); option.setAttribute('aria-selected', String(i === index));
+      option.onmousedown = e => e.preventDefault();
+      option.onclick = () => choose(value);
+      list.appendChild(option);
+      if (i === index) {
+        field.setAttribute('aria-activedescendant', option.id);
+        option.scrollIntoView({block: 'nearest'});
+      }
+    });
+  };
+  const open = () => { list.hidden = false; field.setAttribute('aria-expanded', 'true'); paint(); };
+  field.onfocus = () => { query = ''; index = -1; open(); };
+  field.oninput = () => { query = field.value; index = -1; open(); };
+  field.onblur = close;
+  field.onkeydown = e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (list.hidden) open();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      index = matches.length ? (index < 0 ? (step > 0 ? 0 : matches.length - 1) : (index + step + matches.length) % matches.length) : -1;
+      paint();
+    } else if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      if (!list.hidden && index >= 0) choose(matches[index]);
+      else close();
+    } else if (e.key === 'Escape' && !list.hidden) {
+      e.preventDefault(); e.stopPropagation(); close();
+    }
+  };
+  const load = async url => {
+    const generation = ++request;
+    values = []; index = -1; query = ''; message = 'Loading models…'; paint();
+    try {
+      const data = await getJSON(url);
+      if (generation !== request || !element.isConnected) return;
+      values = data.values || [];
+      message = values.length ? '' : 'Catalog empty or unavailable. You can type a model id.';
+    } catch (e) {
+      if (generation !== request || !element.isConnected) return;
+      message = 'Catalog unavailable: ' + e.message + '. You can type a model id.';
+    }
+    paint();
+  };
+  return {element, field, load};
+}
+
+function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const cur = s.input;
   const back = el('div', 'overlay');
   const opener = document.activeElement;
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-label', 'edit ' + key);
-  const title = el('h2', null, key);
+  const role = /^models\.(planner|worker|reviewer)(?:\.(provider|model))?$/.exec(key)?.[1];
+  const section = role ? 'models.' + role : null;
+  const title = el('h2', null, role ? 'Model: ' + role : key);
   title.style.textTransform = 'none'; // a config key is a case-sensitive identifier
   box.appendChild(title);
   const meta = el('div', 'sub muted');
@@ -193,9 +300,26 @@ function editConfig(key, s, tables) {
     desc.appendChild(descriptionNode(s.description));
     box.appendChild(desc);
   }
-  let field;
+  let field, provider, combo;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
-  if (choices) {
+  if (role) {
+    provider = el('select', 'field'); provider.id = 'cfg-provider';
+    const names = Object.keys(data).map(k => /^providers\.([^.]+)\.api_format$/.exec(k)?.[1]).filter(Boolean).sort();
+    for (const name of ['', ...names]) {
+      const option = el('option', null, name || (names.length ? 'Choose a provider' : 'Add a provider first'));
+      option.value = name; provider.appendChild(option);
+    }
+    provider.value = data[section + '.provider']?.value || '';
+    const providerLabel = el('label', 'sub muted', 'Provider'); providerLabel.htmlFor = provider.id;
+    box.appendChild(providerLabel); box.appendChild(provider);
+    combo = configCombobox(data[section + '.model']?.input || '');
+    field = combo.field; field.id = 'cfg-model';
+    const modelLabel = el('label', 'sub muted', 'Model'); modelLabel.htmlFor = field.id;
+    box.appendChild(modelLabel); box.appendChild(combo.element);
+    const load = () => combo.load('/api/config/suggest/' + section + '.model?provider=' + encodeURIComponent(provider.value));
+    provider.onchange = () => { field.value = ''; load(); };
+    load();
+  } else if (choices) {
     field = el('select', 'field');
     for (const c of choices) { const o = el('option', null, c); o.value = c; field.appendChild(o); }
     field.value = cur || String(s.default ?? '');
@@ -203,18 +327,8 @@ function editConfig(key, s, tables) {
     field = el('input', 'field');
     field.value = cur;
     if (s.type === 'list') field.placeholder = 'TOML list';
-    // Dynamic suggestions (configured provider names, the provider's model
-    // ids) from the same sources the TUI config page and CLI TAB completion
-    // use, attached as a native datalist autocomplete.
-    getJSON('/api/config/suggest/' + encodeURIComponent(key)).then(d => {
-      if (!d.values || !d.values.length || !field.isConnected) return;
-      const dl = el('datalist'); dl.id = 'cfg-suggest';
-      for (const v of d.values) { const o = el('option'); o.value = v; dl.appendChild(o); }
-      box.appendChild(dl);
-      field.setAttribute('list', dl.id);
-    }).catch(() => {});
   }
-  box.appendChild(field);
+  if (!combo) box.appendChild(field);
   const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
   const repoCb = el('input'); repoCb.type = 'checkbox';
   // Default the target layer to the value's origin: editing a repo-sourced value
@@ -231,7 +345,7 @@ function editConfig(key, s, tables) {
   // values have nothing to unset; flag/machine layers are not editable here.)
   let unsetBtn = null;
   if (s.source === 'repo' || s.source === 'global') {
-    unsetBtn = el('button', null, 'Unset');
+    unsetBtn = el('button', null, role ? 'Unset ' + key : 'Unset');
     unsetBtn.title = 'remove from the ' + s.source + ' config; the next layer below takes over';
     row.appendChild(unsetBtn);
   }
@@ -249,8 +363,9 @@ function editConfig(key, s, tables) {
   row.appendChild(cancel); box.appendChild(row);
   back.appendChild(box); document.body.appendChild(back);
   const close = () => {
+    if (!back.isConnected) return;
     activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
-    if (opener && opener.isConnected) opener.focus();
+    if (opener && opener.isConnected) opener.focus({preventScroll: true});
   };
   activeOverlayClose = close; // navigating away dismisses it
   function onKey(e) { if (e.key === 'Escape') close(); }
@@ -274,7 +389,7 @@ function editConfig(key, s, tables) {
         remove.disabled = true;
         try {
           const result = await postJSON('/api/config/reviewer/remove', {index, repo: s.source === 'repo'});
-          toast(result.message); close(); renderConfig();
+          toast(result.message); close(); await refresh();
         } catch (e) { toast(e.message, true); remove.disabled = false; }
       };
       item.appendChild(remove); roster.appendChild(item);
@@ -282,15 +397,18 @@ function editConfig(key, s, tables) {
     if (!s.value || !s.value.length) roster.appendChild(el('div', 'sub muted', 'The reviewer roster is empty.'));
     box.insertBefore(roster, field);
   }
-  field.focus();
+  (provider || field).focus();
   const submit = async () => {
     save.disabled = true;
     try {
       // A string-valued leaf travels as a TOML string, as the TUI sends it, so
       // `true`, `42` or `[a]` typed into a str field stays a string.
-      const value = s.type === 'str' ? JSON.stringify(field.value) : field.value;
-      const d = await postJSON('/api/config', { key, value, repo: repoCb.checked });
-      toast(d.message || 'set ' + key); close(); renderConfig();
+      if (provider && (!provider.value || !field.value.trim())) throw new Error('Provider and model are required.');
+      const value = provider
+        ? `{ provider = ${JSON.stringify(provider.value)}, model = ${JSON.stringify(field.value.trim())} }`
+        : s.type === 'str' ? JSON.stringify(field.value) : field.value;
+      const d = await postJSON('/api/config', { key: section || key, value, repo: repoCb.checked });
+      toast(d.message || 'set ' + key); close(); await refresh();
     } catch (e) { toast(e.message, true); save.disabled = false; }
   };
   save.onclick = submit;
@@ -298,7 +416,7 @@ function editConfig(key, s, tables) {
     unsetBtn.disabled = true;
     try {
       const d = await postJSON('/api/config', { key, unset: true, repo: s.source === 'repo' });
-      toast(d.message || 'unset ' + key); close(); renderConfig();
+      toast(d.message || 'unset ' + key); close(); await refresh();
     } catch (e) { toast(e.message, true); unsetBtn.disabled = false; }
   };
   if (removeBtn) removeBtn.onclick = async () => {
@@ -306,8 +424,8 @@ function editConfig(key, s, tables) {
     removeBtn.disabled = true;
     try {
       const d = await postJSON('/api/config/entry/remove', {table: entry.table, name: entry.name, repo: entry.source === 'repo'});
-      toast(d.message || 'removed'); close(); await renderConfig();
+      toast(d.message || 'removed'); close(); await refresh();
     } catch (e) { toast(e.message, true); removeBtn.disabled = false; }
   };
-  field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+  if (!combo) field.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
 }

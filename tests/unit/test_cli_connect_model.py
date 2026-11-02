@@ -506,6 +506,38 @@ def test_model_set_and_show(
     assert "claude-x" in out
 
 
+@pytest.mark.parametrize("to_repo", [False, True])
+@pytest.mark.parametrize("effort", [None, "medium"])
+def test_model_change_preserves_the_target_layers_other_fields(
+    iso: pathlib.Path, tmp_path: pathlib.Path, to_repo: bool, effort: str | None
+) -> None:
+    """Changing a route keeps temperature and effort unless --effort explicitly replaces it."""
+    cfg = iso / "agent6" / "config.toml"
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nprovider = "a"\nmodel = "old"\neffort = "high"\n'
+        "temperature = 0.4\n"
+    )
+    repo_cfg = paths.repo_config_path(tmp_path)
+    repo_cfg.parent.mkdir(parents=True, exist_ok=True)
+    repo_cfg.write_text('[models.worker]\neffort = "low"\ntemperature = 0.8\n')
+    args = ["model", "worker", "b/new"]
+    if to_repo:
+        args.append("--repo")
+    if effort:
+        args.extend(["--effort", effort])
+    assert main(args) == 0
+    role = tomllib.loads((repo_cfg if to_repo else cfg).read_text())["models"]["worker"]
+    assert role == {
+        "provider": "b",
+        "model": "new",
+        "effort": effort or ("low" if to_repo else "high"),
+        "temperature": 0.8 if to_repo else 0.4,
+    }
+
+
 def test_model_all_sets_every_role(
     iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -537,7 +569,7 @@ def test_model_invalid_provider_refuses_and_rolls_back(
     def _invalid(*_a: object, **_k: object) -> str:
         return "models.worker.provider: no such provider"
 
-    monkeypatch.setattr("agent6.config.write.set_config_table", _invalid)
+    monkeypatch.setattr("agent6.config.write.set_config_leaves", _invalid)
     assert main(["model", "worker", "anthropic/bad-x"]) == 2
     assert capsys.readouterr().err.startswith("REFUSING:")
     after = cfg.read_text(encoding="utf-8")

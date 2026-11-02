@@ -223,6 +223,182 @@ def test_the_provider_form_writes_the_chosen_deployment(
     assert 'deployment = "azure"' in cfg and "api-version" in cfg, cfg
 
 
+@pytest.mark.parametrize("action", ["Save", "Unset"])
+def test_config_save_keeps_filter_scroll_and_row_focus(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int, action: str
+) -> None:
+    """A config refresh keeps the operator's filtered rows and reading position."""
+    from playwright.sync_api import expect
+
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[sandbox]\nrun_commands = "allow"\n')
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    search = page.get_by_placeholder("filter settings…")
+    search.fill("sandbox.")
+    rows = page.locator(".cfg tr:visible .key")
+    before = rows.all_text_contents()
+    row = page.get_by_role("button", name="edit sandbox.run_commands", exact=True)
+    row.focus()
+    scroll = page.evaluate("window.scrollY")
+    row.press("Enter")
+    dialog = page.get_by_role("dialog")
+    dialog.locator("select.field").select_option("deny")
+    dialog.get_by_role("button", name=action, exact=True).click()
+    expect(dialog).to_have_count(0)
+    expect(row.locator(".val")).to_have_text("deny" if action == "Save" else "ask")
+    expect(search).to_have_value("sandbox.")
+    assert rows.all_text_contents() == before
+    expect(row).to_be_focused()
+    assert page.evaluate("window.scrollY") == scroll
+    assert not errors
+
+
+def test_a_late_config_save_does_not_repaint_another_page(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """A save response cannot replace the page opened while the write was pending."""
+    from playwright.sync_api import Route, expect
+
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit web.port", exact=True).click()
+    held: list[Route] = []
+
+    def hold(route: Route) -> None:
+        if route.request.method == "POST":
+            held.append(route)
+        else:
+            route.continue_()
+
+    page.route("**/api/config", hold)
+    page.get_by_role("dialog").get_by_role("button", name="Save", exact=True).click()
+    page.wait_for_timeout(100)
+    assert len(held) == 1
+    page.evaluate("location.hash = '#/machines'")
+    expect(page.locator(".cfg")).to_have_count(0)
+    with page.expect_response(lambda r: r.url.endswith("/api/config")):
+        held[0].continue_()
+    page.wait_for_timeout(300)
+    assert page.locator(".cfg").count() == 0
+    assert not errors
+
+
+def test_modified_only_includes_explicit_defaults_and_combines_with_search(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Modified means set by a layer, even when the value equals its default."""
+    from playwright.sync_api import expect
+
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text("[web]\nport = 7658\n")
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    toggle = page.get_by_role("button", name="Modified only", exact=True)
+    toggle.click()
+    page.get_by_placeholder("filter settings…").fill("web.")
+    expect(page.locator(".cfg tr:visible .key")).to_have_text(["web.port"])
+    page.get_by_role("button", name="edit web.port", exact=True).click()
+    page.get_by_role("dialog").get_by_role("button", name="Unset", exact=True).click()
+    expect(page.get_by_role("dialog")).to_have_count(0)
+    expect(page.locator(".cfg tr:visible .key")).to_have_count(0)
+    expect(toggle).to_have_attribute("aria-pressed", "true")
+    expect(page.get_by_placeholder("filter settings…")).to_have_value("web.")
+    assert not errors
+
+
+def test_the_paired_model_editor_selects_suggestions_without_saving(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """Provider changes clear the model; selecting a suggestion never submits the editor."""
+    from playwright.sync_api import expect
+
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nprovider = "a"\nmodel = "old"\neffort = "high"\n'
+        "temperature = 0.4\n"
+    )
+    page, errors = open_page(port)
+    page.route(
+        "**/api/config/suggest/**",
+        lambda route: route.fulfill(json={"values": ["alpha", "beta"]}),
+    )
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit models.worker.provider", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Provider", exact=True).select_option("b")
+    model = dialog.get_by_role("combobox", name="Model", exact=True)
+    expect(model).to_have_value("")
+    model.focus()
+    expect(dialog.get_by_role("listbox")).to_be_visible()
+    model.press("ArrowDown")
+    model.press("ArrowDown")
+    model.press("ArrowUp")
+    model.press("Enter")
+    expect(model).to_have_value("alpha")
+    expect(dialog).to_be_visible()
+    assert 'provider = "a"' in cfg.read_text()
+    model.fill("newer-than-catalog")
+    expect(dialog.get_by_role("status")).to_contain_text("No matches")
+    model.press("Escape")
+    expect(dialog.get_by_role("listbox")).to_be_hidden()
+    expect(dialog).to_be_visible()
+    dialog.get_by_role("button", name="Save", exact=True).click()
+    expect(dialog).to_have_count(0)
+    expect(page.get_by_role("button", name="edit models.worker.model", exact=True)).to_contain_text(
+        "newer-than-catalog"
+    )
+    text = cfg.read_text()
+    assert 'provider = "b"' in text and 'effort = "high"' in text and "temperature = 0.4" in text
+    assert not errors
+
+
+def test_model_catalog_ignores_a_stale_provider_response(
+    open_page: Callable[[int], tuple[Page, list[str]]], port: int
+) -> None:
+    """An older listing cannot overwrite the selected provider's empty catalog."""
+    from playwright.sync_api import Route, expect
+
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text(
+        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nprovider = "a"\nmodel = "old"\n'
+    )
+    page, errors = open_page(port)
+    held: list[Route] = []
+
+    def listing(route: Route) -> None:
+        if "provider=a" in route.request.url:
+            held.append(route)
+        else:
+            route.fulfill(json={"values": []})
+
+    page.route("**/api/config/suggest/**", listing)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit models.worker.model", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    dialog.get_by_label("Provider", exact=True).select_option("b")
+    model = dialog.get_by_role("combobox", name="Model", exact=True)
+    model.focus()
+    expect(dialog.get_by_role("status")).to_contain_text("Catalog empty or unavailable")
+    assert len(held) == 1
+    held[0].fulfill(json={"values": ["stale-model"]})
+    page.wait_for_timeout(100)
+    expect(dialog.get_by_role("option", name="stale-model", exact=True)).to_have_count(0)
+    model.fill("custom")
+    dialog.get_by_role("button", name="Save", exact=True).click()
+    expect(dialog).to_have_count(0)
+    assert 'model = "custom"' in cfg.read_text()
+    assert not errors
+
+
 def test_a_files_diff_fills_the_git_tab(
     open_page: Callable[[int], tuple[Page, list[str]]], git_port: int
 ) -> None:

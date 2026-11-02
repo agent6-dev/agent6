@@ -461,6 +461,7 @@ banned-from = [
     "agent6.ui.tui.clipboard",
     "agent6.ui.tui.composer",
     "agent6.ui.tui.config_forms",
+    "agent6.ui.tui.config_model",
     "agent6.ui.tui.config_page",
     "agent6.ui.tui.conversation",
     "agent6.ui.tui.copy_method",

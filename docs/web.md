@@ -72,11 +72,13 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - "Allow all" on a prompt appears only where it would grant more than the one call
 - **Machine view**: the state overview, the path taken and the current agent state's conversation; the entry submits as **Steer** (into the current state) or **Message** (a `poke` a waiting machine's next tool reads); **Stop** parks the instance at its next transition and `machine run` resumes it
 - **Config page**: every setting with value and source, filterable; click a row to set it, with the choices an enum or a provider's model listing offers; secrets never shown
+    - **Modified only** combines with the text filter to show settings a config layer set, including values equal to their defaults.
+    - The **Model** editor pairs provider and model for each role, accepts model ids outside the live suggestions, and saves both without replacing the role's other settings.
     - **Add provider…** adds or updates a `[providers.<name>]` entry, with format and URL prefilled for known provider names.
     - **Add MCP server…** adds or updates a `[mcp.servers.<name>]` entry.
       Enter either a URL or a command line; shell quoting splits the command into argv, without running a shell.
     - **Add skill…** sets `skills.state.<name>` to `enabled`, `disabled` or `always`; it does not install the skill.
-    - Forms save to global config by default and offer repo config as a target.
+    - Entry forms save to global config by default and offer repo config as a target.
       A blank field keeps an existing value or uses the schema default.
     - **Remove provider**, **Remove MCP server** or **Remove skill** in an entry row's editor confirms its name and config layer, then removes the whole entry, including its subtables.
       Removal targets the highest layer holding the entry and accepts only global or repo config.
@@ -175,7 +177,7 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
 - sign-in: `POST` `/api/login` with `{"secret": "<secret>"}` answers the token; a wrong secret answers `403`
 - every other `/api/...` route answers `401` with `{"error": ..., "login": true}` without the token
 - `GET /metrics` answers Prometheus text when `web.metrics_route = "on"` and `telemetry.metrics = "prometheus"`, with the web secret as the bearer, not the sign-in token ([telemetry export](usage.md#telemetry-export))
-- reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,resume_defaults}`, `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>`, `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
+- reads: `/api/meta`, `/api/hub`, `/api/session/<id>/{receipt,findings,resume_defaults}`, `/api/reviews/<panel_id>` with `/diff` and `/file`, `/api/routes?mode=&preset=`, `/api/config` with `/suggest/<key>?provider=<name>` (the model editor's configured provider), `/entry_tables` and `/reviewer_choices`, `/api/session/<id>` (what `attach --json` prints; `?step=<sha>` folds up to that commit) with `/conversation`, `/restate`, `/diff` (`?sha=&cumulative=1`) and `/events`, `/api/machine/<name>` with `/reasoning`, `/conversation` and `/events`, `/api/draft/<name>` with `/conversation`, `/diff` and `/events`
 - git reads, all of the repository the server runs in: `/api/git/refs`, `/api/git/graph` (`?refs=<full ref name or resolved sha>` repeated, `&limit=&skip=`), `/api/git/commit/<rev>`, `/api/git/compare?base=&head=`, `/api/git/diff?base=&head=&path=&old_path=`, `/api/git/search?q=`, `/api/git/worktree`
     - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **↻** starts from live refs
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`

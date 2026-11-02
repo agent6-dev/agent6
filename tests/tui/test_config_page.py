@@ -20,7 +20,7 @@ from agent6 import paths
 from agent6.config import ClaudeCodeProviderEntry, OpenAIProviderEntry, layer
 from agent6.models import cache
 from agent6.models import choices as models_choices
-from agent6.ui.tui import config_forms, config_page, forms, menubar, modals
+from agent6.ui.tui import config_forms, config_model, config_page, forms, menubar, modals
 from agent6.viewmodel import config_view
 
 _GLOBAL = """\
@@ -374,9 +374,9 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: pathlib.Path) 
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_forms.EditModal)
+            assert isinstance(modal, config_model.ModelModal)
             # A ChoiceField, not a plain Input: the configured providers were injected as choices.
-            field = modal.query_one("#edit-value", forms.ChoiceField)
+            field = modal.query_one("#model-provider", forms.ChoiceField)
             assert field.value == "anthropic"
 
     asyncio.run(scenario())
@@ -392,7 +392,7 @@ def test_model_field_is_a_typeahead_picker(
         return models
 
     monkeypatch.setattr(cache, "cached_models", _models)
-    monkeypatch.setattr(models_choices, "config_value_choices", _models)  # mock the live fetch
+    monkeypatch.setattr(models_choices, "provider_model_choices", _models)  # mock the live fetch
 
     async def scenario() -> None:
         from agent6.ui.tui import forms
@@ -414,15 +414,106 @@ def test_model_field_is_a_typeahead_picker(
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            assert isinstance(modal, config_forms.EditModal)
-            field = modal.query_one("#edit-value", forms.TypeaheadField)
+            assert isinstance(modal, config_model.ModelModal)
+            field = modal.query_one("#model-name", forms.TypeaheadField)
             assert field.value == "claude-sonnet-4-5"  # the current model
+            field.focus()
             # First keystroke replaces + narrows; arrow highlights a match.
             await pilot.press("h")
             await pilot.pause()
             await pilot.press("down")
             await pilot.pause()
             assert field.value == "claude-haiku-4-5"
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("to_repo", [False, True])
+def test_paired_model_editor_resets_the_model_and_preserves_siblings(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, to_repo: bool
+) -> None:
+    """A role change clears the old model and saves both fields without replacing siblings."""
+    from agent6.config import io, write
+
+    cfg = paths.global_config_path()
+    cfg.write_text(
+        cfg.read_text().replace(
+            'model = "claude-sonnet-4-5"',
+            'model = "claude-sonnet-4-5"\neffort = "high"\ntemperature = 0.4',
+        )
+        + '\n[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
+    )
+    repo_cfg = paths.repo_config_path(repo)
+    repo_cfg.parent.mkdir(parents=True, exist_ok=True)
+    repo_cfg.write_text('[models.worker]\neffort = "low"\ntemperature = 0.8\n')
+
+    def listing(provider: str, *_: object) -> list[str]:
+        return [provider + "-live"]
+
+    monkeypatch.setattr(cache, "list_models", listing)
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(110, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            table = screen.query_one("#tbl-models", widgets.DataTable)
+            table.move_cursor(
+                row=next(
+                    r
+                    for r in range(table.row_count)
+                    if str(table.get_row_at(r)[0]) == "worker.provider"
+                )
+            )
+            table.focus()
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            provider = modal.query_one("#model-provider", forms.ChoiceField)
+            provider.focus()
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            field = modal.query_one("#model-name", forms.TypeaheadField)
+            assert field.value == ""
+            modal.query(forms.ActionItem).first().focus()
+            await pilot.press("enter")
+            assert app.screen is modal
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("Provider and model are required" in note for note in notes)
+            field.focus()
+            await pilot.press("down", "enter")
+            assert field.value == "b-live"
+            assert app.screen is modal
+            await pilot.press(*["backspace"] * len("b-live"), *"custom")
+            assert field.value == "custom"
+            target = modal.query_one("#model-target", forms.ChoiceField)
+            target.select_value("repo config" if to_repo else "global config")
+            before = (repo_cfg if to_repo else cfg).read_text()
+            real_write = write.set_config_leaves
+
+            def refused(*_: object, **__: object) -> str:
+                return "model write refused for this test"
+
+            monkeypatch.setattr(write, "set_config_leaves", refused)
+            modal.query(forms.ActionItem).first().focus()
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.screen is modal
+            assert (repo_cfg if to_repo else cfg).read_text() == before
+            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
+            assert any("model write refused for this test" in note for note in notes)
+            monkeypatch.setattr(write, "set_config_leaves", real_write)
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.screen is screen
+            assert io.read_toml_file(repo_cfg if to_repo else cfg)["models"]["worker"] == {
+                "provider": "b",
+                "model": "custom",
+                "effort": "low" if to_repo else "high",
+                "temperature": 0.8 if to_repo else 0.4,
+            }
 
     asyncio.run(scenario())
 
@@ -578,7 +669,7 @@ def test_editing_a_model_survives_a_broken_secrets_file(
             # Let the thread worker run; the app must survive it.
             for _ in range(6):
                 await pilot.pause(0.05)
-            assert isinstance(app.screen, config_forms.EditModal)  # still open, app alive
+            assert isinstance(app.screen, config_model.ModelModal)  # still open, app alive
 
     asyncio.run(scenario())
 
@@ -1810,7 +1901,7 @@ def test_reload_on_an_invalid_on_disk_config_keeps_the_last_good_view(repo: path
             screen.action_edit()
             for _ in range(4):
                 await pilot.pause(0.05)
-            assert isinstance(app.screen, config_forms.EditModal)
+            assert isinstance(app.screen, config_model.ModelModal)
 
     asyncio.run(scenario())
 

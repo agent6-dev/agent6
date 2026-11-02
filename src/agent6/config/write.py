@@ -645,7 +645,7 @@ def set_config_table(
     *,
     to_repo: bool = False,
 ) -> str | None:
-    """Insert or replace a whole `[table]` block, as `agent6 model` writes each role.
+    """Insert or replace a whole `[table]` block.
 
     Args:
         repo_root: The repo.

@@ -59,6 +59,43 @@ def test_spawn_machine_create_argv_ends_options_before_task(
     assert captured[-1][1:] == ["machine", "create", "--", "-dashy task"]
 
 
+@pytest.mark.parametrize("repo", [False, True])
+def test_model_section_write_preserves_the_target_layers_siblings(
+    tmp_path: pathlib.Path, repo: bool
+) -> None:
+    """The paired web save preserves effort and temperature from its own target layer."""
+    from agent6.config import io
+
+    global_path = paths.global_config_path()
+    global_path.parent.mkdir(parents=True, exist_ok=True)
+    global_path.write_text(
+        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nprovider = "a"\nmodel = "old"\neffort = "high"\n'
+        "temperature = 0.4\n"
+    )
+    repo_path = paths.repo_config_path(tmp_path)
+    repo_path.parent.mkdir(parents=True, exist_ok=True)
+    repo_path.write_text('[models.worker]\neffort = "low"\ntemperature = 0.8\n')
+    target = repo_path if repo else global_path
+    ok, message = actions.set_config(
+        tmp_path, "models.worker", '{provider = "b", model = "not-in-catalog"}', repo=repo
+    )
+    assert ok, message
+    assert io.read_toml_file(target)["models"]["worker"] == {
+        "provider": "b",
+        "model": "not-in-catalog",
+        "effort": "low" if repo else "high",
+        "temperature": 0.8 if repo else 0.4,
+    }
+    before = target.read_text()
+    ok, message = actions.set_config(
+        tmp_path, "models.worker", '{provider = "a", model = "bad", effort = "invalid"}', repo=repo
+    )
+    assert not ok and "effort" in message
+    assert target.read_text() == before
+
+
 def test_merge_and_config_argv_end_options_before_values(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

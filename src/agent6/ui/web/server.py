@@ -778,7 +778,15 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             return
         if path.startswith("/api/config/suggest/"):
             key = path.removeprefix("/api/config/suggest/")
-            self._send_json({"values": model.config_suggestions(self.cwd, key, self.config_paths)})
+            query = parse.parse_qs(parse.urlsplit(self.path).query, keep_blank_values=True)
+            provider = query.get("provider", [None])[0]
+            self._send_json(
+                {
+                    "values": model.config_suggestions(
+                        self.cwd, key, self.config_paths, provider=provider
+                    )
+                }
+            )
             return
         if path.startswith("/api/git/"):
             self._route_git(path.removeprefix("/api/git/"))
