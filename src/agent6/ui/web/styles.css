@@ -624,7 +624,8 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .blamed-line > .source-code { flex: 1; }
 .blamed-line > .g { flex: none; }
 .blamed-line { flex-wrap: wrap; }
-.blamed-line > .finding { flex-basis: 100%; }
+/* order: a finding attached before blame still leaves the gutter beside the code. */
+.blamed-line > .finding { flex-basis: 100%; order: 1; }
 .dsplit:has(.blame-cell) { display: grid; grid-template-columns: repeat(2, minmax(max-content, 1fr)); width: max-content; min-width: 100%; }
 .dsplit:has(.blame-cell) .ds-row { grid-column: 1 / -1; grid-template-columns: subgrid; }
 .dsplit:has(.blame-cell) .ds-head { grid-column: 1 / -1; }
