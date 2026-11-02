@@ -356,7 +356,7 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
         tool_calls=1,
         verified="failed",
     )
-    assert finalize.session_exit_code(inherited) == 4
+    assert finalize.session_exit_code(inherited, harness_gate=True) == 4
 
 
 def test_the_listing_and_the_header_agree_on_the_word() -> None:

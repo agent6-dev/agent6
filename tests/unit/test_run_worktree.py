@@ -1125,8 +1125,8 @@ def test_a_default_run_whose_gate_the_model_never_ran_exits_zero_and_reads_unver
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """With the harness gate off (the default), nothing judged the tree, so nothing is wrong."""
-    repo = _repo(tmp_path, monkeypatch, config=_COMMANDS)
-    _pin_gate(repo)
+    in_checkout = _COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]')
+    _repo(tmp_path, monkeypatch, config=in_checkout + '\n[harness]\nverify_command = ["true"]\n')
     _script(monkeypatch, _edit("new.txt", "one\n"))
 
     assert cli_main(["run", "--session-id", "wt-UNJ01", "add new.txt"]) == 0
