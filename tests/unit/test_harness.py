@@ -1798,8 +1798,8 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
 
     commits: list[str] = []
 
-    def _fake_commit(root: Any, subject: str) -> str:
-        del root
+    def _fake_commit(root: Any, subject: str, **kw: Any) -> str:
+        del root, kw
         commits.append(subject)
         return f"sha{len(commits)}"
 
@@ -1813,8 +1813,87 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             original_task="t",
         )
 
-    # The verify->edit turn makes no 'verify passed' commit.
-    assert commits == []
+    # The verify->edit turn makes no 'verify passed' commit: the edit after the green leaves the
+    # tree unjudged, so it is checkpointed like any other editing turn.
+    assert commits == ["agent6 turn 1: checkpoint"]
+    assert result.reason == "finish_session"
+
+
+def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.Path) -> None:
+    """Per-turn checkpoints do not depend on `verify_when`.
+
+    With a gate configured and `verify_when = "never"`, an editing turn the model did not verify
+    committed nothing until the final checkpoint, so `/undo` and `fork --at-turn` had no turn to
+    cut at and the settled stop never armed.
+    """
+
+    class ProviderStub:
+        def __init__(self) -> None:
+            self.n = 0
+
+        def call(self, **kwargs: Any) -> ProviderResponse:
+            del kwargs
+            self.n += 1
+            if self.n == 1:
+                return _tool_resp("apply_edit", {}, tool_id="e1")
+            return _tool_resp("finish_session", {"summary": "done"}, tool_id="fin")
+
+    class DispatcherStub(_StubDispatcher):
+        def dispatch(self, name: str, raw_input: dict[str, Any]) -> tools_results.ToolResult:
+            if name == "apply_edit":
+                return tools_results.RawResult({"ok": True})
+            if name == "finish_session":
+                return tools_results.RawResult(
+                    {"acknowledged": True, "summary": raw_input["summary"]}
+                )
+            raise AssertionError(f"unexpected tool: {name}")
+
+    config = types.SimpleNamespace(
+        sandbox=types.SimpleNamespace(hide_paths=()),
+        git=_GIT_STUB,
+        budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+        harness=types.SimpleNamespace(
+            standing_patience=-1,
+            went_quiet_max_nudges=4,
+            loop_guard_kill_threshold=10,
+            verify_settled_stop_after=12,
+            stagnation_notice_after_s=300.0,
+            verify_when="never",
+            verify_at_start=False,
+            verify_retries=2,
+            verify_command=("true",),
+            metric=None,
+            verify_timeout_s=60.0,
+            verify_infer=True,
+        ),
+        prompt=types.SimpleNamespace(decompose=False),
+    )
+    wf = _wf(
+        root=tmp_path,
+        config=config,
+        provider=ProviderStub(),
+        dispatcher=DispatcherStub(),
+        max_turns=3,
+    )
+    messages = [{"role": "user", "content": [{"type": "text", "text": "TASK:\nx"}]}]
+    commits: list[str] = []
+
+    def _fake_commit(root: Any, subject: str, **kw: Any) -> str:
+        del root, kw
+        commits.append(subject)
+        return f"sha{len(commits)}"
+
+    with mock.patch("agent6.vcs.git_ops.chain_commit", side_effect=_fake_commit):
+        result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="s",
+            conversation=loop_conversation.Conversation.from_wire(messages),
+            tool_calls=0,
+            start_turn=1,
+            root_task_id=None,
+            original_task="t",
+        )
+
+    assert commits == ["agent6 turn 1: checkpoint"]
     assert result.reason == "finish_session"
 
 
@@ -5996,6 +6075,16 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
                 )
             if name == "apply_edit":
                 return tools_results.RawResult({"applied": True, "path": "f.py"})
+            if name == "run_metric_command":
+                # Each editing turn is checkpointed, and a checkpoint samples the metric.
+                return tools_results.MetricResult(
+                    returncode=0,
+                    stdout="3",
+                    stderr="",
+                    duration_s=0.1,
+                    exec_failed=False,
+                    score=3.0,
+                )
             return tools_results.RawResult({"ok": True})
 
     provider = ProviderStub()

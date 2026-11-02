@@ -343,9 +343,10 @@ def _knobs(cfg: Any, **knobs: Any) -> Any:
 def _gated_wf(
     repo: pathlib.Path, provider: mock.MagicMock, dispatcher: mock.MagicMock, **kw: Any
 ) -> loop.Harness:
-    """Return a gated harness whose auto-commit fires only on a green verify.
+    """Return a harness with a gate it never runs itself (`verify_when = "never"`).
 
-    A run_command-authored edit stays in the worktree, and only a final checkpoint gets it into git.
+    An editing turn is checkpointed on the chain whatever the gate policy, so a run_command-authored
+    edit reaches git at its turn, and an abnormal end checkpoints whatever is left.
     """
     return loop.Harness(
         chain=run_chain.RunChain(
@@ -358,6 +359,16 @@ def _gated_wf(
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
+            git=types.SimpleNamespace(
+                control="agent6",
+                commit_per_turn=True,
+                commit=types.SimpleNamespace(
+                    checkpoint=types.SimpleNamespace(message="agent6"),
+                    name="",
+                    email="",
+                    trailer="",
+                ),
+            ),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -390,15 +401,17 @@ def _dirtying_dispatcher(repo: pathlib.Path) -> mock.MagicMock:
     return dispatcher
 
 
-def _git_log(repo: pathlib.Path) -> str:
-    """The run's commit line: the chain ref (checkpoints never touch HEAD)."""
-    return subprocess.run(
-        ["git", "log", "--oneline", "refs/agent6/guard"],
-        cwd=repo,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
+def _chain_holds(repo: pathlib.Path, path: str) -> bool:
+    """Return whether the chain tip's tree holds the file: the edit reached git."""
+    return (
+        subprocess.run(
+            ["git", "cat-file", "-e", f"refs/agent6/guard:{path}"],
+            cwd=repo,
+            capture_output=True,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 def test_loop_guard_kill_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
@@ -423,7 +436,7 @@ def test_loop_guard_kill_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) 
     result = wf.run("loop forever")
 
     assert result.reason == "loop_guard_killed"
-    assert "checkpoint (turn 5)" in _git_log(repo)
+    assert _chain_holds(repo, "edit.txt")
 
 
 def test_max_turns_stop_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
@@ -445,7 +458,7 @@ def test_max_turns_stop_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -
     result = wf.run("keep going")
 
     assert result.reason == "max_turns"
-    assert "checkpoint (turn 3)" in _git_log(repo)
+    assert _chain_holds(repo, "edit.txt")
 
 
 def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
@@ -462,7 +475,7 @@ def test_budget_exhausted_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path)
     wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_turns=5)
     result = wf.run("do the thing")
     assert result.reason == "budget_exhausted"
-    assert "checkpoint (turn" in _git_log(repo)
+    assert _chain_holds(repo, "edit.txt")
 
 
 def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
@@ -479,7 +492,7 @@ def test_provider_error_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -
     wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_turns=5)
     result = wf.run("do the thing")
     assert result.reason == "provider_error"
-    assert "checkpoint (turn" in _git_log(repo)
+    assert _chain_holds(repo, "edit.txt")
 
 
 def test_went_quiet_checkpoints_the_dirty_worktree(
@@ -502,14 +515,11 @@ def test_went_quiet_checkpoints_the_dirty_worktree(
     wf.config = _knobs(wf.config, went_quiet_max_nudges=0)
     result = wf.run("do the thing")
     assert result.reason == "went_quiet"
-    assert "checkpoint (turn" in _git_log(repo)
+    assert _chain_holds(repo, "edit.txt")
 
 
 def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: pathlib.Path) -> None:
-    """A verify that cannot execute in the jail still ends with the run's edits checkpointed.
-
-    Verify never goes green, so the per-turn auto-commit never fires.
-    """
+    """A verify that cannot execute in the jail still ends with the run's edits checkpointed."""
     from agent6.tools import tool_errors
 
     repo = tmp_path / "repo"
@@ -534,7 +544,7 @@ def test_unexecutable_verify_abort_checkpoints_the_dirty_worktree(tmp_path: path
     wf = _gated_wf(repo, provider, dispatcher, max_turns=5)
     result = wf.run("do the thing")
     assert result.reason == "verify_command_unexecutable"
-    assert "checkpoint (turn" in _git_log(repo)
+    assert _chain_holds(repo, "edit.txt")
 
 
 def _stagnation_blocks(messages: list[dict[str, Any]]) -> list[str]:

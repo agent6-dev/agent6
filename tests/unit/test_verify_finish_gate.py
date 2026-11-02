@@ -751,20 +751,25 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
     assert state.verify.fail_streak == 0
 
 
-def test_never_mode_leaves_the_models_timed_out_gate_alone(
+def test_never_mode_gives_the_models_timed_out_gate_the_same_scoped_followup(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
-    """Under `never` a timeout in the model's own run_verify_command gets no harness re-run."""
+    """The scoped re-run belongs to the model's own verify call, whatever `verify_when` says.
+
+    Under `never` a timeout in the model's run_verify_command got no re-run, so the only gate
+    policy without a harness run also lost the fallback for a slow pytest gate.
+    """
     monkeypatch.setattr(run_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"], when="never")
+    dispatcher.run_verify.return_value = _exec(0)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn()
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
         state, turn, "run_verify_command", _exec(124), {}
     )
-    dispatcher.run_verify.assert_not_called()
-    assert state.verify.scoped is False
-    assert turn.verify_just_failed is True
+    dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
+    assert state.verify.scoped is True
+    assert turn.verify_just_passed is True
 
 
 def test_a_full_green_from_the_models_own_gate_unarms_scoping(

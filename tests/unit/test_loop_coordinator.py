@@ -253,6 +253,16 @@ def _build_wf(
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             prompt=mock.MagicMock(system_prompt_file=""),
+            git=types.SimpleNamespace(
+                control="agent6",
+                commit_per_turn=True,
+                commit=types.SimpleNamespace(
+                    checkpoint=types.SimpleNamespace(message="agent6"),
+                    name="",
+                    email="",
+                    trailer="",
+                ),
+            ),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -684,7 +694,7 @@ def test_invalid_parallel_directive_dispatches_nothing_and_names_the_reason(
 
 
 def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) -> None:
-    """A changed worktree at the boundary is chain-committed before dispatch cuts the lanes."""
+    """A changed worktree is chain-committed at its turn, and dispatch cuts the lanes from it."""
     repo = tmp_path / "repo"
     _init_repo(repo)
     coord_id = "run-dirty"
@@ -712,17 +722,15 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
         lane_spawner=spawner,
         events=events,
         dispatcher=dispatcher,
-        # A model-run gate: the wip edit stays uncommitted until dispatch.
+        # A model-run gate the model never ran: the editing turn is checkpointed all the same.
         verify_command=("true",),
         verify_when="never",
     )
     wf.run("start")
 
     assert spawner.calls and spawner.calls[0][1] == "p1"  # dispatched
-    # The wip edit was captured by the pre-dispatch checkpoint, on the chain.
+    # The wip edit reached the chain before the lanes were cut from it.
     assert _git(repo, "show", "refs/agent6/coord:wip.txt") == "uncommitted work"
-    chain_log = _git(repo, "log", "--oneline", "refs/agent6/coord")
-    assert "checkpoint before /parallel dispatch" in chain_log
     commits = events.of("loop.auto_commit")
     diffs = events.of("diff.updated")
     assert commits  # the state fold sees the checkpoint step

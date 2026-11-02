@@ -1012,10 +1012,9 @@ class Harness:
             isinstance(result, results.ExecResult) and result.stopped_by_operator
         )
         if name == "run_verify_command" and isinstance(result, results.ExecResult):
-            # A timed-out model gate gets the same scoped follow-up as the harness gate.
+            # A timed-out model gate gets the scoped follow-up, whatever the gate policy.
             if not (
                 self.mode == "run"
-                and self.gate.when != "never"
                 and result.returncode == verify_gate.EXIT_TIMEOUT
                 and not state.verify.scoped
                 and self.gate.scoped_followup(state, turn) is not None
@@ -1170,13 +1169,10 @@ class Harness:
             The end when the operator stops at the commit hook or the metric command cannot
             execute, else None.
         """
-        gateless = not self.gate.present(state.verify)
-        # Unjudged: no gate may run, or under `verify_when = "finish"` the model ran none.
-        unjudged = gateless or (
-            self.gate.when == "finish" and not (turn.verify_just_passed or turn.verify_just_failed)
-        )
-        unjudged_changed = unjudged and (turn.edited or self.chain.dirty())
+        # A green verify with no edit after it makes a verified step; any other editing turn
+        # makes a checkpoint, whatever the gate policy, so every turn stays a point to cut at.
         verified_commit = turn.verify_just_passed and not turn.edit_since_verify_pass
+        unjudged_changed = not verified_commit and (turn.edited or self.chain.dirty())
         if self.mode != "run" or not (verified_commit or unjudged_changed):
             return None
         if unjudged_changed:
