@@ -55,22 +55,6 @@ def test_modified_and_untracked_paths_split_the_operators_work(tmp_path: pathlib
     assert git_read.status(tmp_path, exclude={"new.txt"}).untracked_count == 1
 
 
-def test_worktree_name_status_leaves_out_the_operators_untracked_files(
-    tmp_path: pathlib.Path,
-) -> None:
-    """`worktree_name_status` excludes `untracked_at_start` like every status call in the loop.
-
-    A bystander untracked file would otherwise skew every checkpoint's derived type and scope.
-    """
-    _init_repo(tmp_path)
-    (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")  # the operator's
-    mine = git_read.untracked_paths(tmp_path)
-    (tmp_path / "feature.py").write_text("x = 1\n", encoding="utf-8")  # the run's
-
-    changes = git_read.worktree_name_status(tmp_path, exclude=mine)
-    assert ("A", "feature.py") in changes
-    assert not any(path == "notes.txt" for _status, path in changes)
-
 
 def test_stash_tracked_changes_leaves_untracked_files_in_place(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
@@ -2201,7 +2185,6 @@ def test_status_and_name_status_leave_out_everything_under_an_excluded_directory
     assert git_read.status(tmp_path, exclude={"secrets"}).modified_count == 0
     assert git_read.status(tmp_path, exclude={"secrets", "secrets.txt"}).is_clean
     assert git_read.status(tmp_path).modified_count == 2
-    assert git_read.worktree_name_status(tmp_path, exclude={"secrets"}) == (("A", "secrets.txt"),)
     assert git_read.excluded("secrets/deep/key.txt", {"secrets"})
     assert git_read.excluded("secrets/", {"secrets"})
     assert not git_read.excluded("secrets.txt", {"secrets"})

@@ -797,31 +797,6 @@ def list_run_commits(
     return tuple(rows)
 
 
-def worktree_name_status(
-    path: pathlib.Path, *, exclude: Collection[str] = ()
-) -> tuple[tuple[str, str], ...]:
-    """Return the status letter and path of every pending change, untracked reported as `A`.
-
-    Args:
-        path: The repository.
-        exclude: Repo-relative paths left out, each with everything under it: the run's
-            `untracked_at_start` and its hidden paths.
-
-    Returns:
-        The (status, path) pairs.
-    """
-    res = git_command.run(path, "status", "--porcelain", check=False)
-    pairs: list[tuple[str, str]] = []
-    for line in res.stdout.splitlines():
-        if len(line) < 4:
-            continue
-        rel = line[3:].strip()
-        if excluded(rel, exclude):
-            continue
-        code = line[:2].strip() or "M"
-        pairs.append(("A" if code in ("??", "A", "AM") else code[:1], rel))
-    return tuple(pairs)
-
 
 def tree_name_status(
     path: pathlib.Path, old_tree: str, new_tree: str
