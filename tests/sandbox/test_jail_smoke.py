@@ -1139,7 +1139,8 @@ def test_jail_fork_worktree_reads_the_repository_git(
     rc, _out, err = jailed("git", "commit", "-q", "--allow-empty", "-m", "x", granted=True)
     assert rc != 0 and "Read-only file system" in err
     rc, _out, err = jailed("git", "rev-parse", "--show-toplevel", granted=False)
-    assert rc != 0 and "not a git repository" in err
+    # git 2.56 says "gitfile does not point to a valid repository", 2.53 "not a git repository".
+    assert rc == 128 and "repository" in err
 
 
 def test_full_runs_the_command_as_the_operators_own_uid(
