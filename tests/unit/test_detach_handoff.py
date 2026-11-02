@@ -206,7 +206,9 @@ def _stub_execution_internals(
                 "bridge"
             ].undo_forker
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             if isinstance(result, Exception):
                 raise result
             if result.reason == "undone" and self._undo_forker is not None:

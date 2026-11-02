@@ -44,9 +44,10 @@ def test_expanded_shows_the_full_tool_detail() -> None:
     detail = "old_string not found\n" + "\n".join(f"line {i}" for i in range(50))
     item = transcript.TranscriptItem("tool", name="apply_edit", ok=False, detail=detail)
     lines = transcript_style.item_lines(item, detail="expanded")
-    assert lines[1] == [("  └ ", "fail"), ("old_string not found", "detail")]
-    assert all(span[1] == "detail" for line in lines[2:52] for span in line)  # every line neutral
-    assert "line 49" in lines[51][0][0]  # the last detail line is present, no "+N more"
+    assert lines[1] == [("  arguments: (none)", "arg")]
+    assert lines[2] == [("  └ ", "fail"), ("old_string not found", "detail")]
+    assert all(span[1] == "detail" for line in lines[3:53] for span in line)  # every line neutral
+    assert "line 49" in lines[52][0][0]  # the last detail line is present, no "+N more"
 
 
 def test_short_single_line_detail_is_not_clipped_and_has_no_more_note() -> None:
@@ -181,7 +182,10 @@ def test_an_in_flight_tool_is_one_running_line() -> None:
     (line,) = transcript_style.item_lines(item, detail="collapsed")
     assert "".join(text for text, _style in line) == "→ run_command  sleep 60  · running"
     assert "fail" not in {style for _text, style in line}
-    assert transcript_style.item_lines(item, detail="expanded") == [line]
+    assert transcript_style.item_lines(item, detail="expanded") == [
+        line,
+        [("  arguments: (none)", "arg")],
+    ]
     assert transcript_style.item_lines(item, detail="hidden") == []
     (line,) = transcript_style.item_lines(
         dataclasses.replace(item, detail="awaiting approval"), detail="collapsed"

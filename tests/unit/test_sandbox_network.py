@@ -81,7 +81,9 @@ def test_run_one_returns_finish_payload(
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _prompt: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             return loop_snapshot.SessionResult(
                 reason="finish_session",
                 completed=True,
@@ -120,7 +122,9 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _prompt: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             return loop_snapshot.SessionResult(
                 reason="finish_session",
                 completed=True,

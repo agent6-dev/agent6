@@ -298,7 +298,9 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -567,7 +569,9 @@ def _finishing_workflow(turns: int) -> type:
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
@@ -696,7 +700,9 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             events.emit("session.end", reason=reason, turns=1, verified=verified)
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -811,7 +817,9 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -890,7 +898,9 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             events.emit("session.end", reason="finish_session", turns=3, all_passed=True)
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -963,7 +973,9 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             events.emit("session.end", reason="finish_session", turns=3, all_passed=True)
             return loop_snapshot.SessionResult(
                 completed=True,
@@ -1066,7 +1078,9 @@ def test_an_interrupted_end_records_the_tree_the_run_left(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             raise KeyboardInterrupt
 
     frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
@@ -1135,7 +1149,9 @@ def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             raise KeyboardInterrupt
 
     frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
@@ -1271,7 +1287,9 @@ def test_a_plan_under_auto_merge_prints_no_skipped_note(
         def __init__(self, **_kwargs: object) -> None:
             pass
 
-        def run(self, _task: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _task: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             events.emit("session.end", reason="finish_planning", turns=1)
             return loop_snapshot.SessionResult(
                 completed=True,

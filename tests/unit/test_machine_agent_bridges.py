@@ -167,7 +167,9 @@ def test_machine_agent_wires_the_summariser_seat(
         def __init__(self, **kw: Any) -> None:
             wf_kwargs.update(kw)
 
-        def run(self, _prompt: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _prompt: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             return loop_snapshot.SessionResult(
                 reason="finish_session", completed=True, summary="done", turns=1, tool_calls=0
             )

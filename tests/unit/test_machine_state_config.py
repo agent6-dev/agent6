@@ -850,7 +850,9 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
         def __init__(self, **_kw: object) -> None:
             pass
 
-        def run(self, _prompt: str) -> loop_snapshot.SessionResult:
+        def run(
+            self, _prompt: str, *, operator_task: str | None = None
+        ) -> loop_snapshot.SessionResult:
             return loop_snapshot.SessionResult(
                 reason="finish_session", completed=True, summary="d", turns=1, tool_calls=0
             )

@@ -73,6 +73,8 @@ def test_no_new_site_builds_a_layout_without_naming_its_bucket() -> None:
         "ui/cli/sessions_merge.py",
         # The owner of this directory's layout passes the bucket it read off the path.
         "sessions/layout.py",
+        # The sandbox table shows the shell-log path for a sample id; it reads no session.
+        "ui/cli/sandbox_paths.py",
     }
     offenders: list[str] = []
     for path in src.rglob("*.py"):
