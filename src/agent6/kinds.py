@@ -401,12 +401,13 @@ class SandboxReport:
 
     Attributes:
         name: The test's name.
-        status: PASS, FAIL or SKIP when the probe does not apply.
+        status: PASS, FAIL, WARN for a jail that runs degraded, or SKIP when the probe does
+            not apply.
         detail: What it found.
     """
 
     name: str
-    status: Literal["PASS", "FAIL", "SKIP"]
+    status: Literal["PASS", "FAIL", "WARN", "SKIP"]
     detail: str
 
 

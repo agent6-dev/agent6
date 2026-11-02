@@ -16,7 +16,6 @@ import sys
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import session_setup
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, jail, landlock, tool_paths
 from agent6.ui.cli import check_cmds, check_render, check_sandbox, sandbox_paths
@@ -1131,3 +1130,32 @@ def test_annotations_wrap_without_overflow_or_shortening_paths(
     assert lines[0] == f"    ro        {path}"
     assert all(line.startswith(" " * 14) for line in lines[1:])
     assert " ".join(line.strip() for line in lines[1:]) == f"({note})"
+
+
+def test_check_sandbox_reports_a_jail_whose_proc_mount_was_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A launcher that could not mount /proc fails the probe, and the /proc row says so."""
+    _force_profile(monkeypatch, "full")
+    monkeypatch.setattr(check_sandbox, "landlock_abi", lambda: 8)
+    monkeypatch.setattr(tool_paths, "operator_tool_mounts", lambda: _MOUNTS)
+
+    def run(policy: kinds.JailPolicy) -> kinds.CommandResult:
+        if "/proc/self/status" in " ".join(policy.argv):
+            return _fake_result(policy.argv, 1)
+        quiet = policy.argv == ("/usr/bin/true",)
+        return kinds.CommandResult(
+            argv=policy.argv,
+            returncode=2 if policy.argv[0].endswith("getent") else 0,
+            stdout="",
+            stderr="agent6-jail: mount /proc: EPERM;\n continuing" if quiet else "",
+            duration_s=0.0,
+        )
+
+    monkeypatch.setattr(check_sandbox, "run_in_jail", run)
+    checks = check_sandbox.check_sandbox_section(Config())
+    out = capsys.readouterr().out
+    assert _row(checks, "sandbox").status == "FAIL", out
+    assert "the launcher reported: agent6-jail: mount /proc: EPERM; continuing" in out
+    assert "its procfs mount was refused" in out
+    assert any("its procfs mount is refused here" in line for line in _commands_block(out)), out

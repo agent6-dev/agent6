@@ -263,7 +263,9 @@ def unconfined_rows(cfg: Config, root: pathlib.Path) -> list[Row]:
     return _merge(rows, lambda _p: "rw")
 
 
-def _system_rows(selected: kinds.IsolationLevel, net: kinds.NetworkMode, abi: int) -> list[Row]:
+def _system_rows(
+    selected: kinds.IsolationLevel, net: kinds.NetworkMode, abi: int, *, proc_ok: bool = True
+) -> list[Row]:
     if selected == "full":
         rows = [
             Row(
@@ -280,9 +282,14 @@ def _system_rows(selected: kinds.IsolationLevel, net: kinds.NetworkMode, abi: in
             Row(
                 "ro",
                 pathlib.Path("/proc"),
-                "private process filesystem; no execute"
-                if abi > 0
-                else "private process filesystem",
+                (
+                    "private process filesystem; no execute"
+                    if abi > 0
+                    else "private process filesystem"
+                )
+                if proc_ok
+                else "its procfs mount is refused here: commands see an empty /proc",
+                warning=not proc_ok,
             ),
         ]
     else:
@@ -314,12 +321,27 @@ def command_rows(
     selected: kinds.IsolationLevel,
     git_grant: pathlib.Path | None,
     abi: int,
+    *,
+    proc_ok: bool = True,
 ) -> list[Row]:
-    """Return command-policy rows, folding sibling linked install roots with equal access."""
+    """Return command-policy rows, folding sibling linked install roots with equal access.
+
+    Args:
+        cfg: The config.
+        ws: The workspace.
+        grants: The resolved grants.
+        selected: The resolved isolation level.
+        git_grant: A fork's read grant on its repository git dir, when there is one.
+        abi: The Landlock ABI.
+        proc_ok: Whether the jail's /proc answered its probe.
+
+    Returns:
+        The rows.
+    """
     net = tools_policy.resolve_network(cfg, selected)
     configured = _grant_rows(grants)
     mounts = tool_paths.operator_tool_mounts()
-    rows = [*_system_rows(selected, net, abi), *_tool_rows(mounts)]
+    rows = [*_system_rows(selected, net, abi, proc_ok=proc_ok), *_tool_rows(mounts)]
     rows += [r for r in configured if r.mode != "rw"]
     if net == "host":
         rows += [Row("ro", p, tag="net") for p in tools_policy.host_network_reads()]

@@ -128,7 +128,7 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
     check_render.line(
         f"  isolation: {common.sgr(selected, '1')}  ",
         f"(sandbox.isolation = {cfg.sandbox.isolation};"
-        f" userns {'yes' if env.userns_supported else 'no'}, Landlock ABI {abi},"
+        f" userns {'yes' if env.userns_supported else 'no'}, Landlock ABI {abi}{sockets},"
         f" kernel {env.kernel.raw})",
     )
     if selected == "none":
@@ -145,7 +145,6 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
         f"  commands:  {common.sgr(gate, '1')} ",
         f"(sandbox.run_commands = {cfg.sandbox.run_commands})",
     )
-    net = tools_policy.resolve_network(cfg, selected)
     net_line = {
         "session": "the run's own network, no route off this machine;"
         " reach it with agent6 exec or agent6 forward",
@@ -208,8 +207,38 @@ def _probe(
                 detail=f"/usr/bin/true exited {res.returncode}",
             )
         )
+        # A quiet command's stderr is the launcher's own: what it could not set up (a refused
+        # /proc mount, a hostname it could not set), the same words a run prints as degraded.
+        notes = " ".join(res.stderr.split())
+        reports.append(
+            kinds.SandboxReport(
+                name="jail_setup",
+                status="WARN" if notes else "PASS",
+                detail=f"the launcher reported: {notes}"
+                if notes
+                else "the launcher set up quietly",
+            )
+        )
     except JailUnavailableError as exc:
         reports.append(kinds.SandboxReport(name="jail_true", status="FAIL", detail=str(exc)))
+
+    try:
+        res = _jail("/bin/sh", "-c", "cat /proc/self/status >/dev/null")
+        reports.append(
+            kinds.SandboxReport(
+                name="jail_proc",
+                status="PASS" if res.ok else "FAIL",
+                detail=(
+                    "the jail's /proc answers (cat /proc/self/status)"
+                    if res.ok
+                    else f"the jail's /proc is empty (cat /proc/self/status exited"
+                    f" {res.returncode}): its procfs mount was refused, as a container runtime"
+                    " can; ps and every tool reading /proc fail in the run's commands"
+                ),
+            )
+        )
+    except JailUnavailableError as exc:
+        reports.append(kinds.SandboxReport(name="jail_proc", status="FAIL", detail=str(exc)))
 
     # Only `full` has a network namespace to probe; `partial` shares this process's network.
     if isolation == "full":
@@ -274,8 +303,21 @@ def _probe(
     return reports
 
 
+_PROBE_NAMES = (
+    "landlock_abi",
+    "jail_true",
+    "jail_setup",
+    "jail_proc",
+    "jail_blocks_network",
+    "jail_blocks_etc_write",
+)
+
+
 def _probe_checks(
-    cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
+    cfg: Config,
+    env: detect.Environment,
+    selected: kinds.IsolationLevel,
+    reports: list[kinds.SandboxReport],
 ) -> list[kinds.DoctorCheck]:
     """Print the probe lines and return the one summary row they fold into.
 
@@ -286,6 +328,7 @@ def _probe_checks(
         cfg: The config.
         env: The detected host.
         selected: The resolved isolation level.
+        reports: The probes' results; empty under `none`.
 
     Returns:
         The `sandbox` row.
@@ -295,18 +338,21 @@ def _probe_checks(
         explicit = detect.sandbox_disabled_by_env() or cfg.sandbox.isolation == "none"
         status = "WARN" if explicit else "FAIL"
         detail = f"no jail to probe: {cause}; commands run unconfined"
-        for name in ("landlock_abi", "jail_true", "jail_blocks_network", "jail_blocks_etc_write"):
+        for name in _PROBE_NAMES:
             reason = "none has no network namespace" if name == "jail_blocks_network" else cause
             check_render.result("SKIP", name, reason)
         check_render.result(status, "jail", detail)
         return [kinds.DoctorCheck(name="sandbox", status=status, detail=detail)]
-    reports = _probe(cfg, selected, env)
-    ok = True
     for r in reports:
         check_render.result(r.status, r.name, r.detail)
-        ok = ok and r.status != "FAIL"
-    detail = "all jail probes passed" if ok else "a jail probe failed"
-    return [kinds.DoctorCheck(name="sandbox", status="PASS" if ok else "FAIL", detail=detail)]
+    statuses = {r.status for r in reports}
+    status = "FAIL" if "FAIL" in statuses else "WARN" if "WARN" in statuses else "PASS"
+    detail = {
+        "PASS": "all jail probes passed",
+        "WARN": "the jail runs degraded",
+        "FAIL": "a jail probe failed",
+    }[status]
+    return [kinds.DoctorCheck(name="sandbox", status=status, detail=detail)]
 
 
 def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
@@ -330,6 +376,9 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
     out = [
         kinds.DoctorCheck(name="sandbox.isolation", status="PASS", detail=f"selected '{selected}'")
     ]
+    # Probed before the rows, so the /proc row says what the jail here gets, not the policy.
+    reports = _probe(cfg, selected, env) if selected != "none" else []
+    proc_ok = all(r.status != "FAIL" for r in reports if r.name == "jail_proc")
     root = pathlib.Path.cwd()
     grants = tools_policy.resolve_grants(cfg, root)
     ws = tools_policy.workspace_for(
@@ -384,7 +433,9 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
         else:
             git_grant = _fork_git_grant(cfg, ws, selected)
             check_render.rows(
-                sandbox_paths.command_rows(cfg, ws, grants, selected, git_grant, env.landlock_abi)
+                sandbox_paths.command_rows(
+                    cfg, ws, grants, selected, git_grant, env.landlock_abi, proc_ok=proc_ok
+                )
             )
         print()
         _mcp_lines(cfg, ws.root, selected)
@@ -403,4 +454,4 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
         "(0600, never passed into a child's environment)",
     )
     print()
-    return [*out, *_probe_checks(cfg, env, selected)]
+    return [*out, *_probe_checks(cfg, env, selected, reports)]

@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import functools
 import pathlib
 import sys
 from collections.abc import Callable, Sequence
+from typing import Any
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, kinds, paths
@@ -50,6 +52,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, operator_prompts
 from agent6.tools import policy as tools_policy
 from agent6.vcs import commit_message, git_read
+from agent6.viewmodel import transcript_text
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -125,6 +128,17 @@ class ExecutionEnd:
 
     rc: int
     detach_requested: bool = False
+
+
+def headless_marker(event: dict[str, Any], *, log: Callable[[str], None]) -> None:
+    """Print the degraded-jail marker a live view renders, through the run's text log.
+
+    Args:
+        event: One journal event.
+        log: The run's text logger.
+    """
+    if event.get("type") == "jail.degraded":
+        log(f"[agent6] {transcript_text.jail_degraded_body(event)}")
 
 
 def detach_to_background(
@@ -370,6 +384,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         )
 
         loop_log = frontend.loop_logger(mode)
+        if not console_stream:
+            # Headless, the fold's markers reach no view: a degraded jail is said once here.
+            events.subscribe(functools.partial(headless_marker, log=loop_log))
         tools = session_runtime.build_session_tools(
             cfg,
             cwd=cwd,
