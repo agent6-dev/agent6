@@ -2428,7 +2428,7 @@ Source: [`agent6.review_records.FindingAction`](https://github.com/agent6-dev/ag
 | `expected_version` | `int` | The review version the caller read. |
 | `action` | `Literal['fix', 'resolve', 'reopen']` | The action kind supplied by the route rather than the HTTP body. |
 | `resolution` | `FindingResolution \| None` | The conclusion for a resolve action, or null. |
-| `reason` | `Optional[str]` | The explanation for a reopen action, or null. |
+| `reason` | `str \| None` | The explanation for a reopen action, or null. |
 | `resume` | `bool` | Whether the operator approved resuming a stopped session to fix the finding. |
 
 ### ActionResult
@@ -2734,7 +2734,7 @@ Source: [`agent6.sessions.manifest.MergeStamp`](https://github.com/agent6-dev/ag
 | `tip` | `str` | The run branch tip that was merged. `sessions prune --delete-squashed` deletes only while the branch still points here: a resumed run's later commits exist in no other ref. |
 | `into_tip` | `str` | For a merge that added nothing, the base's own tip at the time, the commit that already held the run's content; the delete checks it as it checks `sha`. |
 | `via` | `str` | The run whose merge landed this one, when a later run took its work in under `dirty_tree = "include"`; "" for the run's own merge. |
-| `method` | `Optional[Literal['ff_only', 'merge', 'squash', 'tasks']]` | The landing method, or null when unrecorded. |
+| `method` | `Literal['ff_only', 'merge', 'squash', 'tasks'] \| None` | The landing method, or null when unrecorded. |
 | `target_before` | `str \| None` | The target commit before landing, or null when unrecorded. |
 
 ### IncludedRun
@@ -3059,7 +3059,7 @@ Source: [`agent6.review_records.FindingResolution`](https://github.com/agent6-de
 | --- | --- | --- |
 | `disposition` | `Literal['fixed', 'false_positive', 'intentional', 'wont_fix', 'duplicate', 'pre_existing']` | The operator's conclusion about the finding. |
 | `reason` | `str` | The operator's explanation. |
-| `duplicate_of` | `Optional[str]` | The other finding for a duplicate resolution, or null. |
+| `duplicate_of` | `str \| None` | The other finding for a duplicate resolution, or null. |
 | `commit` | `str \| None` | The associated correction commit, or null. |
 | `verify_id` | `str \| None` | The associated verification attempt, or null. |
 
@@ -3243,10 +3243,10 @@ Source: [`agent6.viewmodel.review.ActionRecord`](https://github.com/agent6-dev/a
 | `type` | `str` | The journaled action event name. |
 | `finding_id` | `str` | The target finding identifier. |
 | `request_id` | `str` | The caller's idempotency identifier. |
-| `source` | `Optional[Literal['cli', 'tui', 'web', 'acp']]` | The front-end that requested the action, or null when unrecorded. |
+| `source` | `Literal['cli', 'tui', 'web', 'acp'] \| None` | The front-end that requested the action, or null when unrecorded. |
 | `version` | `int \| None` | The resulting review version, or null when unrecorded. |
 | `resolution` | `FindingResolution \| None` | The recorded conclusion, or null. |
-| `reason` | `Optional[str]` | The operator's explanation, or null. |
+| `reason` | `str \| None` | The operator's explanation, or null. |
 | `target` | `ReviewTarget \| None` | The reviewed target associated with the action, or null. |
 | `action` | `str \| None` | The requested action kind, or null when unrecorded. |
 | `execution_id` | `str \| None` | The execution that handled the action, or null. |

@@ -261,6 +261,9 @@ def _type_text(value: Any) -> str:
     text = str(value).replace("typing.", "")
     text = re.sub(r"<class '([^']+)'>", r"\1", text)
     text = re.sub(r"agent6\.[\w.]+\.([A-Z]\w*)", r"\1", text)
+    # Python 3.14 spells `Optional[X]` as `X | None`; the page reads the same on every version.
+    if text.startswith("Optional[") and text.endswith("]"):
+        text = f"{text[len('Optional[') : -1]} | None"
     return text.replace("|", "\\|")
 
 
