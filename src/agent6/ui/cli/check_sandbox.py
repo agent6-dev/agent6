@@ -115,6 +115,16 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
         selected: The resolved isolation level.
     """
     abi = str(env.landlock_abi) if env.sandbox_available else "n/a (no Linux sandbox)"
+    net = tools_policy.resolve_network(cfg, selected)
+    sockets = ""
+    if selected == "partial" or (selected == "full" and net == "host"):
+        # The jail shares the host's network namespace, so only the Landlock scope keeps a
+        # command off a host daemon's abstract unix socket.
+        sockets = (
+            " (abstract unix sockets scoped)"
+            if env.landlock_abi >= 6
+            else " (abstract unix sockets reachable: the scope needs ABI 6)"
+        )
     check_render.line(
         f"  isolation: {common.sgr(selected, '1')}  ",
         f"(sandbox.isolation = {cfg.sandbox.isolation};"

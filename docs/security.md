@@ -65,11 +65,12 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - The agent process's own egress is unbounded
     - agent6 reaches the configured providers (each `[providers.*].base_url` host, plus the fixed ChatGPT OAuth authority and each `[providers.*].oauth` issuer for token grants); nothing stops the process reaching elsewhere
     - a jailed command's egress is bounded under `full` `sandbox.isolation` unless `sandbox.network = "host"` ([Network](#5-network))
-- Under `partial` `sandbox.isolation`, a command can hand work to a user daemon already running (tmux, `systemd --user`): unix sockets have no Landlock hook and stay nameable without a mount namespace
+- Under `partial` `sandbox.isolation`, a command can hand work to a user daemon already running (tmux, `systemd --user`): pathname unix sockets have no Landlock hook and stay nameable without a mount namespace.
+  Abstract unix sockets are scoped to the jail on Landlock ABI 6 (Linux 6.12); an older kernel leaves them reachable, and the run warns
     - the environment carries no address for one.
       A jailed command gets `LANG`, `LC_ALL`, `TERM` and `CI` from the host, plus `HOME`, `PATH`, `PYTHONDONTWRITEBYTECODE` and `UV_NO_SYNC` set by agent6 (a machine tool also `AGENT6_MACHINE_DATA_DIR`), and the `[git.commit]` name and email as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` when the config sets them.
       A jailed MCP server's base drops `DISPLAY`, `WAYLAND_DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, and `XDG_RUNTIME_DIR` (`curated_env(desktop=False)`)
-    - `full` `sandbox.isolation` does not expose them, except a daemon on an abstract Unix socket (an X server) under `sandbox.network = "host"`
+    - `full` `sandbox.isolation` does not expose them; under `sandbox.network = "host"` a daemon on an abstract unix socket (an X server) is scoped out on Landlock ABI 6 and reachable below it, warned
 
 ## Defense layers
 

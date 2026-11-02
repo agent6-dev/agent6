@@ -383,13 +383,36 @@ def test_a_plain_partial_run_neither_warns_nor_refuses(
     monkeypatch.chdir(ws)
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
-    confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
+    confine.warn_sandbox_gaps("partial", _env(6), cfg, root=tmp_path)
     err = capsys.readouterr().err
     # `partial`'s persistent HOME is the one notice every such run carries;
     # nothing here is an exposure.
     assert err.count("WARNING") == 1 and str(paths.jail_cache_home(tmp_path)) in err, err
     assert "can read" not in err
     assert confine.check_hide_paths_support(cfg, "partial", tmp_path) is None
+
+
+@pytest.mark.parametrize(
+    ("isolation", "network", "abi", "reachable"),
+    [("partial", "host", 5, True), ("full", "host", 5, True), ("full", "session", 5, False)],
+)
+def test_unscoped_abstract_sockets_are_warned_where_the_host_network_is_shared(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    isolation: kinds.IsolationLevel,
+    network: kinds.NetworkMode,
+    abi: int,
+    reachable: bool,
+) -> None:
+    """Below Landlock ABI 6, a shared network namespace leaves a host daemon's socket in reach."""
+    for var in ("CONFIG", "STATE", "DATA"):
+        monkeypatch.setenv(f"XDG_{var}_HOME", f"/nonexistent-private/{var.lower()}")
+    monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
+    cfg = Config(sandbox=SandboxConfig(network=network, protect_git="off"))
+    confine.warn_sandbox_gaps(isolation, _env(abi), cfg, root=tmp_path)
+    err = capsys.readouterr().err
+    assert ("abstract unix sockets stay reachable" in err) is reachable, err
 
 
 def test_partial_warns_when_private_state_sits_in_a_granted_region(
@@ -584,7 +607,7 @@ def test_a_run_start_prints_the_home_grant_warning(
 ) -> None:
     """A run, a resume and a fork started under a `$HOME` grant without a word about it."""
     from agent6.app import reporter as app_reporter
-    from agent6.app import session_runtime, session_setup
+    from agent6.app import session_runtime
 
     def _detected() -> detect.Environment:
         return _env(4)

@@ -30,7 +30,7 @@ use std::time::Duration;
 
 use landlock::{
     Access, AccessFs, BitFlags, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreated,
-    RulesetCreatedAttr, RulesetStatus, ABI,
+    RulesetCreatedAttr, RulesetStatus, Scope, ABI,
 };
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{setns, unshare, CloneFlags};
@@ -1525,7 +1525,20 @@ fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
     let sets = landlock_sets();
     let ruleset = Ruleset::default()
         .handle_access(sets.handled)
-        .map_err(|e| io::Error::other(format!("handle_access: {e}")))?
+        .map_err(|e| io::Error::other(format!("handle_access: {e}")))?;
+    // Abstract unix sockets belong to the network namespace. "session" and "none"
+    // give the jail its own, so a host daemon's abstract socket (an X server, a
+    // session D-Bus) is unreachable already; on the host network only the Landlock
+    // scope (ABI 6, Linux 6.12) keeps it out. Best-effort: an older kernel enforces
+    // no scope, and the Python side warns the operator of that reach.
+    let ruleset = if policy.network == "host" {
+        ruleset
+            .scope(Scope::AbstractUnixSocket)
+            .map_err(|e| io::Error::other(format!("scope abstract sockets: {e}")))?
+    } else {
+        ruleset
+    };
+    let ruleset = ruleset
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
@@ -1729,9 +1742,14 @@ fn apply_landlock_partial(policy: &Policy) -> io::Result<()> {
     // with no MS_NODEV bind, and this, the seccomp mode rule below and
     // drop_capabilities are the locks left.
     let sets = landlock_sets();
+    // `partial` shares the host's network namespace, so the Landlock scope (ABI 6)
+    // is all that keeps a jailed command off a host daemon's abstract unix socket;
+    // best-effort, so an older kernel enforces no scope and the Python side warns.
     let ruleset = Ruleset::default()
         .handle_access(sets.handled)
         .map_err(|e| io::Error::other(format!("handle_access: {e}")))?
+        .scope(Scope::AbstractUnixSocket)
+        .map_err(|e| io::Error::other(format!("scope abstract sockets: {e}")))?
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;

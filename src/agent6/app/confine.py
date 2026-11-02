@@ -84,6 +84,7 @@ def warn_sandbox_gaps(
             " Namespaces, the read-only root filesystem and seccomp still confine commands."
             " Landlock needs Linux 5.13+ with the Landlock LSM enabled."
         )
+    warn_unscoped_sockets(isolation, env, cfg, reporter=reporter)
     if isolation == "partial" and paths.is_root():
         # The root banner names running as root; this names what it costs at this level.
         reporter.warn(
@@ -143,6 +144,36 @@ def warn_sandbox_gaps(
                 " into its own subdirectory."
             )
         # notes.exposes_home_dir is the ordinary state of a dev box; `agent6 check` lists it.
+
+
+def warn_unscoped_sockets(
+    isolation: kinds.IsolationLevel,
+    env: detect.Environment,
+    cfg: Config,
+    *,
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
+) -> None:
+    """Warn when jailed commands share the host's abstract unix sockets with no Landlock scope.
+
+    `partial`, and `full` on the host network, share the host's network namespace; the
+    launcher scopes abstract sockets there on Landlock ABI 6, and an older kernel enforces
+    nothing.
+
+    Args:
+        isolation: The resolved isolation level.
+        env: The detected host environment.
+        cfg: The resolved config.
+        reporter: Where the warning goes.
+    """
+    shares_host_sockets = isolation == "partial" or (
+        isolation == "full" and tools_policy.resolve_network(cfg, isolation) == "host"
+    )
+    if shares_host_sockets and 0 < env.landlock_abi < 6:
+        reporter.warn(
+            "abstract unix sockets stay reachable from jailed commands: this kernel's Landlock"
+            f" ABI {env.landlock_abi} has no socket scope (ABI 6, Linux 6.12), so a command can"
+            " talk to a host daemon listening on one (an X server, a session D-Bus)."
+        )
 
 
 def exposure_warning(hidden: pathlib.Path, region: pathlib.Path, source: str) -> str:
