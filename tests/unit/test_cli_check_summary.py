@@ -22,6 +22,7 @@ from agent6.providers import _oauth_protocol, _transport, oauth, types
 from agent6.sandbox import detect
 from agent6.ui.cli import check_cmds as cli_check_cmds  # pyright: ignore[reportPrivateUsage]
 from agent6.ui.cli import main
+from agent6.vcs import git_policy
 
 
 @pytest.mark.parametrize("name", ["chatgpt", "work"])
@@ -426,3 +427,18 @@ def test_sandbox_alone_prints_its_summary(
     assert "[PASS] sandbox.isolation: selected 'full'" in summary
     assert "[PASS] sandbox.refusal: every explicit setting works on 'full'" in summary
     assert "[PASS] sandbox: all jail probes passed" in summary
+
+
+@pytest.mark.parametrize(
+    ("version", "status"), [((2, 39, 5), "FAIL"), ((2, 47, 3), "PASS"), (None, "FAIL")]
+)
+def test_check_reports_git_against_the_floor(
+    monkeypatch: pytest.MonkeyPatch, version: tuple[int, ...] | None, status: str
+) -> None:
+    """`agent6 check` passes git 2.47 and up, and fails an older or unreadable git, naming 2.47."""
+    monkeypatch.setattr(git_policy, "installed_version", lambda: version)
+    by_name = {c.name: c for c in cli_check_cmds._doctor_check_config(Config())}
+
+    row = by_name["config.git_version"]
+    assert row.status == status
+    assert "agent6 needs git 2.47 or newer" in row.detail

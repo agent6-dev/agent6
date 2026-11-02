@@ -25,6 +25,7 @@ from agent6.sandbox import (
 )
 from agent6.tools import mcp_client
 from agent6.ui.cli import _check_render, _check_sandbox, _common
+from agent6.vcs import git_policy
 
 
 def _cmd_check(config_paths: tuple[pathlib.Path, ...], *, section: str) -> int:
@@ -261,7 +262,7 @@ def _doctor_check_verify(cfg: Config) -> list[kinds.DoctorCheck]:
 
 
 def _doctor_check_config(cfg: Config) -> list[kinds.DoctorCheck]:
-    """Check the static config: provider keys and the worktree git policy.
+    """Check the static config and the host's git: provider keys, the git policy, git's version.
 
     Args:
         cfg: The config.
@@ -297,4 +298,22 @@ def _doctor_check_config(cfg: Config) -> list[kinds.DoctorCheck]:
     detail_git = "push, --force and history rewrites are always refused; no setting enables them"
     print(f"  git policy: {detail_git}")
     out.append(kinds.DoctorCheck(name="config.git_policy", status="PASS", detail=detail_git))
+    version = git_policy.installed_version()
+    floor = ".".join(map(str, git_policy.GIT_FLOOR))
+    if version is None:
+        detail_version = f"cannot read the git version; agent6 needs git {floor} or newer"
+    else:
+        found = ".".join(map(str, version))
+        detail_version = git_policy.unsupported_note() or (
+            f"{found}; agent6 needs git {floor} or newer"
+        )
+    supported = version is not None and not git_policy.unsupported_note()
+    print(f"  git version: {detail_version}")
+    out.append(
+        kinds.DoctorCheck(
+            name="config.git_version",
+            status="PASS" if supported else "FAIL",
+            detail=detail_version,
+        )
+    )
     return out
