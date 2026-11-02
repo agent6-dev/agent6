@@ -114,15 +114,20 @@ The defaults are `sandbox.network = "auto"`, `sandbox.run_commands = "ask"` and 
 
 A container or a VM confines the whole agent.
 agent6 confines the model's commands in a jail on your host.
-Its own work runs outside the jail.
-Under `sandbox.isolation = "full"` or `sandbox.isolation = "partial"`, the commands cannot read your provider keys or the secrets file.
-Under `sandbox.isolation = "full"`, the default `sandbox.protect_git = "auto"` keeps the project's `.git` read-only to the commands, so nothing can be planted for agent6's own git to run.
 The repository stays at its real path.
-The jail sees your installed toolchains read-only.
-agent6 runs inside or outside a devcontainer.
-Inside a container, `sandbox.isolation = "auto"` selects the strongest level the container allows, and `agent6 check sandbox` names it.
-Docker's default seccomp and AppArmor profiles block user namespaces, so a plain devcontainer gets `sandbox.isolation = "partial"`: the container's network, and `.git` writable to the commands, warned at startup.
-A container started with `--security-opt seccomp=unconfined --security-opt apparmor=unconfined` allows `sandbox.isolation = "full"`.
+The jail sees your system toolchains and `~/.local/bin` read-only.
+
+Under `full` or `partial` `sandbox.isolation`, the commands cannot read your provider keys or the secrets file.
+Under `full`, the default `sandbox.protect_git = "auto"` keeps `.git` read-only to the commands.
+
+Inside a container, the `sandbox.isolation` level depends on the runtime and its flags:
+
+- Docker gives `partial` by default and allows `full` with both `--security-opt seccomp=unconfined` and `--security-opt apparmor=unconfined`.
+- Rootless Podman allows `full` with no flags.
+- Rootful Podman on an AppArmor host gives `partial` by default and allows `full` with `--security-opt apparmor=unconfined`.
+
+On Ubuntu 24.04+, `full` under Docker or rootful Podman also needs the host to allow unprivileged user namespaces ([Installation][installation]).
+Under `partial`, the commands share the container's network and can write `.git`.
 
 [acp]: https://agent6.dev/acp/
 [budgets]: https://agent6.dev/config/#budget

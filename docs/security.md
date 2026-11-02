@@ -135,12 +135,12 @@ Under `full` `sandbox.isolation` a kernel without Landlock skips that layer, war
 
 **Resolution**
 
-Probed per host: `unshare` for namespaces, the Landlock ABI syscall, the seccomp filter's architecture (x86_64 and aarch64).
+Probed per host: one `full` jail launch for namespaces, the Landlock ABI syscall, the seccomp filter's architecture (x86_64 and aarch64).
 
 | Setting | Host | Effective |
 |---|---|---|
 | `auto` | namespaces | `full` |
-| `auto` | no namespaces, Landlock ABI >= 3 | `partial` |
+| `auto` | no namespaces, Landlock ABI >= 3 | `partial`, warned |
 | `auto` | no namespaces, Landlock ABI 1-2 | `partial`, warned: truncation outside write grants is unconfined |
 | `auto` | no namespaces, no Landlock | `none`, warned |
 | `auto` | non-Linux, or no seccomp filter for the arch | `none`, warned |
@@ -150,11 +150,18 @@ Probed per host: `unshare` for namespaces, the Landlock ABI syscall, the seccomp
 | `none` | any | `none`, warned |
 
 `--disable-sandbox` and `AGENT6_DISABLE_SANDBOX=1` force `none` `sandbox.isolation` for one invocation.
-Inside a container the same probes decide the level.
-Docker's default seccomp and AppArmor profiles block unprivileged user namespaces, so a plain devcontainer resolves `sandbox.isolation = "auto"` to `partial`, with the container's network and `.git` writable to commands, warned at startup (measured 2026-10-27 with `agent6 check sandbox` in `python:3.12-slim` under Docker 29.1).
-The same container started with `--security-opt seccomp=unconfined --security-opt apparmor=unconfined` resolves to `full`, with the private network and the read-only `.git`; the host must also allow unprivileged user namespaces (on Ubuntu 24.04, `kernel.apparmor_restrict_unprivileged_userns = 0`).
-`agent6 check sandbox` names the level and what blocks a stronger one.
 Config, flag, and env var are operator-only; the model reaches neither argv nor env.
+
+Inside a container the same probes decide the level.
+Measured 2026-10-27 on an Ubuntu 26.04 host in `mcr.microsoft.com/devcontainers/base:ubuntu`, `sandbox.isolation = "auto"` resolves to:
+
+- `partial` under Docker 29.1.3, and `full` with both `--security-opt seccomp=unconfined` and `--security-opt apparmor=unconfined`
+- `full` under rootless Podman 5.7.0
+- `partial` under rootful Podman 5.7.0, and `full` with `--security-opt apparmor=unconfined`
+
+On Ubuntu 24.04+ (`kernel.apparmor_restrict_unprivileged_userns = 1`), `full` under Docker or rootful Podman also needs `agent6 system apparmor install` on the host or that sysctl at 0; rootless Podman does not.
+Each `--security-opt` flag on this page turns off a protection of the container itself (its seccomp filter, AppArmor profile or `/proc` masks) for every process in it.
+`agent6 check sandbox` names the level and what blocks a stronger one.
 
 **Inside the jail**
 
@@ -722,9 +729,12 @@ It catches prompt regressions; the structural defenses above confine a model tha
 - AppArmor userns (Ubuntu 24.04+) blocks unprivileged userns without a profile
     - `agent6 system apparmor install` adds the profile that `full` `sandbox.isolation` needs, scoped to the launcher
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
-- Devcontainers get `partial` `sandbox.isolation`.
+- Devcontainers under Docker, or rootful Podman on an AppArmor host, get `partial` `sandbox.isolation` by default.
   The container bounds filesystem damage, and jailed commands share its network ([Network](#5-network))
-    - the XDG state base is ephemeral (lost on rebuild): mount a volume at the state dir or point `XDG_STATE_HOME` at one
+- Under `full` `sandbox.isolation` in a Docker or Podman container, the jail's `/proc` is empty and `ps` fails.
+  Docker's `--security-opt systempaths=unconfined` or Podman's `--security-opt unmask=ALL` lets the jail mount its own `/proc`.
+  Under Podman's default seccomp profile, jailed commands also see the container's hostname.
+- In a devcontainer the XDG state base is ephemeral (lost on rebuild): mount a volume at the state dir or point `XDG_STATE_HOME` at one
 - agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace
     - a jailed command can rewrite it; the next tool call runs the rewrite as you, outside the jail
     - install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry on this shape
