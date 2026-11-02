@@ -163,9 +163,10 @@ def classify(scan: session_log.LogScan, facts: QueueFacts) -> ReviewQueueEntry:
     note = f"{saved} answer{'s' if saved != 1 else ''} saved"
     if entry.group != "needs_answer":
         pronoun = "them" if saved != 1 else "it"
+        # An ended run reads nothing more, whatever pid lingers: only a resume delivers it.
         note += (
             f"; the run reads {pronoun} at its next turn"
-            if facts.alive
+            if facts.alive and not scan.finished
             else f"; the resume delivers {pronoun}"
         )
     return dataclasses.replace(entry, reason=f"{entry.reason} · {note}" if entry.reason else note)
