@@ -497,6 +497,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         ):
             return 2
 
+        if not lock.hold_workspace(cwd):
+            reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
+            return 2
         try:
             isolation = session_runtime.select_isolation(
                 cfg,

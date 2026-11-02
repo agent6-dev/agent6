@@ -26,7 +26,7 @@ from agent6.machine import (
     dry_run,
     load_machine,
 )
-from agent6.sessions import event_log, id, layout, process
+from agent6.sessions import event_log, id, layout, lock, process
 from agent6.vcs import git_ops, git_read
 
 _CREATE_TIMEOUT_S = 900.0
@@ -194,6 +194,9 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     missing = session_setup.check_provider_keys(cfg)
     if missing is not None:
         reporter.err(missing)
+        return 2
+    if not lock.hold_workspace(cwd):
+        reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
         return 2
     try:
         # A create session withholds the command tools: an unconfined autorun needs no confirmation.

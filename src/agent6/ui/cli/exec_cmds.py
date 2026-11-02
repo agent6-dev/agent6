@@ -27,6 +27,7 @@ from agent6 import child_env, kinds
 from agent6.app import confine, session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
+from agent6.sessions import lock
 from agent6.tools import policy as tools_policy
 from agent6.ui.cli import common
 
@@ -233,6 +234,9 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
     Returns:
         The command's exit code; 2 when the host or the config refuses the sandbox.
     """
+    if not lock.hold_workspace(cwd):
+        common.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
+        return 2
     try:
         env = session_setup.detect_env()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)

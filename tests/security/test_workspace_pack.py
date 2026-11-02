@@ -4,10 +4,11 @@ import pathlib
 
 import pytest
 
-from agent6 import kinds, pack, paths
+from agent6 import errors, kinds, pack, paths
 from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import jail
+from agent6.sessions import lock
 from agent6.tools import dispatch, index, path_safety, tool_errors
 from agent6.vcs import git_read
 
@@ -133,3 +134,44 @@ def test_full_jail_masks_workspace_pack(tmp_path: pathlib.Path) -> None:
     )
     assert result.stdout == ""
     assert result.returncode != 0
+
+
+def test_pack_refuses_while_a_user_of_the_checkout_holds_the_lease(tmp_path: pathlib.Path) -> None:
+    """A pack made under a live sandbox put the secrets within its commands' reach.
+
+    An `exec --new` started before `agent6 pack` read the packed secret afterwards, under
+    `full` and `partial` alike: the startup refusal of a present pack runs only when a command
+    starts, and the `full` mask covers only a directory present at jail setup.
+    """
+    assert lock.hold_workspace(tmp_path)
+    with pytest.raises(errors.PackError, match="live"):
+        pack.pack(tmp_path)
+    assert not (tmp_path / ".agent6").exists()
+    lock.release_workspaces()
+    pack.pack(tmp_path)
+    assert (tmp_path / ".agent6" / "pack.json").exists()
+
+
+def test_a_user_refuses_while_pack_writes_and_two_users_share(tmp_path: pathlib.Path) -> None:
+    """`pack` takes the lease alone; runs, execs and machines hold it shared."""
+    writing = lock.exclude_workspace(tmp_path)
+    assert writing is not None
+    assert not lock.hold_workspace(tmp_path)
+    lock.release_single_writer(writing)
+    assert lock.hold_workspace(tmp_path)
+    assert lock.hold_workspace(tmp_path / "sub")  # the same checkout, the same lease
+    assert lock.exclude_workspace(tmp_path) is None
+
+
+def test_pack_of_a_nested_checkout_needs_the_leases_above_it(tmp_path: pathlib.Path) -> None:
+    """A live parent workspace is not bypassed by packing a checkout nested inside it."""
+    parent = tmp_path / "parent"
+    (parent / ".git").mkdir(parents=True)
+    child = parent / "child"
+    (child / ".git").mkdir(parents=True)
+    assert lock.hold_workspace(parent)
+    with pytest.raises(errors.PackError, match=str(parent)):
+        pack.pack(child)
+    lock.release_workspaces()
+    pack.pack(child)
+    assert (child / ".agent6" / "pack.json").exists()

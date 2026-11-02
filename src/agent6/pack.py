@@ -20,6 +20,7 @@ from typing import Literal
 import pydantic
 
 from agent6 import errors, pack_manifest, paths, portable
+from agent6.sessions import lock
 
 Outcome = Literal["move", "keep", "conflict"]
 
@@ -171,6 +172,7 @@ def pack(root: pathlib.Path) -> pack_manifest.Manifest:
         pack_manifest.read(root).origin, paths.effective_user().home
     ):
         raise errors.PackError(f"{directory}: pack belongs to another origin; unpack first")
+    held = _exclusive_leases(root)
     try:
         base_path = paths.state_dir(root, allow_pack=True) / "pack-base.json"
         pack_manifest.check_path(base_path, regular=base_path.exists())
@@ -234,6 +236,44 @@ def pack(root: pathlib.Path) -> pack_manifest.Manifest:
         return manifest
     except (OSError, pydantic.ValidationError) as exc:
         raise errors.PackError(f"pack {directory}: {exc}") from exc
+    finally:
+        for fd in held:
+            lock.release_single_writer(fd)
+
+
+def _exclusive_leases(root: pathlib.Path) -> list[int]:
+    """Take the workspace lease of the root and of every checkout above it, alone.
+
+    A live run, exec or machine of any of them holds the lease shared, and its sandbox could
+    read the secrets a pack writes; the parents count because a nested checkout sits inside
+    their workspace.
+
+    Args:
+        root: The resolved project root.
+
+    Returns:
+        The held fds, released when the pack is written.
+
+    Raises:
+        PackError: A run, exec or machine of one of the checkouts is live.
+    """
+    held: list[int] = []
+    checkouts = dict.fromkeys(
+        paths.checkout_root(path)
+        for path in (root, *root.parents)
+        if path == root or (path / ".git").exists()
+    )
+    for checkout in checkouts:
+        fd = lock.exclude_workspace(checkout)
+        if fd is None:
+            for earlier in held:
+                lock.release_single_writer(earlier)
+            raise errors.PackError(
+                f"{checkout}: a run, exec or machine of this checkout is live; stop it or wait"
+                " for it, then pack"
+            )
+        held.append(fd)
+    return held
 
 
 def _preflight(root: pathlib.Path, manifest: pack_manifest.Manifest) -> tuple[FileFacts, ...]:

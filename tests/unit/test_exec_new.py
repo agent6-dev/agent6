@@ -16,6 +16,7 @@ from agent6 import child_env, kinds
 from agent6.app import session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
+from agent6.sessions import lock
 from agent6.tools import policy as tools_policy
 from agent6.ui import cli
 from agent6.ui.cli import exec_cmds
@@ -355,3 +356,37 @@ def test_run_attached_reports_a_signal_as_128_plus_it(tmp_path: pathlib.Path) ->
     before = signal.getsignal(signal.SIGTERM)
     assert exec_cmds.run_attached(_unsandboxed(tmp_path, "kill -TERM $$")) == 128 + signal.SIGTERM
     assert signal.getsignal(signal.SIGTERM) is before
+
+
+def test_new_holds_the_workspace_lease_while_its_command_runs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`exec --new` holds the checkout's lease while its command lives: no pack starts under it."""
+    seen: list[bool] = []
+
+    def _attached(policy: Any, session_net: Any = None) -> int:
+        del policy, session_net
+        seen.append(lock.exclude_workspace(tmp_path) is None)  # a pack cannot take it now
+        return 5
+
+    monkeypatch.setattr(exec_cmds, "run_attached", _attached)
+    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 5
+    assert seen == [True]
+
+
+def _exit_five(*_a: object, **_k: object) -> int:
+    return 5
+
+
+def test_new_refuses_while_pack_writes_the_checkout(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A command cannot start under a pack being written."""
+    writing = lock.exclude_workspace(tmp_path)
+    assert writing is not None
+    monkeypatch.setattr(exec_cmds, "run_attached", _exit_five)
+    cfg = Config.model_validate({"sandbox": {"isolation": "none"}})
+    assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 2
+    assert "agent6 pack is writing" in capsys.readouterr().err
+    lock.release_single_writer(writing)

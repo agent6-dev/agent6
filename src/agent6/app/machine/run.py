@@ -48,7 +48,7 @@ from agent6.machine import (
 )
 from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
-from agent6.sessions import layout, process
+from agent6.sessions import layout, lock, process
 from agent6.tools import policy as tools_policy
 from agent6.tools import result_format
 from agent6.vcs import git_ops, git_read
@@ -475,6 +475,9 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         denied = host_preflight.machine_pass_env_refusal(configs.operator.config, spec.states)
         if denied is not None:
             reporter.refuse(denied)
+            return 2
+        if not lock.hold_workspace(cwd):
+            reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
             return 2
         # The operator's own config refuses here as it would for a plain run; then each state's.
         for label, resolved in state_configs.labelled_configs(configs):

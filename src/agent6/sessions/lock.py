@@ -158,3 +158,83 @@ def repo_writer_held(state_dir: pathlib.Path, checkout: pathlib.Path) -> bool:
         return True
     release_single_writer(fd)
     return False
+
+
+WORKSPACE_PACKING = (
+    "REFUSING: agent6 pack is writing {root}; wait for it to finish, then start again."
+)
+
+# The leases this process holds, by lease file; released at exit or by `release_workspaces`.
+_held: dict[pathlib.Path, int] = {}
+
+
+def workspace_lease_path(root: pathlib.Path) -> pathlib.Path:
+    """Return the lease file of a checkout: shared by its users, taken alone by `pack`.
+
+    Keyed under the state dir that `pack` and a run both resolve for the root, so the two
+    sides meet on one file whether or not a pack is present.
+
+    Args:
+        root: Any path inside the checkout.
+
+    Returns:
+        `<state-dir>/locks/<checkout-id>.workspace.lock`.
+    """
+    state_dir = paths.state_dir(root, allow_pack=True)
+    return state_dir / "locks" / f"{paths.repo_id(paths.checkout_root(root))}.workspace.lock"
+
+
+def hold_workspace(root: pathlib.Path) -> bool:
+    """Hold the checkout's lease, shared, for the rest of this process.
+
+    A run, a resume, a machine and an exec take it before they look for packs, and keep it
+    while their commands may run: `pack` cannot start meanwhile, since a pack made during a
+    live sandbox would put the secrets within its reach. A second hold of the same checkout
+    reuses the first.
+
+    Args:
+        root: Any path inside the checkout.
+
+    Returns:
+        True when held; False while `pack` writes the checkout.
+    """
+    lease = workspace_lease_path(root)
+    if lease in _held:
+        return True
+    paths.mkdir_for_real_user(lease.parent)
+    fd = os.open(lease, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        portable.lock_shared_nonblocking(fd)
+    except OSError:
+        os.close(fd)
+        return False
+    _held[lease] = fd
+    return True
+
+
+def exclude_workspace(root: pathlib.Path) -> int | None:
+    """Take the checkout's lease alone, as `pack` does before it writes.
+
+    Args:
+        root: Any path inside the checkout.
+
+    Returns:
+        The held fd, passed to `release_single_writer` when the write is done; None while a
+        run, a resume, a machine or an exec of the checkout is live.
+    """
+    lease = workspace_lease_path(root)
+    paths.mkdir_for_real_user(lease.parent)
+    fd = os.open(lease, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        portable.lock_exclusive(fd, blocking=False)
+    except OSError:
+        os.close(fd)
+        return None
+    return fd
+
+
+def release_workspaces() -> None:
+    """Release every lease this process holds; a process exit does the same."""
+    for fd in _held.values():
+        release_single_writer(fd)
+    _held.clear()

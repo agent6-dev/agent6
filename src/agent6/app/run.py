@@ -171,6 +171,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     # A worktree run selects below, once the worktree its commands run in exists.
     isolation: kinds.IsolationLevel | None = None
     if not worktree:
+        # The lease comes before the pack scan, so no pack can be written under a live run.
+        if not lock.hold_workspace(cwd):
+            reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
+            return 2
         try:
             isolation = session_runtime.select_isolation(
                 cfg,
@@ -286,6 +290,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     worker_lock_fd: int | None = None
     try:
         if checkout is not None:
+            if not lock.hold_workspace(cwd):
+                reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
+                return 2
             isolation = session_runtime.select_isolation(
                 cfg,
                 cwd=cwd,

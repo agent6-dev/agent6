@@ -69,7 +69,7 @@ File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `07
 Symlinks and special files refuse rather than following a path outside the snapshot.
 **The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
 A command already running in this checkout's sandbox can read the pack.
-Run `agent6 pack` while no run or `agent6 exec` of this checkout is live.
+`agent6 pack` refuses while a run, an `agent6 exec` or a machine of this checkout is live, and a run refuses to start while `pack` writes: a pack made under a live sandbox would put the secrets within its commands' reach.
 
 `unpack` uses a three-way rule per file: P is the pack's current hash, B is its recorded base hash (possibly null), and H is the home's hash (possibly absent).
 

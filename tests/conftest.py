@@ -11,11 +11,13 @@ import pathlib
 import shutil
 import tempfile
 import termios
+from collections.abc import Iterator
 
 import pytest
 import tree_sitter_language_pack
 
 from agent6.sandbox import tool_paths
+from agent6.sessions import lock
 from tests.browser_env import require_browser
 from tests.collector_env import require_collector
 from tests.jail_env import require_userns_jail
@@ -120,6 +122,13 @@ def jail_bin(
         runner.chmod(0o755)
     monkeypatch.setattr(tool_paths, "jail_search_path", lambda: str(bindir))
     return bindir
+
+
+@pytest.fixture(autouse=True)
+def _release_workspace_leases() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+    """Drop the workspace leases a test's run, exec or machine held; a real process exits."""
+    yield
+    lock.release_workspaces()
 
 
 @pytest.fixture(autouse=True)
