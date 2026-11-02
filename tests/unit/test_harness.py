@@ -110,7 +110,7 @@ def _knobs(cfg: Any, **knobs: Any) -> Any:
 
 
 class _NoRepoChain(run_chain.RunChain):
-    """A chain on /tmp: its commits are patched out, and there is no tree to read a delta from."""
+    """A chain with no repository: its commits are patched out and no tree holds a delta."""
 
     def name_status(self) -> tuple[tuple[str, str], ...]:
         return ()

@@ -2166,7 +2166,7 @@ def test_hidden_in_repo_keeps_the_entries_inside_the_repository(tmp_path: pathli
     )
 
 
-def test_status_and_name_status_leave_out_everything_under_an_excluded_directory(
+def test_status_leaves_out_everything_under_an_excluded_directory(
     tmp_path: pathlib.Path,
 ) -> None:
     """An exclude entry covers the files under it: a hidden directory's files never count."""

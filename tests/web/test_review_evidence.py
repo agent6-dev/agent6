@@ -101,8 +101,8 @@ def test_panel_rules_link_reads_the_base_blob_after_head_deletion(
     assert _get(port, "/api/reviews/panel/file?side=head&path=AGENTS.md")[0] == 404
 
 
-def test_a_tree_another_checkout_holds_is_named(tmp_path: pathlib.Path) -> None:
-    """A recorded tree this repository lacks reads as another checkout's, not as a bad object."""
+def test_a_tree_this_repository_lacks_is_named(tmp_path: pathlib.Path) -> None:
+    """A recorded tree this repository lacks reads as missing here, not as git's bad object."""
     from tests.web import signin
 
     saved = review_helpers.reviewed_repo(tmp_path)
