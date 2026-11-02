@@ -63,6 +63,7 @@ For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolcha
 
 - Python 3.12 or newer
 - A C compiler on Python 3.15 (`tree-sitter` ships no wheel for it)
+- A Rust toolchain on a musl libc (`tree-sitter-language-pack` ships wheels for glibc 2.34 and newer on x86_64 and aarch64 only, and builds with maturin elsewhere)
 - git 2.47 or newer
 - One provider: Anthropic, any OpenAI-compatible endpoint (a local one needs no key), a ChatGPT subscription, or a Claude Code login (`agent6 connect claude`)
 - A Linux release as recent as Debian 13 or Ubuntu 26.04 LTS; older ones are not supported
