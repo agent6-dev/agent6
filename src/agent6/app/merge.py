@@ -219,6 +219,8 @@ def land_tasks(
 
     Each range's squash is parented on the previous one, with the previous range's tip as
     its merge base, so a target that moved since the run started merges once per range.
+    The squashes are made off the target and it moves once at the end: a conflict in a
+    later range lands nothing.
 
     Args:
         cwd: The repository.
@@ -231,22 +233,32 @@ def land_tasks(
             and tip.
 
     Returns:
-        The last squash's result, or the first conflict.
+        The target's move, or the first conflict, with nothing landed.
+
+    Raises:
+        GitError: The target moved while the squashes were made.
     """
     ranges = git_read.chain_task_ranges(cwd, base_sha, tip) or [("", tip)]
-    previous = base_sha
-    result = git_ops.MergeResult(previous, False, ())
+    landed = git_read.branch_tip_sha(cwd, target) or ""
+    start, previous = landed, base_sha
     for task_id, range_tip in ranges:
         node = tasks.get(task_id) if task_id else None
         message = task_commit_message(node) if node else style_message(previous, range_tip)
-        result = git_ops.plumb_merge(
-            cwd, target, range_tip, method="squash", message=message, identity=identity,
+        made = git_ops.merge_commit(
+            cwd,
+            landed,
+            range_tip,
+            method="squash",
+            message=message or f"Merge {range_tip}",
+            identity=identity,
             merge_base=previous,
-        )  # fmt: skip
-        if result.conflicted:
-            return result
-        previous = range_tip
-    return result
+        )
+        if made.conflicted:
+            return made
+        landed, previous = made.merged_sha, range_tip
+    if landed == start:
+        return git_ops.MergeResult(start, False, ())
+    return git_ops.plumb_merge(cwd, target, landed, method="ff_only", identity=identity)
 
 
 def task_commit_message(node: graph_models.TaskNode) -> str:

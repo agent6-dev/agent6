@@ -198,3 +198,31 @@ def test_tasks_merge_with_an_operator_message_lands_one_commit(
     assert main(["sessions", "merge", "run-TASK03", "-m", "both at once"]) == 0
 
     assert _git(tmp_path, "log", "--format=%s", "main").splitlines() == ["both at once", "init"]
+
+
+def test_a_conflict_in_a_later_task_range_lands_nothing(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The squashes chain off the target; a conflict in range two leaves range one unlanded too."""
+    monkeypatch.chdir(tmp_path)
+    base = _repo(tmp_path)
+    layout = _session(tmp_path, "run-TASK04", base)
+    first, second = _subtasks(layout, "Add a file", "Rewrite the README")
+    ref = git_read.chain_ref_for("run-TASK04")
+    _checkpoint(tmp_path, ref, base, "added.txt", first.id)
+    (tmp_path / "README.md").write_text("the run's README\n", encoding="utf-8")
+    sha = git_ops.chain_commit(
+        tmp_path, "agent6 turn: readme", ref=ref, fallback_parent=base,
+        trailers={git_read.TASK_TRAILER: second.id},
+    )  # fmt: skip
+    assert sha
+    # main moves under the run, on the file the second range rewrites.
+    (tmp_path / "README.md").write_text("main's README\n", encoding="utf-8")
+    _git(tmp_path, "commit", "-qam", "main edits the README")
+    moved = _git(tmp_path, "rev-parse", "main")
+
+    assert main(["sessions", "merge", "run-TASK04"]) == 1
+
+    assert _git(tmp_path, "rev-parse", "main") == moved
+    assert "added.txt" not in _git(tmp_path, "ls-tree", "--name-only", "main")
+    assert sessions_manifest.read_manifest(layout.session_dir).merged is None

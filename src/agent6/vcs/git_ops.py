@@ -739,39 +739,81 @@ def plumb_merge(
     ).stdout.strip()
     if git_read.is_ancestor(path, theirs, ours):
         return MergeResult(ours, False, ())
-    ff_able = git_read.is_ancestor(path, ours, theirs)
     if method == "ff_only":
-        if not ff_able:
+        if not git_read.is_ancestor(path, ours, theirs):
             raise errors.GitError(
                 f"{target!r} has moved; a fast-forward to {merge_rev!r} is impossible"
             )
         sha = theirs
     else:
-        if ff_able:
-            tree = git_read.tree_sha(path, theirs)
-        else:
-            tree, conflicts = _merge_tree(path, ours, theirs, merge_base)
-            if conflicts:
-                return MergeResult("", True, conflicts)
-        if tree == git_read.tree_sha(path, ours):
-            return MergeResult(ours, False, ())  # content-identical: nothing to land
-        text = message or f"Merge {merge_rev}"
-        trailer = identity.trailer if identity else None
-        if trailer and trailer not in text:
-            text = f"{text}\n\n{trailer}"
-        parent_args = ["-p", ours] if method == "squash" else ["-p", ours, "-p", theirs]
-        sha = git_command.run(
+        made = merge_commit(
             path,
-            "commit-tree",
-            tree,
-            *parent_args,
-            "-m",
-            text,
-            env_extra=_identity_env(identity),
-        ).stdout.strip()
+            ours,
+            theirs,
+            method=method,
+            message=message or f"Merge {merge_rev}",
+            identity=identity,
+            merge_base=merge_base,
+        )
+        if made.conflicted or made.merged_sha == ours:
+            return made
+        sha = made.merged_sha
     # Compare-and-swap: refuses when the target moved concurrently.
     git_command.run(path, "update-ref", ref, sha, ours)
     return MergeResult(sha, False, (), _bring_index_forward(path, target, ours, sha))
+
+
+def merge_commit(
+    path: pathlib.Path,
+    ours: str,
+    theirs: str,
+    *,
+    method: str,
+    message: str,
+    identity: git_read.CommitIdentity | None = None,
+    merge_base: str | None = None,
+) -> MergeResult:
+    """Make the commit that lands one commit on another, moving no ref.
+
+    `land_tasks` chains these off the target and moves it once at the end, so a conflict
+    in a later range lands nothing.
+
+    Args:
+        path: The repository.
+        ours: The commit to land on.
+        theirs: The commit to land.
+        method: "squash" (one parent) or "merge" (two parents).
+        message: The commit message.
+        identity: The author and committer overrides.
+        merge_base: The base instead of the one git would find.
+
+    Returns:
+        The new commit as `merged_sha`; `ours` when theirs adds nothing to it; or the
+        conflict, which lists its paths.
+    """
+    if git_read.is_ancestor(path, ours, theirs):
+        tree = git_read.tree_sha(path, theirs)
+    else:
+        tree, conflicts = _merge_tree(path, ours, theirs, merge_base)
+        if conflicts:
+            return MergeResult("", True, conflicts)
+    if tree == git_read.tree_sha(path, ours):
+        return MergeResult(ours, False, ())  # content-identical: nothing to land
+    text = message
+    trailer = identity.trailer if identity else None
+    if trailer and trailer not in text:
+        text = f"{text}\n\n{trailer}"
+    parent_args = ["-p", ours] if method == "squash" else ["-p", ours, "-p", theirs]
+    sha = git_command.run(
+        path,
+        "commit-tree",
+        tree,
+        *parent_args,
+        "-m",
+        text,
+        env_extra=_identity_env(identity),
+    ).stdout.strip()
+    return MergeResult(sha, False, ())
 
 
 def _bring_index_forward(
