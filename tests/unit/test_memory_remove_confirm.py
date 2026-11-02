@@ -25,6 +25,7 @@ def _fact(repo: pathlib.Path) -> pathlib.Path:
 
 
 @pytest.mark.parametrize(("typed", "deleted"), [(b"n\n", False), (b"\n", False), (b"y\n", True)])
+@pytest.mark.needs_pty
 def test_memory_remove_on_a_terminal_names_the_fact_and_asks(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, typed: bytes, deleted: bool
 ) -> None:
@@ -50,6 +51,7 @@ def test_memory_remove_on_a_terminal_names_the_fact_and_asks(
 
 
 @pytest.mark.parametrize("flag", ["--yes", "-y"])
+@pytest.mark.needs_pty
 def test_memory_remove_yes_deletes_on_a_terminal_without_asking(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, flag: str
 ) -> None:

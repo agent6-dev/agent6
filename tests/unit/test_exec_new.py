@@ -312,6 +312,7 @@ def on_a_terminal(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
     return spawned
 
 
+@pytest.mark.needs_pty
 def test_on_a_terminal_the_command_gets_the_pty_as_its_controlling_terminal(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, on_a_terminal: list[tuple[str, ...]]
 ) -> None:

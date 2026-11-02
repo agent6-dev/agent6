@@ -368,6 +368,7 @@ _OPEN_QUESTION: dict[str, Any] = {
     ],
     ids=["approval", "question"],
 )
+@pytest.mark.needs_pty
 def test_a_prompt_answered_elsewhere_ends_the_attach_prompt(
     tmp_path: pathlib.Path,
     prompt: dict[str, Any],
@@ -395,6 +396,7 @@ def test_a_prompt_answered_elsewhere_ends_the_attach_prompt(
     assert not (tmp_path / slot).exists()
 
 
+@pytest.mark.needs_pty
 def test_an_answer_typed_at_the_attach_prompt_is_written(tmp_path: pathlib.Path) -> None:
     """A line typed at an open attach prompt is the answer the worker reads, with no notice."""
     process.write_worker_pid(tmp_path, os.getpid())
@@ -411,6 +413,7 @@ def test_an_answer_typed_at_the_attach_prompt_is_written(tmp_path: pathlib.Path)
     assert (ipc.approvals_dir(tmp_path) / "approval-1.answer").read_text(encoding="utf-8") == "yes"
 
 
+@pytest.mark.needs_pty
 def test_a_worker_that_dies_ends_the_attach_prompt(tmp_path: pathlib.Path) -> None:
     """Attach drops an open prompt once the worker is gone, and writes no answer for it.
 
@@ -567,6 +570,7 @@ def test_two_open_prompts_each_close_on_their_own_answer(
     assert view.notices == [f"[agent6] {ipc.ANSWERED_ELSEWHERE}"]
 
 
+@pytest.mark.needs_pty
 def test_attach_follows_on_after_a_prompt_answered_elsewhere(tmp_path: pathlib.Path) -> None:
     """The follow loop drops the answered prompt, prints what follows, and asks the next one.
 

@@ -181,7 +181,8 @@ def test_a_btw_is_not_declared_dead_before_its_worker_starts(tmp_path: pathlib.P
     (d / "worker.pid").write_text(f"{os.getpid()}\n", encoding="utf-8")
     assert btw.btw_answer(session) is None, "a live worker mid-preflight is not an ending"
 
-    (d / "worker.pid").write_text("1\n", encoding="utf-8")  # foreign pid: the worker died
+    # PID_MAX_LIMIT: no process ever holds it, in a jail's pid namespace either.
+    (d / "worker.pid").write_text("4194304\n", encoding="utf-8")
     answer = btw.btw_answer(session)
     assert answer is not None and "died launching" in answer
 

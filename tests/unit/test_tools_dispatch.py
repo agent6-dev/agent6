@@ -72,6 +72,7 @@ def test_read_file_ok(tmp_path: pathlib.Path) -> None:
     assert out["content"] == "hi"
 
 
+@pytest.mark.needs_namespaces
 def test_verify_command_unexecutable_raises_loud(tmp_path: pathlib.Path) -> None:
     """A verify_command the jail cannot execute raises OperatorCommandUnexecutableError.
 
@@ -1144,6 +1145,7 @@ def test_passthrough_env_is_fixed_allowlist() -> None:
                 os.environ[k] = v
 
 
+@pytest.mark.needs_namespaces
 def test_jail_env_disables_python_bytecode(tmp_path: pathlib.Path) -> None:
     cfg = _config_with_run_commands(tmp_path, "allow")
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
@@ -1165,6 +1167,7 @@ def test_jail_env_disables_python_bytecode(tmp_path: pathlib.Path) -> None:
     assert captured["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_outline_returns_symbols(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nclass Bar:\n    pass\n", encoding="utf-8")
@@ -1176,6 +1179,7 @@ def test_outline_returns_symbols(tmp_path: pathlib.Path) -> None:
     assert out["truncated"] is False
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_nav_tools_report_one_based_lines(tmp_path: pathlib.Path) -> None:
     """outline, find_definition and find_references share the LSP twins' 1-based line and col."""
     cfg = _config(tmp_path)
@@ -1207,6 +1211,7 @@ def test_outline_rejects_escape(tmp_path: pathlib.Path) -> None:
         d.dispatch("outline", {"path": "/etc/hosts"})
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_find_definition_returns_relative_paths(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def target():\n    pass\n", encoding="utf-8")
@@ -1217,6 +1222,7 @@ def test_find_definition_returns_relative_paths(tmp_path: pathlib.Path) -> None:
     assert out["definitions"][0]["kind"] == "function"
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_find_references_returns_relative_paths(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\nfoo()\n", encoding="utf-8")
@@ -1227,6 +1233,7 @@ def test_find_references_returns_relative_paths(tmp_path: pathlib.Path) -> None:
     assert all(r["path"] == "a.py" for r in out["references"])
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_apply_edit_invalidates_index(tmp_path: pathlib.Path) -> None:
     cfg = _config(tmp_path)
     (tmp_path / "a.py").write_text("def foo():\n    pass\n", encoding="utf-8")
@@ -1315,6 +1322,7 @@ def test_run_metric_command_is_withheld_when_commands_are(tmp_path: pathlib.Path
         d.dispatch("run_metric_command", {})
 
 
+@pytest.mark.needs_namespaces
 def test_run_metric_command_invokes_jail(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1353,6 +1361,7 @@ def test_run_metric_command_invokes_jail(
     assert out["score"] == 42.0
 
 
+@pytest.mark.needs_namespaces
 def test_run_metric_command_honors_verify_timeout(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1385,6 +1394,7 @@ def test_run_metric_command_honors_verify_timeout(
     assert captured["timeout_s"] == 7.0
 
 
+@pytest.mark.needs_namespaces
 def test_run_metric_command_score_null_on_no_match(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1867,6 +1877,7 @@ def test_run_command_result_carries_output_tails(
     assert read["lines_total"] == 1
 
 
+@pytest.mark.needs_namespaces
 def test_run_command_passes_extra_read_paths_to_policy(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1896,6 +1907,7 @@ def test_run_command_passes_extra_read_paths_to_policy(
     assert "/opt/miniconda3" in captured["ro"]
 
 
+@pytest.mark.needs_namespaces
 def test_run_command_passes_extra_write_paths_to_policy(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2141,6 +2153,7 @@ def test_ask_user_accepts_flat_single_question(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize(("isolation", "protected"), [("full", True), ("partial", False)])
+@pytest.mark.needs_namespaces
 def test_git_reaches_the_jail_as_a_protect_path_only_under_full(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,

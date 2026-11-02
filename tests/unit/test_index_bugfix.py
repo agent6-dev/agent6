@@ -11,6 +11,8 @@ from __future__ import annotations
 import pathlib
 import threading
 
+import pytest
+
 from agent6.tools import index, path_safety
 
 
@@ -22,6 +24,7 @@ def _bump_mtime(p: pathlib.Path) -> None:
     os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_index_self_heals_on_out_of_band_edit(tmp_path: pathlib.Path) -> None:
     src = tmp_path / "m.py"
     src.write_text("def alpha():\n    pass\n", encoding="utf-8")
@@ -42,6 +45,7 @@ def test_index_self_heals_on_out_of_band_edit(tmp_path: pathlib.Path) -> None:
     assert beta[0].name == "beta"
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_index_evicts_deleted_file(tmp_path: pathlib.Path) -> None:
     src = tmp_path / "gone.py"
     src.write_text("def doomed():\n    pass\n", encoding="utf-8")

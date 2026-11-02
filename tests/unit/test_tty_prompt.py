@@ -57,6 +57,7 @@ def _drive_pty(child: Any, expect: bytes, reply: bytes) -> int:
         os.close(master)
 
 
+@pytest.mark.needs_pty
 def test_tty_prompt_round_trips_on_the_controlling_terminal() -> None:
     def child() -> int:
         from agent6.ui.cli import steer_tty
@@ -67,6 +68,7 @@ def test_tty_prompt_round_trips_on_the_controlling_terminal() -> None:
     assert _drive_pty(child, b"PICK>", b"two\n") == 0
 
 
+@pytest.mark.needs_pty
 def test_tty_prompt_discards_type_ahead() -> None:
     # Text typed before the prompt existed must not be consumed as its answer:
     # a "/detach" typed during the "pausing after this turn" window once rode
@@ -104,6 +106,7 @@ def test_tty_prompt_discards_type_ahead() -> None:
         os.close(master)
 
 
+@pytest.mark.needs_pty
 def test_ask_one_stdin_prompts_and_maps_a_digit_to_its_option() -> None:
     def child() -> int:
 
@@ -278,6 +281,7 @@ def test_a_headless_question_park_says_where_to_answer_and_that_it_was(
     assert tty_lines == []
 
 
+@pytest.mark.needs_pty
 def test_tty_prompt_ends_once_until_holds(tmp_path: pathlib.Path) -> None:
     """A prompt answered by another route ends with None, and the partial line is discarded."""
     flag = tmp_path / "answered"
@@ -318,6 +322,7 @@ def test_tty_prompt_ends_once_until_holds(tmp_path: pathlib.Path) -> None:
         os.close(master)
 
 
+@pytest.mark.needs_pty
 def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: pathlib.Path) -> None:
     """A foreground run blocked on its terminal takes an answer written over the file bridge.
 
@@ -373,6 +378,7 @@ def test_a_filed_answer_ends_the_terminal_prompt(tmp_path: pathlib.Path) -> None
         os.close(master)
 
 
+@pytest.mark.needs_pty
 def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: pathlib.Path) -> None:
     """The Ctrl-C pause menu polls the steer file and takes a front-end's steer."""
     from agent6.sessions import ipc
@@ -420,6 +426,7 @@ def test_the_pause_menu_takes_a_steer_written_while_it_is_open(tmp_path: pathlib
         os.close(master)
 
 
+@pytest.mark.needs_pty
 def test_detach_away_mode_asks_on_the_terminal_with_stdin_redirected(
     tmp_path: pathlib.Path,
 ) -> None:

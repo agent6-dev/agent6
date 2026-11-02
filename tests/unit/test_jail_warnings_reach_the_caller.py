@@ -11,6 +11,8 @@ from __future__ import annotations
 import pathlib
 import tempfile
 
+import pytest
+
 from agent6 import kinds
 from agent6.config import Config
 from agent6.sandbox import jail
@@ -38,6 +40,7 @@ def test_a_quiet_launcher_adds_nothing() -> None:
     assert jail._with_launcher_warnings(_result(), "").stderr == ""
 
 
+@pytest.mark.needs_namespaces
 def test_a_real_jailed_command_carries_no_launcher_noise() -> None:
     """End to end on this host, where the jail sets up cleanly, a command's stderr stays clean."""
     result = jail.run_in_jail(

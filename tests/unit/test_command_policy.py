@@ -125,6 +125,7 @@ def test_parallel_makes_the_operator_decide_once(commands: str, refused: bool) -
         assert "agent6 config set sandbox.run_commands" in err
 
 
+@pytest.mark.needs_namespaces
 def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

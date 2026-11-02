@@ -54,6 +54,7 @@ def py_project(tmp_path: pathlib.Path) -> pathlib.Path:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_outline_python_top_level_and_nested(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     syms = idx.outline(py_project / "a.py")
@@ -82,6 +83,7 @@ def test_outline_returns_empty_for_missing_file(tmp_path: pathlib.Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_find_definition_locates_single_def(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     defs = idx.find_definition("Bar")
@@ -91,11 +93,13 @@ def test_find_definition_locates_single_def(py_project: pathlib.Path) -> None:
     assert defs[0].line == 4
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_find_definition_returns_empty_for_unknown_name(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     assert idx.find_definition("definitely_does_not_exist") == []
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_find_definition_skips_excluded_dirs(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     assert idx.find_definition("should_not_appear") == []
@@ -106,6 +110,7 @@ def test_find_definition_skips_excluded_dirs(py_project: pathlib.Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_find_references_filters_comments_and_strings(tmp_path: pathlib.Path) -> None:
     (tmp_path / "a.py").write_text(
         textwrap.dedent(
@@ -128,6 +133,7 @@ def test_find_references_filters_comments_and_strings(tmp_path: pathlib.Path) ->
     assert lines == [1, 6]
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_find_references_spans_files(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     refs = idx.find_references("foo")
@@ -141,6 +147,7 @@ def test_find_references_spans_files(py_project: pathlib.Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_mark_changed_picks_up_new_symbols(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     assert idx.find_definition("brand_new") == []
@@ -152,6 +159,7 @@ def test_mark_changed_picks_up_new_symbols(py_project: pathlib.Path) -> None:
     assert defs[0].kind == "function"
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_mark_deleted_drops_file_from_index(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     # Prime the index
@@ -161,6 +169,7 @@ def test_mark_deleted_drops_file_from_index(py_project: pathlib.Path) -> None:
     assert idx.find_definition("Bar") == []
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_mark_changed_on_deleted_file_silently_removes(py_project: pathlib.Path) -> None:
     idx = index.SymbolIndex(path_safety.Workspace(root=py_project))
     assert idx.find_definition("Bar")
@@ -172,6 +181,7 @@ def test_mark_changed_on_deleted_file_silently_removes(py_project: pathlib.Path)
     assert idx.find_definition("Bar") == []
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_lazy_initial_scan_is_deferred_until_first_query(tmp_path: pathlib.Path) -> None:
     (tmp_path / "a.py").write_text("def x(): pass\n")
     idx = index.SymbolIndex(path_safety.Workspace(root=tmp_path))
@@ -186,6 +196,7 @@ def test_lazy_initial_scan_is_deferred_until_first_query(tmp_path: pathlib.Path)
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.needs_grammar(language="rust")
 def test_rust_outline(tmp_path: pathlib.Path) -> None:
     (tmp_path / "lib.rs").write_text(
         textwrap.dedent(
@@ -212,6 +223,7 @@ def test_rust_outline(tmp_path: pathlib.Path) -> None:
     assert ("Greet", "trait") in by_kind
 
 
+@pytest.mark.needs_grammar(language="typescript")
 def test_typescript_outline(tmp_path: pathlib.Path) -> None:
     (tmp_path / "a.ts").write_text(
         textwrap.dedent(
@@ -249,8 +261,8 @@ def test_typescript_outline(tmp_path: pathlib.Path) -> None:
 # ---------------------------------------------------------------------------
 
 # (filename, source, expected (name, kind) pairs the outline MUST contain).
-_LANG_CASES: list[tuple[str, str, set[tuple[str, str]]]] = [
-    (
+_LANG_CASES = [
+    pytest.param(
         "s.go",
         "package m\ntype Point struct{ X int }\ntype Shape interface{ Area() float64 }\n"
         "const Max = 10\nfunc Add(a, b int) int { return a + b }\n"
@@ -262,8 +274,9 @@ _LANG_CASES: list[tuple[str, str, set[tuple[str, str]]]] = [
             ("Shape", "interface"),
             ("Max", "const"),
         },
+        marks=pytest.mark.needs_grammar(language="go"),
     ),
-    (
+    pytest.param(
         "S.java",
         "class Foo {\n  int field;\n  Foo() {}\n  void doIt() {}\n}\n"
         "interface Bar { void run(); }\nenum Color { RED, GREEN }\n",
@@ -274,25 +287,29 @@ _LANG_CASES: list[tuple[str, str, set[tuple[str, str]]]] = [
             ("Color", "enum"),
             ("RED", "const"),
         },
+        marks=pytest.mark.needs_grammar(language="java"),
     ),
-    (
+    pytest.param(
         "s.js",
         "function top() {}\nclass Widget {\n  render() {}\n  #priv() {}\n}\n",
         {("top", "function"), ("Widget", "class"), ("render", "method")},
+        marks=pytest.mark.needs_grammar(language="javascript"),
     ),
-    (
+    pytest.param(
         "s.c",
         "struct Pt { int x; };\ntypedef int MyInt;\n#define MAXN 8\n"
         "int add(int a, int b) { return a + b; }\n",
         {("add", "function"), ("Pt", "struct"), ("MyInt", "type"), ("MAXN", "const")},
+        marks=pytest.mark.needs_grammar(language="c"),
     ),
-    (
+    pytest.param(
         "s.cpp",
         "namespace ns { class Animal {\npublic:\n  void speak();\n}; }\n"
         "void ns::Animal::speak() {}\nint freefn() { return 0; }\n",
         {("Animal", "class"), ("ns", "module"), ("freefn", "function"), ("speak", "method")},
+        marks=pytest.mark.needs_grammar(language="cpp"),
     ),
-    (
+    pytest.param(
         "S.cs",
         "namespace App {\n  class Svc { public void Do() {} }\n  struct V {}\n"
         "  interface I {}\n  enum E { A }\n}\n",
@@ -304,17 +321,20 @@ _LANG_CASES: list[tuple[str, str, set[tuple[str, str]]]] = [
             ("I", "interface"),
             ("E", "enum"),
         },
+        marks=pytest.mark.needs_grammar(language="csharp"),
     ),
-    (
+    pytest.param(
         "s.rb",
         "module M\n  class Foo\n    def bar; end\n    def name=(v); end\n  end\nend\n",
         {("M", "module"), ("Foo", "class"), ("bar", "method"), ("name=", "method")},
+        marks=pytest.mark.needs_grammar(language="ruby"),
     ),
-    (
+    pytest.param(
         "s.php",
         "<?php\nfunction top() {}\nclass C { public function m() {} }\n"
         "interface I {}\ntrait T {}\n",
         {("top", "function"), ("C", "class"), ("m", "method"), ("I", "interface"), ("T", "trait")},
+        marks=pytest.mark.needs_grammar(language="php"),
     ),
 ]
 
@@ -332,6 +352,7 @@ def test_outline_supported_languages(
     assert expected <= got, f"{filename}: missing {expected - got} (got {got})"
 
 
+@pytest.mark.needs_grammar(language="cpp")
 def test_outline_c_header_uses_cpp_grammar(tmp_path: pathlib.Path) -> None:
     # .h maps to the cpp grammar (a C superset), so a C++ class in a header is
     # captured -- the plain C grammar would miss it.
@@ -342,6 +363,7 @@ def test_outline_c_header_uses_cpp_grammar(tmp_path: pathlib.Path) -> None:
     assert ("Widget", "class") in got
 
 
+@pytest.mark.needs_grammar(language="cpp")
 def test_cpp_skips_forward_decls_and_param_type_uses(tmp_path: pathlib.Path) -> None:
     # The cpp class/struct/enum queries require a body, so a forward declaration
     # and a bare type-use in a parameter are NOT captured as definitions (which
@@ -357,6 +379,7 @@ def test_cpp_skips_forward_decls_and_param_type_uses(tmp_path: pathlib.Path) -> 
     assert idx.find_definition("Pt") == []  # bare param type is not a definition
 
 
+@pytest.mark.needs_grammar(language="cpp")
 def test_c_header_prototypes_are_functions_not_methods(tmp_path: pathlib.Path) -> None:
     # A plain-C prototype in a .h (cpp grammar) is a free function, not a method.
     f = tmp_path / "api.h"
@@ -367,6 +390,7 @@ def test_c_header_prototypes_are_functions_not_methods(tmp_path: pathlib.Path) -
     assert not any(k == "method" for _, k in got)
 
 
+@pytest.mark.needs_grammar(language="csharp")
 def test_csharp_operator_overload_name_is_the_symbol(tmp_path: pathlib.Path) -> None:
     # An operator overload is named by its operator token (+, ==), not "operator".
     f = tmp_path / "V.cs"
@@ -381,6 +405,7 @@ def test_csharp_operator_overload_name_is_the_symbol(tmp_path: pathlib.Path) -> 
     assert ("operator", "method") not in got
 
 
+@pytest.mark.needs_grammar(language="go")
 def test_find_references_go_filters_to_identifiers(tmp_path: pathlib.Path) -> None:
     # Cross-language sanity: references use the per-language ref query, so a Go
     # symbol is found by find_references (and never inside strings/comments).

@@ -465,6 +465,7 @@ def test_rows_sort_by_path_with_a_root_and_a_home_row(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Each table opens at `/`, names the home directory, and lists parents before children."""
+    monkeypatch.setenv("HOME", "/home/operator")  # a home outside /tmp, wherever the test runs
     _force_profile(monkeypatch, "full")
     check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out

@@ -54,6 +54,7 @@ def test_the_guard_wraps_both_streams_for_the_block(capsys: pytest.CaptureFixtur
     assert captured.out == "outafter" and captured.err == "err"
 
 
+@pytest.mark.needs_pty
 def test_the_tty_writers_scrub_like_stdout(monkeypatch: pytest.MonkeyPatch) -> None:
     """`tty_message` and `tty_prompt` reach the terminal past the wrapped streams, scrubbed."""
     master, slave = pty.openpty()
