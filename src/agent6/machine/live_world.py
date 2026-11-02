@@ -59,8 +59,8 @@ def _prune_state_logs(root: pathlib.Path, *, keep: int) -> None:
 class LiveWorld:
     """The production world: tools go through the jail, waits sleep.
 
-    The agent runner, the tool policy and the jail runner are injected by the CLI, so this
-    module imports neither the harness nor config nor git.
+    The agent runner, the tool policy and the jail runner are injected by the machine runner
+    (`app/machine/run.py`), so this module imports neither the harness nor config nor git.
 
     Attributes:
         cwd: The workspace.
@@ -79,8 +79,8 @@ class LiveWorld:
             for no hook (the front-ends still render the journaled events).
         data_dir: The machine's persistent scratch dir, `$AGENT6_MACHINE_DATA_DIR` to a tool,
             outside the workspace; where a tool keeps durable state.
-        jail_runner: Executes one tool policy; the CLI overrides it for `mode = "run"`
-            machines so tools run in the machine's own tree. None is the plain jail.
+        jail_runner: Executes one tool policy; the machine runner overrides it for
+            `mode = "run"` machines so tools run in the machine's own tree. None is the plain jail.
         on_wait: Fired once as a wait starts to block, so the foreground run names where it
             parked; it cannot affect the sleep.
         on_tool_failure: Fired with the state and the result of a tool command that exited
