@@ -201,6 +201,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a grant agent6 makes beneath a masked dir (the run's background-command log dir) is bound again through the mask and keeps its access
     - a grant at or inside a private dir is refused at config load
     - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
+    - a `sandbox.extra_read_paths` or `extra_write_paths` entry inside a `hide_paths` entry refuses at every jailed level: the launcher binds a grant through the mask above it
     - a present `.agent6/pack.json` refuses startup at every isolation level, including `partial`.
       Run `agent6 unpack` in that workspace or delete its `.agent6/` directory
     - run preflight scans the project tree once for nested packs, without following symlinks or entering `.git`, and refuses with every pack's path.

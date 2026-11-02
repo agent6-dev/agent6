@@ -223,7 +223,8 @@ class SandboxConfig(pydantic.BaseModel):
             "readable for installed skills; in-process refusal at every isolation level; "
             "jailed-command masking: empty dirs and files, mount namespace required; under "
             '`sandbox.isolation = "partial"`: run refused for an unmaskable entry, loud warning '
-            "instead for a grant exposing always-hidden dirs"
+            "instead for a grant exposing always-hidden dirs; a grant inside an entry: run "
+            "refused at every jailed level"
         ),
     )
 

@@ -146,7 +146,7 @@ def warn_sandbox_gaps(
 
 
 def exposure_warning(hidden: pathlib.Path, region: pathlib.Path, source: str) -> str:
-    """Return the warning for a private dir `partial` cannot mask from a granted region.
+    """Return the warning for a private dir a granted region exposes.
 
     Args:
         hidden: The private dir.
@@ -369,34 +369,43 @@ def check_jail_home(
     return tools_policy.jail_home_refusal(persistent)
 
 
-def _partial_grant_regions(
-    cfg: Config, root: pathlib.Path, worktree_git_dir: pathlib.Path | None = None
+def _grant_regions(
+    cfg: Config,
+    root: pathlib.Path,
+    isolation: kinds.IsolationLevel,
+    worktree_git_dir: pathlib.Path | None = None,
 ) -> tuple[tuple[pathlib.Path, str], ...]:
-    """Return every region a jailed command is granted under `partial`, labeled by its source.
+    """Return every region a jailed command is granted at this level, labeled by its source.
 
-    Derived from the builders the run uses, so preflight and enforcement cannot drift. The
-    fixed sets mirror the Landlock rules jail/src/main.rs applies under `partial`.
+    Derived from the builders the run uses, so preflight and enforcement cannot drift. Under
+    `partial` the fixed Landlock grants jail/src/main.rs applies join the operator's; under
+    `full` only the operator's and the MCP servers' grants count, which the launcher binds
+    through a mask above them.
 
     Args:
         cfg: The resolved config.
         root: The workspace.
+        isolation: The resolved isolation level, `partial` or `full`.
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
 
     Returns:
         The (region, source) pairs; a source is the phrase a warning or refusal quotes.
     """
     policy = tools_policy.jail_policy(
-        root, cfg, "partial", ("true",), worktree_git_dir=worktree_git_dir
+        root, cfg, isolation, ("true",), worktree_git_dir=worktree_git_dir
     )
-    regions: list[tuple[pathlib.Path, str]] = [(root, "the workspace")]
-    regions += [(pathlib.Path(p), f"the host's shared {p}") for p in PARTIAL_SYSTEM_RW]
-    regions += [
-        (pathlib.Path(p), "a system dir every command is granted") for p in PARTIAL_SYSTEM_RO
-    ]
-    regions += [
-        (pathlib.Path(p), "a device node every command is granted") for p in PARTIAL_DEVICE_NODES
-    ]
-    regions += [(p, "sandbox.extra_device_paths") for p in policy.extra_device_paths]
+    regions: list[tuple[pathlib.Path, str]] = []
+    if isolation == "partial":
+        regions.append((root, "the workspace"))
+        regions += [(pathlib.Path(p), f"the host's shared {p}") for p in PARTIAL_SYSTEM_RW]
+        regions += [
+            (pathlib.Path(p), "a system dir every command is granted") for p in PARTIAL_SYSTEM_RO
+        ]
+        regions += [
+            (pathlib.Path(p), "a device node every command is granted")
+            for p in PARTIAL_DEVICE_NODES
+        ]
+        regions += [(p, "sandbox.extra_device_paths") for p in policy.extra_device_paths]
     network_reads = tools_policy.host_network_reads()
     for p in policy.extra_ro_paths:
         if pathlib.Path(p) == worktree_git_dir:
@@ -407,14 +416,17 @@ def _partial_grant_regions(
             regions.append((p, "what name resolution and TLS verification read"))
         else:
             regions.append((pathlib.Path(p), "sandbox.extra_read_paths"))
-    home = tools_policy.persistent_jail_home(cfg, "partial", root, worktree_git_dir)
+    home = tools_policy.persistent_jail_home(cfg, isolation, root, worktree_git_dir)
     regions += [
         (pathlib.Path(p), "the jail's HOME" if p == home else "sandbox.extra_write_paths")
         for p in policy.extra_rw_paths
     ]
-    regions += [(pathlib.Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths]
+    if isolation == "partial":
+        regions += [
+            (pathlib.Path(p), "an operator tool dir (PATH mount)") for p in policy.tool_paths
+        ]
     for name, srv in cfg.mcp.enabled_servers.items():
-        spol = session_setup.mcp_server_policy(cfg, root, "partial", srv)
+        spol = session_setup.mcp_server_policy(cfg, root, isolation, srv)
         if spol is None:
             continue  # not jailed: a `url` or `unconfined` server
         regions += [
@@ -436,7 +448,8 @@ def unmaskable_exposures(
 ) -> tuple[tuple[pathlib.Path, pathlib.Path, str], ...]:
     """Return the (hidden path, granted region, region source) triples the isolation cannot mask.
 
-    Under `partial`, a hidden path is exposed when it holds a granted region or sits inside one.
+    A grant inside a hidden path is bound through the mask at every jailed level. Under
+    `partial`, which masks nothing, a hidden path inside a granted region is exposed too.
     Paths are resolved before containment so a `..` spelling cannot dodge the check.
 
     Args:
@@ -446,11 +459,11 @@ def unmaskable_exposures(
         worktree_git_dir: The linked worktree's git dir, when the run is in one.
 
     Returns:
-        At most one triple per hidden path; empty outside `partial`.
+        At most one triple per hidden path; empty under `none`.
     """
-    if isolation != "partial":
+    if isolation == "none":
         return ()
-    regions = _partial_grant_regions(cfg, root, worktree_git_dir)
+    regions = _grant_regions(cfg, root, isolation, worktree_git_dir)
     out: list[tuple[pathlib.Path, pathlib.Path, str]] = []
     for h in paths.hidden_paths(root, (pathlib.Path(p) for p in cfg.sandbox.hide_paths)):
         if h.name == ".agent6" and not h.exists():
@@ -458,7 +471,7 @@ def unmaskable_exposures(
         hr = h.resolve()
         for region, source in regions:
             rr = region.resolve()
-            if hr.is_relative_to(rr) or rr.is_relative_to(hr):
+            if rr.is_relative_to(hr) or (isolation == "partial" and hr.is_relative_to(rr)):
                 out.append((h, region, source))
                 break  # one exposing region per hidden path carries the point
     return tuple(out)
@@ -472,7 +485,8 @@ def check_hide_paths_support(
 ) -> str | None:
     """Return the refusal when a `[sandbox].hide_paths` entry cannot be masked here, else None.
 
-    `hide_paths` is only ever explicit, so an entry that `partial` cannot mask refuses. The
+    `hide_paths` is only ever explicit, so a listed entry a grant exposes refuses: at every
+    jailed level an entry holding a grant, under `partial` also an entry inside one. The
     always-hidden private dirs warn instead: granting a region holding them may be meant.
 
     Args:
@@ -484,17 +498,24 @@ def check_hide_paths_support(
     Returns:
         The refusal naming the first exposed entry and the region exposing it, else None.
     """
-    if isolation != "partial":
-        return None  # before reading config: every other level masks
+    if isolation == "none":
+        return None  # no jail masks anything; the file tools refuse alone
     listed = {pathlib.Path(p) for p in cfg.sandbox.hide_paths}
     for hidden, region, source in unmaskable_exposures(cfg, isolation, root, worktree_git_dir):
-        if hidden in listed:
+        if hidden not in listed:
+            continue
+        if region.resolve().is_relative_to(hidden.resolve()):
             return (
-                f"sandbox.hide_paths lists {str(hidden)!r}, which overlaps {str(region)!r}"
-                f" ({source}). Hiding a path that overlaps a grant requires"
-                " sandbox.isolation = 'full', but this run resolved to 'partial'. Set"
-                " sandbox.isolation = 'full', drop the entry, or move one of the two."
+                f"sandbox.hide_paths lists {str(hidden)!r}, and {str(region)!r} ({source}) lies"
+                " inside it: a grant inside a hidden path is bound through the mask and exposes"
+                " that part of it. Drop the grant or the entry."
             )
+        return (
+            f"sandbox.hide_paths lists {str(hidden)!r}, which overlaps {str(region)!r}"
+            f" ({source}). Hiding a path that overlaps a grant requires"
+            " sandbox.isolation = 'full', but this run resolved to 'partial'. Set"
+            " sandbox.isolation = 'full', drop the entry, or move one of the two."
+        )
     return None
 
 

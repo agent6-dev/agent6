@@ -50,7 +50,7 @@ def test_the_recorded_git_dir_is_granted_read_only(tmp_path: pathlib.Path) -> No
         worktree, Config(), "full", ("true",), worktree_git_dir=git_dir
     )
     assert git_dir in policy.extra_ro_paths and git_dir not in policy.extra_rw_paths
-    regions = dict(confine._partial_grant_regions(Config(), worktree, git_dir))
+    regions = dict(confine._grant_regions(Config(), worktree, "partial", git_dir))
     assert regions[git_dir].startswith("the repository's .git")
 
 
@@ -63,7 +63,7 @@ def test_a_rewritten_pointer_refuses_instead_of_granting(tmp_path: pathlib.Path)
         tools_policy.jail_policy(worktree, Config(), "partial", ("true",), worktree_git_dir=git_dir)
     assert str(git_dir) in str(refused.value)
     with pytest.raises(jail.JailUnavailableError):
-        confine._partial_grant_regions(Config(), worktree, git_dir)
+        confine._grant_regions(Config(), worktree, "partial", git_dir)
 
 
 def test_a_linked_worktree_agent6_did_not_record_gets_no_grant(tmp_path: pathlib.Path) -> None:
@@ -74,4 +74,4 @@ def test_a_linked_worktree_agent6_did_not_record_gets_no_grant(tmp_path: pathlib
     # `partial` shares the host network, whose resolver and CA store reads are the only grants.
     partial = tools_policy.jail_policy(worktree, Config(), "partial", ("true",))
     assert partial.extra_ro_paths == tools_policy.host_network_reads()
-    assert (repo / ".git").resolve() not in dict(confine._partial_grant_regions(Config(), repo))
+    assert (repo / ".git").resolve() not in dict(confine._grant_regions(Config(), repo, "partial"))

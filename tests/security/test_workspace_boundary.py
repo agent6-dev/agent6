@@ -407,6 +407,29 @@ def test_hide_paths_resolves_aliases_and_refuses_inner_grants(
     assert r is not None and "extra_read_paths" in r
 
 
+def test_full_refuses_a_grant_inside_a_hidden_path_and_masks_one_inside_a_grant(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under `full` a grant inside a hidden path refuses; a hidden path inside a grant is masked.
+
+    The launcher binds a grant through the mask above it, so the grant exposed part of the
+    hidden tree to jailed commands while the file tools refused it.
+    """
+    from agent6.app import confine
+
+    monkeypatch.chdir(tmp_path)
+    vault = pathlib.Path("/nonexistent-vault")
+    inside = Config.model_validate(
+        {"sandbox": {"hide_paths": [str(vault)], "extra_read_paths": [str(vault / "inner")]}}
+    )
+    r = confine.check_hide_paths_support(inside, "full", tmp_path)
+    assert r is not None and "lies inside it" in r and "extra_read_paths" in r
+    holds = Config.model_validate(
+        {"sandbox": {"hide_paths": [str(vault / "secret")], "extra_read_paths": [str(vault)]}}
+    )
+    assert confine.check_hide_paths_support(holds, "full", tmp_path) is None
+
+
 def test_hide_paths_refuses_an_mcp_server_grant(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
