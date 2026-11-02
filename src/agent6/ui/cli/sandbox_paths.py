@@ -22,6 +22,7 @@ FULL_SYSTEM_BINDS = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc/alternativ
 DEVICE_WRITES = ("/dev/null", "/dev/zero", "/dev/full")
 _TMP = pathlib.Path("/tmp")  # noqa: S108 - a policy path, never opened
 _DEV_SHM = pathlib.Path("/dev/shm")  # noqa: S108 - a policy path, never opened
+_DEV_PTS = pathlib.Path("/dev/pts")
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -280,6 +281,7 @@ def _system_rows(
         rows += [
             Row("rw", _TMP, "a private tmpfs the run's commands share, gone at teardown"),
             Row("rw", _DEV_SHM, "private shared memory, gone at teardown"),
+            Row("rw", _DEV_PTS, "private pseudo-terminals, gone at teardown"),
             Row(
                 "ro",
                 pathlib.Path("/proc"),
@@ -387,6 +389,7 @@ def command_rows(
         for path, resource in (
             (pathlib.Path("/proc"), "process filesystem"),
             (_DEV_SHM, "host shared memory"),
+            (_DEV_PTS, "host terminals; no pseudo-terminal under partial"),
         ):
             unavailable = access(path) == "--"
             note = resource + (" unavailable" if unavailable else " available")

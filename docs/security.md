@@ -24,9 +24,9 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - the run's background-command log dir, in its session dir under the per-repo state dir, widens it for jailed commands
     - where `sandbox.isolation = "auto"` resolves to `partial` on Landlock ABI 1-2, truncation outside write grants is unconfined (warned)
 - No reads outside the workspace and a read-only system set for installed toolchains
-    - `full` `sandbox.isolation`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, plus a curated `/dev`
+    - `full` `sandbox.isolation`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, plus a curated `/dev`: the nodes `null`, `zero`, `urandom`, `random` and `full`, a private `/dev/shm`, and a private devpts (`/dev/pts`, `/dev/ptmx`) so a command can allocate a pseudo-terminal that reaches no host terminal
     - `partial` `sandbox.isolation`: Landlock grants `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64`, `/etc` and the `/dev` nodes `null`, `zero`, `urandom`, `random` and `full`
-        - `/proc` and the host's `/dev/shm` are not granted: `ps` and Python `multiprocessing` fail there, and work under `full` `sandbox.isolation`
+        - `/proc`, the host's `/dev/shm` and the host's `/dev/pts` (the operator's own terminals) are not granted: `ps`, Python `multiprocessing` and pseudo-terminal allocation fail there, and work under `full` `sandbox.isolation`
     - the operator's tool dirs ([Sandbox](#2-sandbox)) and `sandbox.extra_read_paths` add more; `agent6 check sandbox` prints the resolved set
     - a child on the host network (`network = "host"`, or any `sandbox.isolation` but `full`) also reads what name resolution and TLS verification need, where the host has them: `/etc/resolv.conf` and the file it points to, `/etc/hosts`, `/etc/nsswitch.conf`, and the CA store (`/etc/ssl`, `/etc/pki`, `/etc/ca-certificates`).
       File permissions still apply: the root-only private keys beside the certificates stay unreadable to a run that is not root
@@ -48,7 +48,7 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - so do the create paths that take a mode: `creat`, `mknod`/`mknodat`, and `open`/`openat` with `O_CREAT` or `O_TMPFILE`.
       `openat2` carries its mode behind a struct pointer, out of seccomp's reach, so a command can plant the bit through it.
       Every jail mount is `nosuid`, and the file is owned by the operator's own uid, so outside the jail it grants no more than that uid (`--allow-root` below is the exception)
-    - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable
+    - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable, and the private devpts, which carries `nosuid` and `noexec`
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`full` `sandbox.isolation`) or the Landlock write grants (`partial`)
     - a process a command leaves behind dies with the run at the latest
@@ -216,7 +216,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a `hide_paths` entry hides a path, not content git tracks: a tracked file still reads through git's objects (`git show HEAD:<file>`) and in every clone or worktree a lane, a fork, a `run --worktree` run or a machine state works in
     - a `hide_paths` entry inside the workspace stays out of every tree agent6 writes or compares (chain commits, review diffs, dirty checks, undo, resume) and out of the run's pre-run stash, whose change stays in place: no blob of it enters the object store through agent6
     - `XDG_CONFIG_HOME` and `XDG_STATE_HOME` relocate those two dirs, `XDG_CACHE_HOME` the persistent `HOME`; the mask, the grant validator, and the tool-mount scan all read the relocated path
-- `/dev` (`full` `sandbox.isolation`): `/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/random`, `/dev/full`, a private `/dev/shm`; no `/dev/tty`
+- `/dev` (`full` `sandbox.isolation`): `/dev/null`, `/dev/zero`, `/dev/urandom`, `/dev/random`, `/dev/full`, a private `/dev/shm`, a private devpts at `/dev/pts` with `/dev/ptmx` pointing into it; no `/dev/tty`
     - `sandbox.extra_device_paths` binds named `/dev` nodes read-write (GPU compute).
       Each must be a char/block device on the host, or the launch refuses.
       On `partial` `sandbox.isolation` the same grant is a Landlock read+write rule on the node

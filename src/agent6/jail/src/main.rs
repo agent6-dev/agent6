@@ -4,7 +4,7 @@
 //!
 //! Reads a single JSON policy on stdin, sets up:
 //!   - new mount/pid/net/ipc/uts namespaces (user namespace too, so we can mount unprivileged)
-//!   - minimal bind-mounted rootfs (cwd RW, /usr /bin /lib /lib64 RO, tmpfs /tmp)
+//!   - minimal bind-mounted rootfs (cwd RW, /usr /bin /lib /lib64 RO, tmpfs /tmp, a private devpts)
 //!   - Landlock FS rules
 //!   - seccomp-bpf deny-list (default-allow, EPERM on the dangerous syscalls)
 //!   - PR_SET_NO_NEW_PRIVS
@@ -1078,6 +1078,21 @@ fn setup_rootfs(policy: &Policy, real_uid: u32) -> io::Result<()> {
         Some("mode=1777"),
     )
     .map_err(io_err)?;
+    // /dev/pts: a private devpts instance, so a jailed command can allocate a
+    // pseudo-terminal (pexpect, `script`, a TUI's own tests). `newinstance` holds
+    // only the ptys opened in here, and /dev/ptmx points at this instance's node:
+    // the host's terminals are not mounted, so none can be opened or written to.
+    let pts = new_root.join("dev/pts");
+    fs::create_dir_all(&pts)?;
+    mount(
+        Some("devpts"),
+        &pts,
+        Some("devpts"),
+        MsFlags::MS_NOSUID | MsFlags::MS_NOEXEC,
+        Some("newinstance,ptmxmode=0666,mode=0620"),
+    )
+    .map_err(io_err)?;
+    std::os::unix::fs::symlink("pts/ptmx", new_root.join("dev/ptmx"))?;
     // Grants outside the workspace first: the workspace bind below lands on
     // top of a grant that contains it, and stays writable under a read grant.
     bind_grants(policy, &new_root, false)?;
@@ -1581,6 +1596,14 @@ fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
                 .add_rule(PathBeneath::new(fd, sets.read))
                 .map_err(|e| io::Error::other(format!("rule {ro}: {e}")))?;
         }
+    }
+    // The jail's own devpts (setup_rootfs): the pty master opens through /dev/ptmx, a
+    // symlink into it, and the slaves beneath it open read-write. Only this instance
+    // is reachable: the host's /dev/pts is not mounted in the jail.
+    if let Ok(fd) = PathFd::new("/dev/pts") {
+        ruleset = ruleset
+            .add_rule(PathBeneath::new(fd, AccessFs::ReadFile | AccessFs::WriteFile))
+            .map_err(|e| io::Error::other(format!("rule /dev/pts: {e}")))?;
     }
     // Operator tool dirs (mounted at real locations in setup_rootfs): read+exec.
     for tp in &policy.tool_paths {
