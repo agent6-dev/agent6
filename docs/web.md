@@ -166,6 +166,7 @@ For a phone not open on the page, point [`[machine.notify].on_event`](config.md#
 ## The HTTP API
 
 The page reads the same wire form as `agent6 attach --json`.
+[Formats](formats.md#web-api) owns the request and response field lists.
 Sign in once for a token, then send it as a bearer header with every call:
 
 ```bash
@@ -191,21 +192,20 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
     - `WORKTREE` names the working tree as the `head` of a compare or diff (an untracked file diffs against nothing); as a `base` or a commit it answers `422`
     - `/api/git/diff` accepts `full_context=1` for all unchanged lines, independently of `whole=1`, which lifts the patch byte cap
-    - diff payloads include `base_digest` and `head_digest` (SHA-256 of each regular-file input, or null when absent or unavailable), `full_context`, and `context` (file text for a change without text hunks, otherwise null)
+    - [Diff payloads](formats.md#uiwebgit_modeldiff_payload) include checked content identities for blame.
     - regular worktree patches and their digests use the same checked bytes, copied privately before Git compares them; diff blame requests `whole=1` to cover hunks beyond the default text range
-    - `/api/git/worktree` lists the uncommitted files against HEAD (`base`, `files`, `truncated`): tracked changes with git's letters and counts, then untracked files as `A` with their line count, `.gitignore` honoured
-    - `/api/git/tree?rev=` lists the files at a revision or in the working tree (`rev` resolved, `files` as `{path, size, kind, state}` with `kind` one of `file`, `symlink` and `submodule`, `truncated`), 20000 files at most; the working tree is the index plus the untracked files `.gitignore` does not exclude, a tracked file gone from disk left out; only mode `160000` entries are submodules, including unpopulated gitlinks; `state` is `tracked`, `untracked` or `modified` for `WORKTREE`, empty at a commit
-    - `/api/git/text?rev=&path=` returns a file's text at a revision or in the working tree (`rev` resolved, `path`, `digest`, `text`, `lines`, `binary`, `truncated`, `max_bytes`, `language`, `spans`): the text is cut at 1 MiB on a line boundary unless `whole=1`, a binary file has `text` empty and `binary` true, a file over 20 MiB answers `413`; `language` is the tree-sitter language pack's name for the path ("" when it has none) and `spans` its highlight spans per line as `[start, end, class]`, empty when the text is over 512 KiB, the grammar is not cached and cannot be fetched, or the parse ran past a second
+    - `/api/git/worktree` lists uncommitted files against HEAD: tracked changes first, then untracked files, with `.gitignore` honoured
+    - `/api/git/tree?rev=` lists files at a revision or in the working tree, capped at 20000 files; the working tree includes the index and untracked files `.gitignore` does not exclude, omitting tracked files gone from disk; only mode `160000` entries are submodules, including unpopulated gitlinks
+    - `/api/git/text?rev=&path=` returns highlighted file text, cut at 1 MiB on a line boundary unless `whole=1`; binary content has no text, and a file over 20 MiB answers `413`
     - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
-    - `/api/git/blame?rev=&path=` returns `rev`, `path`, `digest`, `lines` as `{line, sha, author, date, filename, original_line}`, `binary`, `truncated` and `max_bytes`; its caps and refusals match `/api/git/text`, including `whole=1`
-    - `filename` and `original_line` identify the historical path and line in the blamed commit, including before a rename
+    - `/api/git/blame?rev=&path=` returns per-line attribution; its caps and refusals match `/api/git/text`, including `whole=1`
+    - blame preserves historical paths and line numbers, including before a rename
     - blame dates are UTC ISO 8601; working-tree blame uses checked file bytes against HEAD, with an empty `sha` and `date` and author `not committed` for uncommitted lines
     - blob, text and blame share a working-tree reader that refuses ancestor and leaf symlinks, paths resolving outside the repository, and non-regular files
     - a revision or path starting with `-`, an unknown revision, a graph ref neither listed in `/api/git/refs` nor a verified full sha, or a path in neither tree answers `422`
 - writes, small JSON `POST`s: `/api/new`, `/api/session/<id>/{steer,approve,answer,merge,undo,fork,resume,run_plan,review,stop,compact,rm}`, `/api/session/<id>/findings/<fid>/{fix,resolve,reopen}`, `/api/machine/<name>/{poke,stop,steer,approve,answer}`, `/api/sessions/{prune,rm_asks}`, `/api/config`, `/api/config/entry`, `/api/config/entry/remove`, `/api/config/reviewer`, `/api/config/reviewer/remove`, `/api/machine/{create,run}`
-- session rows and snapshots use `task` for the full operator text and `task_line` for its headline, with `continued_task` for the latest resume steer; see [the CLI row contract](usage.md)
-- spend uses `cost_usd` on hub rows, `budget.cost_usd` in session snapshots and `spend.cost_usd` in machine snapshots
-- roster writes: `/api/config/reviewer` takes the five form fields as strings (only `focus` is required) and `repo` (default `false`); `/api/config/reviewer/remove` takes a zero-based integer `index` and `repo`
+- session rows, session snapshots and machine snapshots list their fields, the operator's words and the spend among them, on [Formats](formats.md#cli-json)
+- roster writes use the [typed request bodies](formats.md#reviewerbody) for additions and [removals](formats.md#removereviewerbody)
 - writes use the shared config writer or the same spawn and answer-file contracts as the CLI; machine names and answer ids validate to one path component
 - the page and its PWA assets, served without the token (they hold no state): `/`, `/manifest.webmanifest`, `/sw.js`, `/icon.svg`, `/favicon.svg`
 
@@ -228,14 +228,12 @@ The card shows the panel's worker-finish decision separately from the open-block
 Merge is disabled for open block findings or unreadable evidence, and the server enforces the same rule on direct requests.
 
 `POST /api/session/<id>/findings/<finding-id>/{fix,resolve,reopen}` calls the same application path as the [CLI finding actions](usage.md#session-findings).
-Every body includes a `request_id` you choose and `expected_version` from the read response.
+The [finding action format](formats.md#findingaction) defines concurrency checks and idempotency.
 
-- Fix takes `{"request_id":"fix-1","expected_version":3}`.
-  `"resume":true` confirms **Resume to fix** for a stopped session.
-- Resolve adds `"resolution":{"disposition":"fixed","reason":"Reproduced and corrected"}`.
-  A duplicate resolution also names `duplicate_of` in that object.
-- Reopen adds `"reason":"Still reproducible"`.
-- A completed action returns its `status`, `message`, `request_id`, `finding_id`, and resulting `version`.
+- Fix can resume a stopped session only after the operator confirms **Resume to fix**.
+- Resolve records the operator’s conclusion and reason.
+- Reopen records why the finding remains reproducible.
+- A completed action returns the [action result](formats.md#actionresult).
   A queued live action returns 202; repeat its request ID to read the result without resending it.
 - Unknown records return 404, stale versions and conflicting actions return 409, and invalid action fields return 422.
 

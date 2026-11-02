@@ -223,8 +223,7 @@ The tokens and the points against `max_plan_points` on `sessions show` are the l
 `N questions unanswered` beside a status counts the questions of the current execution that nobody was attached to see; a resume starts the count again.
 
 `sessions show` and the conversation's last line print the sentence the run ended on.
-`sessions show --json`, `sessions list --json` and `attach --json` return the full original words in `task`, the latest resume steer in `continued_task`, and their headlines in `task_line`.
-Each headline clips at 200 characters; a continuation adds a newline followed by `continued: <steer>`.
+`sessions show --json`, `sessions list --json` and `attach --json` return the operator's full words in `task`, the latest resume steer in `continued_task` and their headlines in `task_line`; [Formats](formats.md#cli-json) lists every field and the clipping rules.
 An unsteered resume clears `continued_task`.
 The journal stores the operator's words before context blocks are composed around them.
 Old journals retain their clipped text; missing journals use the manifest's 4000-character fallback.
@@ -489,7 +488,7 @@ A fan-out coordinator takes its lanes' earliest group and shows their counts wit
 Lifecycle status stays apart: a running session with an open block reads running in the blocked group, and a failed run reads failed.
 
 `agent6 sessions list --sort review` prints the queue with a review column (the group, the reason, a fan-out's lanes by group); `--sort activity` is the default.
-`sessions list --json` carries each row's `review_queue` (group, reason, open counts, review and verification state, `oldest_open_at`, `source_tip`, `merge_allowed`), `queue_group` and `lane_groups`.
+`sessions list --json` includes the [structured review queue](formats.md#reviewqueueentry) and [lane groups](formats.md#cli-json).
 The web and TUI hubs open in review order with activity one toggle away ([web](web.md#pages), [terminal](terminal.md#hub)); ACP's `/review-queue` lists the repository's queue as text ([ACP](acp.md)).
 
 ## Session receipts
@@ -498,7 +497,7 @@ The web and TUI hubs open in review order with activity one toggle away ([web](w
 It makes no provider call and reruns no checks.
 The short end summary names this inspection command.
 
-- **Testing:** each configured verification attempt has an ID, command, scope, selected paths, before and after tree IDs, outcome, exit code, duration and timeout.
+- **Testing:** the receipt includes each [recorded verification attempt](formats.md#verificationevidence).
   A pass certifies only its unchanged tested tree; a scoped pass covers only the selected tests.
   An edit after a pass or a command that changes the tree leaves the final tree uncertified.
   A different commit with the same tree content does not invalidate the observation.

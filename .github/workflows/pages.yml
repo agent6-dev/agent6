@@ -124,10 +124,12 @@ jobs:
           /tmp/pw/bin/pip install --quiet pillow
           /tmp/pw/bin/python docs/screenshots/make_cover.py
 
-      - name: Regenerate the architecture diagrams
+      - name: Regenerate the architecture and format references
         # Built from the current source (tach module graph + AST callgraph), so
         # the published page matches the commit being deployed.
-        run: uv run python docs/gen_diagrams.py
+        run: |
+          uv run python docs/gen_diagrams.py
+          uv run python docs/gen_formats.py
 
       - name: Build the site (strict)
         run: >

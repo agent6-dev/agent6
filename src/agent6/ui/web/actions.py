@@ -205,6 +205,9 @@ def fork_run(
 ) -> tuple[dict[str, str] | None, str]:
     """Fork a run at its latest checkpoint into a new, unstarted run.
 
+    Attributes:
+        new_session_id: The forked session identifier.
+
     Args:
         cwd: The repository.
         session_id: The run.
@@ -230,6 +233,11 @@ def undo_session(
     """Fork a finished run at the state before its last operator message, unstarted.
 
     A live run is refused: its `/undo` rides the steer channel.
+
+    Attributes:
+        new_session_id: The child session created by undo.
+        undone_text: The instruction removed by undo.
+        notice: The undo result message.
 
     Args:
         cwd: The repository.
@@ -302,6 +310,9 @@ def run_plan(
     """Execute a finished plan by spawning `agent6 run --from <id>` detached.
 
     The plan session is untouched, so revising it keeps working.
+
+    Attributes:
+        run_id: The session created to execute the plan.
 
     Args:
         cwd: The repository.
@@ -586,6 +597,9 @@ def review_run(
     cwd: pathlib.Path, session_id: str, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> tuple[dict[str, str] | None, str]:
     """Review a finished run's record through `agent6 sessions review`, a call of minutes.
+
+    Attributes:
+        review: The completed run review as Markdown.
 
     Args:
         cwd: The repository.

@@ -16,7 +16,12 @@ from agent6.viewmodel import format
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class TaskLabel:
-    """The original task and the latest continuation, before display clipping."""
+    """The original task and the latest continuation, before display clipping.
+
+    Attributes:
+        task: The original task label.
+        continued_task: The latest resume steer, empty without a continuation.
+    """
 
     task: str = ""
     continued_task: str = ""

@@ -50,7 +50,26 @@ def _tree(cwd: pathlib.Path, revision: str) -> str:
 
 
 def comparison(cwd: pathlib.Path, base: str, head: str) -> dict[str, Any]:
-    """Return findings with exact comparison matches and links to their recorded targets."""
+    """Return findings with exact comparison matches and links to their recorded targets.
+
+    Attributes:
+        findings: One comparison entry per recorded finding.
+        read_failures: Diagnostics for unreadable review evidence.
+        session_id: The finding's session, empty for a saved standalone review.
+        version: The review version used for action concurrency checks.
+        panel: The panel containing the selected observation.
+        finding: The finding's shared history and status.
+        observation: The selected observation of the finding.
+        matches: Whether both displayed trees match the observation's target.
+
+    Args:
+        cwd: The repository.
+        base: The displayed base revision.
+        head: The displayed head revision.
+
+    Returns:
+        Findings with comparison matches and evidence-read failures.
+    """
     base_tree = _tree(cwd, base)
     head_tree = "" if head == git_history.WORKTREE else _tree(cwd, head)
     entries: list[dict[str, Any]] = []
@@ -86,6 +105,31 @@ def comparison(cwd: pathlib.Path, base: str, head: str) -> dict[str, Any]:
 def _file(
     cwd: pathlib.Path, target: review_records.ReviewTarget, side: str, path: str, whole: bool
 ) -> tuple[int, dict[str, Any]]:
+    """Return a file from one recorded review tree.
+
+    Attributes:
+        error: The refusal diagnostic on an unsuccessful read.
+        rev: The recorded tree on the requested side.
+        path: The repository-relative file path.
+        text: The displayed file text, empty for binary content.
+        binary: Whether the file is binary.
+        truncated: Whether the text reached its byte cap.
+        max_bytes: The byte cap, or null when whole content was requested.
+        digest: The SHA-256 digest of the complete file bytes.
+        lines: The number of displayed lines.
+        language: The tree-sitter language name, or an empty string when unknown.
+        spans: Per-line highlight spans as start, end and CSS class triples.
+
+    Args:
+        cwd: The repository.
+        target: The recorded comparison.
+        side: The base or head side.
+        path: The repository-relative file path.
+        whole: Whether to omit the display byte cap.
+
+    Returns:
+        The HTTP status and file payload or refusal.
+    """
     location = review_records.ReviewLocation.model_validate({"path": path, "side": side})
     tree = target.base_tree if location.side == "base" else target.head_tree
     blob = git_files.blob_at(
@@ -124,6 +168,32 @@ def _diff(
     path: str,
     whole: bool,
 ) -> tuple[int, dict[str, Any]]:
+    """Return a file diff from the recorded review trees.
+
+    Attributes:
+        error: The refusal diagnostic on an unsuccessful read.
+        base: The recorded base tree.
+        head: The recorded head tree.
+        path: The head-side path, or the base path for a deletion.
+        old_path: The base path of a renamed file, or an empty string.
+        base_digest: The base input's SHA-256 digest, or null when unavailable.
+        head_digest: The head input's SHA-256 digest, or null when unavailable.
+        patch: The unified patch between the recorded trees.
+        binary: Whether Git reports a binary patch.
+        truncated: Whether the patch reached its byte cap.
+        max_bytes: The byte cap, or null when whole content was requested.
+
+    Args:
+        cwd: The repository.
+        base: The recorded base tree.
+        head: The recorded head tree.
+        files: The changed files between the trees.
+        path: Either side of the requested file.
+        whole: Whether to omit the display byte cap.
+
+    Returns:
+        The HTTP status and patch payload or refusal.
+    """
     location = review_records.ReviewLocation(path=path, side="head")
     changed = next((f for f in files if path in (f.path, f.old_path)), None)
     new_path, old_path = (changed.path, changed.old_path) if changed else (location.path, "")
@@ -164,6 +234,14 @@ def panel(
     whole: bool = False,
 ) -> tuple[int, dict[str, Any]]:
     """Read a recorded comparison or file without consulting a mutable checkout.
+
+    Attributes:
+        error: The refusal diagnostic on an unsuccessful read.
+        session_id: The session owning the panel, or an empty string for a saved review.
+        review: The shared review evidence.
+        panel: The selected PanelView.
+        files: Changed-file records between the reviewed trees.
+        truncated: Whether the changed-file list reached its cap.
 
     Args:
         cwd: The repository root.

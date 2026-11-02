@@ -56,6 +56,7 @@ class Contract:
         primary: The classes or aliases whose docstrings drive the invariant.
         writers: The src-relative modules that construct it.
         pins: The repo-relative test files and golden fixtures that guard it.
+        public_format: The Formats anchor when this contract crosses a public boundary.
     """
 
     title: str
@@ -63,11 +64,45 @@ class Contract:
     primary: tuple[str, ...]
     writers: tuple[str, ...]
     pins: tuple[str, ...]
+    public_format: str = ""
 
 
 CONTRACTS: tuple[Contract, ...] = (
     Contract(
+        title="CLI listing rows",
+        module="agent6.viewmodel.listing",
+        primary=("summary_row", "row_json"),
+        writers=("ui/cli/sessions_cmds.py", "ui/web/model.py"),
+        pins=("tests/unit/test_cli_sessions_list.py",),
+        public_format="cli-json",
+    ),
+    Contract(
+        title="CLI session status",
+        module="agent6.ui.cli.sessions_show",
+        primary=("_cmd_status",),
+        writers=("ui/cli/sessions_show.py",),
+        pins=("tests/unit/test_sessions_show_fanout.py",),
+        public_format="cli-json",
+    ),
+    Contract(
+        title="Live process rows",
+        module="agent6.ui.cli.ps_cmd",
+        primary=("_Row",),
+        writers=("ui/cli/ps_cmd.py",),
+        pins=("tests/unit/test_ps.py",),
+        public_format="_row",
+    ),
+    Contract(
+        title="Web payloads",
+        module="agent6.ui.web.model",
+        primary=("hub_payload", "conversation_payload", "config_payload"),
+        writers=("ui/web/server.py",),
+        pins=("tests/web/test_web_server.py",),
+        public_format="web-api",
+    ),
+    Contract(
         title="Review read model",
+        public_format="reviewview",
         module="agent6.viewmodel.review",
         primary=("FindingView", "ReviewView", "MergeReviewGuard"),
         writers=("viewmodel/state.py", "viewmodel/session_log.py"),
@@ -75,6 +110,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="Review records",
+        public_format="typed-records",
         module="agent6.review_records",
         primary=(
             "ReviewTarget",
@@ -117,6 +153,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="SessionManifest",
+        public_format="sessionmanifest",
         module="agent6.sessions.manifest",
         primary=("SessionManifest",),
         writers=("app/stamps.py",),
@@ -147,6 +184,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="Event union",
+        public_format="journal",
         module="agent6.viewmodel.events",
         primary=("Event",),
         # The typed shape exists only on the read side; the sink writes dicts.
@@ -180,6 +218,7 @@ CONTRACTS: tuple[Contract, ...] = (
     ),
     Contract(
         title="Run/machine wire snapshot",
+        public_format="session-snapshots",
         module="agent6.viewmodel.state_view",
         # The dict these builders return IS the payload `attach --json`, the web
         # page, and the SSE stream serialize; their docstrings state the contract.
@@ -468,6 +507,7 @@ class Card:
         readers: The src-relative modules that import it.
         pins: Each pin's basename and repo-relative path.
         guard_count: How many tests guard it.
+        public_format: The Formats anchor, or an empty string for a private contract.
     """
 
     title: str
@@ -480,6 +520,7 @@ class Card:
     readers: tuple[str, ...]
     pins: tuple[tuple[str, str], ...]
     guard_count: int
+    public_format: str
 
 
 def _derive(contract: Contract) -> Card:
@@ -505,6 +546,7 @@ def _derive(contract: Contract) -> Card:
         readers=readers,
         pins=tuple((pathlib.Path(p).name, p) for p in contract.pins),
         guard_count=len(_guard_tests(contract)),
+        public_format=contract.public_format,
     )
 
 
@@ -549,7 +591,7 @@ Every card is generated from the module and class docstrings, so edit those rath
 These levels describe serialized formats, not Python imports.
 
 - **Public:** CLI `--json` rows, the web API, the `logs.jsonl` event envelope, and `.asm.toml` machine files.
-  This covers [Review read model](#review-read-model), [Review records](#review-records), [Event union](#event-union), [MachineSpec](#machinespec), and [Run/machine wire snapshot](#runmachine-wire-snapshot).
+  This covers [CLI listing rows](#cli-listing-rows), [CLI session status](#cli-session-status), [Live process rows](#live-process-rows), [Web payloads](#web-payloads), [Review read model](#review-read-model), [Review records](#review-records), [Event union](#event-union), [MachineSpec](#machinespec), and [Run/machine wire snapshot](#runmachine-wire-snapshot).
 - **Durable but private:** state agent6 retains for resume and replay, not an integration API.
   This covers [Conversation](#conversation), [SessionManifest](#sessionmanifest) (`manifest.json`), [SessionSnapshot](#sessionsnapshot) (`loop_state.json` and checkpoints), the [ToolResult family](#toolresult-family) stored in conversations, [JournalEvent](#journalevent) in the machine's `journal.jsonl`, [TaskNode](#tasknode) and the task graph, and git chain refs.
 - **Disposable:** caches, [provider transcripts](architecture.md#session-state-on-disk), and telemetry export cursors have no format-compatibility or migration guarantee.
@@ -592,7 +634,10 @@ def _md_card(card: Card) -> str:
     ]
     for shape in card.shapes:
         lines += ["", f"**{shape.name}** &mdash; {shape.sentence}"]
-        lines += _md_fields(shape.fields)
+        if not card.public_format:
+            lines += _md_fields(shape.fields)
+    if card.public_format:
+        lines += ["", f"Public fields: [Formats](formats.md#{card.public_format})."]
     if card.members:
         lines += ["", "Members: " + ", ".join(f"`{m}`" for m in card.members)]
     lines += [
@@ -805,7 +850,7 @@ def _html_card(card: Card) -> str:
     """Return one card as HTML."""
     shapes = "".join(
         f'<div class="cshape"><b>{html.escape(shape.name)}</b> &mdash; {_inline(shape.sentence)}'
-        f"</div>{_html_fields(shape.fields)}"
+        f"</div>{_html_fields(()) if card.public_format else _html_fields(shape.fields)}"
         for shape in card.shapes
     )
     members = (
@@ -822,7 +867,12 @@ def _html_card(card: Card) -> str:
         f"{html.escape(card.module)}</a> &middot; {html.escape(card.kind)}</div>"
         f'<div class="cinv">{_inline(card.invariant)}</div>'
         f"{shapes}{members}"
-        "<dl>"
+        + (
+            f'<p><a href="https://agent6.dev/formats/#{card.public_format}">Public format</a></p>'
+            if card.public_format
+            else ""
+        )
+        + "<dl>"
         f"<dt>written by</dt><dd>{_inline(_group(card.writers))}</dd>"
         f"<dt>read by</dt><dd>{_inline(_group(card.readers))}</dd>"
         f"<dt>guarded by</dt><dd>{_inline(_guard_line_text(card))}</dd>"

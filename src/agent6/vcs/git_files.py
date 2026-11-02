@@ -184,7 +184,16 @@ def _open_regular(root: pathlib.Path, parts: tuple[str, ...]) -> int:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class BlameLine:
-    """One line's last commit; an empty sha marks uncommitted content."""
+    """One line's last commit; an empty sha marks uncommitted content.
+
+    Attributes:
+        line: The one-based displayed line number.
+        sha: The attribution commit, empty for uncommitted lines.
+        author: The attribution author, or not committed for uncommitted lines.
+        date: The attribution date in UTC ISO 8601, empty for uncommitted lines.
+        filename: The file's historical path in the attribution commit.
+        original_line: The one-based historical line number.
+    """
 
     line: int
     sha: str

@@ -303,7 +303,8 @@ def test_bench_container_config_template_validates() -> None:
 
 
 def test_architecture_event_table_has_one_generated_owner() -> None:
-    """The template delegates its event table to the registry-backed generator."""
+    """Architecture points to Formats rather than owning another event table."""
     template = (REPO / "docs" / "architecture_template.md").read_text(encoding="utf-8")
-    assert template.count("<!-- generated: journal-events -->") == 1
+    assert "[Formats](formats.md#journal)" in template
+    assert "<!-- generated: journal-events -->" not in template
     assert "| Event |" not in template

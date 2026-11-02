@@ -53,7 +53,14 @@ class _Body(pydantic.BaseModel):
 
 
 class NewWorkBody(_Body):
-    """The `/api/new` body: a session of `mode` on `task`, under a preset and a model."""
+    """The `/api/new` body: a session of `mode` on `task`, under a preset and a model.
+
+    Attributes:
+        mode: The session mode to start.
+        task: The operator's task text.
+        preset: The preset override, empty for configured selection.
+        model: The provider/model override, empty for configured selection.
+    """
 
     mode: str
     task: str
@@ -89,7 +96,13 @@ class ApproveBody(_Body):
 
 
 class AnswerBody(_Body):
-    """An `ask_user` answer: one entry per question, by index."""
+    """An `ask_user` answer: one entry per question, by index.
+
+    Attributes:
+        id: The question prompt identifier.
+        answers: One answer per question in prompt order.
+        state: The machine execution directory, empty to select the newest.
+    """
 
     id: str
     answers: list[str]
@@ -97,25 +110,43 @@ class AnswerBody(_Body):
 
 
 class MergeBody(_Body):
-    """A merge body; an empty method takes the config's."""
+    """A merge body; an empty method takes the config's.
+
+    Attributes:
+        method: The merge method override, empty to use config.
+    """
 
     method: str = ""
 
 
 class PruneBody(_Body):
-    """A prune body; `delete_squashed` is the CLI's own opt-in flag."""
+    """A prune body; `delete_squashed` is the CLI's own opt-in flag.
+
+    Attributes:
+        delete_squashed: Whether to delete branches confirmed squash-merged by their manifests.
+    """
 
     delete_squashed: bool = False
 
 
 class StopBody(_Body):
-    """A stop body; `after_turn` lets the current turn's results and auto-commit land."""
+    """A stop body; `after_turn` lets the current turn's results and auto-commit land.
+
+    Attributes:
+        after_turn: Whether to let the current turn finish before stopping.
+    """
 
     after_turn: pydantic.StrictBool = False
 
 
 class ResumeBody(_Body):
-    """A resume body; each empty field means as the run recorded."""
+    """A resume body; each empty field means as the run recorded.
+
+    Attributes:
+        text: The continuation instruction, empty to continue without new work.
+        preset: The preset override, empty to use the recorded selection.
+        model: The provider/model override, empty to use the recorded selection.
+    """
 
     text: str = ""
     preset: str = ""
@@ -123,26 +154,46 @@ class ResumeBody(_Body):
 
 
 class MachineCreateBody(_Body):
-    """A `machine create` body."""
+    """A `machine create` body.
+
+    Attributes:
+        task: The machine-authoring task.
+    """
 
     task: str
 
 
 class MachineRunBody(_Body):
-    """A `machine run` body naming a listed machine file."""
+    """A `machine run` body naming a listed machine file.
+
+    Attributes:
+        file: The path of a listed machine definition.
+    """
 
     file: str
 
 
 class MachinePokeBody(_Body):
-    """A poke body; a JSON `data` payload wins over a `message` string."""
+    """A poke body; a JSON `data` payload wins over a `message` string.
+
+    Attributes:
+        message: The text message, used when data is null.
+        data: The JSON message payload, or null to use message.
+    """
 
     message: str = ""
     data: Any = None
 
 
 class EntryBody(_Body):
-    """The add-entry form's table, name and string fields."""
+    """The add-entry form's table, name and string fields.
+
+    Attributes:
+        table: The named config table's dotted path.
+        name: The entry name.
+        fields: Entry field values as strings.
+        repo: Whether to write repo config rather than global config.
+    """
 
     table: str
     name: str
@@ -151,7 +202,13 @@ class EntryBody(_Body):
 
 
 class EntryRemoveBody(_Body):
-    """The entry and config layer to remove it from."""
+    """The entry and config layer to remove it from.
+
+    Attributes:
+        table: The named config table's dotted path.
+        name: The entry to remove.
+        repo: Whether to remove from repo config rather than global config.
+    """
 
     table: str
     name: str
@@ -159,7 +216,16 @@ class EntryRemoveBody(_Body):
 
 
 class ReviewerBody(_Body):
-    """The add-reviewer form's five fields and save target."""
+    """The add-reviewer form's five fields and save target.
+
+    Attributes:
+        focus: The reviewer's required focus text.
+        provider: The provider name, paired with model or left empty.
+        model: The model identifier, paired with provider or left empty.
+        effort: The reasoning effort override, empty for the default.
+        temperature: The sampling temperature as text, empty for the default.
+        repo: Whether to write repo config rather than global config.
+    """
 
     focus: str
     provider: str = ""
@@ -170,20 +236,36 @@ class ReviewerBody(_Body):
 
 
 class RemoveReviewerBody(_Body):
-    """The zero-based reviewer position and save target."""
+    """The zero-based reviewer position and save target.
+
+    Attributes:
+        index: The zero-based reviewer position to remove.
+        repo: Whether to write repo config rather than global config.
+    """
 
     index: int = pydantic.Field(strict=True, ge=0)
     repo: bool = False
 
 
 class LoginBody(_Body):
-    """A sign-in body: the secret as typed, normalized before it is compared."""
+    """A sign-in body: the secret as typed, normalized before it is compared.
+
+    Attributes:
+        secret: The server secret as typed, normalized before comparison.
+    """
 
     secret: str
 
 
 class ConfigSetBody(_Body):
-    """A config write; `unset` removes the key from the target layer instead."""
+    """A config write; `unset` removes the key from the target layer instead.
+
+    Attributes:
+        key: The dotted config key.
+        value: The string value parsed by the config writer.
+        repo: Whether to write repo config rather than global config.
+        unset: Whether to remove the setting instead of assigning value.
+    """
 
     key: str
     value: str = ""
@@ -450,7 +532,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         return auth.bearer_matches(self.headers.get("Authorization"), self.server.session_token)
 
     def _send_sign_in_required(self) -> None:
-        """Send 401; `login` tells the page to show its sign-in form."""
+        """Send 401; `login` tells the page to show its sign-in form.
+
+        Attributes:
+            error: The authentication refusal reason.
+            login: Whether the client must sign in.
+        """
         error = "not signed in: this server needs the secret `agent6 web` printed (POST /api/login)"
         self._send_json({"error": error, "login": True}, status=401)
 
@@ -473,7 +560,16 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         return obj
 
     def _route_post(self, path: str) -> None:  # noqa: PLR0911
-        """Dispatch a POST by path."""
+        """Dispatch a POST by path.
+
+        Attributes:
+            session_id: The session created by new work.
+            message: The action's result text.
+            draft: The machine-authoring draft identifier.
+
+        Args:
+            path: The requested route path.
+        """
         parts = path.strip("/").split("/")
         if path == "/api/login":
             self._login()
@@ -583,7 +679,13 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._ok_or_err(ok, {"message": msg}, msg)
 
     def _login(self) -> None:
-        """Answer a sign-in: the token for the server's secret, 403 for any other."""
+        """Answer a sign-in: the token for the server's secret, 403 for any other.
+
+        Attributes:
+            ok: Whether the secret was accepted.
+            error: The refusal reason on a failed login.
+            token: The bearer token on a successful login.
+        """
         body = LoginBody.model_validate(self._read_body())
         token = self.server.session_token
         if not auth.token_matches(auth.session_token(body.secret), token):
@@ -681,7 +783,17 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         self._ok_or_err(ok, {"message": msg}, msg)
 
     def _ok_or_err(self, ok: bool, payload: dict[str, Any], err: str) -> None:
-        """Send the payload under `ok`, or the error as 422."""
+        """Send the payload under `ok`, or the error as 422.
+
+        Attributes:
+            ok: Whether the requested action succeeded.
+            error: The failure reason when the action failed.
+
+        Args:
+            ok: Whether the action succeeded.
+            payload: The successful response fields.
+            err: The refusal diagnostic.
+        """
         if ok:
             self._send_json({"ok": True, **payload})
         else:
@@ -701,7 +813,26 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         )
 
     def _route(self, path: str) -> None:  # noqa: PLR0911, PLR0912
-        """Dispatch a GET by path."""
+        """Dispatch a GET by path.
+
+        Attributes:
+            version: The running agent6 version.
+            target: The target selected when the server started.
+            target_kind: Whether the target is a session, machine or draft.
+            tables: The supported named config tables.
+            tables[].path: The table's dotted config path.
+            tables[].label: The table's display name.
+            tables[].leaf: Whether each entry is a scalar instead of a subtable.
+            tables[].fields: The editable fields of an entry.
+            tables[].fields[].name: The field name accepted by the config writer.
+            tables[].fields[].choices: Suggested values for the field.
+            tables[].fields[].description: The config model's field meaning.
+            tables[].defaults: Known provider defaults, only on the providers table.
+            values: Suggestions for the requested config key.
+
+        Args:
+            path: The requested route path.
+        """
         if path == "/":
             self._send_bytes(
                 page.PAGE_HTML.encode("utf-8"),

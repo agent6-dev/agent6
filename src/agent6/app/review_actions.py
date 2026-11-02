@@ -38,7 +38,15 @@ class ActionRequest(pydantic.BaseModel):
 
 
 class ActionResult(pydantic.BaseModel):
-    """Return the recorded outcome, or an explicit pending delivery."""
+    """Return the recorded outcome, or an explicit pending delivery.
+
+    Attributes:
+        request_id: The caller's action identifier.
+        finding_id: The finding the action targets.
+        version: The review version after the action.
+        status: The action's delivery or completion status.
+        message: The result or next-action explanation.
+    """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 

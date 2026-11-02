@@ -29,7 +29,12 @@ class ManifestError(Exception):
 
 
 class ModelBrief(pydantic.BaseModel):
-    """The provider and model of a resolved role."""
+    """The provider and model of a resolved role.
+
+    Attributes:
+        provider: The configured provider name.
+        model: The provider's model identifier.
+    """
 
     model_config = _MODEL_CONFIG
 
@@ -116,7 +121,8 @@ class HarnessStamp(pydantic.BaseModel):
 
 
 class BudgetStamp(pydantic.BaseModel):
-    """The caps the `--max-*` flags set, which a resume without that flag runs under again.
+    """The caps `--max-usd`, `--max-tokens-fallback` and `--max-plan-points` set; a resume
+    without the flag runs under the recorded cap again.
 
     A cap set in config is not recorded: a resume reads it from config.
 
@@ -151,6 +157,8 @@ class MergeStamp(pydantic.BaseModel):
             that already held the run's content; the delete checks it as it checks `sha`.
         via: The run whose merge landed this one, when a later run took its work in under
             `dirty_tree = "include"`; "" for the run's own merge.
+        method: The landing method, or null when unrecorded.
+        target_before: The target commit before landing, or null when unrecorded.
     """
 
     model_config = _MODEL_CONFIG
@@ -280,7 +288,7 @@ class SessionManifest(pydantic.BaseModel):
         models: The models the run resolved.
         harness: The strategy the run started with.
         policy: The policy the run launched under.
-        budget: The caps the run's or a resume's `--max-*` flags set.
+        budget: The caps the run's or a resume's budget flags set (`--max-usd` and its siblings).
         parked_task: The verbatim task of a run submitted but never started; `agent6 resume`
             starts it fresh and its manifest rewrite clears this.
         parked_operator_task: The parked task before composition, when recorded.

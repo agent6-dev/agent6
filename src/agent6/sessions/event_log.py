@@ -71,6 +71,11 @@ class EventSink:
     def emit(self, event_type: str, /, **fields: Any) -> None:
         """Append one event under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
 
+        Attributes:
+            ts: The write time in UTC ISO 8601 with microseconds.
+            type: The event name in the registry.
+            event_id: A UUID hex identifier on durable events; absent on streaming deltas.
+
         Args:
             event_type: The event's `type`.
             **fields: Its other fields.

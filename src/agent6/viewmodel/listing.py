@@ -349,6 +349,12 @@ def lanes_of(
 def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
     """Return a listing row and its nested lanes as JSON.
 
+    Attributes:
+        mtime: The group's latest activity time in epoch seconds.
+        when: The rendered group activity time.
+        queue_group: The group's review-queue placement.
+        lane_groups: The number of lanes in each review-queue group.
+
     Args:
         row: The row.
         winners: The ids of the fan-out compare winners.
@@ -376,6 +382,38 @@ def summary_row(
     lanes: Sequence[dict[str, object]] = (),
 ) -> dict[str, object]:
     """Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
+
+    Attributes:
+        session_id: The session identifier.
+        mode: The session mode.
+        task: The operator's words, whole.
+        task_line: The task clipped to 200 characters, then a newline and `continued: <steer>`,
+            clipped the same way, when a resume steer exists.
+        continued_task: The latest resume steer, whole; empty without a continuation.
+        status: The lifecycle status word.
+        reason: The detail explaining the status.
+        end_reason: The last journaled end reason, or an empty string while running.
+        label: The rendered status with mode and unmerged marks.
+        level: The status presentation level.
+        mtime: The last activity time in epoch seconds.
+        when: The rendered last activity time.
+        cost_usd: Cumulative spend in USD across executions.
+        usd_partial: Whether unpriced usage makes spend a lower bound.
+        plan_consumed: Subscription points consumed across executions.
+        plan_cap: The subscription points cap.
+        cost: The rendered cost cell.
+        model: The resolved provider/model route.
+        model_from_flag: Whether a model flag selected the route.
+        id_cell: The session identifier with winner and worktree marks.
+        unmerged: Whether the run holds unmerged work.
+        verify_ok: The gate verdict, or null without a verdict.
+        lane: The lane number, or null outside a fan-out.
+        coordinator: The session that dispatched this lane.
+        worktree: The linked worktree path, or null in the operator's checkout.
+        review_queue: The ReviewQueueEntry for this session.
+
+        winner: Whether this lane won its comparison.
+        lanes: Nested listing rows for this coordinator's lanes.
 
     Args:
         s: The row's summary.

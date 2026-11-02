@@ -151,6 +151,11 @@ def _diff_payload(
 ) -> tuple[dict[str, Any] | None, str]:
     """Return one step's patch, or the chain `base..sha` when cumulative and a base is known.
 
+    Attributes:
+        patch: The unified patch for the selected step or chain.
+
+        cumulative: Whether the patch covers the chain rather than one step.
+
     Args:
         repo: The repository.
         sha: The step's commit.
@@ -186,7 +191,24 @@ def _list_sessions(cwd: pathlib.Path, sort: listing.Sort) -> list[dict[str, Any]
 
 
 def _machine_row(s: MachineSummary) -> dict[str, Any]:
-    """Return one machine-instance row for the hub."""
+    """Return one machine-instance row for the hub.
+
+    Attributes:
+        name: The machine instance name.
+        mtime: The latest activity time in epoch seconds.
+        when: The rendered latest activity time.
+        status: The machine's status word.
+        level: The status presentation level.
+        machine: The declared machine name, absent for unreadable instances.
+        current: The current state, absent for unreadable instances.
+        label: The rendered status when a reason is available.
+
+    Args:
+        s: The machine summary.
+
+    Returns:
+        The machine listing row.
+    """
     entry: dict[str, Any] = {
         "name": s.name,
         "mtime": s.mtime,
@@ -216,7 +238,20 @@ def _list_drafts(cwd: pathlib.Path) -> list[dict[str, Any]]:
 
 
 def list_machine_files(cwd: pathlib.Path) -> list[dict[str, str]]:
-    """Return the hub's machine-file rows."""
+    """Return the hub's machine-file rows.
+
+    Attributes:
+        path: The path accepted by machine run.
+        name: The machine file's basename.
+        [].path: The path accepted by machine run.
+        [].name: The machine file's basename.
+
+    Args:
+        cwd: The repository.
+
+    Returns:
+        The authored machine files.
+    """
     return [{"path": str(p), "name": p.name} for p in machine_files(cwd)]
 
 
@@ -224,6 +259,10 @@ def routes_payload(
     cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...], *, mode: str, preset: str
 ) -> dict[str, Any]:
     """Return the new-work composer's model picker.
+
+    Attributes:
+        routes: The provider/model routes the config can run.
+        default_label: The composer's no-flag model label.
 
     Args:
         cwd: The repository.
@@ -249,7 +288,21 @@ def resume_defaults_payload(
     *,
     preset: str,
 ) -> dict[str, str]:
-    """Return the resume row's no-flag preset and model labels under a picked preset."""
+    """Return the resume row's no-flag preset and model labels under a picked preset.
+
+    Attributes:
+        preset_label: The resume's no-flag preset label.
+        model_label: The resume's no-flag model label under the selected preset.
+
+    Args:
+        cwd: The repository.
+        config_paths: Config overlays in command-line order.
+        session_dir: The session directory.
+        preset: The selected preset override.
+
+    Returns:
+        The no-flag preset and model labels.
+    """
     preset_label, model_label = choices.resume_defaults(
         cwd, config_paths, session_dir, preset=preset
     )
@@ -262,7 +315,24 @@ def hub_payload(
     *,
     sort: listing.Sort = "review",
 ) -> dict[str, Any]:
-    """Return the hub: sessions in the given order, machines, drafts, machine files, presets."""
+    """Return the hub: sessions in the given order, machines, drafts, machine files, presets.
+
+    Attributes:
+        sessions: Session listing rows in the requested order.
+        machines: Machine-instance listing rows.
+        machine_files: Authored machine files available to run.
+        drafts: Machine-authoring session listing rows.
+        presets: Available preset names.
+        preset_default_label: The composer's no-flag preset label.
+
+    Args:
+        cwd: The repository.
+        config_paths: Config overlays in command-line order.
+        sort: The session listing order.
+
+    Returns:
+        The hub listings and preset choices.
+    """
     return {
         "sessions": _list_sessions(cwd, sort),
         "machines": _list_machines(cwd),
@@ -284,6 +354,11 @@ def conversation_items(
     Each item carries its `kind`, the collapsed `lines` as `[text, style]` spans from
     the shared renderer, and `full` for every tool, task and steer or when expansion differs.
 
+    Attributes:
+        kind: The transcript item kind.
+        lines: Collapsed lines of text/style span pairs.
+        full: Expanded lines of text/style span pairs, only when different from lines.
+
     Args:
         events: The session's events.
         worker_dead: Settle the calls still open as never returned.
@@ -303,7 +378,18 @@ def conversation_items(
 
 
 def conversation_payload(session_dir: pathlib.Path) -> dict[str, Any]:
-    """Return a run's conversation and the operator's past inputs, from one read of the log."""
+    """Return a run's conversation and the operator's past inputs, from one read of the log.
+
+    Attributes:
+        items: The folded conversation items.
+        operator_inputs: The operator's past inputs for composer history.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The conversation and operator input history.
+    """
     events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
     return {
         "items": conversation_items(events, worker_dead=not process.worker_is_alive(session_dir)),
@@ -312,13 +398,33 @@ def conversation_payload(session_dir: pathlib.Path) -> dict[str, Any]:
 
 
 def restate_payload(session_dir: pathlib.Path) -> dict[str, Any]:
-    """Return `/restate` for the web composer, over the session's whole journal."""
+    """Return `/restate` for the web composer, over the session's whole journal.
+
+    Attributes:
+        text: The rendered restatement of the session.
+
+    Args:
+        session_dir: The session directory.
+
+    Returns:
+        The restatement text.
+    """
     events = list(tail_events(session_dir / layout.LOGS_NAME, follow=False))
     return {"text": restate(events, worker_dead=not process.worker_is_alive(session_dir))}
 
 
 def machine_conversation_payload(machine_dir: pathlib.Path) -> dict[str, Any]:
-    """Return the conversation of the machine's newest agent-state execution, or no items."""
+    """Return the conversation of the machine's newest agent-state execution, or no items.
+
+    Attributes:
+        items: The newest agent-state conversation, empty before any execution.
+
+    Args:
+        machine_dir: The machine instance directory.
+
+    Returns:
+        The newest agent-state conversation.
+    """
     log = machine_logs.newest_state_log(machine_dir)
     if log is None:
         return {"items": []}
@@ -339,6 +445,10 @@ def machine_reasoning_snapshot(
     The snapshot carries `state_dir` so a client echoes it when answering a prompt
     (prompt ids reset per state), and `last_event_ep` rather than an age so the
     payload changes only when something happened.
+
+    Attributes:
+        state_dir: The agent-state execution directory to echo when answering a prompt.
+        last_event_ep: The last event time in epoch seconds, when known.
 
     Args:
         machine_dir: The machine instance's directory.
@@ -368,6 +478,13 @@ def config_payload(
     cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> dict[str, Any]:
     """Return the effective config per leaf, keyed by dotted key.
+
+    Attributes:
+        input: The value formatted for round-trip editing.
+        entry: The named config entry, only for entry-table settings.
+        entry.table: The entry table's dotted path.
+        entry.name: The entry's name.
+        entry.source: The highest config layer holding the entry.
 
     Args:
         cwd: The repository.

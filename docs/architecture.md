@@ -501,7 +501,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 
 | File | Holds |
 |---|---|
-| `manifest.json` | the run's record: the task, where it started (`base_sha`, `base_branch`), its run branch, mode, isolation, the model and preset that drove it, the caps its `--max-usd`, `--max-tokens-fallback` and `--max-plan-points` flags set, and the later stamps (`parked_task`, `compare`, fan-out and lane lineage) |
+| `manifest.json` | the [session record and later stamps](formats.md#sessionmanifest) |
 | `graph.jsonl` | append-only journal of every task-graph mutation (curator-owned) |
 | `graph/**/*.md` | one markdown file per task node, nested under its parent, rewritten atomically (curator-owned) |
 | `cursor.json` | the curator's current task pointer |
@@ -535,7 +535,7 @@ The planner re-reads it before every turn and is shown it whenever it differs fr
 - adds the worktree detached at the turn's sha (`<[workspace].base_dir>/<repo-id>/<new>`)
 - copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`
 - rebuilds the curator DAG at the checkpoint's `graph_version`
-- writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree` / `worktree_git_dir` (the repository git dir the worktree points into, recorded so the jail grant never depends on the worktree's own `.git` pointer)
+- records the fork lineage and worktree in the [manifest](formats.md#sessionmanifest), including the repository git directory the jail grants
 - cuts the chain ref `refs/agent6/<new>/head` at the turn's sha, and the visible `agent6/<new>` branch there too under `[git].branch_per_run`; a plan or ask fork commits nothing and cuts neither
 
 The source run and the operator's checkout are never mutated (except by `/undo`), and one fork edge per line lands in a per-repo `lineage.jsonl`.
@@ -613,148 +613,7 @@ See [Session receipts](usage.md#session-receipts) for output caps and reversal l
 The journal is durable.
 An append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`), and in-process listeners see an event only after its write landed.
 
-The `logs.jsonl` vocabulary is the data contract for any external viewer.
-[Data contracts](data-contracts.md) owns the typed event union the fold parses these into.
-
-`sessions/event_schema.py` owns the event names, meanings and payload fields below.
-The test suite checks every in-process `EventSink.emit` against it; production writes are unchecked.
-`ts`, `type` and durable `event_id` belong to the sink's envelope, not these payloads.
-Optional fields may be absent or null.
-Kinds describe JSON values: tuples serialize as lists, and integers also satisfy `float`, but booleans do not.
-Historical reads remain tolerant through `parse_event` and `RawEvent`.
-
-| Event | Meaning | Fields |
-| --- | --- | --- |
-| `approval.answer` | The operator answered an approval request. | `id` (str), `approved` (bool), `source` (str) |
-| `approval.prompt` | A command is waiting for the operator's approval. | `id` (str), `prompt` (str), `standing` (bool), `call_id` (int, optional) |
-| `btw.answered` | A side question received an answer. | `btw_id` (str), `block` (str) |
-| `btw.opened` | The operator opened a side question. | `btw_id` (str), `question` (str) |
-| `budget.update` | The cumulative token, spend and subscription readings. | `usd_total` (float), `input_total` (int, optional), `output_total` (int, optional), `cache_read_total` (int, optional), `cache_creation_total` (int, optional), `usd_partial` (bool, optional), `usd_cap` (float, optional), `tokens_unmetered` (int, optional), `tokens_fallback_cap` (int, optional), `plan_used_percent` (float, optional), `plan_consumed` (float, optional), `plan_cap` (float, optional), `plan_resets_at` (float, optional), `plan_windows` (list, optional), `credits_has` (bool, optional), `credits_unlimited` (bool, optional), `credits_balance` (str, optional) |
-| `command.backgrounded` | A command was handed back as a background job. | `id` (str), `pid` (int), `seconds` (float) |
-| `diff.updated` | A chain commit landed with its patch. | `sha` (str), `patch` (str) |
-| `graph.update` | The task graph and its current focus. | `nodes` (object), `cursor` (str, optional) |
-| `jail.degraded` | The sandbox started weaker than requested or left surviving processes. | `detail` (str) |
-| `loop.auto_commit` | A turn's checkpoint commit landed. | `turn` (int), `sha` (str), `subject` (str), `task_id` (str, optional) |
-| `loop.auto_commit.failed` | A checkpoint commit could not land. | `turn` (int), `error` (str), `worktree_status` (str), `commit_subject` (str) |
-| `loop.baseline` | The baseline verification attempt finished. | `ok` (bool), `turn` (int), `verify_id` (str, optional) |
-| `loop.budget` | A turn's usage heartbeat before its model call. | `turn` (int), `input_tokens` (int), `output_tokens` (int), `cache_read_tokens` (int), `cost_usd` (float) |
-| `loop.compact.deduped` | Repeated tool results were removed from context. | `n` (int), `calls` (list) |
-| `loop.compact.dropped` | Tool results were elided from context. | `n` (int), `calls` (list) |
-| `loop.compact.gist.call` | The model was asked to summarize files for context. | `files` (int) |
-| `loop.compact.gist.failed` | The file-summary call failed. | `error` (str) |
-| `loop.compact.gists` | File summaries were created or demoted during compaction. | `gisted` (int), `demoted` (int), `paths` (list), `demoted_paths` (list) |
-| `loop.compact.refused` | There was too little history to summarize. | `reason` (str) |
-| `loop.compact.requested` | The operator requested a context restart. | `focus` (str) |
-| `loop.compact.restored` | A resumed context restored its elision and summary counts. | `elided` (int), `gists` (int) |
-| `loop.compact.summarise.call` | The model was asked to summarize the conversation. | `messages` (int) |
-| `loop.compact.summarise.done` | A summary replaced the conversation history. | `summary_chars` (int), `summary` (str), `kept_messages` (int) |
-| `loop.compact.summarise.failed` | The conversation-summary call failed. | `error` (str) |
-| `loop.compact.thinking_dropped` | Reasoning text was removed from context. | `messages` (int), `chars` (int) |
-| `loop.decision.recorded` | An operator ruling was recorded in decisions.md. | `question` (str), `answer` (str) |
-| `loop.decision.unrecorded` | An operator ruling could not be recorded or was missing at finish. | `error` (str, optional), `missing` (int, optional) |
-| `loop.edit.left_out` | A checkpoint left ignored or untracked edits outside its commit. | `turn` (int), `ignored` (list), `untracked` (list) |
-| `loop.finish_contract.refused` | The finish payload did not satisfy the machine's result contract. | `turn` (int), `problems` (list) |
-| `loop.loop_guard.triggered` | Repeated identical tool calls triggered a warning. | `turn` (int), `tool` (str), `streak` (int) |
-| `loop.media.refused` | An attachment was refused by its tool or model route. | `call_id` (str), `reason` (str), `route` (str, optional), `text` (str, optional), `attachment` (object, optional) |
-| `loop.memory_flip.nudged` | Verification turned green and the model was asked to record the lesson. | `turn` (int) |
-| `loop.metric.auto_call` | An automatic metric sample started. | `turn` (int), `sha` (str) |
-| `loop.metric.auto_failed` | An automatic metric sample failed. | `turn` (int), `error` (str) |
-| `loop.metric.sample` | A metric sample was recorded. | `turn` (int), `label` (str), `score` (float, optional), `returncode` (int, optional), `sha` (str) |
-| `loop.metric_ceiling.stop` | The metric ceiling ended the run. | `turn` (int) |
-| `loop.metric_early_finish.rejected` | A metric run's early finish was returned to the model. | `turn` (int), `nudges_used` (int), `budget_remaining` (float, optional), `trigger` (str, optional) |
-| `loop.metric_plateau.nudge` | A metric plateau prompted another attempt. | `turn` (int), `nudges_used` (int), `budget_remaining` (float, optional) |
-| `loop.no_progress.nudge` | Repeated turns without progress prompted a warning. | `turn` (int), `streak` (int), `level` (int) |
-| `loop.note` | A machine-creation progress note. | `text` (str) |
-| `loop.operator.presence` | The operator's observed attachment state changed. | `presence` (str) |
-| `loop.parallel.compared` | Parallel candidates were ranked. | `group` (str), `ranked_by` (str), `rationale` (str), `ranking` (list), `judge_cost_usd` (float), `judge_cost_partial` (bool) |
-| `loop.parallel.dispatched` | Parallel lanes were dispatched. | `group` (str), `lanes` (int), `tasks` (list) |
-| `loop.parallel.failed` | Parallel lane dispatch or execution failed. | `group` (str), `fanout` (bool, optional), `lanes` (list, optional), `error` (str, optional) |
-| `loop.parallel.joined` | Parallel lane results returned. | `group` (str), `lanes` (list) |
-| `loop.parked` | A standing run parked at a turn boundary. | `turn` (int), `reason` (str) |
-| `loop.parked.resumed` | A parked run received work or an operator request. | `turn` (int) |
-| `loop.pin.added` | An operator instruction was pinned in context. | `text` (str), `chars` (int), `count` (int) |
-| `loop.pin.refused` | An instruction exceeded the pinned-context limit. | `chars` (int), `limit` (int) |
-| `loop.pin.restored` | A resumed or forked execution restored pinned instructions. | `pins` (list), `count` (int) |
-| `loop.plan_finish.nudge` | The model was asked to finish its plan within the remaining budget. | `turn` (int), `budget_remaining` (float, optional) |
-| `loop.plan_read.failed` | The plan could not be read. | `path` (str), `error` (str) |
-| `loop.plan_reread` | The plan was read back into context. | `path` (str), `bytes` (int) |
-| `loop.plan_write.failed` | The plan could not be written. | `path` (str), `error` (str) |
-| `loop.plan_written` | The plan was written to disk. | `path` (str), `bytes` (int) |
-| `loop.prompt_revision.call` | Task prompt revision started. | `mode` (str) |
-| `loop.prompt_revision.failed` | Task prompt revision failed. | `error` (str) |
-| `loop.prompt_revision.result` | Task prompt revision returned. | `raw_chars` (int), `revised_chars` (int), `questions` (int) |
-| `loop.provider.empty_tool_call_retry` | A provider response with empty tool calls was retried. | `attempt` (int), `stop_reason` (str) |
-| `loop.provider.fatal` | A non-retryable provider error stopped the call. | `status_code` (int, optional), `error` (str) |
-| `loop.provider.retry` | A provider error prompted another attempt. | `attempt` (int), `error` (str) |
-| `loop.question.delivered` | Queued answers were delivered to the model. | `ids` (list) |
-| `loop.question_nudge` | A silent finish ended on a question and was returned to the model. | `turn` (int) |
-| `loop.reasoning_starvation` | Reasoning consumed a response without usable output. | `turn` (int), `reasoning_chars` (int), `output_tokens` (int), `stop_reason` (str, optional) |
-| `loop.request.refused` | An operator task-graph request could not be applied. | `kind` (str), `text` (str), `error` (str) |
-| `loop.resume.interrupted` | Resume found tool calls that never returned and will not be rerun. | `turn` (int), `tools` (list) |
-| `loop.resume.start` | A resumed execution began. | `session_id` (str), `user_task` (str), `steer` (str), `mode` (str), `turn` (int), `messages` (int), `execution_id` (str) |
-| `loop.review.finding.reopened` | An operator reopened a finding. | `finding_id` (str), `request_id` (str), `source` (str), `version` (int), `reason` (str) |
-| `loop.review.finding.resolved` | An operator recorded a finding's disposition. | `finding_id` (str), `request_id` (str), `source` (str), `version` (int), `resolution` (object) |
-| `loop.review.fix.failed` | A finding's fix request could not be delivered. | `finding_id` (str), `request_id` (str), `source` (str), `version` (int), `error` (str) |
-| `loop.review.fix.requested` | An operator requested a fix for a finding. | `finding_id` (str), `request_id` (str), `source` (str), `version` (int), `target` (object), `action` (str) |
-| `loop.review.fix.submitted` | A finding's fix request reached an execution. | `finding_id` (str), `request_id` (str), `source` (str), `version` (int), `execution_id` (str) |
-| `loop.review.freeform` | A standalone review used free-form output. | `panel_id` (str), `execution_id` (str) |
-| `loop.review.panel` | A review panel completed and recorded its evidence and blocking decision. | `panel_id` (str), `execution_id` (str), `turn` (int), `trigger` (str), `target` (object), `findings` (list), `injected_finding_ids` (list), `block_on` (str), `raw_blocked` (bool), `blocked` (bool), `disarmed` (bool), `n_block` (int), `n_abstain` (int), `completion` (str) |
-| `loop.review.rejected_finish` | The review panel rejected the declared finish. | `turn` (int), `ending` (str) |
-| `loop.review.rejection_cap_reached` | The review gate reached its rejection limit. | `turn` (int), `rejections` (int) |
-| `loop.review.seat` | A review seat returned a grounded verdict or abstained. | `panel_id` (str), `execution_id` (str), `turn` (int, optional), `trigger` (str, optional), `seat_index` (int), `focus` (str), `model_route` (str), `verdict` (str), `findings` (list), `summary` (str), `error` (str, optional), `risk` (str), `risk_truncated` (bool) |
-| `loop.review.skipped` | A review panel could not run. | `panel_id` (str), `execution_id` (str), `turn` (int, optional), `trigger` (str, optional), `reason` (str), `error` (str, optional), `remaining` (float, optional) |
-| `loop.review.start` | A review panel began over an immutable target. | `panel_id` (str), `execution_id` (str), `turn` (int), `trigger` (str), `target` (object), `rule_sources` (list), `rules_complete` (bool), `rules_reason` (str, optional), `seats` (list) |
-| `loop.run_budget.nudge` | The model was asked to finish within its remaining run budget. | `turn` (int), `budget_remaining` (float, optional) |
-| `loop.sandbox_tool_unreachable` | A tool found on the host could not run inside the sandbox. | `binary` (str) |
-| `loop.silent_no_work.nudge` | A silent finish without work was returned to the model. | `turn` (int), `nudges_used` (int) |
-| `loop.skills.warning` | A skill declaration produced a warning. | `warning` (str) |
-| `loop.stagnation.nudged` | Elapsed time without edits or verification prompted a warning. | `turn` (int), `elapsed_s` (int) |
-| `loop.standing.resumed` | A standing goal resumed after absorbing a soft stop. | `reason` (str), `task_id` (str), `turn` (int) |
-| `loop.standing.set` | The operator set a standing goal. | `id` (str), `title` (str) |
-| `loop.steer.aborted` | The operator's steer aborted the run. |  |
-| `loop.steer.detached` | The operator's steer stopped the run for background resume. |  |
-| `loop.steer.exited` | The operator's steer ended the run and left the terminal. |  |
-| `loop.steer.injected` | An operator instruction was injected into context. | `chars` (int), `text` (str) |
-| `loop.steer.requested` | The loop reached an operator steer request. | `turn` (int) |
-| `loop.steer.skill` | An operator steer invoked a skill. | `name` (str), `args` (str) |
-| `loop.steer.undo` | The operator's steer requested an undo fork. |  |
-| `loop.task.queued` | The operator queued a task. | `id` (str), `title` (str) |
-| `loop.task.retired` | The operator retired a task. | `id` (str), `title` (str) |
-| `loop.task.stuck_nudge` | Time on one task prompted a change of approach. | `task_id` (str), `turns` (int), `n` (int) |
-| `loop.task.surfaced` | A task became the current focus. | `task_id` (str) |
-| `loop.task_finish.gated` | A finish with open subtasks was returned to the model. | `turn` (int), `nudges_used` (int), `trigger` (str) |
-| `loop.test_only_green.notice` | Verification passed after changes confined to tests. | `turn` (int), `paths` (list) |
-| `loop.tool.call` | The loop began dispatching a tool call. | `name` (str), `turn` (int) |
-| `loop.tool_error.nudge` | Repeated tool errors prompted a warning. | `turn` (int), `streak` (int), `level` (int) |
-| `loop.verify_broken.nudge` | An unusable verify command prompted a correction request. | `turn` (int) |
-| `loop.verify_finish.gated` | A finish without green verification was returned to the model. | `turn` (int), `nudges_used` (int), `trigger` (str) |
-| `loop.verify_harness` | The harness requested verification. | `why` (str), `turn` (int) |
-| `loop.verify_inferred` | The verify command was inferred, restored, adopted or disabled. | `command` (list), `source` (str), `adopted_at` (int, optional) |
-| `loop.verify_scoped` | Verification was narrowed to tests near the changed files. | `paths` (list), `turn` (int) |
-| `loop.verify_settled.nudge` | Repeated green verification without edits prompted a finish request. | `turn` (int), `idle` (int) |
-| `loop.verify_swapped` | Resume replaced the saved verify command. | `was` (list), `now` (list) |
-| `loop.went_quiet.nudge` | A response without tool calls prompted the model to continue. | `turn` (int), `nudges_used` (int), `nudges_max` (int), `output_tokens` (int) |
-| `mcp.server_unavailable` | A configured MCP server could not start. | `server` (str), `error` (str) |
-| `metric.end` | The metric command finished. | `cmd` (list), `exit_code` (int, optional), `duration_s` (float), `stdout_tail` (str), `stderr_tail` (str), `score` (float, optional) |
-| `metric.start` | The metric command started. | `cmd` (list) |
-| `provider.auth` | A provider credential refresh, exchange or recovery finished. | `provider` (str), `kind` (str), `outcome` (str) |
-| `provider.request` | An HTTP attempt was made for a model call. | `role` (str), `provider` (str), `model` (str), `request_id` (str), `target` (str) |
-| `question.answer` | The operator answered questions or nobody could answer. | `id` (str), `answers` (list), `source` (str), `unseen` (bool) |
-| `question.prompt` | Questions were presented to the operator. | `id` (str), `questions` (list), `call_id` (int, optional), `wait` (bool) |
-| `role.call` | A model call started for a role. | `role` (str), `model` (str), `provider` (str), `model_call_id` (str), `seat_index` (int, optional) |
-| `role.result` | A model call returned or failed. | `role` (str), `model` (str), `provider` (str), `model_call_id` (str), `seat_index` (int, optional), `ok` (bool), `text` (str, optional), `tokens_in` (int, optional), `tokens_out` (int, optional), `cache_read` (int, optional), `cache_creation` (int, optional), `stop_reason` (str, optional), `error` (str, optional) |
-| `role.text_delta` | A piece of assistant text streamed. | `role` (str), `text` (str) |
-| `role.thinking_delta` | A piece of assistant reasoning streamed. | `role` (str), `text` (str) |
-| `session.end` | The execution ended with its outcome and final verification state. | `reason` (str), `turns` (int), `all_passed` (bool, optional), `summary` (str, optional), `verified` (str, optional), `scoped` (bool, optional), `final_verify_id` (str, optional), `tree` (str, optional), `tool` (str, optional), `streak` (int, optional) |
-| `session.start` | A fresh execution began. | `session_id` (str, optional), `user_task` (str), `mode` (str), `execution_id` (str) |
-| `session.steer_requested` | Ctrl-C requested an operator steer during the run. | `source` (str) |
-| `session.stranded` | A finished run left edits uncommitted and no commit landed. |  |
-| `session.undone` | Undo forked the run before its last operator message. | `new_session_id` (str), `undone_text` (str) |
-| `tool.call` | A tool was dispatched, including calls that a guard rejects. | `name` (str), `args` (object), `call_id` (int) |
-| `tool.result` | A dispatched tool returned its result or refusal. | `name` (str), `ok` (bool), `summary` (str), `call_id` (int), `paths` (list, optional), `stdout_tail` (str, optional), `stderr_tail` (str, optional), `stopped_by_operator` (bool, optional), `attachment` (object, optional), `head_tail` (str, optional), `lines_total` (int, optional) |
-| `verify.end` | A verification attempt finished with evidence about the observed tree. | `verify_id` (str, optional), `execution_id` (str, optional), `cmd` (list), `tree_before` (str, optional), `tree_after` (str, optional), `scoped` (bool), `selected_paths` (list), `outcome` (str), `exit_code` (int, optional), `duration_s` (float), `timeout_s` (float), `stdout_tail` (str), `stderr_tail` (str), `stdout_truncated` (bool, optional), `stderr_truncated` (bool, optional), `baseline` (bool), `reason` (str) |
-| `verify.start` | A verification attempt started. | `verify_id` (str, optional), `execution_id` (str, optional), `tree_before` (str, optional), `cmd` (list), `scoped` (bool), `selected_paths` (list), `timeout_s` (float) |
-| `workspace.setup` | The workspace setup command finished. | `cmd` (list), `exit_code` (int, optional), `duration_s` (float), `exec_failed` (bool), `stdout_tail` (str), `stderr_tail` (str) |
+[Formats](formats.md#journal) owns the journal envelope, event names and payload fields.
 
 An approval covered by a standing answer journals only `approval.answer`, with source `session`.
 Every other approval publishes as `approval.prompt` before its answer.

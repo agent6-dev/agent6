@@ -17,7 +17,13 @@ Identifier = Annotated[str, pydantic.StringConstraints(strip_whitespace=True, mi
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class RuleSource:
-    """Identify one base-tree rule blob supplied whole to the reviewer."""
+    """Identify one base-tree rule blob supplied whole to the reviewer.
+
+    Attributes:
+        path: The rule file's path in the base tree.
+        blob_id: The immutable rule blob identifier.
+        supplied_bytes: The number of rule bytes supplied to reviewers.
+    """
 
     path: str
     blob_id: str
@@ -36,7 +42,18 @@ class ReviewRules:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewTarget:
-    """Identify the immutable trees and path coverage of a review."""
+    """Identify the immutable trees and path coverage of a review.
+
+    Attributes:
+        base_commit: The base commit, or null for a tree-only comparison.
+        base_tree: The immutable base tree identifier.
+        head_commit: The head commit, or null for a working-tree snapshot.
+        head_tree: The immutable head tree identifier.
+        snapshot_commit: The commit retaining the reviewed tree.
+        paths: The reviewed path scope, empty for all paths.
+        source: Whether the comparison came from revisions or the working tree.
+        hidden_paths: Paths withheld from the review.
+    """
 
     base_commit: str | None
     base_tree: str
@@ -49,7 +66,14 @@ class ReviewTarget:
 
 
 class ReviewLocation(pydantic.BaseModel):
-    """Name a repository-relative path on one side, with an optional inclusive line range."""
+    """Name a repository-relative path on one side, with an optional inclusive line range.
+
+    Attributes:
+        path: The repository-relative path.
+        side: The base or head side of the comparison.
+        start_line: The inclusive one-based start line, or null for a file-level finding.
+        end_line: The inclusive one-based end line, or null for a file-level finding.
+    """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
@@ -95,7 +119,15 @@ class ReviewLocation(pydantic.BaseModel):
 
 
 class Finding(pydantic.BaseModel):
-    """Hold one review finding at a structured location."""
+    """Hold one review finding at a structured location.
+
+    Attributes:
+        category: The finding's issue category.
+        severity: The grounded block, warn or nit severity.
+        title: The short finding title.
+        detail: The supporting explanation and evidence.
+        location: The path, side and optional line range.
+    """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
@@ -120,7 +152,19 @@ class SeatReply(pydantic.BaseModel):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewVerdict:
-    """Hold one indexed seat's verdict, including an explicit abstention on failure."""
+    """Hold one indexed seat's verdict, including an explicit abstention on failure.
+
+    Attributes:
+        seat_index: The seat's zero-based position in the roster.
+        focus: The seat's assigned review focus.
+        model_route: The provider/model route that reviewed.
+        verdict: The seat's pass, block or abstention decision.
+        findings: The grounded findings from this seat.
+        summary: The seat's closing summary.
+        error: The failure diagnostic for an abstention, or null.
+        risk: The seat's retained risk assessment.
+        risk_truncated: Whether the risk text was truncated.
+    """
 
     seat_index: int
     focus: str
@@ -134,7 +178,14 @@ class ReviewVerdict:
 
 
 class LineOrigin(pydantic.BaseModel):
-    """Record byte-level evidence without dating a defect or changing its severity."""
+    """Record byte-level evidence without dating a defect or changing its severity.
+
+    Attributes:
+        kind: Whether the lines are pre-existing, changed or of unknown origin.
+        reason: The explanation for the attribution result.
+        base_location: The mapped base range for pre-existing lines, or null.
+        commits: Attribution commits for pre-existing lines.
+    """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 
@@ -160,7 +211,15 @@ class LineOrigin(pydantic.BaseModel):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FindingObservation:
-    """Associate a finding with its panel and the seats that reported it."""
+    """Associate a finding with its panel and the seats that reported it.
+
+    Attributes:
+        finding_id: The finding identifier shared across observations.
+        panel_id: The panel that recorded this observation.
+        finding: The grounded finding text and location.
+        seat_indexes: The zero-based seats that reported the finding.
+        line_origin: The line-attribution evidence for this observation.
+    """
 
     finding_id: str
     panel_id: str
@@ -173,6 +232,22 @@ class ReviewPanel(pydantic.BaseModel):
     """Validate a completed panel's durable evidence, including its worker feedback.
 
     A journal row validates with its envelope stripped (`event_log.payload`).
+
+    Attributes:
+        panel_id: The durable panel identifier.
+        execution_id: The execution that requested the panel.
+        turn: The turn that triggered the panel.
+        trigger: The review trigger.
+        target: The immutable reviewed comparison.
+        findings: The panel's grounded finding observations.
+        injected_finding_ids: Findings supplied to the worker as feedback.
+        block_on: The configured worker-finish blocking rule.
+        raw_blocked: Whether the panel met the blocking rule before disarming.
+        blocked: Whether the panel blocks worker completion.
+        disarmed: Whether the harness disarmed the review block.
+        n_block: The number of blocking seats.
+        n_abstain: The number of abstaining seats.
+        completion: Whether the panel completed conclusively.
     """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
@@ -208,6 +283,13 @@ class FindingResolution(pydantic.BaseModel):
     """Record the operator's conclusion without inferring verification success.
 
     The action handler must check that a duplicate names another finding in the same session.
+
+    Attributes:
+        disposition: The operator's conclusion about the finding.
+        reason: The operator's explanation.
+        duplicate_of: The other finding for a duplicate resolution, or null.
+        commit: The associated correction commit, or null.
+        verify_id: The associated verification attempt, or null.
     """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
@@ -228,7 +310,16 @@ class FindingResolution(pydantic.BaseModel):
 
 
 class FindingAction(pydantic.BaseModel):
-    """Validate an operator request against a known review-state version."""
+    """Validate an operator request against a known review-state version.
+
+    Attributes:
+        request_id: The caller's identifier for idempotent action delivery.
+        expected_version: The review version the caller read.
+        action: The action kind supplied by the route rather than the HTTP body.
+        resolution: The conclusion for a resolve action, or null.
+        reason: The explanation for a reopen action, or null.
+        resume: Whether the operator approved resuming a stopped session to fix the finding.
+    """
 
     model_config = pydantic.ConfigDict(extra="forbid", frozen=True)
 

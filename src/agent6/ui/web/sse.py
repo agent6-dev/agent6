@@ -61,6 +61,9 @@ def _with_idle_age(payload: dict[str, Any]) -> dict[str, Any]:
     The age is server-computed so a browser on another machine needs no clock
     agreement: the client anchors its timer to its own now minus the age.
 
+    Attributes:
+        last_event_age_s: Seconds since the reasoning snapshot's last event at frame emission.
+
     Args:
         payload: A machine frame with a `reasoning` half.
 
@@ -109,6 +112,18 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
     previous: dict[str, Any] | None = None
 
     def send_frame(*, dead: bool = False) -> bool:
+        """Send a session snapshot when its state changes.
+
+        Attributes:
+            stream_dead: Whether the worker died without a journaled end.
+            last_event_age_s: Seconds since the last event at frame emission.
+
+        Returns:
+            Whether the client is still connected.
+
+        Args:
+            dead: Whether the worker died without a journaled end.
+        """
         nonlocal previous
         # The dir is read per frame: a resumed parked run changes the label and `live`.
         d = {
@@ -192,6 +207,12 @@ def stream_machine(chan: SseChannel, machine_dir: pathlib.Path) -> None:
 
     Each poll folds the journal and pushes the snapshot when it changed, heartbeats
     when it did not, and closes on a journaled end.
+
+    Attributes:
+        machine: The machine snapshot with its cumulative spend.
+        reasoning: The newest agent-state session snapshot, empty before an execution.
+        type: The error frame kind when the machine cannot be read.
+        error: The machine-read failure diagnostic.
 
     Args:
         chan: The client's socket writes.

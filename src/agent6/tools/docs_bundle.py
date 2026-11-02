@@ -14,6 +14,7 @@ AGENT6_DOC_FILES = (
     "USAGE.md",
     "INSTALLATION.md",
     "CONFIG.md",
+    "FORMATS.md",
     "SECURITY.md",
     "ARCHITECTURE.md",
     "STATE-MACHINES.md",

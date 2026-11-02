@@ -5,7 +5,7 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 
 # Data contracts
 
-Each of the 11 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
+Each of the 15 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
 Every card is generated from the module and class docstrings, so edit those rather than this page.
 
 ## Support levels
@@ -13,7 +13,7 @@ Every card is generated from the module and class docstrings, so edit those rath
 These levels describe serialized formats, not Python imports.
 
 - **Public:** CLI `--json` rows, the web API, the `logs.jsonl` event envelope, and `.asm.toml` machine files.
-  This covers [Review read model](#review-read-model), [Review records](#review-records), [Event union](#event-union), [MachineSpec](#machinespec), and [Run/machine wire snapshot](#runmachine-wire-snapshot).
+  This covers [CLI listing rows](#cli-listing-rows), [CLI session status](#cli-session-status), [Live process rows](#live-process-rows), [Web payloads](#web-payloads), [Review read model](#review-read-model), [Review records](#review-records), [Event union](#event-union), [MachineSpec](#machinespec), and [Run/machine wire snapshot](#runmachine-wire-snapshot).
 - **Durable but private:** state agent6 retains for resume and replay, not an integration API.
   This covers [Conversation](#conversation), [SessionManifest](#sessionmanifest) (`manifest.json`), [SessionSnapshot](#sessionsnapshot) (`loop_state.json` and checkpoints), the [ToolResult family](#toolresult-family) stored in conversations, [JournalEvent](#journalevent) in the machine's `journal.jsonl`, [TaskNode](#tasknode) and the task graph, and git chain refs.
 - **Disposable:** caches, [provider transcripts](architecture.md#session-state-on-disk), and telemetry export cursors have no format-compatibility or migration guarantee.
@@ -23,6 +23,68 @@ From 1.0, public formats will carry a version, including the journal envelope an
 Readers will keep accepting the previous format version for two minor releases.
 The current `logs.jsonl` envelope has no format-version field, and web API routes use the unversioned `/api/` prefix.
 
+## CLI listing rows
+
+[`agent6.viewmodel.listing`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/listing.py) &middot; mutable container + 2 frozen turn types
+
+Scan session dirs into the listing rows every front-end's hub shows.
+
+**summary_row** &mdash; Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
+
+**row_json** &mdash; Return a listing row and its nested lanes as JSON.
+
+Public fields: [Formats](formats.md#cli-json).
+
+- **Written by:** ui/cli/sessions_cmds, ui/web/model
+- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, run, stop}, harness/review_session, ui/{mcp_server, spawn}, ui/acp/{review, session}, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_review, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, dashboard_header, home}, ui/web/{actions, review_routes, sse}, viewmodel/{__init__, state_view, wire}
+- **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (20 test files exercise it)
+
+## CLI session status
+
+[`agent6.ui.cli.sessions_show`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/sessions_show.py) &middot; mutable container + 1 frozen turn types
+
+`agent6 sessions show`: one-shot liveness and progress of a session from its dir.
+
+**_cmd_status** &mdash; Print a one-shot liveness and progress summary for a run.
+
+Public fields: [Formats](formats.md#cli-json).
+
+- **Written by:** ui/cli/sessions_show
+- **Read by:** ui/cli/entry
+- **Guarded by:** [test_sessions_show_fanout.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_show_fanout.py) (5 test files exercise it)
+
+## Live process rows
+
+[`agent6.ui.cli.ps_cmd`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/cli/ps_cmd.py) &middot; frozen dataclass
+
+`agent6 ps`: live agent6 sessions across every repository on this machine.
+
+**_Row** &mdash; One live session or machine instance.
+
+Public fields: [Formats](formats.md#_row).
+
+- **Written by:** ui/cli/ps_cmd
+- **Read by:** ui/cli/entry
+- **Guarded by:** [test_ps.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_ps.py) (2 test files exercise it)
+
+## Web payloads
+
+[`agent6.ui.web.model`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py)
+
+Build the web UI's JSON payloads.
+
+**hub_payload** &mdash; Return the hub: sessions in the given order, machines, drafts, machine files, presets.
+
+**conversation_payload** &mdash; Return a run's conversation and the operator's past inputs, from one read of the log.
+
+**config_payload** &mdash; Return the effective config per leaf, keyed by dotted key.
+
+Public fields: [Formats](formats.md#web-api).
+
+- **Written by:** ui/web/server
+- **Read by:** ui/cli/web_cmds, ui/web/{actions, sse}
+- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (6 test files exercise it)
+
 ## Review read model
 
 [`agent6.viewmodel.review`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review.py) &middot; frozen dataclass
@@ -31,38 +93,11 @@ Fold review evidence and operator history for every session reader.
 
 **FindingView** &mdash; Keep a finding's observations and operator history independently of panel verdicts.
 
-| field | type | default |
-| --- | --- | --- |
-| `finding_id` | `str` | required |
-| `observations` | `tuple[review_records.FindingObservation, ...]` | required |
-| `status` | `Literal['open', 'resolved']` | `'open'` |
-| `resolution` | `review_records.FindingResolution | None` | `None` |
-| `actions` | `tuple[ActionRecord, ...]` | `()` |
-| `anchor_state` | `Literal['unknown', 'current', 'outdated']` | `'unknown'` |
-| `fix_state` | `Literal['none', 'delivery_unknown', 'submitted', 'failed']` | `'none'` |
-| `opened_at` | `float | None` | `None` |
-
 **ReviewView** &mdash; Fold durable review evidence in journal append order.
-
-| field | type | default |
-| --- | --- | --- |
-| `panels` | `tuple[PanelView, ...]` | `()` |
-| `findings` | `tuple[FindingView, ...]` | `()` |
-| `version` | `int` | `0` |
-| `open_counts` | `SeverityCounts` | `dataclasses.field(default_factory=SeverityCounts)` |
-| `completion` | `Completion` | `'unknown'` |
-| `freshness` | `Freshness` | `'unknown'` |
-| `legacy_notice` | `str` | `''` |
-| `read_failure` | `str | None` | `None` |
-| `comparison` | `review_records.ReviewTarget | None` | `None` |
-| `event_ids` | `tuple[str, ...]` | `()` |
 
 **MergeReviewGuard** &mdash; Report open grounded blocks and unreadable evidence without enforcing a merge.
 
-| field | type | default |
-| --- | --- | --- |
-| `open_block_ids` | `tuple[str, ...]` | `()` |
-| `read_failure` | `str | None` | `None` |
+Public fields: [Formats](formats.md#reviewview).
 
 - **Written by:** viewmodel/{session_log, state}
 - **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{log_line, receipt, review_queue, state_types, state_view, telemetry, transcript, transcript_text}
@@ -76,118 +111,25 @@ Define immutable review evidence and validate review boundary payloads.
 
 **ReviewTarget** &mdash; Identify the immutable trees and path coverage of a review.
 
-| field | type | default |
-| --- | --- | --- |
-| `base_commit` | `str | None` | required |
-| `base_tree` | `str` | required |
-| `head_commit` | `str | None` | required |
-| `head_tree` | `str` | required |
-| `snapshot_commit` | `str` | required |
-| `paths` | `tuple[str, ...]` | required |
-| `source` | `Literal['revisions', 'worktree']` | required |
-| `hidden_paths` | `tuple[str, ...]` | `()` |
-
 **ReviewLocation** &mdash; Name a repository-relative path on one side, with an optional inclusive line range.
-
-| field | type | default |
-| --- | --- | --- |
-| `path` | `str` | required |
-| `side` | `Literal['base', 'head']` | required |
-| `start_line` | `int | None` | `None` |
-| `end_line` | `int | None` | `None` |
 
 **Finding** &mdash; Hold one review finding at a structured location.
 
-| field | type | default |
-| --- | --- | --- |
-| `category` | `str` | required |
-| `severity` | `Severity` | required |
-| `title` | `str` | required |
-| `detail` | `str` | `''` |
-| `location` | `ReviewLocation` | required |
-
 **SeatReply** &mdash; Validate the verdict and findings returned by a review seat.
-
-| field | type | default |
-| --- | --- | --- |
-| `verdict` | `Literal['pass', 'block']` | required |
-| `summary` | `str` | required |
-| `findings` | `tuple[Finding, ...]` | required |
-| `risk` | `str` | `''` |
-| `risk_truncated` | `bool` | `False` |
 
 **ReviewVerdict** &mdash; Hold one indexed seat's verdict, including an explicit abstention on failure.
 
-| field | type | default |
-| --- | --- | --- |
-| `seat_index` | `int` | required |
-| `focus` | `str` | required |
-| `model_route` | `str` | required |
-| `verdict` | `Literal['pass', 'block', 'abstain']` | required |
-| `findings` | `tuple[Finding, ...]` | `()` |
-| `summary` | `str` | `''` |
-| `error` | `str | None` | `None` |
-| `risk` | `str` | `''` |
-| `risk_truncated` | `bool` | `False` |
-
 **LineOrigin** &mdash; Record byte-level evidence without dating a defect or changing its severity.
-
-| field | type | default |
-| --- | --- | --- |
-| `kind` | `Literal['pre_existing', 'changed', 'unknown']` | `'unknown'` |
-| `reason` | `str` | `'Historical observations contain no line-origin evidence.'` |
-| `base_location` | `ReviewLocation | None` | `None` |
-| `commits` | `tuple[Identifier, ...]` | `()` |
 
 **FindingObservation** &mdash; Associate a finding with its panel and the seats that reported it.
 
-| field | type | default |
-| --- | --- | --- |
-| `finding_id` | `str` | required |
-| `panel_id` | `str` | required |
-| `finding` | `Finding` | required |
-| `seat_indexes` | `tuple[int, ...]` | required |
-| `line_origin` | `LineOrigin` | `dataclasses.field(default_factory=LineOrigin)` |
-
 **ReviewPanel** &mdash; Validate a completed panel's durable evidence, including its worker feedback.
-
-| field | type | default |
-| --- | --- | --- |
-| `panel_id` | `Identifier` | required |
-| `execution_id` | `Identifier` | required |
-| `turn` | `int` | required |
-| `trigger` | `str` | required |
-| `target` | `ReviewTarget` | required |
-| `findings` | `tuple[FindingObservation, ...]` | required |
-| `injected_finding_ids` | `tuple[str, ...]` | required |
-| `block_on` | `Literal['none', 'any', 'all', 'model_quorum']` | required |
-| `raw_blocked` | `bool` | required |
-| `blocked` | `bool` | required |
-| `disarmed` | `bool` | required |
-| `n_block` | `int` | required |
-| `n_abstain` | `int` | required |
-| `completion` | `Literal['complete', 'inconclusive']` | required |
 
 **FindingResolution** &mdash; Record the operator's conclusion without inferring verification success.
 
-| field | type | default |
-| --- | --- | --- |
-| `disposition` | `Literal['fixed', 'false_positive', 'intentional', 'wont_fix', 'duplicate', 'pre_existing']` | required |
-| `reason` | `Reason` | required |
-| `duplicate_of` | `Identifier | None` | `None` |
-| `commit` | `str | None` | `None` |
-| `verify_id` | `str | None` | `None` |
-
 **FindingAction** &mdash; Validate an operator request against a known review-state version.
 
-| field | type | default |
-| --- | --- | --- |
-| `request_id` | `Identifier` | required |
-| `expected_version` | `int` | required |
-| `action` | `Literal['fix', 'resolve', 'reopen']` | required |
-| `resolution` | `FindingResolution | None` | `None` |
-| `reason` | `Reason | None` | `None` |
-| `resume` | `bool` | `False` |
+Public fields: [Formats](formats.md#typed-records).
 
 - **Written by:** app/review_actions, harness/{review_gate, review_history, review_panel, review_seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
 - **Read by:** harness/{loop_state, repo_context, review_diff, run_chain}, ui/acp/review, ui/cli/review_cmds, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
@@ -213,37 +155,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 
 **SessionManifest** &mdash; The typed manifest.json a session starts with and later stamps.
 
-| field | type | default |
-| --- | --- | --- |
-| `version` | `int` | `MANIFEST_VERSION` |
-| `agent6_version` | `str` | `''` |
-| `session_id` | `str` | `''` |
-| `mode` | `str` | `''` |
-| `start_ts` | `str` | `''` |
-| `user_task` | `str` | `''` |
-| `base_sha` | `str` | `''` |
-| `base_branch` | `str` | `''` |
-| `run_branch` | `str | None` | `None` |
-| `git_control` | `str` | `'agent6'` |
-| `models` | `ModelsBrief` | `ModelsBrief()` |
-| `harness` | `HarnessStamp` | `HarnessStamp()` |
-| `policy` | `PolicyStamp` | `PolicyStamp()` |
-| `budget` | `BudgetStamp` | `BudgetStamp()` |
-| `parked_task` | `str` | `''` |
-| `parked_operator_task` | `str | None` | `None` |
-| `parked_reason` | `str` | `''` |
-| `source_session_id` | `str | None` | `None` |
-| `parent_session_id` | `str | None` | `None` |
-| `forked_from_turn` | `int | None` | `None` |
-| `forked_from_sha` | `str | None` | `None` |
-| `worktree` | `pathlib.Path | None` | `None` |
-| `worktree_git_dir` | `pathlib.Path | None` | `None` |
-| `workspace_set_up` | `bool` | `False` |
-| `merged` | `MergeStamp | None` | `None` |
-| `includes` | `IncludedRun | None` | `None` |
-| `parallel` | `ParallelLineage | None` | `None` |
-| `compare` | `CompareStamp | None` | `None` |
-| `fanout` | `FanoutStamp | None` | `None` |
+Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
 - **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, session_setup, stop, undo, workdirs, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane}, ui/web/{actions, model}, viewmodel/{format, listing, policy, receipt, session_status, state_view, wire}
@@ -316,6 +228,8 @@ Members: `DocsIndexResult`, `DocsContentResult`, `ReadFileResult`, `ReadMediaRes
 [`agent6.viewmodel.events`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/events.py) &middot; tagged union of 29 frozen families
 
 Type the logs.jsonl event families the session fold consumes.
+
+Public fields: [Formats](formats.md#journal).
 
 Members: `SessionStart`, `ResumeStart`, `GraphUpdate`, `DiffUpdated`, `AutoCommit`, `RoleCall`, `RoleResult`, `RoleTextDelta`, `RoleThinkingDelta`, `ToolCall`, `ToolResult`, `VerifyStart`, `VerifyEnd`, `BudgetUpdate`, `ApprovalPrompt`, `ApprovalAnswer`, `QuestionPrompt`, `QuestionAnswer`, `PinAdded`, `PinsRestored`, `CompactRestored`, `CompactDropped`, `CompactGists`, `CompactSummarised`, `SteerRequested`, `SessionEnd`, `SessionStranded`, `SessionUndone`, `RawEvent`
 
@@ -397,6 +311,8 @@ Render session status, context usage, and the wire snapshot.
 
 **session_state_as_dict** &mdash; Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
+Public fields: [Formats](formats.md#session-snapshots).
+
 - **Written by:** viewmodel/{machine_state, state_view}
 - **Read by:** ui/acp/updates, ui/cli/steer_menu, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (8 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (9 test files exercise it)

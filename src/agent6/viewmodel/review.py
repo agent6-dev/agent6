@@ -24,7 +24,21 @@ class ReviewReadError(Exception):
 
 
 class ActionRecord(pydantic.BaseModel):
-    """Validate the journal fields retained in a finding's action history."""
+    """Validate the journal fields retained in a finding's action history.
+
+    Attributes:
+        type: The journaled action event name.
+        finding_id: The target finding identifier.
+        request_id: The caller's idempotency identifier.
+        source: The front-end that requested the action, or null when unrecorded.
+        version: The resulting review version, or null when unrecorded.
+        resolution: The recorded conclusion, or null.
+        reason: The operator's explanation, or null.
+        target: The reviewed target associated with the action, or null.
+        action: The requested action kind, or null when unrecorded.
+        execution_id: The execution that handled the action, or null.
+        error: The action failure diagnostic, or null.
+    """
 
     model_config = pydantic.ConfigDict(frozen=True)
 
@@ -43,7 +57,18 @@ class ActionRecord(pydantic.BaseModel):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class FindingView:
-    """Keep a finding's observations and operator history independently of panel verdicts."""
+    """Keep a finding's observations and operator history independently of panel verdicts.
+
+    Attributes:
+        finding_id: The durable finding identifier.
+        observations: The finding's observations in journal order.
+        status: Whether the finding is open or resolved.
+        resolution: The operator's conclusion, or null while open.
+        actions: The finding's recorded operator actions.
+        anchor_state: Whether the location matches the displayed comparison.
+        fix_state: The latest fix delivery state.
+        opened_at: The first observation time in epoch seconds, or null when unrecorded.
+    """
 
     finding_id: str
     observations: tuple[review_records.FindingObservation, ...]
@@ -63,7 +88,15 @@ class FindingView:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class SeatAssignment:
-    """Identify the resolved route and settings of one panel seat."""
+    """Identify the resolved route and settings of one panel seat.
+
+    Attributes:
+        seat_index: The seat's zero-based position in the roster.
+        model_route: The resolved provider/model route.
+        focus: The seat's assigned review focus.
+        scope: Whether the seat reviews the diff or the repository.
+        temperature: The configured sampling temperature, or null for the provider default.
+    """
 
     seat_index: int
     model_route: str
@@ -74,7 +107,21 @@ class SeatAssignment:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class PanelView:
-    """Keep a panel's roster, grounded verdicts and completion evidence."""
+    """Keep a panel's roster, grounded verdicts and completion evidence.
+
+    Attributes:
+        panel_id: The panel identifier.
+        execution_id: The execution that requested the panel.
+        target: The recorded comparison target, or null.
+        roster: The resolved seat assignments.
+        seats: The recorded verdicts from individual seats.
+        result: The completed panel result, or null while unavailable.
+        completion: The panel's completion state.
+        reason: The explanation for a skipped or incomplete panel, or null.
+        rule_sources: The base-tree rule sources supplied to the panel.
+        rules_complete: Whether all rule sources were supplied, or null when unrecorded.
+        rules_reason: The explanation for missing rules, or null.
+    """
 
     panel_id: str
     execution_id: str
@@ -91,7 +138,13 @@ class PanelView:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class SeverityCounts:
-    """Count open findings by their grounded severity."""
+    """Count open findings by their grounded severity.
+
+    Attributes:
+        block: The number of open grounded block findings.
+        warn: The number of open grounded warning findings.
+        nit: The number of open grounded nit findings.
+    """
 
     block: int = 0
     warn: int = 0
@@ -100,7 +153,12 @@ class SeverityCounts:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class MergeReviewGuard:
-    """Report open grounded blocks and unreadable evidence without enforcing a merge."""
+    """Report open grounded blocks and unreadable evidence without enforcing a merge.
+
+    Attributes:
+        open_block_ids: The open grounded findings that block a merge.
+        read_failure: The evidence-read diagnostic that blocks a merge, or null.
+    """
 
     open_block_ids: tuple[str, ...] = ()
     read_failure: str | None = None
@@ -108,7 +166,20 @@ class MergeReviewGuard:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewView:
-    """Fold durable review evidence in journal append order."""
+    """Fold durable review evidence in journal append order.
+
+    Attributes:
+        panels: Recorded review panels in append order.
+        findings: Findings with their observations and action history.
+        version: The concurrency version for finding actions.
+        open_counts: Counts of open grounded findings by severity.
+        completion: The latest panel's completion state.
+        freshness: Whether the evidence matches the compared trees and paths.
+        legacy_notice: The notice for review data without structured evidence.
+        read_failure: The evidence-read diagnostic, or null.
+        comparison: The target used to determine freshness, or null.
+        event_ids: The durable event identifiers already folded.
+    """
 
     panels: tuple[PanelView, ...] = ()
     findings: tuple[FindingView, ...] = ()
@@ -464,7 +535,20 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
 
 
 def as_dict(view: ReviewView) -> dict[str, Any]:
-    """Return JSON-ready evidence, including nested boundary models and merge facts."""
+    """Return JSON-ready evidence, including nested boundary models and merge facts.
+
+    Attributes:
+        merge_guard: The open-block and unreadable-evidence merge facts.
+        rule_sources: The latest panel's recorded rule sources.
+        rules_complete: Whether all rule sources were supplied, or null when unrecorded.
+        line_origin: The latest observation's attribution evidence, added to each finding.
+
+    Args:
+        view: The folded review evidence.
+
+    Returns:
+        The JSON-safe review with computed merge and attribution facts.
+    """
     result = pydantic.TypeAdapter(ReviewView).dump_python(view, mode="json")
     result["merge_guard"] = dataclasses.asdict(view.merge_guard)
     for row, finding in zip(result["findings"], view.findings, strict=True):

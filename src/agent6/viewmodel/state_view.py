@@ -3,10 +3,8 @@
 """Render session status, context usage, and the wire snapshot.
 
 `session_state_as_dict` is the contract every external viewer reads (`attach --json`,
-the web page): the state's fields plus `status`, `status_label`, `dead_state`,
-`shells`, `live` and `operator_blocked`, with `log_tail` as plain strings; its keys
-stay stable. With a session dir, the wire form also reads the dir's status probes
-and manifest.
+the web page). With a session dir, the wire form also reads the dir's status probes
+and manifest. The generated Formats reference owns its serialized fields.
 """
 
 from __future__ import annotations
@@ -95,6 +93,33 @@ def session_state_as_dict(
     unmerged: bool = False,
 ) -> dict[str, Any]:
     """Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
+
+    Attributes:
+        review: The shared review evidence with computed merge facts.
+        context_pct: The last model call's context fill percentage, or null when unknown.
+        needs_new_work: Whether a resume requires a new task rather than continuing work.
+        budget.cost_usd: Cumulative spend in USD.
+        budget.usd_text: The rendered cumulative spend and cap.
+        open_approval: The current approval identifier, or null when none is open.
+        status: The lifecycle status word.
+        status_label: The rendered status with mode and unmerged marks when available.
+        task: The operator's words, whole.
+        continued_task: The latest resume steer, whole; empty without a continuation.
+        task_line: The task clipped to 200 characters, then a newline and `continued: <steer>`,
+            clipped the same way, when a resume steer exists.
+        dead_state: The explanation for a worker that died without an end, or an empty string.
+        operator_blocked: Whether an unanswered blocking prompt is open.
+        log_tail: The retained log lines as plain strings rather than LogLine records.
+        live: Whether steer or stop can reach the session, or null without a directory.
+        session_id: The journaled session identifier with the directory name as fallback.
+        mode: The session mode with the manifest as fallback.
+        policy: The rendered launch policy when a session directory is supplied.
+        ports: The worker's listening ports when a session directory is supplied.
+        shells: The background shell roster when a session directory is supplied.
+        plan_md: A plan session's deliverable when readable.
+        head: The question part added to each pending approval.
+        payload: The command part added to each pending approval.
+        label: The picker label added to each commit step.
 
     Args:
         state: The folded state.

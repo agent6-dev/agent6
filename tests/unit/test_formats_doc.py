@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+import importlib.util
+import pathlib
+import sys
+import types
+
+import pytest
+
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+
+def _generator() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location("gen_formats", _ROOT / "docs/gen_formats.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_formats_page_is_not_stale() -> None:
+    """The committed public reference matches its serialized producers."""
+    generated = _generator().build_markdown()
+    assert generated == (_ROOT / "docs/formats.md").read_text(encoding="utf-8"), (
+        "Regenerate with: uv run python docs/gen_formats.py"
+    )
+
+
+def test_event_meanings_come_from_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Event field meanings and optionality survive generation."""
+    from agent6.sessions import event_schema
+
+    monkeypatch.setattr(
+        event_schema,
+        "EVENTS",
+        (
+            event_schema.EventSpec(
+                "example.event",
+                "An example event.",
+                (event_schema.FieldSpec("count", "int", False, "An optional count."),),
+            ),
+        ),
+    )
+    page = _generator().build_markdown()
+    assert "example.event" in page
+    assert "An optional count." in page
+    assert "optional" in page
+
+
+def test_dictionary_keys_are_read_from_code(tmp_path: pathlib.Path) -> None:
+    """A new serialized key changes the reference without a generator field list."""
+    generator = _generator()
+    source = tmp_path / "producer.py"
+    source.write_text(
+        "def payload():\n"
+        '    """A payload.\n\n'
+        "    Attributes:\n"
+        "        added: A newly serialized value.\n"
+        '    """\n'
+        '    return {"added": 1}\n',
+        encoding="utf-8",
+    )
+    fields = generator.dictionary_fields(source, "payload")
+    assert [(f.name, f.meaning) for f in fields] == [("added", "A newly serialized value.")]
+
+
+def test_local_nested_payload_excludes_unreturned_dicts(tmp_path: pathlib.Path) -> None:
+    """Only serialized dictionaries contribute keys, including locally built nested rows."""
+    generator = _generator()
+    source = tmp_path / "producer.py"
+    source.write_text(
+        "def payload():\n"
+        '    """A payload.\n\n'
+        "    Attributes:\n"
+        "        rows: The rows.\n"
+        "        rows[].added: The added value.\n"
+        '    """\n'
+        '    internal = {"private": 1}\n'
+        '    rows = [{"added": item} for item in internal]\n'
+        '    return {"rows": rows}\n',
+        encoding="utf-8",
+    )
+    fields = generator.dictionary_fields(source, "payload")
+    assert [f.name for f in fields] == ["rows", "rows[].added"]
+
+
+def test_session_fields_follow_serialization() -> None:
+    """The snapshot reference excludes popped state and includes the serialized additions."""
+    from agent6.viewmodel import state_types, state_view
+
+    generator = _generator()
+    producers = generator.SESSION[:1] + generator.SESSION[2:]
+    fields = generator.composed_fields(state_types.SessionState, producers)
+    names = {f.name for f in fields}
+    actual = state_view.session_state_as_dict(state_types.SessionState())
+    assert actual.keys() <= names
+    assert "task_label" not in names
+    assert {"as_of.turn", "as_of.sha", "compare.line", "budget.usd_text"} <= names
+
+
+def test_model_fields_follow_the_serialized_model() -> None:
+    """A model description and an added field come from the model rather than a docs registry."""
+    import pydantic
+
+    class Payload(pydantic.BaseModel):
+        added: int = pydantic.Field(description="An added serialized value.")
+
+    fields = _generator().model_fields(Payload)
+    assert [(f.name, f.meaning) for f in fields] == [("added", "An added serialized value.")]
+
+
+def test_missing_meaning_refuses_generation(tmp_path: pathlib.Path) -> None:
+    """A new field cannot silently acquire an invented description."""
+    generator = _generator()
+    source = tmp_path / "producer.py"
+    source.write_text('def payload():\n    return {"undocumented": 1}\n', encoding="utf-8")
+    with pytest.raises(generator.FormatError, match="undocumented"):
+        generator.dictionary_fields(source, "payload")

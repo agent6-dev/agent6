@@ -167,27 +167,6 @@ def test_architecture_page_is_not_stale() -> None:
     assert gen.render(template) == committed
 
 
-def test_event_table_is_generated_from_the_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The event marker reads meanings, kinds and optionality from the code registry."""
-    from agent6.sessions import event_schema
-
-    spec = event_schema.EventSpec(
-        "example.event",
-        "An example event.",
-        (
-            event_schema.FieldSpec("text", "str", True, "Event text."),
-            event_schema.FieldSpec("count", "int", False, "An optional count."),
-        ),
-    )
-    monkeypatch.setattr(event_schema, "EVENTS", (spec,))
-    page = _load_generator().render("<!-- generated: journal-events -->")
-    assert page.splitlines()[1:] == [
-        "| Event | Meaning | Fields |",
-        "| --- | --- | --- |",
-        "| `example.event` | An example event. | `text` (str), `count` (int, optional) |",
-    ]
-
-
 def test_tach_graph_uses_a_regular_output_file(monkeypatch: pytest.MonkeyPatch) -> None:
     """Generate diagrams when reopening /dev/stdout is unavailable."""
     gen = _load_generator()

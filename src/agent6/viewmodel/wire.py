@@ -102,6 +102,14 @@ def branch_facts(
 ) -> dict[str, str]:
     """Return `manifest_branches` for a manifest already read.
 
+    Attributes:
+        run_branch: The run's branch when it still exists.
+        base_branch: The recorded base branch when known.
+        worktree: The linked worktree's absolute path when recorded.
+        commits_ref: The ref holding the run's commits when available.
+        merged_into: The merge destination while the stamp still covers the run.
+        branch_line: The rendered branch and merge facts.
+
     Args:
         manifest: The session's manifest.
         repo: The repository, or None to take the manifest's word.
@@ -143,6 +151,15 @@ def manifest_header(
 
     Merged into every session snapshot, one-shot and streamed, so the header a page
     paints from cannot drift.
+
+    Attributes:
+        git_control: The launch git-control policy.
+        base_sha: The run chain's base commit.
+        unmerged: Whether the run holds unmerged work, when a repository is supplied.
+        forked_from: The rendered fork lineage when recorded.
+        worktree: The linked worktree path when recorded.
+        compare: The lane's CompareStamp when recorded.
+        compare.line: The rendered comparison placement.
 
     Args:
         session_dir: The session's state dir.
@@ -195,6 +212,12 @@ def session_snapshot(
     session with no log yet (a parked submission, a `fork --no-run`) folds nothing
     and lets the dir supply the word.
 
+    Attributes:
+        as_of: The selected commit's turn and sha, or null for the current snapshot.
+
+        as_of.turn: The selected checkpoint's turn number.
+        as_of.sha: The selected checkpoint's commit identifier.
+
     Args:
         session_dir: The session's state dir.
         repo: The repository, or None to take the manifest's word on branches.
@@ -235,6 +258,15 @@ def machine_snapshot(
 
     Carries the instance's `spend`: a machine runs unattended against
     `[budget].max_usd`, so every surface that watches one reads the same figure.
+
+    Attributes:
+        spend: The machine's cumulative usage.
+        spend.cost_usd: Cumulative spend in USD.
+        spend.usd_partial: Whether unpriced usage makes spend a lower bound.
+        spend.text: The rendered spend.
+        spend.input_tokens: Recorded input tokens.
+        spend.output_tokens: Recorded output tokens.
+        spend.in_flight_state: The agent-state execution still in flight, or null.
 
     Args:
         machine_dir: The instance's dir.

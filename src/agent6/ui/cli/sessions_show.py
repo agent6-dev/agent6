@@ -298,6 +298,55 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     even while the worker is blocked in a long provider call, plus the last event, the
     turn and the elapsed time from logs.jsonl. `agent6 attach` is the live follower.
 
+    Attributes:
+        mode: The session mode.
+        task: The operator's words, whole.
+        continued_task: The latest resume steer, whole; empty without a continuation.
+        task_line: The task clipped to 200 characters, then a newline and `continued: <steer>`,
+            clipped the same way, when a resume steer exists.
+        model: The resolved provider/model route, or ? when unknown.
+        model_from_flag: Whether a model flag selected the route.
+        preset: The launch preset, or null when absent.
+        status: The lifecycle status word shared with listings.
+        label: The rendered status with mode and unmerged marks.
+        detail: The diagnostic or next action explaining the status.
+        end_summary: The journaled closing sentence, or null when absent.
+        alive: Whether the recorded worker identity is alive.
+        pid: The recorded worker process identifier, or null when unreadable.
+        turn: The latest turn number, or null before a turn.
+        last_event: The latest event name, or null without a log.
+        last_event_age_s: Seconds since the latest event, or null when unknown.
+        elapsed_s: Seconds from the first start to the last event or current time.
+        end_reason: The journaled end reason, or null while unfinished.
+        baseline_ok: Whether baseline verification passed, or null when unrecorded.
+        verified: The final gate word, or null when unrecorded.
+        input_tokens: Recorded input tokens.
+        output_tokens: Recorded output tokens.
+        cache_read_tokens: Recorded cached input tokens.
+        cache_creation_tokens: Recorded cache-creation tokens.
+        cost_usd: Cumulative spend in USD, or null when unknown.
+        plan_consumed: Subscription points consumed across executions.
+        plan_prior_executions: Subscription points banked by earlier executions.
+        plan_cap: The subscription points cap.
+        unattended_questions: Questions answered empty because nobody was attached.
+        setup_output: Retained setup output, or null when absent.
+        usd_partial: Whether unpriced usage makes spend a lower bound, or null without a cost.
+        source_session_id: The source session used by run --from, or null.
+        parent_session_id: The fork parent, or null.
+        forked_from_turn: The fork's source turn, or null.
+        forked_from_sha: The fork's source commit, or null.
+        worktree: The linked worktree path, or null.
+        compare: The CompareStamp, or null outside a compared lane.
+        parallel: The ParallelLineage, or null outside a lane.
+        fanout: The FanoutStamp, or null outside a coordinator.
+        lanes: The coordinator's summary_row objects.
+        run_branch: The existing run branch, or null.
+        base_branch: The base branch, or null when unknown.
+        merged_into: The merge destination, or null when not merged.
+        pins: The operator's active pinned instructions.
+
+        session_id: The session identifier.
+
     Args:
         session_id: The session, or "" for the newest.
         as_json: Print one JSON object.

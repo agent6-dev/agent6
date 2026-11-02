@@ -71,7 +71,14 @@ class TransitionView:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class NotificationView:
-    """One journaled `machine.notify` (a state's `notify` message), in order."""
+    """One journaled `machine.notify` (a state's `notify` message), in order.
+
+    Attributes:
+        ts: The journaled notification time.
+        state: The state that emitted the notification.
+        message: The notification text.
+        level: The notification's presentation level.
+    """
 
     ts: str
     state: str
@@ -559,6 +566,14 @@ def machine_state_as_dict(
     execution: machine_logs.AgentExecution | None = None,
 ) -> dict[str, Any]:
     """Return the wire form of a `MachineState`, what `attach --json` and the web serialize.
+
+    Attributes:
+        status: The directory-aware machine status when a directory is supplied.
+        level: The status presentation level.
+        refusals: Reasons keyed by machine verb, with an empty reason for an allowed verb.
+        worker_lost: The missing-worker diagnostic for a stopped machine.
+        worker_lost.reason: The reason the machine reads stopped.
+        worker_lost.state: The state where the worker was lost.
 
     Args:
         ms: The folded state.

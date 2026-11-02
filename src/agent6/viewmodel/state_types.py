@@ -76,7 +76,12 @@ class ToolCallView:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class LogLine:
-    """One log line plus the task in focus when it was emitted, so a viewer can filter."""
+    """One log line plus the task in focus when it was emitted, so a viewer can filter.
+
+    Attributes:
+        text: The rendered log line.
+        task_id: The task in focus when the line was emitted, or null.
+    """
 
     text: str
     task_id: str | None = None
@@ -84,7 +89,13 @@ class LogLine:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class DiffView:
-    """One auto-commit diff plus the task in focus when it landed."""
+    """One auto-commit diff plus the task in focus when it landed.
+
+    Attributes:
+        patch: The auto-commit's unified patch.
+        task_id: The task in focus when the commit landed, or null.
+        sha: The auto-commit identifier.
+    """
 
     patch: str
     task_id: str | None = None
@@ -187,7 +198,13 @@ class RoleCall:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class CommitStep:
-    """One per-step commit of the run, which the dashboards select among."""
+    """One per-step commit of the run, which the dashboards select among.
+
+    Attributes:
+        turn: The turn that produced the checkpoint.
+        sha: The checkpoint commit identifier.
+        subject: The checkpoint commit's subject.
+    """
 
     turn: int
     sha: str

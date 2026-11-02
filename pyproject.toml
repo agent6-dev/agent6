@@ -43,6 +43,7 @@ exclude = ["src/agent6/jail"]
 "docs/acp.md" = "agent6/_docs/ACP.md"
 "docs/architecture.md" = "agent6/_docs/ARCHITECTURE.md"
 "docs/config.md" = "agent6/_docs/CONFIG.md"
+"docs/formats.md" = "agent6/_docs/FORMATS.md"
 "docs/installation.md" = "agent6/_docs/INSTALLATION.md"
 "docs/security.md" = "agent6/_docs/SECURITY.md"
 "docs/state-machines.md" = "agent6/_docs/STATE-MACHINES.md"
@@ -66,6 +67,7 @@ include = [
     "docs/acp.md",
     "docs/architecture.md",
     "docs/config.md",
+    "docs/formats.md",
     "docs/installation.md",
     "docs/security.md",
     "docs/state-machines.md",
@@ -595,7 +597,7 @@ banned-from = [
 "tests/**" = ["ANN", "B017", "D1", "D401", "DOC", "PLC0415", "PLR0915", "PLR2004", "S"]
 
 [tool.pyright]
-include = ["docs/gen_contracts.py", "src", "tests"]
+include = ["docs/gen_contracts.py", "docs/gen_formats.py", "src", "tests"]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false

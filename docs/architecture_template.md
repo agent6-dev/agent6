@@ -439,7 +439,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 
 | File | Holds |
 |---|---|
-| `manifest.json` | the run's record: the task, where it started (`base_sha`, `base_branch`), its run branch, mode, isolation, the model and preset that drove it, the caps its `--max-usd`, `--max-tokens-fallback` and `--max-plan-points` flags set, and the later stamps (`parked_task`, `compare`, fan-out and lane lineage) |
+| `manifest.json` | the [session record and later stamps](formats.md#sessionmanifest) |
 | `graph.jsonl` | append-only journal of every task-graph mutation (curator-owned) |
 | `graph/**/*.md` | one markdown file per task node, nested under its parent, rewritten atomically (curator-owned) |
 | `cursor.json` | the curator's current task pointer |
@@ -473,7 +473,7 @@ The planner re-reads it before every turn and is shown it whenever it differs fr
 - adds the worktree detached at the turn's sha (`<[workspace].base_dir>/<repo-id>/<new>`)
 - copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`
 - rebuilds the curator DAG at the checkpoint's `graph_version`
-- writes a manifest with `parent_session_id` / `forked_from_turn` / `forked_from_sha` / `worktree` / `worktree_git_dir` (the repository git dir the worktree points into, recorded so the jail grant never depends on the worktree's own `.git` pointer)
+- records the fork lineage and worktree in the [manifest](formats.md#sessionmanifest), including the repository git directory the jail grants
 - cuts the chain ref `refs/agent6/<new>/head` at the turn's sha, and the visible `agent6/<new>` branch there too under `[git].branch_per_run`; a plan or ask fork commits nothing and cuts neither
 
 The source run and the operator's checkout are never mutated (except by `/undo`), and one fork edge per line lands in a per-repo `lineage.jsonl`.
@@ -551,17 +551,7 @@ See [Session receipts](usage.md#session-receipts) for output caps and reversal l
 The journal is durable.
 An append failure on anything but the streaming deltas stops the run loudly (`EventWriteError`), and in-process listeners see an event only after its write landed.
 
-The `logs.jsonl` vocabulary is the data contract for any external viewer.
-[Data contracts](data-contracts.md) owns the typed event union the fold parses these into.
-
-`sessions/event_schema.py` owns the event names, meanings and payload fields below.
-The test suite checks every in-process `EventSink.emit` against it; production writes are unchecked.
-`ts`, `type` and durable `event_id` belong to the sink's envelope, not these payloads.
-Optional fields may be absent or null.
-Kinds describe JSON values: tuples serialize as lists, and integers also satisfy `float`, but booleans do not.
-Historical reads remain tolerant through `parse_event` and `RawEvent`.
-
-<!-- generated: journal-events -->
+[Formats](formats.md#journal) owns the journal envelope, event names and payload fields.
 
 An approval covered by a standing answer journals only `approval.answer`, with source `session`.
 Every other approval publishes as `approval.prompt` before its answer.

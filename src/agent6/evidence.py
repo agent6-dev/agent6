@@ -11,7 +11,27 @@ import pydantic
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class VerificationEvidence:
-    """Record one verification attempt and the content it observed."""
+    """Record one verification attempt and the content it observed.
+
+    Attributes:
+        verify_id: The verification attempt identifier, or null when unrecorded.
+        execution_id: The execution that ran the attempt, or null when unrecorded.
+        cmd: The verification command's argv.
+        tree_before: The observed tree before the attempt, or null when unknown.
+        tree_after: The observed tree after the attempt, or null when unknown.
+        scoped: Whether verification ran over selected paths instead of the full gate.
+        selected_paths: The paths selected for scoped verification.
+        outcome: The attempt's observed outcome.
+        exit_code: The process exit code, or null without an observed exit.
+        duration_s: The elapsed attempt time in seconds.
+        timeout_s: The configured timeout in seconds.
+        stdout_tail: The retained standard-output tail.
+        stderr_tail: The retained standard-error tail.
+        stdout_truncated: Whether standard output was truncated, or null when unrecorded.
+        stderr_truncated: Whether standard error was truncated, or null when unrecorded.
+        baseline: Whether this was the pre-run baseline attempt.
+        reason: Why the command did not run, separate from its output.
+    """
 
     verify_id: str | None
     execution_id: str | None

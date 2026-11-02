@@ -21,6 +21,7 @@ exclude_docs: |
   gen_contracts.py
   gen_config.py
   gen_diagrams.py
+  gen_formats.py
   config_template.md
   architecture_template.md
   screenshots/*.tape
@@ -136,6 +137,7 @@ nav:
   - Web UI: web.md
   - Editor integration: acp.md
   - Configuration: config.md
+  - Formats: formats.md
   - Security: security.md
   - Architecture: architecture.md
   - Data contracts: data-contracts.md

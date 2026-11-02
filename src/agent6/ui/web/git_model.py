@@ -151,7 +151,19 @@ def _resolve(
 
 
 def _decorations(refs: tuple[git_history.RefRow, ...]) -> dict[str, list[dict[str, Any]]]:
-    """Return the refs at each sha, in listing order."""
+    """Return the refs at each sha, in listing order.
+
+    Attributes:
+        name: The ref's display name.
+        kind: The ref's group.
+        head: Whether this ref is the current branch.
+
+    Args:
+        refs: The listed refs.
+
+    Returns:
+        Ref decorations keyed by commit identifier.
+    """
     out: dict[str, list[dict[str, Any]]] = {}
     for r in refs:
         out.setdefault(r.sha, []).append({"name": r.name, "kind": r.kind, "head": r.head})
@@ -159,10 +171,41 @@ def _decorations(refs: tuple[git_history.RefRow, ...]) -> dict[str, list[dict[st
 
 
 def _ref_row(r: git_history.RefRow) -> dict[str, Any]:
+    """Return one Git ref for the picker.
+
+    Attributes:
+        name: The ref's display name.
+        full: The fully qualified ref name.
+        kind: The ref group used by the picker.
+        sha: The ref's commit identifier.
+        head: Whether this ref is the current branch.
+
+    Args:
+        r: The listed ref.
+
+    Returns:
+        The ref row.
+    """
     return {"name": r.name, "full": r.full, "kind": r.kind, "sha": r.sha, "head": r.head}
 
 
 def _file_row(f: git_history.ChangedFile) -> dict[str, Any]:
+    """Return one changed file.
+
+    Attributes:
+        status: Git's change-status letter.
+        path: The file's path on the head side, or the base path for a deletion.
+        old_path: The base path of a renamed file, or an empty string.
+        additions: The number of added lines.
+        deletions: The number of deleted lines.
+        binary: Whether Git reports a binary change.
+
+    Args:
+        f: The changed file.
+
+    Returns:
+        The changed-file row.
+    """
     return {
         "status": f.status,
         "path": f.path,
@@ -183,6 +226,24 @@ def _files(repo: pathlib.Path, base: str, head: str) -> tuple[list[dict[str, Any
 
 
 def _log_row(c: git_history.LogCommit) -> dict[str, Any]:
+    """Return one commit graph row.
+
+    Attributes:
+        sha: The full commit identifier.
+        short: The seven-character commit identifier.
+        parents: The parent commit identifiers in order.
+        author: The commit author's name.
+        date: The author date from Git.
+        when: The rendered commit time.
+        subject: The commit's first message line.
+        is_merge: Whether the commit has more than one parent.
+
+    Args:
+        c: The listed commit.
+
+    Returns:
+        The commit row.
+    """
     return {
         "sha": c.sha,
         "short": c.sha[:7],
@@ -196,7 +257,20 @@ def _log_row(c: git_history.LogCommit) -> dict[str, Any]:
 
 
 def refs_payload(repo: pathlib.Path) -> dict[str, Any]:
-    """Return every ref with its kind and tip, and HEAD's sha and branch."""
+    """Return every ref with its kind and tip, and HEAD's sha and branch.
+
+    Attributes:
+        head: The checkout's HEAD identity.
+        head.sha: The HEAD commit identifier.
+        head.branch: The current branch name.
+        refs: The selectable ref rows.
+
+    Args:
+        repo: The repository.
+
+    Returns:
+        The current HEAD and selectable refs.
+    """
     _repo(repo)
     sha, branch = git_history.head_commit(repo)
     return {
@@ -217,6 +291,16 @@ def graph_payload(
     repo: pathlib.Path, refs: list[str] | None, *, limit: str = "", skip: str = ""
 ) -> dict[str, Any]:
     """Return one page of the commit graph.
+
+    Attributes:
+        commits: Commit rows with their ref decorations.
+        tips: The resolved commit tips to reuse for the next page.
+        has_more: Whether another commit page exists.
+
+        skip: The number of commits skipped.
+        limit: The effective page size.
+
+        commits[].refs: The ref decorations attached to this commit.
 
     Args:
         repo: The repository.
@@ -274,6 +358,26 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     `base` is that parent, or the empty tree for a root commit, so a file's diff is read
     with `/api/git/diff?base=<base>&head=<sha>`.
 
+    Attributes:
+        sha: The full commit identifier.
+        short: The seven-character commit identifier.
+        parents: The parent commit identifiers in order.
+        author: The commit author's identity and date.
+        author.name: The author's name.
+        author.email: The author's email address.
+        author.date: The author date from Git.
+        committer: The committer's identity and date.
+        committer.name: The committer's name.
+        committer.email: The committer's email address.
+        committer.date: The committer date from Git.
+        subject: The commit's first message line.
+        body: The commit's remaining message.
+        refs: The ref decorations at this commit.
+        is_merge: Whether the commit has more than one parent.
+        base: The first parent, or the empty tree for a root commit.
+        files: Changed-file rows against the base.
+        truncated: Whether the file list reached its cap.
+
     Args:
         repo: The repository.
         rev: The revision as the browser sent it.
@@ -312,6 +416,11 @@ def commit_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
 def worktree_payload(repo: pathlib.Path) -> dict[str, Any]:
     """Return the working tree's uncommitted files, tracked changes first.
 
+    Attributes:
+        base: HEAD's commit, or the empty tree on an unborn branch.
+        files: Changed-file rows, with tracked changes before untracked files.
+        truncated: Whether the file list reached its cap.
+
     Args:
         repo: The repository.
 
@@ -326,7 +435,22 @@ def worktree_payload(repo: pathlib.Path) -> dict[str, Any]:
 
 
 def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
-    """Return one side of a compare: the rev as sent, the sha it names, and its subject."""
+    """Return one side of a compare: the rev as sent, the sha it names, and its subject.
+
+    Attributes:
+        rev: The revision as requested.
+        sha: The resolved commit, empty tree or WORKTREE identifier.
+        short: The abbreviated identifier, or WORKTREE.
+        subject: The commit subject or working-tree label.
+
+    Args:
+        repo: The repository.
+        rev: The requested revision.
+        sha: The resolved revision.
+
+    Returns:
+        The comparison endpoint.
+    """
     if sha == git_history.WORKTREE:
         subject = "(working tree)"
     elif sha == git_read.EMPTY_TREE:
@@ -339,6 +463,13 @@ def _endpoint(repo: pathlib.Path, rev: str, sha: str) -> dict[str, Any]:
 
 def compare_payload(repo: pathlib.Path, base: str, head: str) -> dict[str, Any]:
     """Return the files that differ between two revisions, as `git diff base head` lists them.
+
+    Attributes:
+        files: Changed-file rows between the endpoints.
+        truncated: Whether the file list reached its cap.
+
+        base: The base revision as an endpoint object.
+        head: The head revision as an endpoint object.
 
     Args:
         repo: The repository.
@@ -374,6 +505,21 @@ def diff_payload(
     full_context: bool = False,
 ) -> dict[str, Any]:
     """Return one file's unified diff between two revisions.
+
+    Attributes:
+        base_digest: The base input's SHA-256 digest, or null when unavailable.
+        head_digest: The head input's SHA-256 digest, or null when unavailable.
+        context: File text for a full-context change without text hunks, or null.
+        patch: The unified patch, subject to the byte cap.
+        binary: Whether Git reports a binary patch.
+        truncated: Whether the displayed content reached its cap.
+        max_bytes: The byte cap, or null when whole content was requested.
+
+        base: The resolved base revision.
+        head: The resolved head revision, or WORKTREE.
+        full_context: Whether all unchanged lines were requested.
+        path: The file's head path, or its base path for a deletion.
+        old_path: The base path for a rename, or an empty string.
 
     Args:
         repo: The repository.
@@ -445,6 +591,11 @@ def search_payload(repo: pathlib.Path, query: str) -> dict[str, Any]:
 
     An empty query lists every ref and the newest commits, the picker's opening list.
     Each list stops at `SEARCH_MAX`; `truncated` says when one did.
+
+    Attributes:
+        refs: Matching ref rows.
+        commits: Matching commit rows.
+        truncated: Whether either result list reached its cap.
 
     Args:
         repo: The repository.
@@ -544,7 +695,26 @@ def _display_text(data: bytes, cap: int | None) -> tuple[str, bool, bool]:
 def blame_payload(
     repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
 ) -> dict[str, Any]:
-    """Return per-line attribution with the text route's caps, refusals and digest."""
+    """Return per-line attribution with the text route's caps, refusals and digest.
+
+    Attributes:
+        rev: The resolved revision, or WORKTREE.
+        path: The repository-relative file path.
+        digest: The SHA-256 digest of the complete checked file bytes.
+        binary: Whether the file is binary.
+        truncated: Whether the displayed text reached its cap.
+        max_bytes: The byte cap, or null when whole content was requested.
+        lines: BlameLine records for the displayed text lines.
+
+    Args:
+        repo: The repository.
+        rev: The requested revision.
+        path: The repository-relative path.
+        whole: Whether to omit the display byte cap.
+
+    Returns:
+        The attribution rows and capture facts.
+    """
     _repo(repo)
     sha, data = _read(repo, rev, path)
     cap = None if whole else TEXT_MAX_BYTES
@@ -563,6 +733,19 @@ def blame_payload(
 
 def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False) -> dict[str, Any]:
     """Return a file's text at a revision or in the working tree, with its highlight spans.
+
+    Attributes:
+        digest: The SHA-256 digest of the complete checked file bytes.
+        binary: Whether the file is binary.
+        truncated: Whether the displayed text reached its cap.
+        max_bytes: The byte cap, or null when whole content was requested.
+        text: The file text, or an empty string for binary content.
+        lines: The number of displayed text lines.
+        language: The tree-sitter language name, or an empty string when unknown.
+        spans: Per-line highlight spans as start, end and CSS class triples.
+
+        rev: The resolved revision, or WORKTREE.
+        path: The repository-relative file path.
 
     Args:
         repo: The repository.
@@ -601,6 +784,12 @@ def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
 
 def tree_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     """Return the files at a revision or in the working tree.
+
+    Attributes:
+        files: TreeFile records in the selected tree.
+        truncated: Whether the file list reached its cap.
+
+        rev: The resolved revision, or WORKTREE.
 
     Args:
         repo: The repository.

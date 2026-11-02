@@ -396,6 +396,19 @@ def _description_lines(description: str, indent: str) -> list[str]:
 def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
     """Return one leaf's JSON view, shared by the full dump and the single-key path.
 
+    Attributes:
+        value: The effective raw config value, masked when secret.
+        effective: The resolved config value, masked when secret.
+        default: The built-in config default.
+        source: The layer that supplied the value.
+        modified: Whether a config layer set the value.
+        adaptive: Whether the effective value was resolved from an automatic setting.
+        type: The config editor's type name.
+        choices: Allowed enum values, or null for open input.
+        description: The config model's field meaning.
+        display: The rendered effective value.
+        default_display: The rendered default value.
+
     Args:
         s: The leaf.
 

@@ -18,7 +18,14 @@ from agent6.viewmodel import session_log
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class RevertPlan:
-    """Explain reversal from recorded git facts without executing it."""
+    """Explain reversal from recorded git facts without executing it.
+
+    Attributes:
+        kind: The reversal method supported by the recorded evidence.
+        commits: The commits to reverse in order.
+        mainline: The merge parent to keep, or null when not needed.
+        explanation: The evidence supporting the plan or requiring manual inspection.
+    """
 
     kind: Literal["not_recorded", "squash", "tasks", "merge", "ff_only", "manual"]
     commits: tuple[str, ...] = ()
@@ -114,7 +121,20 @@ def revert_plan(root: pathlib.Path, stamp: manifest.MergeStamp | None) -> Revert
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReceiptView:
-    """Keep a session's evidence derived from its journal and manifest."""
+    """Keep a session's evidence derived from its journal and manifest.
+
+    Attributes:
+        session_id: The session identifier.
+        execution_id: The last execution identifier, or null when unrecorded.
+        source_tip: The source checkpoint commit, or null when unrecorded.
+        end_tree: The final observed tree, or null when unrecorded.
+        verifications: The recorded VerificationEvidence attempts.
+        final_verify_id: The attempt covering the final tree, or null when absent.
+        review: The review evidence compared against the final tree.
+        revert: The reversal plan derived from recorded merge facts.
+        evidence_notes: Diagnostics for absent or unreadable evidence.
+        merged: The MergeStamp, or null without a recorded landing.
+    """
 
     session_id: str
     execution_id: str | None
@@ -171,6 +191,10 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
 
 def as_dict(view: ReceiptView) -> dict[str, Any]:
     """Return the JSON-safe receipt fields.
+
+    Attributes:
+        revert_request: A proposed task for preparing a reversal, not a command to execute.
+        text: The shared receipt rendering without retained output bodies.
 
     Args:
         view: The derived receipt.

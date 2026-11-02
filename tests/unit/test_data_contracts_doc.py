@@ -53,6 +53,14 @@ def test_every_contract_has_one_support_level() -> None:
     assert sorted(classified) == sorted(contract.title for contract in generator.CONTRACTS)
 
 
+def test_public_cards_link_to_formats_without_field_tables() -> None:
+    """The developer map links public fields instead of copying their reference tables."""
+    page = _load_generator().build_markdown()
+    public_cards = [card for card in page.split("\n## ") if "[Formats](formats.md#" in card]
+    assert len(public_cards) >= 9
+    assert all("| field | type | default |" not in card for card in public_cards)
+
+
 def test_function_only_module_has_no_class_kind() -> None:
     """A function-only wire builder must not be described as a plain class."""
     generator = _load_generator()

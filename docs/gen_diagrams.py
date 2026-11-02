@@ -20,8 +20,6 @@ import subprocess
 import sys
 import tempfile
 
-from agent6.sessions import event_schema
-
 _ROOT = pathlib.Path(__file__).resolve().parent.parent
 _TEMPLATE = _ROOT / "docs" / "architecture_template.md"
 _OUT = _ROOT / "docs" / "architecture.md"
@@ -304,20 +302,7 @@ def _tool_names() -> str:
     return ", ".join(f"`{name}`" for name in _handler_names())
 
 
-def _journal_events() -> str:
-    """Return the journal's event table in registry order."""
-    rows = ["| Event | Meaning | Fields |", "| --- | --- | --- |"]
-    for spec in event_schema.EVENTS:
-        fields = ", ".join(
-            f"`{field.name}` ({field.kind}{'' if field.required else ', optional'})"
-            for field in spec.fields
-        )
-        rows.append(f"| `{spec.type}` | {spec.meaning} | {fields} |")
-    return "\n".join(rows)
-
-
 _BLOCKS = {
-    "journal-events": _journal_events,
     "layering": _layering_mermaid,
     "run-lifecycle": _run_lifecycle_mermaid,
     "tool-dispatch": _dispatch_mermaid,
