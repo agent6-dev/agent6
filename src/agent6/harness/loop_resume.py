@@ -138,15 +138,16 @@ def carry_verify_verdict(
     """Carry the prior execution's verify observation when it still describes this tree.
 
     Content identity carries a verdict across commits with the same tree. A snapshot without
-    a tree observation requires its original clean commit. `baseline_ok` describes the base
-    commit, so a resume that moved the base carries none.
+    a tree observation requires its original clean commit. `baseline_ok` describes one gate's
+    run on the base commit, so a resume that moved the base or changed the gate carries none.
 
     Args:
         harness: The execution's harness.
         state: The execution's state.
         snap: The snapshot the execution resumes from.
     """
-    if snap.base_sha == harness.chain.base_sha:
+    gate = harness.gate.configured or harness.adopted_on_resume
+    if snap.base_sha == harness.chain.base_sha and tuple(snap.verify_command) == tuple(gate):
         state.verify.baseline_ok = snap.baseline_ok
     state.standing.tools_mark = snap.standing_tools_mark
     state.standing.fruitless = snap.standing_fruitless

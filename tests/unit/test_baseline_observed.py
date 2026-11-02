@@ -355,7 +355,7 @@ def test_the_listing_and_the_header_agree_on_the_word() -> None:
         finished=True, all_passed=False, end_reason="gate_red_at_base"
     ) == (
         "finished",
-        "gate was already red",
+        "gate red at base",
     )
 
 

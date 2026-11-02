@@ -220,16 +220,21 @@ def _print_red_gate(
     if not (gate and base):
         return
     if scan.baseline_ok is not None:
-        word = "green" if scan.baseline_ok else "already red"
-        attribution = ""
-        if scan.baseline_ok:
-            # Another gate's green says nothing about this one.
-            attribution = (
-                "; the gate changed since"
-                if scan.gate_swapped
-                else "; this run's edits made it red"
+        if scan.gate_swapped:
+            # Another gate's verdict says nothing about this one.
+            reporter.out(
+                f"\nthe gate changed since the base ({base[:12]}) was checked, so nothing says"
+                " what this gate did there."
             )
-        reporter.out(f"\nthe gate was {word} at the base ({base[:12]}){attribution}.")
+        elif scan.baseline_ok:
+            reporter.out(
+                f"\nthe gate was green at the base ({base[:12]}); this run's edits made it red."
+            )
+        else:
+            reporter.out(
+                f"\nthe gate was red at the base ({base[:12]}) and red at the finish; the"
+                " failures were not compared."
+            )
         return
     reporter.out(
         f"\nthe gate is red, and nothing checked it before this run started ({base[:12]})."

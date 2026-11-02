@@ -326,8 +326,9 @@ class HarnessConfig(pydantic.BaseModel):
         default=True,
         description=(
             "one `harness.verify_command` call before a fresh run's first turn to record "
-            "pre-existing gate failure; red output in the first request; finish leaving that "
-            "same red: `finished · gate was already red`; cost: one gate call per fresh run; "
+            "pre-existing gate failure; red output in the first request; a red finish over a "
+            "red base: `finished · gate red at base` (red at the start and at the finish, the "
+            "failures not compared); cost: one gate call per fresh run; "
             "`harness.verify_at_start = false`: skip for a gate too slow to run twice; no start "
             'gate with `harness.verify_when = "never"` or `sandbox.run_commands = "deny"`; '
             "recorded baseline kept on resume"

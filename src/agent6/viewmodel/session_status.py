@@ -189,8 +189,8 @@ def status_word(
         # The harness ended the run over a green gate; the worker called no finish_session.
         "verify_settled": ("finished", "settled"),
         "settled": ("finished", not_green),
-        # A verify against the unmodified tree proved the gate red before the run touched it.
-        "gate_red_at_base": ("finished", "gate was already red"),
+        # The gate was red at the base and red at the finish; the failures were not compared.
+        "gate_red_at_base": ("finished", "gate red at base"),
         # A fan-out's own end: its lanes carry the gate verdicts, and no model finished it.
         "lanes_ranked": ("finished", "lanes ranked"),
     }

@@ -681,7 +681,7 @@ _DONE_LABELS = {
     "max_turns": "failed · max turns",
     "ask_repl_empty": "failed · ask repl empty",
     "gate_stale": "finished · gate stale",
-    "gate_red_at_base": "finished · gate was already red",
+    "gate_red_at_base": "finished · gate red at base",
     "lanes_ranked": "finished · lanes ranked",
     "no_lane_result": "failed · no lane result",
     "no_lane_passed": "failed · no lane passed",

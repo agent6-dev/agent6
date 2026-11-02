@@ -1539,7 +1539,7 @@ def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> N
 def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: pathlib.Path) -> None:
     """The unanswered count joins a detail the end already has, a failure's reason included.
 
-    Added only to a bare label, it vanished under "gate was already red" and every failed end.
+    Added only to a bare label, it vanished under "gate red at base" and every failed end.
     """
     asked: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
@@ -1553,7 +1553,7 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
         },
     ]
     ends = {
-        "gate_red_at_base": ("finished", "gate was already red · 1 question unanswered"),
+        "gate_red_at_base": ("finished", "gate red at base · 1 question unanswered"),
         "max_turns": ("failed", "max_turns · 1 question unanswered"),
     }
     for reason, expected in ends.items():

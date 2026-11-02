@@ -246,8 +246,8 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
         reporter=app_reporter.STDIO_REPORTER,
     )
     out = capsys.readouterr().out
-    assert "green at the base" in out and "the gate changed since" in out
-    assert "this run's edits made it red" not in out
+    assert "the gate changed since the base" in out
+    assert "green at the base" not in out and "this run's edits made it red" not in out
 
 
 @pytest.mark.parametrize("baseline_ok", [True, False])
@@ -303,7 +303,7 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
         assert "green at the base" in out
         assert "this run's edits made it red" in out
     else:
-        assert "red at the base" in out
+        assert "red at the base" in out and "failures were not compared" in out
         assert "this run's edits made it red" not in out
 
 

@@ -1440,6 +1440,13 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     loop_resume.carry_verify_verdict(wf, state, older)
     assert state.verify.baseline_ok is None
+    # The gate changed on resume: the old gate's red says nothing about this one's base.
+    swapped = loop_snapshot.SessionSnapshot.model_validate(
+        {**fields, "base_sha": "a" * 40, "verify_command": ("false",)}
+    )
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    loop_resume.carry_verify_verdict(wf, state, swapped)
+    assert state.verify.baseline_ok is None
 
 
 def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
