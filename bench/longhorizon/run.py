@@ -276,19 +276,19 @@ class Condition:
 CONDITIONS: dict[str, Condition] = {
     "baseline": Condition(),
     "window16k": Condition(
-        toml="[context]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\nkeep_recent_chars = 26000\n"
+        toml="[compaction]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\nkeep_recent_chars = 26000\n"
     ),
     "window32k": Condition(
-        toml="[context]\ndrop_at_chars = 58000\nsummarise_at_chars = 104000\nkeep_recent_chars = 52000\n"
+        toml="[compaction]\ndrop_at_chars = 58000\nsummarise_at_chars = 104000\nkeep_recent_chars = 52000\n"
     ),
     "window64k": Condition(
-        toml="[context]\ndrop_at_chars = 115000\nsummarise_at_chars = 205000\nkeep_recent_chars = 102000\n"
+        toml="[compaction]\ndrop_at_chars = 115000\nsummarise_at_chars = 205000\nkeep_recent_chars = 102000\n"
     ),
     # The gist A/B arm: window16k thresholds with tier-1 gist elision off
     # (bare markers only, the pre-gist behavior).
     "window16k_nogist": Condition(
         toml=(
-            "[context]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\n"
+            "[compaction]\ndrop_at_chars = 29000\nsummarise_at_chars = 52000\n"
             "keep_recent_chars = 26000\nelision_gists = false\n"
         )
     ),

@@ -53,14 +53,14 @@ tools, so a hand-written feed no generator reproduces scores zero.
 ## Conditions (`CONDITIONS` in run.py)
 
 - `baseline`: shipped defaults (adaptive thresholds; memories on).
-- `window16k` / `window32k` / `window64k`: `[context]` thresholds pinned to
+- `window16k` / `window32k` / `window64k`: `[compaction]` thresholds pinned to
   what the shipped adaptive fractions (45%/80%) resolve to on that window.
   That is the regime a small/open-model user gets BY DEFAULT, not an
   artificial squeeze; on a 256k model baseline compaction never fires, so
   these rungs are the compaction A/B. A tidy reader stays under the 32k
   rung's 58k-char drop threshold on these tasks; 16k (local serving) is
   where tier-1 provably engages.
-- `window16k_nogist`: the same thresholds with `context.elision_gists`
+- `window16k_nogist`: the same thresholds with `compaction.elision_gists`
   off: bare markers only, the pre-gist behavior. Pairs with `window16k`
   as the gist-elision A/B.
 - `fresh_state`: private state dir per session: the no-cross-run-memory

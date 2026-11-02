@@ -18,7 +18,7 @@ qwen3-coder-30b, n=3 per cell, bare tier-1 placeholders:
 - window16k is a spiral on retention work: the first drop lands mid-reading, elision causes re-reads, re-reads cause more pressure; every rule scores at most 0.67 and the early-read rules die first.
 - relay is score-immune in the same regime: code on disk is cheaply re-readable, spec nuance is not; compaction taxes retention tasks in correctness and implementation tasks in efficiency.
 
-Tier-1 gists (`[context].elision_gists`, default on): a large read result decays to a model-written gist before the bare marker, one batched summariser call per drop event.
+Tier-1 gists (`[compaction].elision_gists`, default on): a large read result decays to a model-written gist before the bare marker, one batched summariser call per drop event.
 
 | stylebook under window16k | qwen gists on | qwen gists off | kimi-k2.6 baseline | kimi gists on | kimi gists off |
 |---|---|---|---|---|---|

@@ -103,7 +103,7 @@ CONDITIONS: dict[str, str] = {
     # (for future tier-1 compaction work). NB the keep-last-K tier-2 hybrid that
     # this once A/B'd was measured inert and scrapped -- see FINDINGS.md; tier-2
     # almost never fires because tier-1 keeps context bounded below its trigger.
-    "compact_tight": "[context]\ndrop_at_chars = 18000\nsummarise_at_chars = 36000\n",
+    "compact_tight": "[compaction]\ndrop_at_chars = 18000\nsummarise_at_chars = 36000\n",
     # Skills/prompt-style thrust: conditions swap the static base prompt for a
     # rendered file under prompts/ ({ROOT} is filled with this directory at run
     # time). base_rendered.md is byte-equivalent to the shipped run-mode base;

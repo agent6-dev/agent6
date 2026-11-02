@@ -6,7 +6,7 @@ from noise. Built for two thrusts:
 
 - **Thrust 2, task decomposition** (`[prompt].decompose`): whether
   front-loading a subtask plan helps small models finish multi-part tasks.
-- **Thrust 1, context compaction** (`[context].keep_recent_chars`): whether
+- **Thrust 1, context compaction** (`[compaction].keep_recent_chars`): whether
   a recent verbatim tail at tier-2 beats the hard `[task, summary]` restart.
 
 ## What it measures
@@ -61,7 +61,7 @@ Anthropic models (unpriced) get token caps instead of `--max-usd`.
 
 - `baseline`: shipped defaults.
 - `decompose`: `[prompt].decompose = true`.
-- `compact_tight`: aggressive `[context]` thresholds to force tier-2 on a
+- `compact_tight`: aggressive `[compaction]` thresholds to force tier-2 on a
   moderate task.
 - `decompose_tight`: both.
 
