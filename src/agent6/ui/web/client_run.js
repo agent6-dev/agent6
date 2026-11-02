@@ -72,11 +72,12 @@ async function renderRun(id, opts, gen) {
       const kept = cards._run_branch ? ' The branch and its commits are kept.' : '';
       const wt = cards._worktree ? ' Its worktree ' + cards._worktree + ' goes too when no other session names it and it holds no uncommitted work.' : '';
       if (!confirm('Delete this session\'s history?' + kept + wt)) return;
+      closeLive(); cc.conv.close(); // no poll or refresh may ask for the session while it goes
       try {
         const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/rm', {});
         toast(d.message || 'removed');
         location.hash = '#/';
-      } catch (e) { toast(e.message, true); }
+      } catch (e) { toast(e.message, true); route(); } // the view polls again
     };
     // Execute a finished plan: spawns `agent6 run --from <id>` detached
     // and opens the run; the plan itself is untouched (the composer keeps

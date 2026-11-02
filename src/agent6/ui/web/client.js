@@ -726,7 +726,7 @@ function makeConv(url, box, body) {
   };
 
   conv.refresh = async () => {
-    if (!box.isConnected) return; // navigated away: don't fetch or paint stale
+    if (conv.closed || !box.isConnected) return; // closed or navigated away: don't fetch or paint stale
     let data; try { data = await getJSON(url); } catch (_) { return; }
     if (!box.isConnected) return;
     conv.items = data.items || [];
@@ -736,6 +736,8 @@ function makeConv(url, box, body) {
     if (conv.timer) return;
     conv.timer = setTimeout(() => { conv.timer = null; conv.refresh(); }, 900);
   };
+  // A refresh landing after the session's removal would ask the server for a record that is gone.
+  conv.close = () => { conv.closed = true; if (conv.timer) { clearTimeout(conv.timer); conv.timer = null; } };
   // The in-progress turn under the folded items (streamed thinking/text from
   // the SessionState SSE frame): the analogue of the TUI's docked live pane. The
   // live "thinking…" marker always shows; the reasoning text itself streams
