@@ -1270,7 +1270,7 @@ def test_create_runs_the_shared_isolation_preflight(
 
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(session_setup, "check_provider_keys", _keys_ok)
-    monkeypatch.setattr(session_setup, "detect_env", _env)
+    monkeypatch.setattr(detect, "probed_environment", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     assert main(["machine", "create", "a nightly loop"]) == 2
     err = capsys.readouterr().err

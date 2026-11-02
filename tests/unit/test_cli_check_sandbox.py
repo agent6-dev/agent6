@@ -63,7 +63,7 @@ def stub_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
 def _force_profile(
     monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None
 ) -> None:
-    monkeypatch.setattr(session_setup, "detect_env", lambda: _ENV)
+    monkeypatch.setattr(detect, "probed_environment", lambda: _ENV)
 
     def _reason(_env: object) -> str | None:
         return reason
@@ -495,7 +495,7 @@ def test_check_names_a_jail_binary_it_cannot_run(
     def _binary_refusal() -> object:
         raise jail.JailUnavailableError(refusal)
 
-    monkeypatch.setattr(session_setup, "detect_env", _binary_refusal)
+    monkeypatch.setattr(detect, "probed_environment", _binary_refusal)
     checks = check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert [(c.name, c.status, c.detail) for c in checks] == [
@@ -512,7 +512,7 @@ def test_check_sandbox_fails_on_an_isolation_this_host_refuses(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """An explicit level the host refuses is a FAIL naming it; nothing probes another level."""
-    monkeypatch.setattr(session_setup, "detect_env", lambda: _ENV)
+    monkeypatch.setattr(detect, "probed_environment", lambda: _ENV)
 
     def _refuse(req: str, _env: object) -> str:
         raise detect.IsolationUnavailableError(

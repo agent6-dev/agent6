@@ -11,7 +11,6 @@ import pathlib
 
 import pytest
 
-from agent6.app import session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail
 from agent6.tools import mcp_client
@@ -62,7 +61,7 @@ def test_an_http_only_mcp_check_does_not_create_a_command_network(
     def _unexpected_network() -> jail.SessionNetwork:
         raise AssertionError("HTTP-only check created a command session network")
 
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_start))
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_unexpected_network))
@@ -90,7 +89,7 @@ def test_mcp_check_applies_the_runs_config_refusals_before_a_probe(
     def _unexpected_start(*_args: object, **_kwargs: object) -> object:
         raise AssertionError("the check started a server under a config a run refuses")
 
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _partial)
     monkeypatch.setattr(mcp_client.MCPManager, "start", staticmethod(_unexpected_start))
     cfg = Config.model_validate(
@@ -117,7 +116,7 @@ def test_mcp_check_reports_a_session_network_refusal(
     def _refuse_network() -> jail.SessionNetwork:
         raise jail.JailUnavailableError("the session network could not be created: denied")
 
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_refuse_network))
     cfg = Config.model_validate(

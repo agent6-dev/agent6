@@ -11,7 +11,7 @@ import tempfile
 import tomllib
 
 from agent6 import errors, paths, portable
-from agent6.app import confine, session_setup
+from agent6.app import confine
 from agent6.app.machine import sandbox_widening
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, notices, write
 from agent6.machine import (
@@ -276,7 +276,7 @@ def _sandbox_problems(
     Raises:
         ConfigError: A layer does not load.
     """
-    cwd, env = pathlib.Path.cwd(), session_setup.detect_env()
+    cwd, env = pathlib.Path.cwd(), detect.probed_environment()
     operator = layer.load_effective(cwd, config_paths).config
     machine = layer.load_effective_with_overlay(cwd, overlay, explicit_paths=config_paths).config
     try:

@@ -145,9 +145,11 @@ Probed per host: one `full` jail launch for namespaces, the Landlock ABI syscall
 | `auto` | no namespaces, Landlock ABI 1-2 | `partial`, warned: truncation outside write grants is unconfined |
 | `auto` | no namespaces, no Landlock | `none`, warned |
 | `auto` | non-Linux, or no seccomp filter for the arch | `none`, warned |
+| `auto` | no `agent6-jail` launcher installed | `none`, warned |
 | `full` | no namespaces | refused |
 | `partial` | Landlock ABI < 3 | refused |
 | `full`, `partial` | non-Linux, or no seccomp filter for the arch | refused |
+| `full`, `partial` | no `agent6-jail` launcher installed | refused |
 | `none` | any | `none`, warned |
 
 `--disable-sandbox` and `AGENT6_DISABLE_SANDBOX=1` force `none` `sandbox.isolation` for one invocation.

@@ -222,7 +222,7 @@ def cmd_mcp_add(
         )
         common.error(f"{name}: {detail}")
         return 2
-    env = session_setup.detect_env()
+    env = detect.probed_environment()
     isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
     if command and isolation == "none":
         # No jail, no read-only workspace to probe under: the entry is written unproved, said so.

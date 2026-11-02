@@ -593,7 +593,7 @@ def test_a_run_start_prints_the_home_grant_warning(
         return True
 
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setattr(session_setup, "detect_env", _detected)
+    monkeypatch.setattr(detect, "probed_environment", _detected)
     workspace = tmp_path / "repo"
     workspace.mkdir()
     said: list[str] = []

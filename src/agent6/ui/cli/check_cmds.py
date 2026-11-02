@@ -152,7 +152,7 @@ def _doctor_check_mcp(cfg: Config) -> list[kinds.DoctorCheck]:
         print(f"  (no MCP servers to check: {cause})")
         return [kinds.DoctorCheck(name="mcp", status="PASS", detail=f"not configured ({cause})")]
     try:
-        env = session_setup.detect_env()
+        env = detect.probed_environment()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
     except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
         print(f"[FAIL] mcp: {exc}")

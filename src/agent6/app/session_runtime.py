@@ -104,7 +104,7 @@ def select_isolation(
         SessionRefusedError: The host, the config or the operator refused the run.
     """
     try:
-        env = session_setup.detect_env()
+        env = detect.probed_environment()
     except jail.JailUnavailableError as exc:
         # The jail binary cannot run, so no jailed command can either.
         reporter.refuse(str(exc))

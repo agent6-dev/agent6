@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`detect_env` asks the jail binary itself whether `full` works.
+"""`probed_environment` asks the jail launcher itself whether `full` works.
 
 `probe_userns_supported` runs `/usr/bin/unshare`, which is wrong in both directions: an AppArmor
 profile can grant the jail binary userns but not unshare, and inside Docker with a relaxed seccomp
@@ -14,8 +14,9 @@ import re
 
 import pytest
 
-from agent6.app import session_setup
-from agent6.sandbox import detect
+from agent6.config import Config
+from agent6.sandbox import detect, jail
+from agent6.tools import policy
 
 
 def _env(userns: bool, *, sandbox: bool = True) -> detect.Environment:
@@ -34,22 +35,24 @@ def _fail_probe() -> bool:
     pytest.fail("namespaces_work should not be called here")
 
 
-def test_detect_env_does_not_probe_where_there_is_no_sandbox(
+def test_probe_does_not_probe_where_there_is_no_sandbox(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A non-Linux host has no jail to ask."""
     monkeypatch.setattr(detect, "environment", lambda: _env(False, sandbox=False))
-    monkeypatch.setattr(session_setup, "namespaces_work", _fail_probe)
-    assert session_setup.detect_env().detected_isolation == "none"
+    monkeypatch.setattr(jail, "namespaces_work", _fail_probe)
+    assert detect.probed_environment().detected_isolation == "none"
 
 
-def test_detect_env_keeps_userns_when_the_jail_agrees(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_probe_keeps_userns_when_the_jail_agrees(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(session_setup, "namespaces_work", lambda: True)
-    assert session_setup.detect_env().userns_supported is True
+    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
+    assert detect.probed_environment().userns_supported is True
 
 
-def test_detect_env_drops_to_partial_when_the_jail_cannot_do_full(
+def test_probe_drops_to_partial_when_the_jail_cannot_do_full(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A jail that fails its own probe resolves `auto` down, never announces `full` and then dies.
@@ -58,20 +61,22 @@ def test_detect_env_drops_to_partial_when_the_jail_cannot_do_full(
     jail's `mount`.
     """
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(session_setup, "namespaces_work", lambda: False)
-    env = session_setup.detect_env()
+    monkeypatch.setattr(jail, "namespaces_work", lambda: False)
+    env = detect.probed_environment()
     assert env.userns_supported is False
     assert env.detected_isolation == "partial"
 
 
-def test_detect_env_upgrades_to_full_via_jail_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_probe_upgrades_to_full_via_jail_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The AppArmor-isolation case: unshare blocked, but the jail binary can userns.
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(session_setup, "namespaces_work", lambda: True)
-    assert session_setup.detect_env().userns_supported is True
+    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
+    assert detect.probed_environment().userns_supported is True
 
 
-def test_detect_env_refuses_over_a_binary_it_cannot_run(
+def test_probe_refuses_over_a_binary_it_cannot_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The probe answers only the namespace question; an unusable binary's own refusal propagates.
@@ -81,7 +86,6 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
     from agent6.app import preflight, session_runtime
     from agent6.app import reporter as app_reporter
     from agent6.config import Config
-    from agent6.sandbox import jail
 
     fake = tmp_path / "agent6-jail"
     fake.write_text("#!/bin/sh\n", encoding="utf-8")
@@ -90,7 +94,7 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
     jail.namespaces_work.cache_clear()
     try:
         with pytest.raises(jail.JailUnavailableError, match=re.escape(str(fake))):
-            session_setup.detect_env()
+            detect.probed_environment()
         said: list[str] = []
         reporter = app_reporter.Reporter(out=said.append, err=said.append)
         with pytest.raises(preflight.SessionRefusedError):
@@ -105,16 +109,18 @@ def test_detect_env_refuses_over_a_binary_it_cannot_run(
         jail.namespaces_work.cache_clear()
 
 
-def test_detect_env_stays_partial_when_jail_probe_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_probe_stays_partial_when_jail_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(session_setup, "namespaces_work", lambda: False)
-    assert session_setup.detect_env().userns_supported is False
+    monkeypatch.setattr(jail, "namespaces_work", lambda: False)
+    assert detect.probed_environment().userns_supported is False
 
 
-def test_detect_env_skips_probe_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_probe_skips_probe_off_linux(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(False, sandbox=False))
-    monkeypatch.setattr(session_setup, "namespaces_work", _fail_probe)  # not consulted
-    assert session_setup.detect_env().userns_supported is False
+    monkeypatch.setattr(jail, "namespaces_work", _fail_probe)  # not consulted
+    assert detect.probed_environment().userns_supported is False
 
 
 def test_degrade_reason_full_strength_is_none() -> None:
@@ -167,3 +173,47 @@ def test_unsupported_seccomp_arch_degrades_auto_and_refuses_explicit() -> None:
     # auto and the explicit opt-out still resolve.
     assert detect.resolve_isolation("auto", e) == "none"
     assert detect.resolve_isolation("none", e) == "none"
+
+
+def test_a_missing_launcher_degrades_auto_and_refuses_the_real_levels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No launcher: `auto` and `none` run unsandboxed with the cause; the real levels refuse."""
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
+    monkeypatch.setattr(detect, "environment", lambda: _env(True))
+    monkeypatch.setattr(jail, "locate_jail_binary", lambda: None)
+    monkeypatch.setattr(jail, "namespaces_work", _fail_probe)
+    env = detect.probed_environment()
+    assert env.launcher_found is False
+    assert detect.resolve_isolation("none", env) == "none"
+    assert detect.resolve_isolation("auto", env) == "none"
+    assert "agent6-jail launcher" in (detect.degrade_reason(env) or "")
+    for level in ("full", "partial"):
+        with pytest.raises(detect.IsolationUnavailableError, match="agent6-jail launcher"):
+            detect.resolve_isolation(level, env)
+
+
+def test_a_disabled_sandbox_never_launches_the_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`AGENT6_DISABLE_SANDBOX=1` needs no launcher at all."""
+    monkeypatch.setenv("AGENT6_DISABLE_SANDBOX", "1")
+    monkeypatch.setattr(detect, "environment", lambda: _env(True))
+    monkeypatch.setattr(jail, "locate_jail_binary", lambda: None)
+    monkeypatch.setattr(jail, "namespaces_work", _fail_probe)
+    assert detect.resolve_isolation("auto", detect.probed_environment()) == "none"
+
+
+def test_grants_follow_the_launchers_verdict_on_namespaces(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`unshare` says `full`, the launcher says `partial`: a grant under the host's /tmp drops."""
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
+    monkeypatch.setattr(detect, "environment", lambda: _env(True))
+    monkeypatch.setattr(jail, "locate_jail_binary", lambda: pathlib.Path("/usr/bin/true"))
+    monkeypatch.setattr(jail, "namespaces_work", lambda: False)
+    assert tmp_path.is_relative_to(policy.HOST_TMP)
+    root = tmp_path / "repo"
+    root.mkdir()
+    grant = tmp_path / "grant"
+    grant.mkdir()
+    cfg = Config.model_validate({"sandbox": {"extra_write_paths": [str(grant)]}})
+    assert [d.path for d in policy.resolve_grants(cfg, root).dropped] == [grant]

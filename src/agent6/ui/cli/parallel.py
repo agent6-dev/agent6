@@ -13,7 +13,7 @@ import pathlib
 from collections.abc import Callable, Sequence
 
 from agent6 import directive, errors, paths, terminal
-from agent6.app import confine, parallel, preflight, session_setup
+from agent6.app import confine, parallel, preflight
 from agent6.app import lanes as app_lanes
 from agent6.config import Config, ConfigError
 from agent6.models import validate
@@ -103,7 +103,7 @@ def _sandbox_refusal(cfg: Config, origin: pathlib.Path) -> str | None:
         The host's refusal of the isolation, or None.
     """
     try:
-        env = session_setup.detect_env()
+        env = detect.probed_environment()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         confine.warn_sandbox_gaps(isolation, env, cfg, root=origin)
     except (jail.JailUnavailableError, detect.IsolationUnavailableError) as exc:

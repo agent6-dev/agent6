@@ -13,7 +13,7 @@ from agent6.config import Config
 from agent6.context import memory, skills
 from agent6.harness import dag_focus, prompt_blocks, repo_context, toolset
 from agent6.providers import ToolDefinition
-from agent6.sandbox import detect
+from agent6.sandbox import detect, jail
 from agent6.tools import dispatch
 
 
@@ -116,8 +116,8 @@ def model_exchange_for(
 def _shown_isolation(config: Config) -> kinds.IsolationLevel:
     """Return the isolation level a run here would resolve, "none" when the host cannot honor it."""
     try:
-        return detect.resolve_isolation(config.sandbox.isolation, detect.environment())
-    except detect.IsolationUnavailableError:
+        return detect.resolve_isolation(config.sandbox.isolation, detect.probed_environment())
+    except (detect.IsolationUnavailableError, jail.JailUnavailableError):
         return "none"
 
 

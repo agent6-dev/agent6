@@ -363,7 +363,7 @@ def _stub_probes(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
     from agent6 import kinds
     from agent6.ui.cli import check_sandbox
 
-    monkeypatch.setattr(session_setup, "detect_env", lambda: _ENV)
+    monkeypatch.setattr(detect, "probed_environment", lambda: _ENV)
 
     def _select(_requested: str, _env: object) -> str:
         return isolation

@@ -36,33 +36,10 @@ from agent6.config import (
 )
 from agent6.models import cache
 from agent6.providers import claude_code, oauth, provider_types
-from agent6.sandbox import detect, jail, namespaces_work
+from agent6.sandbox import detect, jail
 from agent6.sessions import event_log, manifest
 from agent6.tools import mcp_client, mcp_http, policy
 from agent6.vcs import git_policy
-
-
-def detect_env() -> detect.Environment:
-    """Detect the host environment, with the jail binary settling whether `full` works.
-
-    The `unshare -U -r true` probe is wrong in both directions: an AppArmor profile can grant
-    the jail binary userns but not `unshare`, and Docker with a relaxed seccomp profile lets
-    `unshare` succeed while AppArmor denies the jail's `mount`. One jail spawn at startup,
-    cached for the process, settles it; a binary the kernel cannot execute raises out of it.
-
-    Returns:
-        The environment, with `userns_supported` as the jail binary found it.
-
-    Raises:
-        JailBinaryError: The jail binary cannot be executed on this host.
-    """
-    env = detect.environment()
-    if not env.sandbox_available:
-        return env
-    works = namespaces_work()
-    if works != env.userns_supported:
-        return dataclasses.replace(env, userns_supported=works)
-    return env
 
 
 def budget_tracker(cfg: Config, *, max_usd: float | None = None) -> agent6_budget.BudgetTracker:

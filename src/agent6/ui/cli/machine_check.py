@@ -16,7 +16,6 @@ import tomllib
 from typing import Any
 
 from agent6 import errors
-from agent6.app import session_setup
 from agent6.app.machine import (
     SandboxWidenedError,
     lint_and_typecheck,
@@ -84,7 +83,7 @@ def _load_validated(
         return None, bundle_problems, "bundle"
     try:
         resolve_configs(
-            spec, pathlib.Path.cwd(), session_setup.detect_env(), config_paths=config_paths
+            spec, pathlib.Path.cwd(), detect.probed_environment(), config_paths=config_paths
         )
     except SandboxWidenedError as exc:
         return None, exc.problems, "config"
@@ -220,7 +219,7 @@ def _cmd_machine_test(
     if spec is None:
         return _fail(path, problems, label)
     script_problems = lint_and_typecheck(path.parent / "scripts")
-    offline = run_offline_tests(path.parent, session_setup.detect_env().detected_isolation)
+    offline = run_offline_tests(path.parent, detect.probed_environment().detected_isolation)
     script_problems.extend(offline.problems)
     if script_problems:
         return _fail(path, script_problems, "scripts")

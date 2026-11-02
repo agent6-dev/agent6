@@ -263,8 +263,8 @@ def _link_dirs(path: pathlib.Path) -> tuple[pathlib.Path, ...]:
 def _resolved_isolation(requested: str) -> str:
     """Return the level the run would get on this host; an unhonourable one as requested."""
     try:
-        return detect.resolve_isolation(requested, detect.environment())
-    except detect.IsolationUnavailableError:
+        return detect.resolve_isolation(requested, detect.probed_environment())
+    except (detect.IsolationUnavailableError, jail.JailUnavailableError):
         return requested
 
 

@@ -305,9 +305,9 @@ def test_plan_resume_requires_the_planner_role(
     def _stop(*_a: object, **_k: object) -> object:
         raise _Stop()
 
-    # Reaching detect_env means the readiness gate accepted the planner-only
+    # Reaching probed_environment means the readiness gate accepted the planner-only
     # config; the old hard-coded require_runnable("worker") returned 2 first.
-    monkeypatch.setattr(session_setup, "detect_env", _stop)
+    monkeypatch.setattr(detect, "probed_environment", _stop)
     monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)  # no key in a unit test
     with pytest.raises(_Stop):
         cli_resume._cmd_resume((), "plan-AAAA11", force=False)
@@ -921,7 +921,7 @@ def test_plan_resume_builds_the_planner_provider(
         return "full"
 
     monkeypatch.setattr(cli_run, "session_frontend", _frontend)
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
@@ -1229,7 +1229,7 @@ def test_a_declined_unconfined_confirm_is_the_operators_refusal(
     def _unconfined(*_a: object, **_k: object) -> str:
         return "none"
 
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _unconfined)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     err: list[str] = []

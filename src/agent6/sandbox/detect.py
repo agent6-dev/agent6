@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 from agent6 import kinds
-from agent6.sandbox import landlock
+from agent6.sandbox import jail, landlock
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -46,6 +46,8 @@ class Environment:
             the arch set in `jail/src/main.rs` `apply_seccomp`, which fails closed, and
             both `full` and `partial` promise that filter.
         sandbox_available: The host is Linux.
+        launcher_found: The `agent6-jail` launcher is installed; both `full` and `partial`
+            run through it.
     """
 
     in_container: bool
@@ -55,6 +57,7 @@ class Environment:
     landlock_abi: int
     seccomp_arch_supported: bool
     sandbox_available: bool
+    launcher_found: bool = True
 
     @property
     def detected_isolation(self) -> kinds.IsolationLevel:
@@ -67,6 +70,8 @@ class Environment:
         never a `partial` label that confines nothing.
         """
         if not self.sandbox_available or not self.seccomp_arch_supported:
+            return "none"
+        if not self.launcher_found:
             return "none"
         if self.userns_supported:
             return "full"
@@ -248,6 +253,10 @@ def degrade_reason(env: Environment) -> str | None:
             f"the jail's seccomp filter does not exist for {platform.machine()!r} "
             "(filters exist for x86_64 and aarch64)"
         )
+    if not env.launcher_found:
+        return (
+            "the agent6-jail launcher was not found (reinstall the wheel, or set AGENT6_JAIL_BIN)"
+        )
     if env.userns_supported:
         return None
     cause = _userns_block_cause(env)
@@ -271,6 +280,32 @@ def environment() -> Environment:
         seccomp_arch_supported=platform.machine() in ("x86_64", "aarch64"),
         sandbox_available=sandbox_available(),
     )
+
+
+def probed_environment() -> Environment:
+    """Return the environment with the jail launcher settling whether `full` works.
+
+    The `unshare -U -r true` probe is wrong in both directions: an AppArmor profile can grant
+    the launcher userns but not `unshare`, and Docker with a relaxed seccomp profile lets
+    `unshare` succeed while AppArmor denies the launcher's `mount`. One launch, cached for the
+    process, settles it. No launch happens where no level could use the launcher: no Linux
+    sandbox, no seccomp filter for this CPU, or `AGENT6_DISABLE_SANDBOX=1`.
+
+    Returns:
+        The environment, with `launcher_found` and `userns_supported` as the launcher found them.
+
+    Raises:
+        JailBinaryError: The launcher is installed but the kernel cannot execute it.
+    """
+    env = environment()
+    if not env.sandbox_available or not env.seccomp_arch_supported or sandbox_disabled_by_env():
+        return env
+    if jail.locate_jail_binary() is None:
+        return dataclasses.replace(env, userns_supported=False, launcher_found=False)
+    works = jail.namespaces_work()
+    if works != env.userns_supported:
+        return dataclasses.replace(env, userns_supported=works)
+    return env
 
 
 class IsolationUnavailableError(Exception):
@@ -321,6 +356,13 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
             f"which does not exist for {platform.machine()!r} (filters exist for "
             "x86_64 and aarch64). Set sandbox.isolation = 'auto' to run unsandboxed on "
             "this machine, or 'none' to opt out explicitly."
+        )
+    if not env.launcher_found:
+        raise IsolationUnavailableError(
+            f"sandbox.isolation = {requested!r} requires the agent6-jail launcher, which was not"
+            " found. Install agent6 from a built wheel (it bundles the launcher), or build it with"
+            " `cargo build --release --locked --manifest-path src/agent6/jail/Cargo.toml` and set"
+            " AGENT6_JAIL_BIN to it; sandbox.isolation = 'auto' (or 'none') runs unsandboxed."
         )
     if requested == "full":
         if not env.userns_supported:

@@ -311,7 +311,7 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
         The section's summary rows.
     """
     try:
-        env = session_setup.detect_env()
+        env = detect.probed_environment()
         selected = detect.resolve_isolation(cfg.sandbox.isolation, env)
     except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
         check_render.result("FAIL", "isolation selection", str(exc))

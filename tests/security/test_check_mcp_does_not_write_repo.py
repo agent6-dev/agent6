@@ -17,7 +17,6 @@ import pathlib
 import pytest
 
 from agent6 import kinds
-from agent6.app import session_setup
 from agent6.config import Config, layer
 from agent6.sandbox import detect
 from agent6.tools import mcp_client
@@ -62,7 +61,7 @@ def _force(monkeypatch: pytest.MonkeyPatch, isolation: str) -> None:
 
     The jail, when one is started, still runs at that level for real.
     """
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
 
     def _select(_req: str, _env: object) -> str:
         return isolation

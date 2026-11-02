@@ -355,7 +355,7 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
     has_run_agent = any(s.mode == "run" for s in agent_states.values())
     has_tool_state = any(isinstance(s, ToolState) for s in spec.states.values())
     agent_runner: Callable[[AgentRequest, pathlib.Path | None], AgentExecResult] | None = None
-    env = session_setup.detect_env()
+    env = detect.probed_environment()
     # The machine's own file and scripts are read-only in every jail: no state rewrites them.
     protect_paths = host_preflight.machine_protect_paths(path, cwd, config_paths)
     # Every machine resolves its configs: a pure wait/branch machine still reads snapshot_keep.

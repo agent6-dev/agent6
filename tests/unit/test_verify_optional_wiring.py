@@ -443,7 +443,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
 
     pinned: list[tuple[tuple[str, ...], str]] = []
     monkeypatch.setattr(layer, "load_effective", _load)
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)
@@ -503,7 +503,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
         return mock.MagicMock()
 
     pinned: list[tuple[tuple[str, ...], str]] = []
-    monkeypatch.setattr(session_setup, "detect_env", object)
+    monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
     monkeypatch.setattr(confine, "check_network_support", _none)

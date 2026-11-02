@@ -26,7 +26,6 @@ import sys
 from typing import TextIO
 
 from agent6 import kinds
-from agent6.app import session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail
 from agent6.sessions import layout as sessions_layout
@@ -277,7 +276,7 @@ def _launch_policy(
         assert stamped is not None
         # The recorded word, not the holder: a host-network run can still hold a netns for MCP.
         network = stamped[1] if stamped[1] is not None else ("session" if pid else None)
-        return detect.resolve_isolation(recorded, session_setup.detect_env()), network
+        return detect.resolve_isolation(recorded, detect.probed_environment()), network
     if recorded not in ("", "auto"):
         common.refuse(
             f"run {layout.session_id} recorded isolation {recorded!r}, a level this agent6 does"
@@ -290,7 +289,7 @@ def _launch_policy(
         " current config, which may differ from what the run's commands got.",
         file=sys.stderr,
     )
-    isolation = detect.resolve_isolation(cfg.sandbox.isolation, session_setup.detect_env())
+    isolation = detect.resolve_isolation(cfg.sandbox.isolation, detect.probed_environment())
     return isolation, ("session" if pid else None)
 
 

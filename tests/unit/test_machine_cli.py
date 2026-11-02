@@ -17,7 +17,6 @@ from collections.abc import Callable
 import pytest
 
 from agent6 import errors, paths
-from agent6.app import session_setup
 from agent6.app.machine import agent
 from agent6.machine import MachineJournal, write_stop_request
 from agent6.sandbox import detect
@@ -1793,7 +1792,7 @@ def test_run_refuses_an_explicit_protect_git_the_host_cannot_enforce(
     class _Env:
         detected_isolation = "partial"
 
-    monkeypatch.setattr(session_setup, "detect_env", _Env)
+    monkeypatch.setattr(detect, "probed_environment", _Env)
 
     def _partial(_req: str, _env: object) -> str:
         return "partial"
@@ -1817,7 +1816,7 @@ def test_run_refuses_a_state_dir_inside_the_workspace(
     class _Env:
         detected_isolation = "full"
 
-    monkeypatch.setattr(session_setup, "detect_env", _Env)
+    monkeypatch.setattr(detect, "probed_environment", _Env)
 
     def _full(_req: str, _env: object) -> str:
         return "full"

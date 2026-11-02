@@ -10,8 +10,8 @@ import re
 
 import pytest
 
-from agent6.app import session_setup
 from agent6.machine import dry_run, dryrun, load_machine, semantics
+from agent6.sandbox import detect
 
 # tool -> branch -> (agent | tool) -> terminal, with a typed capture + an enum.
 DEMO = """
@@ -201,8 +201,8 @@ def test_machine_test_verdict_names_the_offline_tests_that_ran(
     scripts.mkdir()
     for name in ("a_test.py", "b_test.py"):
         (scripts / name).write_text("assert 1 + 1 == 2\n", encoding="utf-8")
-    full = dataclasses.replace(session_setup.detect_env(), userns_supported=True)
-    monkeypatch.setattr(session_setup, "detect_env", lambda: full)
+    full = dataclasses.replace(detect.probed_environment(), userns_supported=True)
+    monkeypatch.setattr(detect, "probed_environment", lambda: full)
     monkeypatch.setattr(scriptcheck, "run_in_jail", test_scriptcheck._run_python_script)
 
     assert main(["machine", "test", str(f)]) == 0
@@ -235,8 +235,8 @@ def test_cli_machine_test_verdict_names_unrun_offline_tests(
     scripts.mkdir()
     (scripts / "thing_test.py").write_text("raise SystemExit(1)\n", encoding="utf-8")
     # A real environment minus user namespaces: the level under which offline tests are skipped.
-    partial = dataclasses.replace(session_setup.detect_env(), userns_supported=False)
-    monkeypatch.setattr(session_setup, "detect_env", lambda: partial)
+    partial = dataclasses.replace(detect.probed_environment(), userns_supported=False)
+    monkeypatch.setattr(detect, "probed_environment", lambda: partial)
     assert main(["machine", "test", str(f)]) == 0
     out = capsys.readouterr().out
     assert "1 offline script test not run" in out

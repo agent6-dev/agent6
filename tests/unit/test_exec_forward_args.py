@@ -16,7 +16,6 @@ from typing import Any
 import pytest
 
 from agent6 import paths
-from agent6.app import session_setup
 from agent6.sandbox import detect
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
@@ -213,7 +212,7 @@ def test_exec_uses_the_runs_recorded_policy_over_current_config(
 
     monkeypatch.setattr(policy, "jail_policy", fake_jail_policy)
     monkeypatch.setattr(process, "read_session_netns_pid", _no_pid)
-    monkeypatch.setattr(session_setup, "detect_env", _env)
+    monkeypatch.setattr(detect, "probed_environment", _env)
     monkeypatch.setattr(detect, "resolve_isolation", _resolve)
 
     cfg = Config.model_validate({"sandbox": {"isolation": "full"}})
@@ -389,7 +388,7 @@ def test_exec_keeps_a_host_network_run_on_the_host_network(
         return "full"
 
     monkeypatch.setattr(
-        session_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True)
+        detect, "probed_environment", lambda: types.SimpleNamespace(sandbox_available=True)
     )
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)
@@ -461,7 +460,7 @@ def test_exec_runs_in_the_sessions_worktree_with_its_recorded_git_dir(
         return "full"
 
     monkeypatch.setattr(
-        session_setup, "detect_env", lambda: types.SimpleNamespace(sandbox_available=True)
+        detect, "probed_environment", lambda: types.SimpleNamespace(sandbox_available=True)
     )
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(exec_cmds, "run_attached", fake_run)

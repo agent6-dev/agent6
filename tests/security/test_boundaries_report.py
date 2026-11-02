@@ -16,7 +16,7 @@ import re
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import confine, session_setup
+from agent6.app import confine
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, tool_paths
 from agent6.tools import policy as tools_policy
@@ -84,7 +84,7 @@ def test_partial_device_nodes_mirror_the_launcher() -> None:
 
 def _force(monkeypatch: pytest.MonkeyPatch, isolation: str, reason: str | None = None) -> None:
     """Pin the host at one level, with passing probes and one operator tool dir."""
-    monkeypatch.setattr(session_setup, "detect_env", lambda: _ENV)
+    monkeypatch.setattr(detect, "probed_environment", lambda: _ENV)
 
     def _select(_req: str, _env: object) -> str:
         return isolation

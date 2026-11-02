@@ -24,7 +24,7 @@ import types
 from typing import Any
 
 from agent6 import child_env, kinds
-from agent6.app import confine, session_setup
+from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.sessions import lock
@@ -238,7 +238,7 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
         common.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
         return 2
     try:
-        env = session_setup.detect_env()
+        env = detect.probed_environment()
         isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
         refusal = confine.check_network_support(cfg, isolation) or confine.config_refusal(
             cfg, isolation, cwd

@@ -13,7 +13,6 @@ from typing import Any
 import pytest
 
 from agent6 import child_env, kinds
-from agent6.app import session_setup
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.sessions import lock
@@ -143,7 +142,7 @@ def host(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return net
 
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
-    monkeypatch.setattr(session_setup, "detect_env", _env)
+    monkeypatch.setattr(detect, "probed_environment", _env)
     monkeypatch.setattr(exec_cmds, "run_attached", _run)
     monkeypatch.setattr(jail.SessionNetwork, "open", staticmethod(_open))
     return seen

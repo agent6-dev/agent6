@@ -523,7 +523,7 @@ def _materialize_fork(
         forked_from_sha=plan.forked_from_sha,
         gate=plan.gate,
         budget=plan.budget,
-        isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, session_setup.detect_env()),
+        isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, detect.probed_environment()),
         worktree=checkout.worktree if checkout is not None else None,
         worktree_git_dir=checkout.git_dir if checkout is not None else None,
         workspace_set_up=checkout.set_up if checkout is not None else False,

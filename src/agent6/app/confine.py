@@ -669,7 +669,7 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
     out = registry.resolved_adaptive_values(cfg)
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":
         try:
-            selected = detect.resolve_isolation(cfg.sandbox.isolation, session_setup.detect_env())
+            selected = detect.resolve_isolation(cfg.sandbox.isolation, detect.probed_environment())
         except jail.JailBinaryError:
             return out
         if cfg.sandbox.isolation == "auto":

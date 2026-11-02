@@ -15,7 +15,6 @@ import pytest
 
 from agent6 import kinds, paths
 from agent6.app import reporter as app_reporter
-from agent6.app import session_setup
 from agent6.app.machine import (
     SandboxWidenedError,
     StateConfig,
@@ -29,6 +28,9 @@ from agent6.app.machine import (
 from agent6.config import Config, ConfigError, SandboxConfig
 from agent6.machine import AgentExecResult, MachineError, load_machine
 from agent6.sandbox import detect, jail
+
+# The probe before any fixture stubs it: the stub must never fill the real cache.
+_REAL_NAMESPACES_WORK = jail.namespaces_work
 
 # Two tool states and an agent state; the machine narrows, `scan` and `judge` set their own.
 MACHINE = """
@@ -208,7 +210,7 @@ def working_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
         )
 
     monkeypatch.setattr(jail, "run_in_jail", ok)
-    monkeypatch.setattr(session_setup, "namespaces_work", lambda: True)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
     return ran
 
 
@@ -316,7 +318,7 @@ def test_a_state_table_cannot_select_a_preset(
         )
     )
     with pytest.raises(ConfigError, match="preset"):
-        resolve_configs(spec, tmp_path, session_setup.detect_env())
+        resolve_configs(spec, tmp_path, detect.probed_environment())
 
 
 def test_the_cap_and_its_config_leaf_are_one_spelling(tmp_path: pathlib.Path) -> None:
@@ -535,7 +537,7 @@ def test_the_machine_narrows_and_a_state_widens_back_up_to_the_operators(
     monkeypatch.chdir(tmp_path)
     _operator()
     configs = resolve_configs(
-        load_machine(_write(tmp_path, MACHINE)), tmp_path, session_setup.detect_env()
+        load_machine(_write(tmp_path, MACHINE)), tmp_path, detect.probed_environment()
     )
     assert configs.operator.config.sandbox.extra_read_paths == ("/srv/inbox", "/opt/toolchain")
     assert configs.machine.config.sandbox.extra_read_paths == ()
@@ -559,7 +561,7 @@ def test_a_state_wider_than_the_operator_is_refused_by_name(
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
     spec = load_machine(_write(tmp_path, MACHINE))
     with pytest.raises(SandboxWidenedError) as refused:
-        resolve_configs(spec, tmp_path, session_setup.detect_env())
+        resolve_configs(spec, tmp_path, detect.probed_environment())
     said = str(refused.value)
     assert said.startswith('[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"]')
     assert "wider than your config's []" in said
@@ -577,7 +579,7 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
     )
     with pytest.raises(SandboxWidenedError) as refused:
         resolve_configs(
-            load_machine(_write(tmp_path, nested)), tmp_path, session_setup.detect_env()
+            load_machine(_write(tmp_path, nested)), tmp_path, detect.probed_environment()
         )
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /srv/outbox/in")
@@ -588,7 +590,7 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox"]'
     )
     configs = resolve_configs(
-        load_machine(_write(tmp_path, whole)), tmp_path, session_setup.detect_env()
+        load_machine(_write(tmp_path, whole)), tmp_path, detect.probed_environment()
     )
     assert state_configs.shared_write_regions(configs, tmp_path) == (pathlib.Path("/srv/outbox"),)
 
@@ -609,7 +611,9 @@ def test_a_grant_under_the_hosts_tmp_is_refused_when_any_state_writes_it(
         'isolation = "full"\nextra_read_paths = ["/tmp/handoff"]',
     )
     with pytest.raises(SandboxWidenedError) as refused:
-        resolve_configs(load_machine(_write(tmp_path, mixed)), tmp_path, session_setup.detect_env())
+        resolve_configs(
+            load_machine(_write(tmp_path, mixed)), tmp_path, detect.probed_environment()
+        )
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /tmp/handoff")
     assert f"it sits inside {pathlib.Path('/tmp').resolve()}, which the machine's" in said
@@ -629,7 +633,7 @@ def test_the_ceiling_is_the_operators_layers_alone(
         SandboxWidenedError, match=r"the machine's \[config\] sets sandbox\.extra_read_paths"
     ):
         resolve_configs(
-            load_machine(_write(tmp_path, widened)), tmp_path, session_setup.detect_env()
+            load_machine(_write(tmp_path, widened)), tmp_path, detect.probed_environment()
         )
 
 
@@ -640,7 +644,7 @@ def test_a_config_flag_file_is_part_of_the_ceiling(
     _operator(OPERATOR.replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []"))
     ops = _write(tmp_path, '[sandbox]\nextra_write_paths = ["/srv/outbox"]\n', name="ops.toml")
     spec = load_machine(_write(tmp_path, MACHINE))
-    configs = resolve_configs(spec, tmp_path, session_setup.detect_env(), config_paths=(ops,))
+    configs = resolve_configs(spec, tmp_path, detect.probed_environment(), config_paths=(ops,))
     assert configs.states["judge"].config.sandbox.extra_write_paths == ("/srv/outbox",)
     # A state must not be able to rewrite its own ceiling: the file is read-only in every jail.
     assert ops.resolve() in machine_protect_paths(tmp_path / "m.asm.toml", tmp_path, (ops,))
@@ -659,7 +663,7 @@ def test_the_operator_flags_apply_after_the_overlays(
     spec = load_machine(
         _write(tmp_path, MACHINE + '\n[states.store.config.sandbox]\nrun_commands = "deny"\n')
     )
-    configs = resolve_configs(spec, tmp_path, session_setup.detect_env(), auto_approve=True)
+    configs = resolve_configs(spec, tmp_path, detect.probed_environment(), auto_approve=True)
     assert configs.states["scan"].config.sandbox.run_commands == "allow"
     # A state's own `deny` stays: a flag never grants what the standing policy denied.
     assert configs.states["store"].config.sandbox.run_commands == "deny"
@@ -674,7 +678,7 @@ def test_no_commands_and_disable_sandbox_reach_every_resolved_config(
     _operator(OPERATOR + 'run_commands = "allow"\nisolation = "full"\n')
     spec = load_machine(_write(tmp_path, MACHINE))
     configs = resolve_configs(
-        spec, tmp_path, session_setup.detect_env(), disable_sandbox=True, no_commands=True
+        spec, tmp_path, detect.probed_environment(), disable_sandbox=True, no_commands=True
     )
     for resolved in (configs.operator, configs.machine, *configs.states.values()):
         assert resolved.isolation == "none"
@@ -696,7 +700,7 @@ def test_each_tool_state_gets_its_own_jail_policy(
         + '\n[states.store.config.sandbox]\nnetwork = "host"\n'
     )
     configs = resolve_configs(
-        load_machine(_write(tmp_path, machine)), tmp_path, session_setup.detect_env()
+        load_machine(_write(tmp_path, machine)), tmp_path, detect.probed_environment()
     )
     build = run.machine_tool_policy_factory(
         configs.states, tmp_path, protect_paths=(), data_dir=None, shared_writes=()
@@ -934,13 +938,13 @@ def test_a_state_with_its_own_table_still_refuses_setup_under_ask(
 
 @pytest.mark.usefixtures("working_jail")
 def test_a_stubbed_jail_leaves_no_namespace_verdict_in_the_process() -> None:
-    """A stubbed run leaves `jail.namespaces_work`'s process-wide cache empty."""
-    jail.namespaces_work.cache_clear()
+    """A stubbed run leaves the real `jail.namespaces_work`'s process-wide cache empty."""
+    _REAL_NAMESPACES_WORK.cache_clear()
     try:
-        assert session_setup.detect_env().userns_supported is True
-        assert jail.namespaces_work.cache_info().currsize == 0
+        assert detect.probed_environment().userns_supported is True
+        assert _REAL_NAMESPACES_WORK.cache_info().currsize == 0
     finally:
-        jail.namespaces_work.cache_clear()
+        _REAL_NAMESPACES_WORK.cache_clear()
 
 
 # --- the refusal reaches the operator at check and at run ------------------------------------
@@ -1021,10 +1025,10 @@ def test_a_state_this_host_cannot_honor_refuses_by_name(
     """Each state's config passes the host checks a plain run's does, at startup."""
     monkeypatch.chdir(tmp_path)
     _operator()
-    partial = dataclasses.replace(session_setup.detect_env(), userns_supported=False)
+    partial = dataclasses.replace(detect.probed_environment(), userns_supported=False)
     if partial.detected_isolation != "partial":
         pytest.skip("this host cannot stand in for a partial one")
-    monkeypatch.setattr(session_setup, "detect_env", lambda: partial)
+    monkeypatch.setattr(detect, "probed_environment", lambda: partial)
     mfile = _write(tmp_path, MACHINE + '\n[states.store.config.sandbox]\nnetwork = "session"\n')
     reporter = mock.MagicMock()
     assert run.run_machine(mfile, reporter) == 2
@@ -1039,7 +1043,7 @@ def test_resolve_configs_keeps_the_resolved_isolation_per_state(
 ) -> None:
     monkeypatch.chdir(tmp_path)
     _operator()
-    env = session_setup.detect_env()
+    env = detect.probed_environment()
     configs = resolve_configs(load_machine(_write(tmp_path, MACHINE)), tmp_path, env)
     expected = detect.resolve_isolation("auto", env)
     assert {s.isolation for s in configs.states.values()} == {expected}
