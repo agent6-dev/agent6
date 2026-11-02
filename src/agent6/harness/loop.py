@@ -1186,7 +1186,9 @@ class Harness:
         )
         sha = ""
         try:
-            sha = self.checkpoints.commit(commit_subject, turn=turn.number)
+            sha = self.checkpoints.commit(
+                commit_subject, turn=turn.number, task_id=state.focus.surfaced_task_id
+            )
             turn.committed = bool(sha)
             # Adoption fills an absent command; a configured gate nobody may run stays as is.
             if (
@@ -1524,7 +1526,7 @@ class Harness:
                 )
                 return None
             self.log(f"LOOP: {finish.kind} called at turn {turn.number}")
-            self.checkpoints.final(turn=turn.number)
+            self.checkpoints.final(turn=turn.number, task_id=state.focus.surfaced_task_id)
             # A finish_session over a red or stale verify reads "finished", not "passed".
             reason = finish_gates.finish_reason(
                 finish.kind,
@@ -1730,7 +1732,7 @@ class Harness:
             The execution's result.
         """
         if end.checkpoint:
-            self.checkpoints.final(turn=turn)
+            self.checkpoints.final(turn=turn, task_id=state.focus.surfaced_task_id)
         # An end the loop declares is no death: the next resume re-enters at the snapshot.
         if self.resume_state_path is not None:
             loop_snapshot.clear_turn_marker(

@@ -20,7 +20,7 @@ from agent6.viewmodel import session_log
 class RevertPlan:
     """Explain reversal from recorded git facts without executing it."""
 
-    kind: Literal["not_recorded", "squash", "merge", "ff_only", "manual"]
+    kind: Literal["not_recorded", "squash", "tasks", "merge", "ff_only", "manual"]
     commits: tuple[str, ...] = ()
     mainline: int | None = None
     explanation: str = "cannot determine a safe revert"
@@ -83,13 +83,14 @@ def revert_plan(root: pathlib.Path, stamp: manifest.MergeStamp | None) -> Revert
                 parents.index(stamp.target_before) + 1,
                 "Keep the verified target parent when reverting the merge commit.",
             )
-        elif stamp.method == "ff_only" and git_read.is_ancestor(
+        elif stamp.method in ("tasks", "ff_only") and git_read.is_ancestor(
             root, stamp.target_before, stamp.sha
         ):
+            # Both land a straight line of single-parent commits on the target.
             commits = commit_graph.landed_commits(root, stamp.target_before, stamp.sha)
             if commits and all(len(commit_graph.parents(root, c)) == 1 for c in commits):
                 plan = RevertPlan(
-                    "ff_only",
+                    stamp.method,
                     commits,
                     explanation="Revert landed commits in reverse topological order.",
                 )

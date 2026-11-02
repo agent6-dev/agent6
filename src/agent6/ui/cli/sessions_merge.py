@@ -227,7 +227,8 @@ def _manual_merge_cmd(cwd: pathlib.Path, plan: _MergePlan) -> str:
             steps.append("git stash")
         if st.branch != plan.target:
             steps.append(f"git checkout {plan.target}")
-    squash = " --squash" if plan.method == "squash" else ""
+    # A by-hand landing of a `tasks` merge is one squash: the task ranges need the chain.
+    squash = " --squash" if plan.method in ("squash", "tasks") else ""
     steps.append(f"git merge{squash} {plan.run_branch}")
     return " && ".join(steps)
 

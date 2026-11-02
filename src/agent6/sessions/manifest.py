@@ -161,7 +161,7 @@ class MergeStamp(pydantic.BaseModel):
     tip: str = ""
     into_tip: str = ""
     via: str = ""
-    method: Literal["ff_only", "merge", "squash"] | None = None
+    method: Literal["ff_only", "merge", "squash", "tasks"] | None = None
     target_before: str | None = None
 
     @property

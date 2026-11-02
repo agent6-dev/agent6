@@ -569,7 +569,7 @@ def merge_run(
     Args:
         cwd: The repository.
         session_id: The run.
-        method: `squash`, `merge` or `ff_only`; "" takes `git.merge_method`.
+        method: `tasks`, `squash`, `merge` or `ff_only`; "" takes `git.merge_method`.
         config_paths: The `--config` files in command-line order.
 
     Returns:

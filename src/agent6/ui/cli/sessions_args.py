@@ -121,7 +121,7 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
     common._add_session_id(sessions_merge, completers._complete_session_ids)
     sessions_merge.add_argument(
         "--method",
-        choices=("squash", "merge", "ff_only"),
+        choices=("tasks", "squash", "merge", "ff_only"),
         default=None,
         help="Use this method. Default: git.merge_method from the active config.",
     )

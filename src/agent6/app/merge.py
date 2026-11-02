@@ -14,13 +14,15 @@ import dataclasses
 import datetime
 import pathlib
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Literal
 
 from agent6 import budget as agent6_budget
 from agent6 import errors
 from agent6.app import merge_message, session_setup, stamps
 from agent6.config import Config
+from agent6.graph import models as graph_models
+from agent6.graph import storage
 from agent6.sessions import event_log, lock, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -65,7 +67,7 @@ def record_merge_in_manifest(
     merged_tip: str = "",
     into_tip: str = "",
     via: str = "",
-    method: Literal["ff_only", "merge", "squash"] | None = None,
+    method: Literal["ff_only", "merge", "squash", "tasks"] | None = None,
     target_before: str | None = None,
 ) -> str:
     """Stamp the merge into the run manifest, so `prune` can tell a merged branch.
@@ -129,11 +131,14 @@ def dispatch_merge(
     warn: Callable[[str], None] = lambda _m: None,
     merge_base: str | None = None,
     finish_summaries: tuple[str, ...] = (),
+    tasks: Mapping[str, graph_models.TaskNode] | None = None,
 ) -> git_ops.MergeResult:
     """Run the method on the target through `plumb_merge`.
 
     A squash builds its message per `[git.commit.squash].message`; an operator message
-    overrides any style.
+    overrides any style. `tasks` lands one squash per consecutive range of checkpoints
+    that worked on one subtask, each under that subtask's title; a range outside any
+    subtask takes the squash style's message, and an operator message lands one squash.
 
     Args:
         cwd: The repository.
@@ -152,24 +157,41 @@ def dispatch_merge(
         merge_base: The base to merge from, when git's own does not serve.
         finish_summaries: Completed executions' summaries; the last supplies the body of
             an `agent6` or `conventional` message, the tuple supplies model context.
+        tasks: The run's task graph, which names the `tasks` method's commits.
 
     Returns:
         The plumbing's result.
     """
-    if method == "squash" and message is None:
-        # The message names what this merge lands: the commits after the landed base.
-        message = merge_message.squash_message(
+
+    def style_message(range_base: str, range_tip: str) -> str | None:
+        # The message names what this squash lands: the commits after its base.
+        return merge_message.squash_message(
             cwd,
             cfg,
             manifest,
-            base_sha=merge_base or base_sha,
-            run_branch=run_branch,
+            base_sha=range_base,
+            run_branch=range_tip,
             finish_summaries=finish_summaries,
             transcript_dir=transcript_dir,
             budget=budget,
             events=events,
             warn=warn,
         )
+
+    if method == "tasks" and message is None:
+        return land_tasks(
+            cwd,
+            target,
+            run_branch,
+            base_sha=merge_base or base_sha,
+            tasks=tasks or {},
+            identity=identity,
+            style_message=style_message,
+        )
+    if method in ("squash", "tasks") and message is None:
+        message = style_message(merge_base or base_sha, run_branch)
+    if method == "tasks":
+        method = "squash"
     if message is None and method == "merge":
         message = f"Merge {run_branch}"
     return git_ops.plumb_merge(
@@ -181,6 +203,57 @@ def dispatch_merge(
         identity=identity,
         merge_base=merge_base,
     )
+
+
+def land_tasks(
+    cwd: pathlib.Path,
+    target: str,
+    tip: str,
+    *,
+    base_sha: str,
+    tasks: Mapping[str, graph_models.TaskNode],
+    identity: git_read.CommitIdentity,
+    style_message: Callable[[str, str], str | None],
+) -> git_ops.MergeResult:
+    """Land the chain as one squash per task range, in chain order.
+
+    Each range's squash is parented on the previous one, with the previous range's tip as
+    its merge base, so a target that moved since the run started merges once per range.
+
+    Args:
+        cwd: The repository.
+        target: The branch to land on.
+        tip: The chain's tip.
+        base_sha: Where the un-landed part of the chain starts.
+        tasks: The task graph's nodes by id; a range naming a node lands under its title.
+        identity: The committer.
+        style_message: Builds the message of a range outside any subtask, from its base
+            and tip.
+
+    Returns:
+        The last squash's result, or the first conflict.
+    """
+    ranges = git_read.chain_task_ranges(cwd, base_sha, tip) or [("", tip)]
+    previous = base_sha
+    result = git_ops.MergeResult(previous, False, ())
+    for task_id, range_tip in ranges:
+        node = tasks.get(task_id) if task_id else None
+        message = task_commit_message(node) if node else style_message(previous, range_tip)
+        result = git_ops.plumb_merge(
+            cwd, target, range_tip, method="squash", message=message, identity=identity,
+            merge_base=previous,
+        )  # fmt: skip
+        if result.conflicted:
+            return result
+        previous = range_tip
+    return result
+
+
+def task_commit_message(node: graph_models.TaskNode) -> str:
+    """Return a task range's commit message: the subtask's title, then its acceptance."""
+    subject = node.title.strip().splitlines()[0] if node.title.strip() else "task"
+    body = node.acceptance.strip()
+    return f"{subject}\n\n{body}" if body else subject
 
 
 def landed_base(
@@ -335,6 +408,7 @@ def execute_merge(
                 warn=warn,
                 merge_base=merge_base,
                 finish_summaries=merge_message.finish_summaries(layout),
+                tasks=storage.load_graph(layout) if method == "tasks" else None,
             )
             if result.conflicted:
                 return MergeOutcome("conflict", conflicts=result.conflicts)
@@ -348,7 +422,7 @@ def execute_merge(
                     merged_sha=sessions_manifest.NO_MERGE_COMMIT if noop else result.merged_sha,
                     merged_tip=tip,
                     into_tip=target_tip_before if noop else "",
-                    method=method if method in ("ff_only", "merge", "squash") else None,
+                    method=method if method in ("ff_only", "merge", "squash", "tasks") else None,
                     target_before=target_tip_before,
                 )
             if not noop:

@@ -38,6 +38,7 @@ depends_on = [
   "agent6.directive",
   "agent6.errors",
   "agent6.graph.curator",
+  "agent6.graph.models",
   "agent6.graph.replay",
   "agent6.graph.storage",
   "agent6.harness",

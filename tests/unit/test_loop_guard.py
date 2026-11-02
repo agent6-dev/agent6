@@ -858,3 +858,42 @@ def test_the_kill_is_a_hard_stop_at_the_threshold_and_off_at_zero() -> None:
     )
     off = turn_context(loop_guard_kill_threshold=0)
     assert guards.loop_guard_kill(turn, state, off) is None
+
+
+def test_a_checkpoint_names_the_subtask_the_turn_worked_on(tmp_path: pathlib.Path) -> None:
+    """An editing turn's chain commit carries the surfaced subtask in its `Agent6-Task` trailer."""
+    from agent6 import budget
+    from agent6.graph import curator as graph_curator
+    from agent6.graph import models
+    from agent6.sessions import layout as sessions_layout
+    from agent6.vcs import git_read
+
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    curator = graph_curator.GraphCurator(
+        sessions_layout.SessionLayout(state_dir=tmp_path / ".agent6", session_id="run1")
+    )
+
+    def draft(title: str) -> models.TaskNodeDraft:
+        return models.TaskNodeDraft(title=title, depends_on=(), created_by="planner")
+
+    root = curator.add_subtask(models.AddSubtaskIntent(parent_id=None, draft=draft("the task")))
+    sub = curator.add_subtask(
+        models.AddSubtaskIntent(parent_id=root.id, draft=draft("write edit.txt"))
+    )
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _resp_with_tool("read_file", {"path": "x.txt"}),
+        budget.BudgetExceededError("input cap reached"),
+    ]
+    wf = _gated_wf(repo, provider, _dirtying_dispatcher(repo), max_turns=5, curator=curator)
+    wf.run("the task")
+
+    body = subprocess.run(
+        ["git", "log", "-1", "--format=%B", "refs/agent6/guard"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert f"{git_read.TASK_TRAILER}: {sub.id}" in body, body

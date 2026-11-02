@@ -75,23 +75,27 @@ class Checkpoints:
         )
         return default
 
-    def commit(self, subject: str, *, turn: int, label: str = "auto-commit") -> str:
+    def commit(
+        self, subject: str, *, turn: int, label: str = "auto-commit", task_id: str | None = None
+    ) -> str:
         """Commit the step and emit the two events every fold counts a commit by.
 
         Args:
             subject: The commit subject.
             turn: The loop turn the events carry.
             label: The log line's label.
+            task_id: The subtask the turn worked on, named in the commit's trailer and the
+                event; None when the run has no current subtask.
 
         Returns:
             The commit's sha, or "" when the tree held nothing new (then no event
             claims a commit); a git or filesystem fault propagates.
         """
-        sha = self.chain.commit(subject)
+        sha = self.chain.commit(subject, task_id=task_id)
         if not sha:
             return ""
         self.log(f"  {label}: {sha[:12]}")
-        self.emit("loop.auto_commit", turn=turn, sha=sha, subject=subject)
+        self.emit("loop.auto_commit", turn=turn, sha=sha, subject=subject, task_id=task_id or "")
         # Every fold tallies commits and the latest diff from diff.updated alone.
         self.emit(
             "diff.updated",
@@ -136,7 +140,7 @@ class Checkpoints:
             commit_subject=subject[:200],
         )
 
-    def final(self, *, turn: int) -> None:
+    def final(self, *, turn: int, task_id: str | None = None) -> None:
         """Commit a dirty tree at a successful exit, best-effort.
 
         A run_command-authored edit after the last green verify, which the per-turn
@@ -145,11 +149,14 @@ class Checkpoints:
 
         Args:
             turn: The loop turn the checkpoint names.
+            task_id: The subtask the last turn worked on, or None.
         """
         if not self.enabled or not self.chain.per_turn or not self.chain.dirty():
             return
         try:
-            self.commit(f"checkpoint (turn {turn})", turn=turn, label="final checkpoint")
+            self.commit(
+                f"checkpoint (turn {turn})", turn=turn, label="final checkpoint", task_id=task_id
+            )
         except (errors.GitError, OSError) as exc:
             self.log(f"  final checkpoint commit failed: {exc}")
 

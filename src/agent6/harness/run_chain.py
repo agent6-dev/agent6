@@ -81,11 +81,13 @@ class RunChain:
         """Return the paths every tree the chain writes or compares leaves out."""
         return self.untracked_at_start | self.hidden
 
-    def commit(self, subject: str) -> str:
+    def commit(self, subject: str, *, task_id: str | None = None) -> str:
         """Commit the worktree onto the chain.
 
         Args:
             subject: The commit subject.
+            task_id: The task graph subtask the commit worked on, carried as the
+                `Agent6-Task` trailer `sessions merge` groups by; None for none.
 
         Returns:
             The commit's sha; "" when nothing changed since the tip or there is no chain.
@@ -98,6 +100,7 @@ class RunChain:
                 subject,
                 ref=self.ref,
                 fallback_parent=self.fallback_parent,
+                trailers={git_read.TASK_TRAILER: task_id} if task_id else None,
                 identity=self.identity,
                 also_branch=self.branch,
                 exclude=self.excluded,

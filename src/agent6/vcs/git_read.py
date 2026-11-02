@@ -531,6 +531,46 @@ def unignored(path: pathlib.Path, candidates: tuple[str, ...]) -> tuple[str, ...
     return tuple(c for c in candidates if c not in ignored)
 
 
+# The trailer a checkpoint carries to name the task graph subtask it worked on.
+TASK_TRAILER = "Agent6-Task"
+
+
+def chain_task_ranges(path: pathlib.Path, base: str | None, tip: str) -> list[tuple[str, str]]:
+    """Return the chain's commits grouped into consecutive runs of one task, oldest first.
+
+    A checkpoint names the subtask it worked on in its `Agent6-Task` trailer; a commit
+    without one belongs to the run's root task, "". A task worked on in two separate
+    stretches gives two ranges.
+
+    Args:
+        path: The repository.
+        base: The commit the chain starts from, left out; None reads the whole history.
+        tip: The chain's tip.
+
+    Returns:
+        One (task id, last commit of the range) pair per range.
+    """
+    span = f"{base}..{tip}" if base else tip
+    out = git_command.run(
+        path,
+        "log",
+        "--reverse",
+        f"--format=%H %(trailers:key={TASK_TRAILER},valueonly,separator=%x20)",
+        span,
+    ).stdout
+    ranges: list[tuple[str, str]] = []
+    for line in out.splitlines():
+        sha, _, rest = line.strip().partition(" ")
+        if not sha:
+            continue
+        task = rest.split()[0] if rest.split() else ""
+        if ranges and ranges[-1][0] == task:
+            ranges[-1] = (task, sha)
+        else:
+            ranges.append((task, sha))
+    return ranges
+
+
 def chain_tip(path: pathlib.Path, ref: str) -> str | None:
     """Return the commit sha the ref resolves to, or None when it does not exist."""
     res = git_command.run(

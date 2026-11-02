@@ -231,7 +231,7 @@ The manifest.json shape and its one reader; `app.stamps` is the writer.
 
 - **Written by:** app/stamps
 - **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, session_setup, stop, undo, workdirs, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/mcp_server, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane}, ui/web/{actions, model}, viewmodel/{format, listing, policy, receipt, session_status, state_view, wire}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (27 test files exercise it)
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (28 test files exercise it)
 
 ## SessionSnapshot
 
@@ -370,8 +370,8 @@ The task-graph nodes and the intents that mutate them.
 | `graph_version` | `int` | `0` |
 
 - **Written by:** graph/{curator, storage}
-- **Read by:** graph/{order, replay}, harness/{advice, compaction_driver, dag_focus, guards, loop, operator_tasks, parallel_dispatch}, tools/{dag_tools, schema}, viewmodel/state
-- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (20 test files exercise it)
+- **Read by:** app/merge, graph/{order, replay}, harness/{advice, compaction_driver, dag_focus, guards, loop, operator_tasks, parallel_dispatch}, tools/{dag_tools, schema}, viewmodel/state
+- **Guarded by:** [test_graph_storage.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_graph_storage.py) (22 test files exercise it)
 
 ## Run/machine wire snapshot
 

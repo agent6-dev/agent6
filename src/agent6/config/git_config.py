@@ -187,13 +187,17 @@ class GitConfig(pydantic.BaseModel):
             "changed tree"
         ),
     )
-    merge_method: Literal["squash", "merge", "ff_only"] = pydantic.Field(
-        default="squash",
+    merge_method: Literal["tasks", "squash", "merge", "ff_only"] = pydantic.Field(
+        default="tasks",
         description=(
             "method for `agent6 sessions merge` to land a run on its base; `git.merge_method = "
-            '"squash"`: one commit; `git.merge_method = "merge"`: a merge commit keeping '
-            'per-step history; `git.merge_method = "ff_only"`: fast-forward only; consolidation '
-            "only, per-turn commits always on the run's chain"
+            '"tasks"`: one commit per task, each consecutive range of checkpoints that worked '
+            "on one task graph subtask squashed under that subtask's title (checkpoints outside "
+            "any subtask take the `[git.commit.squash]` message, so a run that never decomposed "
+            'lands as one commit); `git.merge_method = "squash"`: one commit; `git.merge_method '
+            '= "merge"`: a merge commit keeping per-step history; `git.merge_method = '
+            '"ff_only"`: fast-forward only; consolidation only, per-turn commits always on the '
+            "run's chain; `sessions merge -m` lands one commit with that message"
         ),
     )
     # With auto_stash_pop the merge lands first, then the stash goes back on top.
