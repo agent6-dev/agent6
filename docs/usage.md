@@ -305,7 +305,7 @@ State is snapshotted before each model call and checkpointed per turn.
 - a fan-out stopped only by lane caps reads `failed · budget exhausted` and exits `3`; its report says to raise the budget cap and fork each stopped lane
 - the first `--steer` on a fork becomes the fork's task and names its row and its merge subject; later steers are continuations
 - a resume with `--steer` keeps the original session label, with the latest steer beneath it as `continued: <steer>`; new questions in an ask REPL are not continuations
-- under the `agent6` squash message style, a resumed run's merge keeps the task as its subject, with `continued: <steer>` in the body
+- under the `agent6` and `conventional` squash message styles, a resumed run's merge keeps the task as its subject (`conventional` prefixes it with the type and scope), with `continued: <steer>` in the body
 - a gate withheld after denied or interrupted approval stays withheld only for that execution.
   When the snapshot records that withholding, a resume with the gate and commands allowed tells the model once that the gate is available again, without claiming it passed
 - a resume after the run's work landed continues from the checkout's HEAD when HEAD holds the merge: the run's next commits, `sessions diff` and its next merge then hold only the new work, so nothing lands twice

@@ -147,8 +147,8 @@ def model_squash_message(
         system = (
             "Write a git commit message describing the entire base-to-tip diff being landed,"
             " not just the latest execution or review feedback. The diff is authoritative;"
-            " the task, its continuation, finish summaries and per-step subjects are context"
-            " only. Use only"
+            " the task, its continuation, finish summaries and per-step subjects are context only."
+            " Use only"
             " the facts given. Write one imperative subject line under 72 characters, a blank"
             " line, then a short body. Output the message text only."
         )

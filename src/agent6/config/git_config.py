@@ -41,7 +41,8 @@ class GitCommitSquashConfig(pydantic.BaseModel):
         default="agent6",
         description=(
             "The message of the one commit a squash merge produces: `agent6` (the task's first "
-            "clause as the subject, then `continued: <steer>` for a resumed run, then the finish "
+            "clause as the subject, then `continued: <steer>` for a run resumed with `--steer`, "
+            "then the finish "
             "summary as the body, else the steps as bullets), "
             "`conventional` (the same body under a `type(scope): subject` derived from the diff, "
             "no model call), `combine` (git's own squash message: the per-step log concatenated), "
