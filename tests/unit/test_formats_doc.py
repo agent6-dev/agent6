@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import pathlib
+import re
 import sys
 import types
 
@@ -25,6 +27,20 @@ def test_formats_page_is_not_stale() -> None:
     assert generated == (_ROOT / "docs/formats.md").read_text(encoding="utf-8"), (
         "Regenerate with: uv run python docs/gen_formats.py"
     )
+
+
+def test_source_links_name_the_tree_not_the_import_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CI tests the installed wheel: every source link still names `src/agent6/`."""
+
+    def elsewhere(obj: object) -> str:
+        return "/elsewhere/site-packages/agent6/x.py"
+
+    monkeypatch.setattr(inspect, "getfile", elsewhere)
+    page = _generator().build_markdown()
+    links = re.findall(r"\(https://github\.com/agent6-dev/agent6/blob/master/([^)]*)\)", page)
+    assert links and all(link.startswith("src/agent6/") for link in links)
 
 
 def test_event_meanings_come_from_registry(monkeypatch: pytest.MonkeyPatch) -> None:

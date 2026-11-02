@@ -22,6 +22,11 @@ _OUT = _ROOT / "docs/formats.md"
 _BLOB = "https://github.com/agent6-dev/agent6/blob/master/"
 
 
+def module_path(module: str) -> pathlib.Path:
+    """Return the tree's file for a dotted module name, wherever agent6 is imported from."""
+    return _SRC / (module.removeprefix("agent6.").replace(".", "/") + ".py")
+
+
 class FormatError(Exception):
     """A serialized field has no documented meaning or a producer cannot be read."""
 
@@ -302,7 +307,7 @@ class Producer:
     @property
     def path(self) -> pathlib.Path:
         """Return the producer module path."""
-        return _SRC / (self.module.replace(".", "/") + ".py")
+        return module_path(self.module)
 
     def render(self) -> str:
         """Return a table of the keys this builder writes."""
@@ -422,7 +427,7 @@ def _models() -> list[type[Any]]:
 
 
 def _model_section(cls: type[Any]) -> str:
-    source = pathlib.Path(inspect.getfile(cls)).relative_to(_ROOT)
+    source = module_path(cls.__module__).relative_to(_ROOT)
     meaning = (inspect.getdoc(cls) or "").split("\n\n")[0].replace("\n", " ")
     return (
         f"### {cls.__name__}\n\n**Support: public.** {meaning}\n\n"
