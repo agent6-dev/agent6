@@ -86,19 +86,19 @@ def _worker_repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pat
 @pytest.mark.parametrize(
     ("urgency", "command", "when", "cut"),
     [
-        ("after_step", False, "after step 1", ""),
-        ("now", False, "during step 1", ""),
-        ("abort", False, "during step 1", ""),
-        ("now", True, "during step 1", "; running command was cut short"),
-        ("abort", True, "during step 1", "; running command was cut short"),
-        ("after_step", True, "after step 1", ""),
+        ("after_turn", False, "after turn 1", ""),
+        ("now", False, "during turn 1", ""),
+        ("abort", False, "during turn 1", ""),
+        ("now", True, "during turn 1", "; running command was cut short"),
+        ("abort", True, "during turn 1", "; running command was cut short"),
+        ("after_turn", True, "after turn 1", ""),
     ],
 )
 def test_worker_stop_words_match_the_request(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    urgency: Literal["after_step", "now", "abort"],
+    urgency: Literal["after_turn", "now", "abort"],
     command: bool,
     when: str,
     cut: str,
@@ -137,7 +137,7 @@ def test_worker_stop_words_match_the_request(
     monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=Worker()))
     # The launcher cannot run nested here: the result is the one the dispatcher builds for a
     # command an immediate stop ended, or for one a stop after the step let finish.
-    cut_now = urgency != "after_step"
+    cut_now = urgency != "after_turn"
     monkeypatch.setattr(
         command_tools,
         "run_model_command",
@@ -157,13 +157,13 @@ def test_worker_stop_words_match_the_request(
     assert "tool_error:" not in output
     assert f"operator stopped the run {when}{cut}" in output
     assert "stopped" in output
-    if urgency == "after_step":
-        assert "LOOP: operator stop at the step boundary (turn 1)" in output
+    if urgency == "after_turn":
+        assert "LOOP: operator stop at the turn boundary (turn 1)" in output
         assert "cut short" not in output
     else:
-        assert f"LOOP: operator stop during step 1{cut}" in output
-        assert "operator stop at the step boundary" not in output
-        assert "after step 1" not in output
+        assert f"LOOP: operator stop during turn 1{cut}" in output
+        assert "operator stop at the turn boundary" not in output
+        assert "after turn 1" not in output
 
 
 def test_worker_stop_during_a_model_call_names_the_interruption(
@@ -185,9 +185,9 @@ def test_worker_stop_during_a_model_call_names_the_interruption(
     monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=Worker()))
     assert main(["--config", str(cfg), "run", "--session-id", session_id, "task"]) == 130
     output = capsys.readouterr().out
-    assert "operator stopped the run during step 1; model call was cut short" in output
-    assert "LOOP: operator stop during step 1; model call was cut short" in output
-    assert "after step 1" not in output
+    assert "operator stopped the run during turn 1; model call was cut short" in output
+    assert "LOOP: operator stop during turn 1; model call was cut short" in output
+    assert "after turn 1" not in output
 
 
 def test_stop_is_a_top_level_verb_and_sessions_stop_is_gone() -> None:
@@ -196,8 +196,8 @@ def test_stop_is_a_top_level_verb_and_sessions_stop_is_gone() -> None:
     `sessions stop` is gone.
     """
     parser = cli_parser.build_parser()
-    args = parser.parse_args(["stop", "some-run", "--after-step", "--all"])
-    assert (args.command, args.session_id, args.after_step, args.all) == (
+    args = parser.parse_args(["stop", "some-run", "--after-turn", "--all"])
+    assert (args.command, args.session_id, args.after_turn, args.all) == (
         "stop",
         "some-run",
         True,
@@ -207,16 +207,16 @@ def test_stop_is_a_top_level_verb_and_sessions_stop_is_gone() -> None:
         parser.parse_args(["sessions", "stop", "some-run"])
 
 
-def test_after_step_writes_the_marker_and_names_the_resume(
+def test_after_turn_writes_the_marker_and_names_the_resume(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.chdir(tmp_path)
     d = _run(tmp_path, "step-run-AAAAAA")
     (d / "loop_state.json").write_text("{}", encoding="utf-8")  # a turn ran: a resume can start
     process.write_worker_pid(d, os.getpid())
-    assert main(["stop", "step-run", "--after-step"]) == 0
+    assert main(["stop", "step-run", "--after-turn"]) == 0
     out = capsys.readouterr().out
-    assert "step-run-AAAAAA stops after its current step" in out
+    assert "step-run-AAAAAA stops after its current turn" in out
     assert "resume with:  agent6 resume step-run-AAAAAA" in out
     assert (d / ipc.STOP_REQUEST_FILE).exists() and not (d / ipc.STEER_ANSWER_FILE).exists()
 
@@ -421,7 +421,7 @@ def test_a_marker_that_cannot_be_written_is_an_error(
     process.write_worker_pid(rd, os.getpid())
     rd.chmod(0o555)
     try:
-        assert main(["stop", "live-run-RO1111", "--after-step"]) == 1
+        assert main(["stop", "live-run-RO1111", "--after-turn"]) == 1
         assert not ipc.stop_request_pending(rd)
     finally:
         rd.chmod(0o700)
@@ -490,10 +490,10 @@ def test_a_fan_out_gets_no_resume_hint(
         '{"version": 3, "mode": "run", "fanout": {"lanes": 2, "spec": "2"}}', encoding="utf-8"
     )
     process.write_worker_pid(rd, os.getpid())
-    assert main(["stop", "fan-AAAA11", "--after-step"]) == 0
+    assert main(["stop", "fan-AAAA11", "--after-turn"]) == 0
     assert ipc.stop_request_pending(rd)
     out = capsys.readouterr().out
-    assert "fan-AAAA11 stops after its current step" in out and "resume" not in out
+    assert "fan-AAAA11 stops after its current turn" in out and "resume" not in out
 
 
 def test_a_bare_stop_targets_the_newest_live_session(

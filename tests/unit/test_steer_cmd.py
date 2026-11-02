@@ -160,7 +160,7 @@ def test_steer_stop_is_the_one_stop(
 
     calls: list[pathlib.Path] = []
 
-    def _fake(session_dir: pathlib.Path, *, after_step: bool = False) -> stop.StopOutcome:
+    def _fake(session_dir: pathlib.Path, *, after_turn: bool = False) -> stop.StopOutcome:
         calls.append(session_dir)
         return stop.StopOutcome(session_dir.name, True, "stopped", f"{session_dir.name} stopped")
 

@@ -360,7 +360,7 @@ class BackgroundShells:
             tail_lines: The most lines returned.
             wait_s: How long to wait for the command to end first; it returns as soon as the
                 command ends, so one call replaces a dozen polls.
-            interrupted: Cuts the wait short; the operator's Stop is polled at a step boundary,
+            interrupted: Cuts the wait short; the operator's Stop is polled at a turn boundary,
                 which a tool call in flight never reaches.
 
         Returns:

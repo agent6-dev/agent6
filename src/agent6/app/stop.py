@@ -44,7 +44,7 @@ class StopOutcome:
     Attributes:
         session_id: The stopped session.
         ok: Whether the stop took.
-        how: `after_step`, `requested`, `stopped`, `killed`, `stale` (no answer and nothing
+        how: `after_turn`, `requested`, `stopped`, `killed`, `stale` (no answer and nothing
             left to signal), `not_live` (nothing to stop) or `failed` (a request could not
             be written).
         message: The line every surface shows.
@@ -61,7 +61,7 @@ class StopOutcome:
 def stop_session(
     session_dir: pathlib.Path,
     *,
-    after_step: bool = False,
+    after_turn: bool = False,
     request_only: bool = False,
     wait_s: float | None = None,
     grace_s: float | None = None,
@@ -70,7 +70,7 @@ def stop_session(
 
     Args:
         session_dir: The session to stop.
-        after_step: Let the current step finish first.
+        after_turn: Let the current turn finish first.
         request_only: Write the requests without waiting for or signalling the worker.
         wait_s: How long to wait for the run to end; None takes `STOP_WAIT_S`.
         grace_s: SIGTERM to SIGKILL; None takes `KILL_GRACE_S`.
@@ -94,7 +94,7 @@ def stop_session(
     # written after they ended is never read.
     written = (
         ipc.request_stop(session_dir)
-        if after_step
+        if after_turn
         else ipc.submit_steer(session_dir, "abort", now=True)
         and ipc.request_stop(session_dir, now=True)
     )
@@ -102,12 +102,12 @@ def stop_session(
         return StopOutcome(rid, False, "failed", f"could not write the stop request for {rid}")
     for lane in lanes:
         stop_session(
-            lane, after_step=after_step, request_only=request_only, wait_s=wait_s, grace_s=grace_s
+            lane, after_turn=after_turn, request_only=request_only, wait_s=wait_s, grace_s=grace_s
         )
-    if after_step:
-        when = "their current steps" if lanes else "its current step"
+    if after_turn:
+        when = "their current turns" if lanes else "its current turn"
         return StopOutcome(
-            rid, True, "after_step", f"{rid} stops{with_lanes} after {when}", resumable=resumable
+            rid, True, "after_turn", f"{rid} stops{with_lanes} after {when}", resumable=resumable
         )
     if request_only:
         return StopOutcome(

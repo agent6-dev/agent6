@@ -23,13 +23,13 @@ def _is_lane(session_dir: pathlib.Path) -> bool:
         return False
 
 
-def _cmd_stop(session_id: str, *, all_sessions: bool, after_step: bool) -> int:
+def _cmd_stop(session_id: str, *, all_sessions: bool, after_turn: bool) -> int:
     """Stop a session, or every live one.
 
     Args:
         session_id: The session, or "" for the newest live one.
         all_sessions: Stop every live session instead.
-        after_step: Stop at the end of the current step rather than now.
+        after_turn: Stop at the end of the current turn rather than now.
 
     Returns:
         The exit code: 1 when a stop failed, 2 when the session could not be resolved.
@@ -63,7 +63,7 @@ def _cmd_stop(session_id: str, *, all_sessions: bool, after_step: bool) -> int:
     for session_dir in targets:
         if all_sessions and not session_is_live(session_dir):
             continue  # a lane its coordinator's stop ended
-        out = stop.stop_session(session_dir, after_step=after_step)
+        out = stop.stop_session(session_dir, after_turn=after_turn)
         print(f"[agent6] {out.message}.", file=sys.stdout if out.ok else sys.stderr)
         if out.resumable:
             print(f"  resume with:  agent6 resume {out.session_id}")

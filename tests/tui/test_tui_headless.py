@@ -1092,8 +1092,8 @@ def test_a_typed_stop_is_the_one_stop(
 
     calls: list[bool] = []
 
-    def _fake(session_dir: pathlib.Path, *, after_step: bool = False) -> stop.StopOutcome:
-        calls.append(after_step)
+    def _fake(session_dir: pathlib.Path, *, after_turn: bool = False) -> stop.StopOutcome:
+        calls.append(after_turn)
         return stop.StopOutcome(session_dir.name, True, "stopped", f"{session_dir.name} stopped")
 
     monkeypatch.setattr(app_stop, "stop_session", _fake)
@@ -1128,8 +1128,8 @@ def test_a_typed_stop_is_the_one_stop(
     asyncio.run(finished())
 
 
-def test_stop_after_step_drops_the_marker(tmp_path: pathlib.Path) -> None:
-    """Run > Stop after this step on a live run confirms, then drops the stop.request marker."""
+def test_stop_after_turn_drops_the_marker(tmp_path: pathlib.Path) -> None:
+    """Run > Stop after this turn on a live run confirms, then drops the stop.request marker."""
     import os
 
     async def scenario() -> None:
@@ -1139,7 +1139,7 @@ def test_stop_after_step_drops_the_marker(tmp_path: pathlib.Path) -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await pilot.pause()
             assert not ipc.stop_request_pending(tmp_path)
-            app.action_stop_step()
+            app.action_stop_turn()
             await pilot.pause()
             assert isinstance(app.screen, modals.ConfirmModal)  # confirms before stopping
             await pilot.press("y")  # confirm

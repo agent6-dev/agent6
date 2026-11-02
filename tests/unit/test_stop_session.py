@@ -76,11 +76,11 @@ def _gone(proc: subprocess.Popen[bytes], within_s: float = 3.0) -> bool:
     return True
 
 
-def test_after_step_writes_the_marker_alone(tmp_path: pathlib.Path) -> None:
+def test_after_turn_writes_the_marker_alone(tmp_path: pathlib.Path) -> None:
     d = _live_run(tmp_path, "step-run-AAAAAA")
     process.write_worker_pid(d, os.getpid())
-    out = stop.stop_session(d, after_step=True)
-    assert (out.ok, out.how) == (True, "after_step") and "after its current step" in out.message
+    out = stop.stop_session(d, after_turn=True)
+    assert (out.ok, out.how) == (True, "after_turn") and "after its current turn" in out.message
     assert (d / ipc.STOP_REQUEST_FILE).exists() and not (d / ipc.STEER_ANSWER_FILE).exists()
     assert not ipc.stop_request_is_now(d)  # the step's running command is left to finish
 

@@ -375,7 +375,7 @@ def test_resume_refused_while_the_worker_is_alive(
     assert "still live" in str(data["error"])
 
 
-def test_stop_after_step_and_compact_drop_markers_on_a_live_run(
+def test_stop_after_turn_and_compact_drop_markers_on_a_live_run(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     import os
@@ -384,9 +384,9 @@ def test_stop_after_step_and_compact_drop_markers_on_a_live_run(
     _make_run(tmp_path, "run-m", [{"type": "session.start"}])
     runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-m"
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-    status, data = _post(port, "/api/session/run-m/stop", {"after_step": True})
+    status, data = _post(port, "/api/session/run-m/stop", {"after_turn": True})
     assert status == 200 and data["ok"] is True
-    assert "after its current step" in str(data["message"])
+    assert "after its current turn" in str(data["message"])
     assert (runs / "stop.request").exists() and not (runs / "steer.answer").exists()
     status, data = _post(port, "/api/session/run-m/compact", {})
     assert status == 200 and data["ok"] is True
@@ -429,15 +429,15 @@ def test_stop_refused_on_a_dead_run(
     assert "nothing to stop" in str(data["error"])
 
 
-def test_stop_rejects_a_non_boolean_after_step(
+def test_stop_rejects_a_non_boolean_after_turn(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
     _make_run(tmp_path, "run-bad-stop", [{"type": "session.start"}])
     runs = paths.state_dir(tmp_path) / "sessions" / "runs" / "run-bad-stop"
-    status, data = _post(port, "/api/session/run-bad-stop/stop", {"after_step": "false"})
+    status, data = _post(port, "/api/session/run-bad-stop/stop", {"after_turn": "false"})
     assert status == 400
-    assert "after_step" in str(data["error"])
+    assert "after_turn" in str(data["error"])
     assert not (runs / "stop.request").exists()
 
 
@@ -452,7 +452,7 @@ def test_stop_that_cannot_write_the_marker_is_refused(
     (runs / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     runs.chmod(0o555)
     try:
-        status, data = _post(port, "/api/session/run-ro/stop", {"after_step": True})
+        status, data = _post(port, "/api/session/run-ro/stop", {"after_turn": True})
     finally:
         runs.chmod(0o700)
     assert status == 422 and "could not write the stop request" in str(data["error"])

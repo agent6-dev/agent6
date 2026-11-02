@@ -85,7 +85,7 @@ class _Wire:
 
 
 def _ignore(
-    path: pathlib.Path, *, after_step: bool = False, request_only: bool = False
+    path: pathlib.Path, *, after_turn: bool = False, request_only: bool = False
 ) -> stop.StopOutcome:
     """A cancel whose requests landed (nothing here reads the run dir)."""
     return stop.StopOutcome(path.name, True, "requested", f"{path.name} stop requested")
@@ -134,10 +134,10 @@ def test_a_cancel_reaches_the_run_it_names(
     how: list[tuple[bool, bool]] = []
 
     def _record(
-        path: pathlib.Path, *, after_step: bool = False, request_only: bool = False
+        path: pathlib.Path, *, after_turn: bool = False, request_only: bool = False
     ) -> stop.StopOutcome:
         stopped.append(path)
-        how.append((after_step, request_only))
+        how.append((after_turn, request_only))
         return _ignore(path)
 
     monkeypatch.setattr(stop, "stop_session", _record)

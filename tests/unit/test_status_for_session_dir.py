@@ -252,12 +252,12 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
 @pytest.mark.parametrize(
     ("events", "pid", "now", "word", "reason"),
     [
-        ([_START, _TOOL], LIVE, False, "running", "stopping after this step"),
+        ([_START, _TOOL], LIVE, False, "running", "stopping after this turn"),
         ([_START, _TOOL], LIVE, True, "running", ""),
         ([_START, _TOOL], DEAD, False, "stale", ""),
         ([_START, _end("steer_abort")], LIVE, False, "stopped", ""),
-        ([], LIVE, False, "starting", "stopping after this step"),
-        ([_START, _QUESTION], LIVE, False, "waiting", "needs answer · stopping after this step"),
+        ([], LIVE, False, "starting", "stopping after this turn"),
+        ([_START, _QUESTION], LIVE, False, "waiting", "needs answer · stopping after this turn"),
     ],
     ids=["running", "immediate", "dead", "ended", "starting", "waiting"],
 )
@@ -269,7 +269,7 @@ def test_pending_step_stop_labels_agree_in_the_listing_and_typed_fold(
     word: str,
     reason: str,
 ) -> None:
-    """A pending after-step stop is visible on live runs in both status fact producers."""
+    """A pending after-turn stop is visible on live runs in both status fact producers."""
     d = _mk(tmp_path, "stop-AAAAAA", events, pid=pid)
     assert ipc.request_stop(d, now=now)
     fold = viewmodel_state.fold_session(events)
@@ -308,7 +308,7 @@ def test_clearing_a_pending_step_stop_clears_its_label(tmp_path: pathlib.Path) -
     d = _mk(tmp_path, "clear-AAAAAA", events, pid=LIVE)
     fold = viewmodel_state.fold_session(events)
     assert ipc.request_stop(d)
-    assert session_state_as_dict(fold, d)["status_label"] == ("running · stopping after this step")
+    assert session_state_as_dict(fold, d)["status_label"] == ("running · stopping after this turn")
     ipc.clear_stop_request(d)
     assert listing.summarize_session_dir(d).reason == ""
     assert session_state_as_dict(fold, d)["status_label"] == "running"

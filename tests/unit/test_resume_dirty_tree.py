@@ -136,7 +136,7 @@ def _session_dir(repo: pathlib.Path, session_id: str) -> pathlib.Path:
 def _stopped_run(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, session_id: str, step: _Step
 ) -> None:
-    """Run one step, then end at the step boundary on an operator stop."""
+    """Run one step, then end at the turn boundary on an operator stop."""
     session_dir = _session_dir(repo, session_id)
 
     def _stop_during_the_first_call(call_index: int) -> None:

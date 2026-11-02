@@ -2534,7 +2534,7 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
 def test_session_end_journals_its_summary() -> None:
     """The harness journals the same end sentence it returns, for stops and clean finishes."""
     for end in (
-        loop_snapshot.End("steer_abort", "operator stopped the run after step 4", checkpoint=False),
+        loop_snapshot.End("steer_abort", "operator stopped the run after turn 4", checkpoint=False),
         loop_snapshot.End(
             "finish_session", "implemented addition", verdict="grounded", checkpoint=False
         ),
@@ -4380,7 +4380,7 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             original_task="t",
         )
     assert result.reason == "steer_abort"  # the resumable stopped shape
-    assert "stopped the run after step 1" in result.summary
+    assert "stopped the run after turn 1" in result.summary
     assert provider.calls == 1  # the step completed; no second turn started
     assert pending["stop"] is False  # the marker was consumed
 
@@ -7214,7 +7214,7 @@ def test_finish_dispatch_is_not_work_for_the_standing_streak() -> None:
 
 
 def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None:
-    """A stop after this step is honoured at the end of every completed turn, prose too."""
+    """A stop after this turn is honoured at the end of every completed turn, prose too."""
     calls = {"n": 0}
 
     class ProviderStub:

@@ -109,9 +109,9 @@ class PruneBody(_Body):
 
 
 class StopBody(_Body):
-    """A stop body; `after_step` lets the current step's results and auto-commit land."""
+    """A stop body; `after_turn` lets the current turn's results and auto-commit land."""
 
-    after_step: pydantic.StrictBool = False
+    after_turn: pydantic.StrictBool = False
 
 
 class ResumeBody(_Body):
@@ -637,7 +637,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             )
         elif verb == "stop":
             sb = StopBody.model_validate(self._read_body())
-            ok, msg = actions.stop_run(self.cwd, session_id, after_step=sb.after_step)
+            ok, msg = actions.stop_run(self.cwd, session_id, after_turn=sb.after_turn)
         elif verb == "compact":
             self._read_body()
             ok, msg = actions.compact_run(self.cwd, session_id)

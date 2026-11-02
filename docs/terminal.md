@@ -36,7 +36,7 @@ The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
 
 - `Ctrl+T` cycles the thinking and tool detail: hidden, collapsed, expanded
 - `Ctrl+C` copies the selection, or the whole transcript when nothing is selected
-- `Ctrl+Z` leaves the view: a run started with `agent6 run --tui` detaches after its current step (`agent6 attach` reattaches); one opened with `attach --tui` or from the hub keeps running as it was
+- `Ctrl+Z` leaves the view: a run started with `agent6 run --tui` detaches after its current turn (`agent6 attach` reattaches); one opened with `attach --tui` or from the hub keeps running as it was
 - `Ctrl+_` undoes typing in the composer
 
 An approval shows inline at the conversation's tail with an answer row above the bar, and collapses to one dim line once answered.
@@ -141,7 +141,7 @@ Skill states have individual rows, so Remove drops only the selected skill's sta
 
 - the menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages; a steer sent from another surface while it is open is taken as the answer
     - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/answer`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
-- `/detach` hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it
+- `/detach` hands the run to the background after its current turn (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it
 - `/exit` leaves the run resumable; `/stop`, or Ctrl-C at the pause prompt, stops it now, as `agent6 stop ID` does
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
 - hub-started runs run detached; `agent6 attach` follows them (conversation by default; `--tui`, `--raw`)

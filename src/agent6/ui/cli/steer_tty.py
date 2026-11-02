@@ -354,7 +354,7 @@ def install_steer_sigint(  # noqa: C901, PLR0915  # a closure factory over one s
         # A live front-end prompts in its own modal; its terminal is not scribbled on.
         if not process.frontend_is_live(session_dir):
             tty_message(
-                "\n[agent6] pausing after this step: Enter continues, type to steer,"
+                "\n[agent6] pausing after this turn: Enter continues, type to steer,"
                 " /stop ends it, /detach backgrounds it. Ctrl-C again to interrupt now.\n"
                 + _status_suffix(session_facts)
             )

@@ -222,7 +222,7 @@ def test_a_read_only_mode_cannot_background(tmp_path: pathlib.Path) -> None:
 def test_an_operator_stop_cuts_a_wait_short(tmp_path: pathlib.Path) -> None:
     """A Stop pressed during a check-in wait ends the wait.
 
-    Stop is a marker file polled at a step boundary, and a tool call in flight reaches no
+    Stop is a marker file polled at a turn boundary, and a tool call in flight reaches no
     boundary; unread, a Stop sits for the whole wait (measured: the full 10s of a 10s wait,
     and the default wait is 900).
     """
@@ -287,7 +287,7 @@ def test_an_immediate_stop_ends_a_running_command_at_once(
 def test_a_stop_after_the_step_lets_the_command_finish(tmp_path: pathlib.Path) -> None:
     """The stop marker alone leaves a running command to finish and return its own result.
 
-    `stop --after-step` handed the step's command back as a background job on the first poll, and
+    `stop --after-turn` handed the turn's command back as a background job on the first poll, and
     the end of the execution then killed it: the step the operator asked to let finish was cut.
     """
     from agent6.sessions import ipc

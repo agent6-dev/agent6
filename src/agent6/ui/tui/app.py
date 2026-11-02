@@ -455,7 +455,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
     def _typed_stop(self) -> None:
         """Stop the live run without a confirm, as `agent6 stop` does."""
         if self.session_controllable():
-            self._stop_session(after_step=False)
+            self._stop_session(after_turn=False)
         else:
             self.notify("nothing to stop: the session is not live", severity="warning")
 
@@ -588,7 +588,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
         def _confirmed(yes: bool | None) -> None:
             if yes:
-                self._stop_session(after_step=False)
+                self._stop_session(after_turn=False)
 
         self.push_screen(
             modals.ConfirmModal(
@@ -601,20 +601,20 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             _confirmed,
         )
 
-    def action_stop_step(self) -> None:
-        """Confirm, then stop the run after the current step lands."""
+    def action_stop_turn(self) -> None:
+        """Confirm, then stop the run after the current turn lands."""
         if not self.session_controllable():
             self.notify("nothing to stop: the session is not live", severity="warning")
             return
 
         def _confirmed(yes: bool | None) -> None:
             if yes:
-                self._stop_session(after_step=True)
+                self._stop_session(after_turn=True)
 
         self.push_screen(
             modals.ConfirmModal(
-                "Stop after this step?",
-                "The current step finishes (its tool results and auto-commit land), "
+                "Stop after this turn?",
+                "The current turn finishes (its tool results and auto-commit land), "
                 "then the run stops. Resume later with `agent6 resume`.",
                 confirm_label="Stop",
             ),
@@ -622,9 +622,9 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         )
 
     @textual.work(thread=True)
-    def _stop_session(self, *, after_step: bool) -> None:
+    def _stop_session(self, *, after_turn: bool) -> None:
         """Stop the run off the UI thread, since a stop now waits for the run to end."""
-        out = stop.stop_session(self.session_dir, after_step=after_step)
+        out = stop.stop_session(self.session_dir, after_turn=after_turn)
         self.call_from_thread(
             self.notify, out.message, severity="information" if out.ok else "warning"
         )
@@ -904,7 +904,7 @@ def run_tui(
         sid = session_dir.name
         if exit_on_end:
             # The parent's lifecycle prints the reattach line once the run is in the background.
-            print(f"[agent6] leaving the view: {sid} detaches to the background after this step.")
+            print(f"[agent6] leaving the view: {sid} detaches to the background after this turn.")
         else:
             print(f"[agent6] detached: {sid} keeps running.")
             print(f"          reattach:  agent6 attach {sid}")

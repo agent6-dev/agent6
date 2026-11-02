@@ -86,7 +86,7 @@ class SessionResult:
             turn (the app layer).
         loop_guard_killed: an identical tool call repeated past the kill threshold.
         interactive_stop: the operator chose stop at the after-commit hook.
-        steer_abort: the operator stopped the run, mid-call, at a step boundary or while parked.
+        steer_abort: the operator stopped the run, mid-call, at a turn boundary or while parked.
         undone: the operator sent /undo; a child was forked at the state before their message.
         detached: the operator chose detach; the CLI respawns a detached resume.
         prompt_revision_failed: revise_prompt failed before the worker loop.

@@ -78,9 +78,9 @@ async function renderRun(id, opts, gen) {
     };
     const stopBtn = el('button', 'danger', '■ Stop now');
     stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'this session');
-    const stepBtn = el('button', null, 'Stop after step');
+    const stepBtn = el('button', null, 'Stop after turn');
     stepBtn.onclick = async () => {
-      try { const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/stop', { after_step: true }); toast(d.message || 'stopping after the current step'); }
+      try { const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/stop', { after_turn: true }); toast(d.message || 'stopping after the current turn'); }
       catch (e) { toast(e.message, true); }
     };
     const compactBtn = el('button', null, 'Compact context');

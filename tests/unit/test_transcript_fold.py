@@ -97,11 +97,11 @@ def test_done_line_says_why_a_stopped_run_ended() -> None:
             {
                 "type": "session.end",
                 "reason": "steer_abort",
-                "summary": "operator stopped after step 3",
+                "summary": "operator stopped after turn 3",
             },
         ]
     )
-    assert items[-1].body == "operator stopped after step 3"
+    assert items[-1].body == "operator stopped after turn 3"
 
 
 def test_tool_only_turn_has_no_empty_text_item() -> None:

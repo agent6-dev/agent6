@@ -312,7 +312,7 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
         and ipc.stop_request_pending(session_dir)
         and not ipc.stop_request_is_now(session_dir)
     ):
-        note = "stopping after this step"
+        note = "stopping after this turn"
         reason = f"{reason} · {note}" if reason else note
     return word, reason
 

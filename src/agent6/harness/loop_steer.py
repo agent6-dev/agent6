@@ -76,13 +76,13 @@ def operator_boundary(
     if harness.bridge.stop_requested() or harness.bridge.should_abort():
         immediate = harness.bridge.stop_is_now() or harness.bridge.should_abort()
         harness.bridge.stop_clear()
-        when = f"during step {turn}" if immediate else f"after step {turn}"
+        when = f"during turn {turn}" if immediate else f"after turn {turn}"
         cut = "; running command was cut short" if immediate and state.command_cut else ""
         if immediate:
             harness.bridge.steer_clear()
             harness.log(f"LOOP: operator stop {when}{cut}")
         else:
-            harness.log(f"LOOP: operator stop at the step boundary (turn {turn})")
+            harness.log(f"LOOP: operator stop at the turn boundary (turn {turn})")
         return harness.finish(
             state,
             loop_snapshot.End(

@@ -53,7 +53,7 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
 
 def test_end_summary_reaches_the_wire_and_clears_on_resume() -> None:
     """Run headers carry the journaled end sentence without holding it over a resume."""
-    summary = "operator stopped the run after step 4"
+    summary = "operator stopped the run after turn 4"
     s = viewmodel_state.fold_session(
         [
             {"type": "session.start", "mode": "run"},

@@ -508,9 +508,9 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `approvals/`, `questions/` | one `<id>.answer` file per prompt, whichever front-end answers; `approvals/` also holds the session-wide allow and deny marker per scope |
 | `frontends/` | one file per front-end registered to answer this run, named for its pid |
 | `review-actions/` | one request and one reply file per finding action (Fix, Resolve, Reopen) a surface put to the run |
-| `queue/` | the operator's queued tasks, standing goal and retirements (`/task`, `/standing`, `/retire`), read at the step boundary |
+| `queue/` | the operator's queued tasks, standing goal and retirements (`/task`, `/standing`, `/retire`), read at the turn boundary |
 | `shells/` | the roster of background commands the run started |
-| `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its step boundary |
+| `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its turn boundary |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.
@@ -578,7 +578,7 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
 - A worker still alive after that wait (5 s for a run, 30 s for a fan-out draining its lanes) gets SIGTERM and, 3 s later, SIGKILL, along with the background commands it started on the host.
 - A run's worker and a fan-out's coordinator take the SIGTERM as a Ctrl-C stop (an `interrupted` end at exit 130).
 - Every target is named by process identity (pid plus start time), so a pid recycled before the identity check is never signalled.
-- `--after-step` writes the plain marker alone, so the step's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
+- `--after-turn` writes the plain marker alone, so the turn's running command finishes (or reaches `[harness].command_checkin_s`) and its tool results and auto-commit land first.
 - A fan-out passes its stop's urgency to its lanes: a plain marker lets each lane finish its turn, a `now` marker ends their running commands at once.
 - An ACP cancel is request-only: it writes both requests without waiting for or signalling the worker, which is the ACP server itself.
 - An immediate stop ends a foreground `run_command` the launcher hands back.

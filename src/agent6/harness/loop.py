@@ -731,12 +731,12 @@ class Harness:
             )
         except ProviderAborted:
             self.bridge.steer_clear()  # consume the stop; don't leave it on disk to re-read
-            self.log(f"LOOP: operator stop during step {turn}; model call was cut short")
+            self.log(f"LOOP: operator stop during turn {turn}; model call was cut short")
             return self.finish(
                 state,
                 loop_snapshot.End(
                     "steer_abort",
-                    f"operator stopped the run during step {turn}; model call was cut short"
+                    f"operator stopped the run during turn {turn}; model call was cut short"
                     f"{self.dirty_tree_note()}",
                     checkpoint=False,
                 ),

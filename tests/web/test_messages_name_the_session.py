@@ -57,7 +57,7 @@ def _ask(state: pathlib.Path) -> str:
 @pytest.mark.parametrize(
     "call",
     [
-        functools.partial(actions.stop_run, after_step=True),
+        functools.partial(actions.stop_run, after_turn=True),
         actions.compact_run,
         functools.partial(_steer, text="go on"),
     ],
@@ -76,6 +76,6 @@ def test_an_unknown_id_is_not_called_a_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    ok, message = actions.stop_run(tmp_path, "nope-nope-NOPE00", after_step=True)
+    ok, message = actions.stop_run(tmp_path, "nope-nope-NOPE00", after_turn=True)
     assert not ok
     assert "run" not in message, message

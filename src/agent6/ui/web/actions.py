@@ -340,13 +340,13 @@ def run_plan(
     return {"run_id": new_dir.name}, ""
 
 
-def stop_run(cwd: pathlib.Path, session_id: str, *, after_step: bool) -> tuple[bool, str]:
-    """Stop a run now, or after the current step's tool results and auto-commit.
+def stop_run(cwd: pathlib.Path, session_id: str, *, after_turn: bool) -> tuple[bool, str]:
+    """Stop a run now, or after the current turn's tool results and auto-commit.
 
     Args:
         cwd: The repository.
         session_id: The run.
-        after_step: Let the current step finish first.
+        after_turn: Let the current turn finish first.
 
     Returns:
         Whether the stop landed, and the message.
@@ -354,7 +354,7 @@ def stop_run(cwd: pathlib.Path, session_id: str, *, after_step: bool) -> tuple[b
     session_dir = model.session_dir_for(cwd, session_id)
     if session_dir is None:
         return False, f"no session {session_id!r}"
-    out = stop.stop_session(session_dir, after_step=after_step)
+    out = stop.stop_session(session_dir, after_turn=after_turn)
     return out.ok, out.message
 
 

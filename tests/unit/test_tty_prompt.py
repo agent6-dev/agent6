@@ -69,7 +69,7 @@ def test_tty_prompt_round_trips_on_the_controlling_terminal() -> None:
 
 def test_tty_prompt_discards_type_ahead() -> None:
     # Text typed before the prompt existed must not be consumed as its answer:
-    # a "/detach" typed during the "pausing after this step" window once rode
+    # a "/detach" typed during the "pausing after this turn" window once rode
     # into the next run_command [y/N/a] approval and silently denied it (and a
     # buffered "y" would have silently approved).
     def child() -> int:

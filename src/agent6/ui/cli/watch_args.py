@@ -171,7 +171,7 @@ def _add_steer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
         action="store_true",
         help=(
             "Interrupt the in-flight model call to take the steer immediately"
-            " (the default waits for the next step boundary; an approval or"
+            " (the default waits for the next turn boundary; an approval or"
             " question wait cannot be interrupted either way)."
         ),
     )
@@ -191,11 +191,11 @@ def _add_stop_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
     )
     common._add_session_id(stop_p, completers._complete_live_session_ids)
     stop_p.add_argument(
-        "--after-step",
+        "--after-turn",
         action="store_true",
         help=(
-            "Let the current step finish, then stop: a running command runs to its end or its"
-            " check-in, and the step's tool results and auto-commit land."
+            "Let the current turn finish, then stop: a running command runs to its end or its"
+            " check-in, and the turn's tool results and auto-commit land."
         ),
     )
     stop_p.add_argument(

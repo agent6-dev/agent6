@@ -415,7 +415,7 @@ def test_a_stop_request_ends_an_away_wait(
 
     The questioner returns empty answers and the run parks or denies.
 
-    A run blocked before its start has no step for `stop --after-step` to stop after.
+    A run blocked before its start has no turn for `stop --after-turn` to stop after.
     """
     import time
 

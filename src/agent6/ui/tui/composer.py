@@ -245,7 +245,7 @@ RUN_MENU = menubar.Menu(
         menubar.MenuItem("Search past messages…", "history_search", priority=True),
         menubar.MenuItem(keymap.ANSWER_QUESTION, "answer_question"),
         menubar.MenuItem("Compact context now", "compact"),
-        menubar.MenuItem("Stop after this step", "stop_step"),
+        menubar.MenuItem("Stop after this turn", "stop_turn"),
         menubar.MenuItem("Stop now", "stop_now"),
         menubar.MenuItem("Resume this session", "resume"),
         menubar.MenuItem("Run this plan", "run_plan"),

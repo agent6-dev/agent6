@@ -559,7 +559,7 @@ def test_ctrl_z_shows_status_and_cancels_an_armed_pause(
         # interrupt the operator never asked for.
         printed.clear()
         sigint(signal.SIGINT, None)
-        assert "pausing after this step" in printed[0]
+        assert "pausing after this turn" in printed[0]
     finally:
         state.restore()
 

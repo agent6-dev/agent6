@@ -117,7 +117,7 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
 - without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it, or an away-mode decides it; a run whose commands are unsettled refuses to start and names the choices (`--auto-approve`, `--no-commands`, `AGENT6_DETACHED_AWAY`), see [approvals](security.md#6-approvals)
-- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-step` lets the step finish) or a ceiling (budget, turns) stops it
+- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-turn` lets the turn finish) or a ceiling (budget, turns) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
 - without a terminal a finished run prints its merge and inspect commands, and an unfinished run its resume command
 - `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused
@@ -182,8 +182,8 @@ Lanes remain reachable by their own ids.
 agent6 attach                 # follow live; --raw tails events, --tui full screen, --json one snapshot
 agent6 steer ID "focus on X"  # an instruction at the next step; --now interrupts the call in flight
 agent6 answer ID "yes"        # answer a pending question, live or ended run (bare: list them; --question QID before the id picks one)
-agent6 stop ID                # stop during the current step (the worker killed if it does not answer); --all
-agent6 stop ID --after-step   # finish the current step, then stop
+agent6 stop ID                # stop during the current turn (the worker killed if it does not answer); --all
+agent6 stop ID --after-turn   # finish the current turn, then stop
 agent6 sessions show          # status, turn, elapsed, cost, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
 agent6 sessions commits       # the run's per-step commits
@@ -201,10 +201,10 @@ agent6 history search <text>  # grep this repository's sessions' persisted data;
 agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
 ```
 
-`agent6 stop ID` ends the run as `stopped`, with `operator stopped the run during step N` in the end block.
+`agent6 stop ID` ends the run as `stopped`, with `operator stopped the run during turn N` in the end block.
 The end block adds `running command was cut short` when the stop ended a running command, or `model call was cut short` when it cut the model call.
-`--after-step` leaves `running · stopping after this step` in listings until the step ends, then prints `operator stopped the run after step N`.
-A starting or waiting run keeps that status and adds `stopping after this step` beside its other details.
+`--after-turn` leaves `running · stopping after this turn` in listings until the turn ends, then prints `operator stopped the run after turn N`.
+A starting or waiting run keeps that status and adds `stopping after this turn` beside its other details.
 
 `history search` keeps the matches it read if a file disappears or another search error occurs, prints `search incomplete: some files were not read.` and the error, and exits with code 2.
 It does not report `no matches` when the search is incomplete.

@@ -502,7 +502,7 @@ def _dispatch_stop(args: argparse.Namespace) -> int:
     """Return the exit code of `agent6 stop`."""
     from agent6.ui.cli import stop_cmd
 
-    return stop_cmd._cmd_stop(args.session_id, all_sessions=args.all, after_step=args.after_step)
+    return stop_cmd._cmd_stop(args.session_id, all_sessions=args.all, after_turn=args.after_turn)
 
 
 def _dispatch_answer(args: argparse.Namespace) -> int:

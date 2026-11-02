@@ -1023,7 +1023,7 @@ STOP_REQUEST_FILE = "stop.request"
 
 
 def request_stop(session_dir: pathlib.Path, *, now: bool = False) -> bool:
-    """Drop the "stop after this step" marker the session honors at its next boundary.
+    """Drop the "stop after this turn" marker the session honors at its next boundary.
 
     The finished step's tool results and auto-commit land first: a command the step is running
     finishes. The session dir is created here: ACP can cancel after assigning the id but

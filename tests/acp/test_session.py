@@ -289,7 +289,7 @@ def test_a_cancel_while_idle_does_not_poison_the_next_execution(
     stopped: list[pathlib.Path] = []
 
     def _stop(
-        path: pathlib.Path, *, after_step: bool = False, request_only: bool = False
+        path: pathlib.Path, *, after_turn: bool = False, request_only: bool = False
     ) -> stop.StopOutcome:
         stopped.append(path)
         return stop.StopOutcome(path.name, True, "requested", "")

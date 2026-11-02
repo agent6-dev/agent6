@@ -323,7 +323,7 @@ def test_show_words_the_end_instead_of_the_reason_token(
     reason: str,
 ) -> None:
     """Text shows the end sentence while JSON retains the raw reason for scripts."""
-    summary = "operator stopped the run after step 4" if reason == "steer_abort" else "added mul"
+    summary = "operator stopped the run after turn 4" if reason == "steer_abort" else "added mul"
     _make_run(
         tmp_path,
         monkeypatch,

@@ -30,7 +30,7 @@ def test_prompt_consumes_bridged_answer(tmp_path: pathlib.Path) -> None:
     sessions_ipc.write_steer_answer(tmp_path, "focus on the tests")
     sessions_ipc.request_steer(tmp_path)
     assert steer.requested() is True
-    # The ruled default: a plain steer waits for the step boundary (aborting
+    # The ruled default: a plain steer waits for the turn boundary (aborting
     # the in-flight call wastes the streamed tokens); only the `now` urgency
     # (`steer --now`) interrupts.
     assert steer.interrupt() is False
@@ -86,7 +86,7 @@ def test_steer_answer_is_abort_peeks_without_consuming(tmp_path: pathlib.Path) -
     assert not sessions_ipc.steer_answer_is_abort(tmp_path)  # a steering instruction is not a stop
     sessions_ipc.write_steer_answer(tmp_path, "stop")
     # Even "stop" is a steer instruction, not a stop -- the Stop button writes
-    # "abort", and the between-step boundary stops only on "abort". Consistency.
+    # "abort", and the between-turn boundary stops only on "abort". Consistency.
     assert not sessions_ipc.steer_answer_is_abort(tmp_path)
     sessions_ipc.write_steer_answer(tmp_path, "  ABORT  ")
     assert sessions_ipc.steer_answer_is_abort(
@@ -312,7 +312,7 @@ def test_workflow_run_resets_the_steer_stage_at_execution_entry() -> None:
 
 
 def test_the_turn_boundary_settles_background_commands(tmp_path: pathlib.Path) -> None:
-    """The between-step boundary observes background commands once per turn.
+    """The between-turn boundary observes background commands once per turn.
 
     An ending reaches disk when someone observes it; a model that never asked again left
     `/shells`, which reads off disk, reporting maybe-running for the rest of the run.
@@ -500,7 +500,7 @@ def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
 
     The execution installs the run's escalating steer handler before the loop reaches this prompt,
     so without `idle_prompt_sigint` the press was absorbed by the retried input(): three presses to
-    leave, a "pausing after this step" line with no step in flight, and an armed stage that opened a
+    leave, a "pausing after this turn" line with no step in flight, and an armed stage that opened a
     pause menu at the run's first boundary.
     """
     import contextlib
