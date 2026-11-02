@@ -256,3 +256,18 @@ def test_sandbox_available_matches_platform(monkeypatch: pytest.MonkeyPatch) -> 
     assert detect.sandbox_available() is False
     monkeypatch.setattr(detect.sys, "platform", "linux")
     assert detect.sandbox_available() is True
+
+
+def test_an_agent6_jail_is_a_container_signal_with_its_own_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Inside an agent6 jail, pid 1 is the launcher: the detector names it and why `full` is out."""
+    import dataclasses
+
+    monkeypatch.setattr(detect, "read_init_comm", lambda: "agent6-jail")
+    assert "agent6-jail" in detect.detect_container_signals()
+    env = dataclasses.replace(
+        _env_c(userns=False, in_container=True), container_signals=("agent6-jail",)
+    )
+    reason = detect.degrade_reason(env)
+    assert reason is not None and "inside an agent6 jail" in reason

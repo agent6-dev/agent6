@@ -35,7 +35,7 @@ class Environment:
     """The detected execution environment.
 
     Attributes:
-        in_container: A container indicator is present.
+        in_container: A container indicator is present; an agent6 jail counts as one.
         container_signals: The names of the indicators present.
         kernel: The running kernel's version.
         userns_supported: This process can create an unprivileged user namespace.
@@ -100,9 +100,20 @@ def read_kernel() -> KernelInfo:
     return _parse_kernel(raw)
 
 
+def read_init_comm() -> str:
+    """Return pid 1's command name, or "" when /proc does not say."""
+    try:
+        return pathlib.Path("/proc/1/comm").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 def detect_container_signals() -> tuple[str, ...]:
     """Return the names of the container indicators present; empty on a bare host."""
     signals: list[str] = []
+    # Inside an agent6 jail pid 1 is the launcher; the jail refuses nested namespaces.
+    if read_init_comm() == "agent6-jail":
+        signals.append("agent6-jail")
     if pathlib.Path("/.dockerenv").exists():
         signals.append("/.dockerenv")
     # Rootless podman often lacks a "podman" token in /proc/1/cgroup; this file is its marker.
@@ -230,6 +241,8 @@ def _userns_block_cause(env: Environment) -> str:
             "unprivileged user namespaces are disabled (user.max_user_namespaces = 0); "
             "raise it to allow sandbox.isolation = 'full'"
         )
+    if "agent6-jail" in env.container_signals:
+        return "this process already runs inside an agent6 jail, which refuses nested namespaces"
     if env.in_container:
         return (
             "unprivileged user namespaces are blocked in this container "
