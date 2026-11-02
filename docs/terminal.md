@@ -11,10 +11,12 @@ Every image is from a recorded run; click to enlarge.
 ## Hub
 
 `agent6 tui` lists every session for the repository in [review queue](usage.md#the-review-queue) order with six columns: updated, status (the mode folded in), review (the group, blank for `other`, then the reason and a fan-out's lanes by group), cost, id, and task; by activity the review column is not shown.
-Below 100 columns `updated` keeps only the time for today's runs and only the date for older ones, a status drops its reason and the review column hides; below 80, cost hides too, so the task keeps its room.
+Below 100 columns `updated` keeps only the time for today's runs and only the date for older ones, a status drops its reason and the review column hides; below 80, cost hides too.
 
 - Enter opens a run
-- `n`: an empty conversation to start a run, plan, or ask (mode, preset and model picked above the composer; the model box shows the model the config resolves for the mode and preset, re-resolved whenever either changes, and a pick overrides it for this run; a refusal shows there with the text kept)
+- `n`: an empty conversation to start a run, plan, or ask (mode, preset and model picked above the composer)
+    - the model box shows the model the config resolves for the mode and preset, re-resolved whenever either changes, and a pick overrides it for this run
+    - a refusal shows in the conversation, with the text kept in the composer
 - `l`: the selected run's event log; `m`: merge its branch (`sessions merge`); `d`: delete its history (`sessions rm`), both after a confirm
 - Space: expand or fold a fan-out's lanes (one row with its lane count otherwise)
 - `s`: switch between review-queue and activity order, remembered in `ui.toml` beside the theme
@@ -40,27 +42,25 @@ The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
 An approval shows inline at the conversation's tail with an answer row above the bar, and collapses to one dim line once answered.
 The dashboard and the machine watch dock the same row.
 
-- the keys are the CLI prompt's, on every surface: `y` allow, `a` allow all this session, `n` deny, `d` deny all this session
-- the composer keeps the focus, so a message typed as a prompt arrives is a message; Tab moves the focus off it and the letters answer wherever it lands, Enter answering the focused button
+- the keys are the CLI prompt's: `y` allow, `a` allow all this session, `n` deny, `d` deny all this session
+- the composer keeps the focus, so a message typed when a prompt arrives stays a message; Tab moves the focus off it and the letters answer wherever it lands, Enter answering the focused button
 - on a terminal narrower than a modal's button row the later buttons are off screen; the question modal's fields and Ctrl+S still answer
-- a question the model queued pops no modal: a notification names it, Run › Answer a question… opens it, and Esc there keeps it pending; a question a dead run left waiting is offered the same way, its answer saved for the resume
+- a question the model queued pops no modal: a notification names it, Run › Answer a question… opens it, and Esc there keeps it pending; a question a dead run left waiting opens from the same menu item, its answer saved for the resume
 
 ![A run transcript](screenshots/out/05-transcript.png)
 
 ## Run dashboard
 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
-Before the first model call, the header names the role and model from the manifest and says `starting`; the spinner runs only while a model call is in flight.
+Before the first model call, the header names the role and model from the manifest and says `starting` while the run launches; the spinner runs only while a model call is in flight.
 
 - the diff pane opens on the latest commit; its selector walks the per-step commits, `cumulative` shows the chain up to one, and the task tree and cost line follow it; a run whose model owns git has no chain and the pane says so
 - the composer bar steers a live run or resumes a finished one, under the preset and model picked in the row above it (the first entries name what a resume without flags runs under); `/` completes the directives, Ctrl-R searches past messages
 - `/shells` lists the run's background commands; `/restate` replays the conversation since your last message
-- the View menu maximizes the focused pane; under 28 rows the dashboard shows one pane row at a time under a summary line (the execution's tool calls, the count the conversation's end line shows, and the last one), and Tab unfolds the rest
-- on a finished plan, Run > Run this plan starts `agent6 run --from` on it and opens the new run; the plan session stays as it was
+- the View menu maximizes the focused pane
+- under 28 rows the dashboard shows one pane row at a time under a summary line (the execution's tool call count and the last call), and Tab unfolds the rest
+- on a finished plan, Run > Run this plan starts `agent6 run --from` on it and, from the hub, opens the new run; the plan session stays as it was
 - on a finished run, Run > Review this run… runs `agent6 sessions review` on it (a model call that can take minutes) and opens the markdown in a modal; a live run is refused until it ends
-
-Inspect persisted [line-origin evidence](usage.md#session-findings) with `agent6 sessions findings <id>` or the web Findings card.
-The terminal UI has no line-origin badge.
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
@@ -68,7 +68,9 @@ The terminal UI has no line-origin badge.
 
 Open Findings from the hub's View menu (`v`) or the run dashboard's View menu (`Ctrl+F`).
 Use ↑↓ to select a finding and read its recorded diff and action history.
+A finding on a [pre-existing line](usage.md#session-findings) also shows the mapped base range and its blame commits.
 The screen shows open severity counts and the panel's rejection decision separately.
+
 `f` submits Fix through the steer bridge; a stopped run requires a **Resume to fix** confirmation.
 `s` resolves with a disposition and reason; `o` reopens with a reason.
 Fix leaves the finding open, and a failed or unknown delivery stays visible.
@@ -80,8 +82,7 @@ Fix leaves the finding open, and a failed or unknown delivery stays visible.
 
 Open **Receipt** (`e`) from the Findings screen to inspect [recorded evidence](usage.md#session-receipts).
 The screen shows Testing, Review, Risk and How to revert, with expandable stdout and stderr for each verification attempt.
-**Ask a run to revert** opens New work with a proposed task; submitting it starts work through the existing controls.
-Reading the screen does not run tests or call a provider.
+**Ask a run to revert** opens New work with a proposed task.
 
 ![A receipt](screenshots/out/07-receipt.png)
 
@@ -108,7 +109,7 @@ The Edit menu and Ctrl+P palette offer entry forms:
 - **Add MCP server…** (`c`): add or update a `[mcp.servers.<name>]` entry.
   Enter either a URL or a command line; shell quoting splits the command into argv, without running a shell.
 - **Add skill…** (`s`): set `skills.state.<name>` to `enabled`, `disabled` or `always`.
-  This sets a skill's state; it does not install the skill.
+  It does not install the skill.
 
 Forms save to global config by default and offer repo config as a target.
 In a named-entry form, a blank field keeps an existing value or uses the schema default.
@@ -117,16 +118,14 @@ In a named-entry form, a blank field keeps an existing value or uses the schema 
 It removes from the highest layer holding the entry, and accepts only global or repo config.
 Values from lower layers may become visible.
 Skill states have individual rows, so Remove drops only the selected skill's state.
-**Unset** (`d`) still drops only the selected leaf.
+**Unset override** (`d`) drops only the selected leaf.
 
 - **Add reviewer…** (`v`) in the Edit menu, palette and footer appends to the ordered `review.reviewers` list.
     - Its form takes `focus` (required), `provider`, `model`, `effort` and `temperature`, with the same save-target chooser.
     - Set `provider` and `model` together, or leave both blank to inherit the reviewer role.
     - Blank sampling fields inherit the route's settings.
 - **Remove reviewer** (`Shift+X`) on the `review.reviewers` row opens a chooser by position and focus, then confirms removal from the roster's source layer (global or repo).
-    - Positions distinguish reviewers that share a focus.
 - Both actions save the whole list; removing the last reviewer writes `[]` so a lower layer's roster stays hidden.
-- The row's value column still shows the list.
 
 ![The config page](screenshots/out/03-config.png)
 
@@ -142,10 +141,10 @@ Skill states have individual rows, so Remove drops only the selected skill's sta
 
 - the menu Tab-completes its commands; Up recalls, Ctrl-R searches past messages; a steer sent from another surface while it is open is taken as the answer
     - the [steer directives](usage.md#follow-and-steer-a-run) plus `/status`, `/tasks`, `/answer`, `/shells`, `/restate`, `/continue`, `/stop`, `/exit`, `/detach`, `/help`
-- `/detach` hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it (a suspended agent would lose its provider stream)
+- `/detach` hands the run to the background after its current step (`agent6 attach` reattaches); Ctrl-Z prints the run's state and never suspends it
 - `/exit` leaves the run resumable; `/stop`, or Ctrl-C at the pause prompt, stops it now, as `agent6 stop ID` does
 - `run -i` prompts after every commit: `/continue` (bare Enter), `/cost`, `/diff`, `/watch`, `/mcp`, `/init`, `/undo`, `/help`, `/quit`, `/exit`
-- hub-started runs run detached; `agent6 attach` follows them (conversation by default; `--tui`, `--json`, `--raw`)
+- hub-started runs run detached; `agent6 attach` follows them (conversation by default; `--tui`, `--raw`)
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/temps-demo.webm" type="video/webm">
@@ -162,7 +161,3 @@ Here `code-fixer` runs a fix loop: an agent state edits the repo to make a faili
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/machine-demo.webm" type="video/webm">
 </video>
-
----
-
-The screenshots and videos are regenerated from recorded runs by the [pages workflow](https://github.com/agent6-dev/agent6/blob/master/.github/workflows/pages.yml), so they track the current UI.
