@@ -47,9 +47,7 @@ def _tree(cwd: pathlib.Path, revision: str) -> str:
     if not commit and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", revision):
         raise git_model.GitRequestError(f"unknown revision {revision!r}")
     if not commit and not git_read.object_exists(cwd, revision):
-        raise git_model.GitRequestError(
-            f"tree {revision[:12]} is not in this repository: the review ran on another checkout"
-        )
+        raise git_model.GitRequestError(f"tree {revision[:12]} is not in this repository")
     return git_read.tree_sha(cwd, commit or revision)
 
 
