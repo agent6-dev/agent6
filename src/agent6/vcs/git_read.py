@@ -797,7 +797,6 @@ def list_run_commits(
     return tuple(rows)
 
 
-
 def tree_name_status(
     path: pathlib.Path, old_tree: str, new_tree: str
 ) -> tuple[tuple[str, str], ...]:

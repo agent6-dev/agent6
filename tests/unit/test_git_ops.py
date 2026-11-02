@@ -55,7 +55,6 @@ def test_modified_and_untracked_paths_split_the_operators_work(tmp_path: pathlib
     assert git_read.status(tmp_path, exclude={"new.txt"}).untracked_count == 1
 
 
-
 def test_stash_tracked_changes_leaves_untracked_files_in_place(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     (tmp_path / "notes.txt").write_text("mine\n", encoding="utf-8")
