@@ -442,6 +442,7 @@ def test_outline_names_why_it_has_no_symbols(
     from agent6.sandbox import detect
     from agent6.tools import dispatch, tool_errors
 
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     monkeypatch.setattr(
         detect,
         "probed_environment",

@@ -1195,7 +1195,10 @@ def test_model_squash_uses_the_whole_run(
     conventions: str,
     oversized: bool,
 ) -> None:
-    """A review execution must not replace the landed diff or the original finish context."""
+    """A review execution must not replace the landed diff or the original finish context.
+
+    The request names the manifest's continuation as `Continued:`.
+    """
     from agent6.app import merge_message
 
     monkeypatch.chdir(tmp_path)
