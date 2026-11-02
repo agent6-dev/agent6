@@ -69,7 +69,7 @@ The task set is ad hoc; its scripts and raw rows are outside the tree.
 - agent6 compacts in two tiers: tier 1 elides the oldest tool results and keeps the context bounded; tier 2 summarises and restarts.
 - A keep-last-K-verbatim tail for tier 2 measured inert on these tasks: under forced 18k/36k thresholds on the `needle` task (kimi, n=6 per condition) tier 2 fired 0 times in 18 runs, because tier 1 keeps the context below the tier-2 trigger; the 0.91 vs 0.96 score gap was noise.
 - The measurable compaction cost is tier 1: tight elision dropped the reference files and the model re-read them 12 to 43 times per run (kimi 1.00 -> 0.91); at the shipped adaptive thresholds neither tier fires on tasks this size.
-- State: a tier-2 restart keeps the last 80,000 characters verbatim (`[context].keep_recent_chars`); tier-1 gists are measured in `bench/longhorizon/FINDINGS.md`.
+- State: a tier-2 restart keeps the last 80,000 characters verbatim (`[compaction].keep_recent_chars`); tier-1 gists are measured in `bench/longhorizon/FINDINGS.md`.
 
 ## Provider fixes found here
 
@@ -175,7 +175,7 @@ gpt-6.1-sol, the same six tasks, the key off against on, n=2 per task and arm (2
 - With the key on no fix run verified red itself before editing, so the advisory, which waits for a red of the run's own, fired in none.
 - Adopted: `harness.verify_at_start`, default on.
   A slow gate was not measured; the key turns the start gate off.
-- Since 2026-11-01 the shipped default is off, with `harness.verify_when` defaulting to `never` (a product decision on cost and prior art, G12 in DECISIONS.md); the measurement above stands for a fast gate beside a red suite, the case the key is for.
+- The shipped default is off, and `harness.verify_when` defaults to `never` (a product decision on cost and prior art); the measurement above stands for a fast gate beside a red suite, the case the key is for.
 
 ## A notice for an edit the run's commits leave out
 

@@ -585,7 +585,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - a jailed command's environment is built from its policy
     - unconfined paths (`sandbox.isolation = "none"`, git subprocesses, MCP servers, token commands) drop every configured `api_key_env` name
     - an `[mcp.servers.*].pass_env` naming a provider's `api_key_env` refuses at config load, so the name cannot be handed over deliberately either
-- `agent6 connect` prompts locally (key input masked on Python 3.14+, hidden on 3.12 and 3.13) and writes config and secrets
+- `agent6 connect` prompts locally (each keystroke masked on a terminal) and writes config and secrets
     - one read-only `GET` of the provider's `/models` endpoint (OpenRouter's auth-gated `/key`) confirms auth (status only; `--no-verify` skips it)
     - it executes nothing a remote returns
 - `agent6 connect chatgpt` is a PKCE OAuth sign-in
