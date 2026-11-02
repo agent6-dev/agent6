@@ -10,36 +10,6 @@ async function stopRun(base, label) {
 // leaves a hollow dashboard: the conversation fetch swallows its 404 and a
 // stream error is silent) and the first paint, so the view never flashes
 // empty while waiting for the first SSE frame.
-// The details drawer: the run's context widgets combined into one collapsible,
-// drag-resizable panel on the left, so the conversation keeps the focus.
-function drawerHandle(drawer) {
-  const h = el('div', 'drawer-handle');
-  h.title = 'drag to resize · double-click to reset';
-  h.onpointerdown = (e) => {
-    e.preventDefault();
-    h.setPointerCapture(e.pointerId);
-    h.classList.add('dragging');
-    const startX = e.clientX;
-    const startW = drawer.getBoundingClientRect().width;
-    h.onpointermove = (ev) => {
-      const w = Math.round(Math.max(220, Math.min(window.innerWidth * 0.6, startW + ev.clientX - startX)));
-      document.documentElement.style.setProperty('--drawer-w', w + 'px');
-      localStorage.setItem('a6-drawer-w', w + 'px');
-    };
-    h.onpointerup = (ev) => {
-      h.releasePointerCapture(ev.pointerId);
-      h.classList.remove('dragging');
-      h.onpointermove = null; h.onpointerup = null;
-    };
-  };
-  h.ondblclick = () => {
-    document.documentElement.style.removeProperty('--drawer-w');
-    localStorage.removeItem('a6-drawer-w');
-  };
-  return h;
-}
-{ const w = localStorage.getItem('a6-drawer-w'); if (w) document.documentElement.style.setProperty('--drawer-w', w); }
-
 // The run's state word, from the one field the fold stamps it in.
 function runState(s) { return s.status_label || ''; }
 
@@ -67,7 +37,7 @@ async function renderRun(id, opts, gen) {
   const applyDrawer = (open) => {
     drawer.classList.toggle('closed', !open);
     dBtn.classList.toggle('active', open);
-    localStorage.setItem('a6-drawer', open ? 'open' : 'closed');
+    remember('a6-drawer', open ? 'open' : 'closed');
   };
   dBtn.onclick = () => applyDrawer(drawer.classList.contains('closed'));
   actions.appendChild(dBtn);
@@ -175,10 +145,9 @@ async function renderRun(id, opts, gen) {
   cc.card.dataset.w = 'conv';
   const body = el('div', 'run-body');
   body.appendChild(drawer);
-  body.appendChild(drawerHandle(drawer));
   body.appendChild(cc.card);
   app.appendChild(body);
-  const saved = localStorage.getItem('a6-drawer');
+  const saved = recall('a6-drawer', '');
   applyDrawer(saved ? saved === 'open' : window.innerWidth >= 1024);
 
   // The phone widget menu: pick which single widget the page shows.
@@ -215,6 +184,10 @@ async function renderRun(id, opts, gen) {
     cards._composer = composer;
   }
   view.appendChild(app);
+  body.insertBefore(resizeHandle(drawer, {
+    label: 'Details width', key: 'a6-drawer-w', property: '--drawer-w',
+    min: 220, max: () => window.innerWidth * 0.6,
+  }), cc.card);
   paintRun(cards, snap);
   cc.conv.refresh().then(() => {
     // On a phone the page (not the box) scrolls the conversation: open at the tail.

@@ -11,16 +11,18 @@ it.
 from __future__ import annotations
 
 import hashlib
+import re
 import shutil
 import subprocess
 from importlib import resources
+from xml.etree import ElementTree
 
 import pytest
 
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "bd7df9e214c5e500d49e992b1b59871117e4532f076bc185a9678748abde8f19"
+PAGE_SHA256 = "73cbbf587e582df8c66f655e0849149b940897668ab80dcbfd48ee63d883054c"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -28,6 +30,100 @@ def test_rendered_page_bytes_are_pinned() -> None:
     assert got == PAGE_SHA256, (
         f"page bytes changed (sha256 {got}); if intended, update PAGE_SHA256 in this test"
     )
+
+
+def test_navigation_bars_share_order_labels_and_inline_svg_icons() -> None:
+    """Both bars keep the requested order and a labelled, theme-coloured SVG per entry."""
+    bars = re.findall(r'<nav class="(?:rail-nav|tabs)">.*?</nav>', page.PAGE_HTML, re.DOTALL)
+    assert len(bars) == 2
+    expected = [
+        ("hub", "#/", "Sessions"),
+        ("git", "#/git", "Git"),
+        ("files", "#/files", "Files"),
+        ("machines", "#/machines", "Machines"),
+        ("config", "#/config", "Config"),
+    ]
+    drawings: list[list[str]] = []
+    for bar in bars:
+        links = ElementTree.fromstring(bar).findall("a")
+        assert [
+            (link.get("data-tab"), link.get("href"), "".join(link.itertext()).strip())
+            for link in links
+        ] == expected
+        icons: list[str] = []
+        for link in links:
+            svgs = link.findall("svg")
+            assert len(svgs) == 1
+            svg = svgs[0]
+            for name, value in {
+                "viewBox": "0 0 24 24",
+                "stroke-width": "1.75",
+                "stroke-linecap": "round",
+                "stroke-linejoin": "round",
+                "fill": "none",
+                "stroke": "currentColor",
+                "aria-hidden": "true",
+            }.items():
+                assert svg.get(name) == value
+            assert len(svg) > 0
+            icons.append(ElementTree.tostring(svg, encoding="unicode"))
+        assert len(set(icons)) == 5
+        drawings.append(icons)
+    assert drawings[0] == drawings[1]
+
+
+@pytest.mark.parametrize("storage", ["blocked", "full"])
+def test_page_startup_and_layout_storage_survive_storage_failure(storage: str) -> None:
+    """Unavailable storage cannot stop startup or discard a token needed to read Files."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is needed to exercise the web client")
+    setup = (
+        "const storageMode = "
+        + repr(storage)
+        + ";"
+        + r"""
+const assert = require('node:assert/strict');
+let oldToken = 'expired';
+const fullStorage = {
+  getItem(key) { return key === 'a6-token' ? oldToken : null; },
+  setItem() { throw new Error('storage full'); },
+  removeItem() { oldToken = null; },
+};
+Object.defineProperty(globalThis, 'localStorage', {
+  get() { if (storageMode === 'full') return fullStorage; throw new Error('storage blocked'); }
+});
+const classes = new Set();
+const document = {
+  getElementById() { return null; },
+  documentElement: {classList: {
+    add: c => classes.add(c), contains: c => classes.has(c),
+    toggle(c) { if (classes.has(c)) { classes.delete(c); return false; }
+                classes.add(c); return true; }
+  }},
+};
+const navigator = {}, window = {};
+let logins = 0;
+function showLogin() { logins++; }
+"""
+    )
+    scenario = r"""
+assert.equal(recall('width', 'default'), 'default');
+remember('width', '400px');
+toggleTheme(); toggleRail();
+assert.ok(classes.has('light'));
+assert.ok(classes.has('rail-min'));
+saveToken({token: 'signed-in'});
+assert.equal(authHeaders().Authorization, 'Bearer signed-in');
+signedOut({status: 401});
+assert.equal(logins, 1);
+assert.equal(authHeaders().Authorization, undefined);
+"""
+    client = page.CLIENT_JS[: page.CLIENT_JS.index("// --- sign-in")]
+    result = subprocess.run(
+        [node, "-e", setup + client + scenario], check=False, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_page_assets_load_non_empty() -> None:

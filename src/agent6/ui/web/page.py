@@ -13,10 +13,11 @@ from __future__ import annotations
 from importlib import resources
 
 _ASSETS = resources.files(__package__)
-# One script block, concatenated in declaration order: core and hub, run, machine, config,
+# One script block, concatenated in declaration order: core and hub, layout, run, machine, config,
 # the source views the Git and Files tabs share, git, files.
 _CLIENT_FILES = (
     "client.js",
+    "client_layout.js",
     "client_run.js",
     "client_machine.js",
     "client_config.js",
@@ -28,6 +29,56 @@ _CLIENT_FILES = (
 )
 CLIENT_JS = "".join(_ASSETS.joinpath(name).read_text(encoding="utf-8") for name in _CLIENT_FILES)
 STYLES_CSS = _ASSETS.joinpath("styles.css").read_text(encoding="utf-8")
+
+_NAV_ITEMS = (
+    (
+        "hub",
+        "#/",
+        "Sessions",
+        '<path d="M4 5.5h10a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H9l-3.5 3v-3H4'
+        'a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z"/>'
+        '<path d="M18 9.5h2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-.5v3l-3.5-3H12"/>',
+    ),
+    (
+        "git",
+        "#/git",
+        "Git",
+        '<circle cx="6.5" cy="5" r="2.2"/><circle cx="6.5" cy="19" r="2.2"/>'
+        '<circle cx="17.5" cy="8" r="2.2"/><path d="M6.5 7.2v9.6"/>'
+        '<path d="M17.5 10.2c0 3.6-4 4.6-7 5.6-1.6.5-3 1.1-4 2"/>',
+    ),
+    (
+        "files",
+        "#/files",
+        "Files",
+        '<rect x="5" y="3" width="14" height="18" rx="1.5"/><path d="M5 12h14"/>'
+        '<path d="M10.5 7.5h3"/><path d="M10.5 16.5h3"/>',
+    ),
+    (
+        "machines",
+        "#/machines",
+        "Machines",
+        '<circle cx="6.5" cy="7" r="2.5"/><circle cx="17.5" cy="7" r="2.5"/>'
+        '<circle cx="12" cy="17.5" r="2.5"/><path d="M9 7h6"/>'
+        '<path d="M8 9.2l2.8 5.9"/><path d="M16 9.2l-2.8 5.9"/>',
+    ),
+    (
+        "config",
+        "#/config",
+        "Config",
+        '<path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/>'
+        '<circle cx="9" cy="7" r="1.8" fill="currentColor" stroke="none"/>'
+        '<circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none"/>'
+        '<circle cx="7" cy="17" r="1.8" fill="currentColor" stroke="none"/>',
+    ),
+)
+_NAV_LINKS = "\n".join(
+    f'<a href="{href}" data-tab="{tab}" title="{label}" aria-label="{label}">'
+    '<svg class="ic" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" '
+    'stroke-linejoin="round" fill="none" stroke="currentColor" aria-hidden="true">'
+    f"{drawing}</svg><span>{label}</span></a>"
+    for tab, href, label, drawing in _NAV_ITEMS
+)
 
 # A hash-routed page: live views open an event stream, static views fetch a snapshot.
 PAGE_HTML = (
@@ -50,11 +101,9 @@ PAGE_HTML = (
 <aside class="rail">
   <a class="rail-brand" href="#/" aria-label="agent6 home"><img src="/icon.svg" width="24" height="24" alt=""><b>agent6</b></a>
   <nav class="rail-nav">
-    <a href="#/" data-tab="hub" title="Sessions"><span class="ic">▤</span><span>Sessions</span></a>
-    <a href="#/machines" data-tab="machines" title="Machines"><span class="ic">◈</span><span>Machines</span></a>
-    <a href="#/config" data-tab="config" title="Config"><span class="ic">⚙</span><span>Config</span></a>
-    <a href="#/git" data-tab="git" title="Git"><span class="ic">⎇</span><span>Git</span></a>
-    <a href="#/files" data-tab="files" title="Files"><span class="ic">▣</span><span>Files</span></a>
+"""
+    + _NAV_LINKS
+    + r"""
   </nav>
   <span class="rail-gap"></span>
   <button onclick="toggleTheme()" title="theme">◐<span class="rail-label"> theme</span></button>
@@ -72,11 +121,9 @@ PAGE_HTML = (
 </div>
 
 <nav class="tabs">
-  <a href="#/" data-tab="hub"><span class="ic">▤</span>Sessions</a>
-  <a href="#/machines" data-tab="machines"><span class="ic">◈</span>Machines</a>
-  <a href="#/config" data-tab="config"><span class="ic">⚙</span>Config</a>
-  <a href="#/git" data-tab="git"><span class="ic">⎇</span>Git</a>
-  <a href="#/files" data-tab="files"><span class="ic">▣</span>Files</a>
+"""
+    + _NAV_LINKS
+    + r"""
 </nav>
 
 <script>

@@ -25,21 +25,21 @@ function hbTick() {
 let activeOverlayClose = null; // an open modal dialog's dismisser, closed on navigation
 
 // --- theme -------------------------------------------------------------------
-if (localStorage.getItem('a6-theme') === 'light') document.documentElement.classList.add('light');
+if (recall('a6-theme', '') === 'light') document.documentElement.classList.add('light');
 function toggleTheme() {
   const on = document.documentElement.classList.toggle('light');
-  localStorage.setItem('a6-theme', on ? 'light' : 'dark');
+  remember('a6-theme', on ? 'light' : 'dark');
 }
 
 // --- nav rail collapse ---------------------------------------------------------
-if (localStorage.getItem('a6-rail') === 'min') document.documentElement.classList.add('rail-min');
+if (recall('a6-rail', '') === 'min') document.documentElement.classList.add('rail-min');
 function railArrow() {
   const a = document.getElementById('rail-arrow');
   if (a) a.textContent = document.documentElement.classList.contains('rail-min') ? '»' : '«';
 }
 function toggleRail() {
   const on = document.documentElement.classList.toggle('rail-min');
-  localStorage.setItem('a6-rail', on ? 'min' : '');
+  remember('a6-rail', on ? 'min' : '');
   railArrow();
 }
 railArrow(); // reflect the persisted state on load
@@ -68,18 +68,26 @@ const esc = s => (s == null ? '' : String(s));
 // The sign-in token lives in storage scoped to this origin (host and port), so a page another
 // local server serves never receives it, as it would a cookie; every call sends it as a header.
 const TOKEN_KEY = 'a6-token';
+let loginToken = ''; // an in-memory sign-in when browser storage is unavailable
 function authHeaders(extra) {
   const h = Object.assign({}, extra || {});
-  const t = localStorage.getItem(TOKEN_KEY);
+  const t = loginToken || recall(TOKEN_KEY, '');
   if (t) h['Authorization'] = 'Bearer ' + t;
   return h;
 }
-function saveToken(login) { localStorage.setItem(TOKEN_KEY, login.token); }
+function saveToken(login) { loginToken = login.token; remember(TOKEN_KEY, loginToken); }
 // Per-viewer conveniences (a view, a diff mode) kept in this browser; the page works without storage.
 function recall(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch (_) { return fallback; } }
 function remember(key, value) { try { localStorage.setItem(key, value); } catch (_) {} }
 // A 401 is the server asking for its secret: every API call brings up the sign-in form.
-function signedOut(r) { if (r.status === 401) { localStorage.removeItem(TOKEN_KEY); showLogin(); } return r; }
+function signedOut(r) {
+  if (r.status === 401) {
+    loginToken = '';
+    try { localStorage.removeItem(TOKEN_KEY); } catch (_) {}
+    showLogin();
+  }
+  return r;
+}
 // Every GET: the token on the request, a 401 to the sign-in form, the server's error text thrown.
 async function getResponse(url) { const r = signedOut(await fetch(url, { headers: authHeaders() })); if (!r.ok) throw new Error((await r.json().catch(()=>({error:r.statusText}))).error || r.statusText); return r; }
 async function getJSON(url) { return (await getResponse(url)).json(); }
@@ -104,9 +112,8 @@ function toast(msg, bad) {
 function setCrumb(t) { crumb.textContent = t || ''; }
 
 // --- sign-in -----------------------------------------------------------------
-// The form takes over the view; a sign-in reloads the page, so every view and
-// stream starts again with the token. A repeat call (a poll still in flight)
-// keeps the form and what is typed in it.
+// The form takes over the view; a sign-in restarts the route with the token.
+// A repeat call (a poll still in flight) keeps the form and what is typed in it.
 function showLogin(error) {
   routeGen++; // a render in flight must not paint over the form
   closeLive();
@@ -131,7 +138,7 @@ function showLogin(error) {
     form.appendChild(el('div', 'err'));
     form.onsubmit = async (e) => {
       e.preventDefault();
-      try { saveToken(await postJSON('/api/login', { secret: input.value })); location.reload(); }
+      try { saveToken(await postJSON('/api/login', { secret: input.value })); route(); }
       catch (err) { showLogin(err.message); }
     };
     view.appendChild(form);
@@ -672,7 +679,7 @@ function firstLine(s, n) { const t = String(s == null ? '' : s).split('\n')[0]; 
 function makeConv(url, box, body) {
   const conv = {
     items: [], open: new Set(),
-    detail: localStorage.getItem('a6-detail') || 'collapsed',
+    detail: recall('a6-detail', '') || 'collapsed',
     timer: null,
     finished: false, // set by setLive: an ended run/machine gets past-tense empty text
   };
@@ -779,7 +786,7 @@ function makeConv(url, box, body) {
     const b = el('button', 'mini', 'detail: ' + conv.detail);
     b.onclick = () => {
       conv.detail = DETAIL_CYCLE[conv.detail];
-      localStorage.setItem('a6-detail', conv.detail);
+      remember('a6-detail', conv.detail);
       b.textContent = 'detail: ' + conv.detail;
       conv.open.clear();
       paintItems();
@@ -1136,7 +1143,7 @@ function makeComposer(id) {
       if (drawer && drawer.classList.contains('closed')) {
         drawer.classList.remove('closed');
         document.querySelector('.details-btn')?.classList.add('active');
-        localStorage.setItem('a6-drawer', 'open');
+        remember('a6-drawer', 'open');
       }
       const pick = document.querySelector('.wmenu button[data-w="shells"]');
       if (pick) pick.click();

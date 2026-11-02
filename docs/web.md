@@ -37,8 +37,9 @@ agent6 web: secret: amber-acorn-agile-alder-alert-arrow (type it once per browse
 - Open the printed URL: the page signs in with the secret in the address, then removes it from the address bar.
 - On another device, open the server's address and type the six words into the sign-in form.
   Capitals, spaces and hyphens between the words do not matter, so `Amber acorn agile alder alert arrow` from a phone keyboard signs in.
-- A browser signs in once and stays signed in.
+- With browser storage available, a browser signs in once and stays signed in.
   It keeps a keyed digest of the secret, never the secret, in storage scoped to this server's address and port.
+  Without browser storage, sign in again after reloading.
 - Each launch mints a new secret, and every browser signs in again.
 
 Set your own secret, at least 12 characters after lowercasing and joining words with single hyphens, to keep browsers signed in across restarts:
@@ -102,6 +103,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - the compare lists the files that differ between the two, as `git diff base head` does, so a commit against its parent reads like that commit's own diff; a commit's **Set as base** and **Set as head** put it in the pickers
     - limits: 500 commits a page at most, 2000 files a list, 256 KiB a patch unless opened whole, 20 MiB an image, 30 refs and 30 commits a search; each list says when it was cut
 - **Files page**: the files at one revision; it reads the repository `agent6 web` was started in and writes nothing
+    - on desktop, drag the divider or use its arrow keys to resize the tree, and use **Hide tree** / **Show tree** to collapse or reopen it; the browser remembers both choices
     - the revision picker at the top is the compare pickers' search, with **working tree** as its first choice; HEAD to start (the working tree in a repository with no commits yet)
     - the files as a folder tree with a filter box: a folder row shows how many files it holds and their size and folds them on a click; a tree over 200 files starts folded; at a commit the committed files, in the working tree the tracked files plus untracked ones `.gitignore` does not exclude
     - working-tree badges use `H` for tracked, `A` for untracked and `M` for tracked files with uncommitted changes; a folder shows `M` if any child is modified, else `A` if any is untracked, else `H`, with the counts in its tooltip

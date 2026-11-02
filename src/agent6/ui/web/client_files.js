@@ -23,9 +23,27 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
   bar.appendChild(pick.root); bar.appendChild(filter); bar.appendChild(counts);
   app.appendChild(listHost);
   const body = el('div', 'files-body'); app.appendChild(body);
-  const tree = el('div', 'files-tree'); body.appendChild(tree);
+  const tree = el('div', 'files-tree'); tree.id = 'files-tree'; body.appendChild(tree);
+  body.appendChild(resizeHandle(tree, {
+    label: 'File tree width', key: 'a6-files-tree-w', property: '--files-tree-w',
+    min: 180, max: () => body.getBoundingClientRect().width - 246,
+  }));
   const pane = el('div', 'files-view'); body.appendChild(pane);
   pane.appendChild(el('div', 'empty', 'click a file to read it'));
+  const toggle = el('button', 'files-tree-toggle');
+  toggle.setAttribute('aria-controls', tree.id);
+  const setTreeOpen = open => {
+    body.classList.toggle('tree-closed', !open);
+    toggle.textContent = open ? 'Hide tree' : 'Show tree';
+    toggle.setAttribute('aria-expanded', String(open));
+  };
+  setTreeOpen(recall('a6-files-tree', 'open') !== 'closed');
+  toggle.onclick = () => {
+    const open = body.classList.contains('tree-closed');
+    setTreeOpen(open);
+    remember('a6-files-tree', open ? 'open' : 'closed');
+  };
+  bar.insertBefore(toggle, pick.root);
 
   // -- the tree ----------------------------------------------------------------------
   let entries = [], truncated = false, rev = '', loading = 0, shown = null;

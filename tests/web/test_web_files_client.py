@@ -15,7 +15,7 @@ class Element {
   constructor(tag, cls = '', text = '') {
     this.tag = tag; this.cls = new Set((cls || '').split(' ')); this.text = text;
     this.children = []; this.dataset = {}; this.value = ''; this.parent = null;
-    this.style = {setProperty() {}};
+    this.style = {setProperty(k, v) { this[k] = v; }, removeProperty(k) { delete this[k]; }};
     this.classList = {
       add: c => this.cls.add(c), remove: c => this.cls.delete(c),
       contains: c => this.cls.has(c),
@@ -37,6 +37,7 @@ class Element {
     this.parent.children = this.parent.children.filter(c => c !== this); this.parent = null;
   }
   setAttribute(k, v) { this[k] = v; }
+  getBoundingClientRect() { return {width: this.cls.has('files-body') ? 1000 : 360}; }
   scrollIntoView() { this.scrolled = true; }
   querySelectorAll(selector) {
     const matches = n => selector.startsWith('.')
@@ -64,8 +65,9 @@ let activeTab = '';
 const setTab = tab => activeTab = tab;
 const closeLive = () => {};
 const closeOverlay = () => {};
-const recall = (_, fallback) => fallback;
-const remember = () => {};
+const saved = new Map();
+const recall = (key, fallback) => saved.get(key) ?? fallback;
+const remember = (key, value) => saved.set(key, value);
 const toast = message => { throw new Error(message); };
 const view = el('main');
 const setCrumb = () => {};
@@ -101,6 +103,7 @@ def _run(scenario: str) -> None:
         + "\n".join(
             web.joinpath(name).read_text(encoding="utf-8")
             for name in (
+                "client_layout.js",
                 "client_source.js",
                 "client_review.js",
                 "client_git_diff.js",
@@ -248,6 +251,32 @@ await late;
 assert.ok(!view.textContent.includes('stale blame error'));
 """
     )
+
+
+def test_files_tree_controls_resize_collapse_and_restore() -> None:
+    """The Files controls change and retain width and visibility through a render."""
+    _run("""
+await renderFiles(1);
+let tree = view.querySelector('.files-tree');
+let handle = view.querySelector('.resize-handle');
+let toggle = view.querySelector('.files-tree-toggle');
+assert.ok(handle, 'file tree has no divider');
+assert.ok(toggle, 'file tree has no collapse control');
+handle.onkeydown({key: 'ArrowRight', preventDefault() {}});
+assert.equal(tree.style['--files-tree-w'], '380px');
+assert.equal(saved.get('a6-files-tree-w'), '380px');
+toggle.onclick();
+assert.ok(view.querySelector('.files-body').classList.contains('tree-closed'));
+assert.equal(toggle['aria-expanded'], 'false');
+await renderFiles(1);
+tree = view.querySelector('.files-tree');
+toggle = view.querySelector('.files-tree-toggle');
+assert.equal(tree.style['--files-tree-w'], '380px');
+assert.ok(view.querySelector('.files-body').classList.contains('tree-closed'));
+toggle.onclick();
+assert.ok(!view.querySelector('.files-body').classList.contains('tree-closed'));
+assert.equal(toggle['aria-expanded'], 'true');
+""")
 
 
 def test_client_javascript_parses() -> None:

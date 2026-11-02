@@ -82,7 +82,7 @@ nav.tabs a {
   color: var(--muted); font-size: 11px; gap: 2px; padding: 6px 0;
 }
 nav.tabs a.active { color: var(--accent); }
-nav.tabs a .ic { font-size: 18px; line-height: 1; }
+.rail-nav .ic, nav.tabs .ic { width: 20px; height: 20px; flex: none; }
 
 /* Flat layout everywhere: sections run edge to edge, split by single
    hairline borders; floating cards wasted width. Mobile and desktop keep
@@ -395,13 +395,12 @@ aside.rail { display: none; }
   aside.rail .rail-nav a { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; color: var(--muted); }
   aside.rail .rail-nav a:hover { background: var(--surface2); color: var(--text); }
   aside.rail .rail-nav a.active { background: var(--surface2); color: var(--accent); }
-  aside.rail .rail-nav .ic { font-size: 16px; width: 18px; text-align: center; }
   aside.rail .rail-gap { flex: 1; }
   /* collapsed: an icon-only strip; labels and the brand name hide, icons centre */
   html.rail-min aside.rail { padding-left: 8px; padding-right: 8px; }
   html.rail-min aside.rail .rail-brand { justify-content: center; padding-left: 0; padding-right: 0; }
   html.rail-min aside.rail .rail-brand b,
-  html.rail-min aside.rail .rail-nav a span:not(.ic),
+  html.rail-min aside.rail .rail-nav a span,
   html.rail-min aside.rail .rail-label { display: none; }
   html.rail-min aside.rail .rail-nav a { justify-content: center; padding: 10px 0; }
   .content { margin-left: var(--rail-w); }
@@ -433,7 +432,11 @@ aside.rail { display: none; }
   .dock-fixed { position: fixed; left: var(--rail-w); right: 0; bottom: 0; z-index: 15; }
   main:has(.dock-fixed) { padding-bottom: 180px; }
 }
+.resize-handle { display: none; touch-action: none; user-select: none; }
 @media (min-width: 781px) {
+  .resize-handle { display: block; flex: none; width: 6px; cursor: col-resize; }
+  .resize-handle:hover, .resize-handle.dragging, .resize-handle:focus-visible { background: var(--accent); }
+  .resize-handle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .run-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
   /* prompts / controls / status keep their natural height; only the body pane
      flexes (without this the column shrinks them and clips the status kv) */
@@ -453,9 +456,7 @@ aside.rail { display: none; }
      (except the event log, which keeps a follow-the-tail window). */
   .run-app .drawer .card.scroll { max-height: none; overflow: visible; }
   .run-app .drawer .card-log .card-body { max-height: 45vh; overflow: auto; }
-  .run-app .drawer-handle { flex: none; width: 6px; cursor: col-resize; }
-  .run-app .drawer-handle:hover, .run-app .drawer-handle.dragging { background: var(--accent); }
-  .run-app .drawer.closed + .drawer-handle { display: none; }
+  .run-app .drawer.closed + .resize-handle { display: none; }
   .run-app .card-conv { flex: 1 1 auto; min-width: 0; }
   .run-app .card-conv .conv-box { flex: 1 1 auto; min-height: 0; max-height: none; }
 }
@@ -608,7 +609,7 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .files-head .gf-path { flex: 1 1 200px; }
 .files-note { font-size: 12px; white-space: nowrap; }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
-.files-back { display: none; }
+.files-back, .files-tree-toggle { display: none; }
 .blame-cell { display: inline-flex; width: 38ch; gap: 1ch; padding-right: 1ch; vertical-align: bottom; user-select: none; }
 .blame-commit, .blame-date { flex: none; }
 .blame-author { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -618,7 +619,9 @@ button.active { border-color: var(--accent); color: var(--accent); }
   .files-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }
   .files-app > .files-bar, .files-app > .gpick-host { flex: none; }
   .files-body { flex: 1 1 auto; min-height: 0; display: flex; border-top: 1px solid var(--border); }
-  .files-tree { flex: 0 0 36%; min-width: 0; overflow: auto; }
+  .files-tree { flex: none; width: var(--files-tree-w, 36%); min-width: 180px; max-width: calc(100% - 246px); overflow: auto; }
+  .files-tree-toggle { display: inline-block; }
+  .files-body.tree-closed > .files-tree, .files-body.tree-closed > .resize-handle { display: none; }
   .files-view { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border); }
 }
 @media (max-width: 780px) {

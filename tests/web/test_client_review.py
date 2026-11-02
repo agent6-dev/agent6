@@ -26,10 +26,6 @@ def _run(scenario: str) -> None:
         _DOM.replace(
             "const toast = message => { throw new Error(message); };",
             "const toast = message => notices.push(message);",
-        ).replace(
-            "const recall = (_, fallback) => fallback;",
-            "let diffMode = 'inline'; const recall = (key, fallback) => "
-            "key === 'a6-diff-mode' ? diffMode : fallback;",
         )
         + r"""
 Element.prototype.querySelectorAll = function(s) {
@@ -183,7 +179,7 @@ def test_review_deep_link_reload_opens_diff_then_exact_file(mode: str) -> None:
         + repr(mode)
         + ";"
         + """
-diffMode = ['narrow', 'truncated'].includes(mode) ? 'split' : mode;
+saved.set('a6-diff-mode', ['narrow', 'truncated'].includes(mode) ? 'split' : mode);
 window.matchMedia = () => ({matches: mode === 'narrow'});
 const e = entry(mode === 'new' ? 'head' : 'base', 2, mode === 'new' ? 'new.txt' : 'old.txt');
 e.finding.observations = [e.observation];
