@@ -1117,8 +1117,8 @@ def test_a_steer_that_resumes_a_run_is_its_continuation(
     """A steer that resumes a run is recorded as its continuation; the task stays as it began.
 
     The listing row, the squash message and the wire read the task and the latest steer as two
-    facts, finished run or not. Stamped past every refusal: a resume with no snapshot records
-    nothing.
+    facts, finished run or not; an unsteered resume clears the continuation. Stamped past every
+    refusal: a resume with no snapshot records nothing.
     """
     from unittest import mock
 

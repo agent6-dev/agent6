@@ -223,7 +223,10 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
 def test_a_resumed_runs_squash_names_the_task_and_its_continuation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The squash subject is the run's task; the latest steer follows as a `continued:` line."""
+    """The squash subject is the run's task; the latest steer follows as a `continued:` line.
+
+    The step bullets stay beneath it when the run left no finish summary.
+    """
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-CONT01", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     layout = sessions_layout.SessionLayout(
@@ -1217,6 +1220,9 @@ def test_model_squash_uses_the_whole_run(
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id=session_id
     )
+    recorded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    recorded["continued_task"] = "Address review feedback"
+    layout.manifest_path.write_text(json.dumps(recorded) + "\n", encoding="utf-8")
     summaries = ["Resolve minor model IDs through the family.", "Add fallback docstrings."]
     events = []
     for event_type, task, summary, reason in (
@@ -1247,6 +1253,7 @@ def test_model_squash_uses_the_whole_run(
     assert "+context_window = 200000" in seen["user"]
     assert "+Document the fallback." in seen["user"]
     assert "implement the thing" in seen["user"]
+    assert "Continued: Address review feedback" in seen["user"]
     assert all(summary in seen["user"] for summary in summaries)
     assert "Abandoned finish text." not in seen["user"]
     if oversized:
