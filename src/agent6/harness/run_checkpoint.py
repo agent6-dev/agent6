@@ -55,6 +55,9 @@ class Checkpoints:
             The subject line.
         """
         text = turn.resp.text or ""
+        if self.style == "agent6" and commit_message.first_prose_line(text, fallback=""):
+            return commit_message.agent6_subject(text, turn.number, fallback=fallback)
+        # The chain's delta names the fallback and feeds the conventional and model styles.
         changes = self.chain.name_status()
         if len(changes) == 1:
             path = changes[0][1]

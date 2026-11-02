@@ -109,6 +109,13 @@ def _knobs(cfg: Any, **knobs: Any) -> Any:
     return cfg
 
 
+class _NoRepoChain(run_chain.RunChain):
+    """A chain on /tmp: its commits are patched out, and there is no tree to read a delta from."""
+
+    def name_status(self) -> tuple[tuple[str, str], ...]:
+        return ()
+
+
 def _wf(
     root: pathlib.Path | None = None,
     *,
@@ -134,7 +141,9 @@ def _wf(
     # A live chain by default, so the auto-commit paths run; tests patch
     # `agent6_git_ops.chain_commit`.
     defaults: dict[str, Any] = {
-        "chain": run_chain.RunChain(
+        "chain": (
+            run_chain.RunChain if root is not None and (root / ".git").exists() else _NoRepoChain
+        )(
             root or pathlib.Path("/tmp"),
             ref=ref,
             branch=branch,
