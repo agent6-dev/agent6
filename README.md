@@ -1,4 +1,3 @@
-<!-- --8<-- [start:overview] -->
 # agent6
 
 - Runs the model's commands in a [Linux sandbox](#security) with the file and network access you set.
@@ -12,7 +11,6 @@
 - Supports repository `AGENTS.md` instructions, [SKILL.md packs][skills], [MCP servers][mcp], and background commands for development servers and watchers.
 - Shows the repository in the browser: the commit graph, each commit's diff, a compare of two revisions, and the files at any revision with blame.
 - Eight runtime dependencies, no telemetry unless you [configure an export][telemetry], and no automatic updates.
-<!-- --8<-- [end:overview] -->
 
 <table>
   <tr>
@@ -27,7 +25,6 @@
   </tr>
 </table>
 
-<!-- --8<-- [start:guide] -->
 Also available as a [streaming CLI][cli-demo] and through [ACP editor integration][acp].
 
 ## [Installation][installation]
@@ -126,7 +123,6 @@ agent6 runs inside or outside a devcontainer.
 Inside a container, `sandbox.isolation = "auto"` selects the strongest level the container allows, and `agent6 check sandbox` names it.
 Docker's default seccomp and AppArmor profiles block user namespaces, so a plain devcontainer gets `sandbox.isolation = "partial"`: the container's network, and `.git` writable to the commands, warned at startup.
 A container started with `--security-opt seccomp=unconfined --security-opt apparmor=unconfined` allows `sandbox.isolation = "full"`.
-<!-- --8<-- [end:guide] -->
 
 [acp]: https://agent6.dev/acp/
 [budgets]: https://agent6.dev/config/#budget
