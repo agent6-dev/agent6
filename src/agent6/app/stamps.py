@@ -372,42 +372,45 @@ def stamp_includes(session_dir: pathlib.Path, included: manifest.IncludedRun) ->
 
 
 def stamp_fork_task(session_dir: pathlib.Path, steer: str, *, source_dir: pathlib.Path) -> None:
-    """Record the first steer that sends a fork elsewhere as the fork's own task.
+    """Record a fork's steer: its own task while it still carries the source's, else a continuation.
 
-    A fork starts with its source's task; later steers are follow-ups within the task, so the
-    stamp fires only while the task is still the source's. A newer manifest, or a pruned
-    source, leaves the task as it stands rather than failing the resume.
+    A fork's journal opens with the steer that sent it elsewhere, so the fold names the fork by
+    it; the manifest agrees. An unreadable manifest leaves the fork as it stands, and a pruned
+    source makes the steer a continuation.
 
     Args:
         session_dir: The fork's session directory.
         steer: The steer that resumed the fork.
         source_dir: The source's session directory.
     """
-    m = manifest.read_manifest(session_dir)
-    if m.parent_session_id is None:
-        return
-    try:
-        source_task = manifest.read_manifest(source_dir).user_task
-    except manifest.ManifestError:
-        return  # the source is gone; its task is whatever the fork already carries
-    if m.user_task != source_task:
-        return  # already sent somewhere; this steer is a follow-up
     with contextlib.suppress(manifest.ManifestError, OSError):
-        _write_task(session_dir, m, steer)
+        m = manifest.read_manifest(session_dir)
+        try:
+            source_task: str | None = manifest.read_manifest(source_dir).user_task
+        except manifest.ManifestError:
+            source_task = None
+        field = (
+            "user_task"
+            if source_task is not None and m.user_task == source_task
+            else "continued_task"
+        )
+        write_manifest(
+            session_dir / manifest.MANIFEST_NAME,
+            m.model_copy(update={field: task_text.operator_task_text(steer)[:4000]}),
+        )
 
 
-def stamp_task(session_dir: pathlib.Path, steer: str) -> None:
-    """Record the steer as the run's task; a newer manifest keeps its task rather than fail."""
+def stamp_continuation(session_dir: pathlib.Path, steer: str) -> None:
+    """Record the steer as the run's latest continuation; the task stays as the run began.
+
+    An unreadable manifest is left alone rather than failing the resume.
+    """
     with contextlib.suppress(manifest.ManifestError, OSError):
-        _write_task(session_dir, manifest.read_manifest(session_dir), steer)
-
-
-def _write_task(session_dir: pathlib.Path, m: manifest.SessionManifest, steer: str) -> None:
-    """Write the steer as the manifest's task, clipped like the first write."""
-    write_manifest(
-        session_dir / manifest.MANIFEST_NAME,
-        m.model_copy(update={"user_task": task_text.operator_task_text(steer)[:4000]}),
-    )
+        m = manifest.read_manifest(session_dir)
+        write_manifest(
+            session_dir / manifest.MANIFEST_NAME,
+            m.model_copy(update={"continued_task": task_text.operator_task_text(steer)[:4000]}),
+        )
 
 
 def stamp_verify_gate(session_dir: pathlib.Path, argv: Sequence[str], origin: str) -> None:

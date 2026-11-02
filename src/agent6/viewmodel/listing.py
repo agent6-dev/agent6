@@ -666,7 +666,7 @@ def summarize_session_dir(
     mode, label = scan.mode, scan.task_label
     if manifest is not None:
         if not label.task:
-            label = label.fallback(manifest.user_task)
+            label = label.fallback(manifest.user_task, manifest.continued_task)
         if mode == "?":
             mode = manifest.mode or mode
     if mode == "?" and not label.task:

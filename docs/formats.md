@@ -2323,6 +2323,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `mode` | `str` | The session mode. No default: it is the privilege gate's only input, and a manifest that lost the key must not read as the more-privileged `run`. |
 | `start_ts` | `str` | When the session started. |
 | `user_task` | `str` | A 4000-character fallback for listings whose journal is missing. |
+| `continued_task` | `str` | The latest resume steer, clipped the same way; the fallback for the continuation line. |
 | `base_sha` | `str` | The commit the run's un-landed work starts from: where it started, or the commit a resume continued from after its work landed. |
 | `base_branch` | `str` | The branch that commit was on. |
 | `run_branch` | `str \| None` | The run's own branch, or None. |

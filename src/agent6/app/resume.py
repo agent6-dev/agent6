@@ -731,16 +731,14 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if caps := budget_overrides.argv():
             reporter.note(f"budget caps in force from this run's flags: {' '.join(caps)}")
         if steer.strip():
-            # A steer that is the work names the run, for a finished run or a fork still
-            # carrying its source's task.
-            if new_work:
-                stamps.stamp_task(layout.session_dir, steer.strip())
-            elif manifest.parent_session_id:
+            if manifest.parent_session_id:
                 stamps.stamp_fork_task(
                     layout.session_dir,
                     steer.strip(),
                     source_dir=layout.session_dir.parent / manifest.parent_session_id,
                 )
+            else:
+                stamps.stamp_continuation(layout.session_dir, steer.strip())
         # This execution's models and policy, for `agent6 exec` and the policy surfaces.
         stamps.stamp_execution(layout.session_dir, cfg, mode, isolation)
         if mode == "run":

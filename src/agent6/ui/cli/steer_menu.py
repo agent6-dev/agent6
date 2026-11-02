@@ -157,17 +157,18 @@ def _print_status(session_dir: pathlib.Path) -> None:
         ctx += f" · elided {s.compact_elided} ({s.compact_gists_live} gists)"
     if s.pins:
         ctx += f" · pins {len(s.pins)}"
-    preset, fallback_task = "", ""
+    preset, fallback_task, fallback_continued = "", "", ""
     try:
         saved = manifest.read_manifest(session_dir)
         preset, fallback_task = saved.harness.preset, saved.user_task
+        fallback_continued = saved.continued_task
     except manifest.ManifestError:
         pass
     prof = f" · preset {preset}" if preset else ""
     calls = common.plural(len(s.tool_calls), "tool")
     print(f"[agent6] {label} · tasks {tasks} · {calls} · cost {cost}{ctx}{prof}")
     lead = f"         model {model} · task: "
-    task = s.task_label.fallback(fallback_task).line(max_chars=80)
+    task = s.task_label.fallback(fallback_task, fallback_continued).line(max_chars=80)
     print(lead + task.replace("\n", "\n" + " " * len(lead)))
 
 

@@ -240,7 +240,9 @@ def build_session_seed(cwd: pathlib.Path, session_id: str, *, latest: bool) -> S
             "This question is about a PRIOR agent6 run. Its run state lives outside the"
             " workspace and is not reachable with read_file, so everything you have"
             " about it is in this digest.\n\n"
-            f"## Run task\n{manifest.user_task}\n\n"
+            f"## Run task\n{manifest.user_task}\n"
+            + (f"continued: {manifest.continued_task}\n" if manifest.continued_task else "")
+            + "\n"
             f"## Outcome / key events\n{summarize_session_log(layout.logs_path)}\n\n"
             f"## Diff {diff_label}\n{diff_body}\n"
             f"{plan_section}"

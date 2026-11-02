@@ -159,11 +159,13 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         self._reader_start_at = 0
         # The header's task line before session.start folds: the manifest knows the work.
         self.fallback_task = ""
+        self.fallback_continued = ""
         # The session's mode (run, plan, ask), the title word; "run" for a manifest-less dir.
         self.mode = "run"
         with contextlib.suppress(sessions_manifest.ManifestError):
             manifest = sessions_manifest.read_manifest(session_dir)
             self.fallback_task = manifest.user_task
+            self.fallback_continued = manifest.continued_task
             self.mode = manifest.mode or "run"
         # A run is silent for a whole reasoning turn; the ~1/s repaint tells thinking from hung.
         self.last_event_at = time.monotonic()
@@ -197,7 +199,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         Returns:
             The fold's label, else the manifest's task.
         """
-        return self.state.task_label.fallback(self.fallback_task)
+        return self.state.task_label.fallback(self.fallback_task, self.fallback_continued)
 
     def _task_lead(self) -> str:
         """Return the clipped task for a title, or the session name before a task is known."""
@@ -363,8 +365,12 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
                 has_unmerged = False
             with contextlib.suppress(sessions_manifest.ManifestError):
                 manifest = sessions_manifest.read_manifest(self.session_dir)
-                if manifest.user_task != self.fallback_task:
+                if (manifest.user_task, manifest.continued_task) != (
+                    self.fallback_task,
+                    self.fallback_continued,
+                ):
                     self.fallback_task = manifest.user_task
+                    self.fallback_continued = manifest.continued_task
                     self._dirty = True
                 if self.state.finished:
                     has_unmerged = listing.unmerged(

@@ -220,6 +220,24 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
     assert m["merged"]["sha"]
 
 
+def test_a_resumed_runs_squash_names_the_task_and_its_continuation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The squash subject is the run's task; the latest steer follows as a `continued:` line."""
+    monkeypatch.chdir(tmp_path)
+    _setup_run(tmp_path, "run-CONT01", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
+    layout = sessions_layout.SessionLayout(
+        state_dir=paths.state_dir(tmp_path), session_id="run-CONT01"
+    )
+    recorded = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    recorded["continued_task"] = "do more"
+    layout.manifest_path.write_text(json.dumps(recorded) + "\n", encoding="utf-8")
+    assert main(["sessions", "merge", "run-CONT01", "--method", "squash"]) == 0
+    message = _git(tmp_path, "log", "-1", "--format=%B", "main")
+    assert message.splitlines()[0] == "implement the thing"
+    assert "continued: do more" in message
+
+
 def test_runs_merge_with_no_id_names_the_live_run(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

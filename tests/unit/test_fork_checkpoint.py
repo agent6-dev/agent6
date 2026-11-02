@@ -1726,6 +1726,7 @@ def test_only_the_first_steer_names_a_fork(
 
     manifest = json.loads(dst.manifest_path.read_text(encoding="utf-8"))
     assert manifest["user_task"] == "create README.md only"
+    assert manifest["continued_task"] == "also fix the typo"
 
 
 def test_a_steered_ordinary_run_keeps_its_task(

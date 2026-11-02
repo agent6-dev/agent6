@@ -52,16 +52,21 @@ class TaskLabel:
             return self.start(steer or task)
         return TaskLabel(self.task, steer)
 
-    def fallback(self, task: str) -> TaskLabel:
+    def fallback(self, task: str, continued: str = "") -> TaskLabel:
         """Return manifest text only when the journal holds no task.
 
         Args:
             task: The manifest's task text.
+            continued: The manifest's latest continuation.
 
         Returns:
-            This label when it holds a task, else a label holding the manifest's task.
+            This label when it holds a task, else a label holding the manifest's texts.
         """
-        return self if self.task else TaskLabel(task_text.operator_task_text(task))
+        if self.task:
+            return self
+        return TaskLabel(
+            task_text.operator_task_text(task), task_text.operator_task_text(continued)
+        )
 
     def line(self, max_chars: int | None = 200) -> str:
         """Return each task clipped once at the caller's width.

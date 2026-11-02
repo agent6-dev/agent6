@@ -166,6 +166,7 @@ def session_state_as_dict(
     current = session_fold.open_approval_of(state)
     d["open_approval"] = None if current is None else current.id
     fallback_task = ""
+    fallback_continued = ""
     if session_dir is not None:
         word, reason = session_status.status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in session_status.LIVE_STATUS_WORDS
@@ -177,6 +178,7 @@ def session_state_as_dict(
             manifest = sessions_manifest.read_manifest(session_dir)
             if not state.task_label.task:
                 fallback_task = manifest.user_task
+                fallback_continued = manifest.continued_task
             d["mode"] = d["mode"] or manifest.mode
         d["policy"] = policy.manifest_policy(manifest).line()
         d["ports"] = process.listening_ports(session_dir)
@@ -203,7 +205,7 @@ def session_state_as_dict(
         if session_dir is not None
         else format.status_label(word, reason)
     )
-    label = state.task_label.fallback(fallback_task)
+    label = state.task_label.fallback(fallback_task, fallback_continued)
     d.pop("task_label")
     d["task"] = label.task
     d["continued_task"] = label.continued_task

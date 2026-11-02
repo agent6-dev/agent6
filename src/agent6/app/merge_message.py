@@ -44,6 +44,9 @@ def squash_message(
         return "\n".join(parts) if rows else None
     task = manifest.user_task or "agent6 run"
     summary = finish_summaries[-1] if finish_summaries else ""
+    if manifest.continued_task:
+        # A resumed run lands its continuation too; the subject stays the task's.
+        summary = f"continued: {manifest.continued_task}\n\n{summary}".strip()
     if style == "conventional":
         # The prefix goes on the uncut clause, so the subject is cut once.
         whole = commit_message.condense_commit_message(

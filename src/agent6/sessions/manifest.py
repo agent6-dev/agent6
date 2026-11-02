@@ -278,6 +278,8 @@ class SessionManifest(pydantic.BaseModel):
             manifest that lost the key must not read as the more-privileged `run`.
         start_ts: When the session started.
         user_task: A 4000-character fallback for listings whose journal is missing.
+        continued_task: The latest resume steer, clipped the same way; the fallback for the
+            continuation line.
         base_sha: The commit the run's un-landed work starts from: where it started, or the
             commit a resume continued from after its work landed.
         base_branch: The branch that commit was on.
@@ -323,6 +325,7 @@ class SessionManifest(pydantic.BaseModel):
     mode: str = ""
     start_ts: str = ""
     user_task: str = ""
+    continued_task: str = ""
     base_sha: str = ""
     base_branch: str = ""
     run_branch: str | None = None

@@ -1111,15 +1111,14 @@ def test_a_finished_run_still_resumes_with_a_steer(
 
 
 @pytest.mark.parametrize("ended", [True, False])
-def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
+def test_a_steer_that_resumes_a_run_is_its_continuation(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, *, ended: bool
 ) -> None:
-    """A steer that resumes a finished run becomes its task.
+    """A steer that resumes a run is recorded as its continuation; the task stays as it began.
 
-    The steer is the work (the fork rule, `stamp_fork_task`, for the only resume a finished run
-    allows), so the listing row and the squash merge of the new execution are titled with it, not
-    with work an earlier merge already landed; a run that had not finished keeps its task, the steer
-    being a follow-up. Stamped past every refusal: a resume with no snapshot renames nothing.
+    The listing row, the squash message and the wire read the task and the latest steer as two
+    facts, finished run or not. Stamped past every refusal: a resume with no snapshot records
+    nothing.
     """
     from unittest import mock
 
@@ -1166,7 +1165,8 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
         (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer="do more"
     )
     assert rc == 2
-    assert sessions_manifest.read_manifest(session_dir).user_task == "t"
+    refused = sessions_manifest.read_manifest(session_dir)
+    assert (refused.user_task, refused.continued_task) == ("t", "")
 
     (session_dir / "loop_state.json").write_text(
         json.dumps(
@@ -1187,7 +1187,8 @@ def test_a_steer_that_resumes_a_finished_run_becomes_its_task(
         (), sid, started_at=time.time(), frontend=mock.MagicMock(), force=False, steer="do more"
     )
     assert rc == 0
-    assert sessions_manifest.read_manifest(session_dir).user_task == ("do more" if ended else "t")
+    resumed = sessions_manifest.read_manifest(session_dir)
+    assert (resumed.user_task, resumed.continued_task) == ("t", "do more")
 
 
 def test_resume_refuses_a_fan_out_coordinator(
