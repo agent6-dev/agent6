@@ -11,16 +11,16 @@ The layers, lowest precedence first:
 |---|---|---|
 | built-in defaults | (none) | (secure defaults, always present) |
 | global *(default location)* | `$XDG_CONFIG_HOME/agent6/config.toml` | `agent6 connect`, `agent6 model` |
-| per-repo *(override)* | `<state-dir>/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
+| per-repo *(override)* | `$XDG_STATE_HOME/agent6/<repo-id>/config.toml` | `agent6 init`, `agent6 config set --repo` |
 | flag (FILE) | `--config FILE` | `agent6 run --config FILE` |
 | machine overlay | a machine file's `[config]` table | `agent6 config set --machine-file FILE` |
 
-`--config FILE` may repeat; later files win, and each file is layered after the repo config.
+`--config FILE` may repeat; later files win.
 In the `flag (FILE)` source `config show` prints, FILE is the path as given on the command line.
 
 A selected preset is inserted above the config layer that selected it; [Presets](#presets) gives the precedence rules.
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.
-It can be empty or absent when the global config supplies a provider and model; `harness.verify_command` is inferred per run when unset.
+It can be empty or absent when the global config supplies a provider and model.
 
 ## Creating and inspecting
 
@@ -34,15 +34,15 @@ It can be empty or absent when the global config supplies a provider and model; 
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
   Non-empty mappings show one row per entry with its origin.
   Empty mappings keep a `{}` row.
-  Mapping entry values are masked except for fields marked display-safe (`skills.state`).
+  Mapping entry values are masked except for fields marked display-safe (`skills.state`, `review.reviewers`).
 - `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
-  A key component that is not a bare TOML key (`[A-Za-z0-9_-]+`) is written quoted, as in `skills.state."org.some.skill"` or `providers.demo.extra_body."a.b"` (keep those quotes inside a shell-quoted argument).
+  A key component that is not a bare TOML key (`[A-Za-z0-9_-]+`) is written quoted, as in `providers.demo.extra_body."a.b"` (keep those quotes inside a shell-quoted argument).
   `get` accepts a whole mapping or one entry and prints each entry with its own origin.
   `set` and `unset` accept a whole mapping or one entry, such as `skills.state.alpha`.
   Every edit is re-validated; an invalid edit is rolled back when the config lock is held.
   A sibling pair that must move together is set as one inline table: `agent6 config set context '{ drop_at_chars = 200000, summarise_at_chars = 400000 }'`.
-- Writes are atomic; failure to take the edit lock does not block the write, but concurrent edits can lose updates.
-  An invalid edit without the lock is reported as "kept as written", since rolling it back could erase another writer's update.
+- Writes are atomic; failure to take the config lock does not block the write, but concurrent edits can lose updates.
+  An invalid edit without the lock is reported as "kept as written".
   A symlinked config file is followed only when you own the target, or its nearest existing parent when the target does not exist.
 - The [TUI config page](terminal.md#configuration) adds and removes named provider, MCP server and skill state entries through forms.
 - `agent6 config set --secret telemetry.headers.<name> <value>` saves a literal header value in the private global `secrets.toml`; `agent6 config unset --secret telemetry.headers.<name>` removes it.
@@ -51,9 +51,9 @@ It can be empty or absent when the global config supplies a provider and model; 
 - `config set`, `config unset`, and the web and TUI config editors name the preset or higher config layer that overrides a value they write or remove.
 - `agent6 config fill`: materialize defaults + global config into the global file; pass `--force` to replace an existing file.
   The repo layer and any selected preset are left as-is.
-- `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from every layer and preset, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
+- `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from the global and repo configs and their presets, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
-  `config show` prints what an `auto` knob resolved to on this host, tagged `(adaptive)`; `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
+  `config show` prints what an `auto` `sandbox.isolation` or `sandbox.network` resolved to on this host, tagged `(adaptive)`; `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
 
 ---
 
@@ -65,8 +65,8 @@ It can be empty or absent when the global config supplies a provider and model; 
 
 One backend per block; `<name>` is referenced from `[models.<role>]`.
 Provider names must match `[A-Za-z0-9_-]+`: one or more ASCII letters, digits, hyphens or underscores.
-The schema and config editors use the same rule, so `config set providers.<name>.<leaf>` can address each entry.
-Three orthogonal choices describe an HTTP backend: **`api_format`** (the wire dialect, the only field that selects code), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env` or `token_command`).
+
+Three orthogonal choices describe an HTTP backend: **`api_format`** (the wire dialect), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env`, `token_command` or `oauth`).
 A minimal block is just `api_format` (plus `base_url` for a non-default host).
 
 <!-- config-table: providers.<name> -->
@@ -77,14 +77,16 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 A literal string (`"x-title" = "agent6"`) rides every API request: model calls, the model listing and the plan reading.
 A template table renders from request facts for the request classes it names.
 Only a template whose `targets` name `oauth` or `exchange` reaches a configured issuer's credential endpoint.
+
 The facts: `request_id` (fresh per HTTP attempt) and `agent6_version` on every request; `model`, `session_id` (an opaque id per role and provider, kept across a resume), `initiator` (`user` or `agent`), `is_first_turn`, `is_subagent`, `has_tool_results` and `has_images` on a model call.
 `{{` and `}}` are literal braces; a placeholder holds a fact name and nothing else.
-The transport owns `authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; naming one refuses at config load, as does a control character, two spellings of one header, or a template its target cannot render.
+
+The transport owns `authorization`, `proxy-authorization`, `x-api-key`, `api-key`, `cookie`, `host`, `connection`, `content-length`, `transfer-encoding`, `content-type` and `accept`; naming one refuses at config load, as does a control character, two spellings of one header, or a template its target cannot render.
 
 ```toml
 [providers.work.extra_headers]
 "x-title" = "agent6"
-"user-agent" = { template = "agent6/{agent6_version}", targets = ["inference", "models", "oauth"] }
+"user-agent" = { template = "agent6/{agent6_version}", targets = ["inference", "models"] }
 "x-initiator" = { template = "{initiator}" }
 "x-vision" = { template = "true", when = "has_images" }
 ```
@@ -98,9 +100,7 @@ Every endpoint is https, or plain http on `127.0.0.1` or `[::1]` for a local ser
 A stored grant is bound to the entry's transport settings (`api_format`, `deployment`, `base_url`, `auth_style`, `extra_query`, `extra_headers`) and its issuer settings: change any of them and the next run refuses until `agent6 connect <name>` runs again.
 `[providers.<name>.oauth.exchange]` adds one second exchange when the model endpoint takes a token other than the issuer's: one `GET` or `POST` with the issuer's bearer, whose named top-level fields are the token and its expiry.
 
-<!-- config-table: providers.<name>.oauth -->
-
-<!-- config-table: providers.<name>.oauth.exchange -->
+<!-- config-table: providers.<name>.oauth providers.<name>.oauth.exchange -->
 
 ```toml
 [providers.work]
@@ -121,7 +121,7 @@ redirect_uri = "http://127.0.0.1:8765/auth/callback"
 ### Deployments
 
 ```toml
-# Anthropic direct (default): equivalent to a bare api_format = "anthropic"
+# Anthropic direct (default)
 [providers.anthropic]
 api_format = "anthropic"
 
@@ -176,21 +176,21 @@ The `session-id` header and `prompt_cache_key` carry the [shared conversation id
 Calls outside a conversation omit both.
 
 ```bash
-agent6 connect chatgpt      # browser sign-in (paste fallback when headless)
+agent6 connect chatgpt      # browser sign-in (device code, then paste, when headless)
 agent6 model worker chatgpt/gpt-5.6-sol
 ```
 
-- `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`, a constant, not config) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
-- Usage draws on the plan's own limits; cost meters show an authoritative $0 and the tokens meter nothing, so `[budget].max_plan_points` is the ledger that bounds these calls.
+- `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
 - Past the included window, calls draw on purchased credits (real money; auto top-up can buy more).
-  `[budget].allow_plan_overage = false` (the default) is a circuit breaker: a usage preflight before the first call and every response's headers report both windows and the credit state, and once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes, so a boundary-crossing call can spend before the stop.
+  `[budget].allow_plan_overage = false` (the default) is a circuit breaker: once a window is exhausted with credits present the run stops at its next boundary; a call already in flight completes, so a boundary-crossing call can spend before the stop.
 - Whether these conversations train OpenAI's models follows the ChatGPT account's own data controls (Settings > Data controls > "Improve the model for everyone"); agent6 cannot change that setting.
   agent6 never calls the feedback/rating endpoints, which would opt the rated turns into training regardless of it; there is no rating surface.
-- Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs, never a static list), and its context windows size compaction.
+- Model names complete from the backend's own listing for the signed-in plan (fetched like other providers' catalogs), and its context windows size compaction.
 - An `unsupported_value` refusal naming `reasoning.effort` and listing accepted levels, over HTTP 400 or a stream error frame, silently retries once at the lowest listed effort.
-  Later calls on that provider instance keep the accepted levels; they are not persisted across machine attempts.
+  Later calls on that provider instance keep the accepted levels; they are not persisted.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
-- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit window, surfaces show the fullest window as `plan usage (<entry>): N% of the 7-day window`; the duration is whatever the provider reports (`5-hour window`), or `window` when unknown.
+- Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit windows.
+  Surfaces show the fullest window as `plan usage (<entry>): N% of the 7-day window`; the duration is whatever the provider reports (`5-hour window`), or `window` when unknown.
   `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0.
 
@@ -206,17 +206,15 @@ agent6 model worker claude/claude-sonnet-4-5
 
 - agent6's own loop, tools, jail, verify gate, and approvals drive the run; the binary supplies the model.
   Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
-- `binary` names the executable (default `claude`, resolved on PATH).
-  agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
-- Spend is plan-metered, not dollar-metered: every round reports the account's 5-hour and 7-day windows.
+- agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
+- Spend is plan-metered: every round reports the account's 5-hour and 7-day windows.
   The end-of-run summary and fan-out report show the fuller one as `plan usage (<entry>): N% of the 7-day window` (or `5-hour window`).
-  Window labels show the reported duration (or `window` when unknown), adding the distinguishing key suffix with the common prefix removed when reported windows share a duration.
   `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
 - Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude/claude-haiku-4-5`).
-  Each side call is one short-lived `claude` process.
+  Each side call without tools is one short-lived `claude` process.
 - One `claude` process serves a worker execution.
   It restarts, replaying the conversation as one user message with retained attachments, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
   Tier-1 text compaction shrinks the model's context at that next restart, not before.
@@ -227,7 +225,6 @@ agent6 model worker claude/claude-sonnet-4-5
   The provider checks text plus notices against the 50,000-byte guard and each complete encoded stdin line against 8 MiB.
   See [Media retention](security.md#media-retention) for the child process and upstream boundary.
 - Use a full model id (`claude-sonnet-4-5`, not `sonnet`) so the context window is known for compaction sizing.
-- The bundled context-window table tries exact and date/tag-normalized ids first, then falls back from `claude-<family>-<major>-<minor>` to `claude-<family>-<major>` when that key exists; the compaction log names the family key when used.
 - `agent6 connect claude --logout` is refused: agent6 stores no Claude Code credentials; `claude auth logout` signs out.
 
 ### OpenRouter routing and caching (`extra_body`)
@@ -249,14 +246,12 @@ agent6 config set providers.openrouter.extra_body \
   '{ provider = { sort = "throughput" } }'
 ```
 
-Caching matters more than payload size: the large per-call input is the same prefix every turn.
-Watch `cache_r` in the cost summary to confirm it engages.
+Watch `cache_r` in the cost summary to confirm caching engages.
 
 ### Short-lived bearer tokens (`token_command`)
 
 For endpoints authenticated by a refreshed bearer rather than a static key (Vertex OAuth, OIDC/STS gateways): point `token_command` at anything that prints a current token, e.g. `["gcloud", "auth", "print-access-token"]` or `["az", "account", "get-access-token", "--query", "accessToken", "-o", "tsv"]`.
-Cached `token_command_ttl_s` seconds, re-run once on `401`/`403`.
-It runs in agent6's own process with your environment (operator-only, same trust as an MCP `command`); non-zero exit, timeout, or empty output surfaces as a provider error.
+It runs outside the jail with your environment (operator-only); non-zero exit, timeout, or empty output surfaces as a provider error.
 
 ## `[models.<role>]`
 
@@ -269,7 +264,7 @@ Cross-vendor mixes are fine.
 
 ## `[sandbox]`
 
-The field summary; the model is in security.md: [Sandbox](security.md#2-sandbox) and [Network](security.md#5-network).
+The field summary; the security model is in security.md: [Sandbox](security.md#2-sandbox) and [Network](security.md#5-network).
 For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 `extra_read_paths`, `extra_write_paths` and `hide_paths` take absolute paths with no `..` segment, and `extra_device_paths` only paths under `/dev`; anything else refuses at config load.
@@ -282,7 +277,7 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 `agent6 sessions merge --method <method>` overrides `git.merge_method` for that merge.
 
-`git.control = "agent6"` is enforced by the sandbox; without it, an explicit setting refuses to run and the default warns that a commit the model runs lands on the checkout's branch.
+`git.control = "agent6"` is enforced by `sandbox.protect_git`; without the sandbox, the run warns that a commit the model runs lands on the checkout's branch.
 
 ### `[git.commit]`
 
@@ -296,18 +291,52 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 <!-- config-table: preset -->
 
+### Presets
+
+A preset fills many settings at once.
+`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
+A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
+A `--config FILE` or machine overlay cannot select one.
+
+The default `preset = "none"` selects no preset.
+Set `preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
+This keeps the layers' own settings; it does not reset them to defaults.
+An empty string is refused.
+The name `none` is reserved, so `[presets.none]` is refused.
+
+<!-- presets-table -->
+
+Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
+
+```toml
+preset = "myteam"
+
+[presets.myteam.review]
+trigger = "before_finish"
+block_on = "any"
+reviewers = [
+  { focus = "security", provider = "anthropic", model = "claude-opus-4-8" },
+  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
+]
+```
+
 ## `[harness]`
 
 <!-- config-table: harness -->
 
-The table was `[harness]` from 0.0.35; a config that still says `[workflow]` is refused with the table named.
+### `[harness.metric]` (optional)
+
+A continuous score for measurable goals; `command` runs in the jail like `verify_command`.
+Set its required fields together: `agent6 config set --repo harness.metric '{ command = ["python3", "bench.py"], pattern = "score: ([0-9.]+)", goal = "minimize" }'`.
+
+<!-- config-table: harness.metric -->
 
 ## `[review]`
 
 <!-- config-table: review -->
 
 The [TUI](terminal.md#configuration) and [web](web.md#pages) config pages edit the ordered roster with **Add reviewer…** and positional removal.
-Each edit writes the whole list to the chosen layer, including `[]` after the last removal.
+Each edit writes the whole list to the global or repo config, including `[]` after the last removal.
 
 Each `reviewers` entry has these fields:
 
@@ -363,42 +392,6 @@ Discovery skips a skill that breaks this rule with a warning.
 
 Measured (2026-07): small and frontier open models alike almost never invoke a skill organically from the passive index, and no prompt lever made it reliable.
 When a skill must apply, use `always`, `/name`, or `--skill`.
-
-### Presets
-
-A preset fills many settings at once.
-`agent6 config presets` lists them; select with `--preset <name>`, `agent6 config set preset <name>` (`--repo`), or the preset picker of the TUI and web new-task composers.
-A preset overrides config at the layer that selected it (most-specific source wins, presets never stack); a more-specific config layer, `--config FILE`, or an individual flag still beats it.
-A `--config FILE` or machine overlay cannot select one.
-
-The default `preset = "none"` selects no preset.
-Set `preset = "none"` in the repo config to stop lookup before a global preset, or pass `--preset none` to override both layers.
-This keeps the layers' own settings; it does not reset them to defaults.
-An empty string is refused.
-The name `none` is reserved, so `[presets.none]` is refused.
-
-<!-- presets-table -->
-
-Define your own with a `[presets.<name>]` table (a partial config); a built-in's name replaces that built-in wholesale:
-
-```toml
-preset = "myteam"
-
-[presets.myteam.review]
-trigger = "before_finish"
-block_on = "any"
-reviewers = [
-  { focus = "security", provider = "anthropic", model = "claude-opus-4-8" },
-  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
-]
-```
-
-### `[harness.metric]` (optional)
-
-A continuous score for measurable goals; `command` runs in the jail like `verify_command`.
-Set its required fields together: `agent6 config set --repo harness.metric '{ command = ["python3", "bench.py"], pattern = "score: ([0-9.]+)", goal = "minimize" }'`.
-
-<!-- config-table: harness.metric -->
 
 ## `[budget]`
 
@@ -466,18 +459,18 @@ A lane never fans out; headless surfaces without a dispatcher answer "not availa
 ## `[workspace]`
 
 Placement and setup for lane clones, machine state clones, forks and `run --worktree` worktrees.
-An empty `base_dir` uses `<cache_dir>/parallel`.
 
 <!-- config-table: workspace -->
 
 ## `[mcp]` and `[mcp.servers.<name>]` (optional)
 
-agent6 as an MCP CLIENT; for the other direction (`agent6 mcp serve`, agent6 as a server) see [Editor integration](acp.md#as-an-mcp-server).
+agent6 as an MCP client; for the other direction (`agent6 mcp serve`, agent6 as a server) see [Editor integration](acp.md#as-an-mcp-server).
 
 MCP servers, spawned (`command`) or connected (`url`); tools appear as `mcp__<name>__<tool>` in run mode only (plan, ask, machine and agent sessions never offer them: agent6 cannot classify an external tool as read-only).
 A spawned server runs as a jailed child by default (its own `[mcp.servers.<name>.sandbox]` policy; `unconfined = true` opts out) with a curated env (never your provider keys; `pass_env` adds named vars); a `url` server is a process you run and confine yourself.
 The model chooses the arguments, so each call is approved like a command (`approve`); audit each server like a `run_command` allow-list.
-`agent6 mcp add` saves a spawned server unprobed with a warning when `sandbox.isolation` resolves to `none`; otherwise it requires a successful probe before writing the entry.
+
+`agent6 mcp add` saves a spawned server unprobed with a warning when `sandbox.isolation` resolves to `none` or a run would refuse the config; otherwise it requires a successful probe before writing the entry.
 During a run, a server that does not start is skipped with an `mcp.server_unavailable` journal event, never fatal.
 `agent6 check mcp` probes under the run's sandbox with the repository bound read-only and skips a server it cannot hold that way ([the rule](security.md#2-sandbox)).
 
@@ -488,17 +481,16 @@ agent6 mcp list
 agent6 mcp remove files
 ```
 
-`agent6 mcp remove <name>` drops the entry from the global config (`--repo` for the per-repo one): `config unset` cannot, because the entry is a table rather than a leaf, and dropping its `command`/`url` is refused since an entry needs exactly one of them.
+`agent6 mcp remove <name>` drops the entry from the global config (`--repo` for the per-repo one): `config unset` cannot, and dropping its `command`/`url` is refused.
 
 A spawned server's `[sandbox]` block names what it needs on top of the sandbox a `run_command` gets.
 
 ```toml
 [mcp.servers.notes]
-command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "~/notes"]
+command = ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/home/you/notes"]
 
 [mcp.servers.notes.sandbox]
 extra_read_paths  = ["~/notes"]   # additive; the system and tool dirs are already there
-extra_write_paths = ["~/notes"]
 ```
 
 A confined spawn also loses the desktop-session addresses (`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`, `DISPLAY`, `WAYLAND_DISPLAY`): Landlock does not gate unix-socket `connect()`, and an unconfined session daemon would act on the server's behalf.
@@ -514,7 +506,7 @@ Anything else that reaches an unconfined process is still a way out, so name the
 
 ## Reaching a run's network
 
-A run's commands share one network with no route off the box, so a dev server the agent starts is reachable only through these operator-only commands:
+When `sandbox.network` resolves to `session`, a run's commands share one network with no route off the box, so a dev server the agent starts is reachable only through these operator-only commands:
 
 ```
 agent6 sessions show <id>        # what it is serving, and the command to open it (the TUI dashboard and web run headers say the same)
