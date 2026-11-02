@@ -268,24 +268,42 @@ _END_RED: dict[str, Any] = {
 }
 
 
+@pytest.mark.parametrize("recorded", [False, True])
+def test_exit_124_without_a_timeout_fact_stays_red(tmp_path: pathlib.Path, recorded: bool) -> None:
+    """A configured deadline alone does not make exit 124 a timeout in any view."""
+    from agent6 import evidence
+    from agent6.viewmodel import transcript
+
+    end = _verify_end(124, timeout_s=300.0)
+    if recorded:
+        end["outcome"] = "failed"
+    events = [_START, end, _END_RED]
+    listing, viewer = _shared_facts(events, tmp_path)
+    assert listing == viewer
+    assert listing["gate_timed_out"] is False
+    assert evidence.outcome(end) == "failed"
+    done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
+    assert done.name == "finished · gate red"
+
+
 def test_both_folds_tell_a_timed_out_gate_from_a_red_one(tmp_path: pathlib.Path) -> None:
     """A verify killed at `verify_timeout_s` read "gate red", as if the suite had failed."""
     from agent6.viewmodel import transcript
 
-    timed_out = [_START, _verify_end(124, timeout_s=300.0), _END_RED]
+    timed_out = [_START, _verify_end(124, timeout_s=300.0, outcome="timed_out"), _END_RED]
     listing, viewer = _shared_facts(timed_out, tmp_path)
     assert listing == viewer
     assert listing["gate_timed_out"] is True and listing["gate_red"] is True
     done = next(it for it in transcript.fold_transcript(timed_out) if it.kind == "done")
     assert done.name == "finished · gate timed out"
-    # A command that exits 124 under no limit, or any other red, is a red gate.
+    # An exit without a timeout fact is a red gate.
     for red in (_verify_end(124), _verify_end(124, timeout_s=0.0), _verify_end(1, timeout_s=300.0)):
         listing, viewer = _shared_facts([_START, red, _END_RED], tmp_path)
         assert listing == viewer
         assert listing["gate_timed_out"] is False and listing["gate_red"] is True
     # A later verdict, or a new execution, replaces the timeout.
     for later in (_verify_end(1, timeout_s=300.0), {**_START, "type": "loop.resume.start"}):
-        events = [_START, _verify_end(124, timeout_s=300.0), later, _END_RED]
+        events = [_START, _verify_end(124, timeout_s=300.0, outcome="timed_out"), later, _END_RED]
         listing, viewer = _shared_facts(events, tmp_path)
         assert listing == viewer and listing["gate_timed_out"] is False
 

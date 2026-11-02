@@ -303,8 +303,8 @@ class AgentState(pydantic.BaseModel):
         capture: How the payload is written to the blackboard.
         timeout_s: The wall-clock cap.
         on: The destination per outcome label.
-        max_usd: The slice's spend cap, or None to inherit the config's; a field because the
-            engine clamps it to what the machine budget has left.
+        max_usd: The slice's spend cap, or None to inherit the config's; the config cap and
+            the machine's remaining budget also bind.
         config: The state's own config layer, above the machine's `[config]`: the model
             (`models.worker`) and every other knob of the state.
     """
@@ -334,7 +334,9 @@ class AgentState(pydantic.BaseModel):
         """
         budget = self.config.get("budget")
         if self.max_usd is not None and isinstance(budget, dict) and "max_usd" in budget:
-            raise ValueError("`max_usd` and `config.budget.max_usd` set the same thing; keep one")
+            raise ValueError(
+                "`max_usd` and `config.budget.max_usd` both set this state's spend cap; keep one"
+            )
         return self
 
 
@@ -345,7 +347,7 @@ class ToolState(pydantic.BaseModel):
         kind: The discriminator.
         notify: The message journaled on entry, or None.
         command: The argv templates.
-        output_schema: The schema the stdout must match, or None for no shape.
+        output_schema: The schema the stdout must match; requires capture, or None for no shape.
         capture: How the stdout is written to the blackboard, or None.
         timeout_s: The wall-clock cap.
         on: The destination per outcome label.

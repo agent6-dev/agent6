@@ -785,6 +785,8 @@ def test_worker_is_alive_reads_a_foreign_owned_pid_as_dead(
     """
     if os.geteuid() == 0:
         pytest.skip("root can signal any pid; the foreign-owner probe needs a non-root euid")
+    if pathlib.Path("/proc/1").stat().st_uid == os.geteuid():
+        pytest.skip("PID 1 belongs to the test user; the probe needs a foreign-owned pid")
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     d = tmp_path / "run"
     d.mkdir()
@@ -1248,7 +1250,13 @@ def test_show_says_a_timed_out_gate_timed_out(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(9), "type": "verify.end", "exit_code": 124, "timeout_s": 300.0},
+            {
+                "ts": _ts(9),
+                "type": "verify.end",
+                "exit_code": 124,
+                "outcome": "timed_out",
+                "timeout_s": 300.0,
+            },
             {
                 "ts": _ts(3),
                 "type": "session.end",

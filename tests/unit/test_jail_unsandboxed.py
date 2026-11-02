@@ -98,6 +98,7 @@ def test_none_profile_timeout_returns_124_not_exception(tmp_path: pathlib.Path) 
         )
     )
     assert res.returncode == 124
+    assert res.timed_out
 
 
 def test_closing_one_unconfined_server_spares_a_later_sibling(tmp_path: pathlib.Path) -> None:

@@ -235,16 +235,19 @@ def test_machine_tool_runner_runs_each_call_in_the_machine_tree(
     assert not clone_cwd.exists()  # scratch tree, discarded
 
 
-@pytest.mark.parametrize("fail_setup", [False, True])
+@pytest.mark.parametrize("setup_exit", [0, 7, 124])
 def test_tool_clone_runs_setup_before_reading_environment(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fail_setup: bool
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, setup_exit: int
 ) -> None:
     """A tool clone runs the setup command already resolved by preflight."""
     from agent6 import kinds, machine
     from agent6.app.machine import run as machine_run
 
     origin = _origin(tmp_path)
-    command = "echo broken >&2; exit 7" if fail_setup else "echo ready > environment.txt"
+    fail_setup = setup_exit != 0
+    command = (
+        f"echo broken >&2; exit {setup_exit}" if fail_setup else "echo ready > environment.txt"
+    )
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}}).with_setup_command(
         ("sh", "-c", command)
     )
@@ -323,7 +326,8 @@ reason = "setup failed"
     assert len(calls) == (1 if fail_setup else 2)
     if fail_setup:
         assert "broken" in failures[0].stderr
-        assert failures[0].exit_code == 7
+        assert failures[0].exit_code == setup_exit
+        assert not failures[0].timed_out
         assert outcomes[0].argv == expected_setup
         assert outcomes[0].duration_s == 2.5
     logs = list((tmp_path / "logs").glob("*/logs.jsonl"))
@@ -331,7 +335,7 @@ reason = "setup failed"
     event = json.loads(logs[0].read_text())
     assert event["type"] == "workspace.setup"
     assert event["cmd"] == list(expected_setup)
-    assert event["exit_code"] == (7 if fail_setup else 0)
+    assert event["exit_code"] == setup_exit
     assert event["duration_s"] == 2.5
     assert not (origin / "environment.txt").exists()
 
@@ -493,6 +497,7 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
             stderr="command not found" if failure == "missing" else "",
             duration_s=policy.timeout_s,
             exec_failed=failure == "missing",
+            timed_out=failure == "timeout",
         )
 
     monkeypatch.setattr(sandbox_jail, "run_in_jail", execute)

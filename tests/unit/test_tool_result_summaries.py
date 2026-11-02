@@ -190,7 +190,13 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
     (
         "exec_timed_out",
         results_mod.ExecResult(
-            returncode=124, stdout="", stderr="", duration_s=240.1, exec_failed=False, timeout_s=240
+            returncode=124,
+            timed_out=True,
+            stdout="",
+            stderr="",
+            duration_s=240.1,
+            exec_failed=False,
+            timeout_s=240,
         ),
         "exit=124 (timed out at 240s) in 240.1s",
     ),
@@ -222,6 +228,7 @@ CASES: list[tuple[str, results_mod.ToolResult, str]] = [
         "metric_timed_out",
         results_mod.MetricResult(
             returncode=124,
+            timed_out=True,
             stdout="",
             stderr="",
             duration_s=240.1,

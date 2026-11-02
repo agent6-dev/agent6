@@ -1015,7 +1015,7 @@ class Harness:
             # A timed-out model gate gets the scoped follow-up, whatever the gate policy.
             if not (
                 self.mode == "run"
-                and result.returncode == verify_gate.EXIT_TIMEOUT
+                and result.timed_out
                 and not state.verify.scoped
                 and self.gate.scoped_followup(state, turn) is not None
             ):

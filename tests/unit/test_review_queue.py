@@ -77,6 +77,7 @@ def _verify_rows(
             "tree_after": tree,
             "scoped": scoped,
             "timeout_s": 5.0 if exit_code == 124 else 0.0,
+            "timed_out": exit_code == 124,
         },
     ]
 

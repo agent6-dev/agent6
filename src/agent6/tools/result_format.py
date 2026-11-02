@@ -148,4 +148,5 @@ def exec_result(res: kinds.CommandResult, *, timeout_s: float = 0.0) -> results.
         duration_s=res.duration_s,
         exec_failed=res.exec_failed,
         timeout_s=timeout_s,
+        timed_out=res.timed_out,
     )

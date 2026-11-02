@@ -1076,15 +1076,15 @@ def test_tool_jails_carry_the_operator_hide_paths(
     assert hidden in captured["policy"].hide_paths
 
 
-def test_live_world_run_tool_maps_rc124_to_timed_out(
+def test_live_world_run_tool_preserves_timeout_flag(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """LiveWorld.run_tool derives timed_out from rc 124, so on.timeout is reachable."""
+    """LiveWorld.run_tool keeps the runner's timeout distinct from an exit code."""
 
     def fake_run_in_jail(policy: kinds.JailPolicy) -> kinds.CommandResult:
         # The launcher SIGKILLed the child at the deadline and reported rc=124.
         return kinds.CommandResult(
-            argv=policy.argv, returncode=124, stdout="", stderr="", duration_s=0.0
+            argv=policy.argv, returncode=124, stdout="", stderr="", duration_s=0.0, timed_out=True
         )
 
     monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
@@ -1302,8 +1302,8 @@ def test_an_agent_request_carries_the_cap_and_no_model_knob(tmp_path: pathlib.Pa
     world = FakeWorld({}, agent_results=[_agent("finish_session", {"approved": True})])
     machine_engine.drive(spec, journal, world, live=True)
     req = world.agent_calls[0]
-    # min(2.5 state cap, 1.0 machine budget): a state never gets more than the machine has.
-    assert req.max_usd == 1.0
+    assert req.max_usd == 2.5
+    assert req.remaining_usd == 1.0
     assert req.effort is None
     assert not {"model", "provider", "temperature", "max_tokens_fallback"} & set(
         contracts.AgentRequest.model_fields
@@ -1413,10 +1413,10 @@ def test_machine_stops_when_cumulative_max_usd_exceeded(tmp_path: pathlib.Path) 
     assert len(world.agent_calls) == 1  # one step ran, then the budget guard fired
 
 
-def test_the_agent_request_cap_is_clamped_to_the_remaining_machine_budget(
+def test_the_agent_request_keeps_the_state_cap_and_remaining_budget_separate(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A child agent's cap is min(state cap, remaining machine budget)."""
+    """The remainder shrinks between states without replacing the state's own cap."""
     body = _SPENDER.replace('prompt = "do"', 'prompt = "do"\nmax_usd = 0.10')
     journal, f = _load(tmp_path, body)
     spec = semantics.load_machine(f)
@@ -1429,9 +1429,9 @@ def test_the_agent_request_cap_is_clamped_to_the_remaining_machine_budget(
     )
     result = machine_engine.drive(spec, journal, world, live=True)
     assert result.status == "failed" and "max_usd" in result.reason
-    caps = [req.max_usd for req in world.agent_calls]
-    assert caps[0] == 0.05  # min(0.10 state cap, 0.05 machine budget)
-    assert caps[1] == pytest.approx(0.01)  # the machine's remaining cent, not 0.10
+    assert [req.max_usd for req in world.agent_calls] == [0.10, 0.10]
+    remaining = [req.remaining_usd for req in world.agent_calls]
+    assert remaining == pytest.approx([0.05, 0.01])
 
 
 def test_agent_spend_threaded_into_fact(tmp_path: pathlib.Path) -> None:

@@ -1020,7 +1020,13 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 1},
-            {"type": "verify.end", "exit_code": 124, "timeout_s": 60, "duration_s": 60.0},
+            {
+                "type": "verify.end",
+                "exit_code": 124,
+                "outcome": "timed_out",
+                "timeout_s": 60,
+                "duration_s": 60.0,
+            },
             {"type": "tool.result", "name": "run_verify_command", "ok": False, "call_id": 1},
             {"type": "session.end", "reason": "finish_session", "all_passed": False},
         ]

@@ -230,7 +230,13 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
     events: list[dict[str, object]] = [_START]
     if verify_exit is not None:
         events.append(
-            {"type": "verify.end", "cmd": ["pytest"], "exit_code": verify_exit, "timeout_s": 300.0}
+            {
+                "type": "verify.end",
+                "cmd": ["pytest"],
+                "exit_code": verify_exit,
+                "timeout_s": 300.0,
+                "timed_out": gate_detail == "gate timed out",
+            }
         )
     events.append(
         {"type": "session.end", "reason": reason, "all_passed": all_passed, "scoped": scoped}

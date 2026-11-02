@@ -1570,7 +1570,7 @@ def test_merge_says_a_timed_out_gate_timed_out(
     )
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "verify.end", "exit_code": 124, "timeout_s": 300.0},
+        {"type": "verify.end", "exit_code": 124, "outcome": "timed_out", "timeout_s": 300.0},
         {
             "type": "session.end",
             "reason": "finish_session",

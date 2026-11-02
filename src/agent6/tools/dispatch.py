@@ -663,7 +663,7 @@ class ToolDispatcher:
             outcome = "unavailable"
         elif res.stopped_by_operator or res.returncode is None or res.returncode < 0:
             outcome = "interrupted"
-        elif res.returncode == 124:
+        elif res.timed_out:
             outcome = "timed_out"
         record = dataclasses.replace(
             record,

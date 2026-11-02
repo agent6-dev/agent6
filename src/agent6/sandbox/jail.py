@@ -400,6 +400,7 @@ def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
             stdout=lossy_text(exc.stdout),
             stderr=lossy_text(exc.stderr),
             duration_s=time.monotonic() - start,
+            timed_out=True,
         )
     duration = time.monotonic() - start
     return kinds.CommandResult(
@@ -913,6 +914,7 @@ def _launcher_result(
             stdout=lossy_text(raw_out) or lossy_text(exc.stdout),
             stderr=lossy_text(raw_err) or lossy_text(exc.stderr),
             duration_s=time.monotonic() - start,
+            timed_out=True,
         )
     proc = subprocess.CompletedProcess(
         args=[str(binary)],
@@ -991,4 +993,5 @@ def result_from_json(
         ),
         duration_s=duration,
         exec_failed=failed_exec,
+        timed_out=result_json.get("timed_out") is True,
     )

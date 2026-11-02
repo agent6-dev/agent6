@@ -352,26 +352,6 @@ def agent_outcome(
     return "failed"
 
 
-def agent_usd_cap(state_cap: float | None, remaining: float | None) -> float | None:
-    """Return the smaller of the state's own cap and the machine's unspent budget.
-
-    The aggregate gate guards only state starts, so the child needs this cap to stay under
-    the machine's max_usd.
-
-    Args:
-        state_cap: The state's own `max_usd`, or None when uncapped.
-        remaining: The machine's unspent budget, or None when uncapped.
-
-    Returns:
-        The smaller of the two; when one is None, the other.
-    """
-    if state_cap is None:
-        return remaining
-    if remaining is None:
-        return state_cap
-    return min(state_cap, remaining)
-
-
 def execute(
     spec: schema.MachineSpec,
     state: schema.StateSpec,
@@ -427,7 +407,8 @@ def execute(
             contracts.AgentRequest(
                 prompt=prompt,
                 timeout_s=float(state.timeout_s),
-                max_usd=agent_usd_cap(state.max_usd, remaining_usd),
+                max_usd=state.max_usd,
+                remaining_usd=remaining_usd,
                 mode=state.mode,
                 state_name=state_name,
                 step_seq=seq,

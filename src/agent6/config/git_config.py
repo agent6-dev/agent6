@@ -184,7 +184,8 @@ class GitConfig(pydantic.BaseModel):
             "never moved; index and working tree touched only with the run's own branch checked "
             "out; `git.commit_per_turn = false`: no agent6 commits, work only in the worktree, "
             "degraded resume-from-git, `sessions diff`/`merge` and `/parallel` dispatch from a "
-            "changed tree"
+            "changed tree; machine run states require true because only the committed chain "
+            "leaves a clone"
         ),
     )
     merge_method: Literal["tasks", "squash", "merge", "ff_only"] = pydantic.Field(

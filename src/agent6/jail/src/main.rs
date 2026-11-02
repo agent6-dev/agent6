@@ -2543,6 +2543,7 @@ fn run_child(
         "returncode": returncode,
         "stdout": stdout,
         "stderr": stderr,
+        "timed_out": timed_out,
     });
     let mut out = io::stdout().lock();
     writeln!(out, "{result}")?;

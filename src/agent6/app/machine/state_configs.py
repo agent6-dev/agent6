@@ -318,6 +318,17 @@ def resolve_configs(
         )
     if widened:
         raise SandboxWidenedError(widened)
+    for name, resolved in states.items():
+        state = spec.states[name]
+        if (
+            isinstance(state, AgentState)
+            and state.mode == "run"
+            and not resolved.config.git.commit_per_turn
+        ):
+            raise ConfigError(
+                f"state {name!r}: mode = 'run' requires git.commit_per_turn = true;"
+                " the committed chain is the only path out of a clone."
+            )
     configs = MachineConfigs(
         StateConfig(with_flags(operator), operator_isolation),
         machine,

@@ -181,14 +181,15 @@ An `agent` state spins up a normal agent6 run: its own transcript, budget slice,
 Where a run state's work lands:
 
 - each run state executes in a fresh clone (the `--parallel` lane mechanism, `[workspace].base_dir` cache) checked out at the machine chain's tip
+- run states require `git.commit_per_turn = true`: the committed chain is the only path out of a clone
 - its commits land per state on the visible `agent6/machine-<id>` branch; your checkout is never touched
 - merge the branch when you want the work (the run's ending names it and the `git merge` line)
 - the hub's machine card shows supervision state only; a run state is not a session in the [review queue](usage.md#the-review-queue)
 - a state's clone is removed as it lands
-- the chain ref (`refs/agent6/machine-<id>/head`) outlives the instance dir
-    - a fresh instance over a leftover chain starts from HEAD once the chain's tip is in HEAD, dropping the ref
-    - while the tip is not in HEAD it refuses, naming the merge and delete remedies
-    - a branch left without its ref is an ordinary branch, and the instance starts from HEAD
+- the chain ref (`refs/agent6/machine-<id>/head`) and visible branch (`agent6/machine-<id>`) outlive the instance dir
+    - a fresh instance refuses while either tip is not in HEAD, naming the merge and delete remedies
+    - once HEAD contains both tips, it drops any chain ref and starts from HEAD
+    - a branch left without its chain ref must also be merged or discarded before a fresh instance starts
 - a machine with run states works its own tree everywhere: `tool` and read-only agent states also run in fresh clones at the chain tip
     - setup comes from `[workspace].setup_command`, else the AGENTS.md block at `machine.begin.base_commit` (the commit the machine started from), never the writable chain tip
     - setup runs per tool call and gets the state's `timeout_s` before the tool receives its own `timeout_s`
@@ -216,7 +217,10 @@ The state's `config` table tunes how that loop runs.
 
 - `[states.<name>.config.models.worker]` selects and tunes the model (`provider`, `model`, `effort`, `temperature`); `[states.<name>.config.budget]` sets `max_tokens_fallback`; most other config keys work the same way
 - a key the table leaves out falls back through the effective config ([Machine config overlay](#47-machine-config-overlay-config))
-- `max_usd` is the one knob that is a field of the state: it bounds this agent slice, and the engine clamps it to what the machine budget has left; setting it and `config.budget.max_usd` together is a load error
+- `max_usd` bounds this agent slice; omit it to inherit the resolved config cap.
+  The config cap, state cap and machine remainder all bind.
+  The smallest nonnegative cap wins; zero refuses metered calls and `-1` is unlimited.
+  Setting `max_usd` and `config.budget.max_usd` together is a load error.
 - `model`, `provider`, `effort`, `temperature` and `max_tokens_fallback` are not fields of the state: a machine file that sets one fails to load, with the `config` table that takes it named
 - secrets are never expressed here, only a `provider` name that must exist in the effective config
 
@@ -236,6 +240,7 @@ A single command, argv-style (never a shell string), through the existing `run_i
 
 - `nonzero` is any non-zero exit
 - with a `capture`, stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces))
+- `output_schema` without `capture` is a load error
 - a capture binds only on `ok`: `nonzero` and `timeout` leave the blackboard as it was
     - a branch reading a captured var on those edges reads the previous iteration's value
 - capture has two modes; a state uses at most one:

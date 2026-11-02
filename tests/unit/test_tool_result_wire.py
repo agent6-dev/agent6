@@ -416,7 +416,7 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
     d = dispatch.ToolDispatcher(root=tmp_path, config=load_config(p))
     with mock.patch(
         "agent6.sandbox.jail.run_in_jail",
-        return_value=_cmd_result(returncode=124, duration_s=240.1),
+        return_value=_cmd_result(returncode=124, duration_s=240.1, timed_out=True),
     ):
         out = d.dispatch("run_verify_command", {})
     wire = _wire(out)
@@ -428,6 +428,17 @@ def test_wire_run_verify_timeout_names_the_cap(tmp_path: pathlib.Path) -> None:
         ' "exec_failed": false, "stdout_truncated": false, "stderr_truncated": false,'
         ' "command": "true", "timed_out": true, "timeout_s": 240.0}'
     )
+
+
+def test_exit_124_has_no_timeout_label(tmp_path: pathlib.Path) -> None:
+    """A command's own exit 124 stays a failure in evidence, wire data and summaries."""
+    d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
+    with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=_cmd_result(returncode=124)):
+        out = d.run_verify()
+    assert out.verification is not None and out.verification.outcome == "failed"
+    for result in (out, results.MetricResult.from_exec(out, None)):
+        assert "timed_out" not in result.to_wire()
+        assert "timed out" not in result.summary()
 
 
 def test_wire_run_command(tmp_path: pathlib.Path) -> None:

@@ -250,25 +250,20 @@ class VerifyEnd:
     reason: str = ""
 
 
-# A jailed command killed at its wall-clock limit exits 124, per the sandbox's contract.
-EXIT_TIMEOUT = 124
-
-
-def verify_limit_hit(exit_code: object, timeout_s: object) -> float:
+def verify_limit_hit(outcome: str | None, timeout_s: object) -> float:
     """Return the limit a verify.end's fields say the gate ran out.
 
     The one rule the listing scan, the typed fold and the transcript fold share.
 
     Args:
-        exit_code: The event's exit code.
+        outcome: The recorded verification outcome.
         timeout_s: The event's wall-clock limit.
 
     Returns:
-        The limit for exit 124 under a positive one, else 0.0: a command that exits 124
-        by itself is red.
+        The positive limit for a recorded timeout, else 0.0.
     """
     if (
-        exit_code == EXIT_TIMEOUT
+        outcome == "timed_out"
         and isinstance(timeout_s, (int, float))
         and not isinstance(timeout_s, bool)
         and timeout_s > 0

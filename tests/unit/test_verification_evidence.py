@@ -49,6 +49,7 @@ def test_attempt_records_tree_id_scope_and_output_caps(
     raw = kinds.CommandResult(
         argv=("true",),
         returncode=rc,
+        timed_out=outcome == "timed_out",
         stdout="x" * 21000,
         stderr="error",
         duration_s=1.0,

@@ -247,7 +247,13 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
         "r-slow",
         [
             {"type": "session.start", "session_id": "r-slow", "user_task": "t"},
-            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 124, "timeout_s": 300.0},
+            {
+                "type": "verify.end",
+                "cmd": ["pytest"],
+                "exit_code": 124,
+                "outcome": "timed_out",
+                "timeout_s": 300.0,
+            },
             {"type": "session.end", "reason": "finish_session", "all_passed": False},
         ],
     )

@@ -368,11 +368,11 @@ def test_a_resumed_execution_carries_the_scoped_gate(tmp_path: pathlib.Path) -> 
 # ---- the harness-run gate (`[harness].verify_when`) -------------------------
 
 
-def _exec(rc: int, out: str = "") -> Any:
+def _exec(rc: int, out: str = "", *, timed_out: bool = False) -> Any:
     from agent6.tools import results
 
     return results.ExecResult(
-        returncode=rc, stdout=out, stderr="", duration_s=1.0, exec_failed=False
+        returncode=rc, stdout=out, stderr="", duration_s=1.0, exec_failed=False, timed_out=timed_out
     )
 
 
@@ -642,7 +642,7 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
         emitted.append((event_type, fields))
 
     wf.events = mock.MagicMock(emit=_capture)
-    dispatcher.run_verify.side_effect = [_exec(124), _exec(0)]
+    dispatcher.run_verify.side_effect = [_exec(124, timed_out=True), _exec(0)]
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
@@ -665,13 +665,24 @@ def test_a_timed_out_gate_reruns_scoped_to_the_nearest_tests(
     dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
 
 
+def test_exit_124_does_not_trigger_a_scoped_retry(tmp_path: pathlib.Path, monkeypatch: Any) -> None:
+    """A gate's own exit 124 is a failure, not a reason to run a smaller gate."""
+    monkeypatch.setattr(run_chain.RunChain, "diff_since_base", _fake_diff)
+    wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
+    dispatcher.run_verify.return_value = _exec(124)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    wf.gate.harness_verify(state, _turn(finishing=True))
+    assert not state.verify.scoped
+    assert state.verify.last_ok is False
+
+
 def test_a_timed_out_non_pytest_gate_stays_a_plain_timeout(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
     """Only pytest takes file-path selection; another gate that times out is reported as is."""
     monkeypatch.setattr(run_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["make", "test"])
-    dispatcher.run_verify.return_value = _exec(124)
+    dispatcher.run_verify.return_value = _exec(124, timed_out=True)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
@@ -698,7 +709,7 @@ def test_a_gate_that_cannot_take_appended_paths_stays_a_plain_timeout(
     """
     monkeypatch.setattr(run_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, command)
-    dispatcher.run_verify.return_value = _exec(124)
+    dispatcher.run_verify.return_value = _exec(124, timed_out=True)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
@@ -715,7 +726,7 @@ def test_a_timeout_with_no_nearby_tests_stands(tmp_path: pathlib.Path, monkeypat
 
     monkeypatch.setattr(run_chain.RunChain, "diff_since_base", no_tests_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
-    dispatcher.run_verify.return_value = _exec(124)
+    dispatcher.run_verify.return_value = _exec(124, timed_out=True)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn(finishing=True)
     wf.gate.harness_verify(state, turn)
@@ -738,7 +749,7 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn()
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_verify_command", _exec(124), {}
+        state, turn, "run_verify_command", _exec(124, timed_out=True), {}
     )
     dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
     assert state.verify.scoped is True
@@ -766,7 +777,7 @@ def test_never_mode_gives_the_models_timed_out_gate_the_same_scoped_followup(
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     turn = _turn()
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, turn, "run_verify_command", _exec(124), {}
+        state, turn, "run_verify_command", _exec(124, timed_out=True), {}
     )
     dispatcher.run_verify.assert_called_once_with(extra_argv=("tests/test_mod.py",))
     assert state.verify.scoped is True
@@ -782,7 +793,7 @@ def test_a_full_green_from_the_models_own_gate_unarms_scoping(
     dispatcher.run_verify.return_value = _exec(0)
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
-        state, _turn(), "run_verify_command", _exec(124), {}
+        state, _turn(), "run_verify_command", _exec(124, timed_out=True), {}
     )
     assert state.verify.scoped is True
     turn = _turn()
@@ -803,7 +814,7 @@ def test_a_denied_scoped_rerun_withholds_the_gate_for_the_run(
     monkeypatch.setattr(run_chain.RunChain, "diff_since_base", _fake_diff)
     wf, dispatcher = _scoped_wf(tmp_path, ["python", "-m", "pytest", "-q"])
     dispatcher.run_verify.side_effect = [
-        _exec(124),
+        _exec(124, timed_out=True),
         tool_errors.ToolDeniedError("run_verify_command not approved"),
     ]
     state = loop_state.LoopState(original_task="t", tool_calls=0)

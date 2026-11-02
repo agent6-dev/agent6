@@ -693,7 +693,12 @@ def test_stagnation_ignores_the_start_gates_time(
             clock[0] += 1.0  # past the knob, then timed out: no baseline either
         gates.append(124 if not gates else 0)
         return results.ExecResult(
-            returncode=gates[-1], stdout="", stderr="", duration_s=1.0, exec_failed=False
+            returncode=gates[-1],
+            stdout="",
+            stderr="",
+            duration_s=1.0,
+            exec_failed=False,
+            timed_out=len(gates) == 1,
         )
 
     dispatcher = mock.MagicMock(last_verification=None, operator_wait_s=0.0)

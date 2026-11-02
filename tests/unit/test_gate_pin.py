@@ -146,7 +146,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
         records.extend(
             [
                 {"type": "loop.start"},
-                {"type": "verify.end", "exit_code": 124, "timeout_s": 30},
+                {"type": "verify.end", "exit_code": 124, "outcome": "timed_out", "timeout_s": 30},
                 {"type": "session.end", "verified": "failed"},
                 {"type": "loop.resume.start"},
             ]

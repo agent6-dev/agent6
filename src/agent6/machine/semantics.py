@@ -692,6 +692,11 @@ def _validate_tool(name: str, state: schema.ToolState, env: _Env) -> list[str]:
     problems = _validate_on(name, state.on, schema.TOOL_LABELS)
     result_type: schema.TypeRef | None = None
     if state.output_schema is not None:
+        if state.capture is None:
+            problems.append(
+                f"state {name!r}: `output_schema` requires `capture`;"
+                " add field-capture or drop `output_schema`"
+            )
         if state.output_schema not in env.schemas:
             problems.append(
                 f"state {name!r}: output_schema {state.output_schema!r} is not a declared schema"

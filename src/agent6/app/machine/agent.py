@@ -382,7 +382,10 @@ def run_one(
         cfg = layer.load_effective_with_overlay(
             req.cwd, req.overlay
         ).config.with_machine_agent_overrides(
-            effort=r.effort, max_usd=r.max_usd, max_plan_points=r.max_plan_points
+            effort=r.effort,
+            max_usd=r.max_usd,
+            remaining_usd=r.remaining_usd,
+            max_plan_points=r.max_plan_points,
         )
         cfg = _apply_operator_env_grants(cfg)
     except (ConfigError, pydantic.ValidationError) as exc:

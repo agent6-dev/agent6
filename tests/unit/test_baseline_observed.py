@@ -67,7 +67,12 @@ def _state() -> loop_state.LoopState:
 
 def _verify(rc: int, *, duration_s: float = 5.0) -> results.ExecResult:
     return results.ExecResult(
-        returncode=rc, stdout="", stderr="", duration_s=duration_s, exec_failed=False
+        returncode=rc,
+        stdout="",
+        stderr="",
+        duration_s=duration_s,
+        exec_failed=False,
+        timed_out=rc == 124,
     )
 
 
@@ -276,7 +281,12 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
             exec_failed=False,
         ),
         results.ExecResult(
-            returncode=124, stdout="", stderr="", duration_s=600.0, exec_failed=False
+            returncode=124,
+            stdout="",
+            stderr="",
+            duration_s=600.0,
+            exec_failed=False,
+            timed_out=True,
         ),
         results.ExecResult(returncode=1, stdout="", stderr="", duration_s=1.0, exec_failed=True),
     ],

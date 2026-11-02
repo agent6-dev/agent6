@@ -217,6 +217,43 @@ def working_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
 # --- the grammar ------------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("layer_name", ["operator", "machine", "state"])
+def test_run_state_requires_commits_at_resolution_and_check(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    layer_name: str,
+) -> None:
+    """A run state's clone can land work only through its committed chain."""
+    from agent6.ui import cli
+
+    monkeypatch.chdir(tmp_path)
+    text = RUN_STATE_AFTER_WAIT
+    if layer_name == "operator":
+        _operator("[git]\ncommit_per_turn = false\n")
+    else:
+        table = "config" if layer_name == "machine" else "states.work.config"
+        text += f"\n[{table}.git]\ncommit_per_turn = false\n"
+    path = _write(tmp_path, text)
+    spec = load_machine(path)
+    with pytest.raises(ConfigError, match=r"git\.commit_per_turn = true.*chain.*only.*clone"):
+        state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
+    assert cli.main(["machine", "check", str(path)]) == 1
+    output = capsys.readouterr().err
+    assert "work" in output and "git.commit_per_turn" in output and "chain" in output
+
+
+def test_read_only_states_allow_disabled_commits(tmp_path: pathlib.Path) -> None:
+    """Read-only agent and tool states need no commit chain."""
+    _operator("[git]\ncommit_per_turn = false\n")
+    spec = load_machine(
+        _write(tmp_path, RUN_STATE_AFTER_WAIT.replace('mode = "run"', 'mode = "agent"'))
+    )
+    configs = state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
+    assert not configs.states["work"].config.git.commit_per_turn
+    assert not configs.states["check"].config.git.commit_per_turn
+
+
 def test_agent_and_tool_states_take_a_config_table(tmp_path: pathlib.Path) -> None:
     spec = load_machine(_write(tmp_path, MACHINE))
     assert spec.states["scan"].config == {"sandbox": {"extra_read_paths": ["/srv/inbox"]}}  # type: ignore[union-attr]
@@ -573,14 +610,13 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
 ) -> None:
     """`scan` reads below `/srv/outbox`, which `judge` writes: a planted link would lead it out."""
     monkeypatch.chdir(tmp_path)
+    env = dataclasses.replace(detect.probed_environment(), userns_supported=True)
     _operator()
     nested = MACHINE.replace(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox/in"]'
     )
     with pytest.raises(SandboxWidenedError) as refused:
-        resolve_configs(
-            load_machine(_write(tmp_path, nested)), tmp_path, detect.probed_environment()
-        )
+        resolve_configs(load_machine(_write(tmp_path, nested)), tmp_path, env)
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /srv/outbox/in")
     assert "which the machine's jailed commands write" in said
@@ -589,9 +625,7 @@ def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(
     whole = MACHINE.replace(
         'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox"]'
     )
-    configs = resolve_configs(
-        load_machine(_write(tmp_path, whole)), tmp_path, detect.probed_environment()
-    )
+    configs = resolve_configs(load_machine(_write(tmp_path, whole)), tmp_path, env)
     assert state_configs.shared_write_regions(configs, tmp_path) == (pathlib.Path("/srv/outbox"),)
 
 
@@ -604,6 +638,7 @@ def test_a_grant_under_the_hosts_tmp_is_refused_when_any_state_writes_it(
     while `store` under `partial` could replace `/tmp/handoff` on the host with a link.
     """
     monkeypatch.chdir(tmp_path)
+    env = dataclasses.replace(detect.probed_environment(), userns_supported=True)
     reads = 'extra_read_paths = ["/srv/inbox", "/opt/toolchain"]'
     _operator(OPERATOR.replace(reads, f'isolation = "partial"\n{reads[:-1]}, "/tmp/handoff"]'))
     mixed = MACHINE.replace(
@@ -611,9 +646,7 @@ def test_a_grant_under_the_hosts_tmp_is_refused_when_any_state_writes_it(
         'isolation = "full"\nextra_read_paths = ["/tmp/handoff"]',
     )
     with pytest.raises(SandboxWidenedError) as refused:
-        resolve_configs(
-            load_machine(_write(tmp_path, mixed)), tmp_path, detect.probed_environment()
-        )
+        resolve_configs(load_machine(_write(tmp_path, mixed)), tmp_path, env)
     said = str(refused.value)
     assert said.startswith("[states.scan.config]: sandbox.extra_read_paths entry /tmp/handoff")
     assert f"it sits inside {pathlib.Path('/tmp').resolve()}, which the machine's" in said

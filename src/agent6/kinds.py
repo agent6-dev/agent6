@@ -234,6 +234,7 @@ class CommandResult:
         duration_s: How long it ran.
         exec_failed: The binary could not be executed at all, as distinct from a
             non-zero exit: an operator command that cannot execute is surfaced loudly.
+        timed_out: The runner ended the command at its deadline.
     """
 
     argv: tuple[str, ...]
@@ -242,6 +243,7 @@ class CommandResult:
     stderr: str
     duration_s: float
     exec_failed: bool = False
+    timed_out: bool = False
 
     @property
     def ok(self) -> bool:

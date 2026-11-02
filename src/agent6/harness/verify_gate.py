@@ -171,10 +171,6 @@ def settled_red_notice(*, used: int, retries: int) -> str:
     )
 
 
-# A jailed command that hit its timeout, per sandbox.jail's contract.
-EXIT_TIMEOUT = 124
-
-
 @dataclasses.dataclass(slots=True)
 class VerifyGate:
     """Own the run's verify gate: whether one is present, what a result means, and the harness runs.
@@ -227,7 +223,7 @@ class VerifyGate:
         if (
             verdict.ever_passed
             or result.exec_failed
-            or result.returncode == EXIT_TIMEOUT
+            or result.timed_out
             or nudges.verify_did_not_run(result.stdout, result.stderr, result.duration_s)
             or not self.chain.base_sha
         ):
@@ -452,7 +448,7 @@ class VerifyGate:
         no_verdict = (
             not observed
             or result.exec_failed
-            or result.returncode == EXIT_TIMEOUT
+            or result.timed_out
             or nudges.verify_did_not_run(result.stdout, result.stderr, result.duration_s)
         )
         if no_verdict:
@@ -516,7 +512,7 @@ class VerifyGate:
             )
             return
         if (
-            result.returncode == EXIT_TIMEOUT
+            result.timed_out
             and not state.verify.scoped
             and self.scoped_followup(state, turn) is not None
         ):

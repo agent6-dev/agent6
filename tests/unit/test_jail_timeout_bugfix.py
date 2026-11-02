@@ -17,6 +17,14 @@ from agent6 import kinds
 from agent6.sandbox import jail
 
 
+@pytest.mark.parametrize("timed_out", [False, True])
+def test_launcher_result_preserves_timeout_fact(timed_out: bool) -> None:
+    """The launcher distinguishes its deadline from a child's own exit 124."""
+    result = jail.result_from_json({"returncode": 124, "timed_out": timed_out}, ("sh",), 1.0)
+    assert result.returncode == 124
+    assert result.timed_out is timed_out
+
+
 def _write_fake_launcher(tmp_path: pathlib.Path) -> pathlib.Path:
     # A child holds stdout open and blocks forever; the marker file shows whether the group died.
     marker = tmp_path / "grandchild_alive"
@@ -58,6 +66,7 @@ def test_jail_timeout_returns_124_and_kills_group(
 
     # Must return the documented timeout contract, not raise.
     assert result.returncode == 124
+    assert result.timed_out
     assert result.argv == ("/bin/true",)
     # Bounded: must not block for the full 600s sleep.
     assert elapsed < 30.0

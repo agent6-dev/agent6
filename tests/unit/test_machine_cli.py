@@ -1085,10 +1085,17 @@ model = "x"
     assert begins == [first]
 
 
-def test_run_says_where_a_machines_work_landed(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("merged_chain", [False, True])
+def test_fresh_instance_refuses_unmerged_visible_branch(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    merged_chain: bool,
 ) -> None:
-    """A machine with run states commits to `agent6/machine-<id>` and never touches the checkout."""
+    """An absent or merged chain cannot hide unmerged work on the visible branch."""
+    from agent6.machine import journal as machine_journal
+    from agent6.vcs import git_read
+
     cfg_home = tmp_path.parent / (tmp_path.name + "-cfg")  # outside the workspace
     monkeypatch.setenv("XDG_CONFIG_HOME", str(cfg_home))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
@@ -1125,12 +1132,24 @@ def test_run_says_where_a_machines_work_landed(
     subprocess.run(["git", "-C", str(tmp_path), "add", "wtr.asm.toml"], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "commit", "-qm", "machine"], check=True)
 
-    assert main(["machine", "run", str(f), "--exit-on-wait", "--auto-approve"]) == 0
+    ref = "refs/agent6/machine-wait-then-run/head"
+    if merged_chain:
+        subprocess.run(["git", "update-ref", ref, "HEAD"], cwd=tmp_path, check=True)
+    tip = git_read.chain_tip(tmp_path, ref)
+    branch = "agent6/machine-wait-then-run"
+    branch_tip = git_read.chain_tip(tmp_path, branch)
 
-    out = capsys.readouterr().out
-    assert "WAITING" in out
-    assert "changes are on agent6/machine-wait-then-run" in out
-    assert "git merge agent6/machine-wait-then-run" in out
+    assert main(["machine", "run", str(f), "--exit-on-wait", "--auto-approve"]) == 2
+    captured = capsys.readouterr()
+    assert "WAITING" not in captured.out
+    assert f"git merge {branch}" in captured.err
+    assert f"git branch -D {branch}" in captured.err
+    assert f"git update-ref -d {ref}" in captured.err
+    assert git_read.chain_tip(tmp_path, ref) == tip
+    assert git_read.chain_tip(tmp_path, branch) == branch_tip
+    root = paths.state_dir(tmp_path) / "machines" / "wait-then-run"
+    assert not machine_journal.MachineJournal(root).exists()
+    assert process.read_worker_pid(root) is None
 
 
 def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
@@ -1514,8 +1533,12 @@ reason = "done"
 """
 
 
+@pytest.mark.parametrize("chain_present", [False, True])
 def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    chain_present: bool,
 ) -> None:
     """A chain whose tip HEAD already holds is spent: the instance drops it and starts from HEAD."""
     import subprocess
@@ -1535,6 +1558,8 @@ def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
         ["git", "update-ref", "refs/agent6/machine-run-warn/head", "HEAD"],
         ["git", "branch", "agent6/machine-run-warn", "HEAD"],
     ):
+        if argv[1] == "update-ref" and not chain_present:
+            continue
         subprocess.run(argv, cwd=repo, check=True)
     cfg = tmp_path / "agent6.toml"
     cfg.write_text(
@@ -1554,7 +1579,7 @@ model = "m"
     captured = capsys.readouterr()
     assert code == 0, captured.err
     assert "REFUSING" not in captured.err
-    assert "work on 'agent6/machine-run-warn' is in HEAD" in captured.err
+    assert ("work on 'agent6/machine-run-warn' is in HEAD" in captured.err) is chain_present
     assert "WAITING" in captured.out
     # This instance committed nothing and HEAD holds the branch: no merge line.
     assert "changes are on" not in captured.out
@@ -2012,3 +2037,48 @@ def test_a_failed_tool_step_says_why_in_the_run_and_in_status(
         "[0] check --nonzero--> broken -- exit 3: python3: can't open file 'scripts/x.py'"
         in capsys.readouterr().out
     )
+
+
+def test_tool_exit_124_is_not_a_timeout(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A tool's own exit 124 follows nonzero, not the jail's timeout edge."""
+    from agent6.app import reporter
+    from agent6.app.machine import run
+
+    monkeypatch.chdir(tmp_path)
+    mfile = tmp_path / "exit124.asm.toml"
+    mfile.write_text(
+        """machine = "exit124"
+version = 1
+initial = "t"
+[budget]
+max_transitions = 5
+[states.t]
+kind = "tool"
+command = ["sh", "-c", "echo hi; exit 124"]
+timeout_s = 60
+on = { ok = "okend", nonzero = "nzend", timeout = "toend" }
+[states.okend]
+kind = "terminal"
+status = "ok"
+reason = "ok"
+[states.nzend]
+kind = "terminal"
+status = "failed"
+reason = "routed-nonzero"
+[states.toend]
+kind = "terminal"
+status = "failed"
+reason = "routed-timeout"
+""",
+        encoding="utf-8",
+    )
+    said: list[str] = []
+    assert run.run_machine(mfile, reporter.Reporter(out=said.append, err=said.append)) == 1
+    assert any("routed-nonzero" in line for line in said), said
+    assert any(line.startswith("[agent6] state 't': exit 124:") for line in said), said
+    assert main(["machine", "status", "exit124"]) == 0
+    assert "t --nonzero--> nzend" in capsys.readouterr().out

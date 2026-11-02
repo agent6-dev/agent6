@@ -64,7 +64,7 @@ def outcome(event: Mapping[str, Any]) -> str:
     if isinstance(recorded, str) and recorded:
         return recorded
     code = event.get("exit_code")
-    if code == 124:
+    if event.get("timed_out") is True:
         return "timed_out"
     if isinstance(code, int) and code < 0:
         return "interrupted"

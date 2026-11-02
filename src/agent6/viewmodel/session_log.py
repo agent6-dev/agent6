@@ -450,7 +450,9 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     last_verify_rc = (
                         rc if isinstance(rc, int) and not isinstance(rc, bool) else None
                     )
-                    verify_timeout_s = events.verify_limit_hit(rc, ev.get("timeout_s"))
+                    verify_timeout_s = events.verify_limit_hit(
+                        evidence.outcome(ev), ev.get("timeout_s")
+                    )
                 elif etype == "role.result":
                     # A side call's failure never ends the run, so it is not the reason.
                     if ev.get("ok") is False and not kinds.is_side_role(str(ev.get("role", ""))):

@@ -457,12 +457,14 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
 
         Args:
             name: The state's name, which selects its resolved config.
-            state: The state, whose `max_usd`, when set, replaces `budget.max_usd`.
+            state: The state, whose `max_usd`, when set, tightens `budget.max_usd`.
 
         Returns:
             The config, revalidated.
         """
-        return configs.states[name].config.with_machine_agent_overrides(max_usd=state.max_usd)
+        return configs.states[name].config.with_machine_agent_overrides(
+            max_usd=state.max_usd, remaining_usd=spec.budget.max_usd
+        )
 
     if agent_states or has_tool_state:
         try:
@@ -584,17 +586,15 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
             crash_spend.book_crashed_attempt(journal, root)
             app_frontend.apply_spawned_away_default(root, app_frontend.approval_scopes(cfg))
             if not journal.exists():
-                # The chain ref outlives an archived instance dir; its tip is that instance's work.
+                # Either ref can outlive an archived instance and hold unmerged work.
                 ref = git_read.machine_chain_ref_for(spec.machine)
                 branch = git_read.machine_branch_for(spec.machine)
                 tip = git_read.chain_tip(cwd, ref) if has_run_agent else None
-                if tip is not None and git_read.is_ancestor(cwd, tip, "HEAD"):
-                    git_ops.delete_ref(cwd, ref)
-                    reporter.note(
-                        f"the previous instance's work on {branch!r} is in HEAD;"
-                        " this instance starts from HEAD"
-                    )
-                elif tip is not None:
+                branch_tip = git_read.chain_tip(cwd, branch) if has_run_agent else None
+                if any(
+                    candidate is not None and not git_read.is_ancestor(cwd, candidate, "HEAD")
+                    for candidate in (tip, branch_tip)
+                ):
                     reporter.refuse(
                         f"no journal for {spec.machine!r}, but its chain branch"
                         f" {branch!r} exists with a previous instance's work."
@@ -603,6 +603,12 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
                         " then rerun."
                     )
                     return 2
+                if tip is not None:
+                    git_ops.delete_ref(cwd, ref)
+                    reporter.note(
+                        f"the previous instance's work on {branch!r} is in HEAD;"
+                        " this instance starts from HEAD"
+                    )
                 write_bundle(root, path)
             operator_hook = host_preflight.build_machine_notify_hook(cfg, spec.machine, root)
 

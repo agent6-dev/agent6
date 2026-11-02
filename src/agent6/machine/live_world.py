@@ -141,11 +141,10 @@ class LiveWorld:
             )
         except jail.JailUnavailableError as exc:
             raise contracts.EngineError(f"jail unavailable: {exc}") from exc
-        # run_in_jail returns rc 124 on a timeout and never raises TimeoutExpired.
         outcome = contracts.ToolExecResult(
             exit_code=result.returncode,
             stdout=result.stdout,
-            timed_out=result.returncode == 124,
+            timed_out=result.timed_out,
             stderr=result.stderr,
         )
         if outcome.exit_code != 0 and self.on_tool_failure is not None:

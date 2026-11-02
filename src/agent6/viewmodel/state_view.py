@@ -48,7 +48,7 @@ def status_facts(state: state_types.SessionState) -> session_status.StatusFacts:
         verify_scoped=state.verify_scoped,
         gate_red=gate is not None and gate.exit_code is not None and gate.exit_code != 0,
         gate_timed_out=gate is not None
-        and events.verify_limit_hit(gate.exit_code, gate.timeout_s) > 0,
+        and events.verify_limit_hit(gate.outcome, gate.timeout_s) > 0,
         end_reason=state.end_reason,
         operator_blocked=bool(pending),
         blocked_kind=oldest[0] if oldest else "",

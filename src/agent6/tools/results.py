@@ -377,8 +377,8 @@ class ExecResult(ToolResult):
         exec_failed: The command could not be started.
         command: What ran, for a command the model did not choose (a verify gate).
         background_id: The background job the command continues as, when handed back.
-        timeout_s: The wall-clock cap the runner enforced, 0 when none; with rc 124 it tells a
-            timeout from a failure.
+        timeout_s: The wall-clock cap the runner enforced, 0 when none.
+        timed_out: The runner ended the command at its deadline.
         stopped_by_operator: The operator's immediate stop ended the command before it finished.
     """
 
@@ -390,6 +390,7 @@ class ExecResult(ToolResult):
     command: tuple[str, ...] = ()
     background_id: str = ""
     timeout_s: float = 0.0
+    timed_out: bool = False
     stopped_by_operator: bool = False
     stdout_truncated: bool | None = None
     stderr_truncated: bool | None = None
@@ -412,7 +413,7 @@ class ExecResult(ToolResult):
             wire["verification"] = dataclasses.asdict(self.verification)
         if self.command:
             wire["command"] = shlex.join(self.command)
-        if self.returncode == 124 and self.timeout_s > 0:
+        if self.timed_out:
             wire["timed_out"] = True
             wire["timeout_s"] = self.timeout_s
         if self.stopped_by_operator:
@@ -428,7 +429,7 @@ class ExecResult(ToolResult):
             return f"operator's stop ended the command before it finished ({self.duration_s:.1f}s)"
         if self.background_id:
             return f"still running as {self.background_id} after {self.duration_s:.1f}s"
-        if self.returncode == 124 and self.timeout_s > 0:
+        if self.timed_out:
             return f"exit=124 (timed out at {self.timeout_s:.0f}s) in {self.duration_s:.1f}s"
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 
@@ -444,6 +445,7 @@ class MetricResult(ToolResult):
     exec_failed: bool
     score: float | None
     timeout_s: float = 0.0
+    timed_out: bool = False
 
     @classmethod
     def from_exec(cls, res: ExecResult, score: float | None) -> MetricResult:
@@ -469,6 +471,7 @@ class MetricResult(ToolResult):
             exec_failed=res.exec_failed,
             score=score,
             timeout_s=res.timeout_s,
+            timed_out=res.timed_out,
         )
 
     def to_wire(self) -> dict[str, Any]:
@@ -481,14 +484,14 @@ class MetricResult(ToolResult):
             "exec_failed": self.exec_failed,
             "score": self.score,
         }
-        if self.returncode == 124 and self.timeout_s > 0:
+        if self.timed_out:
             wire["timed_out"] = True
             wire["timeout_s"] = self.timeout_s
         return wire
 
     def summary(self) -> str:
         """Return the one-line summary."""
-        if self.returncode == 124 and self.timeout_s > 0:
+        if self.timed_out:
             return f"exit=124 (timed out at {self.timeout_s:.0f}s) in {self.duration_s:.1f}s"
         return f"exit={self.returncode} in {self.duration_s:.1f}s"
 

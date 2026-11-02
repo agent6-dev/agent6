@@ -317,6 +317,27 @@ def test_template_set_into_non_str_names_the_str_declaration(tmp_path: pathlib.P
     )
 
 
+def test_tool_schema_without_capture_is_refused_at_load_and_check(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A schema without a capture must not leave stdout unchecked."""
+    from agent6.ui import cli
+
+    monkeypatch.chdir(tmp_path)
+    body = VALID_MACHINE.replace(
+        'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
+        "",
+    )
+    path = tmp_path / "invalid.asm.toml"
+    path.write_text(body, encoding="utf-8")
+    with pytest.raises(
+        schema.MachineError, match="state 'scan': `output_schema` requires `capture`"
+    ):
+        semantics.load_machine(path)
+    assert cli.main(["machine", "check", str(path)]) == 1
+    assert "state 'scan': `output_schema` requires `capture`" in capsys.readouterr().err
+
+
 def test_capture_cannot_write_operator_var(tmp_path: pathlib.Path) -> None:
     body = VALID_MACHINE.replace(
         'capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }',
