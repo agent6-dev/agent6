@@ -258,7 +258,8 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help=(
             "Permit running as root (also AGENT6_ALLOW_ROOT=1). Off by default:"
             " running an LLM-driven agent as root is dangerous. Under sudo,"
-            " agent6 reads your config/secrets and chowns new files back to you."
+            " agent6 reads your config and secrets. It chowns config and secrets writes"
+            " back to you, and the state dir at run teardown, not workspace files."
         ),
     )
     sub = parser.add_subparsers(

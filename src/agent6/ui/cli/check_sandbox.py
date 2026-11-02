@@ -442,10 +442,16 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
         check_render.result("FAIL", "a run would refuse", str(exc))
         return [*out, kinds.DoctorCheck(name="sandbox.refusal", status="FAIL", detail=str(exc))]
     print()
+    command_boundary = (
+        "commands also run unconfined"
+        if selected == "none"
+        else "command files are confined; command egress is unbounded"
+        if tools_policy.resolve_network(cfg, selected) == "host"
+        else "command files and egress are confined"
+    )
     check_render.line(
         f"  {common.sgr('agent process:', '1')} ",
-        "its own egress is unbounded (documented in docs/security.md);"
-        " the jail bounds commands, not the agent",
+        f"its own egress is unbounded (documented in docs/security.md); {command_boundary}",
         warning=True,
     )
     check_render.line(

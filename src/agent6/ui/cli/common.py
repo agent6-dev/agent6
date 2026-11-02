@@ -376,8 +376,8 @@ def _enforce_root_policy(allow_root: bool) -> int | None:
     who = f" on behalf of {user.name} (uid {user.uid})" if user.via_sudo else ""
     print(
         f"[agent6] WARNING: running as root{who}. The LLM's commands execute as"
-        " root inside the jail; files agent6 writes under the repo are chowned"
-        " back to you when invoked via sudo. Proceed with care.",
+        " root. Under sudo, agent6 chowns config and secrets writes back to you,"
+        " and the state dir at run teardown, not workspace files. Proceed with care.",
         file=sys.stderr,
     )
     return None

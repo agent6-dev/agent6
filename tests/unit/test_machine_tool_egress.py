@@ -168,7 +168,7 @@ def _patch_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
 
     monkeypatch.setattr(jail, "run_in_jail", fake_run_in_jail)
     # Fake command results must not fill the real namespace probe's process-wide cache.
-    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(True))
     return seen
 
 

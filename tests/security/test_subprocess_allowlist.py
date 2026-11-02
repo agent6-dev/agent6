@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The subprocess audit as a test: every module that spawns a child directly is on the allow-list.
 
-argv there is fixed or operator-chosen, never LLM output, which goes through run_in_jail.
+Argv there is fixed or operator-chosen, except notify-send's documented data argument.
 A new name here is a security review with a `Security review note:` commit paragraph, not
 a test to update in passing. Broader than the AGENTS.md `rg` one-liner on purpose:
 subprocess.call / check_call / check_output, a bare `from subprocess import Popen`, an
@@ -81,6 +81,14 @@ def test_direct_subprocess_stays_on_the_allowlist() -> None:
     stale = ALLOWED - matches
     assert not unexpected, f"unreviewed direct subprocess use: {sorted(unexpected)}"
     assert not stale, f"allow-list entries with no match left (prune them): {sorted(stale)}"
+
+
+def test_review_git_reads_have_their_own_allowlist_reason() -> None:
+    """The review allowlist entry names both direct git calls and their operator input."""
+    doc = (pathlib.Path(__file__).resolve().parents[2] / "docs/security.md").read_text()
+    (line,) = [line for line in doc.splitlines() if line.strip().startswith("- `review_cmds.py`:")]
+    assert "`git status`" in line and "`git log`" in line
+    assert "operator" in line
 
 
 # Every stdlib call that RUNS something. The allow-list above is only as good as

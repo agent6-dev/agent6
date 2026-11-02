@@ -10,7 +10,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.config import Config
-from agent6.tools import policy
+from agent6.tools import policy, tool_errors
 
 
 def _host_cfg() -> Config:
@@ -35,7 +35,8 @@ def test_the_host_network_grants_the_resolver_and_trust_store_files(
     if resolv.exists():
         # The launcher binds the name the resolver opens; Landlock needs the file it points to.
         assert resolv in reads and resolv.resolve() in reads
-    assert reads, "no host in the test matrix lacks every one of them"
+    if not reads:
+        pytest.skip("the test host exposes no resolver or trust-store paths")
     granted = policy.jail_policy(tmp_path, _host_cfg(), isolation, ("true",)).extra_ro_paths
     assert set(reads) <= set(granted)
 
@@ -108,11 +109,34 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
     assert f"a link on its way sits inside {repo}, which jailed commands write" in dropped.line()
 
 
+def test_dropped_tmp_grant_names_command_reach_and_file_tool_refusal(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The dropped-grant notice does not promise /tmp access through the file tools."""
+    repo, held = tmp_path / "repo", tmp_path / "held"
+    repo.mkdir()
+    held.mkdir()
+    note = held / "notes.txt"
+    note.write_text("hi", encoding="utf-8")
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "partial", "extra_read_paths": [str(held)]}}
+    )
+    grants = policy.resolve_grants(cfg, repo)
+    workspace = policy.workspace_for(cfg, repo, grants=grants)
+    assert not workspace.read_roots
+    with pytest.raises(
+        tool_errors.ToolError, match="Absolute paths are only allowed inside a granted path"
+    ):
+        workspace.resolve_read(str(note))
+    (dropped,) = grants.dropped
+    assert "Jailed commands still reach it through /tmp; file tools do not." in dropped.line()
+
+
 def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> None:
     """Commands under `partial` write the host's `/tmp`, so a grant there is re-pointable.
 
-    Spelled inside it or reached through a link there, the grant is dropped; what it held stays
-    reachable as part of `/tmp`. Under `full`, whose `/tmp` is private, both are kept.
+    Spelled inside it or reached through a link there, the grant is dropped; jailed commands
+    still reach it through `/tmp`, but file tools do not. Under `full`, both grants are kept.
     """
     import os
 
@@ -200,7 +224,8 @@ def test_a_dropped_write_grant_is_no_region_for_the_others(tmp_path: pathlib.Pat
     cfg = Config.model_validate(
         {
             "sandbox": {
-                "extra_write_paths": [str(tmp_path / "alias"), str(tmp_path / "data" / "subdir")]
+                "isolation": "full",
+                "extra_write_paths": [str(tmp_path / "alias"), str(tmp_path / "data" / "subdir")],
             }
         }
     )

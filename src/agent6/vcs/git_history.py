@@ -3,8 +3,8 @@
 """Read the repository for display: refs, the log, a commit, its files, a patch, the working tree.
 
 The web Git tab's reads. Every rev these take comes from the operator; `--end-of-options`
-keeps a flag-shaped one from reaching git as an option, and a path follows `--`. Nothing
-here writes.
+keeps a flag-shaped one from reaching git as an option, and a path follows `--`.
+Repository state stays unchanged; working-tree listings use a temporary index copy.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 import re
+import shutil
+import tempfile
 from collections.abc import Sequence
 
 from agent6 import errors
@@ -309,17 +311,23 @@ _WORKTREE = ("diff",)
 
 
 def _listing(
-    path: pathlib.Path, cmd: tuple[str, ...], what: str, revs: tuple[str, ...]
+    path: pathlib.Path,
+    cmd: tuple[str, ...],
+    what: str,
+    revs: tuple[str, ...],
+    env: dict[str, str] | None,
 ) -> list[str]:
     """Return the NUL-separated fields of a `--name-status` or `--numstat` diff listing."""
-    return git_command.nul_fields(path, *cmd, "-M", "-z", what, "--end-of-options", *revs)
+    return git_command.nul_fields(
+        path, *cmd, "-M", "-z", what, "--end-of-options", *revs, env_extra=env
+    )
 
 
 def _numstat(
-    path: pathlib.Path, cmd: tuple[str, ...], revs: tuple[str, ...]
+    path: pathlib.Path, cmd: tuple[str, ...], revs: tuple[str, ...], env: dict[str, str] | None
 ) -> dict[str, tuple[int, int] | None]:
     """Return each changed path's line counts, None for a binary file."""
-    fields = _listing(path, cmd, "--numstat", revs)
+    fields = _listing(path, cmd, "--numstat", revs, env)
     counts: dict[str, tuple[int, int] | None] = {}
     i = 0
     while i < len(fields) and fields[i]:
@@ -335,11 +343,14 @@ def _numstat(
 
 
 def _changed(
-    path: pathlib.Path, cmd: tuple[str, ...], revs: tuple[str, ...]
+    path: pathlib.Path,
+    cmd: tuple[str, ...],
+    revs: tuple[str, ...],
+    env: dict[str, str] | None = None,
 ) -> tuple[ChangedFile, ...]:
     """Return the files a diff listing names, renames detected, with their counts."""
-    fields = _listing(path, cmd, "--name-status", revs)
-    counts = _numstat(path, cmd, revs)
+    fields = _listing(path, cmd, "--name-status", revs, env)
+    counts = _numstat(path, cmd, revs, env)
     rows: list[ChangedFile] = []
     i = 0
     while i < len(fields) and fields[i]:
@@ -438,7 +449,17 @@ def worktree_files(path: pathlib.Path, base: str) -> tuple[ChangedFile, ...]:
     Raises:
         GitError: The base cannot be read.
     """
-    rows = list(_changed(path, _WORKTREE, (base,)))
+    with tempfile.TemporaryDirectory(prefix="agent6-worktree-diff-") as tmp:
+        index_copy = pathlib.Path(tmp) / "index"
+        real_index = pathlib.Path(
+            git_command.run(
+                path, "rev-parse", "--path-format=absolute", "--git-path", "index"
+            ).stdout.rstrip("\n")
+        )
+        # Keep the mtime so Git re-hashes entries from the index file's own second.
+        if real_index.is_file():
+            shutil.copy2(real_index, index_copy)
+        rows = list(_changed(path, _WORKTREE, (base,), {"GIT_INDEX_FILE": str(index_copy)}))
     names = git_command.nul_fields(path, "ls-files", "-z", "--others", "--exclude-standard")
     for name in names:
         if not name:

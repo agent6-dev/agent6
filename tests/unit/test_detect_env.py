@@ -35,6 +35,33 @@ def _fail_probe() -> bool:
     pytest.fail("namespaces_work should not be called here")
 
 
+def test_trial_launch_failure_reaches_refusal_and_degrade_reason(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed full-jail launch keeps its error, even when the unshare probe succeeds."""
+    fake = tmp_path / "failjail"
+    failure = "agent6-jail: fork failed: EAGAIN"
+    fake.write_text(f"#!/bin/sh\necho '{failure}' >&2\nexit 1\n", encoding="utf-8")
+    fake.chmod(0o755)
+    monkeypatch.setenv("AGENT6_JAIL_BIN", str(fake))
+    monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
+    monkeypatch.setattr(detect, "environment", lambda: _env(True))
+    monkeypatch.setattr(detect, "apparmor_userns_restricted", lambda: True)
+    jail.namespaces_work.cache_clear()
+    try:
+        env = detect.probed_environment()
+        assert detect.resolve_isolation("auto", env) == "partial"
+        reason = detect.degrade_reason(env) or ""
+        assert "trial full jail launch" in reason
+        assert repr(f"agent6-jail launcher exited 1: {failure}") in reason
+        assert "AppArmor" not in reason
+        with pytest.raises(detect.IsolationUnavailableError) as caught:
+            detect.resolve_isolation("full", env)
+        assert reason in str(caught.value)
+    finally:
+        jail.namespaces_work.cache_clear()
+
+
 def test_probe_does_not_probe_where_there_is_no_sandbox(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -48,7 +75,7 @@ def test_probe_keeps_userns_when_the_jail_agrees(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(True))
     assert detect.probed_environment().userns_supported is True
 
 
@@ -61,7 +88,7 @@ def test_probe_drops_to_partial_when_the_jail_cannot_do_full(
     jail's `mount`.
     """
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
-    monkeypatch.setattr(jail, "namespaces_work", lambda: False)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(False, "trial failed"))
     env = detect.probed_environment()
     assert env.userns_supported is False
     assert env.detected_isolation == "partial"
@@ -72,7 +99,7 @@ def test_probe_upgrades_to_full_via_jail_probe(
 ) -> None:
     # The AppArmor-isolation case: unshare blocked, but the jail binary can userns.
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(True))
     assert detect.probed_environment().userns_supported is True
 
 
@@ -113,7 +140,7 @@ def test_probe_stays_partial_when_jail_probe_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(detect, "environment", lambda: _env(False))
-    monkeypatch.setattr(jail, "namespaces_work", lambda: False)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(False, "trial failed"))
     assert detect.probed_environment().userns_supported is False
 
 
@@ -209,7 +236,7 @@ def test_grants_follow_the_launchers_verdict_on_namespaces(
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
     monkeypatch.setattr(jail, "locate_jail_binary", lambda: pathlib.Path("/usr/bin/true"))
-    monkeypatch.setattr(jail, "namespaces_work", lambda: False)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(False, "trial failed"))
     assert tmp_path.is_relative_to(policy.HOST_TMP)
     root = tmp_path / "repo"
     root.mkdir()

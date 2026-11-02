@@ -210,7 +210,7 @@ def working_jail(monkeypatch: pytest.MonkeyPatch) -> list[kinds.JailPolicy]:
         )
 
     monkeypatch.setattr(jail, "run_in_jail", ok)
-    monkeypatch.setattr(jail, "namespaces_work", lambda: True)
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(True))
     return ran
 
 
@@ -603,6 +603,37 @@ def test_a_state_wider_than_the_operator_is_refused_by_name(
     assert said.startswith('[states.judge.config] sets sandbox.extra_write_paths = ["/srv/outbox"]')
     assert "wider than your config's []" in said
     assert "`agent6 config add --repo sandbox.extra_write_paths /srv/outbox`" in said
+
+
+@pytest.mark.parametrize("with_writers", [False, True])
+@pytest.mark.usefixtures("working_jail")
+def test_shared_regions_exclude_unused_operator_write_grants(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, with_writers: bool
+) -> None:
+    """An unused operator ceiling does not refuse a state's narrower read grant."""
+    monkeypatch.chdir(tmp_path)
+    _operator()
+    text = MACHINE.replace(
+        'extra_read_paths = ["/srv/inbox"]', 'extra_read_paths = ["/srv/outbox/in"]'
+    ).replace('extra_write_paths = ["/srv/outbox"]', "extra_write_paths = []")
+    if with_writers:
+        text = text.replace(
+            "[config.sandbox]\nextra_read_paths = []\nextra_write_paths = []",
+            '[config.sandbox]\nextra_read_paths = []\nextra_write_paths = ["/srv/outbox/machine"]',
+        ).replace(
+            "[states.judge.config.sandbox]\nextra_write_paths = []",
+            '[states.judge.config.sandbox]\nextra_write_paths = ["/srv/outbox/judge"]',
+        )
+    configs = resolve_configs(
+        load_machine(_write(tmp_path, text)), tmp_path, detect.probed_environment()
+    )
+    expected = (
+        (pathlib.Path("/srv/outbox/judge"), pathlib.Path("/srv/outbox/machine"))
+        if with_writers
+        else ()
+    )
+    assert state_configs.shared_write_regions(configs, tmp_path) == expected
+    assert configs.states["scan"].config.sandbox.extra_read_paths == ("/srv/outbox/in",)
 
 
 def test_a_state_grant_under_a_region_the_machine_writes_is_refused_by_name(

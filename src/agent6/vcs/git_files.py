@@ -407,7 +407,14 @@ def worktree_tree_files(path: pathlib.Path) -> tuple[TreeFile, ...]:
     )
     changed: set[str] = set()
     status = iter(
-        git_command.nul_fields(path, "status", "--porcelain=v1", "-z", "--untracked-files=no")
+        git_command.nul_fields(
+            path,
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=no",
+            env_extra={"GIT_OPTIONAL_LOCKS": "0"},
+        )
     )
     for entry in status:
         if entry:

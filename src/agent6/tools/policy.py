@@ -212,6 +212,8 @@ class DroppedGrant:
         )
         if self.shared:
             still = f" Grant {self.region} itself to this state instead."
+        elif self.region == HOST_TMP and path_safety.path_within(self.real, self.region):
+            still = f" Jailed commands still reach it through {self.region}; file tools do not."
         return (
             f"{self.key} entry {self.path}{where} is not granted on its own: it sits"
             f" inside {self.region}, which {who} write, so a command could point it"
@@ -282,8 +284,8 @@ def resolve_grants(
     one, is dropped: a jailed command can swap a component there for a symlink out of every
     grant, and an alias of the workspace would be bound without its read-only `.git`. `/tmp`
     is such a region unless the run would be `full` on this host, where `/tmp` is private.
-    What a grant inside `/tmp` held stays reachable as part of it. A grant elsewhere
-    resolves as the operator linked it.
+    Jailed commands still reach a dropped grant's contents through `/tmp`; file tools do not.
+    A grant elsewhere resolves as the operator linked it.
 
     A region another state of the same machine writes counts the same way, since that state's
     commands plant links there too; the region itself stays grantable, because replacing it

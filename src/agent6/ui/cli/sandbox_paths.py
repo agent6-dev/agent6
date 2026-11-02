@@ -13,6 +13,7 @@ from agent6 import paths as agent6_paths
 from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import tool_paths
+from agent6.sessions import layout as sessions_layout
 from agent6.tools import path_safety
 from agent6.tools import policy as tools_policy
 
@@ -366,6 +367,15 @@ def command_rows(
     }
     if selected == "full":
         rules += [Row("--", p) for p in masked]
+    logs = Row(
+        "rw",
+        sessions_layout.SessionLayout(agent6_paths.state_dir(ws.root), "<id>").session_dir
+        / "shells"
+        / "logs",
+        "the run's background-command log dir",
+    )
+    rows.append(logs)
+    rules.append(logs)
 
     def access(path: pathlib.Path) -> str:
         matching = [r.mode for r in rules if path.is_relative_to(r.path)]

@@ -18,6 +18,8 @@ import pytest
 from agent6 import kinds, paths
 from agent6.config import Config, SandboxConfig
 from agent6.sandbox import detect, jail, landlock, tool_paths
+from agent6.sessions import layout as sessions_layout
+from agent6.tools import background
 from agent6.ui.cli import check_cmds, check_render, check_sandbox, sandbox_paths
 
 _ENV = detect.Environment(
@@ -110,6 +112,57 @@ def linked_install_roots(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(check_sandbox, "run_in_jail", run)
     return tmp_path
+
+
+@pytest.mark.parametrize(
+    ("isolation", "network", "clause"),
+    [
+        ("none", "auto", "commands also run unconfined"),
+        ("partial", "auto", "command files are confined; command egress is unbounded"),
+        ("full", "host", "command files are confined; command egress is unbounded"),
+        ("full", "auto", "command files and egress are confined"),
+        ("full", "session", "command files and egress are confined"),
+    ],
+)
+def test_agent_egress_line_names_the_effective_command_boundary(
+    isolation: str,
+    network: str,
+    clause: str,
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The agent egress warning does not claim that unconfined commands have a boundary."""
+    _force_profile(monkeypatch, isolation)
+    cfg = Config.model_validate({"sandbox": {"isolation": isolation, "network": network}})
+    check_sandbox.check_sandbox_section(cfg)
+    line = next(line for line in capsys.readouterr().out.splitlines() if "agent process:" in line)
+    assert "its own egress is unbounded" in line
+    assert clause in line
+
+
+@pytest.mark.parametrize("isolation", ["partial", "full"])
+def test_commands_report_the_background_log_grant_beneath_hidden_state(
+    isolation: str,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub_jail: list[kinds.JailPolicy],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The command rows show the log directory rebound through the hidden state base."""
+    monkeypatch.chdir(tmp_path)
+    _force_profile(monkeypatch, isolation)
+    layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "<id>")
+    shells = background.BackgroundShells(layout.session_dir / background.SHELLS_DIR)
+    check_sandbox.check_sandbox_section(Config())
+    rows = _commands_block(capsys.readouterr().out)
+    row = next((line for line in rows if str(shells.log_root) in line), "")
+    assert row.strip().startswith("rw "), rows
+    assert "the run's background-command log dir" in row
+    state_row = next(i for i, line in enumerate(rows) if str(paths.state_base()) in line)
+    assert rows.index(row) > state_row
+    if isolation == "full":
+        assert "(hidden)" in rows[state_row]
 
 
 def _row(checks: list[kinds.DoctorCheck], name: str) -> kinds.DoctorCheck:

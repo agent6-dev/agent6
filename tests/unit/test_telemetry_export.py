@@ -100,6 +100,42 @@ def _resumed() -> list[dict[str, Any]]:
     ]
 
 
+@pytest.mark.parametrize("umask", [0o000, 0o022])
+def test_cursor_tree_is_private_and_handed_back_under_sudo(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, umask: int
+) -> None:
+    """Cursor parents are 0700 and cursor replacements are handed back to the operator."""
+    user = paths.RealUser(1234, 5678, "operator", repo.parent / "home", via_sudo=True)
+    monkeypatch.setattr(paths, "effective_user", lambda: user)
+    monkeypatch.setattr(os, "geteuid", lambda: 0)
+    chowned: dict[pathlib.Path, tuple[int, int]] = {}
+
+    def lchown(path: pathlib.Path, uid: int, gid: int) -> None:
+        chowned[path] = (uid, gid)
+
+    def chown(name: str, uid: int, gid: int, *, dir_fd: int, follow_symlinks: bool) -> None:
+        assert not follow_symlinks
+        chowned[pathlib.Path(f"/proc/self/fd/{dir_fd}").readlink() / name] = (uid, gid)
+
+    monkeypatch.setattr(os, "lchown", lchown)
+    monkeypatch.setattr(os, "chown", chown)
+    state = paths.state_dir(repo)
+    paths.mkdir_for_real_user(state)
+    _write_session(repo, "run-a", fold_tests._journal())  # pyright: ignore[reportPrivateUsage]
+    chowned.clear()
+    previous = os.umask(umask)
+    try:
+        collector = _Collector()
+        report = export.export(repo, _config(logs="none", metrics="none"), post=collector.post)
+    finally:
+        os.umask(previous)
+    assert report.spans > 0 and not report.notes
+    (cursor,) = (state / "telemetry").rglob("*.offset")
+    for path in (state / "telemetry", cursor.parent, cursor):
+        assert stat.S_IMODE(path.stat().st_mode) == (0o700 if path.is_dir() else 0o600)
+        assert chowned[path] == (1234, 5678)
+
+
 def test_an_export_posts_every_signal_and_a_rerun_resends_only_the_metrics(
     repo: pathlib.Path,
 ) -> None:

@@ -70,6 +70,25 @@ _NON_TOOL_SPANS = {
 }
 
 
+def test_security_docs_name_the_notify_send_data_argument_exception() -> None:
+    """The direct-spawn rule names notify-send's model-data exception and lack of stdin."""
+    doc = (REPO / "docs/security.md").read_text(encoding="utf-8")
+    allowlist = doc.split("### 12. Host-side subprocess allowlist", 1)[1].split("## Skills", 1)[0]
+    assert "exception is `notify-send`" in allowlist
+    assert "no stdin mode" in allowlist
+    assert "one data argument after `--`" in allowlist
+    assert "`tmux load-buffer -w -` with fixed argv" in allowlist
+
+
+def test_security_docs_scope_escalation_and_install_claims_to_confined_levels() -> None:
+    """The command docs do not promise NO_NEW_PRIVS or blocked system writes under none."""
+    doc = (REPO / "docs/security.md").read_text(encoding="utf-8")
+    bullets = [line for line in doc.splitlines() if line.startswith("- ")]
+    for claim in ("`sudo` cannot escalate", "package installs fail"):
+        (line,) = [line for line in bullets if claim in line.lower()]
+        assert line.startswith("- Under `partial` or `full` `sandbox.isolation`, ")
+
+
 def _registered_tool_names() -> set[str]:
     names = {cls.TOOL_NAME for cls in tool_schema.ALL_TOOLS}
     for mode in ("run", "plan", "ask", "machine", "agent"):

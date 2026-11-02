@@ -279,6 +279,44 @@ def test_history_reads_never_take_a_rev_as_an_option(tmp_path: pathlib.Path, rev
     assert git_history.log_commits(tmp_path, [rev], limit=5) == ()
 
 
+@pytest.mark.parametrize("listing", ["history", "files"])
+@pytest.mark.parametrize("index_kind", ["plain", "linked", "split"])
+def test_worktree_listings_leave_the_live_index_unchanged(
+    tmp_path: pathlib.Path, listing: str, index_kind: str
+) -> None:
+    """Read-only listings do not refresh a stale index or create shared-index files."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q")
+    (repo / "file.txt").write_text("same content\n", encoding="utf-8")
+    base = _commit(repo, "base")
+    if index_kind == "linked":
+        worktree = tmp_path / "linked"
+        _git(repo, "worktree", "add", "-q", "--detach", str(worktree), base)
+        repo = worktree
+    elif index_kind == "split":
+        _git(repo, "config", "core.splitIndex", "true")
+        _git(repo, "update-index", "--split-index")
+    index = pathlib.Path(_git(repo, "rev-parse", "--path-format=absolute", "--git-path", "index"))
+    before = index.stat()
+    contents = index.read_bytes()
+    shared = {p.name: p.read_bytes() for p in index.parent.glob("sharedindex.*")}
+    touched = repo / "file.txt"
+    st = touched.stat()
+    os.utime(touched, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+    if listing == "history":
+        assert git_history.worktree_files(repo, base) == ()
+    else:
+        assert git_files.worktree_tree_files(repo) == (
+            git_files.TreeFile("file.txt", len("same content\n"), "file", "tracked"),
+        )
+    after = index.stat()
+    assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
+    assert index.read_bytes() == contents
+    assert {p.name: p.read_bytes() for p in index.parent.glob("sharedindex.*")} == shared
+    assert not index.with_name("index.lock").exists()
+
+
 def test_worktree_files_list_tracked_changes_then_untracked_files(tmp_path: pathlib.Path) -> None:
     """Tracked changes carry git's letters and counts, untracked files their line count.
 

@@ -359,9 +359,9 @@ def labelled_configs(configs: MachineConfigs) -> Iterator[tuple[str, StateConfig
 def shared_write_regions(configs: MachineConfigs, cwd: pathlib.Path) -> tuple[pathlib.Path, ...]:
     """Return the regions any state of the machine may write.
 
-    Every state's grants sit at or below the operator's, so the ceiling's write grants cover
-    what any state's jailed command can plant a link in. A state off `full` writes the host's
-    `/tmp` too; a `full` state's `/tmp` is private, yet its grants there are bound from the host.
+    The machine and state configs supply the resolved write grants, not the operator ceiling.
+    A state off `full` writes the host's `/tmp` too; a `full` state's `/tmp` is private,
+    yet its grants there are bound from the host.
 
     Args:
         configs: The run's resolved configs.
@@ -370,11 +370,13 @@ def shared_write_regions(configs: MachineConfigs, cwd: pathlib.Path) -> tuple[pa
     Returns:
         The resolved paths.
     """
-    ceiling = tools_policy.resolve_grants(configs.operator.config, cwd)
-    regions = tuple(real for _p, real in ceiling.write)
-    if any(sc.isolation != "full" for sc in (configs.machine, *configs.states.values())):
-        regions += (tools_policy.HOST_TMP,)
-    return regions
+    active = (configs.machine, *configs.states.values())
+    regions = {
+        real for sc in active for _path, real in tools_policy.resolve_grants(sc.config, cwd).write
+    }
+    if any(sc.isolation != "full" for sc in active):
+        regions.add(tools_policy.HOST_TMP)
+    return tuple(sorted(regions))
 
 
 def unsafe_grants(configs: MachineConfigs, cwd: pathlib.Path) -> list[str]:

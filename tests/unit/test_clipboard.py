@@ -4,9 +4,24 @@
 
 from __future__ import annotations
 
+from unittest import mock
+
 import pytest
 
 from agent6.ui.tui import clipboard as cb
+
+
+@pytest.mark.parametrize(
+    "text", ["plain text", "- a markdown bullet", "-a", "-b evil", "-t /dev/x", "λ\nline2\0"]
+)
+def test_tmux_copies_text_on_stdin_not_in_argv(text: str) -> None:
+    """Transcript text cannot become tmux flags or exceed argv's size limit."""
+    with mock.patch.object(cb.subprocess, "run") as run:
+        status = cb.emit_clipboard(text, "tmux-buffer", lambda _text: None)
+    run.assert_called_once_with(
+        ["tmux", "load-buffer", "-w", "-"], input=text.encode("utf-8"), check=True
+    )
+    assert status == "via tmux load-buffer -w -"
 
 
 def test_osc52_bare_wraps_nothing() -> None:

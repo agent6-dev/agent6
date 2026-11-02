@@ -9,11 +9,13 @@ metavars on options, and plain punctuation.
 from __future__ import annotations
 
 import argparse
+import pathlib
 from collections.abc import Iterator
 
 import pytest
 
-from agent6.ui.cli import completers
+from agent6 import paths
+from agent6.ui.cli import common, completers
 from agent6.ui.cli import parser as cli_parser
 
 
@@ -45,6 +47,30 @@ def _positional(parser: argparse.ArgumentParser, dest: str) -> argparse.Action:
         if not action.option_strings and action.dest == dest:
             return action
     raise AssertionError(f"no positional {dest!r}")
+
+
+def test_root_banner_names_only_the_writes_handed_back(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: pathlib.Path
+) -> None:
+    """The sudo banner promises no ownership handback for workspace or git writes."""
+    monkeypatch.setattr(paths, "is_root", lambda: True)
+    user = paths.RealUser(1234, 5678, "operator", tmp_path, via_sudo=True)
+    monkeypatch.setattr(paths, "effective_user", lambda: user)
+    assert common._enforce_root_policy(True) is None  # pyright: ignore[reportPrivateUsage]
+    text = capsys.readouterr().err
+    assert "config and secrets writes" in text
+    assert "state dir at run teardown" in text
+    assert "not workspace files" in text
+    assert "files agent6 writes under the repo are chowned" not in text
+
+
+def test_allow_root_help_names_only_the_writes_handed_back() -> None:
+    """The opt-in help does not promise to chown all new files."""
+    text = _option(cli_parser.build_parser(), "--allow-root").help or ""
+    assert "config and secrets writes" in text
+    assert "state dir at run teardown" in text
+    assert "not workspace files" in text
+    assert "chowns new files" not in text
 
 
 @pytest.mark.parametrize(

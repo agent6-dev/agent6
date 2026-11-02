@@ -236,9 +236,10 @@ class _Cursor:
             return
         self.delivered, self.closed = offset, closed
         self.interrupted.update(interrupted)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        paths.mkdir_for_real_user(self.path.parent)
         suffix = f" interrupted={','.join(sorted(self.interrupted))}" if self.interrupted else ""
         portable.atomic_write(self.path, f"{offset}{' closed' if closed else ''}{suffix}\n")
+        paths.chown_to_real_user(self.path)
 
 
 class _Session:

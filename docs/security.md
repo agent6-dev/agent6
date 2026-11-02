@@ -137,7 +137,9 @@ Under `full` `sandbox.isolation` a kernel without Landlock skips that layer, war
 
 **Resolution**
 
-Probed per host: one `full` jail launch for namespaces, the Landlock ABI syscall, the seccomp filter's architecture (x86_64 and aarch64).
+Probed per host: one `full` jail launch, the Landlock ABI syscall, the seccomp filter's architecture (x86_64 and aarch64).
+A failed trial launch makes `full` unavailable; the refusal and automatic downgrade reason quote its failure text.
+That failure does not necessarily mean user namespaces are blocked.
 
 | Setting | Host | Effective |
 |---|---|---|
@@ -321,8 +323,8 @@ Under `ask`, a denied gate is withheld the same way for the rest of the run (no 
 
 The agent works within the environment it is given:
 
-- `sudo` cannot escalate, even passwordless: `NO_NEW_PRIVS` voids setuid, so jailed `sudo` fails under any `NOPASSWD` rule.
-- Package installs fail: `apt` / `dnf` / `apk` need root (blocked), a route to a mirror (the default `network` has none off the box under `full` `sandbox.isolation`), and `/usr` or `/var` writes (denied)
+- Under `partial` or `full` `sandbox.isolation`, `sudo` cannot escalate, even passwordless: `NO_NEW_PRIVS` voids setuid, so jailed `sudo` fails under any `NOPASSWD` rule.
+- Under `partial` or `full` `sandbox.isolation`, package installs fail: `apt` / `dnf` / `apk` need root (blocked), a route to a mirror (the default `network` has none off the box under `full` `sandbox.isolation`), and `/usr` or `/var` writes (denied).
 - Host-installed toolchains compile and run; a networked build step needs `network` loosened under `full` `sandbox.isolation`.
     - a toolchain that keeps its state under your home needs that directory granted and named, because the jail's `HOME` is its own; see [Rust toolchains](#rust-toolchains) for rustup's `cargo`
 - Toolchains, venvs, and deps are installed outside agent6.
@@ -347,7 +349,7 @@ The agent works within the environment it is given:
       That is local root for whoever runs it outside the jail
     - under `full` or `partial` `sandbox.isolation`, running as root adds no write grants or network routes
     - readable files include root-only ones (`/etc/shadow` under `partial` `sandbox.isolation`; `full`'s rootfs hides it)
-- Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns state-dir writes back
+- Under `sudo`, agent6 reads the real user's config and secrets (`SUDO_UID` / `SUDO_USER`) and chowns config and secrets writes back, plus the state dir at run teardown, not workspace files.
     - it does not drop privileges in-process; confinement comes from the jail
 
 #### Rust toolchains
@@ -639,7 +641,8 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 - The machine's `[config]` and each state's `config` may set `sandbox` keys, each bounded by your own layers alone ([the rule per key](state-machines.md#47-machine-config-overlay-config))
     - the ceiling is read from one load of your layers (defaults, global, repo, preset, `--config FILE`), never from a config the machine file has merged into
     - a path grant is at or below one of yours, compared by real path, so a symlink out of your tree is refused
-    - a state's grants are judged against every region the machine writes (your write grants, the workspace, `/tmp` off `full` `sandbox.isolation`), as one run's are against its own: a grant below such a region, or reached through a link inside one, refuses `machine check` and machine start, since a state writing the region can point it anywhere; the region itself may be granted
+    - a state's grants are judged against the workspace, the union of the machine's and states' resolved write grants, and host `/tmp` if any runs off `full` `sandbox.isolation`, not the operator ceiling.
+      A grant below such a region, or reached through a link inside one, refuses `machine check` and machine start, since a state writing the region can point it anywhere; the region itself may be granted.
     - a wider value refuses at `machine check` and at machine start, naming the state and the key
     - the other operator-only tables and leaves are rejected at load ([the list](state-machines.md#47-machine-config-overlay-config))
 - One resolved config per state feeds both enforcement sites: a `tool` state's jail, and an `agent` state's subprocess (its in-process file tools and its jailed commands)
@@ -661,7 +664,8 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 
 ### 12. Host-side subprocess allowlist
 
-Everything the model can influence runs through `run_in_jail` ([Sandbox](#2-sandbox)).
+Every child process whose argv depends on model output runs through `run_in_jail` ([Sandbox](#2-sandbox)).
+The exception is `notify-send`: it has no stdin mode, so a machine `notify` message is one data argument after `--`.
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
@@ -690,7 +694,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
     - `plan_watch.py` and `steer_tty.py`: `$EDITOR` for plan and steer editing
-    - `review_cmds.py`, `sessions_cmds.py` and `ask.py`: `git diff` / `log` for the review subcommand and the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
+    - `review_cmds.py`: `git status` with fixed argv and `git log` with an operator-supplied revision, both with git hardening and the curated git environment
+    - `sessions_cmds.py` and `ask.py`: `git diff` / `log` for the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
     - `history_cmds.py`: `rg` for history search
     - `live.py`: the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`
     - `system_cmds.py`: `cp` / `rm` / `apparmor_parser` via sudo with fixed argv for `agent6 system apparmor`
@@ -702,7 +707,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `app/machine/scriptcheck.py`: ruff and ty with fixed argv, reading generated scripts statically.
   Those scripts execute only via `run_in_jail`.
 - `app/machine/agent.py`: spawns each agent state as a fixed-argv `python -m agent6.ui.cli.machine_agent` subprocess whose request travels in a temp file.
-- `ui/tui/clipboard.py`: `tmux set-buffer -w` with the copied transcript text as one data argument.
+- `ui/tui/clipboard.py`: `tmux load-buffer -w -` with fixed argv and the copied transcript text on stdin.
 - `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment, transcript text on stdin.
 
 ## Skills

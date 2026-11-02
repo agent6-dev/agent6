@@ -48,6 +48,7 @@ class Environment:
         sandbox_available: The host is Linux.
         launcher_found: The `agent6-jail` launcher is installed; both `full` and `partial`
             run through it.
+        full_jail_failure: The trial full-jail launch's failure text, when it failed.
     """
 
     in_container: bool
@@ -58,6 +59,7 @@ class Environment:
     seccomp_arch_supported: bool
     sandbox_available: bool
     launcher_found: bool = True
+    full_jail_failure: str | None = None
 
     @property
     def detected_isolation(self) -> kinds.IsolationLevel:
@@ -214,7 +216,9 @@ def _read_max_userns() -> str | None:
 
 
 def _userns_block_cause(env: Environment) -> str:
-    """Return the mechanism blocking unprivileged user namespaces on this host."""
+    """Return the trial launch failure, or the standalone userns probe's diagnosis."""
+    if env.full_jail_failure is not None:
+        return f"the trial full jail launch failed: {env.full_jail_failure!r}"
     if apparmor_userns_restricted():
         return (
             "unprivileged user namespaces are blocked by AppArmor "
@@ -302,10 +306,8 @@ def probed_environment() -> Environment:
         return env
     if jail.locate_jail_binary() is None:
         return dataclasses.replace(env, userns_supported=False, launcher_found=False)
-    works = jail.namespaces_work()
-    if works != env.userns_supported:
-        return dataclasses.replace(env, userns_supported=works)
-    return env
+    probe = jail.namespaces_work()
+    return dataclasses.replace(env, userns_supported=probe.works, full_jail_failure=probe.failure)
 
 
 class IsolationUnavailableError(Exception):
@@ -367,8 +369,7 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
     if requested == "full":
         if not env.userns_supported:
             raise IsolationUnavailableError(
-                "sandbox.isolation = 'full' requires unprivileged user namespaces "
-                "(`unshare -U -r true`) to succeed, but this host blocks them. "
+                f"sandbox.isolation = 'full' is unavailable because {_userns_block_cause(env)}. "
                 "Set sandbox.isolation = 'partial' (or 'auto') to run without namespaces "
                 "while keeping Landlock + seccomp + NO_NEW_PRIVS."
             )

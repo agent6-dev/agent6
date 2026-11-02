@@ -412,8 +412,16 @@ def _run_unsandboxed(policy: kinds.JailPolicy) -> kinds.CommandResult:
     )
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class NamespaceProbe:
+    """The full-jail trial's verdict and failure text."""
+
+    works: bool
+    failure: str | None = None
+
+
 @functools.lru_cache(maxsize=1)
-def namespaces_work() -> bool:
+def namespaces_work() -> NamespaceProbe:
     """Return whether the jail binary can run `full` `sandbox.isolation` on this host.
 
     The authoritative probe: `detect.probe_userns_supported` under-reports on an
@@ -421,14 +429,14 @@ def namespaces_work() -> bool:
     to `/usr/bin/unshare`. Cached for the process lifetime.
 
     Returns:
-        Whether a trivial `full` policy ran.
+        Whether a trivial `full` policy ran, with its failure text when it did not.
 
     Raises:
         JailBinaryError: The kernel cannot execute the binary; that says nothing about
             namespaces, so the callers refuse with it.
     """
     if not pathlib.Path("/usr/bin/true").exists():
-        return False
+        return NamespaceProbe(False, "/usr/bin/true is missing")
     probe_cwd = pathlib.Path(tempfile.gettempdir())
     try:
         res = run_in_jail(
@@ -442,9 +450,11 @@ def namespaces_work() -> bool:
         )
     except JailBinaryError:
         raise
-    except JailUnavailableError:
-        return False
-    return res.returncode == 0
+    except JailUnavailableError as exc:
+        return NamespaceProbe(False, str(exc))
+    if res.returncode != 0:
+        return NamespaceProbe(False, res.stderr.strip() or f"exited {res.returncode}")
+    return NamespaceProbe(True)
 
 
 def require_jail_binary() -> pathlib.Path:

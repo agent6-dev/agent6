@@ -4,7 +4,7 @@
 
 Over SSH the only route to the operator's clipboard is OSC 52 through the
 terminal; tmux and screen swallow a bare one unless configured, so wrapped
-variants and tmux's own `set-buffer` exist beside it. `resolve_method("auto")`
+variants and tmux's own `load-buffer` exist beside it. `resolve_method("auto")`
 picks per environment; the `copy_method` UI preference pins one.
 """
 
@@ -96,11 +96,11 @@ def emit_clipboard(text: str, method: str, write: Callable[[str], None]) -> str:
         A short status naming the route taken.
 
     Raises:
-        subprocess.CalledProcessError: `tmux set-buffer` failed.
+        subprocess.CalledProcessError: `tmux load-buffer` failed.
     """
     if method == "tmux-buffer":
-        subprocess.run(["tmux", "set-buffer", "-w", text], check=True)
-        return "via tmux set-buffer -w"
+        subprocess.run(["tmux", "load-buffer", "-w", "-"], input=text.encode("utf-8"), check=True)
+        return "via tmux load-buffer -w -"
     wrap = "tmux" if method == "osc52-tmux" else ("screen" if method == "osc52-screen" else "")
     write(osc52_sequence(text, wrap=wrap))
     return f"via OSC 52 ({wrap}-wrapped)" if wrap else "via OSC 52"
