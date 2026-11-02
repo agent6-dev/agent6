@@ -1959,7 +1959,7 @@ def test_a_chain_commit_never_rewinds_the_run_branch(tmp_path: pathlib.Path) -> 
 def test_a_merge_tree_this_git_cannot_run_names_the_floor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`merge-tree --merge-base` needs git 2.40; the refusal names the git found and the floor."""
+    """On git 2.39, a rejected merge-tree names the unsupported version and keeps git's message."""
     from agent6 import kinds
 
     _init_repo(tmp_path)
@@ -1978,20 +1978,51 @@ def test_a_merge_tree_this_git_cannot_run_names_the_floor(
                 duration_s=0.0,
                 exec_failed=False,
             )
-        if args == ("--version",):
-            return kinds.CommandResult(
-                argv=("git", "--version"),
-                returncode=0,
-                stdout="git version 2.39.0\n",
-                stderr="",
-                duration_s=0.0,
-                exec_failed=False,
-            )
         return real_run(cwd, *args, **kw)  # pyright: ignore[reportArgumentType]
 
     monkeypatch.setattr(_git_command, "run", old_git)
-    with pytest.raises(errors.GitError, match=r"git version 2\.39\.0.*git 2\.40 or newer"):
+    monkeypatch.setattr(git_policy, "installed_version", lambda: (2, 39, 0))
+    with pytest.raises(errors.GitError) as caught:
         git_ops.plumb_merge(tmp_path, "main", theirs, method="merge", message=None, merge_base=base)
+    assert str(caught.value).startswith(
+        "unsupported git version 2.39.0: agent6 needs git 2.47 or newer\ngit merge-tree "
+    )
+    assert "unknown option `merge-base=abc'" in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("version", "unsupported"), [("2.39.5", True), ("2.47.3", False), ("2.53.0", False)]
+)
+def test_a_failed_git_command_names_a_git_older_than_the_floor(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
+    version: str,
+    unsupported: bool,
+) -> None:
+    """A git command failing on git 2.39 leads with the unsupported version; 2.47 and up do not."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stub = bin_dir / "git"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f'if [ "$1" = "--version" ]; then echo "git version {version}"; exit 0; fi\n'
+        'echo "usage: git blame [<options>] [<rev-opts>] [<rev>] [--] <file>" >&2\n'
+        "exit 129\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    git_policy.installed_version.cache_clear()
+    request.addfinalizer(git_policy.installed_version.cache_clear)
+
+    with pytest.raises(errors.GitError) as caught:
+        _git_command.run(tmp_path, "blame", "--porcelain", "HEAD", "--", "f")
+
+    note = f"unsupported git version {version}: agent6 needs git 2.47 or newer\n"
+    assert str(caught.value).startswith(note) is unsupported
+    assert caught.value.safe_message.startswith(note) is unsupported
+    assert "usage: git blame" in str(caught.value)
 
 
 def test_remove_worktree_reports_a_tree_it_could_not_delete(tmp_path: pathlib.Path) -> None:

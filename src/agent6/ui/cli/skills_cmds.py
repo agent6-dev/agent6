@@ -320,7 +320,10 @@ def _git_clone(url: str, dest: pathlib.Path) -> str:
     except FileNotFoundError as exc:
         raise errors.OperatorError("git not found on PATH") from exc
     except subprocess.CalledProcessError as exc:
-        raise errors.OperatorError(f"git clone of {url} failed: {exc.stderr.strip()}") from exc
+        note = git_policy.unsupported_note()
+        lead = f"{note}\n" if note else ""
+        message = f"{lead}git clone of {url} failed: {exc.stderr.strip()}"
+        raise errors.OperatorError(message) from exc
     return head.stdout.strip()
 
 

@@ -90,6 +90,8 @@ def spawn(
 def failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) -> errors.GitError:
     """Return a Git failure with its diagnostic and an output-free review reason.
 
+    On a git older than `git_policy.GIT_FLOOR`, both open with the unsupported-version line.
+
     Args:
         args: The git subcommand and its arguments.
         returncode: The exit code.
@@ -106,10 +108,12 @@ def failure(args: tuple[str, ...], returncode: int, stdout: str, stderr: str) ->
         detail = f"{stderr_msg} | stdout: {stdout_msg}"
     else:
         detail = stderr_msg or stdout_msg or f"exit {returncode}"
+    note = git_policy.unsupported_note()
+    lead = f"{note}\n" if note else ""
     return errors.GitError(
-        f"git {' '.join(args)} failed: {detail}",
+        f"{lead}git {' '.join(args)} failed: {detail}",
         safe_message=(
-            f"git {args[0]} failed (exit {returncode}); its diagnostic is withheld"
+            f"{lead}git {args[0]} failed (exit {returncode}); its diagnostic is withheld"
             " because it may quote hidden file content."
         ),
     )

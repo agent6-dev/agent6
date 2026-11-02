@@ -226,6 +226,8 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
         check=False,
         env=git_policy.git_environment(),
     )
+    if proc.returncode != 0 and (note := git_policy.unsupported_note()):
+        print(note, file=sys.stderr)
     return proc.returncode
 
 

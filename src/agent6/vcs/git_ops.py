@@ -678,12 +678,11 @@ def _merge_tree(
         The merged tree's oid and no paths, or "" and the conflicted paths.
 
     Raises:
-        GitError: git predates `--merge-base` (2.40), or the merge failed outright.
+        GitError: The merge failed outright; on an unsupported git, the error says so.
     """
     base = [f"--merge-base={merge_base}"] if merge_base else []
-    res = _git_command.run(
-        path, "merge-tree", "--write-tree", "--name-only", *base, ours, theirs, check=False
-    )
+    args = ("merge-tree", "--write-tree", "--name-only", *base, ours, theirs)
+    res = _git_command.run(path, *args, check=False)
     lines = res.stdout.splitlines()
     if res.returncode == 1:
         # The tree oid, the conflicted paths, a blank line, then git's messages.
@@ -693,14 +692,9 @@ def _merge_tree(
                 break
             paths.append(line)
         return "", tuple(paths)
-    if res.returncode == 129:
-        # git's usage exit: `--merge-base` arrived in 2.40, the floor docs/installation.md states.
-        version = _git_command.run(path, "--version", check=False).stdout.strip() or "this git"
-        raise errors.GitError(
-            f"merge-tree rejected its arguments ({version}); agent6 needs git 2.40 or newer"
-        )
     if res.returncode != 0 or not lines:
-        raise errors.GitError(f"merge-tree failed: {res.stderr.strip() or 'exit'}")
+        error = _git_command.failure(args, res.returncode, res.stdout, res.stderr)
+        raise error
     return lines[0].strip(), ()
 
 

@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+import functools
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 
@@ -25,6 +27,48 @@ def git() -> str:
     if executable is None:
         raise errors.GitError("git executable not found on PATH")
     return executable
+
+
+# The oldest git agent6 supports: Debian 13's, the platform floor docs/installation.md names.
+GIT_FLOOR: tuple[int, int] = (2, 47)
+
+
+@functools.cache
+def installed_version() -> tuple[int, ...] | None:
+    """Return the version of the git on PATH, read once per process.
+
+    Returns:
+        The version's numbers, or None when `git --version` cannot run or names none.
+    """
+    try:
+        proc = subprocess.run(
+            [git(), "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=git_environment(),
+        )
+    except (errors.GitError, OSError, subprocess.SubprocessError):
+        return None
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", proc.stdout)
+    if match is None:
+        return None
+    return tuple(int(part) for part in match.groups() if part is not None)
+
+
+def unsupported_note() -> str:
+    """Return the line naming an installed git older than `GIT_FLOOR`.
+
+    Returns:
+        The line, or "" when git is new enough or its version cannot be read.
+    """
+    version = installed_version()
+    if version is None or version[:2] >= GIT_FLOOR:
+        return ""
+    found = ".".join(map(str, version))
+    floor = ".".join(map(str, GIT_FLOOR))
+    return f"unsupported git version {found}: agent6 needs git {floor} or newer"
 
 
 # Repo-config keys that run a repo-controlled command on the host, blanked with `-c` (highest
