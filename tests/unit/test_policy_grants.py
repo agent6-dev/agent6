@@ -19,26 +19,26 @@ def _host_cfg() -> Config:
 
 @pytest.mark.parametrize("isolation", ["full", "partial"])
 def test_the_host_network_grants_the_resolver_and_trust_store_files(
-    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
 ) -> None:
-    """A jail on the host network had no resolver file and no CA store, so no name resolved."""
+    """Host networking grants existing resolver and trust-store paths, including link targets."""
+    hosts, trust, target, resolv, missing = (
+        tmp_path / name for name in ("hosts", "ssl", "resolver", "resolv.conf", "missing")
+    )
+    hosts.touch()
+    trust.mkdir()
+    target.touch()
+    resolv.symlink_to(target)
+    monkeypatch.setattr(
+        policy, "_HOST_NETWORK_FILES", tuple(str(p) for p in (hosts, trust, resolv, missing))
+    )
     reads = policy.host_network_reads()
-    for name in (
-        "/etc/hosts",
-        "/etc/nsswitch.conf",
-        "/etc/ssl",
-        "/etc/pki",
-        "/etc/ca-certificates",
-    ):
-        assert (pathlib.Path(name) in reads) == pathlib.Path(name).exists(), name
-    resolv = pathlib.Path("/etc/resolv.conf")
-    if resolv.exists():
-        # The launcher binds the name the resolver opens; Landlock needs the file it points to.
-        assert resolv in reads and resolv.resolve() in reads
-    if not reads:
-        pytest.skip("the test host exposes no resolver or trust-store paths")
-    granted = policy.jail_policy(tmp_path, _host_cfg(), isolation, ("true",)).extra_ro_paths
+    assert set(reads) == {hosts, trust, resolv, target}
+    granted = policy.jail_policy(
+        tmp_path / "repo", _host_cfg(), isolation, ("true",)
+    ).extra_ro_paths
     assert set(reads) <= set(granted)
+    assert missing not in granted
 
 
 def test_a_session_or_absent_network_grants_no_host_network_file(tmp_path: pathlib.Path) -> None:
@@ -210,12 +210,14 @@ def test_a_dropped_link_that_leads_out_of_its_region_names_the_targets_own_path(
     assert f"Grant {outside} by its own path" in dropped.line()
 
 
-def test_a_dropped_write_grant_is_no_region_for_the_others(tmp_path: pathlib.Path) -> None:
-    """An alias dropped for a link in the workspace still shadowed a grant of its target's child.
-
-    `/data/subdir` was dropped as "inside /data, which jailed commands write", a region the run
-    never held.
-    """
+@pytest.mark.parametrize("isolation", ["full", "partial"])
+def test_a_dropped_write_grant_is_no_region_for_the_others(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
+) -> None:
+    """A dropped alias does not shadow a grant of its target's child."""
+    host_tmp = tmp_path / "host-tmp"
+    host_tmp.mkdir()
+    monkeypatch.setattr(policy, "HOST_TMP", host_tmp)
     repo = tmp_path / "repo"
     repo.mkdir()
     (tmp_path / "data" / "subdir").mkdir(parents=True)
@@ -224,7 +226,7 @@ def test_a_dropped_write_grant_is_no_region_for_the_others(tmp_path: pathlib.Pat
     cfg = Config.model_validate(
         {
             "sandbox": {
-                "isolation": "full",
+                "isolation": isolation,
                 "extra_write_paths": [str(tmp_path / "alias"), str(tmp_path / "data" / "subdir")],
             }
         }

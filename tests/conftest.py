@@ -16,6 +16,7 @@ from collections.abc import Iterator, Mapping
 
 import pytest
 import tree_sitter_language_pack
+from xdist import workermanage
 
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, event_schema, lock
@@ -28,6 +29,7 @@ _GRAMMAR_CACHE = tree_sitter_language_pack.cache_dir()
 
 _XDG_HOMES = ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME")
 _SESSION_HOMES = pytest.StashKey[pathlib.Path]()
+_SESSION_GRAMMAR_CACHE = pytest.StashKey[str]()
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -36,12 +38,20 @@ def pytest_configure(config: pytest.Config) -> None:
     A thread that outlives its test runs after the per-test environment is restored; it
     lands here, never in the operator's config or state.
     """
+    config.stash[_SESSION_GRAMMAR_CACHE] = getattr(config, "workerinput", {}).get(
+        "grammar_cache", _GRAMMAR_CACHE
+    )
     base = pathlib.Path(tempfile.mkdtemp(prefix="agent6-test-session-"))
     config.stash[_SESSION_HOMES] = base
     for name in _XDG_HOMES:
         home = base / name.lower()
         home.mkdir()
         os.environ[name] = str(home)
+
+
+def pytest_configure_node(node: workermanage.WorkerController) -> None:
+    """Pass the original grammar cache to workers before their XDG homes are isolated."""
+    node.workerinput["grammar_cache"] = node.config.stash[_SESSION_GRAMMAR_CACHE]
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -76,16 +86,27 @@ def pytest_unconfigure(config: pytest.Config) -> None:
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
-    """Make the `needs_namespaces`, `browser` and `collector` markers real.
-
-    Skip with the host's actual reason when a required tool cannot run.
-    """
+    """Skip capability-marked tests with the environment's actual reason."""
     if item.get_closest_marker("needs_namespaces") is not None:
         require_userns_jail()
     if item.get_closest_marker("browser") is not None:
         require_browser()
     if marker := item.get_closest_marker("collector"):
         require_collector(marker.kwargs.get("binary", "otelcol-contrib"))
+    if item.get_closest_marker("needs_pty") is not None:
+        try:
+            master, slave = os.openpty()
+        except OSError as exc:
+            pytest.skip(f"PTY unavailable: {exc}")
+        else:
+            os.close(master)
+            os.close(slave)
+    if marker := item.get_closest_marker("needs_grammar"):
+        language = marker.kwargs["language"]
+        cache = item.config.stash[_SESSION_GRAMMAR_CACHE]
+        tree_sitter_language_pack.configure(tree_sitter_language_pack.PackConfig(cache_dir=cache))
+        if language not in tree_sitter_language_pack.downloaded_languages():
+            pytest.skip(f"tree-sitter grammar {language!r} is not cached at {cache}")
 
 
 def _check_event(event_type: str, fields: Mapping[str, object]) -> None:
@@ -186,7 +207,9 @@ def _release_workspace_leases() -> Iterator[None]:  # pyright: ignore[reportUnus
 
 @pytest.fixture(autouse=True)
 def _isolate_state(  # pyright: ignore[reportUnusedFunction]
-    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    request: pytest.FixtureRequest,
 ) -> None:
     """Point agent6's per-repo state base and global config at throwaway dirs.
 
@@ -202,5 +225,5 @@ def _isolate_state(  # pyright: ignore[reportUnusedFunction]
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path_factory.mktemp("agent6-data")))
     # The tree-sitter language pack keeps its grammars under the same XDG cache; keep them.
     tree_sitter_language_pack.configure(
-        tree_sitter_language_pack.PackConfig(cache_dir=_GRAMMAR_CACHE)
+        tree_sitter_language_pack.PackConfig(cache_dir=request.config.stash[_SESSION_GRAMMAR_CACHE])
     )

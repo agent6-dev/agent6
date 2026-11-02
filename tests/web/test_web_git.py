@@ -523,24 +523,29 @@ def test_blob_refuses_what_is_not_a_file_of_the_revision(
     assert "no file" in _refused(port, "/api/git/blob?rev=WORKTREE&path=lnk")
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_text_returns_a_files_lines_with_its_language_and_spans(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A Python file comes back with its line count, language and real highlight spans."""
+    path, _ = repo
+    (path / "tool.py").write_text('def f(x):\n    return "hi"\n', encoding="utf-8")
+    py = _ok(port, "/api/git/text?rev=WORKTREE&path=tool.py")
+    assert py["rev"] == "WORKTREE" and py["lines"] == 2 and py["language"] == "python"
+    assert [0, 3, "keyword"] in py["spans"][0] and len(py["spans"]) == 2
+
+
+def test_text_bounds_reads_and_refuses_invalid_paths(
     repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A text file comes back with its line count, language and highlight spans.
-
-    A binary file says so; the 1 MiB cut is marked and `whole=1` lifts it.
-    """
+    """Binary files have no text; `whole=1` lifts the byte cap but not path checks."""
     path, shas = repo
     make_dirty(path)
-    (path / "tool.py").write_text('def f(x):\n    return "hi"\n', encoding="utf-8")
     body = _ok(port, f"/api/git/text?rev={shas['merge']}&path=b.txt")
     assert body["rev"] == shas["merge"] and body["path"] == "b.txt"
     assert body["text"] == "one\ntwo\nthree\n" and body["lines"] == 3
     assert (body["binary"], body["truncated"], body["max_bytes"]) == (False, False, 1 << 20)
     assert (body["language"], body["spans"]) == ("", [])
-    py = _ok(port, "/api/git/text?rev=WORKTREE&path=tool.py")
-    assert py["rev"] == "WORKTREE" and py["lines"] == 2 and py["language"] == "python"
-    assert [0, 3, "keyword"] in py["spans"][0] and len(py["spans"]) == 2
     new = _ok(port, "/api/git/text?rev=WORKTREE&path=new.txt")
     assert new["text"] == "hello\nworld\n" and new["lines"] == 2
     binary = _ok(port, "/api/git/text?rev=HEAD&path=img.bin")

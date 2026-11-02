@@ -13,6 +13,7 @@ from agent6.ui.web import highlight
 _PY = 'def f(x):\n    return "hi" + str(x)  # c\n'
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_a_python_sample_yields_spans_at_their_columns() -> None:
     """A keyword, a string, a comment and a call land on their columns.
 
@@ -31,6 +32,7 @@ def test_a_python_sample_yields_spans_at_their_columns() -> None:
         assert all(row[i][1] <= row[i + 1][0] for i in range(len(row) - 1))
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_columns_count_utf16_units_as_the_page_slices_strings() -> None:
     rows = highlight.spans('s = "é"  # ü\n', "python")
     assert (4, 7, "string") in rows[0] and (9, 12, "comment") in rows[0]

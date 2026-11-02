@@ -7,9 +7,12 @@ from __future__ import annotations
 import os
 import pty
 
+import pytest
+
 from tests import conftest
 
 
+@pytest.mark.needs_pty
 def test_the_tty_detach_spares_a_session_leader() -> None:
     """A pytest that leads its own session on a pty keeps the terminal and lives.
 
