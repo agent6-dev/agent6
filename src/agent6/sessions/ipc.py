@@ -1025,14 +1025,14 @@ STOP_REQUEST_FILE = "stop.request"
 def request_stop(session_dir: pathlib.Path, *, now: bool = False) -> bool:
     """Drop the "stop after this turn" marker the session honors at its next boundary.
 
-    The finished step's tool results and auto-commit land first: a command the step is running
+    The finished turn's tool results and auto-commit land first: a command the turn is running
     finishes. The session dir is created here: ACP can cancel after assigning the id but
     before the lifecycle creates the layout.
 
     Args:
         session_dir: The session directory.
         now: Write the urgency into the marker, so a running foreground command is ended at once
-            and the step ends there. The model call in flight is cut by the steer `abort`.
+            and the turn ends there. The model call in flight is cut by the steer `abort`.
 
     Returns:
         Whether the marker landed; a failed write neither raises into a front-end action nor
