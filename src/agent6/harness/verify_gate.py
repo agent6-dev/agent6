@@ -435,7 +435,6 @@ class VerifyGate:
         self.emit("loop.verify_harness", why="start", turn=0)
         try:
             result = self.dispatcher.run_verify()
-            state.stagnation.harness_gate_s += result.duration_s
         except tool_errors.ToolDeniedError as exc:
             self.dispatcher.verify_withheld = True
             return [loop_conversation.Notice(gate_withheld_notice("[harness verify] start", exc))]
