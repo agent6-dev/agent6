@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -15,6 +16,40 @@ pytestmark = pytest.mark.browser
 evidence = test_review_evidence.evidence
 browser = test_web_browser.browser
 open_page = test_web_browser.open_page
+
+
+def test_review_diff_controls_preserve_recorded_trees(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    evidence: tuple[int, dict[str, Any]],
+    tmp_path: pathlib.Path,
+) -> None:
+    """Review controls keep recorded bytes and refuse commit-only blame for tree identities."""
+    from playwright.sync_api import expect
+
+    port, revs = evidence
+    (tmp_path / "new.txt").write_text("later checkout bytes\n")
+    page, errors = open_page(port)
+    blame_requests: list[str] = []
+    page.on(
+        "request", lambda r: blame_requests.append(r.url) if "/api/git/blame" in r.url else None
+    )
+    page.goto(
+        f"http://127.0.0.1:{port}/#/git/compare/{revs['base']}..{revs['head']}"
+        "?panel=panel&path=new.txt&finding=head"
+    )
+    page.locator(".diff-blame").click()
+    expect(page.locator(".blame-note")).to_contain_text("recorded tree comparisons")
+    expect(page.locator(".blame-cell")).to_have_count(0)
+    expect(page.locator(".diff-context")).to_be_disabled()
+    expect(page.locator(".diff-context")).to_have_attribute(
+        "title", "Full context is unavailable for recorded review comparisons"
+    )
+    page.get_by_role("link", name="Open in Files", exact=True).click()
+    assert "panel=panel" in page.url and "side=head" in page.url
+    expect(page.locator(".files-text")).to_contain_text("added")
+    expect(page.locator(".files-text")).not_to_contain_text("later checkout bytes")
+    assert blame_requests == []
+    assert errors == [], errors
 
 
 def test_pre_existing_badge_opens_base_lines_and_blame_without_changing_severity(

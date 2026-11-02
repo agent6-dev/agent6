@@ -576,6 +576,7 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .git-body.diffing > .git-diff { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
 .git-diff-head { flex: none; flex-wrap: wrap; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
 .git-diff-head .gf-path { flex: 1 1 200px; }
+.git-diff-head a.mini { display: inline-block; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; text-decoration: none; }
 .git-diff-pos { font-size: 12px; white-space: nowrap; }
 .git-diff-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
 .git-img { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 4px 0 12px; }
@@ -618,10 +619,26 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .files-note { font-size: 12px; white-space: nowrap; }
 .files-text { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 16px; }
 .files-back, .files-tree-toggle { display: none; }
-.blame-cell { display: inline-flex; width: 38ch; gap: 1ch; padding-right: 1ch; vertical-align: bottom; user-select: none; }
-.blame-commit, .blame-date { flex: none; }
-.blame-author { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.files-blame.active { color: var(--accent); border-color: var(--accent); }
+.src:has(.blame-cell), .diff:has(.blame-cell) { width: max-content; min-width: 100%; }
+.src .blamed-line, .diff.numbered .blamed-line, .ds-cell.blamed-line { display: flex; white-space: pre; }
+.blamed-line > .source-code { flex: 1; }
+.blamed-line > .g { flex: none; }
+.blamed-line { flex-wrap: wrap; }
+.blamed-line > .finding { flex-basis: 100%; }
+.dsplit:has(.blame-cell) { display: grid; grid-template-columns: repeat(2, minmax(max-content, 1fr)); width: max-content; min-width: 100%; }
+.dsplit:has(.blame-cell) .ds-row { grid-column: 1 / -1; grid-template-columns: subgrid; }
+.dsplit:has(.blame-cell) .ds-head { grid-column: 1 / -1; }
+.blame-cell { display: inline-flex; flex: none; width: 28ch; margin-left: 3ch; padding: 0 1ch; border-left: 2px solid var(--muted); color: var(--muted); user-select: none; font-weight: normal; }
+.blame-start { border-top-left-radius: 3px; }
+.blame-label { display: inline-flex; width: 100%; gap: 1ch; font-size: 11px; align-items: baseline; }
+.blame-commit { flex: none; color: inherit; }
+.blame-date { flex: none; }
+.blame-author { flex: 1; min-width: 0; max-width: 14ch; overflow: hidden; text-overflow: ellipsis; }
+.blame-hover { color: var(--text); border-color: var(--accent); background: var(--surface2); }
+.blame-card { position: fixed; z-index: 80; display: flex; flex-direction: column; gap: 6px; max-width: min(440px, calc(100vw - 16px)); padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); box-shadow: 0 4px 16px #0004; white-space: normal; overflow-wrap: anywhere; font: 12px/1.5 system-ui, sans-serif; }
+.blame-card[hidden] { display: none; }
+.files-blame.active, .diff-blame.active { color: var(--accent); border-color: var(--accent); }
+@media (max-width: 780px) { .blame-cell { margin-left: 1ch; } }
 .git-img.one { grid-template-columns: 1fr; }
 @media (min-width: 781px) {
   .files-app { display: flex; flex-direction: column; height: calc(100vh - 42px); min-height: 0; }

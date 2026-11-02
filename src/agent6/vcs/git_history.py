@@ -496,6 +496,7 @@ def file_patch(
     old_name: str = "",
     *,
     max_bytes: int | None,
+    full_context: bool = False,
 ) -> tuple[str, bool]:
     """Return one file's unified diff between two trees, cut at a cap.
 
@@ -507,6 +508,7 @@ def file_patch(
         old_name: The older tree's path when renamed, so the rename shows as one.
         max_bytes: Where the patch is cut, at the last line boundary before it; None keeps
             every byte.
+        full_context: Include every unchanged line in the hunks.
 
     Returns:
         The patch text (a binary file's says `Binary files ... differ`) and whether it was cut.
@@ -514,8 +516,9 @@ def file_patch(
     Raises:
         GitError: A rev cannot be read.
     """
+    context = ("--unified=2147483647",) if full_context else ()
     specs = (old_name, name) if old_name else (name,)
-    args = ("diff", "-M", "--no-color", "--end-of-options", base, head, "--", *specs)
+    args = ("diff", "-M", "--no-color", *context, "--end-of-options", base, head, "--", *specs)
     return _patch(path, args, ok=(0,), max_bytes=max_bytes)
 
 
@@ -527,6 +530,7 @@ def worktree_patch(
     *,
     untracked: bool = False,
     max_bytes: int | None,
+    full_context: bool = False,
 ) -> tuple[str, bool]:
     """Return one working-tree file's unified diff against a tree, cut at a cap.
 
@@ -538,6 +542,7 @@ def worktree_patch(
         untracked: The file is not in the index: it diffs against `/dev/null`.
         max_bytes: Where the patch is cut, at the last line boundary before it; None keeps
             every byte.
+        full_context: Include every unchanged line in the hunks.
 
     Returns:
         The patch text and whether it was cut.
@@ -547,10 +552,12 @@ def worktree_patch(
     """
     if untracked:
         # `--no-index` exits 1 when the two sides differ, as a new file always does.
-        args = ("diff", "--no-color", "--no-index", "--", "/dev/null", name)
+        context = ("--unified=2147483647",) if full_context else ()
+        args = ("diff", "--no-color", "--no-index", *context, "--", "/dev/null", name)
         return _patch(path, args, ok=(0, 1), max_bytes=max_bytes)
+    context = ("--unified=2147483647",) if full_context else ()
     specs = (old_name, name) if old_name else (name,)
-    args = ("diff", "-M", "--no-color", "--end-of-options", base, "--", *specs)
+    args = ("diff", "-M", "--no-color", *context, "--end-of-options", base, "--", *specs)
     return _patch(path, args, ok=(0,), max_bytes=max_bytes)
 
 

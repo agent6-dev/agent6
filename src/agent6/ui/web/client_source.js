@@ -112,7 +112,8 @@ function renderUnified(files, numbered) {
     if (old != null) s.dataset.old = old;
     if (nw != null) s.dataset.new = nw;
     if (numbered) { s.appendChild(gutter(old)); s.appendChild(gutter(nw)); }
-    s.appendChild(document.createTextNode(text + '\n'));
+    s.appendChild(el('span', 'source-code', text));
+    s.appendChild(document.createTextNode('\n'));
     return s;
   };
   const mark = { add: '+', del: '-', ctx: ' ' };
@@ -138,11 +139,13 @@ function renderSplit(file) {
     const kind = l ? (side === 'old' ? (l.kind === 'del' ? ' del' : '') : (l.kind === 'add' ? ' add' : '')) : ' ds-empty';
     const c = el('span', 'ds-cell' + kind);
     c.appendChild(gutter(l ? (side === 'old' ? l.old : l.new) : null));
-    if (l) c.appendChild(document.createTextNode(l.text));
+    if (l) c.appendChild(el('span', 'source-code', l.text));
     return c;
   };
+  let segment = 0;
   const row = (left, right) => {
     const r = el('div', 'ds-row');
+    r.dataset.segment = segment;
     if (left) r.dataset.old = left.old;
     if (right) r.dataset.new = right.new;
     r.appendChild(cell(left, 'old')); r.appendChild(cell(right, 'new'));
@@ -150,6 +153,7 @@ function renderSplit(file) {
   };
   for (const p of file.preamble) box.appendChild(el('div', 'ds-head', p));
   for (const h of file.hunks) {
+    segment++;
     box.appendChild(el('div', 'ds-head hunk', h.header));
     let dels = [], adds = [];
     const flush = () => { for (let i = 0; i < Math.max(dels.length, adds.length); i++) row(dels[i] || null, adds[i] || null); dels = []; adds = []; };
@@ -175,12 +179,87 @@ function renderLines(lines, spans, marks) {
     const s = el('span', 'sl' + (marks && marks.has(n) ? ' changed' : ''));
     s.dataset.line = n;
     s.appendChild(gutter(n));
-    appendSpans(s, text, spans && spans[i]);
+    const code = el('span', 'source-code');
+    appendSpans(code, text, spans && spans[i]);
+    s.appendChild(code);
     s.appendChild(document.createTextNode('\n'));
     box.appendChild(s);
   });
   return box;
 }
+// Rows name their side, segment (hunk), displayed path, node and BlameLine.
+const blameCommits = new Map();
+function clearBlame(host) {
+  host.querySelectorAll('.blame-cell').forEach(c => c.remove());
+  host.querySelectorAll('.blamed-line').forEach(c => c.classList.remove('blamed-line'));
+}
+function renderBlame(rows) {
+  let group = null, previous = null;
+  for (const row of rows) {
+    const line = row.line;
+    if (!row.node || !line) { group = previous = null; continue; }
+    const same = previous && previous.side === row.side && previous.segment === row.segment
+      && previous.line.sha === line.sha && previous.line.filename === line.filename
+      && previous.line.line + 1 === line.line;
+    if (!same) group = {cells: [], card: null, timer: null};
+    const g = group;
+    const cell = el('span', 'blame-cell');
+    cell.dataset.sha = line.sha;
+    cell.dataset.side = row.side;
+    cell.dataset.filename = line.filename;
+    if (!same) {
+      cell.classList.add('blame-start');
+      const label = el('span', 'blame-label');
+      if (line.sha) {
+        const link = el('a', 'blame-commit', line.sha.slice(0, 7));
+        link.href = '#/git/commit/' + encodeURIComponent(line.sha) + '?' + new URLSearchParams({path: line.filename, line: line.original_line});
+        link.title = line.sha;
+        label.appendChild(link);
+        label.appendChild(el('span', 'blame-author', line.author));
+        label.appendChild(el('span', 'blame-date', line.date.slice(0, 10)));
+      } else label.appendChild(el('span', null, 'not committed'));
+      cell.appendChild(label);
+    }
+    g.cells.push(cell);
+    const hide = () => {
+      g.timer = setTimeout(() => {
+        g.cells.forEach(c => c.classList.remove('blame-hover'));
+        if (g.card) g.card.hidden = true;
+      }, 150);
+    };
+    const show = async () => {
+      clearTimeout(g.timer);
+      g.cells.forEach(c => c.classList.add('blame-hover'));
+      if (!line.sha) return;
+      if (!g.card) {
+        g.card = el('span', 'blame-card');
+        g.card.appendChild(el('span', 'mono', line.sha));
+        g.card.appendChild(el('span', null, line.author + ' · ' + line.date));
+        if (line.filename !== row.path) g.card.appendChild(el('span', null, line.filename));
+        const title = el('a', 'blame-title', 'loading commit…');
+        title.href = '#/git/commit/' + encodeURIComponent(line.sha);
+        g.card.appendChild(title);
+        g.card.onmouseenter = () => clearTimeout(g.timer);
+        g.card.onmouseleave = hide;
+        g.cells[0].appendChild(g.card);
+        if (!blameCommits.has(line.sha)) blameCommits.set(line.sha, getJSON('/api/git/commit/' + encodeURIComponent(line.sha)));
+        blameCommits.get(line.sha).then(c => { if (g.card.isConnected) title.textContent = c.subject; })
+          .catch(e => { if (g.card.isConnected) title.textContent = 'Commit unavailable: ' + e.message; blameCommits.delete(line.sha); });
+      }
+      g.card.hidden = false;
+      const r = cell.getBoundingClientRect();
+      g.card.style.left = Math.max(8, Math.min(r.left, window.innerWidth - g.card.offsetWidth - 8)) + 'px';
+      g.card.style.top = Math.max(8, Math.min(r.bottom, window.innerHeight - g.card.offsetHeight - 8)) + 'px';
+    };
+    cell.onmouseenter = show; cell.onmouseleave = hide;
+    // focusin bubbles from the link; Chromium has no onfocusin property handler.
+    cell.addEventListener('focusin', show); cell.addEventListener('focusout', hide);
+    row.node.classList.add('blamed-line');
+    row.node.appendChild(cell);
+    previous = row;
+  }
+}
+
 // Append a line's text, its spans wrapped as <span class="hl-<class>">.
 function appendSpans(node, text, row) {
   let at = 0;

@@ -21,7 +21,7 @@ from agent6.providers import (
     output_cap_truncated,
 )
 from agent6.tools import results
-from agent6.vcs import review as vcs_review
+from agent6.vcs import git_files
 
 # A read-only dispatch callable for repo-scope seats: (tool_name, input) -> result.
 ReviewDispatch = Callable[[str, dict[str, Any]], results.ToolResult]
@@ -64,7 +64,7 @@ def coerce_findings(raw: object) -> tuple[review_records.Finding, ...]:
             # merely starts and ends with a quote holds no escape and stays as cited.
             cited = location["path"]
             if "\\" in cited:
-                location = {**location, "path": vcs_review.unquote_git_path(cited)}
+                location = {**location, "path": git_files.unquote_git_path(cited)}
         out.append(
             review_records.Finding(
                 category=category,

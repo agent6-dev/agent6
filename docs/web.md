@@ -100,6 +100,11 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - **list | tree** above every file list: the tree groups the files under their folders, a folder row showing how many files it holds with their summed counts and folding them on a click; the choice is kept per browser
     - click a file and its unified diff fills the page: **‹ files** returns to the list, **‹** and **›** step through the files; a patch over 256 KiB is cut at that size and offers the whole patch on a click, a binary file says so
     - the diff header offers four modes, the choice kept per browser: **inline** (the unified patch), **split** (old and new side by side, a deletion beside the addition that replaces it, context on both sides; at phone width it shows inline and says so), **old** and **new** (the file at the base or the head, highlighted, with its deleted or added lines marked); every line carries its line numbers
+    - **Open in Files** opens the head revision and path; a deletion disables it with a reason and offers **Open base file in Files** instead
+    - **Show full context** in inline and split modes includes unchanged lines; **Show hunks only** restores the compact patch, and a change without text hunks shows its file with a note
+    - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side
+    - diff blame checks both content digests and says why it is unavailable when content changed or a side has no digest
+    - recorded review comparisons preserve their tree identities and Files links; full context and commit blame are unavailable there
     - an image (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `bmp`, `ico`, `avif`) shows **before** and **after** side by side above git's binary line, each with its size and dimensions; at phone width the two stack
     - **Compare** takes two revisions, base and head, each from a picker that searches branch and tag names, commit shas and commit messages as you type (Enter keeps free text as the revision for the server to verify); the head picker offers **working tree** first; **⇄** swaps them
     - the compare lists the files that differ between the two, as `git diff base head` does, so a commit against its parent reads like that commit's own diff; a commit's **Set as base** and **Set as head** put it in the pickers
@@ -111,7 +116,9 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - working-tree badges use `H` for tracked, `A` for untracked and `M` for tracked files with uncommitted changes; a folder shows `M` if any child is modified, else `A` if any is untracked, else `H`, with the counts in its tooltip
     - commit revisions have no state badges
     - click a file: text with line numbers and highlighting (cut at 1 MiB, the whole file on a click), an image as itself, a binary file as its size; a symlink or submodule entry says so
-    - **blame** beside a text file's title adds each line's last commit, author and UTC date beside the gutter; click a commit to open it in Git, or toggle blame off to keep only the source
+    - **blame** beside a text file's title adds a faded right gutter shared with diffs, with one commit, author and UTC date per consecutive group and a bar on its other lines
+    - hovering or focusing a group darkens it and opens a card with the full sha, author, date, commit subject and historical path when different
+    - a group's sha link opens that historical file's diff in its commit; the card's subject opens the commit's file list
     - working-tree blame includes staged and unstaged content; lines without a commit read **not committed**
     - a file that changed since it was opened says so instead of attaching blame to other bytes
     - limits: 20000 files a tree, 1 MiB of text and matching blame lines unless opened whole, 20 MiB a file; the tree says when it was cut
@@ -131,7 +138,7 @@ Expand stdout or stderr to read a verification attempt's retained output.
 
 ## Links
 
-- `#/git/commit/<sha>` opens a commit and scrolls to its graph row when loaded; a commit outside that page still opens by sha
+- `#/git/commit/<sha>` opens a commit and scrolls to its graph row when loaded; `?path=<historical path>&line=<original line>` opens and scrolls to that file's diff
 - `#/git/compare/<base>..<head>` opens a comparison
 - `#/git/worktree` opens the working tree's uncommitted changes
 - `#/files/<rev>/<path>` opens a file, with `WORKTREE` for the working tree
@@ -182,11 +189,15 @@ curl -sN -H "$A" localhost:7658/api/session/<id>/events      # SSE: a snapshot p
     - graph pages return `tips`, the resolved shas walked; pass these as `refs` with the next `skip`, while **↻** starts from live refs
     - a revision is a branch, tag, full ref name, sha prefix or expression git resolves to a commit; the empty tree sha is accepted as a `base`
     - `WORKTREE` names the working tree as the `head` of a compare or diff (an untracked file diffs against nothing); as a `base` or a commit it answers `422`
+    - `/api/git/diff` accepts `full_context=1` for all unchanged lines, independently of `whole=1`, which lifts the patch byte cap
+    - diff payloads include `base_digest` and `head_digest` (SHA-256 of each regular-file input, or null when absent or unavailable), `full_context`, and `context` (file text for a change without text hunks, otherwise null)
+    - regular worktree patches and their digests use the same checked bytes, copied privately before Git compares them; diff blame requests `whole=1` to cover hunks beyond the default text range
     - `/api/git/worktree` lists the uncommitted files against HEAD (`base`, `files`, `truncated`): tracked changes with git's letters and counts, then untracked files as `A` with their line count, `.gitignore` honoured
     - `/api/git/tree?rev=` lists the files at a revision or in the working tree (`rev` resolved, `files` as `{path, size, kind, state}` with `kind` one of `file`, `symlink` and `submodule`, `truncated`), 20000 files at most; the working tree is the index plus the untracked files `.gitignore` does not exclude, a tracked file gone from disk left out; only mode `160000` entries are submodules, including unpopulated gitlinks; `state` is `tracked`, `untracked` or `modified` for `WORKTREE`, empty at a commit
     - `/api/git/text?rev=&path=` returns a file's text at a revision or in the working tree (`rev` resolved, `path`, `digest`, `text`, `lines`, `binary`, `truncated`, `max_bytes`, `language`, `spans`): the text is cut at 1 MiB on a line boundary unless `whole=1`, a binary file has `text` empty and `binary` true, a file over 20 MiB answers `413`; `language` is the tree-sitter language pack's name for the path ("" when it has none) and `spans` its highlight spans per line as `[start, end, class]`, empty when the text is over 512 KiB, the grammar is not cached and cannot be fetched, or the parse ran past a second
     - `/api/git/blob?rev=&path=` serves a file's bytes at a revision, or from disk for `WORKTREE` (a regular file git lists, never through a symlink); an image is typed by extension, anything else is `application/octet-stream` with `Content-Disposition: attachment`; every blob response carries `Content-Security-Policy: sandbox; default-src 'none'; frame-ancestors 'none'` and `X-Content-Type-Options: nosniff`, so a repository file opened directly runs under no origin; a file over 20 MiB answers `413`
-    - `/api/git/blame?rev=&path=` returns `rev`, `path`, `digest`, `lines` as `{line, sha, author, date}`, `binary`, `truncated` and `max_bytes`; its caps and refusals match `/api/git/text`, including `whole=1`
+    - `/api/git/blame?rev=&path=` returns `rev`, `path`, `digest`, `lines` as `{line, sha, author, date, filename, original_line}`, `binary`, `truncated` and `max_bytes`; its caps and refusals match `/api/git/text`, including `whole=1`
+    - `filename` and `original_line` identify the historical path and line in the blamed commit, including before a rename
     - blame dates are UTC ISO 8601; working-tree blame uses checked file bytes against HEAD, with an empty `sha` and `date` and author `not committed` for uncommitted lines
     - blob, text and blame share a working-tree reader that refuses ancestor and leaf symlinks, paths resolving outside the repository, and non-regular files
     - a revision or path starting with `-`, an unknown revision, a graph ref neither listed in `/api/git/refs` nor a verified full sha, or a path in neither tree answers `422`

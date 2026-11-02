@@ -146,7 +146,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
       const request = ++blameRequest;
       blaming = !blaming;
       blame.setAttribute('aria-pressed', String(blaming)); blame.classList.toggle('active', blaming);
-      source.querySelectorAll('.blame-cell').forEach(c => c.remove());
+      clearBlame(source);
       box.querySelectorAll('.blame-note').forEach(c => c.remove());
       if (!blaming) return;
       const notice = el('div', 'muted blame-note', 'loading blame…'); box.insertBefore(notice, source);
@@ -156,19 +156,9 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
         if (d.digest !== t.digest) { notice.classList.add('err'); notice.textContent = 'the file changed since it was opened: open it again to blame'; return; }
         notice.remove();
         const lines = new Map(d.lines.map(l => [l.line, l]));
-        source.querySelectorAll('[data-line]').forEach(row => {
-          const line = lines.get(Number(row.dataset.line)); if (!line) return;
-          const cell = el('span', 'blame-cell');
-          if (line.sha) {
-            const commit = el('a', 'blame-commit', line.sha.slice(0, 7));
-            commit.href = '#/git/commit/' + encodeURIComponent(line.sha); commit.title = line.sha;
-            cell.appendChild(commit);
-            cell.appendChild(el('span', 'blame-author', line.author));
-            cell.appendChild(el('span', 'blame-date muted', line.date.slice(0, 10)));
-          } else cell.appendChild(el('span', 'muted', 'not committed'));
-          cell.title = line.sha ? line.author + ' · ' + line.date : 'not committed';
-          row.insertBefore(cell, row.firstChild);
-        });
+        renderBlame([...source.querySelectorAll('[data-line]')].map(node => ({
+          node, line: lines.get(Number(node.dataset.line)), side: 'head', path: f.path,
+        })));
       } catch (e) { if (current() && request === blameRequest) { notice.classList.add('err'); notice.textContent = e.message; } }
     };
   };

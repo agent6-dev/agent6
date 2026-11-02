@@ -492,6 +492,7 @@ banned-from = [
     "agent6.vcs.commit_graph",
     "agent6.vcs.commit_message",
     "agent6.vcs.git_command",
+    "agent6.vcs.git_diff",
     "agent6.vcs.git_files",
     "agent6.vcs.git_history",
     "agent6.vcs.git_ops",

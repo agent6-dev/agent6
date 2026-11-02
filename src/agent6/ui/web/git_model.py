@@ -14,7 +14,7 @@ import pathlib
 from typing import Any
 
 from agent6.ui.web import highlight
-from agent6.vcs import git_files, git_history, git_read
+from agent6.vcs import git_diff, git_files, git_history, git_read
 from agent6.viewmodel import format
 
 # Commits per graph page, and the most a request may ask for.
@@ -368,6 +368,7 @@ def diff_payload(
     old_path: str = "",
     *,
     whole: bool = False,
+    full_context: bool = False,
 ) -> dict[str, Any]:
     """Return one file's unified diff between two revisions.
 
@@ -379,10 +380,12 @@ def diff_payload(
         old_path: Its path in `base` when renamed, so the patch reads as a rename.
         whole: Keep every byte instead of cutting at `DIFF_MAX_BYTES`: the page is the one
             place that shows a whole patch.
+        full_context: Include all unchanged lines without lifting the byte cap.
 
     Returns:
-        The resolved shas, the paths, the patch, and the `binary`, `truncated` and
-        `max_bytes` facts.
+        The resolved shas, paths, patch, `binary`, `truncated` and `max_bytes` facts,
+        per-side content digests, `full_context`, and file `context` for a change
+        without text hunks (None otherwise).
 
     Raises:
         GitRequestError: A revision or path is malformed, the path is absolute or climbs out
@@ -402,17 +405,29 @@ def diff_payload(
     if old_path and not git_history.tree_has_entry(repo, base_sha, old_path):
         raise GitRequestError(f"no file {old_path!r} in the base revision")
     cap = None if whole else DIFF_MAX_BYTES
-    if worktree:
-        patch, truncated = git_history.worktree_patch(
-            repo, base_sha, path, old_path, untracked=entry == "untracked", max_bytes=cap
-        )
-    else:
-        patch, truncated = git_history.file_patch(
-            repo, base_sha, head_sha, path, old_path, max_bytes=cap
-        )
+    diff = git_diff.read(
+        repo,
+        base_sha,
+        head_sha,
+        path,
+        old_path,
+        max_bytes=cap,
+        blob_max_bytes=BLOB_MAX_BYTES,
+        full_context=full_context,
+    )
+    patch, truncated = diff.patch, diff.truncated
+    context = None
+    if full_context and not truncated and "\n@@ " not in patch and diff.after is not None:
+        text, binary, truncated = _display_text(diff.after, cap)
+        if not binary:
+            context = text
     return {
         "base": base_sha,
         "head": head_sha,
+        "base_digest": diff.base_digest,
+        "head_digest": diff.head_digest,
+        "full_context": full_context,
+        "context": context,
         "path": path,
         "old_path": old_path,
         "patch": patch,

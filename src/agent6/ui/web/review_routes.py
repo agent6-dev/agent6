@@ -16,7 +16,7 @@ from agent6.app import review_actions
 from agent6.sessions import layout
 from agent6.ui import spawn
 from agent6.ui.web import git_model, highlight
-from agent6.vcs import git_files, git_history, git_read
+from agent6.vcs import git_diff, git_files, git_history, git_read
 from agent6.viewmodel import listing, receipt, review, scan_session_log
 
 
@@ -130,12 +130,23 @@ def _diff(
     if not any(git_history.tree_has_entry(cwd, tree, path) for tree in (base, head)):
         return 404, {"error": f"no file {path!r} in the reviewed trees"}
     cap = None if whole else git_model.DIFF_MAX_BYTES
-    patch, truncated = git_history.file_patch(cwd, base, head, new_path, old_path, max_bytes=cap)
+    diff = git_diff.read(
+        cwd,
+        base,
+        head,
+        new_path,
+        old_path,
+        max_bytes=cap,
+        blob_max_bytes=git_model.BLOB_MAX_BYTES,
+    )
+    patch, truncated = diff.patch, diff.truncated
     return 200, dict(
         base=base,
         head=head,
         path=new_path,
         old_path=old_path,
+        base_digest=diff.base_digest,
+        head_digest=diff.head_digest,
         patch=patch,
         binary=git_history.is_binary_patch(patch),
         truncated=truncated,

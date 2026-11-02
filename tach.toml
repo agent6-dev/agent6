@@ -190,6 +190,7 @@ depends_on = [
   "agent6.tools.schema",
   "agent6.tools.verify_infer",  # gateless runs adopt a verify mid-run (deterministic tiers)
   "agent6.vcs.commit_message",
+  "agent6.vcs.git_files",
   "agent6.vcs.git_ops",
   "agent6.vcs.git_read",
   "agent6.vcs.review",
@@ -393,6 +394,7 @@ depends_on = [
   "agent6.ui.spawn",
   "agent6.ui.telemetry",
   # One branch-tips snapshot per hub poll (the listing's unmerged mark).
+  "agent6.vcs.git_diff",
   "agent6.vcs.git_files",
   "agent6.vcs.git_history",
   "agent6.vcs.git_read",
@@ -516,6 +518,10 @@ depends_on = ["agent6.errors", "agent6.review_records", "agent6.tools", "agent6.
 [[modules]]
 path = "agent6.vcs.review_submodules"
 depends_on = ["agent6.errors", "agent6.tools", "agent6.vcs.git_command"]
+
+[[modules]]
+path = "agent6.vcs.git_diff"
+depends_on = ["agent6.errors", "agent6.vcs.git_command", "agent6.vcs.git_files", "agent6.vcs.git_history", "agent6.vcs.git_read"]
 
 [[modules]]
 path = "agent6.vcs.git_files"

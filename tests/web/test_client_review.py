@@ -179,7 +179,7 @@ def test_review_deep_link_reload_opens_diff_then_exact_file(mode: str) -> None:
         + repr(mode)
         + ";"
         + """
-saved.set('a6-diff-mode', ['narrow', 'truncated'].includes(mode) ? 'split' : mode);
+remember(DIFF_MODE_KEY, ['narrow', 'truncated'].includes(mode) ? 'split' : mode);
 window.matchMedia = () => ({matches: mode === 'narrow'});
 const e = entry(mode === 'new' ? 'head' : 'base', 2, mode === 'new' ? 'new.txt' : 'old.txt');
 e.finding.observations = [e.observation];

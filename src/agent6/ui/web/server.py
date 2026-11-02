@@ -840,6 +840,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 arg("path"),
                 arg("old_path"),
                 whole=arg("whole") == "1",
+                full_context=arg("full_context") == "1",
             ),
             "graph": lambda: git_model.graph_payload(
                 cwd, refs, limit=arg("limit"), skip=arg("skip")

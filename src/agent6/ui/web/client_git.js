@@ -389,11 +389,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     pad.appendChild(fileList(wt.files, wt.truncated, (i) => showDiff({ base: wt.base, head: GIT_WORKTREE, files: wt.files }, i)));
     openSide();
   };
-  const showCommit = async (sha) => {
+  const showCommit = async (sha, selection = new URLSearchParams()) => {
     closeDiff();
     selected = sha;
     const gen = routeGen; // a response landing after a route change paints and publishes nothing
-    setViewHash('#/git/commit/' + encodeURIComponent(sha));
+    const suffix = selection.size ? '?' + selection : '';
+    setViewHash('#/git/commit/' + encodeURIComponent(sha) + suffix);
     graph.querySelectorAll('.gc-row').forEach(r => r.classList.toggle('sel', r.dataset.sha === sha));
     side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'muted page-pad', 'loading…'));
     openSide();
@@ -402,7 +403,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     catch (e) { if (selected === sha && app.isConnected && gen === routeGen) { side.innerHTML = ''; side.appendChild(sideHead('Commit')); side.appendChild(el('div', 'err page-pad', e.message)); } return; }
     if (selected !== sha || !app.isConnected || gen !== routeGen) return;
     selected = c.sha;
-    setViewHash('#/git/commit/' + encodeURIComponent(c.sha), true);
+    setViewHash('#/git/commit/' + encodeURIComponent(c.sha) + suffix, true);
     graph.querySelectorAll('.gc-row').forEach(r => { const match = r.dataset.sha === c.sha; r.classList.toggle('sel', match); if (match) r.scrollIntoView({ block: 'nearest' }); });
     side.innerHTML = '';
     side.appendChild(sideHead('Commit'));
@@ -434,7 +435,12 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
     acts.appendChild(asBase); acts.appendChild(asHead);
     pad.appendChild(acts);
     if (c.body) pad.appendChild(el('pre', 'gd-body', c.body));
-    pad.appendChild(fileList(c.files, c.truncated, (i) => showDiff({ base: c.base, head: c.sha, files: c.files }, i)));
+    const ctx = {base: c.base, head: c.sha, files: c.files, commit: true, query: selection};
+    pad.appendChild(fileList(c.files, c.truncated, (i) => showDiff(ctx, i)));
+    const path = selection.get('path');
+    const selectedFile = c.files.findIndex(f => f.path === path);
+    if (selectedFile >= 0) await showDiff(ctx, selectedFile);
+    else if (path) pad.appendChild(el('div', 'err', 'This commit has no diff for ' + path));
   };
 
   let compareRun = 0;
@@ -542,7 +548,7 @@ async function renderGit(gen, link = [], query = new URLSearchParams()) {
 
   await loadGraph(true);
   if (!app.isConnected) return;
-  if (link[0] === 'commit' && link[1]) await showCommit(link[1]);
+  if (link[0] === 'commit' && link[1]) await showCommit(link[1], query);
   else if (link[0] === 'compare' && link[1]) {
     const [base, head] = link[1].split('..');
     gitState.compare = { base: { rev: base || '', label: base || '' }, head: { rev: head || '', label: head || '' } };

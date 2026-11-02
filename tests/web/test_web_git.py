@@ -260,6 +260,117 @@ def test_diff_returns_one_files_patch_with_its_flags(
     assert whole["max_bytes"] is None
 
 
+@pytest.mark.parametrize("working", [False, True])
+def test_full_context_includes_unchanged_lines_without_lifting_the_patch_cap(
+    repo: tuple[pathlib.Path, dict[str, str]],
+    port: int,
+    working: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Full context changes Git's hunk range, not the independent byte cap."""
+    path, _ = repo
+    before = "".join(f"line {i}\n" for i in range(60))
+    (path / "long.txt").write_text(before)
+    _git(path, "add", "long.txt")
+    _git(path, "commit", "-m", "long file")
+    base = _git(path, "rev-parse", "HEAD")
+    (path / "long.txt").write_text(before.replace("line 30\n", "changed\n"))
+    if not working:
+        _git(path, "commit", "-am", "change middle")
+    head = "WORKTREE" if working else "HEAD"
+    route = f"/api/git/diff?base={base}&head={head}&path=long.txt"
+    assert " line 0\n" not in _ok(port, route)["patch"]
+    full = _ok(port, route + "&full_context=1")
+    assert " line 0\n" in full["patch"] and " line 59\n" in full["patch"]
+    assert full["full_context"] is True
+    monkeypatch.setattr(git_model, "DIFF_MAX_BYTES", 100)
+    assert _ok(port, route + "&full_context=1")["truncated"] is True
+    assert _ok(port, route + "&full_context=1&whole=1")["truncated"] is False
+
+
+@pytest.mark.parametrize("change", ["rename", "mode"])
+def test_full_context_provides_lines_for_changes_without_text_hunks(
+    repo: tuple[pathlib.Path, dict[str, str]],
+    port: int,
+    change: str,
+) -> None:
+    """Pure renames and mode changes carry context even though Git emits no hunk."""
+    path, shas = repo
+    name = "b.txt"
+    if change == "rename":
+        _git(path, "mv", name, "renamed.txt")
+        name = "renamed.txt"
+    else:
+        (path / name).chmod(0o755)
+    _git(path, "commit", "-am", change)
+    old = "&old_path=b.txt" if change == "rename" else ""
+    body = _ok(
+        port, f"/api/git/diff?base={shas['merge']}&head=HEAD&path={name}{old}&full_context=1"
+    )
+    assert "@@" not in body["patch"]
+    assert body["context"] == "one\ntwo\nthree\n"
+    assert body["truncated"] is False
+
+
+def test_diff_digests_identify_each_side_including_absent_sides(
+    repo: tuple[pathlib.Path, dict[str, str]],
+    port: int,
+) -> None:
+    """Rename digests address each path; a root or deleted side has no digest."""
+    _, shas = repo
+    body = _ok(port, f"/api/git/diff?base={shas['root']}&head=feature&path=b.txt&old_path=a.txt")
+    assert body["base_digest"] == hashlib.sha256(b"one\ntwo\n").hexdigest()
+    assert body["head_digest"] == hashlib.sha256(b"one\ntwo\nthree\n").hexdigest()
+    root = _ok(port, f"/api/git/diff?base={git_read.EMPTY_TREE}&head=v1&path=a.txt")
+    assert root["base_digest"] is None and root["head_digest"] == body["base_digest"]
+    deleted = _ok(port, "/api/git/diff?base=v1&head=main&path=d.txt")
+    assert deleted["base_digest"] == hashlib.sha256(b"doomed\n").hexdigest()
+    assert deleted["head_digest"] is None
+
+
+def test_worktree_diff_uses_one_read_for_the_patch_and_digest(
+    repo: tuple[pathlib.Path, dict[str, str]],
+    port: int,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A write after the checked read cannot change the patch without changing its digest."""
+    path, _ = repo
+    before = b"one\ntwo\nthree\nfour\n"
+    (path / "b.txt").write_bytes(before)
+    read = git_files.worktree_blob
+    calls: list[str] = []
+
+    def changing_read(root: pathlib.Path, name: str, *, max_bytes: int) -> git_files.Blob | None:
+        blob = read(root, name, max_bytes=max_bytes)
+        calls.append(name)
+        (root / name).write_text("different bytes\n")
+        return blob
+
+    monkeypatch.setattr(git_files, "worktree_blob", changing_read)
+    body = _ok(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b.txt&full_context=1")
+    assert calls == ["b.txt"]
+    assert "+four\n" in body["patch"] and "different bytes" not in body["patch"]
+    assert body["head_digest"] == hashlib.sha256(before).hexdigest()
+    blame = _ok(port, "/api/git/blame?rev=WORKTREE&path=b.txt&whole=1")
+    assert blame["digest"] != body["head_digest"]
+
+
+def test_worktree_snapshot_paths_do_not_rewrite_each_other(
+    repo: tuple[pathlib.Path, dict[str, str]],
+    port: int,
+) -> None:
+    """A path containing the private copy's name stays literal in patch headers."""
+    path, _ = repo
+    (path / "b").mkdir()
+    (path / "b/file").write_text("before\n")
+    _git(path, "add", "b/file")
+    _git(path, "commit", "-m", "nested file")
+    (path / "b/file").write_text("after\n")
+    body = _ok(port, "/api/git/diff?base=HEAD&head=WORKTREE&path=b/file")
+    assert "--- a/b/file\n" in body["patch"]
+    assert "+++ b/b/file\n" in body["patch"]
+
+
 def test_worktree_lists_the_uncommitted_files_against_head(
     repo: tuple[pathlib.Path, dict[str, str]], port: int
 ) -> None:
@@ -470,12 +581,23 @@ def test_blame_attributes_lines_and_marks_uncommitted_content(
     assert body["rev"] == shas["merge"] and body["path"] == "b.txt"
     assert [line["sha"] for line in body["lines"]] == [shas["root"], shas["root"], shas["feature"]]
     assert [line["line"] for line in body["lines"]] == [1, 2, 3]
+    assert [line["filename"] for line in body["lines"]] == ["a.txt", "a.txt", "b.txt"]
+    assert [line["original_line"] for line in body["lines"]] == [1, 2, 3]
+    root = _ok(port, f"/api/git/blame?rev={shas['root']}&path=a.txt")
+    assert root["lines"] == body["lines"][:2]
     assert body["lines"][0]["author"] == "t"
     assert body["lines"][0]["date"].startswith("2026-01-")
     make_dirty(path)
     dirty = _ok(port, "/api/git/blame?rev=WORKTREE&path=b.txt")
     assert dirty["lines"][:3] == body["lines"]
-    assert dirty["lines"][3] == {"line": 4, "sha": "", "author": "not committed", "date": ""}
+    assert dirty["lines"][3] == {
+        "line": 4,
+        "sha": "",
+        "author": "not committed",
+        "date": "",
+        "filename": "b.txt",
+        "original_line": 4,
+    }
     _git(path, "add", "b.txt")
     assert _ok(port, "/api/git/blame?rev=WORKTREE&path=b.txt")["lines"] == dirty["lines"]
     new = _ok(port, "/api/git/blame?rev=WORKTREE&path=new.txt")
@@ -498,6 +620,28 @@ def test_blame_attributes_lines_and_marks_uncommitted_content(
         assert _refused(port, "/api/git/blame?" + query)
     monkeypatch.setattr(git_model, "BLOB_MAX_BYTES", 1)
     assert _get(port, "/api/git/blame?rev=HEAD&path=b.txt")[0] == 413
+
+
+def test_blame_preserves_quoted_historical_paths_and_original_lines(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """A renamed UTF-8 path with a quote round-trips Git's C-quoted filename."""
+    path, _ = repo
+    old = ' old "é".txt '
+    (path / old).write_text("first\nsecond\n", encoding="utf-8")
+    _git(path, "add", "--", old)
+    _git(path, "commit", "-m", "quoted path")
+    before = _git(path, "rev-parse", "HEAD")
+    _git(path, "mv", "--", old, "renamed.txt")
+    (path / "renamed.txt").write_text("inserted\nfirst\nsecond\n", encoding="utf-8")
+    _git(path, "commit", "-am", "rename and insert")
+    body = _ok(port, "/api/git/blame?rev=HEAD&path=renamed.txt&whole=1")
+    assert [
+        (r["line"], r["original_line"], r["filename"], r["sha"]) for r in body["lines"][1:]
+    ] == [
+        (2, 1, old, before),
+        (3, 2, old, before),
+    ]
 
 
 def test_blame_counts_newlines_not_other_text_separators(

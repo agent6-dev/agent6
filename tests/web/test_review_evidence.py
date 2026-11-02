@@ -47,6 +47,9 @@ def test_review_routes_read_exact_trees_and_rename_sides(
     assert code == 200 and old["text"] == "first\nsecond\nthird\nfourth\n"
     code, new = _get(port, "/api/reviews/panel/file?side=head&path=new.txt")
     assert code == 200 and new["text"].endswith("added\n")
+    assert patch["base_digest"] == old["digest"]
+    assert patch["head_digest"] == new["digest"]
+    assert patch["base"] == old["rev"] and patch["head"] == new["rev"]
     assert _get(port, "/api/reviews/panel/file?side=head&path=old.txt")[0] == 404
     assert _get(port, "/api/reviews/missing")[0] == 404
     assert _get(port, "/api/reviews/panel/file?side=other&path=old.txt")[0] == 422

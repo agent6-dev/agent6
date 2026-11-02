@@ -14,6 +14,44 @@ from agent6 import errors
 from agent6.tools import path_safety
 from agent6.vcs import git_command, git_history, git_read
 
+C_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11, '"': 34, "\\": 92}
+
+
+def unquote_git_path(p: str) -> str:
+    """Return a path as git prints it with its C-string quoting decoded.
+
+    Git quotes a path holding a byte outside printable ASCII (`core.quotePath`), a quote or a
+    backslash, each such byte as three octal digits. A non-UTF-8 byte decodes as the listings
+    do (`os.fsdecode`), so the name matches theirs.
+
+    Args:
+        p: The path text, quoted or bare.
+
+    Returns:
+        The decoded path, or the text unchanged when it is not quoted.
+    """
+    if len(p) < 2 or not (p.startswith('"') and p.endswith('"')):
+        return p
+    body, out, i = p[1:-1], bytearray(), 0
+    while i < len(body):
+        char = body[i]
+        i += 1
+        if char != "\\" or i >= len(body):
+            # surrogatepass: a lone surrogate in a seat's reply becomes a name that grounds nothing.
+            out += char.encode("utf-8", "surrogatepass")
+            continue
+        char = body[i]
+        if char in "01234567":
+            digits = body[i : i + 3]
+            while digits and not all(d in "01234567" for d in digits):
+                digits = digits[:-1]
+            out.append(int(digits, 8) & 0xFF)
+            i += len(digits)
+        else:
+            out.append(C_ESCAPES.get(char, ord(char)))
+            i += 1
+    return os.fsdecode(bytes(out))
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class Blob:
@@ -152,6 +190,8 @@ class BlameLine:
     sha: str
     author: str
     date: str
+    filename: str
+    original_line: int
 
 
 # An ignore-revs file lists shas, one per line; a larger one is not that.
@@ -251,7 +291,9 @@ def blame_lines(
         git_history.worktree_entry(path, name) == "untracked"
         or not git_history.head_commit(path)[0]
     ):
-        return tuple(BlameLine(n, "", "not committed", "") for n in range(start_line, end_line + 1))
+        return tuple(
+            BlameLine(n, "", "not committed", "", name, n) for n in range(start_line, end_line + 1)
+        )
     args = ("--contents", "-") if working else ()
     revs = () if working else (rev,)
     with tempfile.TemporaryDirectory(prefix="agent6-blame-") as tmp:
@@ -276,7 +318,7 @@ def blame_lines(
         ).stdout
     metadata: dict[str, dict[str, str]] = {}
     rows: list[BlameLine] = []
-    sha, number = "", 0
+    sha, number, original = "", 0, 0
     for line in out.split("\n"):
         if line.startswith("\t"):
             meta = metadata[sha]
@@ -288,15 +330,17 @@ def blame_lines(
                     sha if committed else "",
                     meta["author"] if committed else "not committed",
                     date,
+                    unquote_git_path(meta["filename"]),
+                    original,
                 )
             )
         elif len(line.split()) in (3, 4) and all(c in "0123456789abcdef" for c in line.split()[0]):
             fields = line.split()
-            sha, number = fields[0], int(fields[2])
+            sha, original, number = fields[0], int(fields[1]), int(fields[2])
             metadata.setdefault(sha, {})
         else:
             key, _, value = line.partition(" ")
-            if key in ("author", "author-time"):
+            if key in ("author", "author-time", "filename"):
                 metadata[sha][key] = value
     return tuple(rows)
 

@@ -18,7 +18,7 @@ import pytest
 
 from agent6 import paths
 from agent6.ui.web import server as web_server
-from tests.unit.test_git_history import build_history, make_dirty
+from tests.unit.test_git_history import _git, build_history, make_dirty
 from tests.web import signin
 
 if TYPE_CHECKING:
@@ -530,6 +530,51 @@ def test_the_diff_view_switches_between_inline_split_old_and_new(
     assert errors == [], errors
 
 
+@pytest.mark.parametrize("theme,width", [("dark", 1280), ("light", 390)])
+def test_files_blame_groups_lines_and_loads_a_commit_card(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    dirty_git_port: int,
+    theme: str,
+    width: int,
+) -> None:
+    """A group's continuation has only a bar; its label links to the historical file."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(dirty_git_port)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/files/WORKTREE/b.txt")
+    page.evaluate(
+        "theme => document.documentElement.classList.toggle('light', theme === 'light')", theme
+    )
+    page.locator(".files-blame").click()
+    page.wait_for_selector(".sl[data-line='4'] .blame-cell")
+    assert page.locator(".blame-label").count() == 3
+    assert page.locator(".sl[data-line='2'] .blame-cell").inner_text() == ""
+    assert page.locator(".sl[data-line='2'] .blame-cell").evaluate(
+        "e => parseFloat(getComputedStyle(e).borderLeftWidth) > 0"
+    )
+    bars = page.locator(".sl .blame-cell").evaluate_all(
+        "cells => cells.slice(0, 2).map(c => c.getBoundingClientRect().left)"
+    )
+    assert bars[0] == bars[1]
+    link = page.locator(".sl[data-line='1'] .blame-commit")
+    assert (link.get_attribute("href") or "").endswith("?path=a.txt&line=1")
+    assert page.locator(".sl[data-line='4'] a").count() == 0
+    link.focus()
+    # Playwright's own retry: the page's animation frames do not run in this headless browser.
+    expect(page.locator(".blame-card .blame-title")).to_have_text("root commit")
+    assert page.locator(".blame-card:visible").inner_text().endswith("root commit")
+    assert "a.txt" in page.locator(".blame-card:visible").inner_text()
+    # The card sits over the next lines' gutter; leaving the link closes it after its grace.
+    link.blur()
+    expect(page.locator(".blame-card")).to_be_hidden()
+    page.locator(".sl[data-line='2'] .blame-cell").hover()
+    assert "blame-hover" in (
+        page.locator(".sl[data-line='1'] .blame-cell").get_attribute("class") or ""
+    )
+    assert errors == [], errors
+
+
 def test_blame_opens_the_lines_commit_in_git(
     open_page: Callable[[int], tuple[Page, list[str]]], dirty_git_port: int
 ) -> None:
@@ -541,9 +586,149 @@ def test_blame_opens_the_lines_commit_in_git(
     assert "not committed" in page.locator(".sl[data-line='4'] .blame-cell").inner_text()
     assert page.locator(".files-view .sl").count() == 4
     page.locator(".sl[data-line='1'] .blame-commit").click()
-    page.wait_for_selector(".git-side .gd-subject")
+    page.wait_for_selector(".git-diff .dl[data-new='1']")
+    assert "a.txt" in page.locator(".git-diff-head").inner_text()
+    assert "path=a.txt" in page.url
+    page.reload()
+    page.wait_for_selector(".git-diff .dl[data-new='1']")
+    page.locator(".git-diff-head").get_by_role("button", name="\u2039 files", exact=True).click()
     assert "root commit" in page.locator(".git-side .gd-subject").inner_text()
     assert page.locator(".gc-row.sel").count() == 1
+    assert "path=" not in page.url
+    assert errors == [], errors
+
+
+@pytest.mark.parametrize("deleted", [False, True])
+def test_diff_opens_files_at_the_correct_side(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    git_port: int,
+    deleted: bool,
+) -> None:
+    """A deletion disables the head action and offers the base file separately."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(git_port)
+    path = "d.txt" if deleted else "dir/f.txt"
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/v1..main?path={path}")
+    if deleted:
+        button = page.get_by_role("button", name="Open in Files", exact=True)
+        expect(button).to_be_disabled()
+        expect(button).to_have_attribute("title", "Deleted: no file at the head revision")
+        page.get_by_role("link", name="Open base file in Files", exact=True).click()
+        expect(page.locator(".files-text")).to_contain_text("doomed")
+    else:
+        page.get_by_role("link", name="Open in Files", exact=True).click()
+        expect(page.locator(".files-head")).to_contain_text(path)
+        expect(page.locator(".files-text")).to_contain_text("nested")
+    assert errors == [], errors
+
+
+@pytest.mark.parametrize("mode", ["inline", "split"])
+def test_diff_full_context_shows_lines_outside_the_hunk(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    dirty_git_port: int,
+    tmp_path: pathlib.Path,
+    mode: str,
+) -> None:
+    """The full-context control reveals omitted lines without switching to a side view."""
+    from playwright.sync_api import expect
+
+    text = "".join(f"line {i}\n" for i in range(60))
+    (tmp_path / "long.txt").write_text(text)
+    _git(tmp_path, "add", "long.txt")
+    _git(tmp_path, "commit", "-m", "long file")
+    (tmp_path / "long.txt").write_text(text.replace("line 30\n", "changed\n"))
+    page, errors = open_page(dirty_git_port)
+    page.add_init_script(f"localStorage.setItem('a6-diff-mode', '{mode}')")
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/compare/HEAD..WORKTREE?path=long.txt")
+    expect(page.locator(".git-diff-body")).to_contain_text("changed")
+    assert page.locator(".git-diff [data-new='1']").count() == 0
+    page.get_by_role("button", name="Show full context", exact=True).click()
+    expect(page.locator(".git-diff [data-new='1']")).to_contain_text("line 0")
+    expect(page.locator(".git-diff [data-new='60']")).to_contain_text("line 59")
+    page.get_by_role("button", name="Show hunks only", exact=True).click()
+    expect(page.locator(".git-diff [data-new='1']")).to_have_count(0)
+    page.get_by_role("link", name="Open in Files", exact=True).click()
+    expect(page).to_have_url(f"http://127.0.0.1:{dirty_git_port}/#/files/WORKTREE/long.txt")
+    assert errors == [], errors
+
+
+@pytest.mark.parametrize("mode", ["inline", "split", "old", "new"])
+def test_diff_blame_attributes_equal_text_to_each_sides_history(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    git_port: int,
+    tmp_path: pathlib.Path,
+    mode: str,
+) -> None:
+    """Restoring equal context text gives it a distinct head-side commit."""
+    from playwright.sync_api import expect
+
+    target = tmp_path / "history.txt"
+    target.write_text("old\nsame\n")
+    _git(tmp_path, "add", "history.txt")
+    _git(tmp_path, "commit", "-m", "base attribution")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    target.write_text("temporary\ndifferent\n")
+    _git(tmp_path, "commit", "-am", "intermediate attribution")
+    target.write_text("new\nsame\n")
+    _git(tmp_path, "commit", "-am", "head attribution")
+    head = _git(tmp_path, "rev-parse", "HEAD")
+    page, errors = open_page(git_port)
+    page.add_init_script(f"localStorage.setItem('a6-diff-mode', '{mode}')")
+    page.goto(f"http://127.0.0.1:{git_port}/#/git/compare/{base}..{head}?path=history.txt")
+    page.locator(".diff-blame").click()
+    cells = page.locator(".git-diff .blame-cell")
+    expect(cells).to_have_count(4 if mode == "split" else 3 if mode == "inline" else 2)
+    left = page.locator('.blame-cell[data-side="base"]')
+    right = page.locator('.blame-cell[data-side="head"]')
+    expect(left).to_have_count(1 if mode == "inline" else 2 if mode in {"split", "old"} else 0)
+    expect(right).to_have_count(0 if mode == "old" else 2)
+    for cell in left.all():
+        expect(cell).to_have_attribute("data-sha", base)
+    for cell in right.all():
+        expect(cell).to_have_attribute("data-sha", head)
+    if mode == "split":
+        expect(page.locator('.ds-row[data-old="2"] .blame-cell').nth(0)).to_have_attribute(
+            "data-sha", base
+        )
+        expect(page.locator('.ds-row[data-new="2"] .blame-cell').nth(1)).to_have_attribute(
+            "data-sha", head
+        )
+    page.locator(".diff-blame").click()
+    expect(cells).to_have_count(0)
+    assert errors == [], errors
+
+
+def test_diff_blame_refuses_a_worktree_file_changed_after_display(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    dirty_git_port: int,
+    tmp_path: pathlib.Path,
+) -> None:
+    """Blame from later working-tree bytes cannot annotate an earlier patch."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/compare/HEAD..WORKTREE?path=b.txt")
+    expect(page.locator(".git-diff-body")).to_contain_text("four")
+    (tmp_path / "b.txt").write_text("changed after display\n")
+    page.locator(".diff-blame").click()
+    expect(page.locator(".blame-note")).to_contain_text("Blame unavailable: head file changed")
+    expect(page.locator(".blame-cell")).to_have_count(0)
+    assert errors == [], errors
+
+
+def test_full_context_displays_a_pure_rename_without_hunks(
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    dirty_git_port: int,
+) -> None:
+    """A pure rename opens its unchanged file instead of an empty full-context patch."""
+    from playwright.sync_api import expect
+
+    page, errors = open_page(dirty_git_port)
+    page.goto(f"http://127.0.0.1:{dirty_git_port}/#/git/compare/HEAD..WORKTREE?path=dir/g.txt")
+    page.locator(".diff-context").click()
+    expect(page.locator(".git-diff-body")).to_contain_text("no text hunks")
+    expect(page.locator('.git-diff [data-new="1"]')).to_contain_text("nested")
     assert errors == [], errors
 
 
