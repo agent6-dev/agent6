@@ -17,10 +17,8 @@ These levels describe serialized formats, not Python imports.
   This covers [Conversation](#conversation), [SessionManifest](#sessionmanifest) (`manifest.json`), [SessionSnapshot](#sessionsnapshot) (`loop_state.json` and checkpoints), the [ToolResult family](#toolresult-family) stored in conversations, [JournalEvent](#journalevent) in the machine's `journal.jsonl`, [TaskNode](#tasknode) and the task graph, git chain refs, and [provider transcripts](architecture.md#session-state-on-disk) (retained diagnostic history).
 - **Disposable:** caches, live coordination files, and telemetry export cursors have no format-compatibility or migration guarantee.
 
-Any release before 1.0 may change a format without a compatibility shim, with the change named in the release notes.
-From 1.0, public formats will carry a version, including the journal envelope and a versioned prefix for the web API.
-Readers will keep accepting the previous format version for two minor releases.
-The current `logs.jsonl` envelope has no format-version field, and web API routes use the unversioned `/api/` prefix.
+Formats are not stable until 1.0.
+From 1.0, changes will be backwards compatible, and deprecations will carry a warning for a period before removal.
 
 ## CLI listing rows
 

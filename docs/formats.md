@@ -16,7 +16,7 @@ Nested dictionary keys use dots and array items use `[]`.
 
 [Data contracts](data-contracts.md#support-levels) defines the support levels.
 
-Any release before 1.0 may change a format without a compatibility shim.
+Formats are not stable until 1.0.
 
 - **Durable but private:** snapshots preserve run history; transcripts retain diagnostic history.
 - **Disposable:** caches and live [coordination files](architecture.md#session-state-on-disk).
