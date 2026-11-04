@@ -32,7 +32,7 @@ from typing import Annotated, Any, Literal
 import pydantic
 import pydantic_core
 
-from agent6 import paths, portable
+from agent6 import journal_tail, paths, portable
 from agent6.machine import schema
 
 __all__ = [
@@ -361,7 +361,7 @@ def dump_json(model: pydantic.BaseModel, *, indent: int | None = None) -> str:
         return raw.encode("utf-8", "replace").decode("utf-8")
 
 
-# How far back a torn-tail heal looks for the last newline before reading the whole file.
+# The terminal-event probe falls back to a full read when no complete line fits.
 _TAIL_WINDOW = 1 << 20
 
 
@@ -411,39 +411,12 @@ class MachineJournal:
         Args:
             event: One of the `JournalEvent` models.
         """
-        self._heal_torn_tail()
+        journal_tail.heal_torn_tail(self.journal_path)
         line = dump_json(event)
         with self.journal_path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
             fh.flush()
             os.fsync(fh.fileno())
-
-    def _heal_torn_tail(self) -> None:
-        """Truncate a torn final line off the journal, in place."""
-        if not self.journal_path.is_file():
-            return
-        with self.journal_path.open("rb") as fh:
-            if fh.seek(0, os.SEEK_END) == 0:
-                return
-            fh.seek(-1, os.SEEK_END)
-            if fh.read(1) == b"\n":
-                return
-        # `truncate` leaves the file at the old length or the new one; a rewrite would open a
-        # window where a kill or a reader sees an empty journal.
-        with self.journal_path.open("rb") as fh:
-            size = fh.seek(0, os.SEEK_END)
-            window = min(size, _TAIL_WINDOW)
-            fh.seek(size - window)
-            tail = fh.read(window)
-        cut = tail.rfind(b"\n")
-        if cut < 0:
-            cut = self.journal_path.read_bytes().rfind(b"\n")
-            if cut < 0:
-                os.truncate(self.journal_path, 0)  # one torn line, nothing committed
-                return
-            os.truncate(self.journal_path, cut + 1)
-            return
-        os.truncate(self.journal_path, size - window + cut + 1)
 
     def read(self) -> list[Any]:
         """Parse and validate every journal line in order.

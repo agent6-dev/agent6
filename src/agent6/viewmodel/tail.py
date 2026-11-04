@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import time
 from collections.abc import Callable, Iterator
@@ -25,7 +26,8 @@ def tail_events(
 
     Reads bytes and splits on newlines before decoding: a writer flushes a long line
     in several syscalls, so a poll can hit EOF inside a multibyte sequence. Only
-    complete lines are decoded; the byte tail stays pending until its newline arrives.
+    complete lines are decoded; each poll rereads from the last complete line's end,
+    so a repaired tail cannot leave stale partial bytes in the reader.
     A malformed line is skipped (a partial write in flight is picked up next poll).
 
     Args:
@@ -51,7 +53,6 @@ def tail_events(
         return
 
     pos = start_at or 0
-    pending = b""
     heard = on_position or _ignore_position
     final_drain = False
     while True:
@@ -60,29 +61,29 @@ def tail_events(
             final_drain = True
         try:
             with path.open("rb") as fh:
+                if fh.seek(0, os.SEEK_END) < pos:
+                    pos = 0
                 fh.seek(pos)
                 chunk = fh.read()
-                pos = fh.tell()
         except FileNotFoundError:
             if not follow or final_drain:
                 return
             time.sleep(poll_s)
             continue
 
-        if chunk:
-            base = pos - len(chunk) - len(pending)
-            parsed, pending = _complete_lines(pending + chunk, base)
-            # A resume appends past a session.end; only the batch's last one is the real end.
-            for i, (end, evt) in enumerate(parsed):
-                heard(end)
-                yield evt
-                if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.end":
-                    return
+        parsed, pending = _complete_lines(chunk, pos)
+        pos += len(chunk) - len(pending)
+        # A resume appends past a session.end; only the batch's last one is the real end.
+        for i, (end, evt) in enumerate(parsed):
+            heard(end)
+            yield evt
+            if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.end":
+                return
 
         if not follow or final_drain:
             evt = _parse_event_line(pending)
             if evt is not None:
-                heard(pos)
+                heard(pos + len(pending))
                 yield evt
             return
         time.sleep(poll_s)
@@ -135,32 +136,30 @@ def _parse_event_line(line: bytes) -> dict[str, Any] | None:
 class LogTail:
     """Read a journal incrementally for a UI poll loop.
 
-    One reader follows a run and its same-dir resume by byte offset, tolerating a
-    partial line at EOF.
+    One reader follows a run and its same-dir resume from the last complete line's
+    end, rereading a partial line at EOF until it is completed or repaired.
 
     Attributes:
-        rewound: The last read found the file shorter than its position (rewritten)
+        rewound: The last read found the file shorter than its last complete line's end
             and started over from its head, so a holder folding the events starts over too.
     """
 
     def __init__(self, path: pathlib.Path) -> None:
         self._path = path
         self._pos = 0
-        self._pending = b""
         self.rewound = False
 
     def read(self) -> list[dict[str, Any]]:
         """Return the events appended since the last read, none when the file is unreadable."""
-        out: list[dict[str, Any]] = []
         self.rewound = False
         try:
-            if self._path.stat().st_size < self._pos:
-                self._pos, self._pending, self.rewound = 0, b"", True
             with self._path.open("rb") as fh:
+                if fh.seek(0, os.SEEK_END) < self._pos:
+                    self._pos, self.rewound = 0, True
                 fh.seek(self._pos)
                 chunk = fh.read()
-                self._pos = fh.tell()
         except OSError:
-            return out
-        parsed, self._pending = _complete_lines(self._pending + chunk, 0)
+            return []
+        parsed, pending = _complete_lines(chunk, self._pos)
+        self._pos += len(chunk) - len(pending)
         return [evt for _end, evt in parsed]

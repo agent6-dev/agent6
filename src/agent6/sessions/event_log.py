@@ -3,7 +3,8 @@
 """Append structured events to a session's journal.
 
 One JSON object per line in `logs.jsonl`, so a front-end follows a run by
-tailing one file. Append-only, with no reads, rotation or production schema validation.
+tailing one file. Complete lines stay append-only; a torn tail is dropped before appending.
+There is no rotation or production schema validation.
 Each durable event is written, flushed and fsynced, and fails loudly: the
 journal is the read model every surface trusts. Streaming deltas only flush
 and stay best-effort; the transcripts keep the lossless copy.
@@ -22,7 +23,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from agent6 import paths
+from agent6 import journal_tail, paths
 
 # Flushed but never fsynced: a reasoning model emits tens of thousands per run.
 _EPHEMERAL_EVENTS = frozenset({"role.text_delta", "role.thinking_delta"})
@@ -108,6 +109,7 @@ class EventSink:
                 # Only when missing: on every event the handback would walk the dir under sudo.
                 if not self.path.parent.is_dir():
                     paths.mkdir_for_real_user(self.path.parent)
+                journal_tail.heal_torn_tail(self.path)
                 with self.path.open("ab") as fh:
                     fh.write(data)
                     fh.flush()

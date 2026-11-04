@@ -231,7 +231,7 @@ depends_on = []
 
 [[modules]]
 path = "agent6.sessions.event_log"
-depends_on = ["agent6.paths"]
+depends_on = ["agent6.journal_tail", "agent6.paths"]
 
 [[modules]]
 path = "agent6.sessions.event_schema"
@@ -689,6 +689,10 @@ path = "agent6.sandbox.detect"
 depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.landlock"]
 
 [[modules]]
+path = "agent6.journal_tail"
+depends_on = []
+
+[[modules]]
 path = "agent6.kinds"
 depends_on = []
 
@@ -855,7 +859,7 @@ depends_on = ["agent6.machine.schema"]
 # JournalError subclasses MachineError (machine.schema), so a broken journal and
 # a broken machine file degrade through the same catch sites.
 path = "agent6.machine.journal"
-depends_on = ["agent6.machine.schema", "agent6.paths", "agent6.portable"]
+depends_on = ["agent6.journal_tail", "agent6.machine.schema", "agent6.paths", "agent6.portable"]
 
 [[modules]]
 path = "agent6.machine.engine"

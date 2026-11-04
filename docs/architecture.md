@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `budget`, `child_env`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `kinds`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `vcs`, `viewmodel`, `words`.
+Any layer may also use the shared substrate: `budget`, `child_env`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `vcs`, `viewmodel`, `words`.
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `git_command.py`.

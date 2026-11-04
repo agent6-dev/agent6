@@ -481,6 +481,7 @@ All public shapes may change before 1.0 without a compatibility shim.
 ## Journal
 
 `logs.jsonl` contains one JSON object per line.
+A torn last line is dropped the next time the journal opens for appending.
 The envelope below surrounds each event's payload.
 The event registry describes current writers; historical reads tolerate unknown events.
 Optional event fields may be absent or null.

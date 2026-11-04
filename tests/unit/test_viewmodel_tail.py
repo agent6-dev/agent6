@@ -9,6 +9,9 @@ import pathlib
 import threading
 import time
 
+import pytest
+
+from agent6.sessions import event_log
 from agent6.viewmodel import tail as viewmodel_tail
 
 
@@ -203,6 +206,58 @@ def test_logtail_holds_a_partial_line_until_its_newline(tmp_path: pathlib.Path) 
     assert [e["type"] for e in tail.read()] == ["b"]  # completed on the next read
 
 
+@pytest.mark.parametrize("fragment_size", [1, 4096])
+def test_logtail_rereads_a_healed_fragment_without_replaying_complete_lines(
+    tmp_path: pathlib.Path, fragment_size: int
+) -> None:
+    """A heal can shrink or regrow past the pending bytes without losing the next event."""
+    path = tmp_path / "logs.jsonl"
+    event_log.EventSink(path).emit("loop.note", text="old")
+    with path.open("ab") as fh:
+        fh.write(b"x" * fragment_size)
+    reader = viewmodel_tail.LogTail(path)
+    assert [event["text"] for event in reader.read()] == ["old"]
+
+    resumed = event_log.EventSink(path)
+    resumed.emit("loop.note", text="new")
+    resumed.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+
+    events = reader.read()
+    assert [event["type"] for event in events] == ["loop.note", "session.end"]
+    assert events[0]["text"] == "new"
+    assert not reader.rewound
+    assert reader.read() == []
+
+
+@pytest.mark.parametrize("fragment_size", [1, 4096])
+def test_follow_rereads_a_healed_fragment_from_the_last_complete_line(
+    tmp_path: pathlib.Path, fragment_size: int
+) -> None:
+    """The follow reader drops stale partial bytes and reports repaired event offsets."""
+    path = tmp_path / "logs.jsonl"
+    event_log.EventSink(path).emit("loop.note", text="old")
+    first_end = path.stat().st_size
+    with path.open("ab") as fh:
+        fh.write(b"x" * fragment_size)
+    stop = threading.Event()
+    positions: list[int] = []
+    reader = viewmodel_tail.tail_events(
+        path, poll_s=0, should_stop=stop.is_set, on_position=positions.append
+    )
+    assert next(reader)["text"] == "old"
+
+    resumed = event_log.EventSink(path)
+    resumed.emit("loop.note", text="new")
+    second_end = path.stat().st_size
+    resumed.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+    stop.set()
+
+    events = list(reader)
+    assert [event["type"] for event in events] == ["loop.note", "session.end"]
+    assert events[0]["text"] == "new"
+    assert positions == [first_end, second_end, path.stat().st_size]
+
+
 def test_logtail_missing_file_is_empty(tmp_path: pathlib.Path) -> None:
     assert viewmodel_tail.LogTail(tmp_path / "nope.jsonl").read() == []
 
@@ -301,6 +356,19 @@ def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: pathlib.Path
     for evt in viewmodel_tail.tail_events(path, follow=False, on_position=positions.append):
         seen.append((evt["type"], positions[-1] if positions else None))
     assert seen == [("a", len(first)), ("b", len(first) + len(last))]
+
+
+def test_follow_starts_over_when_the_file_shrinks(tmp_path: pathlib.Path) -> None:
+    """A follow cursor past a rewritten journal's EOF reads its replacement events."""
+    path = tmp_path / "logs.jsonl"
+    path.write_text('{"type":"old","text":"a long prior event"}\n', encoding="utf-8")
+    stop = threading.Event()
+    reader = viewmodel_tail.tail_events(path, poll_s=0, should_stop=stop.is_set)
+    assert next(reader)["type"] == "old"
+
+    path.write_text('{"type":"session.end"}\n', encoding="utf-8")
+    stop.set()
+    assert [event["type"] for event in reader] == ["session.end"]
 
 
 def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: pathlib.Path) -> None:

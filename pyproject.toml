@@ -274,6 +274,7 @@ banned-from = [
     "agent6.harness.verify_gate",
     "agent6.harness.verify_scope",
     "agent6.harness.verify_verdict",
+    "agent6.journal_tail",
     "agent6.kinds",
     "agent6.machine.authoring",
     "agent6.machine.contracts",

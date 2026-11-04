@@ -8,6 +8,7 @@ import pathlib
 
 import pytest
 
+from agent6 import journal_tail
 from agent6.machine import journal as machine_journal
 
 _DATA = pathlib.Path(__file__).parent / "data"
@@ -544,7 +545,11 @@ def test_append_and_snapshot_survive_a_lone_surrogate(tmp_path: pathlib.Path) ->
     assert j.latest_snapshot() is not None
 
 
-def test_healing_a_torn_tail_never_empties_the_journal(tmp_path: pathlib.Path) -> None:
+@pytest.mark.parametrize("committed_count", [0, 3])
+@pytest.mark.parametrize("fragment_size", [32, (1 << 20) + 37])
+def test_healing_a_torn_tail_never_empties_the_journal(
+    tmp_path: pathlib.Path, committed_count: int, fragment_size: int
+) -> None:
     """The torn-tail heal truncates in place, so a reader never sees an empty journal."""
     import json
     import os
@@ -554,22 +559,18 @@ def test_healing_a_torn_tail_never_empties_the_journal(tmp_path: pathlib.Path) -
     journal = inst / "journal.jsonl"
     committed = (
         json.dumps({"type": "machine.begin", "ts": "t", "machine": "m", "version": 1}) + "\n"
-    ) * 3
-    journal.write_text(committed + '{"type": "step", "ts": "t"', encoding="utf-8")
+    ) * committed_count
+    journal.write_bytes(committed.encode() + b"x" * fragment_size)
     opened = os.open(journal, os.O_RDONLY)  # a reader holding the file open
     try:
-        machine_journal.MachineJournal(inst)._heal_torn_tail()  # pyright: ignore[reportPrivateUsage]
+        journal_tail.heal_torn_tail(journal)
+        assert os.fstat(opened).st_ino == journal.stat().st_ino
+        assert os.read(opened, len(committed) + 1) == committed.encode()
     finally:
         os.close(opened)
 
     assert journal.read_text(encoding="utf-8") == committed
-    assert len(machine_journal.MachineJournal(inst).read()) == 3
-    # Structural: a whole-file rewrite let a kill or a lockless reader see an empty journal.
-    import inspect
-
-    body = inspect.getsource(machine_journal.MachineJournal._heal_torn_tail)  # pyright: ignore[reportPrivateUsage]
-    assert "write_bytes" not in body
-    assert "os.truncate" in body
+    assert len(machine_journal.MachineJournal(inst).read()) == committed_count
 
 
 def test_end_event_reads_a_record_longer_than_its_tail_window(tmp_path: pathlib.Path) -> None:

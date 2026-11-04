@@ -12,6 +12,7 @@ import pytest
 
 from agent6 import paths as agent6_paths
 from agent6.sessions import event_log
+from agent6.viewmodel import tail
 
 
 def _read_lines(path: pathlib.Path) -> list[dict[str, object]]:
@@ -29,6 +30,41 @@ def test_emit_appends_json_lines(tmp_path: pathlib.Path) -> None:
     assert "ts" in lines[0]
     assert lines[1]["type"] == "loop.tool.call"
     assert lines[1]["turn"] == 1
+
+
+def test_reopen_drops_torn_tail_before_resumed_events(
+    tmp_path: pathlib.Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A torn delta cannot swallow the next execution's resume start."""
+    path = tmp_path / "logs.jsonl"
+    first = event_log.EventSink(path)
+    first.emit("session.start", user_task="task", mode="execute", execution_id="first")
+    committed = path.read_bytes()
+    fragment = b'{"type":"role.text_delta","text":"caf\xc3'
+    with path.open("ab") as fh:
+        fh.write(fragment)
+
+    resumed = event_log.EventSink(path)
+    resumed.emit(
+        "loop.resume.start",
+        session_id="session",
+        user_task="task",
+        steer="continue",
+        mode="execute",
+        turn=1,
+        messages=2,
+        execution_id="resumed",
+    )
+    resumed.emit("role.text_delta", role="worker", text="done")
+    resumed.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+
+    expected = ["session.start", "loop.resume.start", "role.text_delta", "session.end"]
+    assert [event["type"] for event in tail.tail_events(path, follow=False)] == expected
+    assert [event["type"] for event in tail.LogTail(path).read()] == expected
+    assert path.read_bytes().startswith(committed)
+    assert len(caplog.records) == 1
+    assert str(len(fragment)) in caplog.records[0].message
+    assert str(path) in caplog.records[0].message
 
 
 def test_emit_creates_parent_dir(tmp_path: pathlib.Path) -> None:
