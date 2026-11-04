@@ -56,8 +56,18 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
     argv: list[str] = [rg, "--json"]
     if fixed:
         argv.append("--fixed-strings")
+    # The conversation is searched below through the filtered transcripts; the harness's own
+    # copies of it (the snapshots, the checkpoints, the object store) would match the prompt too.
+    excluded = (
+        "!**/transcripts/*.json",
+        "!**/checkpoints/*.json",
+        "!**/objects/*.json",
+        "!**/loop_state.json",
+        "!**/turn_in_flight.json",
+    )
+    globs = [flag for pattern in excluded for flag in ("--glob", pattern)]
     completed = subprocess.run(
-        [*argv, "--glob", "!**/transcripts/*.json", "--", query, *(str(t) for t in targets)],
+        [*argv, *globs, "--", query, *(str(t) for t in targets)],
         check=False,
         capture_output=True,
         text=True,

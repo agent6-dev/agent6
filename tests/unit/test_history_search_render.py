@@ -128,6 +128,32 @@ def test_search_excludes_prompt_sections_but_keeps_conversation(
     assert "no matches" in capsys.readouterr().out
 
 
+def test_search_skips_the_harness_copies_of_the_conversation(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The prompt persisted in the snapshot and the checkpoints is not a conversation hit."""
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is required")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="copies")
+    layout.ensure()
+    copy = json.dumps({"system": "snapshot NEEDLE", "messages": []})
+    (layout.session_dir / "loop_state.json").write_text(copy, encoding="utf-8")
+    (layout.session_dir / "turn_in_flight.json").write_text(copy, encoding="utf-8")
+    (layout.session_dir / "checkpoints").mkdir(exist_ok=True)
+    (layout.session_dir / "checkpoints" / "0001.json").write_text(copy, encoding="utf-8")
+    (layout.session_dir / "objects").mkdir(exist_ok=True)
+    (layout.session_dir / "objects" / "ab12.json").write_text(copy, encoding="utf-8")
+    (layout.session_dir / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "task": "journal NEEDLE"}) + "\n", encoding="utf-8"
+    )
+    assert history_cmds._cmd_history_search("NEEDLE", fixed=True, session_id="") == 0
+    out = capsys.readouterr().out
+    assert "journal NEEDLE" in out
+    assert "snapshot NEEDLE" not in out
+
+
 def test_search_reports_unreadable_transcripts_without_dropping_other_hits(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
