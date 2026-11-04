@@ -19,6 +19,7 @@ import pydantic
 
 from agent6 import media, portable
 from agent6.harness import loop_conversation
+from agent6.sessions import objects
 
 # Every way a session can end; `SessionResult` says what each means.
 SessionEndReason = Literal[
@@ -287,6 +288,19 @@ def _load_state_object(path: pathlib.Path, what: str) -> dict[str, Any]:
     return raw
 
 
+def write_checkpoint(path: pathlib.Path, snapshot: SessionSnapshot) -> None:
+    """Write a numbered checkpoint after publishing its message objects.
+
+    Args:
+        path: The numbered file in the session's checkpoints directory.
+        snapshot: The provider-neutral state, with media omitted by its serializer.
+    """
+    record = objects.reference_fields(
+        snapshot.model_dump(mode="json"), path.parent.parent / "objects"
+    )
+    portable.atomic_write(path, json.dumps(record, separators=(",", ":")))
+
+
 def load_session_snapshot(path: pathlib.Path) -> SessionSnapshot:
     """Load a snapshot, `loop_state.json` or a checkpoint.
 
@@ -301,6 +315,8 @@ def load_session_snapshot(path: pathlib.Path) -> SessionSnapshot:
             and fork turn it into a refusal.
     """
     raw = _load_state_object(path, "run-state snapshot")
+    session_dir = path.parent.parent if path.parent.name == "checkpoints" else path.parent
+    raw = objects.materialize(raw, session_dir / "objects", record_path=path)
     version = raw.get("version")
     if version != SNAPSHOT_VERSION:
         raise ValueError(

@@ -10,6 +10,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import pathlib
+import shutil
 from collections.abc import Callable
 
 import agent6
@@ -131,6 +132,23 @@ def select_isolation(
         reporter.refuse(budget_err)
         raise preflight.SessionRefusedError(2)
     return selected
+
+
+def note_state_disk_space(state_dir: pathlib.Path, *, reporter: app_reporter.Reporter) -> None:
+    """Report low free space on the state filesystem without refusing the execution.
+
+    Args:
+        state_dir: The existing state directory whose filesystem holds the session.
+        reporter: Receives the note below ten percent free, or an inspection error.
+    """
+    try:
+        usage = shutil.disk_usage(state_dir)
+    except OSError as exc:
+        reporter.note(f"could not inspect free space at {state_dir}: {exc}")
+        return
+    if usage.free * 10 < usage.total:
+        percent = 100 * usage.free / usage.total
+        reporter.note(f"low disk space: {usage.free} bytes free ({percent:.1f}%) at {state_dir}")
 
 
 def install_inside_workspace(cwd: pathlib.Path) -> pathlib.Path | None:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import shutil
 import subprocess
 from typing import Any
 
@@ -146,6 +147,38 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     monkeypatch.setattr(session_runtime, "select_isolation", _none_isolation)
     monkeypatch.setattr(session_runtime, "select_isolation", _none_isolation)
     return repo
+
+
+@pytest.mark.parametrize("free", [90, 100, 110])
+def test_launch_reports_low_state_disk_space_without_refusing(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    free: int,
+) -> None:
+    """Fresh and resumed executions warn strictly below ten percent, without refusing work."""
+    repo = _setup(tmp_path, monkeypatch)
+    state = paths.state_dir(repo)
+    usage = shutil.disk_usage(repo)
+    seen: list[pathlib.Path] = []
+
+    def disk_usage(path: Any) -> Any:
+        seen.append(pathlib.Path(path))
+        return usage._replace(total=1000, used=1000 - free, free=free)
+
+    monkeypatch.setattr(shutil, "disk_usage", disk_usage)
+    monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
+    for command in (
+        ["run", "--session-id", "disk-test", "task"],
+        ["resume", "disk-test", "--steer", "another task"],
+    ):
+        assert cli_main(command) == 0
+        notice = capsys.readouterr().err
+        assert state in seen
+        assert ("low disk space" in notice) == (free < 100)
+        if free < 100:
+            assert f"{free} bytes" in notice and "9.0%" in notice and str(state) in notice
+        seen.clear()
 
 
 def test_a_failed_first_start_keeps_the_parked_task(

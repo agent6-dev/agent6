@@ -1392,6 +1392,26 @@ Retries share the call id and have separate request ids.
 Older transcripts may omit these ids and `outcome`.
 Secret-bearing request and response headers are redacted, and their credential values of at least eight characters are scrubbed wherever they appear in the record.
 [Attachment payloads are omitted](security.md#media-retention) and replaced with metadata, so these files cannot replay the attachment bytes.
+Each session keeps an `objects/` store: one file per distinct JSON value, named by the SHA-256 of its canonical JSON (`sort_keys=True`, compact separators) after redaction and media omission.
+A transcript's request holds a reference, `{"$object": "<sha256 hex>"}`, in place of each message (a Responses `input` item) and of its `system`, `instructions` and `tools` values; a numbered checkpoint references its messages the same way.
+An object is written before any record that references it, the pre-send record included, so an unchanged retry writes nothing new.
+`loop_state.json` and `turn_in_flight.json` stay full: they are recovery state.
+Readers materialize references, accept older full records, and raise `ObjectStoreError` naming a missing object and its record; `sessions transcript --json` prints materialized records.
+
+### Artifact pruning
+
+`sessions prune --older-than DAYS` removes `transcripts/`, `checkpoints/` and `objects/` together from finished sessions whose last execution ended more than DAYS ago, writing `pruned.json` first so an interrupted prune cannot reuse a sequence.
+The manifest, journal, receipt, recovery state and graph store stay.
+`sessions transcript` reports the prune, a fork at a removed checkpoint refuses with the same notice, and a resumed session continues its transcript sequence above the saved one.
+Nothing is deleted automatically and nothing is compressed.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `pruned_at` | `pydantic.types.AwareDatetime` | The UTC time pruning began. |
+| `counts` | `dict[Literal['transcripts', 'checkpoints', 'objects'], int]` | The file counts selected for removal in each directory. |
+| `last_transcript_seq` | `int` | The highest removed sequence, including earlier prunes. |
+
+### Attempt record
 
 Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/providers/provider_types.py).
 
@@ -1406,7 +1426,7 @@ Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/
 | `request` | `JSON` | The request formed for the provider. |
 | `request.url` | `JSON` | The URL dialled. |
 | `request.headers` | `JSON` | The request headers, with secret-bearing values redacted. |
-| `request.body` | `JSON` | The serialized request body, with attachment payloads omitted. |
+| `request.body` | `JSON` | The redacted body, with message and prompt references into objects/. |
 | `response` | `JSON` | What the attempt received before it ended. |
 | `response.status` | `JSON` | The HTTP status, or 0 when no response opened. |
 | `response.headers` | `JSON` | The response headers, with secret-bearing values redacted. |

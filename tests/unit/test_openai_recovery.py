@@ -21,6 +21,7 @@ from agent6.providers import (
 )
 from agent6.sessions import event_log
 from agent6.tools import dispatch
+from agent6.viewmodel import transcript_render
 from tests.unit.turn_context import turn_context
 
 _TOOLS = frozenset({"list_dir", "read_file"})
@@ -62,11 +63,6 @@ class _Response:
             ],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5},
         }
-
-
-def _transcripts(path: pathlib.Path) -> list[dict[str, Any]]:
-    docs = [json.loads(p.read_text(encoding="utf-8")) for p in path.glob("*.json")]
-    return sorted(docs, key=lambda doc: doc["seq"])
 
 
 def test_mixed_tag_and_fenced_calls_are_recovered_in_source_order() -> None:
@@ -251,7 +247,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     assert "answer = 42" in results[0]["content"]
     assert '"a.py"' in results[1]["content"]
 
-    recorded = _transcripts(transcripts)
+    recorded = transcript_render.load_transcripts(transcripts)
     assert recorded[0]["response"]["body"]["choices"][0]["message"]["content"] == model_text
     assert recorded[1]["request"]["body"] == request_bodies[1]
     journal_events = [json.loads(line) for line in journal.read_text().splitlines()]

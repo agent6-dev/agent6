@@ -5,19 +5,22 @@ from __future__ import annotations
 import dataclasses
 import json
 import pathlib
+from collections.abc import Iterator
 from typing import Any
+
+from agent6.sessions import objects
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class SearchText:
-    """Search input, its source file per line, and files whose evidence could not be read."""
+    """One transcript's search input or its read error."""
 
-    text: str
-    sources: tuple[pathlib.Path, ...]
-    errors: tuple[str, ...]
+    path: pathlib.Path
+    text: str = ""
+    error: str = ""
 
 
-def search_text(targets: list[pathlib.Path]) -> SearchText:
+def search_text(targets: list[pathlib.Path]) -> Iterator[SearchText]:
     """Read conversation content from every target's provider transcripts.
 
     System and developer messages carry the prompt and skill index, not conversation.
@@ -25,16 +28,17 @@ def search_text(targets: list[pathlib.Path]) -> SearchText:
     Args:
         targets: The session directories.
 
-    Returns:
-        JSON lines for rg, their source paths, and read errors.
+    Yields:
+        One file's JSON lines for rg or its read error.
     """
-    lines: list[str] = []
-    sources: list[pathlib.Path] = []
-    errors: list[str] = []
     for target in targets:
         for path in sorted((target / "transcripts").glob("*.json")):
             try:
-                record = json.loads(path.read_text(encoding="utf-8"))
+                record = objects.materialize(
+                    json.loads(path.read_text(encoding="utf-8")),
+                    target / "objects",
+                    record_path=path,
+                )
                 content: dict[str, Any] = (
                     {"outcome": record["outcome"]} if "outcome" in record else {}
                 )
@@ -59,7 +63,7 @@ def search_text(targets: list[pathlib.Path]) -> SearchText:
                                 if not isinstance(message, dict)
                                 or message.get("role") not in ("system", "developer")
                             ]
-                kept = json.dumps(content, indent=2, ensure_ascii=False).splitlines()
+                text = json.dumps(content, indent=2, ensure_ascii=False) + "\n"
             except (
                 OSError,
                 ValueError,
@@ -68,8 +72,6 @@ def search_text(targets: list[pathlib.Path]) -> SearchText:
                 AttributeError,
                 RecursionError,
             ) as exc:
-                errors.append(f"{path}: {exc}")
+                yield SearchText(path, error=f"{path}: {exc}")
                 continue
-            lines.extend(kept)
-            sources.extend([path] * len(kept))
-    return SearchText("\n".join(lines), tuple(sources), tuple(errors))
+            yield SearchText(path, text=text)

@@ -274,14 +274,20 @@ fi
 # The run.log TOTAL line is absent when the run times out, which undercounted
 # a 50-instance sweep by ~$3.7; this number survives regardless of how the
 # run ended.
-"$CONDA_PY" - <<'PYEOF' > /out/cost.json 2>/dev/null || true
-import glob, json
+AGENT6_PY=$(head -n 1 "$(command -v agent6)")
+"${AGENT6_PY#\#!}" - <<'PYEOF' > /out/cost.json
+from __future__ import annotations
+
+import glob, json, pathlib
+from agent6.sessions import objects
 total, calls = 0.0, 0
 for t in glob.glob("/out/state/*/sessions/runs/*/transcripts/*.json"):
     try:
         d = json.load(open(t))
     except Exception:
         continue
+    path = pathlib.Path(t)
+    d = objects.materialize(d, path.parent.parent / "objects", record_path=path)
     r = d.get("response")
     body = r.get("body") if isinstance(r, dict) else None
     u = body.get("usage") if isinstance(body, dict) else None

@@ -8,7 +8,7 @@ import pytest
 from agent6 import paths
 from agent6.providers import provider_types
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import history_cmds, history_transcripts
+from agent6.ui.cli import history_transcripts, sessions_transcript
 from agent6.viewmodel import transcript_render
 
 
@@ -32,7 +32,7 @@ def test_sessions_transcript_labels_an_unfinalized_record(
         request_body={"messages": [{"role": "user", "content": "pending request"}]},
     )
     assert (
-        history_cmds._cmd_history_transcript(
+        sessions_transcript.cmd_transcript(
             "unfinished", as_json=False, no_thinking=False, tools="both", seq="1"
         )
         == 0
@@ -41,7 +41,7 @@ def test_sessions_transcript_labels_an_unfinalized_record(
     assert "call 1: incomplete" in output
     assert "completed" not in output
     assert (
-        history_cmds._cmd_history_transcript(
+        sessions_transcript.cmd_transcript(
             "unfinished", as_json=True, no_thinking=False, tools="both", seq="1"
         )
         == 0
@@ -85,8 +85,8 @@ def test_history_search_accepts_incomplete_and_error_records(
     if error:
         with pytest.raises(provider_types.ProviderError), attempt.capture():
             raise provider_types.ProviderError(error)
-    search = history_transcripts.search_text([tmp_path])
-    assert search.errors == ()
+    (search,) = history_transcripts.search_text([tmp_path])
+    assert search.error == ""
     assert "pending request" in search.text
     assert f'"outcome": "{"failed" if error else "incomplete"}"' in search.text
     if error:

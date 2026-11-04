@@ -744,7 +744,7 @@ The structural defenses above confine a model that follows an injection.
 The read uses `Workspace.resolve_read` and `open_contained`, retaining hidden-path, regular-file and symlink-race checks.
 It reads media under the 10 MiB document cap plus one byte, checks image containers without decoding pixels, and recognizes PDFs by their header.
 
-Transcripts, snapshots and checkpoints omit recognized payloads and retain metadata (path, media type, SHA-256 and byte size).
+Transcripts, snapshots, checkpoints and shared message objects omit recognized payloads and retain metadata (path, media type, SHA-256 and byte size).
 A resume or fork needs a fresh `read_file`; it never reopens a saved path automatically.
 Streaming error excerpts that reach 8 KiB on a media request are omitted because clipping can split an echoed payload.
 

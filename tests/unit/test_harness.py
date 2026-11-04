@@ -4888,7 +4888,7 @@ def test_save_and_load_run_snapshot_round_trip(tmp_path: pathlib.Path) -> None:
 
 
 def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: pathlib.Path) -> None:
-    """After save, no .tmp file remains: the snapshot and its checkpoint are written atomically."""
+    """After save, no .tmp file remains: snapshot, checkpoint and objects are written atomically."""
     snap_path = tmp_path / "loop_state.json"
     wf = _wf(resume_state_path=snap_path)
     loop_resume.save_resume_snapshot(
@@ -4899,12 +4899,13 @@ def test_save_resume_snapshot_atomic_no_partial_tmp(tmp_path: pathlib.Path) -> N
         write_checkpoint=True,
     )
     assert snap_path.is_file()
-    # The per-turn checkpoint lands under checkpoints/; nothing else (no .tmp).
+    # The per-turn checkpoint lands under checkpoints/ and its values under objects/; no .tmp.
     assert (tmp_path / "checkpoints" / "0001.json").is_file()
     leftovers = sorted(p.name for p in tmp_path.iterdir() if p.name != snap_path.name)
-    assert leftovers == ["checkpoints"], f"unexpected leftover files: {leftovers}"
+    assert leftovers == ["checkpoints", "objects"], f"unexpected leftover files: {leftovers}"
     cp_leftovers = [p.name for p in (tmp_path / "checkpoints").iterdir()]
     assert cp_leftovers == ["0001.json"], f"unexpected checkpoint leftovers: {cp_leftovers}"
+    assert all(p.suffix == ".json" for p in (tmp_path / "objects").iterdir())
 
 
 def test_save_resume_snapshot_uses_durable_atomic_writer(
@@ -4933,7 +4934,9 @@ def test_save_resume_snapshot_uses_durable_atomic_writer(
         write_checkpoint=True,
     )
 
-    assert writes == [tmp_path / "checkpoints" / "0009.json", snap_path]
+    # The checkpoint's objects first, then the checkpoint, then the latest pointer.
+    assert writes[-2:] == [tmp_path / "checkpoints" / "0009.json", snap_path]
+    assert writes[:-2] and all(p.parent == tmp_path / "objects" for p in writes[:-2])
 
 
 def test_load_run_snapshot_rejects_version_mismatch(tmp_path: pathlib.Path) -> None:

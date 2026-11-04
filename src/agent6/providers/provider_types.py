@@ -22,6 +22,7 @@ from email import utils
 from typing import Any, Literal, Protocol
 
 from agent6 import media, paths, portable
+from agent6.sessions import objects, retention
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -220,23 +221,6 @@ def scrub_secret_values(text: str, headers: dict[str, str]) -> str:
     return text
 
 
-def _max_seq_in_dir(transcripts_dir: pathlib.Path) -> int:
-    """Return the highest seq recorded in the directory, or 0 when it holds none.
-
-    Args:
-        transcripts_dir: The sink's directory.
-
-    Returns:
-        The highest `<seq>` among the `<ts>-<seq>.json` files.
-    """
-    seqs = [
-        int(tail)
-        for p in transcripts_dir.glob("*.json")
-        if (tail := p.stem.rsplit("-", 1)[-1]).isdigit()
-    ]
-    return max(seqs, default=0)
-
-
 type TranscriptOutcome = Literal["incomplete", "completed", "failed", "interrupted", "aborted"]
 
 
@@ -276,7 +260,7 @@ class TranscriptAttempt:
             request: The request formed for the provider.
             request.url: The URL dialled.
             request.headers: The request headers, with secret-bearing values redacted.
-            request.body: The serialized request body, with attachment payloads omitted.
+            request.body: The redacted body, with message and prompt references into objects/.
             response: What the attempt received before it ended.
             response.status: The HTTP status, or 0 when no response opened.
             response.headers: The response headers, with secret-bearing values redacted.
@@ -311,9 +295,11 @@ class TranscriptAttempt:
         }
         text = scrub_secret_values(json.dumps(payload), self.request_headers)
         clean = json.loads(scrub_secret_values(text, self.response_headers))
-        portable.atomic_write(
-            self.path, json.dumps(media.omit_payloads(clean), indent=2, sort_keys=True)
+        clean = media.omit_payloads(clean)
+        clean["request"]["body"] = objects.reference_fields(
+            clean["request"]["body"], self.path.parent.parent / "objects"
         )
+        portable.atomic_write(self.path, json.dumps(clean, indent=2, sort_keys=True))
 
     @contextlib.contextmanager
     def capture(self) -> Generator[TranscriptAttempt]:
@@ -464,7 +450,7 @@ class TranscriptSink:
         paths.mkdir_for_real_user(transcripts_dir)
         self._dir = transcripts_dir
         self._lock = threading.Lock()
-        self._seq = _max_seq_in_dir(transcripts_dir)
+        self._seq = retention.last_sequence(transcripts_dir)
 
     def for_seat(self, seat: str) -> RoleTranscriptSink:
         """Return a view of this sink that stamps the seat on everything it records."""

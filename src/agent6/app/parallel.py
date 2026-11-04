@@ -25,6 +25,7 @@ from agent6.app import (
     lane_watch,
     parallel_results,
     preflight,
+    session_runtime,
     session_setup,
     stamps,
     workdirs,
@@ -126,6 +127,7 @@ def run_parallel(
         state_dir=origin_state, session_id=fanout_id, subdir=kinds.session_bucket("run")
     )
     layout.ensure()
+    session_runtime.note_state_disk_space(origin_state, reporter=reporter)
     stamps.write_session_manifest(
         layout,
         session_id=fanout_id,

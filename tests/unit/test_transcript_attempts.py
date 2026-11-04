@@ -15,6 +15,7 @@ import pytest
 
 from agent6 import portable
 from agent6.providers import openai, provider_types, request_headers, stream_lifecycle
+from agent6.sessions import objects
 
 _SECRET = "sk-transcript-secret-123456789"
 _USAGE = {
@@ -111,7 +112,8 @@ def test_stream_attempt_keeps_one_record_with_its_outcome(
     real_write = portable.atomic_write
 
     def write(path: pathlib.Path, data: str | bytes) -> None:
-        writes.append((path, json.loads(data)))
+        if path.parent.name != "objects":
+            writes.append((path, json.loads(data)))
         real_write(path, data)
 
     monkeypatch.setattr(portable, "atomic_write", write)
@@ -188,7 +190,10 @@ def test_redacted_attempt_is_on_disk_before_the_http_send(tmp_path: pathlib.Path
     pre_send: list[dict[str, Any]] = []
 
     def send(*args: Any, **kwargs: Any) -> Any:
-        pre_send.extend(json.loads(path.read_text()) for path in tmp_path.glob("*.json"))
+        for path in tmp_path.glob("*.json"):
+            raw = json.loads(path.read_text())
+            assert "$object" in raw["request"]["body"]["messages"][0]
+            pre_send.append(objects.materialize(raw, tmp_path.parent / "objects", record_path=path))
         assert len(pre_send) == 1, "request was sent without a transcript"
         raise httpx2.ConnectError("no route")
 
@@ -240,7 +245,7 @@ def test_redacted_attempt_is_on_disk_before_the_http_send(tmp_path: pathlib.Path
     assert _SECRET not in text and encoded not in text
     assert "payload_omitted" in text
     (path,) = tmp_path.glob("*.json")
-    final = json.loads(path.read_text())
+    final = objects.materialize(json.loads(path.read_text()), tmp_path.parent / "objects")
     assert final["request"] == pre_send[0]["request"]
     assert final["outcome"] == "failed"
 

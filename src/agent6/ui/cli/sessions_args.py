@@ -255,6 +255,16 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
             " or hold no work. Keep unstarted forks. Report kept clones with their paths and"
             " reasons."
         ),
+    ).add_mutually_exclusive_group()
+    sessions_prune.add_argument(
+        "--older-than",
+        type=int,
+        metavar="DAYS",
+        help=(
+            "Instead prune transcripts, checkpoints and objects of finished sessions whose last"
+            " execution ended more than DAYS ago. Keep recovery state, journals, receipts and"
+            " git data. DAYS must be nonnegative. Nothing is deleted automatically."
+        ),
     )
     sessions_prune.add_argument(
         "--delete-squashed",

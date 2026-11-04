@@ -619,6 +619,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
         sessions_findings,
         sessions_merge,
         sessions_show,
+        sessions_transcript,
     )
 
     if args.sessions_command == "list":
@@ -673,6 +674,12 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
     if args.sessions_command == "commits":
         return sessions_cmds._cmd_commits(session_id=args.session_id)
     if args.sessions_command == "prune":
+        if args.older_than is not None:
+            from agent6.app import session_prune
+
+            return session_prune.prune_artifacts(
+                paths.state_dir(pathlib.Path.cwd()), args.older_than
+            )
         return sessions_merge._cmd_prune(
             delete_squashed=args.delete_squashed, config_paths=args.config
         )
@@ -683,7 +690,7 @@ def _dispatch_sessions(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR09
             session_id=args.session_id, asks=args.asks, yes=args.yes
         )
     if args.sessions_command == "transcript":
-        return history_cmds._cmd_history_transcript(
+        return sessions_transcript.cmd_transcript(
             args.session_id,
             as_json=args.as_json,
             no_thinking=args.no_thinking,

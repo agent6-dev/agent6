@@ -20,6 +20,7 @@ import pytest
 
 from agent6 import media, portable
 from agent6.providers import AnthropicProvider, ProviderError, TranscriptSink, provider_types
+from agent6.sessions import objects
 
 
 class _FakeResponse:
@@ -580,6 +581,6 @@ def test_synthetic_media_labels_retain_source_path(
     )
     text = saved.read_text()
     assert encoded not in text
-    body = json.loads(text)["request"]["body"]
+    body = objects.materialize(json.loads(text), saved.parent.parent / "objects")["request"]["body"]
     last = body["input" if responses else "messages"][-1]["content"][-1]
     assert last["source"]["source_path"] == path

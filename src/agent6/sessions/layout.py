@@ -89,7 +89,7 @@ class SessionLayout:
 
     @property
     def checkpoints_dir(self) -> pathlib.Path:
-        """The per-turn checkpoints, `<NNNN>.json`, each the snapshot bytes of that turn."""
+        """The per-turn checkpoints, `<NNNN>.json`, with references to shared message objects."""
         return self.session_dir / "checkpoints"
 
     @property

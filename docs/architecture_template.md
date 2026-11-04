@@ -149,8 +149,8 @@ flowchart TD
     notices -->|continue| pre
 ```
 
-**Snapshot before every call.** `loop_state.json` is rewritten in the session directory before each provider request, with a per-turn copy under `checkpoints/<NNNN>.json`.
-`agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` from the matching checkpoint.
+**Snapshot before every call.** `loop_state.json` is rewritten in full in the session directory before each provider request, with a per-turn snapshot under `checkpoints/<NNNN>.json` referencing shared message objects.
+`agent6 resume` rehydrates from `loop_state.json` and `agent6 fork --at-turn N` materializes the matching checkpoint.
 With the per-call transcripts, an interrupted run replays deterministically up to the next model call.
 A turn's tool calls and each result that returned are recorded in `turn_in_flight.json` while they dispatch.
 A resume after a death there runs none of the turn's calls again: the model gets the results that returned, and one line for each other call saying it was interrupted and not re-run.
@@ -445,10 +445,12 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `cursor.json` | the curator's current task pointer |
 | `logs.jsonl` | the structured event stream |
 | `loop_state.json` | the latest resume snapshot, written before each LLM call and at turn end |
-| `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, all kept, carrying the run's chain tip (`head_sha`) and the curator `graph_version` |
+| `checkpoints/<NNNN>.json` | pre-call snapshots with message references, the run's chain tip (`head_sha`) and the curator `graph_version`; kept until explicit pruning |
 | `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
 | `plan.md` | the plan itself, in plan sessions |
-| `transcripts/<timestamp>-<seq>.json` | provider attempt records with redacted requests, outcomes and response evidence |
+| `transcripts/<timestamp>-<seq>.json` | provider attempt records with redacted request references, outcomes and response evidence |
+| `objects/<sha256 hex>.json` | distinct sanitized JSON values shared by transcripts and numbered checkpoints |
+| `pruned.json` | explicit artifact pruning time, file counts and last transcript sequence |
 | `worker.pid` | the live worker's pid and start time; every surface reads liveness here |
 | `approvals/`, `questions/` | one `<id>.answer` file per prompt, whichever front-end answers; `approvals/` also holds the session-wide allow and deny marker per scope |
 | `frontends/` | one file per front-end registered to answer this run, named for its pid |
@@ -470,7 +472,7 @@ The planner re-reads it before every turn and is shown it whenever it differs fr
 **A fork** clones a source run's state as of a checkpoint into a new session dir with a new id, and gives a run fork a linked git worktree of its own:
 
 - adds the worktree detached at the turn's sha (`<[workspace].base_dir>/<repo-id>/<new>`)
-- copies the checkpoint as the new `loop_state.json` and seed `checkpoints/0000.json`
+- materializes the checkpoint into the new `loop_state.json` and writes seed `checkpoints/0000.json` with references to the child's own objects
 - rebuilds the curator DAG at the checkpoint's `graph_version`
 - records the fork lineage and worktree in the [manifest](formats.md#sessionmanifest), including the repository git directory the jail grants
 - cuts the chain ref `refs/agent6/<new>/head` at the turn's sha, and the visible `agent6/<new>` branch there too under `[git].branch_per_run`; a plan or ask fork commits nothing and cuts neither

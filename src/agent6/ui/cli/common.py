@@ -313,10 +313,10 @@ def resolve_target(target: str) -> sessions_layout.SessionLayout | None:
 
 
 def newest_layout_holding(
-    repo_root: pathlib.Path, child: str
+    repo_root: pathlib.Path, *children: str
 ) -> sessions_layout.SessionLayout | None:
-    """Return the newest session across every bucket whose dir holds the child, or None."""
-    candidates = [d for d in all_session_dirs(repo_root) if (d / child).is_dir()]
+    """Return the newest session holding any named child, or None."""
+    candidates = [d for d in all_session_dirs(repo_root) if any((d / c).exists() for c in children)]
     if not candidates:
         return None
     from agent6.viewmodel import session_mtime  # noqa: PLC0415

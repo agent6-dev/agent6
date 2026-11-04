@@ -30,7 +30,7 @@ from agent6.config import Config, ConfigError, layer
 from agent6.graph import replay, storage
 from agent6.harness import loop_snapshot
 from agent6.sandbox import detect
-from agent6.sessions import id, layout
+from agent6.sessions import id, layout, retention
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import newest_session_dir
@@ -163,8 +163,11 @@ def _select_checkpoint_path(
     if at_turn in turns:
         return src.checkpoint_path(at_turn)
     avail = ", ".join(str(t) for t in turns) or "none"
+    pruned = retention.read_pruned(src.session_dir)
     reporter.error(
-        f"no checkpoint at turn {at_turn} for {src.session_id}. Available turns: {avail}"
+        pruned.notice(src.session_id)
+        if pruned is not None
+        else f"no checkpoint at turn {at_turn} for {src.session_id}. Available turns: {avail}"
     )
     return None
 
@@ -188,7 +191,7 @@ class _ForkPlan:
     Attributes:
         src: The source session.
         dst: The fork's layout.
-        checkpoint_path: The snapshot the fork seeds from.
+        checkpoint: The materialized snapshot the fork seeds from.
         graph_version: The DAG version to rebuild at.
         forked_from_turn: The turn the fork continues from.
         from_seed: The snapshot is the seed a forked source started from, which holds that
@@ -209,7 +212,7 @@ class _ForkPlan:
 
     src: layout.SessionLayout
     dst: layout.SessionLayout
-    checkpoint_path: pathlib.Path
+    checkpoint: loop_snapshot.SessionSnapshot
     graph_version: int
     forked_from_turn: int
     from_seed: bool
@@ -265,14 +268,13 @@ def _plan_fork(
     if src is None:
         raise _ForkRefusedError(2)
 
-    checkpoint_path = _select_checkpoint_path(src, at_turn, reporter=reporter)
-    if checkpoint_path is None:
-        raise _ForkRefusedError(2)
-
     try:
+        checkpoint_path = _select_checkpoint_path(src, at_turn, reporter=reporter)
+        if checkpoint_path is None:
+            raise _ForkRefusedError(2)
         checkpoint = loop_snapshot.load_session_snapshot(checkpoint_path)
     except (OSError, ValueError) as exc:
-        reporter.error(f"failed to load checkpoint {checkpoint_path}: {exc}")
+        reporter.error(f"failed to load checkpoint for {src.session_id}: {exc}")
         raise _ForkRefusedError(1) from exc
 
     # A damaged manifest fails loud: the mode must never fall open to "run".
@@ -335,7 +337,7 @@ def _plan_fork(
         dst=layout.SessionLayout(
             state_dir=state, session_id=child_id, subdir=kinds.session_bucket(src_mode)
         ),
-        checkpoint_path=checkpoint_path,
+        checkpoint=checkpoint,
         graph_version=checkpoint.graph_version,
         forked_from_turn=checkpoint.next_turn,
         # A fork's checkpoint 0 is its seed: it holds the source's turn, not turn 0.
@@ -487,9 +489,8 @@ def _materialize_fork(
     dst.ensure()
 
     # The resume pointer and origin checkpoint, then the DAG as of the checkpoint.
-    blob = plan.checkpoint_path.read_text(encoding="utf-8")
-    portable.atomic_write(dst.session_dir / "loop_state.json", blob)
-    portable.atomic_write(dst.checkpoint_path(0), blob)
+    portable.atomic_write(dst.session_dir / "loop_state.json", plan.checkpoint.model_dump_json())
+    loop_snapshot.write_checkpoint(dst.checkpoint_path(0), plan.checkpoint)
     _copy_dag(src, dst, graph_version=plan.graph_version)
     # The files the fork's commits leave out: observed in a fresh worktree, given for an
     # existing checkout (where the run's own work still reads untracked), else the source's.

@@ -22,6 +22,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from agent6.providers import result_text
+from agent6.sessions import objects
 from agent6.viewmodel import format
 
 # Equals ELISION_PREFIX in harness/compaction_elision.py (a test pins it), so the read model
@@ -83,7 +84,7 @@ def load_transcripts(transcripts_dir: pathlib.Path) -> list[dict[str, Any]]:
         except (OSError, ValueError):
             continue
         if isinstance(obj, dict):
-            out.append(obj)
+            out.append(objects.materialize(obj, transcripts_dir.parent / "objects", record_path=p))
     out.sort(key=transcript_seq)
     return out
 

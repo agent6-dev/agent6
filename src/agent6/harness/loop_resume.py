@@ -244,7 +244,7 @@ def save_resume_snapshot(
         # The checkpoint first, then the latest pointer, so a fork keeps a durable target.
         if write_checkpoint:
             cp_dir = harness.resume_state_path.parent / "checkpoints"
-            portable.atomic_write(cp_dir / f"{next_turn:04d}.json", blob)
+            loop_snapshot.write_checkpoint(cp_dir / f"{next_turn:04d}.json", snapshot)
         portable.atomic_write(harness.resume_state_path, blob)
     except OSError as exc:
         if not harness.snapshot_write_failed:

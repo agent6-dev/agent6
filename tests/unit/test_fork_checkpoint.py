@@ -143,6 +143,7 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_i
 
     state.system, state.tool_calls, state.root_task_id = "s", 0, None
     conversation = loop_conversation.Conversation()
+    conversation.notice("task")
     if with_image:
         assistant = conversation.assistant(
             [{"type": "tool_use", "id": "i1", "name": "read_file", "input": {"path": "page.png"}}]
@@ -160,10 +161,12 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_i
     assert snap.is_file()
     assert cp.is_file(), "per-turn checkpoint must be written"
 
+    stored = json.loads(cp.read_text())
+    assert all(set(message) == {"$object"} for message in stored["messages"])
+    assert json.loads(snap.read_text())["messages"][0]["role"] == "user"
     loaded = loop_snapshot.load_session_snapshot(cp)
     if with_image:
-        for path in (snap, cp):
-            text = path.read_text()
+        for text in (snap.read_text(), loaded.model_dump_json()):
             assert "cHJpdmF0ZSBwaXhlbHM=" not in text
             assert "payload_omitted" in text and "page.png" in text
         restored = loop_conversation.Conversation.from_wire(loaded.messages)
@@ -175,7 +178,6 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_i
     assert loaded.next_turn == 3
     assert loaded.head_sha == head
     assert loaded.graph_version == 7
-    # loop_state.json holds the identical SessionSnapshot bytes as the checkpoint.
     assert json.loads(snap.read_text())["head_sha"] == head
 
 
@@ -829,15 +831,19 @@ def test_latest_fork_does_not_run_ahead_of_loop_state(
     )
 
 
+@pytest.mark.parametrize("referenced", [False, True])
 def test_fork_at_turn_selects_that_checkpoint(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, referenced: bool
 ) -> None:
     """`--at-turn N` forks from checkpoint N, not the latest."""
     repo = tmp_path / "repo"
     head = _git_repo(repo)
     monkeypatch.chdir(repo)
     state = paths.state_dir(repo)
-    _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    src = _seed_source_run(state, "sunny-otter-AAAA11", head_sha=head, turns=(1, 2, 3))
+    if referenced:
+        cp = src.checkpoint_path(2)
+        loop_snapshot.write_checkpoint(cp, loop_snapshot.load_session_snapshot(cp))
 
     rc = fork._cmd_fork((), "sunny-otter", at_turn=2, new_session_id="kid-CCCC33", no_run=True)
     assert rc == 0

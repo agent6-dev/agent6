@@ -66,6 +66,7 @@ depends_on = [
   "agent6.sessions.lock",
   "agent6.sessions.manifest",
   "agent6.sessions.process",
+  "agent6.sessions.retention",
   "agent6.task_text",
   "agent6.terminal",
   "agent6.tools",
@@ -124,7 +125,9 @@ depends_on = [
   "agent6.sessions.layout",
   "agent6.sessions.lock",
   "agent6.sessions.manifest",
+  "agent6.sessions.objects",
   "agent6.sessions.process",
+  "agent6.sessions.retention",
   "agent6.terminal",
   "agent6.tools",
   "agent6.tools.schema",
@@ -186,6 +189,7 @@ depends_on = [
   # subrun lands a finished lane's session dir in the ORIGIN state dir; the
   # bucket layout has one owner rather than a second spelling here.
   "agent6.sessions.layout",
+  "agent6.sessions.objects",
   "agent6.sessions.process",
   "agent6.task_text",  # the session.start headline is the operator's own words
   "agent6.terminal",  # a changed path's name printed on one line
@@ -224,6 +228,8 @@ depends_on = [
   "agent6.paths",
   "agent6.portable",
   "agent6.sandbox",  # die_with_parent ties the claude_code child to the agent
+  "agent6.sessions.objects",
+  "agent6.sessions.retention",
 ]
 
 [[modules]]
@@ -444,6 +450,7 @@ depends_on = [
   "agent6.sessions.ipc",
   "agent6.sessions.layout",
   "agent6.sessions.manifest",
+  "agent6.sessions.objects",
   "agent6.sessions.process",
   "agent6.task_text",
   "agent6.terminal",
@@ -927,3 +934,11 @@ depends_on = ["agent6.errors", "agent6.evidence", "agent6.sessions.manifest", "a
 [[modules]]
 path = "agent6.media"
 depends_on = ["agent6.kinds"]
+
+[[modules]]
+path = "agent6.sessions.objects"
+depends_on = ["agent6.portable"]
+
+[[modules]]
+path = "agent6.sessions.retention"
+depends_on = []

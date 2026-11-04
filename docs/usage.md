@@ -192,6 +192,7 @@ agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
 agent6 sessions compare <ids> # >=2 runs ranked by the reviewer model (a mechanical ranking when it is unavailable or fails), or a fan-out's saved verdict; --rejudge
 agent6 sessions prune         # delete merged agent6/* branches and worktrees, report the rest; squash and tasks merges (`tasks` is the default) need --delete-squashed
+agent6 sessions prune --older-than 30 # delete stored transcripts, checkpoints and objects of sessions ended more than 30 days ago
 agent6 sessions remove [<id>] # delete one run's history; asks [y/N] on a controlling terminal, otherwise requires an id or --yes; --yes skips the question, --asks clears saved asks
 agent6 sessions dir [<id>]    # the repo's run history, or that session's directory
 agent6 exec ID -- <command>   # a command inside the run's jail and network, on your terminal or pipe
@@ -200,6 +201,12 @@ agent6 forward ID 8000        # reach a port inside the run's network; --local-p
 agent6 history search <text>  # grep this repository's sessions' persisted data; --regex
 agent6 ps                     # live sessions of every repository on the machine; --lanes, --json
 ```
+
+`sessions prune --older-than DAYS` removes `transcripts/`, `checkpoints/` and `objects/` together from finished sessions whose last execution ended more than DAYS ago, prints each session's id and file counts, and leaves a `pruned.json` receipt; the manifest, logs, receipt, recovery state and graph store stay.
+Nothing is deleted automatically, and there is no retention setting.
+The [Formats reference](formats.md#provider-transcripts) describes the object store and the receipt.
+
+At launch, a note names the state directory when its filesystem has less than 10% free; low space never refuses a session.
 
 `history search` searches the conversations, not the system prompt, the skill index or the tool declarations.
 It keeps the matches it read if a file disappears or another search error occurs, prints `search incomplete: some files were not read.` and the error, and exits with code 2.

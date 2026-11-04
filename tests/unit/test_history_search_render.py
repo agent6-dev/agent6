@@ -5,9 +5,11 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import pathlib
 import shutil
+import tracemalloc
 
 import pytest
 
@@ -170,6 +172,52 @@ def test_search_reports_unreadable_transcripts_without_dropping_other_hits(
     out = capsys.readouterr()
     assert "operator NEEDLE" in out.out
     assert "search incomplete" in out.err and "0001.json" in out.err
+
+
+@pytest.mark.parametrize("large_match", [False, True])
+def test_search_memory_is_bounded_by_one_transcript(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    large_match: bool,
+) -> None:
+    """A corpus larger than the memory ceiling streams through ripgrep without accumulating."""
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is required")
+    monkeypatch.chdir(tmp_path)
+    layout = sessions_layout.SessionLayout(paths.state_dir(tmp_path), "stream-search")
+    layout.ensure()
+    layout.logs_path.write_text('{"type": "session.start"}\n')
+    for index in range(40):
+        record = {
+            "request": {
+                "body": {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": (f"needle {index}: " if large_match else "")
+                            + "x" * 1_000_000,
+                        }
+                    ]
+                }
+            },
+            "response": {"body": {"text": f"needle {index}"}},
+        }
+        (layout.transcripts_dir / f"{index:04d}.json").write_text(json.dumps(record))
+        del record
+    tracemalloc.start()
+    try:
+        assert (
+            history_cmds._cmd_history_search("needle", fixed=True, session_id=layout.session_id)
+            == 0
+        )
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert "needle 39" in capsys.readouterr().out
+    assert peak < 28_000_000, f"search retained {peak:,} bytes for a 40 MB corpus"
+    with capsys.disabled():
+        print(f"40 MB search peak (large_match={large_match}): {peak:,} bytes")
 
 
 def _rg_match(path: str, line: str, col: int) -> str:
@@ -373,7 +421,10 @@ def test_byte_offsets_convert_to_characters_on_non_ascii_lines() -> None:
         _rg_match_bytes("/s/sessions/runs/r1/logs.jsonl", event, "NEEDLE")
     )
     assert "NEEDLE found mid prose" in hits[0].snippet
-    assert "needle found mid prose" in hits[0].key
+    assert (
+        hits[0].key
+        == hashlib.sha256("café naïve résumé needle found mid prose".encode()).hexdigest()
+    )
 
 
 def test_ascii_escaped_and_raw_utf8_encodings_share_one_key() -> None:

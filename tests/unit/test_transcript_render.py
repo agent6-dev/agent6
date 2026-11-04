@@ -586,11 +586,11 @@ def test_load_transcripts_sorted_by_seq(tmp_path: pathlib.Path) -> None:
     assert transcript_render.load_transcripts(tmp_path / "nope") == []
 
 
-def test_cmd_history_transcript_end_to_end(
+def test_cmd_transcript_end_to_end(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """`agent6 sessions transcript <run>` folds the run's transcripts; --json is the raw escape."""
-    from agent6.ui.cli import history_cmds
+    from agent6.ui.cli import sessions_transcript
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
     repo = tmp_path / "repo"
@@ -602,14 +602,14 @@ def test_cmd_history_transcript_end_to_end(
     (tdir / "20260101-000001.json").write_text(json.dumps(_OPENAI[0]), encoding="utf-8")
     (tdir / "20260101-000002.json").write_text(json.dumps(_OPENAI[1]), encoding="utf-8")
 
-    rc = history_cmds._cmd_history_transcript(
+    rc = sessions_transcript.cmd_transcript(
         "my-run", as_json=False, no_thinking=False, tools="both", seq=""
     )
     assert rc == 0
     out = capsys.readouterr().out
     assert "Transcript: my-run" in out and "-> read_file(" in out and "FULL FILE CONTENTS" in out
 
-    rc_json = history_cmds._cmd_history_transcript(
+    rc_json = sessions_transcript.cmd_transcript(
         "my-run", as_json=True, no_thinking=False, tools="both", seq="2"
     )
     assert rc_json == 0
@@ -617,17 +617,17 @@ def test_cmd_history_transcript_end_to_end(
     assert [t["seq"] for t in data] == [2]  # --seq windowed the raw transcripts
 
     assert (
-        history_cmds._cmd_history_transcript(
+        sessions_transcript.cmd_transcript(
             "nope", as_json=False, no_thinking=False, tools="both", seq=""
         )
         == 2
     )
 
 
-def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
+def test_cmd_transcript_latest_uses_log_activity_not_dir_touch(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.ui.cli import history_cmds
+    from agent6.ui.cli import sessions_transcript
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
     repo = tmp_path / "repo"
@@ -644,7 +644,7 @@ def test_cmd_history_transcript_latest_uses_log_activity_not_dir_touch(
     process.register_frontend(runs / "older-run", 12345)
 
     assert (
-        history_cmds._cmd_history_transcript(
+        sessions_transcript.cmd_transcript(
             "", as_json=True, no_thinking=False, tools="both", seq=""
         )
         == 0
@@ -658,7 +658,7 @@ def test_history_transcript_skips_sessions_without_a_transcripts_dir(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Transcript selection skips a newer session without a transcripts directory."""
-    from agent6.ui.cli import history_cmds
+    from agent6.ui.cli import sessions_transcript
 
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "st"))
     repo = tmp_path / "repo"
@@ -677,7 +677,7 @@ def test_history_transcript_skips_sessions_without_a_transcripts_dir(
     os.utime(newest / "logs.jsonl", (2000, 2000))
 
     assert (
-        history_cmds._cmd_history_transcript(
+        sessions_transcript.cmd_transcript(
             "", as_json=True, no_thinking=False, tools="both", seq=""
         )
         == 0

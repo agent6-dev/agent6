@@ -1,24 +1,28 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 history search` and the `sessions graph` and `sessions transcript` verbs."""
+"""`agent6 history search` and the `sessions graph` verb."""
 
 from __future__ import annotations
 
 import base64
+import bisect
+import contextlib
 import dataclasses
+import hashlib
 import json
 import pathlib
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
+import tempfile
+import threading
+from collections.abc import Iterator, Sequence
 
 from agent6 import paths
 from agent6.graph import storage
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import common, history_transcripts, task_tree
-from agent6.viewmodel import transcript_render
 
 
 def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
@@ -73,22 +77,13 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
         text=True,
     )
     hits = _parse_rg_matches(completed.stdout)
-    conversation = history_transcripts.search_text(targets)
-    searched = subprocess.run(
-        [*argv, "--", query],
-        input=conversation.text,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    hits.extend(_parse_rg_matches(searched.stdout, sources=conversation.sources))
-    incomplete = bool(conversation.errors) or any(
-        result.returncode not in (0, 1) for result in (completed, searched)
-    )
+    transcript_hits, errors = _search_transcripts([*argv, "--", query], targets)
+    hits.extend(transcript_hits)
+    incomplete = bool(errors) or completed.returncode not in (0, 1)
     if incomplete:
         common.error("search incomplete: some files were not read.")
-        sys.stderr.write(completed.stderr + searched.stderr)
-        for error in conversation.errors:
+        sys.stderr.write(completed.stderr)
+        for error in errors:
             common.error(error)
     if hits or not incomplete:
         _render_history_hits(
@@ -106,9 +101,7 @@ class _SearchHit:
         when: The short clock time, or "" when the line is not a timestamped event.
         kind: The event type, or the file's basename for a non-event file.
         snippet: The window around the match.
-        key: The content identity for collapsing the same text across storage encodings:
-            the whole matched JSON value (a transcript's `TASK:` prefix stripped), else the
-            snippet window, normalized.
+        key: The hash of the normalized content identity across storage encodings.
     """
 
     session_id: str
@@ -116,6 +109,62 @@ class _SearchHit:
     kind: str
     snippet: str
     key: str
+
+
+def _search_transcripts(
+    argv: list[str], targets: list[pathlib.Path]
+) -> tuple[list[_SearchHit], list[str]]:
+    """Feed one transcript at a time while draining ripgrep's matches.
+
+    Args:
+        argv: The operator's ripgrep query.
+        targets: The session directories.
+
+    Returns:
+        The hits and read errors, including a failed ripgrep's stderr.
+    """
+    sources: list[tuple[int, pathlib.Path]] = []
+    errors: list[str] = []
+    hits: list[_SearchHit] = []
+    with (
+        tempfile.TemporaryFile(mode="w+t") as stderr,
+        subprocess.Popen(
+            argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=stderr, text=True
+        ) as process,
+    ):
+        assert process.stdin is not None and process.stdout is not None
+        stdin = process.stdin
+
+        def feed() -> None:
+            first_line = 1
+            try:
+                for chunk in history_transcripts.search_text(targets):
+                    if chunk.error:
+                        errors.append(chunk.error)
+                        continue
+                    sources.append((first_line, chunk.path))
+                    first_line += chunk.text.count("\n")
+                    stdin.write(chunk.text)
+            except OSError as exc:
+                errors.append(f"transcript search input: {exc}")
+            finally:
+                with contextlib.suppress(OSError):
+                    stdin.close()
+
+        writer = threading.Thread(target=feed, name="transcript-search")
+        writer.start()
+        try:
+            for line in process.stdout:
+                hits.extend(_parse_rg_matches(line, sources=sources))
+            process.wait()
+        finally:
+            if process.poll() is None:
+                process.terminate()
+            writer.join()
+        if process.wait() not in (0, 1):
+            stderr.seek(0)
+            errors.append(stderr.read() or "transcript search failed")
+    return hits, errors
 
 
 _SNIPPET_HALF = 70  # chars kept either side of the match in a hit's snippet
@@ -225,7 +274,9 @@ def _field_snippet(raw: str, start: int, end: int) -> str | None:
     return None
 
 
-def _parse_rg_matches(rg_json: str, *, sources: tuple[pathlib.Path, ...] = ()) -> list[_SearchHit]:
+def _parse_rg_matches(
+    rg_json: str, *, sources: Sequence[tuple[int, pathlib.Path]] = ()
+) -> list[_SearchHit]:
     """Turn `rg --json` output into readable hits.
 
     A match line is parsed as a logs.jsonl event when it is one, for its type and
@@ -235,7 +286,7 @@ def _parse_rg_matches(rg_json: str, *, sources: tuple[pathlib.Path, ...] = ()) -
 
     Args:
         rg_json: The `rg --json` output.
-        sources: The source file per line when rg searched transcript content on stdin.
+        sources: Each transcript's first stdin line number and source path.
 
     Returns:
         The hits, in rg's order.
@@ -250,7 +301,7 @@ def _parse_rg_matches(rg_json: str, *, sources: tuple[pathlib.Path, ...] = ()) -
             continue
         data = rec.get("data", {})
         path = (
-            sources[data["line_number"] - 1]
+            sources[bisect.bisect_right(sources, data["line_number"], key=lambda s: s[0]) - 1][1]
             if sources
             else pathlib.Path(_rg_bytes(data.get("path")).decode("utf-8", "replace"))
         )
@@ -269,7 +320,7 @@ def _parse_rg_matches(rg_json: str, *, sources: tuple[pathlib.Path, ...] = ()) -
                 when=when,
                 kind=kind,
                 snippet=snippet,
-                key=_match_core(raw, start, end) or snippet,
+                key=hashlib.sha256((_match_core(raw, start, end) or snippet).encode()).hexdigest(),
             )
         )
     return hits
@@ -534,119 +585,4 @@ def _cmd_history_graph(session_id: str) -> int:
     print()
     for line in task_tree.task_tree_lines({nid: nodes[nid].model_dump() for nid in sorted(nodes)}):
         print(line)
-    return 0
-
-
-def _parse_seq_window(spec: str) -> tuple[int, int] | None:
-    """Parse a `--seq` window: "" for all, "5" for one call, "3-7" for a range.
-
-    Args:
-        spec: The `--seq` value.
-
-    Returns:
-        `(first, last)`, or None for all.
-
-    Raises:
-        ValueError: The spec is junk or reversed.
-    """
-    spec = spec.strip()
-    if not spec:
-        return None
-    if "-" in spec:
-        a, b = spec.split("-", 1)
-        lo, hi = int(a), int(b)
-        if lo > hi:
-            raise ValueError(f"reversed window {spec!r}")
-        return lo, hi
-    n = int(spec)
-    return n, n
-
-
-def _transcript_layout(cwd: pathlib.Path, session_id: str) -> sessions_layout.SessionLayout | int:
-    """Resolve the session whose transcripts to render.
-
-    Args:
-        cwd: The repo.
-        session_id: The session, or "" for the most recent one that has a transcripts dir.
-
-    Returns:
-        The layout, or the exit code of a printed error.
-    """
-    if session_id:
-        try:
-            return common.resolve_session_layout(cwd, session_id)
-        except id.SessionIdError as exc:
-            common.error(f"{exc}")
-            return 2
-    found = common.newest_layout_holding(cwd, "transcripts")
-    if found is None:
-        common.error(f"no sessions with transcripts under {paths.state_dir(cwd)}")
-        return 2
-    print(f"[agent6] transcript for most recent session: {found.session_id}", file=sys.stderr)
-    return found
-
-
-def _cmd_history_transcript(
-    session_id: str, *, as_json: bool, no_thinking: bool, tools: str, seq: str
-) -> int:
-    """Render a session's full LLM conversation from its lossless per-call transcripts.
-
-    The transcripts (`<run>/transcripts/*.json`) are the complete record, needing no join
-    with logs.jsonl: assistant text and thinking plus every tool call with its full I/O,
-    and a marker for every attempt that did not complete.
-    `agent6 attach` and `history search` are the terse event timeline.
-
-    Args:
-        session_id: The session, or "" for the newest with transcripts.
-        as_json: Print the raw attempt records as JSON.
-        no_thinking: Leave the thinking blocks out.
-        tools: How much of each tool call to show.
-        seq: The `--seq` call window.
-
-    Returns:
-        The exit code; 2 for a bad window or an unresolvable session.
-    """
-    layout = _transcript_layout(pathlib.Path.cwd(), session_id)
-    if isinstance(layout, int):
-        return layout
-
-    try:
-        window = _parse_seq_window(seq)
-    except ValueError:
-        common.error(f"--seq expects N or N-M with N <= M, got {seq!r}")
-        return 2
-
-    transcripts = transcript_render.load_transcripts(layout.transcripts_dir)
-    if not transcripts:
-        common.error(f"session {layout.session_id} has no transcripts")
-        return 2
-
-    if as_json:
-        if window is not None:
-            lo, hi = window
-            transcripts = [
-                t for t in transcripts if lo <= transcript_render.transcript_seq(t) <= hi
-            ]
-        print(json.dumps(transcripts, indent=2, ensure_ascii=False))
-        return 0
-
-    # Fold the full set (the per-seq walk needs every call), then window the messages.
-    messages = transcript_render.fold_conversation(transcripts)
-    if not messages and not any(transcript_render.drives_conversation(t) for t in transcripts):
-        # A review-only dir: every round-trip is a side-call seat, so the fold prints nothing.
-        print(
-            f"session {layout.session_id} has only side-call transcripts (review seats /"
-            " compaction); --json dumps them raw.",
-            file=sys.stderr,
-        )
-        return 2
-    if window is not None:
-        lo, hi = window
-        messages = [t for t in messages if lo <= t.seq <= hi]
-    print(
-        transcript_render.render_markdown(
-            messages, session_id=layout.session_id, show_thinking=not no_thinking, tools=tools
-        ),
-        end="",
-    )
     return 0

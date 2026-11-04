@@ -15,7 +15,7 @@ from typing import Any
 import pydantic
 
 from agent6.providers import provider_types
-from agent6.sessions import event_schema
+from agent6.sessions import event_schema, retention
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src/agent6"
@@ -546,8 +546,31 @@ def build_markdown() -> str:
         "Secret-bearing request and response headers are redacted, and their credential values "
         "of at least eight characters are scrubbed wherever they appear in the record.\n"
         "[Attachment payloads are omitted](security.md#media-retention) and replaced with "
-        "metadata, so these files cannot replay the attachment bytes.\n\n"
-        f"Source: [`providers.provider_types.TranscriptAttempt.write`]"
+        "metadata, so these files cannot replay the attachment bytes.\n"
+        "Each session keeps an `objects/` store: one file per distinct JSON value, named by the "
+        "SHA-256 of its canonical JSON (`sort_keys=True`, compact separators) after redaction "
+        "and media omission.\n"
+        'A transcript\'s request holds a reference, `{"$object": "<sha256 hex>"}`, in place of '
+        "each message (a Responses `input` item) and of its `system`, `instructions` and "
+        "`tools` values; a numbered checkpoint references its messages the same way.\n"
+        "An object is written before any record that references it, the pre-send record "
+        "included, so an unchanged retry writes nothing new.\n"
+        "`loop_state.json` and `turn_in_flight.json` stay full: they are recovery state.\n"
+        "Readers materialize references, accept older full records, and raise "
+        "`ObjectStoreError` naming a missing object and its record; `sessions transcript "
+        "--json` prints materialized records.\n\n"
+        "### Artifact pruning\n\n"
+        "`sessions prune --older-than DAYS` removes `transcripts/`, `checkpoints/` and "
+        "`objects/` together from finished sessions whose last execution ended more than DAYS "
+        "ago, writing `pruned.json` first so an interrupted prune cannot reuse a sequence.\n"
+        "The manifest, journal, receipt, recovery state and graph store stay.\n"
+        "`sessions transcript` reports the prune, a fork at a removed checkpoint refuses with "
+        "the same notice, and a resumed session continues its transcript sequence above the "
+        "saved one.\n"
+        "Nothing is deleted automatically and nothing is compressed.\n\n"
+        + _table(model_fields(retention.Pruned))
+        + "\n\n### Attempt record\n\n"
+        + f"Source: [`providers.provider_types.TranscriptAttempt.write`]"
         f"({_BLOB}src/agent6/providers/provider_types.py).\n\n"
         + _table(
             dictionary_fields(

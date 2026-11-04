@@ -299,6 +299,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         KeyboardInterrupt: An interrupt before the loop, journaled and re-raised.
         Exception: A crash before or after the loop, journaled and re-raised.
     """
+    session_runtime.note_state_disk_space(state_dir, reporter=reporter)
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
     session: session_runtime.SessionProviders | None = None
