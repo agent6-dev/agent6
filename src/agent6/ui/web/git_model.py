@@ -13,7 +13,7 @@ import hashlib
 import pathlib
 from typing import Any
 
-from agent6.ui.web import highlight
+from agent6.ui.web import diff_highlight, highlight
 from agent6.vcs import git_diff, git_files, git_history, git_read
 from agent6.viewmodel import format
 
@@ -511,6 +511,10 @@ def diff_payload(
         head_digest: The head input's SHA-256 digest, or null when unavailable.
         context: File text for a full-context change without text hunks, or null.
         patch: The unified patch, subject to the byte cap.
+        old_spans: Base paths to per-line [start, end, class] spans in UTF-16 units.
+            Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
+        new_spans: Head paths to per-line [start, end, class] spans in UTF-16 units.
+            Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
         binary: Whether Git reports a binary patch.
         truncated: Whether the displayed content reached its cap.
         max_bytes: The byte cap, or null when whole content was requested.
@@ -580,6 +584,14 @@ def diff_payload(
         "path": path,
         "old_path": old_path,
         "patch": patch,
+        "old_spans": {
+            old_path or path: diff_highlight.side_spans(
+                patch, diff.before, old_path or path, "old", context=context
+            )
+        },
+        "new_spans": {
+            path: diff_highlight.side_spans(patch, diff.after, path, "new", context=context)
+        },
         "binary": git_history.is_binary_patch(patch),
         "truncated": truncated,
         "max_bytes": cap,

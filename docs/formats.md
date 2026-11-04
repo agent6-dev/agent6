@@ -1917,6 +1917,8 @@ Source: [`ui.web.model._diff_payload`](https://github.com/agent6-dev/agent6/blob
 | --- | --- | --- |
 | `cumulative` | `JSON` | Whether the patch covers the chain rather than one step. |
 | `patch` | `JSON` | The unified patch for the selected step or chain. |
+| `old_spans` | `JSON` | Base paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
+| `new_spans` | `JSON` | Head paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
 
 ### viewmodel.config_view._leaf_json
 
@@ -2120,6 +2122,8 @@ Source: [`ui.web.git_model.diff_payload`](https://github.com/agent6-dev/agent6/b
 | `path` | `JSON` | The file's head path, or its base path for a deletion. |
 | `old_path` | `JSON` | The base path for a rename, or an empty string. |
 | `patch` | `JSON` | The unified patch, subject to the byte cap. |
+| `old_spans` | `JSON` | Base paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
+| `new_spans` | `JSON` | Head paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
 | `binary` | `JSON` | Whether Git reports a binary patch. |
 | `truncated` | `JSON` | Whether the displayed content reached its cap. |
 | `max_bytes` | `JSON` | The byte cap, or null when whole content was requested. |
@@ -2239,6 +2243,8 @@ Source: [`ui.web.review_routes._diff`](https://github.com/agent6-dev/agent6/blob
 | `base_digest` | `JSON` | The base input's SHA-256 digest, or null when unavailable. |
 | `head_digest` | `JSON` | The head input's SHA-256 digest, or null when unavailable. |
 | `patch` | `JSON` | The unified patch between the recorded trees. |
+| `old_spans` | `JSON` | Base paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
+| `new_spans` | `JSON` | Head paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
 | `binary` | `JSON` | Whether Git reports a binary patch. |
 | `truncated` | `JSON` | Whether the patch reached its byte cap. |
 | `max_bytes` | `JSON` | The byte cap, or null when whole content was requested. |

@@ -2032,7 +2032,7 @@ def test_step_diff_serves_one_step_or_the_cumulative_chain(
     )
     status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}")
     payload = json.loads(raw)
-    assert set(payload) == {"cumulative", "patch"}
+    assert set(payload) == {"cumulative", "new_spans", "old_spans", "patch"}
     patch = str(payload["patch"])
     assert status == 200 and "three" in patch and "two" not in patch
     status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}&cumulative=1")

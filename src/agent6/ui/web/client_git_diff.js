@@ -113,6 +113,8 @@ function gitDiffViewer(body) {
     const patch = el('div', 'gf-patch'); box.appendChild(patch);
     const parsed = parseUnifiedDiff(d.patch || '');
     const file = parsed[0] || { preamble: [], hunks: [], binary: d.binary };
+    file.oldPath ||= f.old_path || f.path;
+    file.newPath ||= f.path;
     if (fullContext && d.context != null && (mode === 'inline' || mode === 'split')) {
       patch.appendChild(el('div', 'muted gf-note', 'This change has no text hunks; showing the file.'));
       file.hunks = [{header: 'Full file', lines: splitLines(d.context).map((text, n) => ({kind: 'ctx', text, old: n + 1, new: n + 1}))}];
@@ -123,8 +125,8 @@ function gitDiffViewer(body) {
       mode = 'inline';
     }
     let sideText = null;
-    if (mode === 'inline') patch.appendChild(renderUnified(parsed, true));
-    else if (mode === 'split') patch.appendChild(renderSplit(file));
+    if (mode === 'inline') patch.appendChild(renderUnified(parsed, true, d.old_spans, d.new_spans));
+    else if (mode === 'split') patch.appendChild(renderSplit(file, d.old_spans, d.new_spans));
     else sideText = await showSide(patch, ctx, f, file, mode, current, whole, () => showDiff(ctx, i, true, fullContext));
     if (!current()) return;
     await blameDiff(head, box, patch, ctx, f, d, mode, current, sideText);

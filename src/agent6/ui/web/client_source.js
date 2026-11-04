@@ -59,6 +59,20 @@ function treeView(root, fileRow, folderNote, folded, folderMark) {
 }
 
 // --- unified diffs ---------------------------------------------------------------
+// Git quotes control characters and UTF-8 bytes in paths, using C escapes and octal bytes.
+function diffPath(raw) {
+  let path = raw.split('\t')[0];
+  if (path.startsWith('"')) {
+    const bytes = [], encoder = new TextEncoder();
+    const escapes = {a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, '\\': 92};
+    for (const m of path.slice(1, -1).matchAll(/\\([0-7]{1,3}|[abfnrtv"\\])|([^\\]+)/g)) {
+      if (m[2]) bytes.push(...encoder.encode(m[2]));
+      else bytes.push(/^[0-7]/.test(m[1]) ? parseInt(m[1], 8) : escapes[m[1]]);
+    }
+    path = new TextDecoder().decode(new Uint8Array(bytes));
+  }
+  return path === '/dev/null' ? '' : path.replace(/^[ab]\//, '');
+}
 // Parse a unified diff into files, each { preamble: [line], hunks: [{ header, oldStart,
 // newStart, lines }], binary }. A hunk line is { kind: 'ctx' | 'add' | 'del' | 'meta',
 // text (without its leading space, + or -), old, new }: its line number on each side, null
@@ -68,7 +82,7 @@ function parseUnifiedDiff(text) {
   const lines = splitLines(text);
   const files = [];
   let file = null, hunk = null, o = 0, n = 0, oLeft = 0, nLeft = 0;
-  const newFile = () => { file = { preamble: [], hunks: [], binary: false }; files.push(file); hunk = null; };
+  const newFile = () => { file = { preamble: [], hunks: [], binary: false, oldPath: '', newPath: '' }; files.push(file); hunk = null; };
   for (const line of lines) {
     const m = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line);
     if (m) {
@@ -89,6 +103,8 @@ function parseUnifiedDiff(text) {
     if (!file || line.startsWith('diff ')) newFile();
     hunk = null;
     file.preamble.push(line);
+    if (line.startsWith('--- ')) file.oldPath = diffPath(line.slice(4));
+    if (line.startsWith('+++ ')) file.newPath = diffPath(line.slice(4));
     if (/^Binary files .* differ$/.test(line)) file.binary = true;
   }
   return files;
@@ -102,26 +118,33 @@ const gutterWidth = (max) => String(Math.max(1, max)).length + 'ch';
 
 // Render parsed files as one unified patch: a <pre class="diff"> with one span per line
 // carrying `data-old` and `data-new`; `numbered` draws the two gutters.
-function renderUnified(files, numbered) {
+function renderUnified(files, numbered, oldSpans = {}, newSpans = {}) {
   const box = el('pre', 'diff' + (numbered ? ' numbered' : ''));
   let max = 0;
   for (const f of files) for (const h of f.hunks) for (const l of h.lines) max = Math.max(max, l.old || 0, l.new || 0);
   box.style.setProperty('--gw', gutterWidth(max));
-  const line = (cls, text, old, nw) => {
+  const line = (cls, text, old, nw, marker = '', spans) => {
     const s = el('span', 'dl' + (cls ? ' ' + cls : ''));
     if (old != null) s.dataset.old = old;
     if (nw != null) s.dataset.new = nw;
     if (numbered) { s.appendChild(gutter(old)); s.appendChild(gutter(nw)); }
-    s.appendChild(el('span', 'source-code', text));
+    const code = el('span', 'source-code');
+    if (marker) code.appendChild(el('span', 'diff-marker', marker));
+    appendSpans(code, text, spans);
+    s.appendChild(code);
     s.appendChild(document.createTextNode('\n'));
     return s;
   };
   const mark = { add: '+', del: '-', ctx: ' ' };
   for (const f of files) {
+    const old = oldSpans[f.oldPath] || [], news = newSpans[f.newPath] || [];
     for (const p of f.preamble) box.appendChild(line(null, p, null, null));
     for (const h of f.hunks) {
       box.appendChild(line('hunk', h.header, null, null));
-      for (const l of h.lines) box.appendChild(line(l.kind === 'ctx' ? null : l.kind, l.kind === 'meta' ? l.text : mark[l.kind] + l.text, l.old, l.new));
+      for (const l of h.lines) {
+        const spans = l.kind === 'meta' ? null : l.kind === 'del' ? old[l.old - 1] : news[l.new - 1] || old[l.old - 1];
+        box.appendChild(line(l.kind === 'ctx' ? null : l.kind, l.text, l.old, l.new, mark[l.kind], spans));
+      }
     }
   }
   return box;
@@ -130,7 +153,8 @@ function renderUnified(files, numbered) {
 // Render one parsed file side by side: a row per pair of lines, deletions beside the
 // additions that replace them, context on both sides; a row carries `data-old` and
 // `data-new`, each cell its own gutter.
-function renderSplit(file) {
+function renderSplit(file, oldSpans = {}, newSpans = {}) {
+  const old = oldSpans[file.oldPath] || [], news = newSpans[file.newPath] || [];
   const box = el('div', 'dsplit numbered');
   let max = 0;
   for (const h of file.hunks) for (const l of h.lines) max = Math.max(max, l.old || 0, l.new || 0);
@@ -139,7 +163,11 @@ function renderSplit(file) {
     const kind = l ? (side === 'old' ? (l.kind === 'del' ? ' del' : '') : (l.kind === 'add' ? ' add' : '')) : ' ds-empty';
     const c = el('span', 'ds-cell' + kind);
     c.appendChild(gutter(l ? (side === 'old' ? l.old : l.new) : null));
-    if (l) c.appendChild(el('span', 'source-code', l.text));
+    if (l) {
+      const code = el('span', 'source-code');
+      appendSpans(code, l.text, side === 'old' ? old[l.old - 1] : news[l.new - 1]);
+      c.appendChild(code);
+    }
     return c;
   };
   let segment = 0;

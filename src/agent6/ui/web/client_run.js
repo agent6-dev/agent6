@@ -559,6 +559,8 @@ function paintRun(cards, s) {
   // chain (newest first) with a cumulative toggle, hidden truthfully when the
   // model owns git (no chain) or nothing is committed yet.
   cards.diff.innerHTML = '';
+  cards._diffGeneration = (cards._diffGeneration || 0) + 1;
+  cards._diffCache ||= new Map();
   // An ask or a plan never commits: no card, as the shells card goes without a shell.
   cards.diff.parentElement.style.display = s.mode === 'ask' || s.mode === 'plan' ? 'none' : '';
   const steps = (s.steps || []).slice().reverse();
@@ -589,22 +591,31 @@ function paintRun(cards, s) {
       body.innerHTML = '';
       syncCum();
       cards._diffPick.cumulative = cum.checked;
-      if (!sel.value) {
-        cards._stepState = null; paintDetails(cards, s, null); body.appendChild(renderDiff(s.latest_diff || '')); return;
+      const request = ++cards._diffGeneration;
+      const current = () => request === cards._diffGeneration && body.isConnected;
+      const selected = sel.value, sha = selected || steps[0].sha;
+      if (!selected) {
+        cards._stepState = null; paintDetails(cards, s, null);
+        body.appendChild(renderDiff({patch: s.latest_diff || ''}));
       }
+      const url = cards._base + '/diff?sha=' + encodeURIComponent(sha) + '&cumulative=' + (cum.checked ? '1' : '0');
       try {
-        const d = await getJSON(cards._base + '/diff?sha=' + encodeURIComponent(sel.value) + '&cumulative=' + (cum.checked ? '1' : '0'));
+        if (!cards._diffCache.has(url)) cards._diffCache.set(url, getJSON(url).catch(e => { cards._diffCache.delete(url); throw e; }));
+        const d = await cards._diffCache.get(url);
+        if (!current()) return;
         if (cum.checked && d.cumulative === false) { cum.checked = false; cards._diffPick.cumulative = false; toast('this run has no base to accumulate from; showing the single step'); }
-        body.appendChild(renderDiff(d.patch));
-        const st = await getJSON(cards._base + '?step=' + encodeURIComponent(sel.value));
+        body.innerHTML = ''; body.appendChild(renderDiff(d));
+        if (!selected) return;
+        const st = await getJSON(cards._base + '?step=' + encodeURIComponent(selected));
+        if (!current()) return;
         cards._stepState = st; paintDetails(cards, st, st.as_of);
-      } catch (e) { body.appendChild(el('div', 'muted', e.message)); }
+      } catch (e) { if (current()) body.appendChild(el('div', 'muted', e.message)); }
     };
     sel.onchange = show; cum.onchange = show;
     show();
   }
 }
 
-function renderDiff(text) {
-  return renderUnified(parseUnifiedDiff(text), false);
+function renderDiff(diff) {
+  return renderUnified(parseUnifiedDiff(diff.patch), false, diff.old_spans, diff.new_spans);
 }

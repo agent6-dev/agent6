@@ -15,7 +15,7 @@ from agent6 import errors, paths, review_records
 from agent6.app import review_actions
 from agent6.sessions import layout
 from agent6.ui import spawn
-from agent6.ui.web import git_model, highlight
+from agent6.ui.web import diff_highlight, git_model, highlight
 from agent6.vcs import git_diff, git_files, git_history, git_read
 from agent6.viewmodel import listing, receipt, review, scan_session_log
 
@@ -181,6 +181,10 @@ def _diff(
         base_digest: The base input's SHA-256 digest, or null when unavailable.
         head_digest: The head input's SHA-256 digest, or null when unavailable.
         patch: The unified patch between the recorded trees.
+        old_spans: Base paths to per-line [start, end, class] spans in UTF-16 units.
+            Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
+        new_spans: Head paths to per-line [start, end, class] spans in UTF-16 units.
+            Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
         binary: Whether Git reports a binary patch.
         truncated: Whether the patch reached its byte cap.
         max_bytes: The byte cap, or null when whole content was requested.
@@ -220,6 +224,12 @@ def _diff(
         base_digest=diff.base_digest,
         head_digest=diff.head_digest,
         patch=patch,
+        old_spans={
+            old_path or new_path: diff_highlight.side_spans(
+                patch, diff.before, old_path or new_path, "old"
+            )
+        },
+        new_spans={new_path: diff_highlight.side_spans(patch, diff.after, new_path, "new")},
         binary=git_history.is_binary_patch(patch),
         truncated=truncated,
         max_bytes=cap,

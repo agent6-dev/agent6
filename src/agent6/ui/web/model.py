@@ -19,7 +19,8 @@ from agent6.app import confine, workdirs
 from agent6.config import ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices
 from agent6.sessions import layout, manifest, process
-from agent6.vcs import git_read
+from agent6.ui.web import diff_highlight
+from agent6.vcs import git_history, git_read
 from agent6.viewmodel import (
     MachineSummary,
     config_view,
@@ -153,6 +154,10 @@ def _diff_payload(
 
     Attributes:
         patch: The unified patch for the selected step or chain.
+        old_spans: Base paths to per-line [start, end, class] spans in UTF-16 units.
+            Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
+        new_spans: Head paths to per-line [start, end, class] spans in UTF-16 units.
+            Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
 
         cumulative: Whether the patch covers the chain rather than one step.
 
@@ -172,7 +177,16 @@ def _diff_payload(
     patch = git_read.diff_range(repo, base, sha) if whole else git_read.commit_diff(repo, sha)
     if not patch:
         return None, f"no diff for {sha[:12]} ({miss})"
-    return {"cumulative": whole, "patch": patch}, ""
+    if not whole:
+        parents = git_history.commit_info(repo, sha).parents
+        base = parents[0] if parents else git_read.EMPTY_TREE
+    old_spans, new_spans = diff_highlight.revision_spans(repo, base, sha, patch)
+    return {
+        "cumulative": whole,
+        "patch": patch,
+        "old_spans": old_spans,
+        "new_spans": new_spans,
+    }, ""
 
 
 def draft_dir_paths(cwd: pathlib.Path) -> list[pathlib.Path]:

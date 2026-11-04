@@ -487,6 +487,7 @@ banned-from = [
     "agent6.ui.tui.theme",
     "agent6.ui.web.actions",
     "agent6.ui.web.auth",
+    "agent6.ui.web.diff_highlight",
     "agent6.ui.web.git_model",
     "agent6.ui.web.highlight",
     "agent6.ui.web.model",
