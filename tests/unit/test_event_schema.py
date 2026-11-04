@@ -125,7 +125,11 @@ def test_session_lifecycle_names_keep_creation_resume_and_end_distinct() -> None
         ("session.end", {"reason": "done", "turns": 1, "all_passed": 1}, "all_passed.*bool"),
         ("loop.pin.restored", {"pins": "bad", "count": 1}, "pins.*list"),
         ("graph.update", {"nodes": [], "cursor": None}, "nodes.*object"),
-        ("loop.review.freeform", {"panel_id": "p", "execution_id": "e", "ts": "fake"}, "unknown"),
+        (
+            "loop.review.skipped",
+            {"panel_id": "p", "execution_id": "e", "reason": "r", "ts": "fake"},
+            "unknown",
+        ),
     ],
 )
 def test_checker_rejects_invalid_writes(

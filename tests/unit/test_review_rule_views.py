@@ -32,10 +32,10 @@ def start_event(**changes: Any) -> dict[str, Any]:
 def test_rule_metadata_survives_start_completion_and_wire_round_trip() -> None:
     rows = [
         start_event(),
-        {"type": "loop.review.freeform", "panel_id": "panel", "execution_id": "exec"},
+        {"type": "loop.review.skipped", "panel_id": "panel", "execution_id": "exec", "reason": "r"},
     ]
     view = state.fold_session(rows).review
-    assert view.completion == "complete"
+    assert view.completion == "skipped"
     assert view.rules_complete is True
     assert view.rule_sources == (review_records.RuleSource("AGENTS.md", "abc123", 9),)
     wire = review.as_dict(view)

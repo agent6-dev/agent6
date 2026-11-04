@@ -739,15 +739,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `version` | `int` | Review-state version after the action. |
 | `execution_id` | `str` | Execution identifier. |
 
-### loop.review.freeform
-
-**Support: public.** A standalone review used free-form output.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `panel_id` | `str` | Review panel identifier. |
-| `execution_id` | `str` | Execution identifier. |
-
 ### loop.review.panel
 
 **Support: public.** A review panel completed and recorded its evidence and blocking decision.

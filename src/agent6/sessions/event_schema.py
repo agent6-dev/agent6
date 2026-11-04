@@ -708,14 +708,6 @@ EVENTS: tuple[EventSpec, ...] = (
         ),
     ),
     EventSpec(
-        "loop.review.freeform",
-        "A standalone review used free-form output.",
-        (
-            FieldSpec("panel_id", "str", True, "Review panel identifier."),
-            FieldSpec("execution_id", "str", True, "Execution identifier."),
-        ),
-    ),
-    EventSpec(
         "loop.review.panel",
         "A review panel completed and recorded its evidence and blocking decision.",
         (

@@ -283,7 +283,6 @@ _PANEL_EVENTS = frozenset(
         "loop.review.seat",
         "loop.review.panel",
         "loop.review.skipped",
-        "loop.review.freeform",
     }
 )
 _ACTION_EVENTS = frozenset(
@@ -349,10 +348,6 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
             rules_complete=start.rules_complete,
             rules_reason=start.rules_reason,
         )
-    elif kind == "loop.review.freeform":
-        if old is None or old.execution_id != event.get("execution_id"):
-            raise ReviewReadError("freeform review has no matching start")
-        panel = dataclasses.replace(old, completion="complete")
     elif kind == "loop.review.skipped":
         skipped = _Skipped.model_validate(event)
         panel = dataclasses.replace(
