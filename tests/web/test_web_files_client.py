@@ -312,6 +312,139 @@ assert.equal(toggle['aria-expanded'], 'true');
 """)
 
 
+def test_ignored_toggle_is_worktree_only_and_remembers_the_listing_and_read_option() -> None:
+    """Ignored rows need a remembered opt-in; the same choice reaches file reads and badges."""
+    _run(r"""
+const requests = [];
+getJSON = async url => {
+  requests.push(url);
+  if (url === '/api/git/refs') return {head:{sha:'tip'},refs:[]};
+  if (url.startsWith('/api/git/tree')) {
+    const ignored = url.includes('ignored=1'), worktree = url.includes('rev=WORKTREE');
+    return {rev:worktree ? 'WORKTREE' : 'tip',ignored,
+      files:ignored ? [{path:'plan.md',kind:'file',size:7,state:'ignored'}] : [],truncated:false};
+  }
+  return {text:'# Plan\n',lines:1,spans:[],rendered_html:'<h1>Plan</h1>',
+    binary:false,truncated:false};
+};
+await renderFiles(1, 'HEAD');
+assert.equal(view.querySelector('.files-ignored').hidden, true);
+await renderFiles(1, 'WORKTREE');
+let toggle = view.querySelector('.files-ignored');
+assert.equal(toggle.hidden, false);
+assert.equal(toggle['aria-pressed'], 'false');
+assert.equal(view.querySelector('.gf'), null);
+await toggle.onclick();
+assert.equal(toggle['aria-pressed'], 'true');
+assert.equal(view.querySelector('.gf-st').textContent, 'I');
+assert.equal(view.querySelector('.gf-st').title, '1 ignored');
+await view.querySelector('.gf').onclick();
+assert.ok(requests.some(url => url.startsWith('/api/git/text?') && url.includes('ignored=1')));
+assert.ok(view.querySelector('.md-view'));
+await renderFiles(1, 'WORKTREE');
+toggle = view.querySelector('.files-ignored');
+assert.equal(toggle['aria-pressed'], 'true');
+assert.equal(view.querySelector('.gf-st').textContent, 'I');
+await toggle.onclick();
+assert.equal(view.querySelector('.gf'), null);
+await renderFiles(1, 'HEAD');
+assert.equal(view.querySelector('.files-ignored').hidden, true);
+assert.ok(!requests[requests.length-1].includes('ignored=1'));
+""")
+
+
+def test_markdown_mode_switches_content_and_blame_and_survives_reopening() -> None:
+    """The remembered markdown mode changes visibility without losing source or blame state."""
+    _run(r"""
+const answer = {text:'# Heading\n',lines:1,spans:[],digest:'same',
+  rendered_html:'<h1 id="heading">Heading</h1>\n',binary:false,truncated:false};
+async function open() {
+  const opening = renderFiles(1, 'HEAD', 'README.md'); await tick();
+  pending[pending.length - 1].resolve(answer); await opening;
+}
+await open();
+let modes = view.querySelector('.files-md-mode');
+assert.ok(modes, 'markdown toggle missing');
+let [rendered, source] = modes.children;
+assert.equal(rendered['aria-pressed'], 'true');
+assert.equal(source['aria-pressed'], 'false');
+assert.equal(view.querySelector('.md-view').hidden, false);
+assert.equal(view.querySelector('.files-source').hidden, true);
+assert.equal(view.querySelector('.files-blame').hidden, true);
+source.onclick();
+assert.equal(source['aria-pressed'], 'true');
+assert.equal(view.querySelector('.md-view').hidden, true);
+assert.equal(view.querySelector('.files-source').hidden, false);
+assert.ok(view.querySelector('.src').textContent.includes('# Heading'));
+assert.equal(view.querySelector('.files-blame').hidden, false);
+const blaming = view.querySelector('.files-blame').onclick(); await tick();
+rendered.onclick();
+pending[pending.length - 1].resolve({digest:'same',lines:[]}); await blaming;
+assert.equal(view.querySelector('.files-source').hidden, true);
+source.onclick();
+await open();
+modes = view.querySelector('.files-md-mode');
+[rendered, source] = modes.children;
+assert.equal(source['aria-pressed'], 'true', 'source choice lost on reopening');
+assert.equal(view.querySelector('.md-view').hidden, true);
+rendered.onclick();
+await open();
+assert.equal(view.querySelector('.files-md-mode').children[0]['aria-pressed'], 'true',
+  'rendered choice lost on reopening');
+assert.equal(view.querySelector('.md-view').hidden, false);
+""")
+
+
+def test_markdown_images_use_authenticated_blob_reads_and_opaque_data_urls() -> None:
+    """An inline API image cannot send a bearer token; the client fetches its bytes first."""
+    _run(r"""
+const url = '/api/git/blob?rev=old&path=logo.png';
+const image = el('img'); image.dataset.blobSrc = url;
+const setHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML').set;
+const queryAll = Element.prototype.querySelectorAll;
+Object.defineProperty(Element.prototype, 'innerHTML', {set(html) {
+  setHTML.call(this, html);
+  if (this.cls.has('md-view')) this.appendChild(image);
+}});
+Element.prototype.querySelectorAll = function(selector) {
+  return selector === 'img[data-blob-src]' ? this.children.filter(c => c === image)
+    : queryAll.call(this, selector);
+};
+let fetched = '';
+globalThis.getBlob = async request => { fetched = request; return new Blob(['pixels']); };
+globalThis.FileReader = class {
+  readAsDataURL(blob) {
+    blob.text().then(text => {
+      this.result = 'data:image/png;base64,' + Buffer.from(text).toString('base64');
+      this.onload();
+    });
+  }
+};
+const opening = renderFiles(1, 'HEAD', 'README.md'); await tick();
+pending[0].resolve({text:'![Logo](logo.png)',lines:1,spans:[],
+  rendered_html:'<p><img data-blob-src="' + url + '" alt="Logo"></p>',
+  binary:false,truncated:false});
+await opening; await new Promise(setImmediate);
+assert.equal(fetched, url, 'image bytes did not use getBlob');
+assert.equal(image.src, 'data:image/png;base64,cGl4ZWxz', 'image lacks an opaque data URL');
+""")
+
+
+def test_markdown_anchor_query_survives_the_resolved_file_selection() -> None:
+    """Resolving HEAD to a commit must not discard a table-of-contents destination."""
+    _run(r"""
+remember(MARKDOWN_MODE_KEY, 'source');
+const opening = renderFiles(1, 'HEAD', 'README.md', new URLSearchParams('anchor=heading'));
+await tick();
+pending[0].resolve({text:'# Heading\n',lines:1,spans:[],
+  rendered_html:'<h1 id="heading">Heading</h1>\n',binary:false,truncated:false});
+await opening;
+assert.equal(location.hash, '#/files/old/README.md?anchor=heading');
+assert.equal(view.querySelector('.files-md-mode').children[1]['aria-pressed'], 'true',
+  'an anchor discarded the remembered source choice');
+""")
+
+
 def test_blame_groups_stop_at_sides_paths_gaps_and_absent_cells() -> None:
     """Grouping never joins unrelated displayed lines, even when the sha matches."""
     _run("""

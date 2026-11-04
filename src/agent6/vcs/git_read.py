@@ -161,19 +161,27 @@ def paths_dirty(path: pathlib.Path, rel_paths: tuple[str, ...]) -> bool:
     return bool(res.stdout.strip())
 
 
-def porcelain_entries(path: pathlib.Path) -> list[tuple[str, str]]:
+def porcelain_entries(path: pathlib.Path, *, ignored: bool = False) -> list[tuple[str, str]]:
     """Return the status code and repo-relative path of every changed or untracked file.
 
     NUL-separated, so any filename round-trips; a rename's source path is skipped.
 
     Args:
         path: The repository.
+        ignored: Include Git's matching ignored entries, from every exclude source.
 
     Returns:
-        The (code, path) pairs.
+        The (code, path) pairs, including ignored directories when requested.
     """
     fields = git_command.nul_fields(
-        path, "status", "--porcelain=v1", "-z", "--untracked-files=all", check=False
+        path,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        *(("--ignored=matching",) if ignored else ()),
+        check=False,
+        env_extra={"GIT_OPTIONAL_LOCKS": "0"},
     )
     out: list[tuple[str, str]] = []
     i = 0

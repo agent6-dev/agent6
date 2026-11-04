@@ -115,7 +115,9 @@ def read_blob(path: pathlib.Path, sha: str, *, max_bytes: int) -> Blob:
     return Blob(size, out)
 
 
-def worktree_blob(path: pathlib.Path, name: str, *, max_bytes: int) -> Blob | None:
+def worktree_blob(
+    path: pathlib.Path, name: str, *, max_bytes: int, ignored: bool = False
+) -> Blob | None:
     """Return a working-tree file's bytes, read from disk.
 
     Only a path `worktree_entry` names is opened; no ancestor or leaf symlink is followed,
@@ -125,6 +127,7 @@ def worktree_blob(path: pathlib.Path, name: str, *, max_bytes: int) -> Blob | No
         path: The repository.
         name: The repository-relative path.
         max_bytes: The most bytes read; a larger file comes back as its size only.
+        ignored: Permit a file Git reports ignored.
 
     Returns:
         The blob, or None when git lists no file there or it is not a regular file.
@@ -138,7 +141,7 @@ def worktree_blob(path: pathlib.Path, name: str, *, max_bytes: int) -> Blob | No
             or ".." in parts
             or pathlib.PurePosixPath(name).is_absolute()
             or not full.resolve(strict=True).is_relative_to(root)
-            or not git_history.worktree_entry(path, name)
+            or not git_history.worktree_entry(path, name, ignored=ignored)
         ):
             return None
         with os.fdopen(_open_regular(root, parts), "rb") as fh:
@@ -297,8 +300,7 @@ def blame_lines(
     end_line = start_line + lines - 1
     working = rev == git_history.WORKTREE
     if working and (
-        git_history.worktree_entry(path, name) == "untracked"
-        or not git_history.head_commit(path)[0]
+        git_history.worktree_entry(path, name) != "tracked" or not git_history.head_commit(path)[0]
     ):
         return tuple(
             BlameLine(n, "", "not committed", "", name, n) for n in range(start_line, end_line + 1)
@@ -362,7 +364,7 @@ class TreeFile:
         path: The repository-relative path.
         size: The size in bytes; a symlink's is its target's length, a submodule's 0.
         kind: "file", "symlink" or "submodule".
-        state: "tracked", "untracked" or "modified" in the working tree, else "".
+        state: "tracked", "untracked", "modified" or "ignored" in the working tree, else "".
     """
 
     path: str
@@ -401,11 +403,12 @@ def tree_files(path: pathlib.Path, rev: str) -> tuple[TreeFile, ...]:
     return tuple(rows)
 
 
-def worktree_tree_files(path: pathlib.Path) -> tuple[TreeFile, ...]:
-    """Return the working tree's files: the index plus untracked files `.gitignore` keeps.
+def worktree_tree_files(path: pathlib.Path, *, ignored: bool = False) -> tuple[TreeFile, ...]:
+    """Return working-tree files, excluding Git's ignored files unless requested.
 
     Args:
         path: The repository.
+        ignored: Include files matched by any of Git's exclude sources.
 
     Returns:
         The entries on disk with their size and kind, sorted by path; a tracked file gone
@@ -414,33 +417,39 @@ def worktree_tree_files(path: pathlib.Path) -> tuple[TreeFile, ...]:
     entries = git_command.nul_fields(
         path, "ls-files", "-z", "-t", "--stage", "--cached", "--others", "--exclude-standard"
     )
-    changed: set[str] = set()
-    status = iter(
-        git_command.nul_fields(
-            path,
-            "status",
-            "--porcelain=v1",
-            "-z",
-            "--untracked-files=no",
-            env_extra={"GIT_OPTIONAL_LOCKS": "0"},
+    status = git_read.porcelain_entries(path, ignored=ignored)
+    changed = {name for code, name in status if code not in {"??", "!!"}}
+    ignored_names = [name for code, name in status if code == "!!"]
+    directories = [name for name in ignored_names if name.endswith("/")]
+    if directories:
+        # Matching directory rules collapse descendants in status; Git expands them here.
+        ignored_names = [name for name in ignored_names if not name.endswith("/")] + list(
+            git_command.nul_fields(
+                path,
+                "ls-files",
+                "-z",
+                "--others",
+                "--ignored",
+                "--exclude-standard",
+                "--",
+                *directories,
+                env_extra=git_read.LITERAL_PATHSPECS,
+            )
         )
-    )
-    for entry in status:
-        if entry:
-            changed.add(entry[3:])
-            if "R" in entry[:2] or "C" in entry[:2]:
-                next(status, "")
+    entries = [*entries, *(f"I {name}" for name in ignored_names)]
     rows: list[TreeFile] = []
     seen: set[str] = set()
     for entry in entries:
         if not entry:
             continue
         tag, _, rest = entry.partition(" ")
-        metadata, _, name = rest.partition("\t") if tag != "?" else ("", "", rest)
+        metadata, _, name = rest.partition("\t") if tag not in {"?", "I"} else ("", "", rest)
         if name in seen:
             continue
         seen.add(name)
-        state = "untracked" if tag == "?" else "modified" if name in changed else "tracked"
+        state = {"?": "untracked", "I": "ignored"}.get(
+            tag, "modified" if name in changed else "tracked"
+        )
         if metadata.startswith("160000 "):
             rows.append(TreeFile(name, 0, "submodule", state))
             continue

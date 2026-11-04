@@ -24,7 +24,7 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
 - Defines long-running workflows in editable [TOML state machines][state-machines], combining agent runs, tool calls, waits, and branches with offline tests, crash recovery, and replay from recorded results.
 - Supports repository `AGENTS.md` instructions, [SKILL.md packs][skills], [MCP servers][mcp], and background commands for development servers and watchers.
 - Shows the repository in the browser: the commit graph, each commit's diff, a compare of two revisions, and the files at any revision with blame.
-- Eight runtime dependencies, no telemetry unless you [configure an export][telemetry], and no automatic updates.
+- Nine runtime dependencies, no telemetry unless you [configure an export][telemetry], and no automatic updates.
 
 Also available as a [streaming CLI][cli-demo] and through [ACP editor integration][acp].
 

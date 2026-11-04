@@ -126,7 +126,7 @@
 - **Errors**: fail loudly, through a custom exception class per subsystem; every `except` names what it catches and re-raises what it cannot handle.
 - **Versioning**: `__version__` in `src/agent6/__init__.py` is the single source of truth; everything else reads it.
 - **A new runtime dependency is discussed first.**
-  Current: `pydantic`, `httpx2`, `argcomplete`, the `tree-sitter` pair, `textual`, and `ruff` + `ty` (they validate `machine create` output).
+  Current: `pydantic`, `httpx2`, `argcomplete`, `markdown-it-py`, the `tree-sitter` pair, `textual`, and `ruff` + `ty` (they validate `machine create` output).
   `hatchling` builds; `pyright` stays dev-only.
 - **Order-free lists stay sorted**, by Python's string order: pyproject.toml's dependencies, includes and rule lists, tach.toml's lists.
   A list whose order carries meaning (a nav, a pipeline, the CI steps) keeps it.

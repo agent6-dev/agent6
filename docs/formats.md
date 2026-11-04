@@ -2148,11 +2148,12 @@ Source: [`ui.web.git_model.tree_payload`](https://github.com/agent6-dev/agent6/b
 | --- | --- | --- |
 | `rev` | `JSON` | The resolved revision, or WORKTREE. |
 | `files` | `JSON` | TreeFile records in the selected tree. |
+| `ignored` | `JSON` | Whether the working-tree listing includes Git's ignored files. |
 | `truncated` | `JSON` | Whether the file list reached its cap. |
 
 ### `/api/git/text` payload
 
-**Support: public.** Return a file's text at a revision or in the working tree, with its highlight spans.
+**Support: public.** Return a file's text, highlight spans and rendered markdown at a revision.
 
 Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/git_model.py).
 
@@ -2162,6 +2163,7 @@ Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/b
 | `path` | `JSON` | The repository-relative file path. |
 | `digest` | `JSON` | The SHA-256 digest of the complete checked file bytes. |
 | `text` | `JSON` | The file text, or an empty string for binary content. |
+| `rendered_html` | `JSON` | Rendered markdown with raw HTML escaped; null for other or incomplete text. |
 | `lines` | `JSON` | The number of displayed text lines. |
 | `binary` | `JSON` | Whether the file is binary. |
 | `truncated` | `JSON` | Whether the displayed text reached its cap. |
@@ -2479,7 +2481,7 @@ Source: [`agent6.vcs.git_files.TreeFile`](https://github.com/agent6-dev/agent6/b
 | `path` | `str` | The repository-relative path. |
 | `size` | `int` | The size in bytes; a symlink's is its target's length, a submodule's 0. |
 | `kind` | `str` | "file", "symlink" or "submodule". |
-| `state` | `str` | "tracked", "untracked" or "modified" in the working tree, else "". |
+| `state` | `str` | "tracked", "untracked", "modified" or "ignored" in the working tree, else "". |
 
 ### NewWorkBody
 

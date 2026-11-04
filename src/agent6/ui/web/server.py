@@ -960,7 +960,11 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         refs = [r for r in q["refs"] if r] if "refs" in q else None
         reads: dict[str, Callable[[], dict[str, Any]]] = {
             "blame": lambda: git_model.blame_payload(
-                cwd, arg("rev"), arg("path"), whole=arg("whole") == "1"
+                cwd,
+                arg("rev"),
+                arg("path"),
+                whole=arg("whole") == "1",
+                ignored=arg("ignored") == "1",
             ),
             "compare": lambda: git_model.compare_payload(cwd, arg("base"), arg("head")),
             "findings": lambda: review_routes.comparison(cwd, arg("base"), arg("head")),
@@ -979,16 +983,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             "refs": lambda: git_model.refs_payload(cwd),
             "search": lambda: git_model.search_payload(cwd, arg("q")),
             "text": lambda: git_model.text_payload(
-                cwd, arg("rev"), arg("path"), whole=arg("whole") == "1"
+                cwd,
+                arg("rev"),
+                arg("path"),
+                whole=arg("whole") == "1",
+                ignored=arg("ignored") == "1",
             ),
-            "tree": lambda: git_model.tree_payload(cwd, arg("rev")),
+            "tree": lambda: git_model.tree_payload(cwd, arg("rev"), ignored=arg("ignored") == "1"),
             "worktree": lambda: git_model.worktree_payload(cwd),
         }
         try:
             if sub.startswith("commit/"):
                 payload = git_model.commit_payload(cwd, sub.removeprefix("commit/"))
             elif sub == "blob":
-                self._send_blob(git_model.blob_payload(cwd, arg("rev"), arg("path")))
+                self._send_blob(
+                    git_model.blob_payload(
+                        cwd, arg("rev"), arg("path"), ignored=arg("ignored") == "1"
+                    )
+                )
                 return
             elif sub in reads:
                 payload = reads[sub]()

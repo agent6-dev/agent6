@@ -10,6 +10,7 @@ authors = [{ name = "Eric Lesiuta" }]
 dependencies = [
     "argcomplete>=3,<4",
     "httpx2>=2.16.0,<3",
+    "markdown-it-py==4.2.0",  # No trusted publishing; bump this pin by hand.
     "pydantic>=2.14.1,<3",
     "ruff>=0.17.1,<1",  # runtime, not dev: lints the scripts `machine create` generates
     "textual>=8,<9",
@@ -489,6 +490,7 @@ banned-from = [
     "agent6.ui.web.diff_highlight",
     "agent6.ui.web.git_model",
     "agent6.ui.web.highlight",
+    "agent6.ui.web.markdown",
     "agent6.ui.web.model",
     "agent6.ui.web.page",
     "agent6.ui.web.review_routes",

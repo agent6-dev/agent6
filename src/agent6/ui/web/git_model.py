@@ -13,7 +13,7 @@ import hashlib
 import pathlib
 from typing import Any
 
-from agent6.ui.web import diff_highlight, highlight
+from agent6.ui.web import diff_highlight, highlight, markdown
 from agent6.vcs import git_diff, git_files, git_history, git_read
 from agent6.viewmodel import format
 
@@ -635,13 +635,14 @@ def search_payload(repo: pathlib.Path, query: str) -> dict[str, Any]:
     }
 
 
-def _read(repo: pathlib.Path, rev: str, path: str) -> tuple[str, bytes]:
+def _read(repo: pathlib.Path, rev: str, path: str, *, ignored: bool = False) -> tuple[str, bytes]:
     """Return a regular file's bytes at a revision or in the working tree.
 
     Args:
         repo: The repository.
         rev: The revision as the browser sent it; `WORKTREE` reads the file from disk.
         path: The file's repository-relative path.
+        ignored: Permit working-tree files matched by any of Git's exclude sources.
 
     Returns:
         The resolved revision (`WORKTREE` for the working tree) and the bytes.
@@ -653,7 +654,7 @@ def _read(repo: pathlib.Path, rev: str, path: str) -> tuple[str, bytes]:
     sha = _resolve(repo, rev, worktree_ok=True)
     _check_path(path)
     if sha == git_history.WORKTREE:
-        blob = git_files.worktree_blob(repo, path, max_bytes=BLOB_MAX_BYTES)
+        blob = git_files.worktree_blob(repo, path, max_bytes=BLOB_MAX_BYTES, ignored=ignored)
         where = "the working tree"
     else:
         blob = git_files.blob_at(repo, sha, path, max_bytes=BLOB_MAX_BYTES)
@@ -668,13 +669,14 @@ def _read(repo: pathlib.Path, rev: str, path: str) -> tuple[str, bytes]:
     return sha, blob.data
 
 
-def blob_payload(repo: pathlib.Path, rev: str, path: str) -> BlobResponse:
+def blob_payload(repo: pathlib.Path, rev: str, path: str, *, ignored: bool = False) -> BlobResponse:
     """Return a file's bytes at a revision or in the working tree.
 
     Args:
         repo: The repository.
         rev: The revision as the browser sent it; `WORKTREE` reads the file from disk.
         path: The file's repository-relative path.
+        ignored: Permit working-tree files matched by any of Git's exclude sources.
 
     Returns:
         The bytes, typed by extension for an image, an attachment otherwise.
@@ -684,7 +686,7 @@ def blob_payload(repo: pathlib.Path, rev: str, path: str) -> BlobResponse:
         BlobTooLargeError: The file is over `BLOB_MAX_BYTES`.
     """
     _repo(repo)
-    _sha, data = _read(repo, rev, path)
+    _sha, data = _read(repo, rev, path, ignored=ignored)
     ext = path.rpartition("/")[2].rpartition(".")[2].lower()
     ctype = IMAGE_TYPES.get(ext)
     return BlobResponse(ctype or "application/octet-stream", ctype is None, data)
@@ -705,7 +707,7 @@ def _display_text(data: bytes, cap: int | None) -> tuple[str, bool, bool]:
 
 
 def blame_payload(
-    repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
+    repo: pathlib.Path, rev: str, path: str, *, whole: bool = False, ignored: bool = False
 ) -> dict[str, Any]:
     """Return per-line attribution with the text route's caps, refusals and digest.
 
@@ -723,12 +725,13 @@ def blame_payload(
         rev: The requested revision.
         path: The repository-relative path.
         whole: Whether to omit the display byte cap.
+        ignored: Permit working-tree files matched by any of Git's exclude sources.
 
     Returns:
         The attribution rows and capture facts.
     """
     _repo(repo)
-    sha, data = _read(repo, rev, path)
+    sha, data = _read(repo, rev, path, ignored=ignored)
     cap = None if whole else TEXT_MAX_BYTES
     text, binary, truncated = _display_text(data, cap)
     rows = git_files.blame_lines(repo, sha, path, data, lines=_line_count(text))
@@ -743,8 +746,10 @@ def blame_payload(
     }
 
 
-def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False) -> dict[str, Any]:
-    """Return a file's text at a revision or in the working tree, with its highlight spans.
+def text_payload(
+    repo: pathlib.Path, rev: str, path: str, *, whole: bool = False, ignored: bool = False
+) -> dict[str, Any]:
+    """Return a file's text, highlight spans and rendered markdown at a revision.
 
     Attributes:
         digest: The SHA-256 digest of the complete checked file bytes.
@@ -752,6 +757,7 @@ def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
         truncated: Whether the displayed text reached its cap.
         max_bytes: The byte cap, or null when whole content was requested.
         text: The file text, or an empty string for binary content.
+        rendered_html: Rendered markdown with raw HTML escaped; null for other or incomplete text.
         lines: The number of displayed text lines.
         language: The tree-sitter language name, or an empty string when unknown.
         spans: Per-line highlight spans as start, end and CSS class triples.
@@ -764,27 +770,35 @@ def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
         rev: The revision as the browser sent it; `WORKTREE` reads the file from disk.
         path: The file's repository-relative path.
         whole: Keep every byte instead of cutting at `TEXT_MAX_BYTES`.
+        ignored: Permit working-tree files matched by any of Git's exclude sources.
 
     Returns:
         `rev` resolved, `path`, `digest` (sha256 of the bytes read; the blame route sends
         the same, so rows attach only to the text shown), `text` ("" for a binary file),
         `lines`, `binary`, `truncated`, `max_bytes`, `language` (the pack's name, "" when
-        none) and `spans` (per line `[start, end, class]`, empty when nothing is highlighted).
+        none), `spans` (per line `[start, end, class]`, empty when nothing is highlighted),
+        and `rendered_html` for complete markdown text (null otherwise).
 
     Raises:
         GitRequestError: The revision or path is malformed, or no regular file is there.
         BlobTooLargeError: The file is over `BLOB_MAX_BYTES`.
     """
     _repo(repo)
-    sha, data = _read(repo, rev, path)
+    sha, data = _read(repo, rev, path, ignored=ignored)
     cap = None if whole else TEXT_MAX_BYTES
     text, binary, truncated = _display_text(data, cap)
     language = highlight.language_of(path)
+    rendered_html = (
+        markdown.render(text, rev=sha, path=path, ignored=ignored and sha == git_history.WORKTREE)
+        if not binary and not truncated and path.lower().endswith((".md", ".markdown"))
+        else None
+    )
     return {
         "rev": sha,
         "path": path,
         "digest": hashlib.sha256(data).hexdigest(),
         "text": text,
+        "rendered_html": rendered_html,
         "lines": _line_count(text),
         "binary": binary,
         "truncated": truncated,
@@ -794,11 +808,12 @@ def text_payload(repo: pathlib.Path, rev: str, path: str, *, whole: bool = False
     }
 
 
-def tree_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
+def tree_payload(repo: pathlib.Path, rev: str, *, ignored: bool = False) -> dict[str, Any]:
     """Return the files at a revision or in the working tree.
 
     Attributes:
         files: TreeFile records in the selected tree.
+        ignored: Whether the working-tree listing includes Git's ignored files.
         truncated: Whether the file list reached its cap.
 
         rev: The resolved revision, or WORKTREE.
@@ -807,6 +822,7 @@ def tree_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
         repo: The repository.
         rev: The revision as the browser sent it; `WORKTREE` lists the index plus the
             untracked files `.gitignore` keeps.
+        ignored: Permit working-tree files matched by any of Git's exclude sources.
 
     Returns:
         `rev` resolved, `files` as `{path, size, kind, state}` cut at `TREE_MAX`, and `truncated`.
@@ -816,9 +832,10 @@ def tree_payload(repo: pathlib.Path, rev: str) -> dict[str, Any]:
     """
     _repo(repo)
     sha = _resolve(repo, rev, worktree_ok=True)
+    ignored = ignored and sha == git_history.WORKTREE
     if sha == git_history.WORKTREE:
-        rows = git_files.worktree_tree_files(repo)
+        rows = git_files.worktree_tree_files(repo, ignored=ignored)
     else:
         rows = git_files.tree_files(repo, sha)
     files = [dataclasses.asdict(f) for f in rows[:TREE_MAX]]
-    return {"rev": sha, "files": files, "truncated": len(rows) > TREE_MAX}
+    return {"rev": sha, "files": files, "ignored": ignored, "truncated": len(rows) > TREE_MAX}

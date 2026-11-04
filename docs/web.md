@@ -71,6 +71,7 @@ A question the model queued, or an ended run's, keeps its box: the answer reache
     - **blame** uses each line's own side: removed lines use the base, added and inline context lines use the head, split cells use their column, and old/new views use their selected side
     - recorded review comparisons preserve their tree identities and Files links; full context and commit blame are unavailable there
 - **Files page**: the files at one revision; it reads the repository `agent6 web` was started in and writes nothing
+    - a markdown file opens rendered; **source** shows the text; **show ignored** lists the files every exclude rule hides, badged `I`
 
 Start a machine on the Machines page and watch the current state stream, answering its approvals and questions in place:
 

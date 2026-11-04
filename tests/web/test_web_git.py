@@ -339,8 +339,10 @@ def test_a_worktree_diff_and_its_digest_describe_the_same_bytes(
     read = git_files.worktree_blob
     calls: list[str] = []
 
-    def changing_read(root: pathlib.Path, name: str, *, max_bytes: int) -> git_files.Blob | None:
-        blob = read(root, name, max_bytes=max_bytes)
+    def changing_read(
+        root: pathlib.Path, name: str, *, max_bytes: int, ignored: bool = False
+    ) -> git_files.Blob | None:
+        blob = read(root, name, max_bytes=max_bytes, ignored=ignored)
         calls.append(name)
         if len(calls) == 1:
             (root / name).write_text("different bytes\n")
@@ -364,8 +366,10 @@ def test_a_worktree_file_that_keeps_changing_is_refused(
     read = git_files.worktree_blob
     calls: list[str] = []
 
-    def changing_read(root: pathlib.Path, name: str, *, max_bytes: int) -> git_files.Blob | None:
-        blob = read(root, name, max_bytes=max_bytes)
+    def changing_read(
+        root: pathlib.Path, name: str, *, max_bytes: int, ignored: bool = False
+    ) -> git_files.Blob | None:
+        blob = read(root, name, max_bytes=max_bytes, ignored=ignored)
         calls.append(name)
         (root / name).write_text(f"write {len(calls)}\n")
         return blob
@@ -572,6 +576,50 @@ def test_text_bounds_reads_and_refuses_invalid_paths(
     assert "unknown revision" in _refused(port, "/api/git/text?rev=nope&path=b.txt")
 
 
+@pytest.mark.parametrize("extension", ["md", "markdown"])
+def test_text_renders_complete_markdown_at_the_resolved_revision(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int, extension: str
+) -> None:
+    """Markdown HTML uses the same bytes and resolved revision as the source payload."""
+    path, _ = repo
+    name = f"README.{extension}"
+    source = "# Read me\n\n[notes](dir/f.txt)\n"
+    (path / name).write_text(source, encoding="utf-8")
+    _git(path, "add", name)
+    _git(path, "commit", "-m", "documentation")
+    sha = _git(path, "rev-parse", "HEAD")
+    (path / name).write_text("# Working copy\n", encoding="utf-8")
+    body = _ok(port, f"/api/git/text?rev=HEAD&path={name}")
+    assert body["text"] == source and body["rev"] == sha
+    assert body.get("rendered_html") == (
+        f'<h1 id="read-me">Read me</h1>\n<p><a href="#/files/{sha}/dir/f.txt">notes</a></p>\n'
+    )
+    working = _ok(port, f"/api/git/text?rev=WORKTREE&path={name}")
+    assert working["rendered_html"] == '<h1 id="working-copy">Working copy</h1>\n'
+
+
+def test_text_withholds_markdown_html_for_truncated_binary_and_other_files(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The source cap applies before rendering, and whole content can still be requested."""
+    path, _ = repo
+    (path / "README.md").write_text("# Heading\n\nTail\n", encoding="utf-8")
+    (path / "binary.md").write_bytes(b"\x00binary")
+    (path / "empty.md").write_text("", encoding="utf-8")
+    for name in ("b.txt", "binary.md"):
+        body = _ok(port, f"/api/git/text?rev=WORKTREE&path={name}")
+        assert "rendered_html" in body and body["rendered_html"] is None
+    assert _ok(port, "/api/git/text?rev=WORKTREE&path=empty.md")["rendered_html"] == ""
+    monkeypatch.setattr(git_model, "TEXT_MAX_BYTES", 10)
+    route = "/api/git/text?rev=WORKTREE&path=README.md"
+    cut = _ok(port, route)
+    assert cut["truncated"] is True and cut["rendered_html"] is None
+    assert cut["text"] == "# Heading\n" and cut["max_bytes"] == 10
+    whole = _ok(port, route + "&whole=1")
+    assert whole["truncated"] is False and whole["max_bytes"] is None
+    assert whole["rendered_html"] == '<h1 id="heading">Heading</h1>\n<p>Tail</p>\n'
+
+
 @pytest.mark.parametrize("route", ["blob", "text", "blame"])
 @pytest.mark.parametrize("hazard", ["ancestor", "ancestor_inside", "fifo", "device", "leaf"])
 def test_worktree_reads_refuse_unsafe_files(
@@ -729,6 +777,37 @@ def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
     assert "unknown revision" in _refused(port, "/api/git/tree?rev=nope")
     assert "cannot start with '-'" in _refused(port, "/api/git/tree?rev=-x")
     assert "a revision is required" in _refused(port, "/api/git/tree?rev=")
+
+
+def test_ignored_tree_and_file_routes_require_explicit_worktree_opt_in(
+    repo: tuple[pathlib.Path, dict[str, str]], port: int
+) -> None:
+    """Opt-in ignored markdown uses the text renderer and safe blob reader, not a new route."""
+    path, _ = repo
+    (path / ".git" / "info" / "exclude").write_text("plans/\n", encoding="utf-8")
+    (path / "plans").mkdir()
+    (path / "plans" / "plan.md").write_text("# Plan\n\n![logo](logo.png)\n", encoding="utf-8")
+    (path / "plans" / "logo.png").write_bytes(PNG_RED_1X1)
+    normal = _ok(port, "/api/git/tree?rev=WORKTREE")
+    assert "plans/plan.md" not in {row["path"] for row in normal["files"]}
+    shown = _ok(port, "/api/git/tree?rev=WORKTREE&ignored=1")
+    assert shown.get("ignored") is True
+    assert {row["path"]: row["state"] for row in shown["files"]}["plans/plan.md"] == "ignored"
+    for flag in ("", "&ignored=0", "&ignored=true"):
+        assert "no file" in _refused(port, "/api/git/text?rev=WORKTREE&path=plans/plan.md" + flag)
+    body = _ok(port, "/api/git/text?rev=WORKTREE&path=plans/plan.md&ignored=1")
+    assert '<h1 id="plan">Plan</h1>' in body["rendered_html"]
+    assert (
+        'data-blob-src="/api/git/blob?rev=WORKTREE&amp;path=plans%2Flogo.png&amp;ignored=1"'
+        in body["rendered_html"]
+    )
+    blame = _ok(port, "/api/git/blame?rev=WORKTREE&path=plans/plan.md&ignored=1")
+    assert len(blame["lines"]) == 3 and all(row["sha"] == "" for row in blame["lines"])
+    status, _, data = _raw(port, "/api/git/blob?rev=WORKTREE&path=plans/logo.png&ignored=1")
+    assert (status, data) == (200, PNG_RED_1X1)
+    assert _ok(port, "/api/git/tree?rev=HEAD&ignored=1") == _ok(port, "/api/git/tree?rev=HEAD")
+    assert "no file" in _refused(port, "/api/git/text?rev=HEAD&path=plans/plan.md&ignored=1")
+    assert "no file" in _refused(port, "/api/git/text?rev=WORKTREE&path=.git/config&ignored=1")
 
 
 def test_tree_states_distinguish_clean_tracked_and_untracked(

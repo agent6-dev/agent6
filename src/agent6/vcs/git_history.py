@@ -472,19 +472,18 @@ def worktree_files(path: pathlib.Path, base: str) -> tuple[ChangedFile, ...]:
     return tuple(rows)
 
 
-def worktree_entry(path: pathlib.Path, name: str) -> str:
-    """Return "tracked" or "untracked" when the working tree holds the path as a file, else "".
+def worktree_entry(path: pathlib.Path, name: str, *, ignored: bool = False) -> str:
+    """Return a working-tree file's Git state, or an empty string when Git lists no file.
 
-    `ls-files -t` tags an index entry `H` (`S` skip-worktree, `M` unmerged) and an
-    untracked, unignored file `?`; an ignored file, a directory, and a path outside the
-    repository or through a symlink get no entry.
+    A directory, or a path outside the repository or through a symlink, has no entry.
 
     Args:
         path: The repository.
         name: The repository-relative path.
+        ignored: Include files matched by any of Git's exclude sources.
 
     Returns:
-        "tracked", "untracked" or "".
+        "tracked", "untracked", "ignored" when requested, or "".
     """
     fields = git_command.nul_fields(
         path,
@@ -503,6 +502,19 @@ def worktree_entry(path: pathlib.Path, name: str) -> str:
         tag, _, found = entry.partition(" ")
         if found == name:
             return "untracked" if tag == "?" else "tracked"
+    if ignored and name in git_command.nul_fields(
+        path,
+        "ls-files",
+        "-z",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "--",
+        name,
+        check=False,
+        env_extra=git_read.LITERAL_PATHSPECS,
+    ):
+        return "ignored"
     return ""
 
 

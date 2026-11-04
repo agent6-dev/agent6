@@ -8,6 +8,7 @@ source = { editable = "." }
 dependencies = [
     { name = "argcomplete" },
     { name = "httpx2" },
+    { name = "markdown-it-py" },
     { name = "pydantic" },
     { name = "ruff" },
     { name = "textual" },
@@ -33,6 +34,7 @@ dev = [
 requires-dist = [
     { name = "argcomplete", specifier = ">=3,<4" },
     { name = "httpx2", specifier = ">=2.16.0,<3" },
+    { name = "markdown-it-py", specifier = "==4.2.0" },
     { name = "pydantic", specifier = ">=2.14.1,<3" },
     { name = "ruff", specifier = ">=0.17.1,<1" },
     { name = "textual", specifier = ">=8,<9" },

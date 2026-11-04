@@ -96,7 +96,7 @@ function refBadge(r) {
 }
 function statusBadge(status) {
   const s = el('span', 'gf-st st-' + esc(status), status);
-  s.title = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', T: 'type changed' }[status] || status;
+  s.title = { A: 'added', M: 'modified', D: 'deleted', R: 'renamed', T: 'type changed', I: 'ignored' }[status] || status;
   return s;
 }
 function shortLabel(c) { return c.short + ' ' + c.subject; }
@@ -110,15 +110,19 @@ function isImagePath(p) { const dot = p.lastIndexOf('.'); return dot >= 0 && IMA
 // Fetch a blob with the token and show it in an <img> through a data: URL. A blob: URL
 // would open under the page's origin, where the token lives, so an SVG's script opened
 // from one could read it; a data: document has no origin.
-async function blobImage(rev, path, fig, cap) {
-  const blob = await getBlob('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(path));
+async function blobImageData(path) {
+  const blob = await getBlob(path);
   const url = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.onerror = () => rej(fr.error); fr.readAsDataURL(blob); });
+  return { url, size: blob.size };
+}
+async function blobImage(rev, path, fig, cap, ignored = false) {
+  const image = await blobImageData('/api/git/blob?rev=' + encodeURIComponent(rev) + '&path=' + encodeURIComponent(path) + (ignored ? '&ignored=1' : ''));
   if (!fig.isConnected) return;
   const img = el('img'); img.alt = path;
-  const size = cap.dataset.label + ' · ' + fmtBytes(blob.size);
+  const size = cap.dataset.label + ' · ' + fmtBytes(image.size);
   img.onload = () => { cap.textContent = size + ' · ' + img.naturalWidth + '\u00d7' + img.naturalHeight; };
   img.onerror = () => { cap.textContent = size + ' · the browser cannot show this image'; };
-  img.src = url;
+  img.src = image.url;
   fig.appendChild(img);
 }
 
