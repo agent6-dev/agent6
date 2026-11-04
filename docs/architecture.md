@@ -374,6 +374,15 @@ Reviewed file links keep the panel and side, so Files reads the cited version ra
 `agent6 sessions review <id>` ([harness/review_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_session.py)) reviews a finished session's record: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.
 
+## Session review directive
+
+`directive.parse_review` parses `/review [TARGET]` without importing the engine.
+`app/review_directive.py` resolves its reviewed side through `vcs.review.comparison`, loads base rules through `harness.repo_context.review_rules`, and builds the bounded message from `prompts/review_directive.py`.
+`app.run` prepares a detached worktree through `app.fork_worktrees` when the range needs another checkout, for both ask and run.
+`app.execution` injects the live review preparer through `OperatorBridge`; a live request for another tree returns a new-session command without changing the checkout.
+`loop.steer.feedback` carries refusals and no-op answers to the shared transcript fold without a model call.
+The directive uses the session's tools and permissions and returns markdown, without writing findings or a review journal.
+
 ## Parallel runs
 
 The primitive is a task run as a subordinate isolated run whose branch joins back.

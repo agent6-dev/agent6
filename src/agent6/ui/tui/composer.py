@@ -65,7 +65,7 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
     """Return the (command, help) rows matching a `/…` first word still being typed.
 
     A resume composer withholds the live-run commands, a start offers only
-    /parallel, and a draft offers none.
+    /parallel and /review, and a draft offers none.
 
     Args:
         text: The composer's text.
@@ -79,7 +79,9 @@ def steer_suggestion_rows(text: str, *, mode: ComposerMode) -> list[tuple[str, s
     if mode == "draft":
         return []
     if mode == "start":
-        offered = {c: h for c, h in directive.STEER_COMMANDS.items() if c == "/parallel"}
+        offered = {
+            c: h for c, h in directive.STEER_COMMANDS.items() if c in {"/parallel", "/review"}
+        }
     elif mode == "resume":
         offered = {
             c: h

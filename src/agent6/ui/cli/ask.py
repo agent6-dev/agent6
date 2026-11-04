@@ -13,7 +13,7 @@ from typing import Any
 
 from agent6 import budget as agent6_budget
 from agent6 import errors, evidence, paths
-from agent6.harness import loop, loop_snapshot
+from agent6.harness import loop, loop_snapshot, operator_bridge
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -302,7 +302,7 @@ def save_ask_repl_transcript(
     (layout.session_dir / "transcript.md").write_text("\n".join(parts), encoding="utf-8")
 
 
-def run_ask_repl(
+def run_ask_repl(  # noqa: PLR0912  # the input loop and each local command
     wf: loop.Harness,
     budget: agent6_budget.BudgetTracker,
     layout: sessions_layout.SessionLayout,
@@ -353,6 +353,12 @@ def run_ask_repl(
             conversation = []
             print("[agent6] conversation reset.", file=sys.stderr)
             continue
+        if (prepared := operator_bridge.review_message(wf.bridge, question)) is not None:
+            inject, message = prepared
+            if not inject:
+                print(message, flush=True)
+                continue
+            question = message
         if conversation:
             ctx = "\n\n".join(f"Q: {q}\nA: {a}" for q, a in conversation)
             augmented = (

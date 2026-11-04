@@ -492,6 +492,19 @@ def test_the_pin_directive_is_advertised_when_the_run_starts() -> None:
     assert pin["input"] == {"type": "text", "hint": "<text>"}
 
 
+def test_review_is_advertised_as_a_session_directive() -> None:
+    """Editors can complete review without confusing it with stored finding actions."""
+    start = {"type": "session.start", "user_task": "x", "mode": "run"}
+    commands = next(
+        u
+        for u in _updates_of(_info(), [start])
+        if u["sessionUpdate"] == "available_commands_update"
+    )
+    review = next(c for c in commands["availableCommands"] if c["name"] == "review")
+    assert review["description"] == directive.STEER_COMMANDS["/review"]
+    assert review["input"]["hint"] == "[TARGET]"
+
+
 def test_context_use_and_spend_follow_each_budget_update() -> None:
     """`used` is the last call's whole prompt over the model's window, the `ctx N%` rule.
 

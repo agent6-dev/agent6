@@ -920,6 +920,14 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 
+### loop.steer.feedback
+
+**Support: public.** A steer directive returned feedback without invoking the model.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `text` | `str` | The feedback for the operator. |
+
 ### loop.steer.injected
 
 **Support: public.** An operator instruction was injected into context.

@@ -59,7 +59,7 @@ _TOOL_KINDS = {
 }
 
 
-# Review commands are front-end actions; only /pin reaches the worker as a directive.
+# Stored-finding commands are front-end actions; /pin and /review reach the worker.
 REVIEW_COMMANDS: tuple[dict[str, Any], ...] = (
     {
         "name": "review-queue",
@@ -102,6 +102,11 @@ _COMMANDS: tuple[dict[str, Any], ...] = (
         "name": "pin",
         "description": directive.STEER_COMMANDS["/pin"],
         "input": {"type": "text", "hint": "<text>"},
+    },
+    {
+        "name": "review",
+        "description": directive.STEER_COMMANDS["/review"],
+        "input": {"type": "text", "hint": "[TARGET]"},
     },
     ANSWER_COMMAND,
     *REVIEW_COMMANDS,

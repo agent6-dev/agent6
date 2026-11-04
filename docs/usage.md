@@ -228,6 +228,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
 - `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` fans out lanes ([parallel](config.md#parallel))
+- `/review [TARGET]` reviews changes in the session ([targets and worktrees](#plan-review-and-ask))
 - `/undo` is available in the TUI, web, a `run -i` prompt, or a live run's pause menu (Ctrl-C), so `agent6 steer` refuses it:
   - it takes back the last message
   - the tree is committed on the run's chain
@@ -361,6 +362,20 @@ A run whose worker exited without recording an end reads `stale`, for example af
 - `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it
 
 ## Plan, review, and ask
+
+`/review [TARGET]` works as a first message or a live steer, with no flags.
+`/review` covers staged, unstaged and untracked changes against HEAD; a clean tree answers `no uncommitted changes to review` without calling the model.
+`/review REF` reviews the ref's changes from its merge base with HEAD (`HEAD...REF`).
+`/review A..B` compares the endpoints; `/review A...B` compares their merge base to B.
+The argument always names the reviewed side: use `/review main...HEAD` for the current branch against main, or `/review SHA^..SHA` for one commit (a root commit uses the empty tree).
+
+Start with `agent6 ask "/review main...HEAD"` for a review without edit tools, or `agent6 run "/review feature-x"` to allow fixes too.
+Both modes keep the session's sandbox, approvals and git control, and can run approved checks.
+A clean checkout at the range's head is reviewed in place; otherwise startup prepares a detached worktree at that head under `workspace.base_dir`.
+A live session cannot change trees: a request for another tree names the `agent6 ask "/review TARGET"` command to start one.
+A bare run review cannot stash the changes it reviews; use ask or choose `git.dirty_tree = "include"`.
+The first message carries resolved revisions, a diff stat, up to 64 KiB of patch and the base tree's `AGENTS.md` rules.
+The answer is markdown in the session, not stored findings or a review journal.
 
 ```sh
 agent6 plan "refactor the config loader"      # no edit tools; run --from <id> executes it

@@ -420,7 +420,9 @@ function newWorkDock(presets, presetDefault) {
   };
   go.onclick = start;
   const ac = attachParallelSuggest(task, root);
+  const commands = attachCommandSuggest(task, root, () => false, ['/parallel', '/review']);
   task.onkeydown = (e) => {
+    if (commands.onKeyDown(e)) return;
     if (ac.onKeyDown(e)) return;   // the /parallel suggestion popup took the key
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); start(); }
   };
@@ -883,6 +885,7 @@ const STEER_COMMANDS = [
   ['/compact', 'compact the context now; /compact <focus> steers the summary'],
   ['/parallel', 'fan out lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)'],
   ['/restate', 'restate the conversation since your last message (local, no model call)'],
+  ['/review', 'review changes in this session: /review [TARGET] (a ref or A..B or A...B)'],
   ['/undo', 'fork back to before your last message (the text returns to edit and resend)'],
   ['/btw', 'ask a question beside the run: /btw <question> (answers inline, later)'],
   ['/task', 'queue work into the task graph: /task <text> (worked when the queue drains)'],
@@ -896,7 +899,7 @@ const STEER_COMMANDS = [
 // being typed (`/…`, no whitespace yet), the matching directives with their
 // help. Same popup contract as attachParallelSuggest; Tab (or Enter/click on
 // a highlighted row) completes the word plus a trailing space.
-function attachCommandSuggest(ta, root, liveNow) {
+function attachCommandSuggest(ta, root, liveNow, offered = null) {
   let box = null, items = [], active = -1;
   const word = () => {
     const v = ta.value;
@@ -910,7 +913,7 @@ function attachCommandSuggest(ta, root, liveNow) {
   const render = () => {
     const w = word();
     if (w === null) { close(); return; }
-    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now' && c !== '/stop' && c !== '/task' && c !== '/standing' && c !== '/retire')) && c.startsWith(w));
+    items = STEER_COMMANDS.filter(([c]) => (liveNow() || (c !== '/compact' && c !== '/btw' && c !== '/now' && c !== '/stop' && c !== '/task' && c !== '/standing' && c !== '/retire')) && (!offered || offered.includes(c)) && c.startsWith(w));
     if (!items.length) { close(); return; }
     if (active >= items.length) active = -1;
     if (!box) { box = el('div', 'ac-pop'); root.appendChild(box); }

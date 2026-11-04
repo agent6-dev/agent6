@@ -5,6 +5,7 @@
     /parallel [SPEC --] TASK [/parallel [SPEC --] TASK]...
     /pin <instruction that must survive context compaction>
     /compact [focus text for the summary]
+    /review [REF | A..B | A...B]
 
 A message is a directive only when it starts with the exact token.
 A whitespace-delimited `/parallel` token starts each segment.
@@ -146,6 +147,35 @@ def parse_task(text: str) -> str | None:
     return text[m.end() :].strip()
 
 
+_REVIEW_TOKEN = re.compile(r"\A\s*/review(?=\s|\Z)", re.IGNORECASE)
+
+
+def parse_review(text: str) -> str | None:
+    """Return a review's target, empty for the working tree, or None for ordinary text.
+
+    Args:
+        text: The operator's message.
+
+    Returns:
+        The target as typed, without surrounding whitespace.
+
+    Raises:
+        DirectiveError: The message has flags, several targets or a malformed range.
+    """
+    match = _REVIEW_TOKEN.match(text)
+    if match is None:
+        return None
+    target = text[match.end() :].strip()
+    if (
+        any(char.isspace() for char in target)
+        or any(part.startswith("-") for part in re.split(r"\.\.\.?", target))
+        or "...." in target
+        or target.count("..") > 1
+    ):
+        raise DirectiveError("/review accepts one ref or A..B or A...B, with no flags")
+    return target
+
+
 # The run's standing goal, set by the operator alone; never steer text.
 _STANDING_TOKEN = re.compile(r"\A\s*/standing(?=\s|\Z)", re.IGNORECASE)
 
@@ -248,6 +278,7 @@ def steer_problem(text: str) -> str | None:
     try:
         parse_pin(text)
         parse_directive(text)
+        parse_review(text)
     except DirectiveError as exc:
         return str(exc)
     return None
@@ -318,6 +349,7 @@ STEER_COMMANDS: dict[str, str] = {
         "fan out lanes: /parallel [SPEC --] TASK (SPEC: count or models; repeat to queue more)"
     ),
     "/restate": "restate the conversation since your last message (local, no model call)",
+    "/review": "review changes in this session: /review [TARGET] (a ref or A..B or A...B)",
     "/undo": "fork back to before your last message (the text returns to edit and resend)",
     "/btw": "ask a question beside the run: /btw <question> (answers inline, later)",
     "/task": "queue work into the task graph: /task <text> (worked when the queue drains)",

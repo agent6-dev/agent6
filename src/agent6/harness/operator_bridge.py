@@ -64,6 +64,8 @@ class OperatorBridge:
         undo_forker: `/undo`: commits the tree onto the session's ref, forks the session before
             its last operator message and restores that tree; returns the new session id and
             the undone text, or None with the reason printed. Injected: harness never imports app.
+        review_preparer: Builds a review message for this checkout, or returns operator feedback.
+            Injected by app, which owns range resolution and checkout selection.
         lane_spawner: The ui-side group spawner `/parallel` dispatches through; None (headless,
             or inside a lane) makes the directive answer with feedback and continue.
     """
@@ -85,6 +87,28 @@ class OperatorBridge:
     )
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
     lane_spawner: subrun.GroupLaneSpawner | None = None
+    review_preparer: Callable[[str], tuple[bool, str]] | None = None
+
+
+def review_message(bridge: OperatorBridge, text: str) -> tuple[bool, str] | None:
+    """Prepare a review steer or ask follow-up, or return None for an ordinary message.
+
+    Args:
+        bridge: The session's operator callbacks.
+        text: The message as typed.
+
+    Returns:
+        Whether to inject the prepared message, and its text or the operator feedback.
+    """
+    try:
+        target = agent6_directive.parse_review(text)
+    except agent6_directive.DirectiveError as exc:
+        return False, str(exc)
+    if target is None:
+        return None
+    if bridge.review_preparer is None:
+        return False, "/review is unavailable in this session; start one with agent6 ask"
+    return bridge.review_preparer(target)
 
 
 def try_pin(pins: list[str], instruction: str) -> bool:
@@ -174,6 +198,16 @@ class Steering:
             self.emit(event)
             self.log(f"  {line}")
             return name
+        if (prepared := review_message(self.bridge, steer_text)) is not None:
+            inject, message = prepared
+            if inject:
+                state.settled.restart()
+                self.emit("loop.steer.injected", chars=len(text), text=text)
+                conversation.notice(f"{heading}\n{message}", origin="operator")
+            else:
+                self.log(message)
+                self.emit("loop.steer.feedback", text=message)
+            return None
         # The steer is new work: the idle turns before it say nothing about the turns after.
         state.settled.restart()
         if (

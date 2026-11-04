@@ -6,7 +6,7 @@
 never reach the model as a message; `/now` is a steer that interrupts the call
 in flight. Every entry point that takes a typed line routes it through here, so
 the same words do the same thing wherever they are typed. `/pin` and
-`/parallel` are steers the loop parses itself.
+`/parallel` and `/review` are steers the loop parses itself.
 """
 
 from __future__ import annotations

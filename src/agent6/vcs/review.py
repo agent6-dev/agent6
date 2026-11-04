@@ -7,13 +7,15 @@ import itertools
 import os
 import pathlib
 import re
+import shutil
+import tempfile
 from typing import Literal
 
 import pydantic
 
 from agent6 import errors, review_records
 from agent6.tools import path_safety
-from agent6.vcs import git_command, git_files, git_history, git_read
+from agent6.vcs import git_command, git_files, git_history, git_policy, git_read, review_submodules
 
 # Diff grounding: the (path, line) citations this diff supports.
 # Both the old-side and new-side line numbers, so a deletion grounds against the pre-image path.
@@ -349,3 +351,268 @@ def classify_line_origin(
         return review_records.LineOrigin(reason=exc.safe_message)
     except (LineOriginError, OSError) as exc:
         return review_records.LineOrigin(reason=str(exc))
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class Comparison:
+    """Keep the diff with the immutable trees it compares."""
+
+    target: review_records.ReviewTarget
+    diff: str
+    dirty_submodules: tuple[str, ...] = ()
+    untracked_repositories: tuple[str, ...] = ()
+    stat: str = ""
+
+
+def _comparison_commits(root: pathlib.Path, base: str, head: str) -> tuple[str | None, str | None]:
+    """Resolve review endpoints, using the merge base unless the range has two dots.
+
+    Args:
+        root: The review's working directory.
+        base: A base revision or range, or "" for the working tree against HEAD.
+        head: The head revision when base is a single revision.
+
+    Returns:
+        The base and head commits, with no head commit for a worktree review.
+
+    Raises:
+        GitError: A revision or merge base cannot be resolved.
+    """
+    if not base:
+        return git_history.resolve_commit(root, "HEAD") or None, None
+    if "..." in base:
+        left, right = base.split("...", 1)
+        merge_base = True
+    elif ".." in base:
+        left, right = base.split("..", 1)
+        merge_base = False
+    else:
+        left, right, merge_base = base, head, True
+    base_commit = git_history.resolve_commit(root, left or "HEAD")
+    head_commit = git_history.resolve_commit(root, right or "HEAD")
+    if (
+        not base_commit
+        and head_commit
+        and not merge_base
+        and left.endswith("^")
+        and git_history.resolve_commit(root, left[:-1]) == head_commit
+    ):
+        headers = git_command.run(root, "cat-file", "-p", head_commit).stdout.split("\n\n", 1)[0]
+        if not any(line.startswith("parent ") for line in headers.splitlines()):
+            return None, head_commit
+    if not base_commit or not head_commit:
+        raise errors.GitError("review base or head is not a commit")
+    if merge_base:
+        base_commit = git_command.run(root, "merge-base", base_commit, head_commit).stdout.strip()
+    return base_commit, head_commit
+
+
+def comparison(
+    root: pathlib.Path,
+    *,
+    base: str,
+    head: str,
+    paths: tuple[str, ...],
+    hide: tuple[str, ...] = (),
+) -> Comparison:
+    """Resolve a review range once and diff its immutable trees without changing the index.
+
+    Args:
+        root: The review's working directory.
+        base: A base revision or range, or "" for the working tree against HEAD.
+        head: The head revision when base is a single revision.
+        paths: The working-directory-relative pathspecs limiting the review.
+        hide: `[sandbox].hide_paths`, excluded before snapshotting or diffing.
+
+    Returns:
+        The comparison and its immutable target.
+
+    Raises:
+        GitError: A revision or its tree cannot be resolved.
+    """
+    base_commit, head_commit = _comparison_commits(root, base, head)
+    repo = (git_read.toplevel(root) or root).resolve()
+    base_tree = git_read.tree_sha(repo, base_commit) if base_commit else git_read.EMPTY_TREE
+    head_tree = git_read.tree_sha(repo, head_commit) if head_commit else base_tree
+    workspace = path_safety.host_workspace(repo, hide)
+    lexical_hidden = tuple(pathlib.Path(os.path.abspath(p)) for p in hide)  # noqa: PTH100
+    workspace = dataclasses.replace(workspace, denied=(*workspace.denied, *lexical_hidden))
+    specs = paths
+    # Exclusion-only selections span the repository in both listings and diffs.
+    if all(re.match(r"^:(?:[!^]|/[!^]|\((?:[^,)]+,)*exclude(?:,|\)))", p) for p in paths):
+        specs = (":/", *paths)
+    exclusions: list[str] = []
+    dirty_submodules: tuple[str, ...] = ()
+    untracked_repositories: tuple[str, ...] = ()
+    for denied in sorted(set(workspace.denied)):
+        if not path_safety.path_within(denied, repo) or denied == repo:
+            continue
+        name = pathlib.PurePosixPath(*denied.parts[len(repo.parts) :]).as_posix()
+        exclusions.append(f":(top,exclude,icase,literal){name}")
+    with tempfile.TemporaryDirectory(prefix="agent6-review-") as directory:
+        tmp = pathlib.Path(directory)
+        env = {"GIT_INDEX_FILE": str(tmp / "index")}
+        if head_commit:
+            git_command.run(repo, "read-tree", head_tree, env_extra=env)
+        else:
+            index = pathlib.Path(
+                git_command.run(
+                    repo, "rev-parse", "--path-format=absolute", "--git-path", "index"
+                ).stdout.rstrip("\n")
+            )
+            if index.is_file():
+                # The index mtime tells Git which cached entries need a racy-entry recheck.
+                shutil.copy2(index, tmp / "index")
+        listing = (
+            "ls-files",
+            "-z",
+            "--full-name",
+            "--cached",
+            *([] if head_commit else ["--others", "--exclude-standard"]),
+        )
+        coverage_listing = (*listing, *([f"--with-tree={base_tree}"] if base_commit else []))
+        names = sorted(
+            set(git_command.nul_fields(root, *coverage_listing, "--", *specs, env_extra=env)) - {""}
+        )
+        hidden = tuple(name for name in names if workspace.is_denied(repo / name))
+        selected = tuple(sorted(set(names).difference(hidden)))
+        if not head_commit and selected:
+            dirty_submodules = review_submodules.dirty_paths(repo, selected, workspace)
+            # Without --directory, ls-files collapses only untracked repositories to directories.
+            untracked_repositories = tuple(name for name in selected if name.endswith("/"))
+            # agent6's own filter picks the staged names: `ls-files` given a file pathspec and an
+            # exclude element lists nothing (git 2.53), so the exclusions stay off its argv.
+            changed = {
+                name
+                for name in git_command.nul_fields(
+                    root,
+                    "ls-files",
+                    "-z",
+                    "--full-name",
+                    "--modified",
+                    "--others",
+                    "--exclude-standard",
+                    "--",
+                    *specs,
+                    env_extra=env,
+                )
+                if name and not workspace.is_denied(repo / name)
+            }
+            git_command.run(
+                repo,
+                "update-index",
+                "--add",
+                "--remove",
+                "--replace",
+                "-z",
+                "--stdin",
+                stdin_text="".join(f"{name}\0" for name in sorted(changed)),
+                env_extra=env,
+            )
+            # The copied index holds every staged edit and removal: a path outside the selection
+            # (hidden, unselected, renamed away or left unmerged) takes the base tree's entry, or
+            # none.
+            entries = (
+                [e for e in git_command.nul_fields(repo, "ls-tree", "-r", "-z", base_tree) if e]
+                if base_commit
+                else []
+            )
+            indexed = git_command.nul_fields(
+                repo, "ls-files", "-z", "--full-name", "--cached", env_extra=env
+            )
+            outside = (
+                ({entry.partition("\t")[2] for entry in entries} | set(indexed))
+                - {""}
+                - set(selected)
+            )
+            if outside:
+                restored = "".join(
+                    f"0 {'0' * len(base_tree)}\t{name}\0" for name in sorted(outside)
+                ) + "".join(
+                    f"{entry}\0" for entry in entries if entry.partition("\t")[2] in outside
+                )
+                git_command.run(
+                    repo, "update-index", "-z", "--index-info", stdin_text=restored, env_extra=env
+                )
+            head_tree = git_command.run(repo, "write-tree", env_extra=env).stdout.strip()
+    target = review_records.ReviewTarget(
+        base_commit,
+        base_tree,
+        head_commit,
+        head_tree,
+        head_commit or "",
+        paths,
+        "revisions" if base else "worktree",
+        hidden,
+    )
+    diff = (
+        git_command.run(
+            root,
+            "diff",
+            *git_policy.DIFF_SAFETY_FLAGS,
+            "--no-relative",
+            base_tree,
+            head_tree,
+            "--",
+            *specs,
+            *exclusions,
+        ).stdout
+        if selected
+        else ""
+    )
+    # Git's exclusions filtered the diff; its own name list, read raw, says whether a hidden
+    # name reached it anyway (a case fold git's `icase` does not make), which refuses the review.
+    if diff and any(
+        workspace.is_denied(repo / name) for name in _diff_names(root, target, specs, exclusions)
+    ):
+        raise errors.GitError("Git pathspecs cannot enforce the review's hidden paths")
+    stat = (
+        git_command.run(
+            root,
+            "diff",
+            *git_policy.DIFF_SAFETY_FLAGS,
+            "--no-relative",
+            "--stat",
+            base_tree,
+            head_tree,
+            "--",
+            *specs,
+            *exclusions,
+        ).stdout
+        if diff
+        else ""
+    )
+    return Comparison(target, diff, dirty_submodules, untracked_repositories, stat)
+
+
+def _diff_names(
+    root: pathlib.Path,
+    target: review_records.ReviewTarget,
+    specs: tuple[str, ...],
+    exclusions: list[str],
+) -> set[str]:
+    """Return every path the review diff names on either side, as git lists them."""
+    fields = git_command.nul_fields(
+        root,
+        "diff",
+        *git_policy.DIFF_SAFETY_FLAGS,
+        "--no-relative",
+        "--name-status",
+        "-z",
+        target.base_tree,
+        target.head_tree,
+        "--",
+        *specs,
+        *exclusions,
+    )
+    names: set[str] = set()
+    index = 0
+    while index + 1 < len(fields):
+        status = fields[index]
+        names.add(fields[index + 1])
+        if status[:1] in ("R", "C"):
+            names.add(fields[index + 2])
+            index += 3
+        else:
+            index += 2
+    return names - {""}

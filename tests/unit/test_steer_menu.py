@@ -15,6 +15,12 @@ from agent6.sessions import process
 from agent6.ui.cli import menu_input, steer_menu
 
 
+@pytest.mark.parametrize("text", ["/review", "/review feature-x", "/REVIEW main...HEAD"])
+def test_review_passes_through_the_pause_menu(tmp_path: pathlib.Path, text: str) -> None:
+    """Bare review is a complete directive, not an unknown command or a help request."""
+    assert steer_menu.pause_line(text, tmp_path) == text.replace("/REVIEW", "/review")
+
+
 def test_both_prompts_answer_a_line_the_same_way(
     tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

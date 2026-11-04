@@ -22,6 +22,7 @@ from agent6.app import (
     finalize,
     fork_worktrees,
     preflight,
+    review_directive,
     session_runtime,
     session_setup,
     stamps,
@@ -132,6 +133,21 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
 
     # The clamp comes before anything reads a knob; the invocation's grant lands after it.
     cfg = session_setup.session_config(cfg, mode, sandbox_overrides)
+    review_world: review_directive.ReviewWorld | None = None
+    if (review_target := directive.parse_review(task)) is not None:
+        try:
+            review_world = review_directive.build(repo, review_target, hide=cfg.sandbox.hide_paths)
+        except review_directive.ReviewDirectiveError as exc:
+            reporter.refuse(str(exc))
+            return 2
+        if review_world.empty:
+            reporter.out(review_world.message)
+            return 0
+        if worktree and not review_target:
+            reporter.refuse("/review needs this working tree; drop --worktree or name a ref")
+            return 2
+        worktree = worktree or review_world.needs_worktree
+        task = review_world.message
     if worktree and cfg.git.control == "model":
         reporter.refuse(
             "--worktree runs in a linked worktree whose .git is read-only in the jail; under"
@@ -200,6 +216,8 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     except preflight.SessionRefusedError as refusal:
         return refusal.rc
     base_sha, base_branch = git.base_sha, git.base_branch
+    if review_world is not None:
+        base_sha = review_world.target.head_commit or review_world.target.base_commit or ""
     if worktree and not base_sha:
         reporter.refuse(
             "--worktree starts from HEAD's commit, and this repository has none. Commit first"
@@ -251,7 +269,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         gate_refusal := workspace_setup.gate_refusal(
             cfg,
             repo,
-            workspace_setup.origin_gate(cfg, repo),
+            cfg.harness.verify_command
+            if review_world is not None
+            else workspace_setup.origin_gate(cfg, repo),
             workspace="a new worktree",
             at=base_sha,
         )
@@ -420,7 +440,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         def _park(reason: str, detail: str, *, hint: str = "") -> int:
             # `reason` is the short cause listings show; `detail` is the sentence read now.
             stamps.stamp_parked(
-                layout.session_dir, task=task, reason=reason, operator_task=operator_task
+                layout.session_dir,
+                task=operator_task if review_world is not None else task,
+                reason=reason,
+                operator_task=operator_task,
             )
             reporter.err(
                 f"PARKED: {detail}. Your task is saved as run {effective_session_id!r}:\n"
@@ -473,6 +496,12 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                         " then start the run",
                     )
                 if choice == "stash":
+                    if review_world is not None and review_world.target.source == "worktree":
+                        return _park(
+                            "review needs uncommitted changes",
+                            "a bare /review cannot stash the changes it reviews; use agent6 ask "
+                            '"/review", or set git.dirty_tree to include and retry',
+                        )
                     try:
                         git_ops.stash_tracked_changes(
                             cwd,
@@ -505,7 +534,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             # there until the setup command builds it, and the gate is carried.
             cfg = preflight.infer_verify_if_unset(
                 cfg,
-                repo,
+                cwd if review_world is not None else repo,
                 mode=mode,
                 events=events,
                 transcript_sink=transcript_sink,

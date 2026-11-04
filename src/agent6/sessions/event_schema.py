@@ -885,6 +885,11 @@ EVENTS: tuple[EventSpec, ...] = (
         (),
     ),
     EventSpec(
+        "loop.steer.feedback",
+        "A steer directive returned feedback without invoking the model.",
+        (FieldSpec("text", "str", True, "The feedback for the operator."),),
+    ),
+    EventSpec(
         "loop.steer.injected",
         "An operator instruction was injected into context.",
         (

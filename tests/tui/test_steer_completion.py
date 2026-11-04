@@ -19,6 +19,7 @@ def test_rows_match_the_typed_prefix() -> None:
         "/compact",
         "/parallel",
         "/restate",
+        "/review",
         "/undo",
         "/btw",
         "/task",
@@ -43,6 +44,7 @@ def test_compact_and_btw_are_live_only() -> None:
         "/pin",
         "/parallel",
         "/restate",
+        "/review",
         "/undo",
         "/shells",
     ]
@@ -50,9 +52,13 @@ def test_compact_and_btw_are_live_only() -> None:
     assert composer.complete_steer("/c", mode="steer") == "/compact "
 
 
-def test_a_draft_offers_only_the_fan_out() -> None:
-    assert [c for c, _ in composer.steer_suggestion_rows("/", mode="start")] == ["/parallel"]
+def test_a_start_offers_parallel_and_review() -> None:
+    assert [c for c, _ in composer.steer_suggestion_rows("/", mode="start")] == [
+        "/parallel",
+        "/review",
+    ]
     assert composer.complete_steer("/p", mode="start") == "/parallel "
+    assert composer.complete_steer("/rev", mode="start") == "/review "
 
 
 def test_tab_completes_unique_and_stalls_ambiguous() -> None:

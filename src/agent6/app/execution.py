@@ -25,6 +25,7 @@ from agent6.app import (
     conversation_state,
     finalize,
     review_actions,
+    review_directive,
     role_providers,
     session_runtime,
     session_setup,
@@ -497,6 +498,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 take_requests=lambda: ipc.drain_requests(layout.session_dir),
                 after_auto_commit=after_auto_commit,
                 undo_forker=_undo_forker,
+                review_preparer=functools.partial(
+                    review_directive.live, root=cwd, hide=cfg.sandbox.hide_paths
+                ),
                 # None in plan and ask, and inside a lane.
                 lane_spawner=frontend.build_coordinator_spawner(
                     cfg,

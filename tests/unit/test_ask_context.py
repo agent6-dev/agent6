@@ -142,10 +142,12 @@ def test_ask_transcript_snippet_skips_digest_tags() -> None:
 def test_ask_repl_multi_turn_carries_context(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from agent6.harness import loop_snapshot
+    from agent6.harness import loop_snapshot, operator_bridge
     from agent6.sessions import layout as sessions_layout
 
     class _FakeWf:
+        bridge = operator_bridge.OperatorBridge()
+
         def __init__(self) -> None:
             self.calls: list[str] = []
             self.words: list[str] = []

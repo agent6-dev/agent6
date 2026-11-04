@@ -6,7 +6,7 @@ Line input comes from `menu_input` where termios can own the line: editing,
 history recall seeded from the session journal, and a Tab preview of the slash
 commands; elsewhere the plain one-line prompt. A command fires only when it is
 the whole line, typed in full. A line with a space is answered here when its
-word is `/compact`, `/btw` or a skill; `/pin` and `/parallel` travel with their
+word is `/compact`, `/btw` or a skill; `/pin`, `/parallel` and `/review` travel with their
 word lowercased; any other line goes to the run verbatim as the steering
 instruction, so no quoting is needed. Info commands print and re-prompt.
 """
@@ -67,6 +67,7 @@ MENU_COMMANDS: dict[str, str] = {
     "/retire": directive.STEER_COMMANDS["/retire"],
     "/shells": directive.STEER_COMMANDS["/shells"],
     "/restate": directive.STEER_COMMANDS["/restate"],
+    "/review": directive.STEER_COMMANDS["/review"],
     "/undo": directive.STEER_COMMANDS["/undo"],
     "/continue": MENU_ONLY_HELP["/continue"],
     "/stop": directive.STEER_COMMANDS["/stop"],
@@ -371,7 +372,7 @@ class _Again:
 
 AGAIN = _Again()
 # Parsed out of steer text by case-sensitive parsers, so their word travels lowercased.
-_LOOP_DIRECTIVES = ("/pin", "/parallel")
+_LOOP_DIRECTIVES = ("/pin", "/parallel", "/review")
 
 
 def _answer_line(  # noqa: PLR0911, PLR0912
@@ -411,6 +412,8 @@ def _answer_line(  # noqa: PLR0911, PLR0912
             # No call is in flight at a boundary, so the steer lands at once without the word.
             return args.strip()
         return stripped
+    if word == "/review":
+        return word
     if word == "/compact":
         # Complete on its own; the owner composers share acts on it.
         acted = directive_actions.act_on_directive(session_dir, stripped)

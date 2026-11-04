@@ -29,6 +29,7 @@ OPERATOR = "❯"  # noqa: RUF001  # a prompt glyph, not a mistyped >
 
 # Events that render between turns: type -> (kind, the field holding the text).
 _BETWEEN_TURNS: dict[str, tuple[transcript_items.ItemKind, str]] = {
+    "loop.steer.feedback": ("marker", "text"),
     "loop.steer.injected": ("operator", "text"),
     "btw.answered": ("marker", "block"),
 }
