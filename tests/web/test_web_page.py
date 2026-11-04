@@ -387,8 +387,7 @@ function field(id) { return nodes().find(n => n.id === id); }
   assert.ok(button('Add reviewer…'), 'the config bar offers Add reviewer');
   await button('Add reviewer…').onclick();
   field('reviewer-focus').value = 'security';
-  field('reviewer-provider').value = 'p';
-  field('reviewer-model').value = 'm';
+  field('reviewer-model').value = 'p/m';
   assert.deepEqual(field('reviewer-effort').children.map(n => n.value),
     ['', 'off', 'low', 'medium', 'high', 'xhigh', 'max']);
   field('reviewer-effort').value = 'off';
@@ -396,7 +395,7 @@ function field(id) { return nodes().find(n => n.id === id); }
   field('reviewer-repo').checked = true;
   await button('Add').onclick();
   assert.deepEqual(posts.shift(), {path: '/api/config/reviewer', body: {
-    focus: 'security', provider: 'p', model: 'm', effort: 'off', temperature: '0', repo: true,
+    focus: 'security', model: 'p/m', effort: 'off', temperature: '0', repo: true,
   }});
   editConfig('review.reviewers', setting);
   const removes = nodes().filter(n => n.tag === 'button' && n.text === 'Remove');
