@@ -448,27 +448,18 @@ class BudgetTracker:
             self._output_total += output_tokens
             self._cache_read_total += cache_read_tokens
             self._cache_creation_total += cache_creation_tokens
-            if plan_usage is not None:
-                self._check_plan_ceilings(model, plan_usage)
-                return
             metered = (
-                cost_usd > 0.0
+                plan_usage is not None
+                or cost_usd > 0.0
                 or pricing.lookup_price(model, self._routes.get(model, "")) is not None
             )
             if not metered:
                 self._unmetered_tokens += input_tokens + output_tokens
-            if metered and self.max_usd == 0.0:
+            if plan_usage is None and metered and self.max_usd == 0.0:
                 self._exceeded_reason = (
                     "USD budget is 0: metered calls are refused"
                     f" (model {model!r} is priced; raise [budget].max_usd)"
                 )
-            elif self.max_usd > 0.0:
-                cost, _ = self._estimate_usd_locked()
-                if cost >= self.max_usd:
-                    self._exceeded_reason = (
-                        f"USD budget exhausted: ~{format_usd(cost)} >= {format_usd(self.max_usd)}"
-                        " (includes cache_read/cache_creation cost)"
-                    )
             if not metered and self.max_tokens_fallback == 0:
                 self._exceeded_reason = (
                     f"unmetered call refused: model {model!r} has no reported cost and no"
@@ -481,6 +472,7 @@ class BudgetTracker:
                     f"fallback token budget exhausted: {self._unmetered_tokens} unmetered"
                     f" tokens >= {self.max_tokens_fallback}"
                 )
+            self._check_ceilings(model, plan_usage)
 
     def _plan_consumed(self, route: str = "") -> float:
         """Return this run's consumption on its binding window, narrowed to one route when given."""
@@ -536,14 +528,15 @@ class BudgetTracker:
         self._plans.pop(route, None)
         self._plans[route] = plan
 
-    def _check_plan_ceilings(self, model: str, plan_usage: PlanUsage) -> None:
-        """Apply the plan-metered ceilings, most binding first: credits, zero refusals, the cap."""
+    def _check_ceilings(self, model: str, plan_usage: PlanUsage | None = None) -> None:
+        """Check the combined USD and plan-point ledgers with the lock held."""
         would_spend_credits = (
-            plan_usage.has_credits
+            plan_usage is not None
+            and plan_usage.has_credits
             and not plan_usage.credits_unlimited
             and plan_usage.window_exhausted
         )
-        if would_spend_credits and not self.allow_plan_overage:
+        if plan_usage is not None and would_spend_credits and not self.allow_plan_overage:
             balance = plan_usage.credits_balance or "unknown"
             usd = plan_usage.credits_usd
             if usd is not None and not plan_usage.credits_balance.strip().startswith("$"):
@@ -557,7 +550,7 @@ class BudgetTracker:
             self._exceeded_reason = (
                 "USD budget is 0: purchased-credit calls are refused (raise [budget].max_usd)"
             )
-        elif self.max_plan_points == 0.0:
+        elif plan_usage is not None and self.max_plan_points == 0.0:
             self._exceeded_reason = (
                 "percent budget is 0: plan-metered calls are refused"
                 f" (model {model!r} draws on a subscription plan;"
@@ -573,11 +566,13 @@ class BudgetTracker:
                 f" ({route}: account at {reading.used_percent:g}% on its"
                 f" {format_plan_window(reading, windows)})"
             )
-        elif self.max_usd > 0.0 and self._credits_spent_usd >= self.max_usd:
-            self._exceeded_reason = (
-                f"USD budget exhausted: ~{format_usd(self._credits_spent_usd)} of purchased"
-                f" credits spent >= {format_usd(self.max_usd)}"
-            )
+        elif self.max_usd > 0.0:
+            cost, _ = self._estimate_usd_locked()
+            if cost >= self.max_usd:
+                self._exceeded_reason = (
+                    f"USD budget exhausted: ~{format_usd(cost)} >= {format_usd(self.max_usd)}"
+                    " (includes cache_read/cache_creation cost and purchased credits)"
+                )
 
     def register_plan_reader(self, model: str, reader: Callable[[], PlanUsage | None]) -> None:
         """Keep the request that reads a model's plan, for `settle`.
@@ -616,6 +611,7 @@ class BudgetTracker:
                 landed = True
                 with self._lock:
                     self._note_plan_usage(self._routes.get(model, model), plan)
+                    self._check_ceilings(model, plan)
         return landed
 
     def record_plan_preflight(self, model: str, plan: PlanUsage) -> None:
@@ -630,10 +626,10 @@ class BudgetTracker:
         """
         with self._lock:
             self._note_plan_usage(self._routes.get(model, model), plan)
-            self._check_plan_ceilings(model, plan)
+            self._check_ceilings(model, plan)
 
     def check(self) -> None:
-        """Stop the next call when a prior `record` crossed a ceiling.
+        """Stop the next call when a ledger update crossed a ceiling.
 
         Raises:
             BudgetExceededError: A ledger is over its cap.

@@ -10,6 +10,7 @@ from typing import get_args
 import pydantic
 import pytest
 
+from agent6 import config
 from agent6.config import (
     AnthropicProviderEntry,
     Config,
@@ -778,6 +779,20 @@ def test_extra_body_rejects_a_toml_date(tmp_path: pathlib.Path) -> None:
     )
     with pytest.raises(ConfigError, match=r"extra_body\.since.*date"):
         load_config(_write(tmp_path, body))
+
+
+@pytest.mark.parametrize("literal", ["inf", "-inf", "nan"])
+def test_extra_body_rejects_nested_non_finite_floats(tmp_path: pathlib.Path, literal: str) -> None:
+    """Config loading refuses non-finite extra_body floats with their full nested path."""
+    body = _with_openai_provider(
+        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        "[providers.gw.extra_body]\n"
+        f"routing = {{ weights = [0.5, {{ value = {literal} }}] }}\n"
+    )
+    with pytest.raises(
+        config.ConfigError, match=r"extra_body\.routing\.weights\[1\]\.value.*finite"
+    ):
+        config.load_config(_write(tmp_path, body))
 
 
 def test_argv_rejects_blank_element(tmp_path: pathlib.Path) -> None:

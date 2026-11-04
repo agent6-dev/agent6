@@ -499,7 +499,7 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     assert "cost=$0.60" in t.format_summary()
     t.check()
     _record_plan(t, reading("$11.40"))
-    with pytest.raises(budget.BudgetExceededError, match="purchased credits spent"):
+    with pytest.raises(budget.BudgetExceededError, match=r"USD budget exhausted: .*\$1.10"):
         t.check()
     opaque = budget.BudgetTracker(
         max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1, allow_plan_overage=True
@@ -507,6 +507,59 @@ def test_purchased_credit_spend_meters_against_max_usd() -> None:
     _record_plan(opaque, reading("lots"))
     _record_plan(opaque, reading("fewer"))
     assert opaque.estimate_usd()[0] == 0.0
+
+
+@pytest.mark.parametrize("operation", ["record", "preflight", "settle"])
+def test_plan_readings_enforce_combined_usd_spend(operation: str) -> None:
+    """API dollars and purchased credits share the USD ceiling after every plan reading."""
+    tracker = budget.BudgetTracker(
+        max_usd=10, max_tokens_fallback=-1, max_plan_points=-1, allow_plan_overage=True
+    )
+    tracker.record(
+        model="api",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cost_usd=8,
+    )
+    tracker.record_plan_preflight(
+        "gpt-5.6-sol",
+        budget.PlanUsage.single(100, 10080, 2e9, has_credits=True, credits_balance="$40"),
+    )
+    tracker.check()
+    reading = budget.PlanUsage.single(100, 10080, 2e9, has_credits=True, credits_balance="$35")
+    if operation == "record":
+        _record_plan(tracker, reading)
+    elif operation == "preflight":
+        tracker.record_plan_preflight("gpt-5.6-sol", reading)
+    else:
+        tracker.register_plan_reader("gpt-5.6-sol", lambda: reading)
+        assert tracker.settle()
+
+    assert tracker.estimate_usd()[0] == 13
+    assert "cost=$13.00" in tracker.format_summary()
+    assert tracker.snapshot().exhausted
+    assert tracker.is_exhausted()
+    assert tracker.fraction_remaining() == 0
+    with pytest.raises(budget.BudgetExceededError, match=r"USD budget exhausted: .*\$13.00"):
+        tracker.check()
+
+
+def test_settlement_enforces_plan_point_ceiling() -> None:
+    """Settlement marks the tracker exhausted when the last reading crosses its plan cap."""
+    tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=5)
+    tracker.record_plan_preflight("m", _window(20, 2e9))
+    tracker.register_plan_reader("m", lambda: _window(26, 2e9))
+    tracker.check()
+
+    assert tracker.settle()
+
+    assert tracker.snapshot().plan_consumed == 6
+    assert tracker.snapshot().exhausted
+    assert tracker.is_exhausted()
+    with pytest.raises(budget.BudgetExceededError, match="plan budget exhausted"):
+        tracker.check()
 
 
 def test_credit_balances_are_tracked_per_provider_entry() -> None:

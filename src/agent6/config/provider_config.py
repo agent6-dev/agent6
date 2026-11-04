@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Annotated, Any, Literal
 from urllib import parse
@@ -125,8 +126,10 @@ def _require_json_shaped(value: Any, path: str) -> None:
         path: The value's dotted path under `extra_body`, for the message.
 
     Raises:
-        ValueError: The value or a nested item is not JSON-shaped (a TOML date or time).
+        ValueError: The value or a nested item is non-finite or has a non-JSON type.
     """
+    if isinstance(value, float) and not math.isfinite(value):
+        raise ValueError(f"extra_body{path} holds a non-finite float, which JSON cannot carry")
     if value is None or isinstance(value, (str, int, float, bool)):
         return
     if isinstance(value, list):
@@ -216,8 +219,8 @@ class _ProviderBase(pydantic.BaseModel):
             "provider-specific JSON merged last into every request body; precedence for tuning "
             "keys (`max_tokens`, `temperature`); agent6-owned structural keys "
             "filtered out (messages, model, stream, tools, tool choice, response shape); "
-            "JSON-shaped values only, TOML dates and times refused; OpenRouter routing options "
-            "here"
+            "JSON-shaped values only, non-finite floats and TOML dates and times refused; "
+            "OpenRouter routing options here"
         ),
     )
     extra_query: dict[str, str] = pydantic.Field(
@@ -307,7 +310,7 @@ class _ProviderBase(pydantic.BaseModel):
             The table unchanged.
 
         Raises:
-            ValueError: A value is a TOML date or time, or another non-JSON type.
+            ValueError: A value is non-finite or has a non-JSON type, such as a TOML date or time.
         """
         for key, value in v.items():
             _require_json_shaped(value, f".{key}")

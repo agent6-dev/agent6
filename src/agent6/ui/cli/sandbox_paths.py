@@ -114,62 +114,6 @@ def _tool_rows(mounts: tuple[tool_paths.ToolMount, ...] | None = None) -> list[R
     return rows
 
 
-def _group_install_roots(
-    rows: list[Row],
-    mounts: tuple[tool_paths.ToolMount, ...],
-    access: Callable[[pathlib.Path], str],
-) -> list[Row]:
-    roots: dict[pathlib.Path, tool_paths.ToolMount] = {}
-    for mount in mounts:
-        if (
-            mount.on_path
-            or not mount.links
-            or mount.root_refusal
-            or any(link.through is not None for link in mount.links)
-        ):
-            continue
-        try:
-            if any(link.source.resolve().parent == mount.path / "bin" for link in mount.links):
-                roots[mount.path] = mount
-        except OSError:
-            # A link that disappears during the report leaves its grant in a separate row.
-            continue
-    merged = _merge(rows, access)
-    groups: dict[tuple[pathlib.Path, str, str], list[Row]] = {}
-    for row in merged:
-        if row.tag == "tool" and row.path in roots:
-            groups.setdefault((row.path.parent, row.mode, row.tag), []).append(row)
-    folded: dict[pathlib.Path, Row | None] = {}
-    for group in groups.values():
-        if len(group) < 2:
-            continue
-        first = group[0]
-        links = [roots[row.path].links for row in group]
-        shown = [entries[0].source for entries in links]
-        names = [str(shown[0])] + [
-            link.name if link.parent == shown[0].parent else str(link) for link in shown[1:]
-        ]
-        more = sum(len(entries) for entries in links) - len(shown)
-        note = f"{len(group)} install roots; {', '.join(names[:-1])} and {names[-1]} link into them"
-        if more:
-            note += f", {more} more"
-        members = {row.path for row in group}
-        notes = [note] + [
-            f"{row.path.name}: {row.note}"
-            for row in rows
-            if row.path in members and row.tag != "tool" and row.note
-        ]
-        folded.update(dict.fromkeys(members))
-        folded[first.path] = Row(
-            first.mode,
-            first.path.parent / ("{" + ",".join(row.path.name for row in group) + "}"),
-            "; ".join(dict.fromkeys(notes)),
-            first.tag,
-            any(row.warning for row in group),
-        )
-    return [row for entry in merged if (row := folded.get(entry.path, entry)) is not None]
-
-
 def file_tool_rows(ws: path_safety.Workspace, grants: tools_policy.Grants) -> list[Row]:
     """Return the file tools' rows, including the memory exception to the private state dir."""
 
@@ -327,7 +271,7 @@ def command_rows(
     *,
     proc_ok: bool = True,
 ) -> list[Row]:
-    """Return command-policy rows, folding sibling linked install roots with equal access.
+    """Return one command-policy row per path with its effective access and provenance.
 
     Args:
         cfg: The config.
@@ -421,4 +365,4 @@ def command_rows(
             else "denied, except the rows under it below",
         ),
     )
-    return _group_install_roots(rows, mounts, access)
+    return _merge(rows, access)

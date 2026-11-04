@@ -85,7 +85,7 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `<name>.token_command` | `[]` | argv command printing a short-lived bearer token to stdout; re-run after `token_command_ttl_s` and once after a `401` or `403`; precedence over `api_key_env` |
 | `<name>.token_command_ttl_s` | `300.0` | Seconds a `token_command` token is reused before the command runs again. |
 | `<name>.extra_headers` | `{}` | extra HTTP headers: a literal string rides every API request; a template table (`template`, `targets`, `when`) renders from request facts for the request classes it names; no secrets, config file not `0600` |
-| `<name>.extra_body` | `{}` | provider-specific JSON merged last into every request body; precedence for tuning keys (`max_tokens`, `temperature`); agent6-owned structural keys filtered out (messages, model, stream, tools, tool choice, response shape); JSON-shaped values only, TOML dates and times refused; OpenRouter routing options here |
+| `<name>.extra_body` | `{}` | provider-specific JSON merged last into every request body; precedence for tuning keys (`max_tokens`, `temperature`); agent6-owned structural keys filtered out (messages, model, stream, tools, tool choice, response shape); JSON-shaped values only, non-finite floats and TOML dates and times refused; OpenRouter routing options here |
 | `<name>.extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
 | `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
@@ -555,6 +555,8 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
 A worker with no price data is not metered by `max_usd` at all and runs under `max_tokens_fallback`, with a note at startup.
 Included-plan calls are bounded by `max_plan_points`, not by `max_usd` or `max_tokens_fallback`.
+Purchased-credit spend and API cost share the USD ceiling.
+Response usage, plan preflights and settlement readings all recheck the ceilings.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.
 
 ## `[machine]`

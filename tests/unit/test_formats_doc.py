@@ -120,6 +120,15 @@ def test_session_fields_follow_serialization() -> None:
     assert {"as_of.turn", "as_of.sha", "compare.line", "budget.usd_text"} <= names
 
 
+def test_ps_fields_document_separate_status_and_reason() -> None:
+    """The ps reference exposes status and reason as separate string fields."""
+    generator = _generator()
+    row_type = next(cls for cls in generator._models() if cls.__module__ == "agent6.ui.cli.ps_cmd")
+    fields = {field.name: field.kind for field in generator.model_fields(row_type)}
+    assert fields["directory"] == "str \\| None"
+    assert fields["status"] == fields["reason"] == "str"
+
+
 def test_model_fields_follow_the_serialized_model() -> None:
     """A model description and an added field come from the model rather than a docs registry."""
     import pydantic

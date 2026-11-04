@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import time
 
 import pytest
 
@@ -144,6 +145,50 @@ def test_ps_json_carries_the_row_facts(
     assert row["id"] == "fan-l1" and row["mode"] == "run" and row["pid"] == os.getpid()
     assert row["attached"] is False and row["repo_id"] == "lane-repo-000000"
     assert row["directory"] is None  # a state-dir id with no checkout behind it
+
+
+def test_ps_json_waiting_facts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """JSON keeps the absolute directory and separate status and reason of a waiting session."""
+    home = tmp_path / "home"
+    repo = home / "repo"
+    repo.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setattr(time, "time", lambda: 1767225600.0)
+    session_dir = paths.state_dir(repo) / "sessions" / "runs" / "waiting-run"
+    _live(session_dir, {"mode": "run"})
+    with (session_dir / "logs.jsonl").open("a", encoding="utf-8") as log:
+        log.write(
+            json.dumps(
+                {"type": "approval.prompt", "id": "approval-1", "ts": "2026-01-01T00:00:00Z"}
+            )
+            + "\n"
+        )
+
+    assert main(["ps", "--json"]) == 0
+    (row,) = json.loads(capsys.readouterr().out)
+    assert row == {
+        "directory": str(repo),
+        "repo_id": paths.repo_id(repo),
+        "id": "waiting-run",
+        "mode": "run",
+        "status": "waiting",
+        "reason": "approval <1m",
+        "pid": os.getpid(),
+        "attached": False,
+        "coordinator": "",
+        "lanes": [],
+        "worktree": None,
+    }
+
+    assert main(["ps"]) == 0
+    line = next(line for line in capsys.readouterr().out.splitlines() if "waiting-run" in line)
+    assert line.startswith("~/repo ")
+    assert "waiting · approval <1m" in line
+    assert str(home) not in line
 
 
 def _live(session_dir: pathlib.Path, manifest: dict[str, object]) -> None:

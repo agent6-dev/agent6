@@ -2356,11 +2356,12 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `directory` | `str \| None` | The checkout, or None when the id does not lead back to one. |
+| `directory` | `str \| None` | The absolute checkout path, or None when the id does not lead back to one. |
 | `repo_id` | `str` | The state dir's name for the repo. |
 | `id` | `str` | The session id or machine name. |
 | `mode` | `str` | The session mode, or "machine". |
-| `status` | `str` | The status word. |
+| `status` | `str` | The raw status word, without its reason. |
+| `reason` | `str` | The status detail, or "" when there is none. |
 | `pid` | `int \| None` | The worker pid, when readable. |
 | `attached` | `bool` | A front end is live on the session. |
 | `coordinator` | `str` | For a lane, the live coordinator row it nests under. |

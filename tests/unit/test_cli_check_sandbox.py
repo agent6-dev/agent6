@@ -327,13 +327,13 @@ def test_every_operator_tool_mount_is_a_row(
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial"])
-def test_sibling_install_roots_share_a_row(
+def test_sibling_install_roots_each_have_a_row(
     monkeypatch: pytest.MonkeyPatch,
     linked_install_roots: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     isolation: str,
 ) -> None:
-    """Three install roots share one row with a link per root and all extra links counted."""
+    """Each sibling install root keeps its policy path and link provenance in its own row."""
     _force_profile(monkeypatch, isolation)
     base = linked_install_roots
     _, mounts_before = tool_paths.operator_tool_paths()
@@ -344,8 +344,11 @@ def test_sibling_install_roots_share_a_row(
     rows = [line for line in _commands_block(out) if f" {base}/venvs/" in line]
     mode = "ro" if isolation == "full" else "rw"
     assert rows == [
-        f"    {mode}  tool  {base}/venvs/{{bakabakabaka,pyxargs,uv}}  "
-        f"(3 install roots; {base}/bin/baka, pyxargs and uv link into them, 2 more)"
+        f"    {mode}  tool  {base}/venvs/bakabakabaka  "
+        f"({base}/bin/baka links into {base}/venvs/bakabakabaka)",
+        f"    {mode}  tool  {base}/venvs/pyxargs  "
+        f"({base}/bin/pyxargs links into {base}/venvs/pyxargs, 1 more)",
+        f"    {mode}  tool  {base}/venvs/uv  ({base}/bin/uv links into {base}/venvs/uv, 1 more)",
     ]
     files = out.split("  in-process file tools", 1)[1].split("\n\n", 1)[0]
     assert "install roots" not in files and "  tool  " not in files
@@ -372,7 +375,7 @@ def test_path_directory_beside_install_roots_stays_separate(
     linked_install_roots: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A sibling PATH directory stays outside the braces even when a tool links into it."""
+    """A sibling PATH directory keeps its own policy row and link provenance."""
     base = linked_install_roots
     path_dir = base / "venvs" / "bin"
     path_dir.mkdir()
@@ -384,22 +387,18 @@ def test_path_directory_beside_install_roots_stays_separate(
     check_sandbox.check_sandbox_section(Config())
 
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {base}/venvs/" in line]
-    assert len(rows) == 2
+    assert len(rows) == 4
     assert (
         f"    ro  tool  {path_dir}  (on the jail's PATH; "
         f"{base}/bin/path-tool links into {path_dir}; "
         f"install root not widened: {base}/venvs holds a PATH directory)"
     ) in rows
-    assert (
-        f"    ro  tool  {base}/venvs/{{bakabakabaka,pyxargs,uv}}  "
-        f"(3 install roots; {base}/bin/baka, pyxargs and uv link into them, 2 more)"
-    ) in rows
 
 
-def test_install_root_groups_keep_distinct_access_modes(
+def test_install_roots_keep_distinct_access_modes(
     linked_install_roots: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A writable install root cannot join read-only siblings in the command table."""
+    """Each install root shows its effective access in the command table."""
     base = linked_install_roots
     writable = base / "venvs" / "uv"
     cfg = Config(sandbox=SandboxConfig(extra_write_paths=(str(writable),)))
@@ -409,8 +408,10 @@ def test_install_root_groups_keep_distinct_access_modes(
     out = capsys.readouterr().out
     rows = [line for line in _commands_block(out) if f" {base}/venvs/" in line]
     assert rows == [
-        f"    ro  tool  {base}/venvs/{{bakabakabaka,pyxargs}}  "
-        f"(2 install roots; {base}/bin/baka and pyxargs link into them, 1 more)",
+        f"    ro  tool  {base}/venvs/bakabakabaka  "
+        f"({base}/bin/baka links into {base}/venvs/bakabakabaka)",
+        f"    ro  tool  {base}/venvs/pyxargs  "
+        f"({base}/bin/pyxargs links into {base}/venvs/pyxargs, 1 more)",
         f"    rw  tool  {writable}  "
         f"({base}/bin/uv links into {writable}, 1 more; sandbox.extra_write_paths)",
     ]
@@ -433,18 +434,17 @@ def test_link_target_directories_beside_install_roots_stay_separate(
     check_sandbox.check_sandbox_section(Config())
 
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {base}/venvs/" in line]
-    assert len(rows) == 3
-    assert any(f"{base}/venvs/{{bakabakabaka,pyxargs,uv}}" in line for line in rows)
+    assert len(rows) == 5
     for name in ("lib", "libexec"):
         assert (
             f"    ro  tool  {base}/venvs/{name}  ({base}/bin/{name} links into {base}/venvs/{name})"
         ) in rows
 
 
-def test_install_root_groups_keep_other_provenance(
+def test_install_roots_keep_other_provenance(
     linked_install_roots: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Folding equal-access roots retains their configured grant annotations."""
+    """An install root retains its configured grant beside its discovery annotation."""
     base = linked_install_roots
     root = base / "venvs" / "pyxargs"
     cfg = Config(sandbox=SandboxConfig(extra_read_paths=(str(root),)))
@@ -452,11 +452,11 @@ def test_install_root_groups_keep_other_provenance(
     check_sandbox.check_sandbox_section(cfg)
 
     rows = [line for line in _commands_block(capsys.readouterr().out) if f" {base}/venvs/" in line]
-    assert rows == [
-        f"    ro  tool  {base}/venvs/{{bakabakabaka,pyxargs,uv}}  "
-        f"(3 install roots; {base}/bin/baka, pyxargs and uv link into them, 2 more; "
-        "pyxargs: sandbox.extra_read_paths)"
-    ]
+    assert len(rows) == 3
+    assert (
+        f"    ro  tool  {root}  "
+        f"({base}/bin/pyxargs links into {root}, 1 more; sandbox.extra_read_paths)"
+    ) in rows
 
 
 def test_rows_sort_by_path_with_a_root_and_a_home_row(
@@ -796,8 +796,8 @@ def test_report_colours_and_plain_modes_carry_the_same_words(
     assert "    ro  \x1b[2msys " in coloured
     plain = re.sub(r"\x1b\[[0-9;]*m", "", coloured)
     assert (
-        f"    rw  tool  {linked_install_roots}/venvs/{{bakabakabaka,pyxargs,uv}}  "
-        f"(3 install roots; {linked_install_roots}/bin/baka, pyxargs and uv link into them, 2 more)"
+        f"    rw  tool  {linked_install_roots}/venvs/uv  "
+        f"({linked_install_roots}/bin/uv links into {linked_install_roots}/venvs/uv, 1 more)"
     ) in _commands_block(plain)
     for legend in (
         "sys: system paths, including granted device nodes",

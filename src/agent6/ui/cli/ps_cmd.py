@@ -23,11 +23,12 @@ class _Row:
     """One live session or machine instance.
 
     Attributes:
-        directory: The checkout, or None when the id does not lead back to one.
+        directory: The absolute checkout path, or None when the id does not lead back to one.
         repo_id: The state dir's name for the repo.
         id: The session id or machine name.
         mode: The session mode, or "machine".
-        status: The status word.
+        status: The raw status word, without its reason.
+        reason: The status detail, or "" when there is none.
         pid: The worker pid, when readable.
         attached: A front end is live on the session.
         coordinator: For a lane, the live coordinator row it nests under.
@@ -40,6 +41,7 @@ class _Row:
     id: str
     mode: str
     status: str
+    reason: str
     pid: int | None
     attached: bool
     coordinator: str = ""
@@ -48,12 +50,16 @@ class _Row:
 
     def cells(self, id_cell: str) -> tuple[str, ...]:
         """Return the table cells, with the id cell as given."""
-        where = self.directory if self.directory is not None else f"? ({self.repo_id})"
+        where = (
+            common.home_contracted(self.directory)
+            if self.directory is not None
+            else f"? ({self.repo_id})"
+        )
         return (
             where,
             id_cell,
             self.mode,
-            self.status,
+            format.status_label(self.status, self.reason),
             str(self.pid) if self.pid is not None else "?",
             "attached" if self.attached else "",
             common.home_contracted(self.worktree) if self.worktree else "",
@@ -109,7 +115,7 @@ def _live_rows() -> _Live:
         for repo_dir in sorted(base.iterdir()):
             root = paths.repo_root_of_id(repo_dir.name)
             # An elided-hash id is not reversible to a path; the cell says so.
-            where = common.home_contracted(str(root)) if root is not None else None
+            where = str(root) if root is not None else None
             for bucket in layout.SESSION_BUCKETS:
                 bucket_path = repo_dir / "sessions" / bucket
                 if not bucket_path.is_dir():
@@ -129,7 +135,8 @@ def _live_rows() -> _Live:
                         repo_dir.name,
                         sdir.name,
                         summary.mode,
-                        format.status_label(summary.status, summary.reason),
+                        summary.status,
+                        summary.reason,
                         process.read_worker_pid(sdir),
                         process.frontend_is_live(sdir),
                         coordinator=summary.coordinator,
@@ -148,7 +155,8 @@ def _live_rows() -> _Live:
                             repo_dir.name,
                             mdir.name,
                             "machine",
-                            format.status_label(machine.status, machine.reason),
+                            machine.status,
+                            machine.reason,
                             process.read_worker_pid(mdir),
                             False,
                         )
