@@ -831,7 +831,8 @@ def test_the_conversation_seat_is_the_driving_provider_not_always_worker(
 
     kept = [
         t["seat"]
-        for t in transcript_render.conversation_transcripts(transcript_render.load_transcripts(d))
+        for t in transcript_render.load_transcripts(d)
+        if transcript_render.drives_conversation(t)
     ]
     assert "planner" in kept, "a plan run lost its whole conversation"
     assert "" in kept, "a transcript written before seats existed is the driving seat's"

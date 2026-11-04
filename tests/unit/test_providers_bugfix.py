@@ -490,6 +490,9 @@ def _capture_body(provider: openai.OpenAIProvider) -> dict[str, Any]:
         status_code = 200
         text = "{}"
 
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
+
         def json(self) -> Any:
             return {
                 "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],

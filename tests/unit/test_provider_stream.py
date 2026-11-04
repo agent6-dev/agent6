@@ -141,12 +141,14 @@ def test_idle_kill_before_output_reports_prefill_and_records(
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse())),
         pytest.raises(provider_types.ProviderError, match="prefill"),
     ):
-        _call(sink).run(_drain)
+        call = _call(sink)
+        with call.recording():
+            call.run(_drain)
 
     files = list((tmp_path / "transcripts").glob("*.json"))
     assert len(files) == 1
     doc = json.loads(files[0].read_text(encoding="utf-8"))
-    assert doc["response"]["status"] == 0
+    assert doc["response"]["status"] == 200
     assert "idle watchdog" in doc["response"]["body"]
 
 
@@ -275,7 +277,9 @@ def test_4xx_threads_status_retry_after_and_label(tmp_path: pathlib.Path) -> Non
         mock.patch("httpx2.stream", side_effect=_serve(resp)),
         pytest.raises(provider_types.ProviderError) as ei,
     ):
-        _call(sink).run(_drain)
+        call = _call(sink)
+        with call.recording():
+            call.run(_drain)
 
     assert str(ei.value).startswith("OpenAI API error 429")
     assert ei.value.status_code == 429
@@ -292,7 +296,9 @@ def test_http_error_body_read_stops_at_the_surfaced_prefix(tmp_path: pathlib.Pat
         mock.patch("httpx2.stream", side_effect=_serve(resp)),
         pytest.raises(provider_types.ProviderError, match="500"),
     ):
-        _call(sink).run(_drain)
+        call = _call(sink)
+        with call.recording():
+            call.run(_drain)
 
     assert resp.chunks_read == 2
     [transcript] = (tmp_path / "transcripts").glob("*.json")
@@ -444,7 +450,7 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
             return {"choices": [{}]}
 
     with pytest.raises(provider_types.ProviderError, match="did not match the wire shape"):
-        call._decode_success({}, _Resp())  # pyright: ignore[reportPrivateUsage, reportArgumentType]
+        call._decode_success({}, _Resp(), transcript=provider_types.TranscriptAttempt())  # pyright: ignore[reportPrivateUsage, reportArgumentType]
 
 
 def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1382,30 +1382,42 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 **Support: durable but private.**
 
-`transcripts/<timestamp>-<seq>.json` holds one record per model round-trip.
+`transcripts/<timestamp>-<seq>.json` holds one record per model attempt.
 The sequence is padded to six digits in the filename.
+The record is written with the redacted request before the send, with `outcome: "incomplete"`, and rewritten in place when the attempt ends: `completed`, `failed`, `interrupted` (a steer) or `aborted` (a stop or a cancellation).
+A record stays `incomplete` while the call runs, and after a process ended before the attempt did; it does not say whether the provider received or billed the request.
+`sessions transcript` marks every attempt that did not complete.
 `model_call_id` joins a transcript to its logical call; `request_id` joins it to its `provider.request` event.
 Retries share the call id and have separate request ids.
-Older transcripts may omit these ids.
-Secret-bearing request headers are redacted, and their credential values of at least eight characters are scrubbed wherever they appear in the record.
+Older transcripts may omit these ids and `outcome`.
+Secret-bearing request and response headers are redacted, and their credential values of at least eight characters are scrubbed wherever they appear in the record.
 [Attachment payloads are omitted](security.md#media-retention) and replaced with metadata, so these files cannot replay the attachment bytes.
 
-Source: [`providers.provider_types.TranscriptSink.record`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/providers/provider_types.py).
+Source: [`providers.provider_types.TranscriptAttempt.write`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/providers/provider_types.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `ts` | `JSON` | The UTC timestamp in `YYYYMMDDTHHMMSSffffffZ` form. |
+| `ts` | `JSON` | The UTC start timestamp in `YYYYMMDDTHHMMSSffffffZ` form. |
 | `seq` | `JSON` | The run-global sequence, starting at 1 and continuing across resumes. |
 | `model_call_id` | `JSON` | The logical call id from `role.call`; null without a call context. |
 | `request_id` | `JSON` | The HTTP attempt id from `provider.request`; empty for a local process. |
 | `seat` | `JSON` | The role or review focus label, not a unique seat identity. |
-| `request` | `JSON` | The request sent to the provider. |
+| `outcome` | `JSON` | `incomplete`, `completed`, `failed`, `interrupted` or `aborted`. |
+| `request` | `JSON` | The request formed for the provider. |
 | `request.url` | `JSON` | The URL dialled. |
 | `request.headers` | `JSON` | The request headers, with secret-bearing values redacted. |
-| `request.body` | `JSON` | The serialized request body. |
-| `response` | `JSON` | The provider's response or transport error. |
-| `response.status` | `JSON` | The HTTP status, or 0 for a transport error. |
+| `request.body` | `JSON` | The serialized request body, with attachment payloads omitted. |
+| `response` | `JSON` | What the attempt received before it ended. |
+| `response.status` | `JSON` | The HTTP status, or 0 when no response opened. |
+| `response.headers` | `JSON` | The response headers, with secret-bearing values redacted. |
 | `response.body` | `JSON` | The parsed response body or raw error text. |
+| `usage` | `JSON` | The observed token counts and cost; null when the provider reported none. |
+| `error` | `JSON` | The exception type and reason; empty when none was raised. |
+| `usage.input_tokens` | `int` | Fresh input tokens billed. |
+| `usage.output_tokens` | `int` | Completion tokens billed. |
+| `usage.cache_read_tokens` | `int` | Prompt tokens served from the cache. |
+| `usage.cache_creation_tokens` | `int` | Prompt tokens written to the cache. |
+| `usage.cost_usd` | `float \| None` | The reported cost; None means unreported and zero means a free call. |
 
 ## CLI JSON
 

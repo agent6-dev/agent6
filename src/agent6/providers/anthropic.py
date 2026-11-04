@@ -839,65 +839,68 @@ class AnthropicProvider:
             )
             if not saw_usage:
                 return None
-            return provider_types.ProviderUsage(
+            call.transcript.usage = provider_types.ProviderUsage(
                 input_tokens=usage_input,
                 output_tokens=usage_output,
                 cache_read_tokens=usage_cache_read,
                 cache_creation_tokens=usage_cache_creation,
             )
+            return call.transcript.usage
 
-        try:
-            call.run(consume)
-        except BaseException as exc:
-            # Input usage arrives in `message_start`, so a turn ended early was billed.
-            billed_usage = _record_billed()
-            if isinstance(exc, provider_types.ProviderError):
-                exc.usage = billed_usage
-            raise
-
-        # A truncated turn returned as finished would read as the model going quiet.
-        if not saw_message_stop:
-            billed_usage = _record_billed()
-            call.record(status=0, response="stream ended without message_stop (truncated)")
-            raise provider_types.ProviderError(
-                f"Anthropic SSE stream from {url} ended prematurely "
-                "(no message_stop); upstream appears cut off.",
-                usage=billed_usage,
-            )
-
-        synthesised: dict[str, Any] = {
-            "type": "message",
-            "role": "assistant",
-            "content": content_blocks,
-            "stop_reason": stop_reason,
-            "usage": {
-                "input_tokens": usage_input,
-                "output_tokens": usage_output,
-                "cache_read_input_tokens": usage_cache_read,
-                "cache_creation_input_tokens": usage_cache_creation,
-            },
-        }
-        call.record(status=200, response=synthesised)
-        if self.budget is not None:
+        with call.recording():
             try:
-                if not (saw_input_usage and saw_output_usage):
-                    raise provider_types.ProviderError(
-                        "Anthropic stream omitted usage.input_tokens/output_tokens; "
-                        "budgeted runs require provider usage accounting"
-                    )
-                _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
+                call.run(consume)
+            except BaseException as exc:
+                # Input usage arrives in `message_start`, so a turn ended early was billed.
+                billed_usage = _record_billed()
+                if isinstance(exc, provider_types.ProviderError):
+                    exc.usage = billed_usage
+                raise
+
+            # A truncated turn returned as finished would read as the model going quiet.
+            if not saw_message_stop:
+                billed_usage = _record_billed()
+                call.record(status=0, response="stream ended without message_stop (truncated)")
+                raise provider_types.ProviderError(
+                    f"Anthropic SSE stream from {url} ended prematurely "
+                    "(no message_stop); upstream appears cut off.",
+                    usage=billed_usage,
+                )
+
+            synthesised: dict[str, Any] = {
+                "type": "message",
+                "role": "assistant",
+                "content": content_blocks,
+                "stop_reason": stop_reason,
+                "usage": {
+                    "input_tokens": usage_input,
+                    "output_tokens": usage_output,
+                    "cache_read_input_tokens": usage_cache_read,
+                    "cache_creation_input_tokens": usage_cache_creation,
+                },
+            }
+            call.record(status=200, response=synthesised)
+            if self.budget is not None:
+                try:
+                    if not (saw_input_usage and saw_output_usage):
+                        raise provider_types.ProviderError(
+                            "Anthropic stream omitted usage.input_tokens/output_tokens; "
+                            "budgeted runs require provider usage accounting"
+                        )
+                    _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
+                except provider_types.ProviderError as exc:
+                    exc.usage = _record_billed()
+                    raise
+            try:
+                parsed = _parse_response(synthesised)
             except provider_types.ProviderError as exc:
                 exc.usage = _record_billed()
                 raise
-        try:
-            parsed = _parse_response(synthesised)
-        except provider_types.ProviderError as exc:
-            exc.usage = _record_billed()
-            raise
-        transport.meter_completion(
-            self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, "Anthropic"
-        )
-        return parsed
+            transport.meter_completion(
+                self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, "Anthropic"
+            )
+            call.transcript.usage = parsed.usage if saw_usage else None
+            return parsed
 
 
 def _parse_response(data: dict[str, Any]) -> provider_types.ProviderResponse:

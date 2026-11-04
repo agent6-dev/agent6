@@ -582,12 +582,13 @@ def _cmd_history_transcript(
     """Render a session's full LLM conversation from its lossless per-call transcripts.
 
     The transcripts (`<run>/transcripts/*.json`) are the complete record, needing no join
-    with logs.jsonl: assistant text and thinking plus every tool call with its full I/O.
+    with logs.jsonl: assistant text and thinking plus every tool call with its full I/O,
+    and a marker for every attempt that did not complete.
     `agent6 attach` and `history search` are the terse event timeline.
 
     Args:
         session_id: The session, or "" for the newest with transcripts.
-        as_json: Print the folded messages as JSON.
+        as_json: Print the raw attempt records as JSON.
         no_thinking: Leave the thinking blocks out.
         tools: How much of each tool call to show.
         seq: The `--seq` call window.
@@ -619,17 +620,16 @@ def _cmd_history_transcript(
         print(json.dumps(transcripts, indent=2, ensure_ascii=False))
         return 0
 
-    if not transcript_render.conversation_transcripts(transcripts):
-        # A review-only dir: every round-trip is a side-call seat, so the fold would print nothing.
+    # Fold the full set (the per-seq walk needs every call), then window the messages.
+    messages = transcript_render.fold_conversation(transcripts)
+    if not messages and not any(transcript_render.drives_conversation(t) for t in transcripts):
+        # A review-only dir: every round-trip is a side-call seat, so the fold prints nothing.
         print(
             f"session {layout.session_id} has only side-call transcripts (review seats /"
             " compaction); --json dumps them raw.",
             file=sys.stderr,
         )
         return 2
-
-    # Fold the full set (the per-seq walk needs every call), then window the messages.
-    messages = transcript_render.fold_conversation(transcripts)
     if window is not None:
         lo, hi = window
         messages = [t for t in messages if lo <= t.seq <= hi]

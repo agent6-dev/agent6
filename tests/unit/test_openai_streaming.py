@@ -482,6 +482,7 @@ def test_streaming_idle_watchdog_kills_heartbeat_only_stream(
     class _BlockingHeartbeatResponse:
         def __init__(self) -> None:
             self.status_code = 200
+            self.headers: dict[str, str] = {}
             self._closed = threading.Event()
 
         def __enter__(self) -> _BlockingHeartbeatResponse:
@@ -546,6 +547,7 @@ def test_streaming_idle_watchdog_mid_stream_uses_the_short_timeout(
     class _DataThenStallResponse:
         def __init__(self) -> None:
             self.status_code = 200
+            self.headers: dict[str, str] = {}
             self._closed = threading.Event()
 
         def __enter__(self) -> _DataThenStallResponse:
@@ -630,6 +632,7 @@ def test_empty_role_delta_stays_in_the_prefill_budget(monkeypatch: pytest.Monkey
     class _RoleThenSilent:
         def __init__(self) -> None:
             self.status_code = 200
+            self.headers: dict[str, str] = {}
             self._closed = threading.Event()
 
         def __enter__(self) -> _RoleThenSilent:
@@ -707,7 +710,8 @@ def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: pathlib.Pa
 
     recorded = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(tmp_path.glob("*.json"))]
     assert recorded, "the cut attempt was not recorded at all"
-    assert [r["response"]["status"] for r in recorded] == [0]  # never a clean 200
+    assert [r["outcome"] for r in recorded] == ["failed"]
+    assert [r["response"]["status"] for r in recorded] == [200]
     assert "truncat" in str(recorded[0]["response"]["body"]).lower()
 
 

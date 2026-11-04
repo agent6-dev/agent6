@@ -510,7 +510,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `checkpoints/<NNNN>.json` | per-turn snapshots at the pre-call boundary, all kept, carrying the run's chain tip (`head_sha`) and the curator `graph_version` |
 | `turn_in_flight.json` | the turn whose tool calls are dispatching, with each result that returned; gone once the snapshot holds the turn or the execution ends itself |
 | `plan.md` | the plan itself, in plan sessions |
-| `transcripts/<timestamp>-<seq>.json` | provider request and response pairs kept for diagnosis and replay |
+| `transcripts/<timestamp>-<seq>.json` | provider attempt records with redacted requests, outcomes and response evidence |
 | `worker.pid` | the live worker's pid and start time; every surface reads liveness here |
 | `approvals/`, `questions/` | one `<id>.answer` file per prompt, whichever front-end answers; `approvals/` also holds the session-wide allow and deny marker per scope |
 | `frontends/` | one file per front-end registered to answer this run, named for its pid |
@@ -520,7 +520,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its turn boundary |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
-The [Formats reference](formats.md#provider-transcripts) describes provider transcript files and their call and request ids.
+The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
 Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.
 Review conversations use `(panel_id, seat_index)` rather than focus text, so identical seats remain separate.
 Calls with the same panel id and seat index continue the same conversation.

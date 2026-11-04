@@ -206,7 +206,7 @@ def test_transcript_record_publishes_via_atomic_write(
         response_status=200,
         response_body={"ok": True},
     )
-    assert calls == [path]  # published atomically, not via a predictable temp
+    assert calls == [path, path]  # open and finalize the same record atomically
     body = path.read_text(encoding="utf-8")
     assert json.loads(body)["seq"] == 1
     assert "sk-secret" not in body  # redaction intact

@@ -343,21 +343,24 @@ class ResponsesProvider:
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
             )
+            call.transcript.usage = billed.usage
             return billed.usage
 
-        try:
-            call.run(consume)
-            parsed = responses_codec.finish_stream(
-                state, call=call, url=url, label=_LABEL, route=self._route
+        with call.recording():
+            try:
+                call.run(consume)
+                parsed = responses_codec.finish_stream(
+                    state, call=call, url=url, label=_LABEL, route=self._route
+                )
+                if self.budget is not None:
+                    _require_usage(state.usage)
+            except BaseException as exc:
+                billed_usage = record_billed()
+                if isinstance(exc, provider_types.ProviderError):
+                    exc.usage = billed_usage
+                raise
+            transport.meter_completion(
+                self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, _LABEL
             )
-            if self.budget is not None:
-                _require_usage(state.usage)
-        except BaseException as exc:
-            billed_usage = record_billed()
-            if isinstance(exc, provider_types.ProviderError):
-                exc.usage = billed_usage
-            raise
-        transport.meter_completion(
-            self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, _LABEL
-        )
-        return parsed
+            call.transcript.usage = parsed.usage if state.usage else None
+            return parsed

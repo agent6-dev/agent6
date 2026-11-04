@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Fold a session's per-call provider transcripts into conversation messages and render them.
 
-agent6 writes one JSON file per round-trip under `<run>/transcripts/`, the redacted
-`{request, response}`; each request carries the whole conversation up to that call.
+agent6 writes one JSON file per attempt under `<run>/transcripts/`, the redacted
+`{request, response}` and its outcome; each request carries the whole conversation up to that call.
 The fold walks them in seq order across the Chat Completions, Anthropic and Responses
 wire shapes, emitting only the messages each call introduced, so the cumulative
 snapshots are not double-printed and a compaction restart shows as a marker.
@@ -18,6 +18,7 @@ import dataclasses
 import json
 import pathlib
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from agent6.providers import result_text
@@ -87,9 +88,9 @@ def load_transcripts(transcripts_dir: pathlib.Path) -> list[dict[str, Any]]:
     return out
 
 
-def conversation_transcripts(transcripts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Return the driving seats' round-trips; a transcript with no seat is the driver's."""
-    return [t for t in transcripts if str(t.get("seat", "") or "worker") in CONVERSATION_SEATS]
+def drives_conversation(t: dict[str, Any]) -> bool:
+    """Return whether the transcript is a driving seat's; one with no seat is the driver's."""
+    return str(t.get("seat", "") or "worker") in CONVERSATION_SEATS
 
 
 def _as_dict(value: Any) -> dict[str, Any]:
@@ -411,13 +412,36 @@ def _elision_marker(prev: list[Any], msgs: list[Any], upto: int) -> str:
     )
 
 
+def _conversation_calls(
+    transcripts: list[dict[str, Any]], messages: list[Message]
+) -> Iterator[dict[str, Any]]:
+    """Mark each attempt that did not complete and yield the driving seats' calls.
+
+    Args:
+        transcripts: Every seat's records, in seq order.
+        messages: The conversation receiving the markers.
+
+    Yields:
+        Each driving call, after its marker.
+    """
+    for t in transcripts:
+        outcome = t.get("outcome")
+        if outcome and outcome != "completed":
+            notice = f"call {transcript_seq(t)}: {outcome}"
+            if not drives_conversation(t):
+                notice += f" ({t.get('seat')})"
+            messages.append(Message(role="marker", text=notice, seq=transcript_seq(t)))
+        if drives_conversation(t):
+            yield t
+
+
 def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Message]:
     """Fold per-call transcripts into one ordered conversation.
 
     Each request is reconciled against the prior one rather than predicted: a
     recorded response reappears as the next request's message only when the history
     grew, since an error transcript or an empty-response retry re-sends the identical
-    list. Only the driving seats fold.
+    list. Only the driving seats fold; any seat's attempt that did not complete leaves a marker.
 
     Args:
         transcripts: The transcripts, in seq order.
@@ -425,7 +449,6 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Message]:
     Returns:
         The messages, a marker for a compaction restart or an unreadable seq included.
     """
-    transcripts = conversation_transcripts(transcripts)
     messages: list[Message] = []
     names: dict[str, str] = {}
     prev_len = 0
@@ -433,7 +456,7 @@ def fold_conversation(transcripts: list[dict[str, Any]]) -> list[Message]:
     pending_response = False
     prev_output: list[Any] = []
     call_seq = 0
-    for t in transcripts:
+    for t in _conversation_calls(transcripts, messages):
         seq = t.get("seq", 0)
         if not isinstance(seq, int):
             messages.append(Message(role="marker", text=f"unreadable seq {seq!r}: call skipped"))

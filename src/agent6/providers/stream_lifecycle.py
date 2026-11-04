@@ -59,9 +59,6 @@ def http_stream(
 
     Yields:
         The open response.
-
-    Raises:
-        ProviderError: The provider answered with a redirect, which is never followed.
     """
     with httpx2.stream(
         method,
@@ -72,12 +69,6 @@ def http_stream(
         follow_redirects=False,
         trust_env=transport.trust_env_for(url),
     ) as resp:
-        if 300 <= resp.status_code < 400:
-            raise provider_types.ProviderError(
-                f"provider redirected (HTTP {resp.status_code}); refusing to follow with"
-                " credentials (the Location is not shown: it may echo them)",
-                status_code=resp.status_code,
-            )
         yield resp
 
 
@@ -279,7 +270,7 @@ def record_billed_usage(
     )
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(slots=True)
 class SseCall:
     """One provider SSE request, as the shared lifecycle needs it.
 
@@ -295,6 +286,7 @@ class SseCall:
         should_interrupt: Polled each watchdog tick; True ends the turn as interrupted.
         response_headers: Receives the response headers once the stream opens.
         facts: The HTTP attempt's identity and call context, when supplied.
+        transcript: The attempt's response evidence, finalized by `recording`.
     """
 
     api_label: str
@@ -309,25 +301,39 @@ class SseCall:
     response_headers: Callable[[Mapping[str, str]], None] | None = None
     facts: request_headers.RequestFacts | None = None
 
-    def record(self, *, status: int, response: dict[str, Any] | str) -> None:
-        """Write one transcript entry for this request; nothing without a sink."""
+    transcript: provider_types.TranscriptAttempt = dataclasses.field(
+        default_factory=provider_types.TranscriptAttempt, init=False
+    )
+
+    @contextlib.contextmanager
+    def recording(self) -> Generator[None]:
+        """Open the transcript before send and finalize after parsing and usage accounting.
+
+        Yields:
+            Control to the provider's attempt scope.
+        """
         if self.transcript_sink is not None:
-            if (
-                isinstance(response, str)
-                and len(response) >= _ERROR_BODY_PREFIX_BYTES
-                and media.input_modalities(self.body)
-            ):
-                response = _MEDIA_ERROR_OMITTED
             context = self.facts.context if self.facts is not None else None
-            self.transcript_sink.record(
+            self.transcript = self.transcript_sink.open(
                 url=self.url,
                 call_context=context.call_context if context is not None else None,
                 request_id=self.facts.request_id if self.facts is not None else "",
                 request_headers=self.headers,
                 request_body=self.body,
-                response_status=status,
-                response_body=response,
             )
+        with self.transcript.capture():
+            yield
+
+    def record(self, *, status: int, response: dict[str, Any] | str) -> None:
+        """Retain the response body for the attempt's final rewrite."""
+        if (
+            isinstance(response, str)
+            and len(response) >= _ERROR_BODY_PREFIX_BYTES
+            and media.input_modalities(self.body)
+        ):
+            response = _MEDIA_ERROR_OMITTED
+        self.transcript.response_status = self.transcript.response_status or status
+        self.transcript.response_body = response
 
     def run(  # noqa: PLR0915
         self, consume: Callable[[httpx2.Response, StreamClock], None]
@@ -412,8 +418,16 @@ class SseCall:
                 timeout=self.timeout_s,
             ) as resp:
                 resp_holder["resp"] = resp
+                self.transcript.response_status = resp.status_code
+                self.transcript.response_headers = dict(resp.headers)
                 if self.response_headers is not None:
                     self.response_headers(resp.headers)
+                if 300 <= resp.status_code < 400:
+                    raise provider_types.ProviderError(
+                        f"provider redirected (HTTP {resp.status_code}); refusing to follow with"
+                        " credentials (the Location is not shown: it may echo them)",
+                        status_code=resp.status_code,
+                    )
                 if not 200 <= resp.status_code < 300:
                     error_body = _error_body_prefix(resp, self.body, self.headers)
                     self.record(status=resp.status_code, response=error_body)

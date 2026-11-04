@@ -619,76 +619,80 @@ class OpenAIProvider:
                 cache_creation_tokens=billed.cache_creation_tokens,
                 cost_usd=billed.cost_usd,
             )
+            call.transcript.usage = billed.usage
             return billed.usage
 
-        try:
-            call.run(consume)
-        except BaseException as exc:
-            # A usage shape the parser refuses must not replace the reason the stream ended.
-            with contextlib.suppress(provider_types.ProviderError):
-                billed_usage = _record_billed()
-                if isinstance(exc, provider_types.ProviderError):
-                    exc.usage = billed_usage
-            raise
-
-        # A truncated turn returned as finished would read as the model going quiet.
-        if not done_seen and not finish_reason:
-            billed_usage = _record_billed()
-            call.record(
-                status=0,
-                response="stream ended without [DONE] or finish_reason (truncated)",
-            )
-            raise provider_types.ProviderError(
-                f"OpenAI stream from {url} ended prematurely "
-                "(no [DONE], no finish_reason); upstream appears cut off.",
-                usage=billed_usage,
-            )
-
-        final_tool_calls: list[dict[str, Any]] = []
-        for idx in sorted(tool_calls):
-            slot = tool_calls[idx]
-            args = "".join(tool_arg_buf.get(idx, []))
-            slot["function"]["arguments"] = args
-            final_tool_calls.append(slot)
-
-        # The recorded body is read back as a transcript, so it carries the role.
-        message: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
-        if reasoning_parts:
-            message["reasoning_content"] = "".join(reasoning_parts)
-        if final_tool_calls:
-            message["tool_calls"] = final_tool_calls
-
-        synthesised: dict[str, Any] = {
-            "choices": [
-                {
-                    "index": 0,
-                    "message": message,
-                    "finish_reason": finish_reason,
-                }
-            ],
-            "usage": usage,
-        }
-        if self.budget is not None and not done_seen and not usage:
-            # The usage chunk follows finish_reason, so a stream stopped between them was cut.
-            call.record(
-                status=0,
-                response="stream cut before its usage trailer (truncated)",
-            )
-            raise provider_types.ProviderError(
-                f"OpenAI stream from {url} was cut off before its usage trailer"
-                " (finish_reason seen, no [DONE], no usage); truncated response."
-            )
-        call.record(status=200, response=synthesised)
-        if self.budget is not None:
+        with call.recording():
             try:
-                _require_metered_usage(usage, source="OpenAI stream")
-            except provider_types.ProviderError as exc:
-                exc.usage = _record_billed()
+                call.run(consume)
+            except BaseException as exc:
+                # A usage shape the parser refuses must not replace the reason the stream ended.
+                with contextlib.suppress(provider_types.ProviderError):
+                    billed_usage = _record_billed()
+                    if isinstance(exc, provider_types.ProviderError):
+                        exc.usage = billed_usage
                 raise
-        parsed = openai_parse.parse_response(
-            synthesised, tool_names=tool_names, tool_schemas=tool_schemas
-        )
-        transport.meter_completion(
-            self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, "OpenAI"
-        )
-        return parsed
+
+            # A truncated turn returned as finished would read as the model going quiet.
+            if not done_seen and not finish_reason:
+                billed_usage = _record_billed()
+                call.record(
+                    status=0,
+                    response="stream ended without [DONE] or finish_reason (truncated)",
+                )
+                raise provider_types.ProviderError(
+                    f"OpenAI stream from {url} ended prematurely "
+                    "(no [DONE], no finish_reason); upstream appears cut off.",
+                    usage=billed_usage,
+                )
+
+            final_tool_calls: list[dict[str, Any]] = []
+            for idx in sorted(tool_calls):
+                slot = tool_calls[idx]
+                args = "".join(tool_arg_buf.get(idx, []))
+                slot["function"]["arguments"] = args
+                final_tool_calls.append(slot)
+
+            # The recorded body is read back as a transcript, so it carries the role.
+            message: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
+            if reasoning_parts:
+                message["reasoning_content"] = "".join(reasoning_parts)
+            if final_tool_calls:
+                message["tool_calls"] = final_tool_calls
+
+            synthesised: dict[str, Any] = {
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": message,
+                        "finish_reason": finish_reason,
+                    }
+                ],
+                "usage": usage,
+            }
+            if self.budget is not None and not done_seen and not usage:
+                # The usage chunk follows finish_reason, so a stream stopped between them was cut.
+                call.record(
+                    status=0,
+                    response="stream cut before its usage trailer (truncated)",
+                )
+                raise provider_types.ProviderError(
+                    f"OpenAI stream from {url} was cut off before its usage trailer"
+                    " (finish_reason seen, no [DONE], no usage); truncated response."
+                )
+            call.record(status=200, response=synthesised)
+            try:
+                if self.budget is not None:
+                    _require_metered_usage(usage, source="OpenAI stream")
+                parsed = openai_parse.parse_response(
+                    synthesised, tool_names=tool_names, tool_schemas=tool_schemas
+                )
+            except provider_types.ProviderError as exc:
+                with contextlib.suppress(provider_types.ProviderError):
+                    exc.usage = _record_billed()
+                raise
+            transport.meter_completion(
+                self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, "OpenAI"
+            )
+            call.transcript.usage = parsed.usage if usage else None
+            return parsed

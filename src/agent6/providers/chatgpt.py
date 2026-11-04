@@ -495,36 +495,39 @@ class ChatGPTProvider:
                 cache_creation_tokens=0,
                 plan_usage=plan_usage,
             )
-            return billed.usage if state.usage else None
+            call.transcript.usage = billed.usage if state.usage else None
+            return call.transcript.usage
 
-        try:
-            call.run(consume)
-        except BaseException as exc:
-            billed_usage = _record_billed()
-            if isinstance(exc, provider_types.ProviderError):
-                exc.usage = billed_usage
-            raise
-        try:
-            parsed = responses_codec.finish_stream(
-                state, call=call, url=url, label="ChatGPT", route=self._route
-            )
-        except provider_types.ProviderError as exc:
-            exc.usage = _record_billed()
-            raise
-        if self.budget is not None:
-            if int(state.usage.get("input_tokens") or 0) <= 0:
+        with call.recording():
+            try:
+                call.run(consume)
+            except BaseException as exc:
                 billed_usage = _record_billed()
-                raise provider_types.ProviderError(
-                    "ChatGPT stream reported no usage input tokens;"
-                    " budgeted runs require provider usage accounting",
-                    usage=billed_usage,
+                if isinstance(exc, provider_types.ProviderError):
+                    exc.usage = billed_usage
+                raise
+            try:
+                parsed = responses_codec.finish_stream(
+                    state, call=call, url=url, label="ChatGPT", route=self._route
                 )
-            self.budget.record(
-                route=kinds.ModelRoute(self.provider_name, self.model),
-                input_tokens=parsed.input_tokens,
-                output_tokens=parsed.output_tokens,
-                cache_read_tokens=parsed.cache_read_tokens,
-                cache_creation_tokens=0,
-                plan_usage=plan_usage,
-            )
-        return parsed
+            except provider_types.ProviderError as exc:
+                exc.usage = _record_billed()
+                raise
+            if self.budget is not None:
+                if int(state.usage.get("input_tokens") or 0) <= 0:
+                    billed_usage = _record_billed()
+                    raise provider_types.ProviderError(
+                        "ChatGPT stream reported no usage input tokens;"
+                        " budgeted runs require provider usage accounting",
+                        usage=billed_usage,
+                    )
+                self.budget.record(
+                    route=kinds.ModelRoute(self.provider_name, self.model),
+                    input_tokens=parsed.input_tokens,
+                    output_tokens=parsed.output_tokens,
+                    cache_read_tokens=parsed.cache_read_tokens,
+                    cache_creation_tokens=0,
+                    plan_usage=plan_usage,
+                )
+            call.transcript.usage = parsed.usage if state.usage else None
+            return parsed

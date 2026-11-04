@@ -14,6 +14,7 @@ from typing import Any
 
 import pydantic
 
+from agent6.providers import provider_types
 from agent6.sessions import event_schema
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -530,21 +531,31 @@ def build_markdown() -> str:
         _HEADER,
         _journal(),
         "## Provider transcripts\n\n**Support: durable but private.**\n\n"
-        "`transcripts/<timestamp>-<seq>.json` holds one record per model round-trip.\n"
+        "`transcripts/<timestamp>-<seq>.json` holds one record per model attempt.\n"
         "The sequence is padded to six digits in the filename.\n"
+        "The record is written with the redacted request before the send, with "
+        '`outcome: "incomplete"`, and rewritten in place when the attempt ends: `completed`, '
+        "`failed`, `interrupted` (a steer) or `aborted` (a stop or a cancellation).\n"
+        "A record stays `incomplete` while the call runs, and after a process ended before the "
+        "attempt did; it does not say whether the provider received or billed the request.\n"
+        "`sessions transcript` marks every attempt that did not complete.\n"
         "`model_call_id` joins a transcript to its logical call; `request_id` joins it to "
         "its `provider.request` event.\n"
         "Retries share the call id and have separate request ids.\n"
-        "Older transcripts may omit these ids.\n"
-        "Secret-bearing request headers are redacted, and their credential values of at least "
-        "eight characters are scrubbed wherever they appear in the record.\n"
+        "Older transcripts may omit these ids and `outcome`.\n"
+        "Secret-bearing request and response headers are redacted, and their credential values "
+        "of at least eight characters are scrubbed wherever they appear in the record.\n"
         "[Attachment payloads are omitted](security.md#media-retention) and replaced with "
         "metadata, so these files cannot replay the attachment bytes.\n\n"
-        f"Source: [`providers.provider_types.TranscriptSink.record`]"
+        f"Source: [`providers.provider_types.TranscriptAttempt.write`]"
         f"({_BLOB}src/agent6/providers/provider_types.py).\n\n"
         + _table(
             dictionary_fields(
-                module_path("providers.provider_types"), "TranscriptSink.record", "payload"
+                module_path("providers.provider_types"), "TranscriptAttempt.write", "payload"
+            )
+            + tuple(
+                Field(f"usage.{field.name}", field.kind, field.meaning)
+                for field in model_fields(provider_types.ProviderUsage)
             )
         ),
         "## CLI JSON",

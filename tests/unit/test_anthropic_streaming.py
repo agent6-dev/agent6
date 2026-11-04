@@ -382,7 +382,7 @@ def test_streaming_error_event_raises_and_records_transcript(
     files = list((tmp_path / "transcripts").glob("*.json"))
     assert len(files) == 1
     doc = json.loads(files[0].read_text(encoding="utf-8"))
-    assert doc["response"]["status"] == 0
+    assert doc["response"]["status"] == 200
     assert "overloaded_error" in doc["response"]["body"]
 
 
@@ -474,6 +474,9 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
     class _R:
         status_code = 200
         text = ""
+
+        def __init__(self) -> None:
+            self.headers: dict[str, str] = {}
 
         def json(self) -> dict[str, Any]:
             return {

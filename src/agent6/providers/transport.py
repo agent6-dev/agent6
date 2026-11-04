@@ -310,19 +310,6 @@ class ProviderCall:
     ) = None
     auth_observer: provider_types.AuthObserver | None = None
 
-    def record(self, headers: dict[str, str], status: int, response: dict[str, Any] | str) -> None:
-        """Write one transcript entry for this request; nothing without a sink."""
-        if self.transcript_sink is not None:
-            self.transcript_sink.record(
-                url=self.url,
-                call_context=self.facts.context.call_context if self.facts.context else None,
-                request_id=self.facts.request_id,
-                request_headers=headers,
-                request_body=self.body,
-                response_status=status,
-                response_body=response,
-            )
-
     def _attempt_headers(self, token: str) -> dict[str, str]:
         """Return the attempt's headers and report its facts to the caller."""
         headers = self.build_headers(token, self.facts)
@@ -391,30 +378,40 @@ class ProviderCall:
                 self._observe_recovery(recovery_pending, 200)
                 return result
 
-            try:
-                resp = http_post(
-                    self.url,
-                    headers=headers,
-                    content=json.dumps(self.body).encode("utf-8"),
-                    timeout=self.timeout_s,
+            transcript = (
+                self.transcript_sink.open(
+                    url=self.url,
+                    call_context=call.facts.context.call_context if call.facts.context else None,
+                    request_id=call.facts.request_id,
+                    request_headers=headers,
+                    request_body=self.body,
                 )
-            except httpx2.HTTPError as exc:
-                call.record(headers, 0, f"HTTPError: {exc}")
-                raise provider_types.ProviderError(
-                    f"HTTP error calling {self.url} ({self.backend} format): "
-                    f"{self._safe_text(str(exc), headers)}"
-                ) from exc
-            recorded = False
-            if (
-                cred is not None
-                and not recovered
-                and attempt + 1 < max_attempts
-                and resp.status_code in (401, 403)
-            ):
-                # The transcript contract is one file per round-trip, the refused one included.
-                call.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
-                recorded = True
+                if self.transcript_sink is not None
+                else provider_types.TranscriptAttempt()
+            )
+            with transcript.capture():
+                try:
+                    resp = http_post(
+                        self.url,
+                        headers=headers,
+                        content=json.dumps(self.body).encode("utf-8"),
+                        timeout=self.timeout_s,
+                    )
+                except httpx2.HTTPError as exc:
+                    transcript.response_body = f"HTTPError: {exc}"
+                    raise provider_types.ProviderError(
+                        f"HTTP error calling {self.url} ({self.backend} format): "
+                        f"{self._safe_text(str(exc), headers)}"
+                    ) from exc
+                transcript.response_status = resp.status_code
+                transcript.response_headers = dict(resp.headers)
+                transcript.response_body = self._safe_text(resp.text, headers)[:8192]
                 if (
+                    cred is not None
+                    and not recovered
+                    and attempt + 1 < max_attempts
+                    and resp.status_code in (401, 403)
+                ) and (
                     cred.invalidate(
                         resp.status_code,
                         headers.get("authorization", "").removeprefix("Bearer "),
@@ -424,33 +421,31 @@ class ProviderCall:
                     recovered = True
                     recovery_pending = resp.status_code == 401
                     continue
-            if 300 <= resp.status_code < 400:
-                self._observe_recovery(recovery_pending, resp.status_code)
-                # Redirects are never followed: the bearer would go wherever `location` says.
-                raise provider_types.ProviderError(
-                    f"{self.api_label} API redirected (HTTP {resp.status_code}); refusing to"
-                    " follow with credentials (the Location is not shown: it may echo them)",
-                    status_code=resp.status_code,
-                )
-            if not 200 <= resp.status_code < 300:
-                self._observe_recovery(recovery_pending, resp.status_code)
-                recovery_pending = False
-                if not recorded:
-                    call.record(
-                        headers, resp.status_code, self._safe_text(resp.text, headers)[:8192]
+                if 300 <= resp.status_code < 400:
+                    self._observe_recovery(recovery_pending, resp.status_code)
+                    # Redirects are never followed: the bearer would go wherever `location` says.
+                    raise provider_types.ProviderError(
+                        f"{self.api_label} API redirected (HTTP {resp.status_code}); refusing to"
+                        " follow with credentials (the Location is not shown: it may echo them)",
+                        status_code=resp.status_code,
                     )
-                media_errors.raise_rejection(resp.status_code, resp.text, self.body)
-                if attempt + 1 < max_attempts and self.adapt_400(
-                    resp.status_code, resp.text, self.body
-                ):
-                    continue
-                raise provider_types.ProviderError(
-                    f"{self.api_label} API error {resp.status_code}: "
-                    f"{self._safe_text(resp.text, headers)[:500]}",
-                    status_code=resp.status_code,
-                    retry_after_s=provider_types.parse_retry_after(resp.headers),
+                if not 200 <= resp.status_code < 300:
+                    self._observe_recovery(recovery_pending, resp.status_code)
+                    recovery_pending = False
+                    media_errors.raise_rejection(resp.status_code, resp.text, self.body)
+                    if attempt + 1 < max_attempts and self.adapt_400(
+                        resp.status_code, resp.text, self.body
+                    ):
+                        continue
+                    raise provider_types.ProviderError(
+                        f"{self.api_label} API error {resp.status_code}: "
+                        f"{self._safe_text(resp.text, headers)[:500]}",
+                        status_code=resp.status_code,
+                        retry_after_s=provider_types.parse_retry_after(resp.headers),
+                    )
+                return call._decode_success(
+                    headers, resp, transcript=transcript, recovery_pending=recovery_pending
                 )
-            return call._decode_success(headers, resp, recovery_pending=recovery_pending)
         raise provider_types.ProviderError(
             f"{self.api_label} auth retry exhausted"
         )  # pragma: no cover
@@ -475,6 +470,7 @@ class ProviderCall:
         headers: dict[str, str],
         resp: httpx2.Response,
         *,
+        transcript: provider_types.TranscriptAttempt,
         recovery_pending: bool = False,
     ) -> provider_types.ProviderResponse:
         """Decode, record, check and meter a 2xx response.
@@ -482,6 +478,7 @@ class ProviderCall:
         Args:
             headers: The attempt's request headers.
             resp: The response.
+            transcript: The attempt's response evidence.
             recovery_pending: Whether this is the one post-401 retry's answer.
 
         Returns:
@@ -496,21 +493,19 @@ class ProviderCall:
             data: Any = resp.json()
         except (json.JSONDecodeError, ValueError) as exc:
             # A gateway glitch; without a status the error is retryable.
-            self.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
             raise provider_types.ProviderError(
                 f"non-JSON response from {self.api_label} "
                 f"(status {resp.status_code}): "
                 f"{self._safe_text(resp.text, headers)[:500]}"
             ) from exc
         if not isinstance(data, dict):
-            self.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
             raise provider_types.ProviderError(
                 f"{self.api_label} returned a non-object JSON body "
                 ""
                 f"(status {resp.status_code}): "
                 f"{self._safe_text(resp.text, headers)[:500]}"
             )
-        self.record(headers, resp.status_code, data)
+        transcript.response_body = data
         # OpenRouter and LiteLLM deliver an upstream error in a 2xx body; refused before metering.
         err = data.get("error")
         if err and not _has_assistant_output(data):
@@ -530,6 +525,7 @@ class ProviderCall:
             raise provider_types.ProviderError(
                 f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
             ) from exc
+        transcript.usage = parsed.usage if data.get("usage") else None
         meter_completion(self.budget, self.route, parsed, self.api_label)
         self._observe_recovery(recovery_pending, resp.status_code)
         return parsed

@@ -8,6 +8,8 @@ parser live in this leaf so every provider imports down to it, never sideways.
 
 from __future__ import annotations
 
+import contextlib
+import copy
 import dataclasses
 import datetime
 import json
@@ -15,7 +17,7 @@ import math
 import pathlib
 import threading
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 from email import utils
 from typing import Any, Literal, Protocol
 
@@ -170,13 +172,21 @@ def parse_retry_after(headers: Mapping[str, str]) -> float | None:
 
 
 _REDACT_HEADER_NAMES = frozenset(
-    {"x-api-key", "authorization", "proxy-authorization", "api-key", "chatgpt-account-id"}
+    {
+        "api-key",
+        "authorization",
+        "chatgpt-account-id",
+        "cookie",
+        "proxy-authorization",
+        "set-cookie",
+        "x-api-key",
+    }
 )
 _REDACTED = "<REDACTED>"
 
 
 def _redact_headers(headers: dict[str, str]) -> dict[str, str]:
-    """Return the request headers with each secret-bearing value replaced by the marker."""
+    """Return the headers with each secret-bearing value replaced by the marker."""
     return {k: (_REDACTED if k.lower() in _REDACT_HEADER_NAMES else v) for k, v in headers.items()}
 
 
@@ -190,19 +200,23 @@ def scrub_secret_values(text: str, headers: dict[str, str]) -> str:
 
     Args:
         text: The text about to be written.
-        headers: The request headers, the source of the values.
+        headers: The headers carrying the credential values.
 
     Returns:
         The text with every spelling of each credential replaced by the marker.
     """
+    spellings: set[str] = set()
     for name, value in headers.items():
         if name.lower() not in _REDACT_HEADER_NAMES or not value:
             continue
-        for cand in {value, value.split(" ", 1)[-1]}:
-            if len(cand) < 8:
-                continue
-            for spelling in {cand, json.dumps(cand)[1:-1]}:
-                text = text.replace(spelling, _REDACTED)
+        candidates = {value}
+        if name.lower() in {"authorization", "proxy-authorization"}:
+            candidates.add(value.split(" ", 1)[-1])
+        for candidate in candidates:
+            if len(candidate) >= 8:
+                spellings.update((candidate, json.dumps(candidate)[1:-1]))
+    for spelling in sorted(spellings, key=len, reverse=True):
+        text = text.replace(spelling, _REDACTED)
     return text
 
 
@@ -223,8 +237,129 @@ def _max_seq_in_dir(transcripts_dir: pathlib.Path) -> int:
     return max(seqs, default=0)
 
 
+type TranscriptOutcome = Literal["incomplete", "completed", "failed", "interrupted", "aborted"]
+
+
+@dataclasses.dataclass(slots=True)
+class TranscriptAttempt:
+    """Keep one attempt's evidence until its atomic final rewrite.
+
+    A missing path disables disk writes. The record holds no raw stream events: a
+    credential split across two deltas would escape the whole-string scrub.
+    """
+
+    path: pathlib.Path | None = None
+    ts: str = ""
+    seq: int = 0
+    model_call_id: str | None = None
+    request_id: str = ""
+    seat: str = ""
+    url: str = ""
+    request_headers: dict[str, str] = dataclasses.field(default_factory=dict)
+    request_body: dict[str, Any] = dataclasses.field(default_factory=dict)
+    response_status: int = 0
+    response_headers: dict[str, str] = dataclasses.field(default_factory=dict)
+    response_body: dict[str, Any] | str = ""
+    usage: ProviderUsage | None = None
+    error: str = ""
+
+    def write(self, outcome: TranscriptOutcome) -> None:
+        """Publish the redacted attempt atomically.
+
+        Attributes:
+            ts: The UTC start timestamp in `YYYYMMDDTHHMMSSffffffZ` form.
+            seq: The run-global sequence, starting at 1 and continuing across resumes.
+            model_call_id: The logical call id from `role.call`; null without a call context.
+            request_id: The HTTP attempt id from `provider.request`; empty for a local process.
+            seat: The role or review focus label, not a unique seat identity.
+            outcome: `incomplete`, `completed`, `failed`, `interrupted` or `aborted`.
+            request: The request formed for the provider.
+            request.url: The URL dialled.
+            request.headers: The request headers, with secret-bearing values redacted.
+            request.body: The serialized request body, with attachment payloads omitted.
+            response: What the attempt received before it ended.
+            response.status: The HTTP status, or 0 when no response opened.
+            response.headers: The response headers, with secret-bearing values redacted.
+            response.body: The parsed response body or raw error text.
+            usage: The observed token counts and cost; null when the provider reported none.
+            error: The exception type and reason; empty when none was raised.
+
+        Args:
+            outcome: The attempt's current outcome.
+        """
+        if self.path is None:
+            return
+        payload = {
+            "ts": self.ts,
+            "seq": self.seq,
+            "model_call_id": self.model_call_id,
+            "request_id": self.request_id,
+            "seat": self.seat,
+            "outcome": outcome,
+            "request": {
+                "url": self.url,
+                "headers": _redact_headers(self.request_headers),
+                "body": self.request_body,
+            },
+            "response": {
+                "status": self.response_status,
+                "headers": _redact_headers(self.response_headers),
+                "body": self.response_body,
+            },
+            "usage": dataclasses.asdict(self.usage) if self.usage is not None else None,
+            "error": self.error,
+        }
+        text = scrub_secret_values(json.dumps(payload), self.request_headers)
+        clean = json.loads(scrub_secret_values(text, self.response_headers))
+        portable.atomic_write(
+            self.path, json.dumps(media.omit_payloads(clean), indent=2, sort_keys=True)
+        )
+
+    @contextlib.contextmanager
+    def capture(self) -> Generator[TranscriptAttempt]:
+        """Finalize the attempt on every unwind, including cancellation.
+
+        Yields:
+            The mutable response evidence.
+        """
+        outcome: TranscriptOutcome = "completed"
+        try:
+            yield self
+        except BaseException as exc:
+            if isinstance(exc, ProviderInterrupted):
+                outcome = "interrupted"
+            elif isinstance(exc, ProviderAborted) or not isinstance(exc, Exception):
+                outcome = "aborted"
+            else:
+                outcome = "failed"
+            self.error = f"{type(exc).__name__}: {exc}"
+            if not self.response_body:
+                self.response_body = self.error
+            if isinstance(exc, ProviderError):
+                self.response_status = self.response_status or exc.status_code or 0
+                if exc.usage is not None:
+                    self.usage = exc.usage
+            raise
+        finally:
+            if outcome == "completed" and not 200 <= self.response_status < 300:
+                outcome = "failed"
+            self.write(outcome)
+
+
 class TranscriptRecorder(Protocol):
-    """What a provider needs of a transcript sink: the shared sink or a seat's view."""
+    """The shared transcript sink or a seat's view."""
+
+    def open(
+        self,
+        *,
+        url: str = "",
+        call_context: CallContext | None = None,
+        request_id: str = "",
+        request_headers: dict[str, str],
+        request_body: dict[str, Any],
+    ) -> TranscriptAttempt:
+        """Write the redacted request before send and return its attempt."""
+        ...
 
     def record(
         self,
@@ -237,7 +372,27 @@ class TranscriptRecorder(Protocol):
         response_status: int,
         response_body: dict[str, Any] | str,
     ) -> pathlib.Path:
-        """Record one round-trip.
+        """Record a settled local-process round-trip and return its transcript path."""
+        ...
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class RoleTranscriptSink:
+    """Stamp a seat on records while sharing the run-global sequence."""
+
+    inner: TranscriptSink
+    seat: str
+
+    def open(
+        self,
+        *,
+        url: str = "",
+        call_context: CallContext | None = None,
+        request_id: str = "",
+        request_headers: dict[str, str],
+        request_body: dict[str, Any],
+    ) -> TranscriptAttempt:
+        """Open an attempt through the shared sink with the seat stamped.
 
         Args:
             url: The URL dialled.
@@ -245,29 +400,18 @@ class TranscriptRecorder(Protocol):
             request_id: The HTTP attempt id; empty for a local process.
             request_headers: The request headers; secrets are redacted on write.
             request_body: The request body.
-            response_status: The HTTP status.
-            response_body: The response body, parsed or raw.
 
         Returns:
-            The transcript file written.
+            The open attempt.
         """
-        ...
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class RoleTranscriptSink:
-    """A `TranscriptSink` view that stamps one seat on every record.
-
-    The seq counter stays run-global; the seat lets a transcript consumer tell the
-    worker's conversation from a compaction side-call's round-trip.
-
-    Attributes:
-        inner: The shared sink.
-        seat: The seat stamped on each record.
-    """
-
-    inner: TranscriptSink
-    seat: str
+        return self.inner.open(
+            url=url,
+            call_context=call_context,
+            request_id=request_id,
+            request_headers=request_headers,
+            request_body=request_body,
+            seat=self.seat,
+        )
 
     def record(
         self,
@@ -280,13 +424,13 @@ class RoleTranscriptSink:
         response_status: int,
         response_body: dict[str, Any] | str,
     ) -> pathlib.Path:
-        """Record one round-trip through the shared sink with the seat stamped.
+        """Record a settled local-process round-trip with the seat stamped.
 
         Args:
             url: The URL dialled.
             call_context: The logical call identity; None when the caller supplies none.
             request_id: The HTTP attempt id; empty for a local process.
-            request_headers: The request headers.
+            request_headers: The request headers; secrets are redacted on write.
             request_body: The request body.
             response_status: The HTTP status.
             response_body: The response body, parsed or raw.
@@ -307,12 +451,10 @@ class RoleTranscriptSink:
 
 
 class TranscriptSink:
-    """Write one JSON file per model round-trip; append-only and thread-safe.
+    """Write one JSON file per attempt with a thread-safe, run-global sequence.
 
-    Files are `<utc-iso>-<seq>.json`. The seq is run-global: a sink over a directory
-    that already holds transcripts continues from the highest present, so every
-    consumer can treat it as a unique, monotonic key across resumes. Secret headers
-    are redacted and an echoed credential scrubbed before any bytes hit disk.
+    Each request is published before send and atomically rewritten on finalization.
+    A sink over existing transcripts continues from the highest sequence.
     """
 
     __slots__ = ("_dir", "_lock", "_seq")
@@ -328,6 +470,47 @@ class TranscriptSink:
         """Return a view of this sink that stamps the seat on everything it records."""
         return RoleTranscriptSink(self, seat)
 
+    def open(
+        self,
+        *,
+        url: str = "",
+        call_context: CallContext | None = None,
+        request_id: str = "",
+        request_headers: dict[str, str],
+        request_body: dict[str, Any],
+        seat: str = "",
+    ) -> TranscriptAttempt:
+        """Write the attempt's redacted request before the send.
+
+        Args:
+            url: The URL dialled.
+            call_context: The logical call identity; None when the caller supplies none.
+            request_id: The HTTP attempt id; empty for a local process.
+            request_headers: The request headers; secrets are redacted on write.
+            request_body: The request body, copied: a retry may adapt the original in place.
+            seat: The seat that made the call; "" for the worker.
+
+        Returns:
+            The open attempt, on disk with outcome incomplete.
+        """
+        with self._lock:
+            self._seq += 1
+            seq = self._seq
+        ts = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        attempt = TranscriptAttempt(
+            path=self._dir / f"{ts}-{seq:06d}.json",
+            ts=ts,
+            seq=seq,
+            model_call_id=call_context.model_call_id if call_context is not None else None,
+            request_id=request_id,
+            seat=seat,
+            url=url,
+            request_headers=dict(request_headers),
+            request_body=copy.deepcopy(request_body),
+        )
+        attempt.write("incomplete")
+        return attempt
+
     def record(
         self,
         *,
@@ -340,21 +523,7 @@ class TranscriptSink:
         response_body: dict[str, Any] | str,
         seat: str = "",
     ) -> pathlib.Path:
-        """Write one round-trip as the next transcript file.
-
-        Attributes:
-            ts: The UTC timestamp in `YYYYMMDDTHHMMSSffffffZ` form.
-            seq: The run-global sequence, starting at 1 and continuing across resumes.
-            model_call_id: The logical call id from `role.call`; null without a call context.
-            request_id: The HTTP attempt id from `provider.request`; empty for a local process.
-            seat: The role or review focus label, not a unique seat identity.
-            request: The request sent to the provider.
-            request.url: The URL dialled.
-            request.headers: The request headers, with secret-bearing values redacted.
-            request.body: The serialized request body.
-            response: The provider's response or transport error.
-            response.status: The HTTP status, or 0 for a transport error.
-            response.body: The parsed response body or raw error text.
+        """Record a settled local-process round-trip.
 
         Args:
             url: The URL dialled.
@@ -369,33 +538,19 @@ class TranscriptSink:
         Returns:
             The transcript file written.
         """
-        with self._lock:
-            self._seq += 1
-            seq = self._seq
-        ts = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
-        path = self._dir / f"{ts}-{seq:06d}.json"
-        payload = {
-            "ts": ts,
-            "seq": seq,
-            "model_call_id": call_context.model_call_id if call_context is not None else None,
-            "request_id": request_id,
-            # Without it a compaction side-call's one-message request reads as a restart.
-            "seat": seat,
-            "request": {
-                "url": url,
-                "headers": _redact_headers(request_headers),
-                "body": request_body,
-            },
-            "response": {
-                "status": response_status,
-                "body": response_body,
-            },
-        }
-        # atomic_write's unpredictable O_EXCL temp name is not symlink-followable.
-        clean = json.loads(scrub_secret_values(json.dumps(payload), request_headers))
-        text = json.dumps(media.omit_payloads(clean), indent=2, sort_keys=True)
-        portable.atomic_write(path, text)
-        return path
+        attempt = self.open(
+            url=url,
+            call_context=call_context,
+            request_id=request_id,
+            request_headers=request_headers,
+            request_body=request_body,
+            seat=seat,
+        )
+        attempt.response_status = response_status
+        attempt.response_body = response_body
+        attempt.write("completed" if 200 <= response_status < 300 else "failed")
+        assert attempt.path is not None
+        return attempt.path
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

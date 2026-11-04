@@ -26,6 +26,7 @@ from agent6.providers import (
     Provider,
     ProviderError,
     chatgpt,
+    provider_types,
     responses,
 )
 from agent6.sessions import event_log
@@ -63,10 +64,11 @@ def test_other_streams_keep_failed_usage_on_the_result(
     """Failed streams retain per-call cache usage instead of exposing only a budget total."""
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider: Provider
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
     creation = 0
     if api_format == "anthropic":
         provider = AnthropicProvider(
-            api_key="k", model="m", provider_name=api_format, budget=tracker
+            api_key="k", model="m", provider_name=api_format, budget=tracker, transcript_sink=sink
         )
         creation = 7
         usage = {
@@ -88,6 +90,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
                 account_id="account",
                 base_url="https://chatgpt.com/backend-api/codex",
                 budget=tracker,
+                transcript_sink=sink,
             )
         else:
             provider = responses.ResponsesProvider(
@@ -96,6 +99,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
                 provider_name=api_format,
                 base_url="https://example.test/v1",
                 budget=tracker,
+                transcript_sink=sink,
             )
         usage = {
             "input_tokens": 125,
@@ -129,6 +133,21 @@ def test_other_streams_keep_failed_usage_on_the_result(
         pytest.raises(ProviderError),
     ):
         wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    (path,) = (tmp_path / "transcripts").iterdir()
+    transcript = json.loads(path.read_text())
+    assert transcript["outcome"] == "failed"
+    assert "busy" in json.dumps(transcript["response"]["body"])
+    assert transcript["usage"] == (
+        {
+            "input_tokens": 100,
+            "output_tokens": 10,
+            "cache_read_tokens": 25,
+            "cache_creation_tokens": creation,
+            "cost_usd": None,
+        }
+        if reported_usage
+        else None
+    )
     snap = tracker.snapshot()
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     (result,) = [row for row in rows if row["type"] == "role.result"]

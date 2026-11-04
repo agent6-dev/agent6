@@ -35,11 +35,17 @@ def search_text(targets: list[pathlib.Path]) -> SearchText:
         for path in sorted((target / "transcripts").glob("*.json")):
             try:
                 record = json.loads(path.read_text(encoding="utf-8"))
-                content: dict[str, Any] = {}
+                content: dict[str, Any] = (
+                    {"outcome": record["outcome"]} if "outcome" in record else {}
+                )
                 for side in ("request", "response"):
                     body = record[side]["body"]
                     if isinstance(body, str):
-                        body = json.loads(body)
+                        try:
+                            body = json.loads(body)
+                        except json.JSONDecodeError:
+                            content[side] = body
+                            continue
                     content[side] = {
                         key: value
                         for key, value in body.items()
