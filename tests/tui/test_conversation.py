@@ -246,7 +246,7 @@ def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: pa
 
 
 def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: pathlib.Path) -> None:
-    """A resumed execution emits ONLY loop.resume.start (never a second session.start).
+    """A resumed execution emits ONLY session.resume (never a second session.start).
 
     The screen must read it as live, as the host's dir status does once the execution's worker is
     up, so a submit routes to the steer bridge; an execution read as finished had Enter spawn a
@@ -265,7 +265,7 @@ def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: pathlib.
             assert isinstance(screen, conversation.ConversationScreen)
             assert not app.session_controllable()  # finished execution
             with logs.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "loop.resume.start", "turn": 1}) + "\n")
+                fh.write(json.dumps({"type": "session.resume", "turn": 1}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker"}) + "\n")
             (run / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await waits.wait_for(

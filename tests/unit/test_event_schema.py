@@ -100,6 +100,18 @@ def test_registry_matches_writer_inventory() -> None:
     assert event_schema.spec_for("not.registered") is None
 
 
+def test_session_lifecycle_names_keep_creation_resume_and_end_distinct() -> None:
+    """The registry names session creation, resumed executions and execution ends separately."""
+    from agent6.sessions import event_schema
+    from agent6.viewmodel import events
+
+    for name in ("session.start", "session.resume", "session.end"):
+        assert event_schema.spec_for(name) is not None, name
+    assert event_schema.spec_for("loop.resume.start") is None
+    assert frozenset({"session.resume", "session.start"}) == events.SESSION_START_EVENTS
+    assert isinstance(events.parse_event({"type": "loop.resume.start"}), events.RawEvent)
+
+
 @pytest.mark.parametrize(
     ("event_type", "fields", "message"),
     [

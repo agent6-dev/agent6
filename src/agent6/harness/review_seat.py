@@ -301,7 +301,7 @@ def repo_review(
                 content = json.dumps(out.to_wire(), ensure_ascii=False)
                 if attachment is not None and (reason := media_budget.refusal(attachment)):
                     if emit is not None:
-                        emit("loop.media.refused", call_id=tu.id, reason=reason)
+                        emit("loop.media.refused", provider_tool_call_id=tu.id, reason=reason)
                     attachment = None
                     content = reason
                 if attachment is None:

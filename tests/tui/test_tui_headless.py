@@ -842,8 +842,8 @@ def test_resume_reopens_the_approval_for_a_reused_prompt_id(tmp_path: pathlib.Pa
             await pilot.press("y")
             assert await waits.answer_written(tmp_path, pilot, "approval-1") == "yes"
             app._handle_event(_ev(type="approval.answer", id="approval-1", approved=True))
-            # A resumed execution emits only loop.resume.start, never a second session.start.
-            app._handle_event(_ev(type="loop.resume.start", turn=2, messages=4))
+            # A resumed execution emits only session.resume, never a second session.start.
+            app._handle_event(_ev(type="session.resume", turn=2, messages=4))
             # The worker drops a stale answer as it emits the prompt.
             ipc.clear_answer(tmp_path, "approval-1")
             app._handle_event(_ev(type="approval.prompt", id="approval-1", prompt="again?"))
@@ -969,7 +969,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
         spawned.append((rid, steer))
         (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
         with (tmp_path / "logs.jsonl").open("a", encoding="utf-8") as log:
-            log.write(json.dumps(_ev(type="loop.resume.start", turn=2)) + "\n")
+            log.write(json.dumps(_ev(type="session.resume", turn=2)) + "\n")
             log.write(json.dumps(_ev(type="role.call", role="worker", model="m")) + "\n")
         return ""
 
@@ -1269,7 +1269,7 @@ def test_plan_meter_reads_this_executions_points_after_a_resume(tmp_path: pathli
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
             app._handle_event(_ev(type="role.call", role="worker", model="m"))
             app._handle_event(_ev(**plan, plan_consumed=2.0))
-            app._handle_event(_ev(type="loop.resume.start"))
+            app._handle_event(_ev(type="session.resume"))
             app._handle_event(_ev(**plan, plan_consumed=0.5))
             app._tick()
             await pilot.pause()
@@ -1295,7 +1295,7 @@ def test_budget_meter_reads_this_executions_spend_not_the_runs_total(
             app._handle_event(_ev(type="session.start", user_task="x", mode="run"))
             app._handle_event(_ev(type="role.call", role="worker", model="m"))
             app._handle_event(_ev(type="budget.update", usd_total=2.0, usd_cap=2.5))
-            app._handle_event(_ev(type="loop.resume.start"))
+            app._handle_event(_ev(type="session.resume"))
             app._handle_event(_ev(type="budget.update", usd_total=0.5, usd_cap=2.5))
             app._tick()
             await pilot.pause()

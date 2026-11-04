@@ -27,13 +27,13 @@ FACTS_EVERYWHERE: frozenset[str] = frozenset({"agent6_version", "request_id"})
 # The facts a model call adds; a listing or a credential request has none of them.
 FACTS_INFERENCE: frozenset[str] = frozenset(
     {
+        "conversation_id",
         "has_images",
         "has_tool_results",
         "initiator",
         "is_first_turn",
         "is_subagent",
         "model",
-        "session_id",
     }
 )
 # The request classes a literal string reaches; a credential request takes templates only.
@@ -135,7 +135,7 @@ class HeaderTemplate(pydantic.BaseModel):
         description=(
             "literal text with `{fact}` placeholders (`{{` and `}}` are literal braces); the"
             " facts: `request_id`, `agent6_version` on every request, and on a model call"
-            " `model`, `session_id`, `initiator`, `is_first_turn`, `is_subagent`,"
+            " `model`, `conversation_id`, `initiator`, `is_first_turn`, `is_subagent`,"
             " `has_tool_results`, `has_images`"
         ),
     )
@@ -171,6 +171,8 @@ class HeaderTemplate(pydantic.BaseModel):
         if any(s.kind == "text" and not VALUE_OK.fullmatch(s.value) for s in segments):
             raise ValueError("template text holds a control character, newline or non-ASCII byte")
         facts = frozenset(s.value for s in segments if s.kind == "fact")
+        if "session_id" in facts:
+            raise ValueError("template fact {session_id} is not supported; use {conversation_id}")
         unknown = sorted(facts - FACTS_EVERYWHERE - FACTS_INFERENCE)
         if unknown:
             raise ValueError(f"template names no such fact: {', '.join(unknown)}")

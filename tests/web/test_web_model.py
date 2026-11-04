@@ -1047,7 +1047,7 @@ def test_hub_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
         [
             {"type": "session.start", "mode": "run", "user_task": "original task"},
             {"type": "session.end", "all_passed": True},
-            {"type": "loop.resume.start", "steer": "do more"},
+            {"type": "session.resume", "steer": "do more"},
             {"type": "session.end", "all_passed": True},
         ],
     )

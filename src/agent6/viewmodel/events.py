@@ -22,8 +22,8 @@ from typing import Any
 
 from agent6 import evidence
 
-# A fresh run emits session.start; a resumed execution emits only loop.resume.start.
-SESSION_START_EVENTS = frozenset({"session.start", "loop.resume.start"})
+# A fresh run emits session.start; a resumed execution emits only session.resume.
+SESSION_START_EVENTS = frozenset({"session.resume", "session.start"})
 # The calls that end a session rather than work on it; literals, so no tools import.
 FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
 
@@ -109,7 +109,7 @@ class SessionStart:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ResumeStart:
-    """loop.resume.start: a finished or stopped run restarts with an optional steer."""
+    """session.resume: a finished or stopped run restarts with an optional steer."""
 
     user_task: str = ""
     steer: str = ""
@@ -559,7 +559,7 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
     match raw.get("type", ""):
         case "session.start":
             return SessionStart(user_task=str(raw.get("user_task", "")))
-        case "loop.resume.start":
+        case "session.resume":
             return ResumeStart(
                 user_task=str(raw.get("user_task", "")), steer=str(raw.get("steer", ""))
             )

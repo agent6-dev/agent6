@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import contextlib
 import json
+import pathlib
 from typing import Any
 
 import httpx2
@@ -22,6 +23,7 @@ from agent6.providers import (
     stream_lifecycle,
     transport,
 )
+from agent6.sessions import event_log
 
 
 class _Credential:
@@ -255,6 +257,20 @@ def test_adapter_media_rejection_retries_text_only(
     assert not media.input_modalities(captured[1])
     assert "Cannot deliver" in json.dumps(captured[1])
     assert "dir/page" in json.dumps(captured[1])
+
+
+def test_media_refusal_records_the_provider_tool_call_id(tmp_path: pathlib.Path) -> None:
+    """A media refusal journals the provider's string id separately from dispatcher call_id."""
+    conversation = _conversation_with_media("image/png")
+    recovery = provider_call.MediaRecovery(
+        media.InputCapabilities(kinds.ModelRoute("p", "m"), image="unsupported")
+    )
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")
+    assert recovery.replace(conversation, None, sink.emit)
+    rows = [json.loads(line) for line in sink.path.read_text().splitlines()]
+    assert [row["type"] for row in rows] == ["loop.media.refused"] * 2
+    assert [row.get("provider_tool_call_id") for row in rows] == ["a", "c"]
+    assert all("call_id" not in row for row in rows)
 
 
 @pytest.mark.parametrize("dialect", ["openai", "responses"])

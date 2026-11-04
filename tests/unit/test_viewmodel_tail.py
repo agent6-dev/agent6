@@ -64,7 +64,7 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: pathlib.P
         + "\n"
         + json.dumps({"type": "session.end", "reason": "steer_abort"})
         + "\n"
-        + json.dumps({"type": "loop.resume.start"})
+        + json.dumps({"type": "session.resume"})
         + "\n"
         + json.dumps({"type": "role.call"})
         + "\n",
@@ -74,7 +74,7 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: pathlib.P
     assert [e["type"] for e in out] == [
         "session.start",
         "session.end",
-        "loop.resume.start",
+        "session.resume",
         "role.call",
     ]
 
@@ -305,11 +305,11 @@ def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: path
     )
     offset = viewmodel_tail.journal_size(path)
     with path.open("a", encoding="utf-8") as fh:
-        fh.write('{"type": "loop.resume.start"}\n{"type": "tool.call", "call_id": 2}\n')
+        fh.write('{"type": "session.resume"}\n{"type": "tool.call", "call_id": 2}\n')
 
     events = list(viewmodel_tail.tail_events(path, follow=False, start_at=offset))
 
-    assert [e["type"] for e in events] == ["loop.resume.start", "tool.call"]
+    assert [e["type"] for e in events] == ["session.resume", "tool.call"]
     assert events[1]["call_id"] == 2
 
 

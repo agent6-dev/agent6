@@ -75,8 +75,8 @@ def test_the_run_crumb_carries_the_state_word() -> None:
     """
     client = page.CLIENT_JS
     assert "setCrumb(runState(s) + ' · ' + cards._crumb)" in client
-    # One owner for the word: the state row reads the same helper.
-    assert "add('state', runState(s))" in client
+    # One owner for the word: the status row reads the same helper.
+    assert "add('status', runState(s))" in client
 
 
 def test_live_and_empty_conversation_notes_use_the_server_state_words() -> None:

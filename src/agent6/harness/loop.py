@@ -314,7 +314,7 @@ class Harness:
 
         # The execution's log opens with this event, so it identifies itself like session.start.
         self._emit_start(
-            "loop.resume.start",
+            "session.resume",
             session_id=self.session_id,
             user_task=snapshot.operator_task
             or task_text.operator_task_text(snapshot.original_task),
@@ -554,7 +554,7 @@ class Harness:
             return parked
         self._turn_before_call(conversation, state, ctx)
         for call_id, reason in conversation.limit_attachments():
-            self.emit("loop.media.refused", call_id=call_id, reason=reason)
+            self.emit("loop.media.refused", provider_tool_call_id=call_id, reason=reason)
         conversation.roll_cache_marks()
         wire = conversation.to_wire()
         # The one numbered-checkpoint writer: the state this turn's model call consumes.
@@ -847,7 +847,7 @@ class Harness:
                 attachment = result.attachment
                 if attachment is not None and (reason := media_budget.refusal(attachment)):
                     attachment = None
-                    self.emit("loop.media.refused", call_id=tu.id, reason=reason)
+                    self.emit("loop.media.refused", provider_tool_call_id=tu.id, reason=reason)
                     raise tool_errors.ToolError(reason)
                 wire_result = result.to_wire()
                 if note := self._left_out_note(turn, name, result, tool_input):

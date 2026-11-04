@@ -1668,7 +1668,7 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     assert not dst.logs_path.exists()
     journal = [
         {
-            "type": "loop.resume.start",
+            "type": "session.resume",
             "mode": "run",
             "user_task": "source task",
             "steer": "create README.md only",

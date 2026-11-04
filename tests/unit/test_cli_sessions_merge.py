@@ -1230,8 +1230,8 @@ def test_model_squash_uses_the_whole_run(
     events = []
     for event_type, task, summary, reason in (
         ("session.start", "implement the thing", summaries[0], "finish_session"),
-        ("loop.resume.start", "Attempt review", "Abandoned finish text.", "steer_abort"),
-        ("loop.resume.start", "Address review feedback", summaries[1], "finish_session"),
+        ("session.resume", "Attempt review", "Abandoned finish text.", "steer_abort"),
+        ("session.resume", "Address review feedback", summaries[1], "finish_session"),
     ):
         events.extend(
             [

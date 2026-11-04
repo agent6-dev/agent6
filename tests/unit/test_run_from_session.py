@@ -222,7 +222,7 @@ def test_journal_keeps_operator_words_before_composition(
     if continuation == "fork":
         session = session.parent / "whole-fork-BBB222"
     rows = [json.loads(line) for line in (session / "logs.jsonl").read_text().splitlines()]
-    start = next(row for row in rows if row["type"] == "loop.resume.start")
+    start = next(row for row in rows if row["type"] == "session.resume")
     assert start["user_task"] == words
     assert start["steer"] == steer
     assert next(row for row in rows if row["type"] == "loop.steer.injected")["text"] == steer

@@ -757,7 +757,7 @@ def test_continued_run_keeps_its_label(
         json.dumps({"version": 3, "session_id": d.name, "mode": "run", "user_task": "do more"})
     )
     with (d / "logs.jsonl").open("a") as f:
-        f.write(json.dumps({"type": "loop.resume.start", "steer": "do more"}) + "\n")
+        f.write(json.dumps({"type": "session.resume", "steer": "do more"}) + "\n")
         f.write(json.dumps({"type": "session.end", "all_passed": True}) + "\n")
     assert (sessions_show._cmd_status(d.name) if show else sessions_cmds._cmd_list()) == 0
     out = capsys.readouterr().out

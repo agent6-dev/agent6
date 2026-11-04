@@ -220,10 +220,10 @@ def test_calls_use_the_context_conversation_id(
     """Both wire fields follow the call's context, not the adapter instance."""
     provider = _provider(signed_in, extra_body={"prompt_cache_key": "operator-key"})
     context = request_headers.RequestContext(
-        session_id="conversation-1", is_first_turn=True, is_subagent=False, initiator="user"
+        conversation_id="conversation-1", is_first_turn=True, is_subagent=False, initiator="user"
     )
     other = request_headers.RequestContext(
-        session_id="conversation-2", is_first_turn=True, is_subagent=False, initiator="user"
+        conversation_id="conversation-2", is_first_turn=True, is_subagent=False, initiator="user"
     )
     with mock.patch("httpx2.stream", side_effect=_serve(_happy_stream())) as stream:
         for ctx in (context, context, other):
@@ -267,7 +267,7 @@ def test_resumed_conversation_keeps_both_wire_ids(
             json.loads(call.kwargs["content"]).get("prompt_cache_key"),
         )
         for call in stream.call_args_list
-    ] == [(context.session_id, context.session_id)] * 2
+    ] == [(context.conversation_id, context.conversation_id)] * 2
 
 
 @pytest.mark.parametrize("context", [None, request_headers.RequestContext.initiated_by("user")])

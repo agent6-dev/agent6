@@ -570,7 +570,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: pathlib.Path) -> None:
             await waits.wait_for(pilot, lambda: app.worker_lost, "the dead-worker probe")
             # The operator resumes: a new execution appends to the log with a live worker pid.
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "loop.resume.start", "turn": 2}) + "\n")
+                fh.write(json.dumps({"type": "session.resume", "turn": 2}) + "\n")
                 fh.write(json.dumps({"type": "role.call", "role": "worker", "model": "m"}) + "\n")
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
             await waits.wait_for(
@@ -957,7 +957,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             )
 
             (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
-            append({"type": "loop.resume.start", "turn": 2, "mode": "run"})
+            append({"type": "session.resume", "turn": 2, "mode": "run"})
             await waits.wait_for(pilot, lambda: not app.state.finished, "the resumed execution")
             app._tick()
             await pilot.pause()
@@ -1212,7 +1212,7 @@ def test_dashboard_header_says_where_the_changes_are(
             await pilot.pause()
             after = str(app._dash.query_one("#top", widgets.Static).render())
             with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "loop.resume.start", "turn": 2}) + "\n")
+                fh.write(json.dumps({"type": "session.resume", "turn": 2}) + "\n")
             subprocess.run([*git, "checkout", "-q", "agent6/branched"], check=True)
             subprocess.run(
                 [*git, "commit", "-q", "--allow-empty", "-m", "past the stamp"], check=True, env=env
@@ -1360,7 +1360,7 @@ def test_header_continuation_keeps_original_task(
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "original task"},
         {"type": "session.end", "all_passed": True},
-        {"type": "loop.resume.start", "steer": "do more"},
+        {"type": "session.resume", "steer": "do more"},
         {"type": "session.end", "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))

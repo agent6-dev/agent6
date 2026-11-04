@@ -306,8 +306,8 @@ def test_a_resumes_own_failure_does_not_borrow_a_stale_end_reason(
 ) -> None:
     """An execution's stop reason comes from its own `session.end`, never an earlier one's.
 
-    `session.start` and `loop.resume.start` never clear `end_reason`, so an execution that appended
-    only a `loop.resume.start` before dying inherited an earlier execution's reason.
+    `session.start` and `session.resume` never clear `end_reason`, so an execution that appended
+    only a `session.resume` before dying inherited an earlier execution's reason.
     """
     from agent6 import paths
 
@@ -332,7 +332,7 @@ def test_a_resumes_own_failure_does_not_borrow_a_stale_end_reason(
 
     def _crashes_after_resuming(*_a: object, **_kw: object) -> int:
         with layout.logs_path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "loop.resume.start"}) + "\n")
+            fh.write(json.dumps({"type": "session.resume"}) + "\n")
         return 1  # a provider crash this turn, unrelated to any turn cap
 
     monkeypatch.setattr(resume, "resume_task", _crashes_after_resuming)
@@ -1267,7 +1267,7 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
     def _resume_task(_config_path: object, session_id: str, **_kw: Any) -> int:
         events = event_log.EventSink(_layout(session_id).logs_path)
         events.emit(
-            "loop.resume.start",
+            "session.resume",
             session_id=session_id,
             mode="run",
             turn=2,

@@ -68,7 +68,7 @@ def _action(
 @pytest.mark.parametrize(
     "later",
     [
-        {"type": "loop.resume.start", "execution_id": "next"},
+        {"type": "session.resume", "execution_id": "next"},
         {
             "type": "loop.review.skipped",
             "panel_id": "p2",

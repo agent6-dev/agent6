@@ -278,8 +278,8 @@ class ChatGPTProvider:
             "openai-beta": "responses=experimental",
             "originator": "agent6",
         }
-        if facts.context is not None and facts.context.session_id:
-            headers["session-id"] = facts.context.session_id
+        if facts.context is not None and facts.context.conversation_id:
+            headers["session-id"] = facts.context.conversation_id
         headers.update(self.extra_headers.render(facts))
         return headers
 
@@ -349,8 +349,8 @@ class ChatGPTProvider:
             # The encrypted reasoning items replayed for continuity across tool calls.
             "include": ["reasoning.encrypted_content"],
         }
-        if context is not None and context.session_id:
-            body["prompt_cache_key"] = context.session_id
+        if context is not None and context.conversation_id:
+            body["prompt_cache_key"] = context.conversation_id
         if tools:
             body["tools"] = responses_codec.tools_to_responses(tools)
         effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort

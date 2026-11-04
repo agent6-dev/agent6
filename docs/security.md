@@ -567,7 +567,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - a 403 never rotates
     - `agent6 connect <name>` signs in only at those endpoints: the browser opens `authorization_endpoint`, the code returns on the configured loopback redirect (or is pasted, state-checked either way), tokens come from `token_endpoint`; `--logout` revokes at `revocation_endpoint` when set and removes the grant regardless
 - `[providers.<name>].extra_headers` is the one header surface: a literal string rides every API request; a template table renders from a fixed fact vocabulary ([the list](config.md#request-headers)) for the request classes it names, and only a template addressed to `oauth` or `exchange` reaches a credential endpoint.
-    - no fact carries a token, a path, a host, a user, an environment value or prompt text; `session_id` is an opaque id minted per role and provider in the session's `conversations.json`, kept across a resume and new on a fork; sending it or `request_id` is a correlation the operator opts into
+    - no fact carries a token, a path, a host, a user, an environment value or prompt text; `conversation_id` is an opaque id minted per role and provider in the session's `conversations.json`, kept across a resume and new on a fork; sending it or `request_id` is a correlation the operator opts into
     - [request-header restrictions](config.md#request-headers) apply at config load, and a rendered value is checked before it is sent
     - `provider.request` events carry an attempt's request id and class, never a header value
 - Secrets are absent from transcripts, redacted in `config show`, and masked from the jail under `full` `sandbox.isolation` ([Sandbox](#2-sandbox)).

@@ -148,7 +148,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
                 {"type": "loop.start"},
                 {"type": "verify.end", "exit_code": 124, "outcome": "timed_out", "timeout_s": 30},
                 {"type": "session.end", "verified": "failed"},
-                {"type": "loop.resume.start"},
+                {"type": "session.resume"},
             ]
         )
     records.extend(
@@ -214,7 +214,7 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
         {"type": "loop.start"},
         {"type": "loop.baseline", "ok": True, "turn": 0},
         {"type": "session.end", "reason": "finish_session", "verified": "passed"},
-        {"type": "loop.resume.start"},
+        {"type": "session.resume"},
         {"type": "loop.verify_swapped", "was": ["pytest"], "now": ["make", "test"]},
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 1},
@@ -268,7 +268,7 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
         {"type": "verify.end", "exit_code": 0 if baseline_ok else 1},
         {"type": "loop.baseline", "ok": baseline_ok, "turn": 0},
         {"type": "session.end", "reason": "finish_session", "verified": "passed"},
-        {"type": "loop.resume.start"},
+        {"type": "session.resume"},
         {"type": "loop.baseline", "ok": not baseline_ok, "turn": 0},
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 1},

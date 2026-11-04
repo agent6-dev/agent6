@@ -624,7 +624,7 @@ Claude Code receives MCP image or resource items, replays retained attachments a
 - `models.cache.cached_input_capabilities` reads explicit image and document facts from fresh listings, bound to the endpoint, provider entry and exact model.
 - Missing modality data means unknown; names never imply support.
 - `provider_call.call_with_media_recovery` applies the calling role's facts to canonical tool results and retries one recognized `MediaInputError` without rerunning tools.
-- Delivery refusals emit `loop.media.refused` against each affected call ID and update the worker's latest snapshot before retrying.
+- Delivery refusals emit `loop.media.refused` with each affected tool use's `provider_tool_call_id` and update the worker's latest snapshot before retrying.
 - Confirmed unsupported modalities stay unsupported for that route during the execution; malformed media and size rejections do not change capability facts.
 
 See [Media retention](security.md#media-retention) for persistence and visual-secret disclosure.

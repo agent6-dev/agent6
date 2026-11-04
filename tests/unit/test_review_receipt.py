@@ -446,7 +446,7 @@ def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.P
         tree="tree",
     )
     with sink.path.open("ab") as stream:
-        stream.write(b'{"type":"loop.resume.start","user_task":"\xe2\x82')
+        stream.write(b'{"type":"session.resume","user_task":"\xe2\x82')
     view = receipt.read_receipt(tmp_path, tmp_path)
     assert len(view.verifications) == 1
     assert view.verifications[0].stdout_tail == "the retained output"

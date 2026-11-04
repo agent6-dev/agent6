@@ -153,7 +153,7 @@ def test_digest_lists_questions_nobody_answered(repo: pathlib.Path) -> None:
     answer = prompts.ask((schema.UserQuestion(question="keep the public API?"),))
     assert answer.status == "unanswered"
     sink.emit(
-        "loop.resume.start",
+        "session.resume",
         session_id=layout.session_id,
         mode="run",
         user_task="fix the parser",
@@ -286,7 +286,7 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
             "stderr_tail": "E boom",
         },
         {"type": "session.end", "reason": "budget_exhausted", "turns": 4, "all_passed": False},
-        {"type": "loop.resume.start", "session_id": "r", "mode": "run"},
+        {"type": "session.resume", "session_id": "r", "mode": "run"},
         {"type": "session.end", "reason": "finish_session", "turns": 6, "all_passed": False},
     ]
     layout = _write_session(repo, session_id="run-resumed", events=resumed)

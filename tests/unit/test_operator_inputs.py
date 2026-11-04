@@ -14,7 +14,7 @@ def test_task_then_steers_in_order_across_executions() -> None:
         {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
         {"type": "session.end", "reason": "steer_abort"},
         # A resume appends to the same journal; its steer joins the list.
-        {"type": "loop.resume.start"},
+        {"type": "session.resume"},
         {"type": "loop.steer.injected", "chars": 7, "text": "ship it"},
     ]
     assert operator_inputs(events) == ["polish the TUI", "focus on tests", "ship it"]

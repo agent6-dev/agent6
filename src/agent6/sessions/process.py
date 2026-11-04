@@ -234,7 +234,7 @@ def emit_session_start(
     Args:
         events: The event sink.
         session_dir: The session directory.
-        event_type: `session.start` or `loop.resume.start`.
+        event_type: `session.start` or `session.resume`.
         **fields: The event's fields.
     """
     write_worker_pid(session_dir, os.getpid())

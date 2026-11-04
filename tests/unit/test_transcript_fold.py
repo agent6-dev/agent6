@@ -647,11 +647,11 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     run = [{**ask[0], "mode": "run"}, *ask[1:]]
     done = next(it for it in fold_transcript(run) if it.kind == "done")
     assert done.detail == "1 tool · 0 commits"
-    # A resumed execution starts with loop.resume.start (never a second
+    # A resumed execution starts with session.resume (never a second
     # session.start): the mode rides on it too, or the resumed plan's receipt
     # reads "0 commits".
     resumed_plan = [
-        {"type": "loop.resume.start", "mode": "plan", "turn": 3},
+        {"type": "session.resume", "mode": "plan", "turn": 3},
         {"type": "session.end", "reason": "finish_planning", "all_passed": False},
     ]
     done = next(it for it in fold_transcript(resumed_plan) if it.kind == "done")
@@ -728,7 +728,7 @@ def test_a_resumed_executions_receipt_is_its_own() -> None:
         {"type": "diff.updated", "sha": "abc123", "patch": "+x\n"},
         {"type": "budget.update", "usd_total": 0.01},
         {"type": "session.end", "ts": "2026-08-09T20:00:45+00:00", "reason": "stopped"},
-        {"type": "loop.resume.start", "ts": "2026-08-09T20:10:00+00:00", "user_task": "t"},
+        {"type": "session.resume", "ts": "2026-08-09T20:10:00+00:00", "user_task": "t"},
         {"type": "budget.update", "usd_total": 0.002},
         {"type": "tool.call", "name": "finish_session", "args": {"summary": "Done."}},
         {
@@ -757,7 +757,7 @@ def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> N
             "reason": "steer_abort",
             "all_passed": False,
         },
-        {"type": "loop.resume.start", "ts": "2026-08-09T20:10:00+00:00", "mode": "run"},
+        {"type": "session.resume", "ts": "2026-08-09T20:10:00+00:00", "mode": "run"},
         {
             "type": "session.end",
             "ts": "2026-08-09T20:10:01+00:00",
@@ -910,7 +910,7 @@ def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
     items = fold_transcript([call, {"type": "session.end", "reason": "crashed"}])
     assert [i.kind for i in items] == ["tool", "done"]
     assert items[0].ok is False and items[0].call_id == "3" and "no result" in items[0].detail
-    items = fold_transcript([call, {"type": "loop.resume.start"}])
+    items = fold_transcript([call, {"type": "session.resume"}])
     assert [(i.kind, i.ok) for i in items] == [("tool", False)]
 
 

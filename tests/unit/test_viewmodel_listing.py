@@ -42,7 +42,7 @@ def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "original task"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
-        {"type": "loop.resume.start", "steer": "do more"},
+        {"type": "session.resume", "steer": "do more"},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
@@ -53,7 +53,7 @@ def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
         json.dumps({"version": 3, "mode": "run", "user_task": "latest work"})
     )
     with (tmp_path / "logs.jsonl").open("a") as log:
-        log.write(json.dumps({"type": "loop.resume.start", "steer": "latest work"}) + "\n")
+        log.write(json.dumps({"type": "session.resume", "steer": "latest work"}) + "\n")
     summary = listing.summarize_session_dir(tmp_path)
     assert summary.task_label.line() == "original task\ncontinued: latest work"
 
@@ -376,7 +376,7 @@ def _write_run(
     rd = base / "sessions" / sub / session_id
     rd.mkdir(parents=True)
     (rd / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    if any(e.get("type") in ("session.start", "loop.resume.start") for e in events):
+    if any(e.get("type") in ("session.start", "session.resume") for e in events):
         (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     return rd
 
@@ -438,7 +438,7 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
     resumed: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
-        {"type": "loop.resume.start"},
+        {"type": "session.resume"},
         {"type": "session.end", "all_passed": False, "reason": "finish_session"},
     ]
     rd = _write_run(tmp_path, "runs", "r-executions", resumed)
@@ -675,7 +675,7 @@ def test_summary_resume_unfinishes(tmp_path: pathlib.Path) -> None:
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "session.end", "all_passed": False, "reason": "steer_abort"},
-            {"type": "loop.resume.start", "turn": 2},
+            {"type": "session.resume", "turn": 2},
         ],
     )
     assert summarize_session_dir(rd).status == "running"
@@ -982,7 +982,7 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: pathlib.
 def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> None:
     """The first execution-start of any kind begins execution 1.
 
-    A fork's log opens with loop.resume.start, and the unconditional increment counted its single
+    A fork's log opens with session.resume, and the unconditional increment counted its single
     execution as two.
     """
     rd = _write_run(
@@ -990,7 +990,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
         "runs",
         "fork-1",
         [
-            {"type": "loop.resume.start", "turn": 1},
+            {"type": "session.resume", "turn": 1},
             {"type": "budget.update", "usd_total": 0.05},
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
@@ -1005,9 +1005,9 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
         "runs",
         "fork-2",
         [
-            {"type": "loop.resume.start", "turn": 1},
+            {"type": "session.resume", "turn": 1},
             {"type": "budget.update", "usd_total": 0.05},
-            {"type": "loop.resume.start", "turn": 5},
+            {"type": "session.resume", "turn": 5},
             {"type": "budget.update", "usd_total": 0.01},
         ],
     )
@@ -1017,7 +1017,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
 
 
 def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: pathlib.Path) -> None:
-    """The scan reads `mode` off loop.resume.start as off session.start.
+    """The scan reads `mode` off session.resume as off session.start.
 
     A passed fork listed `verify_ok: null`, ranked below any `true` by `sessions compare`.
     """
@@ -1028,7 +1028,7 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: path
         "runs",
         "fork-3",
         [
-            {"type": "loop.resume.start", "mode": "run", "turn": 1},
+            {"type": "session.resume", "mode": "run", "turn": 1},
             {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0, "duration_s": 1.0},
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
         ],
@@ -1055,7 +1055,7 @@ def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> N
             {"type": "budget.update", "usd_total": 0.01},
             {"type": "budget.update", "usd_total": 0.02},  # execution 1 ends at $0.02
             {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"},
-            {"type": "loop.resume.start", "turn": 3},
+            {"type": "session.resume", "turn": 3},
             {"type": "budget.update", "usd_total": 0.003},
             {"type": "budget.update", "usd_total": 0.007},  # execution 2 ends at $0.007
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
@@ -1083,7 +1083,7 @@ def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path
                 "plan_cap": 2.0,
             },
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
-            {"type": "loop.resume.start", "turn": 3},
+            {"type": "session.resume", "turn": 3},
             {
                 "type": "budget.update",
                 "plan_used_percent": 40.0,
@@ -1118,7 +1118,7 @@ def test_cost_cell_keeps_points_between_a_resume_and_its_first_budget_update(
                 "plan_cap": 2.0,
             },
             {"type": "session.end", "all_passed": True, "reason": "finish_session"},
-            {"type": "loop.resume.start", "turn": 3},
+            {"type": "session.resume", "turn": 3},
         ],
     )
     assert summarize_session_dir(rd).cost_cell == "1pt"
@@ -1274,9 +1274,9 @@ def test_newest_run_dir_skips_husks_that_no_listing_shows(tmp_path: pathlib.Path
 def test_summary_forked_execution_reads_mode_and_task_from_manifest(tmp_path: pathlib.Path) -> None:
     """The manifest fallback gates on a missing mode, not on saw_start.
 
-    A resumed execution's log holds only loop.resume.start, so the row blanked to "? (no logs)".
+    A resumed execution's log holds only session.resume, so the row blanked to "? (no logs)".
     """
-    rd = _write_run(tmp_path, "runs", "forked-0001", [{"type": "loop.resume.start"}])
+    rd = _write_run(tmp_path, "runs", "forked-0001", [{"type": "session.resume"}])
     (rd / "manifest.json").write_text(
         json.dumps(
             {"version": 2, "session_id": "forked-0001", "mode": "run", "user_task": "carry on"}
@@ -1526,7 +1526,7 @@ def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> N
                 "unseen": True,
             },
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"type": "loop.resume.start", "turn": 3},
+            {"type": "session.resume", "turn": 3},
             {"type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
     )
@@ -1603,7 +1603,7 @@ def test_the_scan_reads_the_gates_word_and_tolerates_its_absence(tmp_path: pathl
     log.write_text(json.dumps(start) + "\n" + json.dumps(worded) + "\n", encoding="utf-8")
     assert session_log.scan_session_log(log).verified == "unverified"
     # A later execution has not ended, so it has no word yet.
-    resumed = [start, worded, {"type": "loop.resume.start", "mode": "run"}]
+    resumed = [start, worded, {"type": "session.resume", "mode": "run"}]
     log.write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
     assert session_log.scan_session_log(log).verified == ""
 
@@ -1677,7 +1677,7 @@ def test_unsteered_resume_keeps_one_task_line(tmp_path: pathlib.Path, task: str)
     journal = [
         {"type": "session.start", "mode": "run", "user_task": task[: task_text.TASK_DISPLAY_CHARS]},
         {"type": "session.end"},
-        {"type": "loop.resume.start"},
+        {"type": "session.resume"},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     summary = listing.summarize_session_dir(tmp_path)
@@ -1708,7 +1708,7 @@ def test_empty_start_does_not_claim_the_task(tmp_path: pathlib.Path, manifest_ta
     journal = [
         {"type": "session.start", "user_task": "", "mode": "run"},
         {"type": "session.start", "user_task": "original task", "mode": "run"},
-        {"type": "loop.resume.start", "steer": "latest work", "mode": "run"},
+        {"type": "session.resume", "steer": "latest work", "mode": "run"},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     (tmp_path / "manifest.json").write_text(json.dumps({"user_task": manifest_task}))
@@ -1783,9 +1783,9 @@ def test_unsteered_resume_clears_previous_continuation(tmp_path: pathlib.Path) -
     journal = [
         {"type": "session.start", "user_task": "original"},
         {"type": "session.end", "all_passed": True},
-        {"type": "loop.resume.start", "user_task": "original", "steer": "follow up"},
+        {"type": "session.resume", "user_task": "original", "steer": "follow up"},
         {"type": "session.end", "all_passed": True},
-        {"type": "loop.resume.start", "user_task": "follow up", "steer": ""},
+        {"type": "session.resume", "user_task": "follow up", "steer": ""},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     assert listing.summarize_session_dir(tmp_path).task_label.line() == "original"

@@ -114,7 +114,7 @@ class MediaRecovery:
         rejected: provider_types.MediaInputError | None,
         emit: Callable[..., None] | None,
     ) -> bool:
-        """Replace affected canonical attachments and record their refusal by call ID.
+        """Replace affected canonical attachments and record refusal by provider tool-call ID.
 
         Args:
             conversation: The calling role's history.
@@ -173,7 +173,7 @@ class MediaRecovery:
                 if emit is not None:
                     emit(
                         "loop.media.refused",
-                        call_id=item.tool_use_id,
+                        provider_tool_call_id=item.tool_use_id,
                         route=self.capabilities.route.spec,
                         reason=reason,
                         text=refusal,
@@ -209,7 +209,7 @@ def call_with_media_recovery(
     limited = conversation.limit_attachments()
     for call_id, reason in limited:
         if emit is not None:
-            emit("loop.media.refused", call_id=call_id, reason=reason)
+            emit("loop.media.refused", provider_tool_call_id=call_id, reason=reason)
     if (recovery.replace(conversation, None, emit) or limited) and changed is not None:
         changed()
     try:

@@ -420,7 +420,7 @@ class InstrumentedProvider:
             thinking_delta_callback: Receives each reasoning piece as it streams.
             should_abort: Polled to abort the call.
             should_interrupt: Polled to interrupt the call.
-            context: The caller's context; one without a session id names the initiator
+            context: The caller's context; one without a conversation id names the initiator
                 only, and the conversation supplies the rest; None is an agent-initiated call.
 
         Returns:
@@ -430,7 +430,7 @@ class InstrumentedProvider:
             ProviderError: The inner call failed; the provider name is filled in.
         """
         model_call_id = uuid.uuid4().hex
-        if context is None or not context.session_id:
+        if context is None or not context.conversation_id:
             initiator = context.initiator if context is not None else "agent"
             context = self.conversations.context(
                 self.role, self.provider_name, initiator=initiator, observe=self._observe

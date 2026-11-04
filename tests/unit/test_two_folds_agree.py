@@ -108,7 +108,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "plan_cap": 6.0,
         },
         _END_PASSED,
-        {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "turn": 3},
+        {"ts": "2026-07-14T10:02:00+00:00", "type": "session.resume", "turn": 3},
         {
             "ts": "2026-07-14T10:02:30+00:00",
             "type": "budget.update",
@@ -126,7 +126,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "exit_code": 1,
         },
         {**_END_PASSED, "all_passed": False},
-        {"ts": "2026-07-14T10:02:00+00:00", "type": "loop.resume.start", "turn": 3},
+        {"ts": "2026-07-14T10:02:00+00:00", "type": "session.resume", "turn": 3},
         {**_END_PASSED, "ts": "2026-07-14T10:03:00+00:00", "all_passed": False},
     ],
     "blocked": [
@@ -144,7 +144,7 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "source": "headless-default",
             "unseen": True,
         },
-        {"ts": "2026-07-14T10:01:00+00:00", "type": "loop.resume.start"},
+        {"ts": "2026-07-14T10:01:00+00:00", "type": "session.resume"},
         {"ts": "2026-07-14T10:01:30+00:00", "type": "question.prompt", "id": "question-1"},
         {
             "ts": "2026-07-14T10:01:40+00:00",
@@ -237,7 +237,7 @@ def test_the_listing_and_the_viewer_fold_agree(shape: str, tmp_path: pathlib.Pat
 def test_the_viewer_fold_counts_unseen_questions_per_execution() -> None:
     """The viewers' count of questions nobody saw starts again at a resume, as the listing's."""
     shape = _SHAPES["asked_unseen_then_seen"]
-    resume = next(i for i, e in enumerate(shape) if e["type"] == "loop.resume.start")
+    resume = next(i for i, e in enumerate(shape) if e["type"] == "session.resume")
     assert viewmodel_state.fold_session(shape[:resume]).unattended_questions == 1
     assert viewmodel_state.fold_session(shape).unattended_questions == 0
 
@@ -302,7 +302,7 @@ def test_both_folds_tell_a_timed_out_gate_from_a_red_one(tmp_path: pathlib.Path)
         assert listing == viewer
         assert listing["gate_timed_out"] is False and listing["gate_red"] is True
     # A later verdict, or a new execution, replaces the timeout.
-    for later in (_verify_end(1, timeout_s=300.0), {**_START, "type": "loop.resume.start"}):
+    for later in (_verify_end(1, timeout_s=300.0), {**_START, "type": "session.resume"}):
         events = [_START, _verify_end(124, timeout_s=300.0, outcome="timed_out"), later, _END_RED]
         listing, viewer = _shared_facts(events, tmp_path)
         assert listing == viewer and listing["gate_timed_out"] is False
@@ -321,7 +321,7 @@ def test_the_folds_agree_that_a_queued_question_blocks_nothing(tmp_path: pathlib
     rows = [
         {"ts": "2026-07-14T10:00:00+00:00", "type": "session.start", "user_task": "t"},
         prompt,
-        {"ts": "2026-07-14T10:00:02+00:00", "type": "loop.resume.start", "user_task": "t"},
+        {"ts": "2026-07-14T10:00:02+00:00", "type": "session.resume", "user_task": "t"},
     ]
     waiting = {**prompt, "ts": "2026-07-14T10:00:03+00:00", "id": "question-2", "wait": True}
     for events, blocked in ((rows, False), ([*rows, waiting], True)):

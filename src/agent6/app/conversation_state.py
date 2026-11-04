@@ -87,7 +87,7 @@ class Conversations:
                 self._routes[f"{role}@{provider}"] = route
                 self._persist()
             return request_headers.RequestContext(
-                session_id=route.id,
+                conversation_id=route.id,
                 is_first_turn=route.completed == 0,
                 is_subagent=self.is_subagent,
                 initiator=initiator,

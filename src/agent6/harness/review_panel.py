@@ -66,7 +66,7 @@ class PanelResult:
         blocked: Whether the panel rejects the work.
         merged_findings: The grounded findings across seats, deduplicated, blocks first.
         per_seat: Each seat's grounded verdict.
-        n_block: Distinct blocking models counted toward the gate.
+        n_block: Distinct blocking provider/model routes counted toward the gate.
         n_abstain: Seats that failed.
         skipped_reason: Why the panel did not run, or None.
     """
@@ -225,7 +225,7 @@ def _decide(
 
     Args:
         block_on: The rule.
-        n_block: Distinct blocking models.
+        n_block: Distinct blocking provider/model routes.
         min_blocking_models: The distinct blocking routes `model_quorum` needs.
         n_seats_blocking: Seats with a surviving non-prior block.
         n_total: Seats that reviewed.
@@ -275,7 +275,7 @@ def aggregate_verdicts(
     prior_keys = {review_records.finding_key(f) for f in ctx.prior_findings}
 
     grounded_seats: list[review_records.ReviewVerdict] = []
-    blocking_models: set[str] = set()  # distinct models with >=1 surviving non-prior block
+    blocking_models: set[str] = set()  # distinct routes with >=1 surviving non-prior block
     n_abstain = n_seats_blocking = 0
     for v in per_seat:
         if v.error is not None or v.verdict == "abstain":
@@ -302,7 +302,7 @@ def aggregate_verdicts(
         sorted(merged.values(), key=lambda f: (_SEV_ORDER[f.severity], str(f.location), f.category))
     )
 
-    n_block = len(blocking_models)  # distinct-model blocking seats
+    n_block = len(blocking_models)  # distinct blocking provider/model routes
     blocked = _decide(
         block_on,
         n_block,

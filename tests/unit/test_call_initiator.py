@@ -59,4 +59,6 @@ def test_the_caller_passes_the_initiator_as_a_partial_context() -> None:
     caller.call("s", [], [], 10, initiator="user")
     caller.call("s", [], [], 10)
     assert [c.initiator for c in seen] == ["user", "agent"]
-    assert all(isinstance(c, request_headers.RequestContext) and c.session_id == "" for c in seen)
+    assert all(
+        isinstance(c, request_headers.RequestContext) and c.conversation_id == "" for c in seen
+    )

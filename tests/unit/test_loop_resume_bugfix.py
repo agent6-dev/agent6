@@ -527,7 +527,7 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
 
 
 def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> None:
-    """loop.resume.start opens a resumed or forked execution's log with session_id and mode."""
+    """session.resume opens a resumed or forked execution's log with session_id and mode."""
     session_dir = tmp_path / "sessions" / "runs" / "tidy-otter-AB12CD"
     session_dir.mkdir(parents=True)
     snap_path = session_dir / "loop_state.json"
@@ -593,7 +593,7 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
         resume_state_path=snap_path,
     )
     wf.resume()
-    (start,) = [e for e in ev.events if e["type"] == "loop.resume.start"]
+    (start,) = [e for e in ev.events if e["type"] == "session.resume"]
     assert start["session_id"] == "tidy-otter-AB12CD"
     assert start["mode"] == "run"
 

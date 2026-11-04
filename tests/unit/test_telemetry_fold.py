@@ -9,6 +9,8 @@ import json
 import pathlib
 from typing import Any
 
+from agent6 import review_records
+from agent6.harness import review_panel
 from agent6.viewmodel import telemetry, telemetry_metrics, telemetry_records
 from tests.unit import test_review_queue as queue_tests
 
@@ -193,6 +195,43 @@ def test_a_journal_folds_into_a_deterministic_span_tree() -> None:
     assert _fold1.first_ns == telemetry_records.event_ns(_ts(0))
 
 
+def test_panel_telemetry_counts_distinct_blocking_routes() -> None:
+    """Three blocking seats on two routes export two routes, not seats or findings."""
+    finding = review_records.Finding(
+        category="security",
+        severity="block",
+        title="Unsafe input",
+        location=review_records.ReviewLocation(
+            path="foo.py", side="head", start_line=1, end_line=1
+        ),
+    )
+    result = review_panel.aggregate_verdicts(
+        [
+            review_records.ReviewVerdict(
+                seat_index=index,
+                focus="security",
+                model_route=route,
+                verdict="block",
+                findings=(finding,),
+            )
+            for index, route in enumerate(("m@p1", "m@p1", "m@p2"))
+        ],
+        review_panel.ReviewContext(diff="--- a/foo.py\n+++ b/foo.py\n@@ -1 +1 @@\n-old\n+new\n"),
+        block_on="model_quorum",
+        min_blocking_models=2,
+        panel_id="p",
+    )
+    assert result.n_block == 2 and len(result.merged_findings) == 1
+    rows = _journal()
+    for row in rows:
+        if row["type"] == "loop.review.panel":
+            row["n_block"] = result.n_block
+    _fold, spans, _logs = _run(rows)
+    panel = _by_name(spans)[telemetry_records.SPAN_REVIEW]
+    assert _attr(panel, "agent6.panel.blocking_routes") == 2
+    assert "agent6.panel.block_findings" not in dict(panel.attributes)
+
+
 def test_metadata_capture_carries_no_task_arguments_or_commands() -> None:
     """The default export names outcomes and ids, never the task, the argv or the gate command."""
     _fold, spans, logs = _run(_journal())
@@ -312,9 +351,10 @@ def test_the_ask_repls_repeated_starts_share_one_cumulative_tracker() -> None:
 
 
 def test_a_resume_opens_a_second_trace_and_restarts_the_spend_baseline() -> None:
+    """Creation, resume and end events fold into one session with two executions."""
     rows = [
         *_journal(),
-        {"type": "loop.resume.start", "ts": _ts(100), "execution_id": "e2", "turn": 2},
+        {"type": "session.resume", "ts": _ts(100), "execution_id": "e2", "turn": 2},
         {"type": "budget.update", "ts": _ts(110), "usd_total": 0.10, "usd_partial": True},
         {"type": "session.end", "ts": _ts(120), "reason": "finish_session", "verified": "passed"},
     ]

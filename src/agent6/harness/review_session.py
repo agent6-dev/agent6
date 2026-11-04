@@ -288,7 +288,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
                     reason=str(event.get("reason", "")),
                 )
             )
-        elif etype == "loop.resume.start":
+        elif etype == "session.resume":
             execution_rc = None
         elif etype == "tool.call":
             tool_calls += 1

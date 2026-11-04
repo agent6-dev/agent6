@@ -5065,7 +5065,7 @@ def test_resume_drives_loop_from_snapshot(tmp_path: pathlib.Path, steer: str) ->
     )
     result = wf.resume(steer=steer)
     start = json.loads((tmp_path / "logs.jsonl").read_text().splitlines()[0])
-    assert start["type"] == "loop.resume.start"
+    assert start["type"] == "session.resume"
     assert start["steer"] == steer
     assert start["user_task"] == "go"
 
@@ -9588,7 +9588,10 @@ def test_media_recovery_updates_canonical_history_snapshot_and_execution_fact(
     saved = json.loads((tmp_path / "loop_state.json").read_text())
     assert saved["messages"] == conv.to_wire()
     assert "cHJpdmF0ZSBwaXhlbHM=" not in json.dumps(saved)
-    assert any(e["type"] == "loop.media.refused" and e["call_id"] == "t1" for e in events.events)
+    assert any(
+        e["type"] == "loop.media.refused" and e["provider_tool_call_id"] == "t1"
+        for e in events.events
+    )
     add_media("t2")
     wf._turn_provider_call("s", conv, [], state, turn=2)  # pyright: ignore[reportPrivateUsage]
     assert provider.call.call_count == 3

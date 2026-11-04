@@ -169,6 +169,30 @@ def test_unreviewed_run_names_the_absent_panel(
     assert not errors
 
 
+def test_session_details_label_the_lifecycle_status(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """The session details label the lifecycle result status, not machine state."""
+    from playwright.sync_api import expect
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "status-run-AAA111"
+    session.mkdir(parents=True)
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "Show the status"},
+        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+    ]
+    (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    label = page.locator(".kv .k").filter(has_text=re.compile(r"^status$"))
+    expect(label).to_be_visible()
+    expect(label.locator("+ .v")).to_have_text("passed")
+    expect(page.locator(".kv .k").filter(has_text=re.compile(r"^state$"))).to_have_count(0)
+    assert not errors
+
+
 def test_expanded_task_keeps_the_full_operator_words(
     port: int,
     tmp_path: pathlib.Path,

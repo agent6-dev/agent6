@@ -95,7 +95,7 @@ def _resumed() -> list[dict[str, Any]]:
     ts = fold_tests._ts  # pyright: ignore[reportPrivateUsage]
     return [
         *fold_tests._journal(),  # pyright: ignore[reportPrivateUsage]
-        {"type": "loop.resume.start", "ts": ts(100), "execution_id": "e2", "turn": 2},
+        {"type": "session.resume", "ts": ts(100), "execution_id": "e2", "turn": 2},
         {"type": "session.end", "ts": ts(120), "reason": "finish_session", "verified": "passed"},
     ]
 
@@ -379,9 +379,7 @@ def test_a_resumed_crash_delivers_each_span_once_per_endpoint(
     journal = paths.state_dir(repo) / "sessions" / "runs" / "run-a" / "logs.jsonl"
     with journal.open("a") as fh:
         fh.write(
-            json.dumps(
-                {"type": "loop.resume.start", "ts": ts(100), "execution_id": "e2", "turn": 2}
-            )
+            json.dumps({"type": "session.resume", "ts": ts(100), "execution_id": "e2", "turn": 2})
             + "\n"
         )
         fh.write(

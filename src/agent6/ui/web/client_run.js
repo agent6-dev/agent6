@@ -446,7 +446,7 @@ function paintRun(cards, s) {
   add('task', s.task_line || '(none)');
   kv.lastElementChild.classList.add('task');
   add('id', s.session_id || cards._id || ''); // older logs carry no session_id in session.start
-  add('state', runState(s));
+  add('status', runState(s));
   // The harness's end sentence (a stop, a failure, a guard); an end the model wrote
   // itself is the conversation's last line, beside this panel.
   const modelEnds = ['answered', 'finish_planning', 'finish_session', 'silent_finish'];

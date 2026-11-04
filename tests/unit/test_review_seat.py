@@ -839,7 +839,7 @@ def test_repo_review_uses_shared_media_recovery_without_rerunning_tools() -> Non
         "Cannot deliver image 'page.png' to p/m: image input is unsupported. "
         "Describe the page through its DOM or accessibility tree, or read the test output."
     )
-    assert emit.call_args.kwargs["call_id"] == "t1"
+    assert emit.call_args.kwargs["provider_tool_call_id"] == "t1"
 
 
 def test_panel_media_refusals_follow_the_seat_not_the_shared_dispatch() -> None:
@@ -935,5 +935,5 @@ def test_repo_review_records_attachment_limit_refusals(cross_turn: bool) -> None
     assert verdict.error is None
     emit.assert_called_once()
     assert emit.call_args.args == ("loop.media.refused",)
-    assert emit.call_args.kwargs["call_id"] == "one"
+    assert emit.call_args.kwargs["provider_tool_call_id"] == "one"
     assert ("4 MiB" if cross_turn else "2 MiB") in emit.call_args.kwargs["reason"]

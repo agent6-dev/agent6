@@ -1654,7 +1654,7 @@
                     }
                   },
                   {
-                    "key": "agent6.panel.block_findings",
+                    "key": "agent6.panel.blocking_routes",
                     "value": {
                       "intValue": "1"
                     }

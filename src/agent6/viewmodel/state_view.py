@@ -170,7 +170,7 @@ def session_state_as_dict(
     if session_dir is not None:
         word, reason = session_status.status_for_session_dir(session_dir, status_facts(state))
         d["live"] = word in session_status.LIVE_STATUS_WORDS
-        # A forked execution's log opens at loop.resume.start and folds its identity empty.
+        # A forked execution's log opens at session.resume and folds its identity empty.
         d["session_id"] = d["session_id"] or session_dir.name
         d["mode"] = d.get("mode") or ""
         manifest = None

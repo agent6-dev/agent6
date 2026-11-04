@@ -245,7 +245,7 @@ class ReviewPanel(pydantic.BaseModel):
         raw_blocked: Whether the panel met the blocking rule before disarming.
         blocked: Whether the panel blocks worker completion.
         disarmed: Whether the harness disarmed the review block.
-        n_block: The number of blocking seats.
+        n_block: The number of distinct blocking provider/model routes.
         n_abstain: The number of abstaining seats.
         completion: Whether the panel completed conclusively.
     """

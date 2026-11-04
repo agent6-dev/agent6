@@ -80,7 +80,7 @@ def test_end_summary_reaches_the_wire_and_clears_on_resume() -> None:
         ]
     )
     assert session_state_as_dict(s)["end_summary"] == summary
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert session_state_as_dict(s)["end_summary"] == ""
 
 
@@ -416,7 +416,7 @@ def test_budget_update_carries_usd_total() -> None:
 
 def test_budget_usd_cumulative_across_resume_executions() -> None:
     # Each resume execution's budget.update restarts usd_total from 0; the view banks
-    # the finished execution on loop.resume.start so "cost" stays the cumulative
+    # the finished execution on session.resume so "cost" stays the cumulative
     # spend -- the same rule the hub scanner applies (session_log.scan_session_log),
     # keeping the hub row and the run view in agreement.
     def _update(usd: float, *, partial: bool = False) -> dict[str, object]:
@@ -426,7 +426,7 @@ def test_budget_usd_cumulative_across_resume_executions() -> None:
     s = viewmodel_state.apply_event(
         s, {"type": "session.end", "reason": "finish_session", "all_passed": True}
     )
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     # Banked, and the header keeps the old total until the new execution reports.
     assert s.budget.usd_total == 0.02
     s = viewmodel_state.apply_event(s, _update(0.005))
@@ -434,7 +434,7 @@ def test_budget_usd_cumulative_across_resume_executions() -> None:
     # partial is sticky: execution 1's unpriced spend keeps the total an under-estimate.
     assert s.budget.usd_partial is True
     # A second resume banks the cumulative, not just the last execution.
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     s = viewmodel_state.apply_event(s, _update(0.001))
     assert s.budget.usd_total == pytest.approx(0.026)
 
@@ -591,7 +591,7 @@ def test_run_state_as_dict_is_json_serializable() -> None:
 def test_run_state_as_dict_owns_the_dir_backed_identity(tmp_path: pathlib.Path) -> None:
     """The wire owner fills session_id and user_task from the dir when the log has no session.start.
 
-    A resumed or forked execution's log can start at loop.resume.start.
+    A resumed or forked execution's log can start at session.resume.
     """
     import json
 
@@ -686,7 +686,7 @@ def test_resume_start_unfinishes_the_run() -> None:
         viewmodel_state.initial_state(), {"type": "session.end", "reason": "steer_abort"}
     )
     assert s.finished and s.end_reason == "steer_abort"
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert not s.finished and s.end_reason == ""
     assert session_state_as_dict(s)["status_label"] == "running"
 
@@ -769,7 +769,7 @@ def test_resume_resets_the_execution_token_counters() -> None:
     s = viewmodel_state.apply_event(
         s, {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"}
     )
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert s.budget.input_total == 0
     assert s.budget.output_total == 0
     assert s.budget.usd_cap == 0.0
@@ -796,7 +796,7 @@ def test_resume_resets_the_execution_plan_counters() -> None:
     s = viewmodel_state.apply_event(
         s, {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"}
     )
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert s.budget.plan_used_percent == 0.0
     assert s.budget.plan_consumed == s.budget.plan_prior_executions == 3.5
     assert s.budget.plan_cap == 0.0
@@ -813,7 +813,7 @@ def test_plan_points_cumulative_across_resume_executions() -> None:
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "t"})
     update = {"type": "budget.update", "plan_used_percent": 42.0, "plan_cap": 6.0}
     s = viewmodel_state.apply_event(s, {**update, "plan_consumed": 2.5})
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     s = viewmodel_state.apply_event(s, {**update, "plan_consumed": 1.0})
     assert s.budget.plan_consumed == 3.5
     assert s.budget.plan_prior_executions == 2.5
@@ -872,7 +872,7 @@ def test_tool_count_is_the_executions_dispatched_calls() -> None:
         s, {"type": "tool.call", "name": "finish_session", "args": {"summary": "done"}}
     )
     assert (s.tool_count, len(s.tool_calls)) == (60, 50)
-    s = viewmodel_state.apply_event(s, {"type": "loop.resume.start"})
+    s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     s = viewmodel_state.apply_event(s, {"type": "tool.call", "name": "grep", "args": {}})
     assert s.tool_count == 1
 
@@ -1187,7 +1187,7 @@ def test_task_identity_survives_missing_or_invalid_manifest(
         [
             {"type": "session.start", "user_task": "original task"},
             {"type": "session.end"},
-            {"type": "loop.resume.start"},
+            {"type": "session.resume"},
         ]
     )
     payload = session_state_as_dict(folded, tmp_path)
@@ -1240,7 +1240,7 @@ def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> Non
     rows = [
         {"type": "session.start", "user_task": "t"},
         queued,
-        {"type": "loop.resume.start", "user_task": "t", "steer": ""},
+        {"type": "session.resume", "user_task": "t", "steer": ""},
     ]
     state = viewmodel_state.fold_session(rows)
     (first,) = state.pending_questions
@@ -1277,7 +1277,7 @@ def test_a_questions_kind_is_one_word_on_every_surface() -> None:
     ]
     before = viewmodel_state.fold_session(rows)
     assert [q.kind() for q in before.pending_questions] == ["waiting", "queued"]
-    after = viewmodel_state.fold_session([*rows, {"type": "loop.resume.start", "user_task": "t"}])
+    after = viewmodel_state.fold_session([*rows, {"type": "session.resume", "user_task": "t"}])
     assert [q.kind() for q in after.pending_questions] == [
         "asked by an earlier execution",
         "queued",
@@ -1318,7 +1318,7 @@ def test_a_reused_question_id_names_the_latest_question(tmp_path: pathlib.Path) 
     rows = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "old?"}]},
-        {"type": "loop.resume.start"},
+        {"type": "session.resume"},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "new?"}]},
     ]
     log = tmp_path / "logs.jsonl"

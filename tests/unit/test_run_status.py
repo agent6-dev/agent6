@@ -103,14 +103,14 @@ def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
 ) -> None:
     """A fork execution's elapsed time runs from its first event.
 
-    A fork's log opens with `loop.resume.start` and never carries a `session.start`; without one the
+    A fork's log opens with `session.resume` and never carries a `session.start`; without one the
     scan's start is the first event's timestamp, not `elapsed: -`.
     """
     _make_run(
         tmp_path,
         monkeypatch,
         [
-            {"type": "loop.resume.start", "ts": "2026-01-01T00:00:00+00:00", "turn": 2},
+            {"type": "session.resume", "ts": "2026-01-01T00:00:00+00:00", "turn": 2},
             {"type": "tool.call", "ts": "2026-01-01T00:00:10+00:00", "turn": 2},
             {
                 "type": "session.end",
@@ -233,7 +233,7 @@ def test_status_crashed_when_pid_dead_and_no_run_end(
     assert not process.worker_is_alive(d)
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out
-    assert "state:      stale (worker exited without finishing (crashed or killed))" in out
+    assert "status:     stale (worker exited without finishing (crashed or killed))" in out
     assert "stopped" not in out
 
 
@@ -260,7 +260,7 @@ def test_show_stale_run_offers_resume(
     assert sessions_show._cmd_status("winsome-dawn") == 0
 
     out = capsys.readouterr().out
-    assert "state:      stale (worker exited without finishing (crashed or killed))" in out
+    assert "status:     stale (worker exited without finishing (crashed or killed))" in out
     assert f"resume with:  agent6 resume {d.name}\n" in out
 
 
@@ -452,7 +452,7 @@ def test_status_of_a_scoped_green_names_the_scoped_gate(
         "finish_session",
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
-    assert "state:      passed · scoped gate (finish_session)\n" in capsys.readouterr().out
+    assert "status:     passed · scoped gate (finish_session)\n" in capsys.readouterr().out
 
 
 @pytest.mark.parametrize(
@@ -483,7 +483,7 @@ def test_sessions_and_show_name_a_harness_end_over_a_green_gate(
     assert sessions_cmds._cmd_list(as_json=False) == 0
     assert label in capsys.readouterr().out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
-    assert f"state:      {label} ({reason})\n" in capsys.readouterr().out
+    assert f"status:     {label} ({reason})\n" in capsys.readouterr().out
 
 
 def test_status_finish_without_all_passed_reads_finished(
@@ -515,7 +515,7 @@ def test_status_error_reason_reads_failed(
     )
     # The label already carries the reason; the parenthetical is not repeated.
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
-    assert "state:      failed · provider error\n" in capsys.readouterr().out
+    assert "status:     failed · provider error\n" in capsys.readouterr().out
 
 
 def test_status_of_a_provider_failure_keeps_the_providers_error(
@@ -552,7 +552,7 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
     obj = json.loads(capsys.readouterr().out)
     assert (obj["label"], obj["detail"]) == ("failed · provider error", error)
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
-    assert f"state:      failed · provider error ({error})\n" in capsys.readouterr().out
+    assert f"status:     failed · provider error ({error})\n" in capsys.readouterr().out
 
 
 def test_status_shows_fan_out_compare_outcome(
@@ -688,7 +688,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
                 "usd_partial": True,
             },
             {"ts": _ts(40), "type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"ts": _ts(30), "type": "loop.resume.start", "turn": 4},
+            {"ts": _ts(30), "type": "session.resume", "turn": 4},
             {
                 "ts": _ts(5),
                 "type": "budget.update",
@@ -744,7 +744,7 @@ def test_status_text_labels_plan_points_on_a_resumed_run(
             {"ts": _ts(90), "type": "session.start", "mode": "run", "user_task": "t"},
             {"ts": _ts(80), "type": "budget.update", **plan, "plan_consumed": 1.0},
             {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"ts": _ts(60), "type": "loop.resume.start", "turn": 4},
+            {"ts": _ts(60), "type": "session.resume", "turn": 4},
             {"ts": _ts(10), "type": "budget.update", **plan, "plan_consumed": 0.0},
             {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
         ],
@@ -775,7 +775,7 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
                 "usd_total": 0.02,
             },
             {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
-            {"ts": _ts(60), "type": "loop.resume.start", "turn": 4},
+            {"ts": _ts(60), "type": "session.resume", "turn": 4},
             {
                 "ts": _ts(10),
                 "type": "budget.update",
@@ -1159,7 +1159,7 @@ def test_status_of_an_undone_run_does_not_offer_a_merge(
 
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
-    assert "state:      undone" in out
+    assert "status:     undone" in out
     assert f"changes:    {branch} (taken back by /undo)" in out
     assert "merge with:" not in out
 
@@ -1177,7 +1177,7 @@ def test_status_of_an_ask_does_not_repeat_its_word(
         ],
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
-    assert "state:      answered\n" in capsys.readouterr().out
+    assert "status:     answered\n" in capsys.readouterr().out
 
 
 def test_show_json_label_matches_the_listing_cell(
@@ -1290,7 +1290,7 @@ def test_show_says_a_timed_out_gate_timed_out(
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
-    assert "state:      finished · gate timed out" in out
+    assert "status:     finished · gate timed out" in out
     assert "verify:     timed out on the final tree" in out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     assert json.loads(capsys.readouterr().out)["verified"] == "failed"
@@ -1335,7 +1335,7 @@ def test_show_json_carries_the_points_earlier_executions_banked(
                 "plan_used_percent": 5.0,
             },
             {"ts": _ts(30), "type": "session.end", "reason": "steer_abort", "all_passed": False},
-            {"ts": _ts(20), "type": "loop.resume.start", "mode": "run"},
+            {"ts": _ts(20), "type": "session.resume", "mode": "run"},
             {
                 "ts": _ts(10),
                 "type": "budget.update",

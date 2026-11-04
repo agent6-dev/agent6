@@ -227,7 +227,7 @@ def test_panels_count_and_inject_each_finding_once(
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     starts = [row for row in rows if row["type"] == "loop.review.start"]
     assert len({row["panel_id"] for row in starts}) == len(starts)
-    resume_start = next(row for row in rows if row["type"] == "loop.resume.start")
+    resume_start = next(row for row in rows if row["type"] == "session.resume")
     assert starts[-1]["execution_id"] == resume_start["execution_id"]
     assert starts[-1]["execution_id"] != starts[0]["execution_id"]
 

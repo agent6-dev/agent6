@@ -182,7 +182,7 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
             salient = f"{event.get('server')} unavailable: {_cut(str(event.get('error', '')), 120)}"
         case "loop.skills.warning":
             salient = _cut(str(event.get("warning", "")), 160)
-        case "loop.resume.start":
+        case "session.resume":
             salient = f"turn={event.get('turn')} messages={event.get('messages')}"
         case "budget.update":
             usd = event.get("usd_total")

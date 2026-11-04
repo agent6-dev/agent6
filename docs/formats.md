@@ -347,7 +347,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `call_id` | `str` | The tool call correlated with this event. |
+| `provider_tool_call_id` | `str` | The provider's tool-use identifier. |
 | `reason` | `str` | The reason for the outcome. |
 | `route` | `str, optional` | The model route that refused the attachment. |
 | `text` | `str, optional` | The event's text. |
@@ -678,20 +678,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `turn` | `int` | The execution's turn number. |
 | `tools` | `list` | Interrupted tool calls that will not be rerun. |
 
-### loop.resume.start
-
-**Support: public.** A resumed execution began.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `session_id` | `str` | Session identifier. |
-| `user_task` | `str` | The displayed task text. |
-| `steer` | `str` | The instruction supplied when resuming. |
-| `mode` | `str` | The execution or prompt-revision mode. |
-| `turn` | `int` | The execution's turn number. |
-| `messages` | `int` | Number of conversation messages. |
-| `execution_id` | `str` | Execution identifier. |
-
 ### loop.review.finding.reopened
 
 **Support: public.** An operator reopened a finding.
@@ -779,7 +765,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `raw_blocked` | `bool` | Whether the verdicts meet the blocking rule. |
 | `blocked` | `bool` | Whether the armed gate blocks the finish. |
 | `disarmed` | `bool` | Whether the review gate's rejection cap disarmed it. |
-| `n_block` | `int` | Number of blocking seats. |
+| `n_block` | `int` | Number of distinct blocking provider/model routes. |
 | `n_abstain` | `int` | Number of abstaining seats. |
 | `completion` | `str` | Whether the panel completed or was inconclusive. |
 
@@ -1243,7 +1229,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### session.end
 
-**Support: public.** The execution ended with its outcome and final verification state.
+**Support: public.** Emitted at the end of every execution, with its reason.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1258,9 +1244,23 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `tool` | `str, optional` | The repeated tool's name. |
 | `streak` | `int, optional` | Number of consecutive matching turns or calls. |
 
+### session.resume
+
+**Support: public.** Emitted at the start of every resumed execution.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `session_id` | `str` | Session identifier. |
+| `user_task` | `str` | The displayed task text. |
+| `steer` | `str` | The instruction supplied when resuming. |
+| `mode` | `str` | The execution or prompt-revision mode. |
+| `turn` | `int` | The execution's turn number. |
+| `messages` | `int` | Number of conversation messages. |
+| `execution_id` | `str` | Execution identifier. |
+
 ### session.start
 
-**Support: public.** A fresh execution began.
+**Support: public.** Emitted once when the session is created.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3210,7 +3210,7 @@ Source: [`agent6.review_records.ReviewPanel`](https://github.com/agent6-dev/agen
 | `raw_blocked` | `bool` | Whether the panel met the blocking rule before disarming. |
 | `blocked` | `bool` | Whether the panel blocks worker completion. |
 | `disarmed` | `bool` | Whether the harness disarmed the review block. |
-| `n_block` | `int` | The number of blocking seats. |
+| `n_block` | `int` | The number of distinct blocking provider/model routes. |
 | `n_abstain` | `int` | The number of abstaining seats. |
 | `completion` | `Literal['complete', 'inconclusive']` | Whether the panel completed conclusively. |
 

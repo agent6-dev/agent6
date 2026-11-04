@@ -199,7 +199,7 @@ _IN_FLIGHT = {
 
 
 def _pid_note(pid: int | None, *, alive: bool, finished: bool) -> str:
-    """Return the state line's worker suffix: alive, recycled, or not running."""
+    """Return the status line's worker suffix: alive, recycled, or not running."""
     if alive:
         return f"  (worker pid {pid} alive)"
     if pid is None or finished:
@@ -491,7 +491,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
         f"preset:     {manifest.harness.preset or '-'}"
     )
-    print(f"state:      {state}{pid_note}")
+    print(f"status:     {state}{pid_note}")
     print(f"turn:       {scan.turn if scan.turn is not None else '-'}")
     print(
         f"last event: {scan.last_type or '-'}"

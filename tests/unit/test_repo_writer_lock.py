@@ -795,7 +795,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     # resume instead of quietly committing the operator's file as run work.
     layout.logs_path.write_text(
         layout.logs_path.read_text(encoding="utf-8")
-        + '{"type": "loop.resume.start"}\n'
+        + '{"type": "session.resume"}\n'
         + '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
         encoding="utf-8",
     )

@@ -1500,7 +1500,7 @@ def test_home_continuation_has_two_visible_lines(tmp_path: pathlib.Path) -> None
         [
             {"type": "session.start", "mode": "run", "user_task": "original task"},
             {"type": "session.end", "all_passed": True},
-            {"type": "loop.resume.start", "steer": "write docs"},
+            {"type": "session.resume", "steer": "write docs"},
         ],
     )
 

@@ -24,7 +24,7 @@ class LogScan:
     fold's BudgetView.
 
     Attributes:
-        saw_start: A session.start or loop.resume.start was seen; neither means unstarted.
+        saw_start: A session.start or session.resume was seen; neither means unstarted.
         mode: The session's mode, "?" until a start event names it.
         task_label: The first task and the latest resume steer from the journal.
         finished: A session.end was seen and no later execution began.
@@ -335,7 +335,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     continue
                 review_view = review.apply_event(review_view, ev)
                 etype = ev.get("type")
-                if etype in ("session.start", "loop.resume.start"):
+                if etype in ("session.start", "session.resume"):
                     execution_id = ev.get("execution_id")
                     final_verify_id = None
                 elif etype == "diff.updated":
@@ -402,7 +402,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     end_tree = str(ev.get("tree") or "")
                     final_verify_id = ev.get("final_verify_id")
                     end_ep = ep
-                elif etype == "loop.resume.start":
+                elif etype == "session.resume":
                     task = task.resume(str(ev.get("user_task", "")), str(ev.get("steer", "")))
                     if saw_start:
                         # Each execution's budget starts at 0: bank the finished one's total.

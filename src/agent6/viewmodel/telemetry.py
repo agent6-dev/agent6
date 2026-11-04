@@ -99,7 +99,7 @@ class TelemetryFold:
             return self._machine.feed(event, now)
         spans: list[telemetry_records.Span] = []
         logs: list[telemetry_records.LogRecord] = []
-        if kind in ("session.start", "loop.resume.start"):
+        if kind in ("session.start", "session.resume"):
             spans.extend(self._start_execution(event, now))
         if kind.startswith("loop.review."):
             logs.extend(self._findings_update(event, now))
@@ -373,7 +373,7 @@ class TelemetryFold:
         panel.attributes["agent6.panel.blocked"] = blocked
         panel.attributes["agent6.panel.completion"] = completion
         if (n_block := telemetry_records.as_int(event.get("n_block"))) is not None:
-            panel.attributes["agent6.panel.block_findings"] = n_block
+            panel.attributes["agent6.panel.blocking_routes"] = n_block
         step.spans.append(execution.end(panel, now, "error" if blocked else "ok"))
         body = "review panel blocked" if blocked else f"review panel {completion}"
         severity: telemetry_records.Severity = "WARN" if blocked else "INFO"

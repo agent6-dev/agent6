@@ -94,6 +94,18 @@ def test_show_names_the_preset_the_run_continues_under(
     assert json.loads(capsys.readouterr().out)["preset"] == "deep_review"
 
 
+def test_show_labels_the_session_status(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Text and JSON call the session's lifecycle result status."""
+    assert main(["sessions", "show", "fan-l1"]) == 0
+    out = capsys.readouterr().out
+    assert "status:     passed" in out
+    assert "state:" not in out
+    assert main(["sessions", "show", "fan-l1", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "passed"
+
+
 def test_show_on_a_coordinator_lists_its_lanes(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -137,7 +149,7 @@ def test_stale_coordinator_does_not_offer_resume(
     assert main(["sessions", "show", "fan"]) == 0
 
     out = capsys.readouterr().out
-    assert "state:      stale" in out
+    assert "status:     stale" in out
     assert "resume with:" not in out
 
 
@@ -378,7 +390,7 @@ def test_show_drops_the_questions_line_after_a_resume(
         },
     ]
     resumed = [
-        {"type": "loop.resume.start", "turn": 3},
+        {"type": "session.resume", "turn": 3},
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     layout.logs_path.write_text(
@@ -421,8 +433,8 @@ def test_show_names_a_failed_end_once_beside_the_unanswered_count(
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     assert main(["sessions", "show", "capped"]) == 0
-    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("state:"))
-    assert line == "state:      failed · max turns · 1 question unanswered"
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith("status:"))
+    assert line == "status:     failed · max turns · 1 question unanswered"
 
 
 def test_show_offers_plan_show_only_once_the_plan_is_written(

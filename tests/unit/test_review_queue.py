@@ -412,7 +412,7 @@ def test_an_ended_run_dates_its_entry_from_its_end(tmp_path: pathlib.Path) -> No
     assert entry.group == "awaiting_merge" and entry.oldest_open_at == pytest.approx(_END_EPOCH)
     resumed = [
         *rows,
-        {"type": "loop.resume.start", "ts": "2026-10-25T12:00:00+00:00", "steer": "more"},
+        {"type": "session.resume", "ts": "2026-10-25T12:00:00+00:00", "steer": "more"},
     ]
     scan = _scan(resumed, tmp_path)
     assert scan.end_ep is None

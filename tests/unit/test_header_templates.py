@@ -12,7 +12,7 @@ import httpx2
 import pydantic
 import pytest
 
-from agent6 import __version__
+from agent6 import __version__, config
 from agent6 import budget as agent6_budget
 from agent6.app import conversation_state, role_providers
 from agent6.config import Config, OpenAIProviderEntry, secret_store
@@ -42,7 +42,7 @@ def _entry(headers: dict[str, Any], **extra: Any) -> OpenAIProviderEntry:
 
 def _context(**overrides: Any) -> request_headers.RequestContext:
     fields: dict[str, Any] = {
-        "session_id": "sid-1",
+        "conversation_id": "sid-1",
         "is_first_turn": True,
         "is_subagent": False,
         "initiator": "user",
@@ -75,7 +75,7 @@ def test_a_literal_string_stays_literal_and_rides_the_api_classes_only() -> None
         ({"x-t": {"template": "{home}"}}, "no such fact"),
         ({"x-t": {"template": "{model"}}, "never closes"),
         ({"x-t": {"template": "a}b"}}, "never opened"),
-        ({"x-t": {"template": "{session_id}", "targets": ["oauth"]}}, "model-call fact"),
+        ({"x-t": {"template": "{conversation_id}", "targets": ["oauth"]}}, "model-call fact"),
         ({"x-t": {"template": "x", "when": "has_images", "targets": ["oauth"]}}, "inference only"),
         ({"x-t": {"template": "x", "targets": ["models", "models"]}}, "repeats"),
         ({"x-t": {"template": "x", "targets": []}}, "at least 1"),
@@ -154,12 +154,27 @@ def test_chatgpt_reserved_headers_stay_reserved_for_credential_targets(
         )
 
 
+def test_session_id_template_refuses_at_load_with_the_conversation_fact(
+    tmp_path: pathlib.Path,
+) -> None:
+    """The session_id placeholder refuses at load and names conversation_id as its replacement."""
+    path = tmp_path / "agent6.toml"
+    path.write_text(
+        "[agent6]\nconfig_version = 1\n"
+        '[providers.work]\napi_format = "openai"\nbase_url = "https://m.example/v1"\n'
+        '[providers.work.extra_headers.x-conversation]\ntemplate = "{session_id}"\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(config.ConfigError, match=r"\{session_id\}.*\{conversation_id\}"):
+        config.load_config(path)
+
+
 def test_every_fact_renders_for_the_class_that_has_it() -> None:
     entry = _entry(
         {
             "x-id": {"template": "{request_id}"},
             "x-ver": {"template": "agent6/{agent6_version}", "targets": ["inference", "models"]},
-            "x-sess": {"template": "{session_id}"},
+            "x-sess": {"template": "{conversation_id}"},
             "x-model": {"template": "{model}"},
             "x-init": {"template": "{initiator}"},
             "x-first": {"template": "{is_first_turn}"},
@@ -303,15 +318,15 @@ def test_a_conversation_persists_across_a_resume_and_starts_new_on_a_fork(
     path.parent.mkdir()
     first = conversation_state.Conversations(path=path)
     ctx = first.context("worker", "work", initiator="user")
-    assert ctx.is_first_turn and not ctx.is_subagent and len(ctx.session_id) == 32
+    assert ctx.is_first_turn and not ctx.is_subagent and len(ctx.conversation_id) == 32
     first.completed("worker", "work")
     resumed = conversation_state.Conversations(path=path)
     again = resumed.context("worker", "work", initiator="agent")
-    assert again.session_id == ctx.session_id and again.is_first_turn is False
+    assert again.conversation_id == ctx.conversation_id and again.is_first_turn is False
     other = resumed.context("review:security", "work", initiator="agent")
-    assert other.session_id != ctx.session_id and other.is_first_turn
+    assert other.conversation_id != ctx.conversation_id and other.is_first_turn
     forked = conversation_state.Conversations(path=tmp_path / "s2" / conversation_state.FILE_NAME)
-    assert forked.context("worker", "work", initiator="user").session_id != ctx.session_id
+    assert forked.context("worker", "work", initiator="user").conversation_id != ctx.conversation_id
     lane = conversation_state.Conversations(is_subagent=True)
     assert lane.context("worker", "work", initiator="user").is_subagent
     assert lane.path is None  # a path-less state writes nothing
@@ -358,8 +373,8 @@ def test_the_instrumented_provider_fills_the_context_and_reports_each_attempt() 
     first, second, third = inner.contexts
     assert (first.initiator, first.is_first_turn) == ("user", True)
     assert (second.initiator, second.is_first_turn) == ("agent", False)
-    assert third.initiator == "agent" and len(third.session_id) == 32
-    assert first.session_id == second.session_id == third.session_id
+    assert third.initiator == "agent" and len(third.conversation_id) == 32
+    assert first.conversation_id == second.conversation_id == third.conversation_id
     events = wrapped.events
     assert isinstance(events, mock.MagicMock)
     requests = [c for c in events.emit.call_args_list if c.args[0] == "provider.request"]
@@ -372,7 +387,7 @@ def test_the_instrumented_provider_fills_the_context_and_reports_each_attempt() 
 def test_a_call_outside_a_conversation_keeps_its_model_and_body_facts() -> None:
     entry = _entry(
         {
-            "x-sess": {"template": "{session_id}"},
+            "x-sess": {"template": "{conversation_id}"},
             "x-first": {"template": "{is_first_turn}"},
             "x-init": {"template": "{initiator}"},
             "x-id": {"template": "{request_id}"},
@@ -395,7 +410,7 @@ def test_a_malformed_conversation_file_starts_empty(tmp_path: pathlib.Path) -> N
     path = tmp_path / conversation_state.FILE_NAME
     path.write_text('{"routes": {"worker@work": {"id": "abc", "completed": "x"}}}')
     ctx = conversation_state.Conversations(path=path).context("worker", "work", initiator="agent")
-    assert ctx.is_first_turn and ctx.session_id != "abc"
+    assert ctx.is_first_turn and ctx.conversation_id != "abc"
 
 
 def test_an_oauth_targeted_template_reaches_the_token_endpoint_and_a_literal_does_not(

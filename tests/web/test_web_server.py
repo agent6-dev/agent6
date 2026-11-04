@@ -1069,7 +1069,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
         _read_until(resp, lambda s: s.get("finished") is True)
         # A resume (from the CLI, say) appends to the same log.
         with logs.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "loop.resume.start", "ts": time.time()}) + "\n")
+            fh.write(json.dumps({"type": "session.resume", "ts": time.time()}) + "\n")
             fh.write(
                 json.dumps({"type": "role.call", "role": "worker", "model": "m", "ts": time.time()})
                 + "\n"

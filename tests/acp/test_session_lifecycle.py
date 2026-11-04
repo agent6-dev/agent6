@@ -320,7 +320,7 @@ def test_loaded_executions_keep_distinct_tools_and_resume_the_same_run(
     rows = [
         {"type": "session.start", "mode": "run", "user_task": "first"},
         call,
-        {"type": "loop.resume.start"},
+        {"type": "session.resume"},
         {"type": "loop.steer.injected", "text": "carry on"},
         call,
     ]
@@ -420,7 +420,7 @@ def test_reopened_thread_seeds_execution_without_replaying_on_resume(
     cwd = _repo(tmp_path)
     saved = _record(cwd, "run-AAAAAA", "task", mtime=1)
     with (saved / "logs.jsonl").open("a") as log:
-        log.write('{"type": "loop.resume.start"}\n')
+        log.write('{"type": "session.resume"}\n')
     sessions = _sessions(None)
     frames = _drive(_msg(1, method, cwd=str(cwd), sessionId=saved.name) + b"\n", sessions)
     assert frames[-1]["result"] == {}

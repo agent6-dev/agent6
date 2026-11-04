@@ -677,7 +677,7 @@ def test_pause_menu_continuation_aligns_with_task(
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "original task"},
         {"type": "session.end", "all_passed": True},
-        {"type": "loop.resume.start", "steer": "write docs"},
+        {"type": "session.resume", "steer": "write docs"},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     steer_menu.pause_menu(tmp_path, input_fn=_feed(["/status"]))

@@ -311,7 +311,7 @@ EVENTS: tuple[EventSpec, ...] = (
         "loop.media.refused",
         "An attachment was refused by its tool or model route.",
         (
-            FieldSpec("call_id", "str", True, "The tool call correlated with this event."),
+            FieldSpec("provider_tool_call_id", "str", True, "The provider's tool-use identifier."),
             FieldSpec("reason", "str", True, "The reason for the outcome."),
             FieldSpec("route", "str", False, "The model route that refused the attachment."),
             FieldSpec("text", "str", False, "The event's text."),
@@ -623,19 +623,6 @@ EVENTS: tuple[EventSpec, ...] = (
         ),
     ),
     EventSpec(
-        "loop.resume.start",
-        "A resumed execution began.",
-        (
-            FieldSpec("session_id", "str", True, "Session identifier."),
-            FieldSpec("user_task", "str", True, "The displayed task text."),
-            FieldSpec("steer", "str", True, "The instruction supplied when resuming."),
-            FieldSpec("mode", "str", True, "The execution or prompt-revision mode."),
-            FieldSpec("turn", "int", True, "The execution's turn number."),
-            FieldSpec("messages", "int", True, "Number of conversation messages."),
-            FieldSpec("execution_id", "str", True, "Execution identifier."),
-        ),
-    ),
-    EventSpec(
         "loop.review.finding.reopened",
         "An operator reopened a finding.",
         (
@@ -749,7 +736,7 @@ EVENTS: tuple[EventSpec, ...] = (
             FieldSpec(
                 "disarmed", "bool", True, "Whether the review gate's rejection cap disarmed it."
             ),
-            FieldSpec("n_block", "int", True, "Number of blocking seats."),
+            FieldSpec("n_block", "int", True, "Number of distinct blocking provider/model routes."),
             FieldSpec("n_abstain", "int", True, "Number of abstaining seats."),
             FieldSpec(
                 "completion", "str", True, "Whether the panel completed or was inconclusive."
@@ -1202,7 +1189,7 @@ EVENTS: tuple[EventSpec, ...] = (
     ),
     EventSpec(
         "session.end",
-        "The execution ended with its outcome and final verification state.",
+        "Emitted at the end of every execution, with its reason.",
         (
             FieldSpec("reason", "str", True, "The reason for the outcome."),
             FieldSpec(
@@ -1233,8 +1220,21 @@ EVENTS: tuple[EventSpec, ...] = (
         ),
     ),
     EventSpec(
+        "session.resume",
+        "Emitted at the start of every resumed execution.",
+        (
+            FieldSpec("session_id", "str", True, "Session identifier."),
+            FieldSpec("user_task", "str", True, "The displayed task text."),
+            FieldSpec("steer", "str", True, "The instruction supplied when resuming."),
+            FieldSpec("mode", "str", True, "The execution or prompt-revision mode."),
+            FieldSpec("turn", "int", True, "The execution's turn number."),
+            FieldSpec("messages", "int", True, "Number of conversation messages."),
+            FieldSpec("execution_id", "str", True, "Execution identifier."),
+        ),
+    ),
+    EventSpec(
         "session.start",
-        "A fresh execution began.",
+        "Emitted once when the session is created.",
         (
             FieldSpec("session_id", "str", False, "Session identifier."),
             FieldSpec("user_task", "str", True, "The displayed task text."),

@@ -25,7 +25,7 @@ class RequestContext:
     """What the application knows about a model call before it is serialized.
 
     Attributes:
-        session_id: The opaque id of the conversation the call belongs to; "" names the
+        conversation_id: The opaque id of the conversation the call belongs to; "" names the
             initiator only, and the application fills the rest from its conversation state.
         is_first_turn: No call of this conversation has completed yet.
         is_subagent: The call belongs to a fan-out lane.
@@ -34,7 +34,7 @@ class RequestContext:
         observe: Receives each HTTP attempt's facts; None observes nothing.
     """
 
-    session_id: str
+    conversation_id: str
     is_first_turn: bool
     is_subagent: bool
     initiator: str
@@ -48,9 +48,9 @@ class RequestContext:
             initiator: `user` or `agent`.
 
         Returns:
-            A context with no session id; the application fills it in.
+            A context with no conversation id; the application fills it in.
         """
-        return cls(session_id="", is_first_turn=False, is_subagent=False, initiator=initiator)
+        return cls(conversation_id="", is_first_turn=False, is_subagent=False, initiator=initiator)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -102,13 +102,13 @@ class RequestFacts:
                 "has_tool_results": _flag(self.has_tool_results),
                 "model": self.model,
             }[fact]
-        if self.context is None or (fact != "initiator" and not self.context.session_id):
+        if self.context is None or (fact != "initiator" and not self.context.conversation_id):
             raise KeyError(fact)  # the call stands outside a conversation
         return {
             "initiator": self.context.initiator,
             "is_first_turn": _flag(self.context.is_first_turn),
             "is_subagent": _flag(self.context.is_subagent),
-            "session_id": self.context.session_id,
+            "conversation_id": self.context.conversation_id,
         }[fact]
 
 
