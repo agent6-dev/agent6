@@ -4,9 +4,9 @@
 
 /* ---- Dark scheme (mirrors agent6-dark) -------------------------------- */
 [data-md-color-scheme="slate"] {
-  --a6-bg: #161618;        /* near-black charcoal background           */
-  --a6-surface: #202023;   /* raised card                              */
-  --a6-panel: #2c2c30;     /* panel / table header                     */
+  --a6-bg: #0f1414;        /* near-black teal background               */
+  --a6-surface: #161c1c;   /* raised card                              */
+  --a6-panel: #1e2626;     /* panel / table header                     */
   --a6-fg: #c0caf5;        /* soft lavender text                       */
   --a6-primary: #7aa2f7;   /* selection / links                        */
   --a6-accent: #06f5f3;    /* focus / hover, vivid cyan               */
@@ -38,7 +38,7 @@
 [data-md-color-scheme="slate"] .md-tabs {
   background-color: var(--a6-surface);
   color: var(--a6-fg);
-  border-bottom: 1px solid #2c2c30;
+  border-bottom: 1px solid var(--a6-panel);
 }
 
 /* ---- Light scheme (mirrors agent6-light) ------------------------------ */

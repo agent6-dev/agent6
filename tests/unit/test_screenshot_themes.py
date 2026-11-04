@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import runpy
 
 import pytest
@@ -26,6 +27,20 @@ def test_tape_theme_matches_the_terminal_palette(tape: pathlib.Path) -> None:
         assert json.loads(line.removeprefix("Set Theme ")) == rendered, (
             f"{tape.name} is stale; run uv run python docs/screenshots/sync_theme.py"
         )
+
+
+def test_docs_dark_surfaces_match_the_tui_palette() -> None:
+    """The docs dark surfaces and header border use the TUI palette."""
+    css = (_SCREENSHOTS.parent / "assets" / "extra.css").read_text(encoding="utf-8")
+    dark = css.split('[data-md-color-scheme="slate"] {', 1)[1].split("}", 1)[0]
+    colours = dict(re.findall(r"(--a6-[a-z]+):\s*(#[0-9a-fA-F]{6});", dark))
+    assert {key: colours[key] for key in ("--a6-bg", "--a6-surface", "--a6-panel")} == {
+        "--a6-bg": theme.AGENT6_DARK.background,
+        "--a6-surface": theme.AGENT6_DARK.surface,
+        "--a6-panel": theme.AGENT6_DARK.panel,
+    }
+    header = css.split('[data-md-color-scheme="slate"] .md-tabs {', 1)[1].split("}", 1)[0]
+    assert "border-bottom: 1px solid var(--a6-panel);" in header
 
 
 def test_vhs_theme_is_independent_of_ansi_text(monkeypatch: pytest.MonkeyPatch) -> None:
