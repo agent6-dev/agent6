@@ -12,6 +12,7 @@ from typing import ClassVar
 from rich import syntax
 from textual import app, containers, screen, widgets
 
+from agent6 import terminal
 from agent6.ui.tui import menubar, screen_chrome
 from agent6.vcs import git_files, git_read
 
@@ -91,7 +92,6 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         """Preview at most 1 MiB as Markdown, highlighted source or file facts."""
         event.stop()
         path = event.path
-        self.app.sub_title = f"Files · {path.relative_to(self._root)}"
         switcher = self.query_one(widgets.ContentSwitcher)
         switcher.current = "files-message"
         message = self.query_one("#files-message", widgets.Static)
@@ -99,6 +99,11 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         note.update("")
         self._is_markdown = False
         self.refresh_bindings()
+        if not path.is_relative_to(self._root):
+            # A directory symlink lists its real children, wherever it points.
+            message.update(f"Outside the working tree: {terminal.printable_name(str(path))}")
+            return
+        self.app.sub_title = f"Files · {path.relative_to(self._root)}"
         try:
             info = path.stat()
             if not stat.S_ISREG(info.st_mode):
@@ -122,12 +127,15 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         if b"\0" in data or (data and not body):
             message.update(f"Binary · {kind} · {info.st_size:,} bytes")
             return
+        # A file is untrusted text: an escape sequence in it would reach the terminal as is.
+        body = terminal.scrub_terminal_controls(body)
         if truncated:
             note.update(f"Showing first 1 MiB of {info.st_size:,} bytes.")
         source = self.query_one(widgets.RichLog)
         source.clear()
         highlighted = syntax.Syntax(body, syntax.Syntax.guess_lexer(str(path), code=body))
         source.write(highlighted.highlight(body))
+        source.scroll_home(animate=False)
         self._is_markdown = path.suffix.lower() in (".md", ".markdown")
         if self._is_markdown:
             viewer = self.query_one(widgets.MarkdownViewer)

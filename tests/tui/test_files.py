@@ -300,3 +300,61 @@ def test_markdown_links_do_not_replace_the_selected_file(
             )
 
     asyncio.run(scenario())
+
+
+def test_terminal_controls_in_a_file_never_reach_the_viewer(repo: pathlib.Path) -> None:
+    """A file carrying an OSC 52 sequence cannot write the clipboard when it is opened."""
+    (repo / "notes.txt").write_text(
+        "before \x1b]52;c;SGVsbG8=\x1b\\ after \x1b[31mred\x1b[0m\n", encoding="utf-8"
+    )
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "notes.txt")
+            text = _source_text(app.screen.query_one(widgets.RichLog))
+            assert "\x1b" not in text
+            assert "before" in text and "after" in text and "red" in text
+
+    asyncio.run(scenario())
+
+
+def test_a_file_behind_a_directory_symlink_out_of_the_tree_is_refused(repo: pathlib.Path) -> None:
+    """Textual lists a directory symlink's real children; one outside the root must not crash."""
+    outside = repo.parent / "outside"
+    outside.mkdir()
+    (outside / "readme.txt").write_text("elsewhere\n", encoding="utf-8")
+    (repo / "link").symlink_to(outside, target_is_directory=True)
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "link/readme.txt")
+            assert type(app.screen).__name__ == "FilesScreen"
+            message = app.screen.query_one("#files-message", widgets.Static)
+            assert "Outside the working tree" in str(message.content)
+            assert "elsewhere" not in _source_text(app.screen.query_one(widgets.RichLog))
+
+    asyncio.run(scenario())
+
+
+def test_a_newly_selected_file_opens_at_its_top(repo: pathlib.Path) -> None:
+    """The source viewer forgets the previous file's scroll offset."""
+    for name in ("first.py", "second.py"):
+        (repo / name).write_text("".join(f"x{i} = {i}\n" for i in range(300)), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "first.py")
+            source = app.screen.query_one(widgets.RichLog)
+            source.scroll_to(y=100, animate=False)
+            await pilot.pause()
+            assert source.scroll_y == 100
+            await _select(pilot, "second.py")
+            assert source.scroll_y == 0
+
+    asyncio.run(scenario())
