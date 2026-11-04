@@ -1,20 +1,10 @@
 # Agent state machines
 
 An agent state machine is a declarative program whose building blocks are agent6 runs, sandboxed tool calls, timed waits, and branches.
-It lets an operator compose small deterministic agents that run for a long time, and agent6 is the runner.
 
 This document specifies the format and its runtime.
 The `agent6 machine` subcommands drive it: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
 It changes neither the security model nor the tool surface [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) binds; [Security considerations](#9-security-considerations) records how each invariant holds.
-
----
-
-## 1. Motivation
-
-`run` and `review` are single-shot.
-A machine expresses the long-running shape: timed polling, branches on agent output, side-effecting steps, and terminal states.
-The operator authors the flow as a static graph, and the LLM works inside one state at a time.
-The same inputs take the same path, and a crash loses no journaled state.
 
 ---
 
@@ -30,27 +20,6 @@ The same inputs take the same path, and a crash loses no journaled state.
     - anything that talks to the outside world is a *tool*, gated by the existing audit rules
 - Not run unreviewed
     - `machine create` may draft a machine; in a repository `machine run` refuses the draft until the operator commits it
-
----
-
-## 3. Design principles
-
-- **Control flow is static and operator-owned; work is dynamic and model-owned**
-    - the graph of states/edges is fixed at author time
-    - inside an `agent` state runs the usual agent6 loop
-- **Authored in a text editor**
-    - TOML: diff-friendly, commentable
-    - a state can *be* an agent6 run, so mini-agents are wired together rather than written in Python
-- **Everything nondeterministic is journaled as a fact**
-    - wall-clock reads, tool stdout, agent outputs: appended to an immutable event log once observed and reduced
-    - the engine is a pure reducer over `(machine, blackboard, event) → blackboard'`
-    - replay reads the journal instead of re-observing the world
-- **Fail loudly**
-    - one file parses to one validated machine or a precise error
-    - a missing transition target, an unreachable state, a blackboard type mismatch, an unknown key: load-time errors
-- **No implicit initial values or edges**
-    - every variable declares a type and an explicit initial value (`value` for `[vars.operator]`, `default` for mutable `[vars.code]`/`[vars.agent]`)
-    - every state declares every outcome edge it can produce
 
 ---
 
@@ -92,23 +61,12 @@ verdict = { type = "classification", default = {} }  # a [schemas.*] record type
 ### 4.2 The blackboard: three owners
 
 The key/value store is split into three subtables, named by who may write each variable.
-The subtable header carries the owner, so who may write a value is checkable at load time.
 
 | subtable          | written by                                        | mutability        | declared with | example |
 |-------------------|---------------------------------------------------|-------------------|---------------|---------|
 | `[vars.operator]` | the human, at author time                         | immutable at runtime | `value`    | `inbox_dir`, `poll_secs`, thresholds, an API base |
 | `[vars.code]`     | a `tool` state's `capture`                         | mutable (deterministic) | `default` | `pending`, `cursor` |
 | `[vars.agent]`    | an `agent` state's validated `finish_session` payload | mutable (LLM)     | `default`     | `verdict` (a `[schemas.*]` record) |
-
-- **`[vars.operator]`**: the machine's parameters, set once at author/commit time, never written by any state
-    - a `capture`/`set` targeting an operator var is a load-time error
-    - any JSON-serializable value; the names above are illustrative
-- **`[vars.code]`**: change only as a pure function of journaled tool output (what keeps the path deterministic and replayable)
-- **`[vars.agent]`**: change only through the single validated structured output of one `agent` state (the LLM's one sanctioned channel into the blackboard)
-
-`machine check` enforces the ownership wall.
-
-- a `tool` capture targets only `[vars.code]`; an `agent` capture only `[vars.agent]`; `[vars.operator]` is read-only to every state
 
 Allowed types (all three subtables): `str`, `int`, `float` (finite: `nan` and `inf` refuse), `bool`, `list[<scalar>]`, `json`, and any **named record type** declared in `[schemas.*]` (see [Record schemas](#46-record-schemas-schemas)).
 The two structured types differ on one axis, **navigability**:
@@ -118,7 +76,6 @@ The two structured types differ on one axis, **navigability**:
     - use it only when the machine never inspects the value's internals
 - a **record type** (e.g. `classification`) is **navigable**
     - every `.field` read in a predicate or template checks against the schema at `machine check` time
-    - a misspelled field is a load error
 
 ### 4.3 State kinds
 
@@ -211,7 +168,6 @@ Where a run state's work lands:
 - a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode)
 - grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to allow; a configured `deny` stays deny), or set `sandbox.run_commands = "allow"` in the repo config
 - `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool
-- agent states alone read the two env names
 - an overlay cannot grant it: a `sandbox` key is never wider than your own config ([Machine config overlay](#47-machine-config-overlay-config))
 - edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
 
@@ -223,7 +179,6 @@ The state's `config` table tunes how that loop runs.
   The config cap, state cap and machine remainder all bind.
   The smallest nonnegative cap wins; zero refuses metered calls and `-1` is unlimited.
   Setting `max_usd` and `config.budget.max_usd` together is a load error.
-- `model`, `provider`, `effort`, `temperature` and `max_tokens_fallback` are not fields of the state: a machine file that sets one fails to load, with the `config` table that takes it named
 - secrets are never expressed here, only a `provider` name that must exist in the effective config
 
 #### `tool`
@@ -244,7 +199,6 @@ A single command, argv-style (never a shell string), through the existing `run_i
 - with a `capture`, stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces))
 - `output_schema` without `capture` is a load error
 - a capture binds only on `ok`: `nonzero` and `timeout` leave the blackboard as it was
-    - a branch reading a captured var on those edges reads the previous iteration's value
 - capture has two modes; a state uses at most one:
     - **Opaque whole-capture**: `capture = { stdout_json = "<var>" }` binds the entire parsed stdout to one variable
         - no `output_schema` allowed; `result` is opaque and may not be dotted
@@ -284,7 +238,6 @@ network = "host"                    # except this reviewed tool
 - only names the operator lists in `[machine].pass_env` reach a jail (global/repo config or `--config FILE`, never the machine overlay)
 - a state naming one not listed refuses the run at startup, naming the variable
 - a provider's `api_key_env` is never allowed there, as for an MCP server's `pass_env`
-- `machine check` names every variable a state declares
 
 **Script bundles.** A machine is a bundle: the `.asm.toml` plus an optional sibling `scripts/` of operator-reviewed helpers (the kind `machine create` may draft).
 
@@ -297,7 +250,7 @@ network = "host"                    # except this reviewed tool
 
 Cross-iteration persistence: `$AGENT6_MACHINE_DATA_DIR`.
 
-- a per-machine writable dir under the per-repo state dir (`<state-dir>/<repo-id>/machines/<id>/data/`, out of the workspace), RW in every tool jail
+- a per-machine writable dir under the per-repo state dir (`<state-dir>/machines/<id>/data/`, out of the workspace), RW in every tool jail
 
 #### `wait`
 
@@ -435,9 +388,7 @@ Every variable is referenced everywhere (templates and predicates alike) by its 
 Three consequences, each a `machine check` error:
 
 - **Global uniqueness across owners.** A name is declared in one of the three subtables only.
-  Declaring `positions` in both `[vars.code]` and `[vars.agent]` is rejected: *"variable 'positions' declared in both `[vars.code]` and `[vars.agent]`; the three owner subtables share one read namespace"*.
 - **No bare top-level vars.** Every variable must live under one of the three owner subtables.
-  A key written directly under `[vars]` (i.e. `vars.positions`) has no declared owner and is rejected: *"`vars.positions` has no owner subtable; put it in `[vars.operator]`, `[vars.code]`, or `[vars.agent]`"*.
 - **Reserved names.** The bare names `vars`, `operator`, `code`, `agent`, and `result` may not be used as variable names.
   `result` is reserved for capture scope (below).
 
@@ -596,7 +547,7 @@ loop:
 Mirrors the per-run layout under the per-repo state dir, out of the workspace:
 
 ```
-<state-dir>/<repo-id>/machines/<machine-id>/
+<state-dir>/machines/<machine-id>/
   machine.asm.toml           # the exact source the run started from (replay, status)
   scripts/                   # the bundle's scripts the run started from
   journal.jsonl              # append-only, fsync'd, one event per line
@@ -635,7 +586,6 @@ Sizing for long-running machines:
     - replay and recovery fold the whole journal and never read a snapshot
 - the journal has no rotation: archive or delete an instance dir when replay no longer needs it; `[budget] max_transitions` is the primary runaway guard
 
-Fresh-start refusals print a shell-quoted `mv` command that moves the instance to `<state-dir>/<repo-id>/<machine-id>.archived-<UTC timestamp>`, beside `machines/`.
 Keep archives outside `machines/`; renaming an instance inside it still lists the renamed directory.
 Moving the directory preserves its journal and recorded bundle, but does not remove a run-mode machine's git chain; a fresh run names any chain work that must be merged or discarded.
 
@@ -650,22 +600,6 @@ Moving the directory preserves its journal and recorded bundle, but does not rem
 - the crash window is side-effect-done to StepEvent-on-disk: a kill there loses the fact and the step re-runs on resume
 - the posture is at-least-once: a `tool` with an external side effect must be idempotent (the examples move a file or write `$AGENT6_MACHINE_DATA_DIR`, so a re-run is a no-op)
 - the journal is crash-tolerant: a torn final line drops on read and heals on the next append
-
----
-
-## 6. Reliability for 24/7 operation
-
-- **Restartable**
-    - a `wait` blocks in-process or persists the next wake and exits 0, re-armed by a systemd timer / cron
-    - the journal is the source of truth either way: a reboot loses nothing journaled
-- **Runaway guards**
-    - `[budget].max_usd` and `[budget].max_transitions` stop a non-terminal machine when reached
-- **Single writer**: `machine.lock` (flock) guarantees one process per machine id; a second invocation refuses
-- **Health/visibility**
-    - `machine status <id>`: current state, blackboard, last N events, spend, next wake
-    - `agent6 attach <id>`: the unified watcher, live (state overview, each transition, the active agent state's reasoning)
-    - the TUI machines screen opens the same view ([Terminal UI](terminal.md#watching-a-state-machine))
-    - `machine graph <file>`: mermaid or Graphviz DOT (`--format`)
 
 ---
 
@@ -692,12 +626,9 @@ Run instance commands from the repo where the instance was started.
 `machine run` prints cumulative dollars and input/output tokens when it ends, waits or stops, as `machine status` does.
 Its budget preflight judges the agent states' resolved model routes, including inherited roles, not an unused operator worker.
 
-A foreground polling run prints each wait's wake time, with the poke command on its first wait line only; `machine status` always includes the poke command for an armed wait.
-
 `machine create` prints dollars, plan points and input/output tokens summed across all drafting attempts; `--max-usd` and `--max-plan-points` cap those sums, each attempt getting what is left, and `--max-tokens-fallback` caps each attempt as it caps a run.
 A leading `~` marks dollar totals that omit unpriced usage; the `run` and `status` summaries do not report subscription-plan usage.
 
-`machine check` names each problem with its state and rule (``state 'act': branch is not total (no final `else`)``).
 It warns when a `tool` state's binary is not on the jail's PATH.
 
 `machine test` prints the same jail-PATH warnings and sandbox and environment notes as `check`.
@@ -705,7 +636,6 @@ It runs mock tests at the machine's resolved isolation level.
 `machine test` runs each `scripts/**/*_test.py` as `python3 <file>`, not through test discovery; a nonzero exit fails the script.
 Plain assertions can run at top level; a file using `unittest.TestCase` must call `unittest.main()` after all test definitions, usually under `if __name__ == "__main__":`.
 The verdict counts script files that ran and files skipped, not individual test cases.
-Its state count includes the branches, matching `machine check`.
 
 ### 7.1 `machine create`
 
@@ -724,7 +654,6 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
     - up to `--max-attempts` (default 3); the agent patches the files it wrote
 - the result is a draft: `-o <file>` overwrites the file and same-named files in the `scripts/` directory beside it
     - without `-o`, `<name>.asm.toml` in the cwd and its script targets are never clobbered (a collision prints the machine to stdout, exits non-zero)
-    - the OK line names the files it replaced
 - each attempt is watchable: a draft dir under the state dir carries the prompt, the transcript, and a `logs.jsonl` the TUI/web follow live
     - the CLI streams in the foreground; the TUI and web start detached and follow the dir
 - `create` publishes a draft for review; `machine run` checks for uncommitted bundle pieces inside the cwd's git work tree, including when started from a subdirectory

@@ -6,7 +6,6 @@ tests/unit/test_data_contracts_doc.py fails if this file drifts. -->
 # Data contracts
 
 Each of the 15 typed contracts owns a set of facts, with one writer set, a known reader set, and byte-level pins over the frozen surface.
-Every card is generated from the module and class docstrings, so edit those rather than this page.
 
 ## Support levels
 
@@ -14,11 +13,11 @@ These levels describe serialized formats, not Python imports.
 
 - **Public:** CLI `--json` rows, the web API, the `logs.jsonl` event envelope, and `.asm.toml` machine files.
   This covers [CLI listing rows](#cli-listing-rows), [CLI session status](#cli-session-status), [Live process rows](#live-process-rows), [Web payloads](#web-payloads), [Review read model](#review-read-model), [Review records](#review-records), [Event union](#event-union), [MachineSpec](#machinespec), and [Run/machine wire snapshot](#runmachine-wire-snapshot).
-- **Durable but private:** state agent6 retains for resume and replay, not an integration API.
-  This covers [Conversation](#conversation), [SessionManifest](#sessionmanifest) (`manifest.json`), [SessionSnapshot](#sessionsnapshot) (`loop_state.json` and checkpoints), the [ToolResult family](#toolresult-family) stored in conversations, [JournalEvent](#journalevent) in the machine's `journal.jsonl`, [TaskNode](#tasknode) and the task graph, and git chain refs.
-- **Disposable:** caches, [provider transcripts](architecture.md#session-state-on-disk), and telemetry export cursors have no format-compatibility or migration guarantee.
+- **Durable but private:** state agent6 retains for resume, replay and diagnostics, not an integration API.
+  This covers [Conversation](#conversation), [SessionManifest](#sessionmanifest) (`manifest.json`), [SessionSnapshot](#sessionsnapshot) (`loop_state.json` and checkpoints), the [ToolResult family](#toolresult-family) stored in conversations, [JournalEvent](#journalevent) in the machine's `journal.jsonl`, [TaskNode](#tasknode) and the task graph, git chain refs, and [provider transcripts](architecture.md#session-state-on-disk) (retained diagnostic history).
+- **Disposable:** caches, live coordination files, and telemetry export cursors have no format-compatibility or migration guarantee.
 
-Until 1.0, a format may change in a minor release, with the change named in the release notes.
+Any release before 1.0 may change a format without a compatibility shim, with the change named in the release notes.
 From 1.0, public formats will carry a version, including the journal envelope and a versioned prefix for the web API.
 Readers will keep accepting the previous format version for two minor releases.
 The current `logs.jsonl` envelope has no format-version field, and web API routes use the unversioned `/api/` prefix.

@@ -17,7 +17,6 @@ The layers, lowest precedence first:
 | machine overlay | a machine file's `[config]` table | `agent6 config set --machine-file FILE` |
 
 `--config FILE` may repeat; later files win.
-In the `flag (FILE)` source `config show` prints, FILE is the path as given on the command line.
 
 A selected preset is inserted above the config layer that selected it; [Presets](#presets) gives the precedence rules.
 The per-repo config lives in the state dir, out of the workspace: per-machine, never committed.
@@ -26,16 +25,12 @@ It can be empty or absent when the global config supplies a provider and model.
 ## Creating and inspecting
 
 - `agent6 connect`: add a provider and, when needed, credentials (stored `0600`), global by default; `--repo` writes the provider entry to the repo config while credentials stay global.
-  The prompts offer the values a run here reads and say when a layer above the target sets one.
-  Enter writes the shown value unless the target already holds it.
   An existing block's format wins over a preset's.
 - `agent6 model <role> [provider/]model [--effort off|low|medium|high|xhigh|max]`: a model id alone keeps the role's provider; a configured provider name alone opens a model picker on a terminal, or lists its models without one.
   A model change preserves the target layer's other role settings; only an explicit `--effort` replaces effort.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
-  Non-empty mappings show one row per entry with its origin.
-  Empty mappings keep a `{}` row.
   Mapping entry values are masked except for fields marked display-safe (`skills.state`, `review.reviewers`).
 - `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
   A key component that is not a bare TOML key (`[A-Za-z0-9_-]+`) is written quoted, as in `providers.demo.extra_body."a.b"` (keep those quotes inside a shell-quoted argument).
@@ -50,13 +45,11 @@ It can be empty or absent when the global config supplies a provider and model.
 - `agent6 config set --secret telemetry.headers.<name> <value>` saves a literal header value in the private global `secrets.toml`; `agent6 config unset --secret telemetry.headers.<name>` removes it.
   This target accepts only telemetry header keys and cannot be combined with `--repo` or `--machine-file`.
   Values are never printed by these commands or `config show`, but command-line values can remain in shell history and the process list ([secrets](security.md#8-secrets-and-connect)).
-- `config set`, `config unset`, and the web and TUI config editors name the preset or higher config layer that overrides a value they write or remove.
 - `agent6 config fill`: materialize defaults + global config into the global file; pass `--force` to replace an existing file.
   The repo layer and any selected preset are left as-is.
 - `agent6 config fix`: drop auto-removable invalid entries (unknown keys, stale values) from the global and repo configs and their presets, a global value a repo override masks included, naming each, and report entries that need manual repair; `--machine-file FILE` repairs an overlay instead.
 - `agent6 check`: validate config + sandbox + provider keys without starting an agent run.
   `config show` tags resolved values `(adaptive)`: `auto` settings for `sandbox.isolation`, `sandbox.network` and `prompt.decompose`, each role's unset effort, and adaptive compaction thresholds.
-  `check` adds why a level fell short, live jail probes, and each MCP server's network and `approve`.
 
 ---
 
@@ -235,7 +228,6 @@ agent6 model worker chatgpt/gpt-5.6-sol
   Later calls on that provider instance keep the accepted levels; they are not persisted.
 - `agent6 connect chatgpt --logout` signs out: the grant is revoked at the OAuth authority (best effort) and the tokens leave `secrets.toml`.
 - Spend is plan-metered, not dollar-metered: every response carries the account's rate-limit windows.
-  Surfaces show the fullest window as `plan usage (<entry>): N% of the 7-day window`; the duration is whatever the provider reports (`5-hour window`), or `window` when unknown.
   `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0.
 
@@ -253,7 +245,6 @@ agent6 model worker claude/claude-sonnet-4-5
   Inside it every Claude Code capability is off: built-in tools, hooks, settings, CLAUDE.md, MCP servers, skills, slash commands, session files, auto-memory, auto-compaction.
 - agent6 never reads the login under `~/.claude`; a `CLAUDE_CONFIG_DIR` in the environment selects a relocated one.
 - Spend is plan-metered: every round reports the account's 5-hour and 7-day windows.
-  The end-of-run summary and fan-out report show the fuller one as `plan usage (<entry>): N% of the 7-day window` (or `5-hour window`).
   `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
@@ -308,8 +299,6 @@ Role routing:
 | `worker` | none | model for `agent6 run`, `ask`, run resumes, machine agent states and the model-written squash message |
 | `reviewer` | none | model for `agent6 review`, `sessions review`, the `sessions compare` and `--parallel` judge, verify-command inference, the in-loop review panel, context summariser and gister, and prompt reviser; fallback to `models.worker` when unset |
 | `planner` | none | model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset |
-
-Cross-vendor mixes are fine.
 
 <!-- the three roles are the same shape, so the table is rendered once -->
 | Field | Default | Meaning |
@@ -535,7 +524,6 @@ Discovery skips a skill that breaks this rule with a warning.
 | `extra_dirs` | `[]` | Additional directories scanned for skills, before the installed skills dir; a skill of the same name in an earlier dir wins. |
 | `state` | `{}` | per-skill state by name; `skills.state.<name> = "enabled"`: indexed, loaded on `use_skill`; `skills.state.<name> = "disabled"`: dropped; `skills.state.<name> = "always"`: full text in the system prompt; layers merged key by key; written by `agent6 skills enable [--repo]` or `agent6 skills disable [--repo]` |
 
-Measured (2026-07): small and frontier open models alike almost never invoke a skill organically from the passive index, and no prompt lever made it reliable.
 When a skill must apply, use `always`, `/name`, or `--skill`.
 
 ## `[budget]`
@@ -553,10 +541,7 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 
 `--max-usd` / `--max-tokens-fallback` / `--max-plan-points` override per run.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.
-A worker with no price data is not metered by `max_usd` at all and runs under `max_tokens_fallback`, with a note at startup.
-Included-plan calls are bounded by `max_plan_points`, not by `max_usd` or `max_tokens_fallback`.
 Purchased-credit spend and API cost share the USD ceiling.
-Response usage, plan preflights and settlement readings all recheck the ceilings.
 Prices come from provider listings (OpenRouter's; cached under `$XDG_CACHE_HOME/agent6/models/`), and a direct-Anthropic id is priced via its OpenRouter listing.
 
 ## `[machine]`
@@ -606,7 +591,6 @@ Every browser [signs in](web.md#sign-in) with the server's secret.
 What `agent6 telemetry export` sends, and where ([Telemetry export](usage.md#telemetry-export)).
 The web scrape route requires `metrics = "prometheus"` and the [`web.metrics_route`](#web) opt-in.
 Off by default: no signal is selected, nothing is dialled, no socket is opened.
-The exporter is a separate process the operator starts; a run never exports its own events.
 Header values live in `secrets.toml` under `[telemetry.headers]`, never in config.
 The [`--secret` target](#creating-and-inspecting) writes and removes them; `[telemetry].headers` selects which names the exporter sends.
 
@@ -624,7 +608,6 @@ The [`--secret` target](#creating-and-inspecting) writes and removes them; `[tel
 
 Lane limit for `run --parallel N|[provider/]model,...`.
 Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
-A lane runs under the settings you set, at their effective values; a setting left at its default is a default in the lane too, so a sandbox default this host cannot honour degrades with a warning there as it does in a single run, and one you set refuses.
 `--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
 A lane never fans out; headless surfaces without a dispatcher answer "not available".

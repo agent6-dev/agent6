@@ -17,7 +17,8 @@ def _add_plan_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
         sub,
         "plan",
         help=(
-            "Write a plan without editing repository files or making commits; save it as plan.md."
+            "Write a plan without edit tools or automatic commits; approved commands can still"
+            " modify files. Save it as plan.md."
             ' `agent6 plan "TASK"` and `agent6 plan run "TASK"` are the same. A planning'
             " session asks before running commands even when the config approves them"
             " automatically; --auto-approve approves them for the session. Execute the plan"
@@ -88,8 +89,9 @@ def _add_ask_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         sub,
         "ask",
         help=(
-            "Ask for a prose answer without allowing file edits or commits; no repository is"
-            ' required. `agent6 ask "QUESTION"` and `agent6 ask query "QUESTION"` are the'
+            "Ask for a prose answer without edit tools or automatic commits; approved commands"
+            " can still modify files. No repository is required."
+            ' `agent6 ask "QUESTION"` and `agent6 ask query "QUESTION"` are the'
             " same. On a foreground terminal, bare `agent6 ask` starts an interactive"
             " conversation. An ask asks before running commands even when the config"
             " approves them automatically; --auto-approve approves them for the session."

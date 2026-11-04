@@ -158,8 +158,8 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
         help=(
             "Approve every sandboxed command for this session without prompting. Changes"
             " sandbox.run_commands from `ask` to `allow`, but never overrides `deny` or changes"
-            " sandbox.isolation. With --disable-sandbox, this gives the agent"
-            " unprompted host access."
+            " sandbox.isolation. Sets every configured MCP server's `approve` to `allow`."
+            " With --disable-sandbox, this gives the agent unprompted host access."
         ),
     )
     approval.add_argument(

@@ -16,8 +16,6 @@ It uses the same engine, config, and jail as `agent6 run`.
 }
 ```
 
-Any ACP client works the same way, and the command above is the whole configuration.
-
 ## What the editor sees
 
 Every run writes one event journal; the CLI, TUI, web UI, and ACP all render it the same way.
@@ -46,8 +44,6 @@ Three more updates ride the journal.
   The editor cancels through `session/cancel`.
 - `usage_update` after each model call: the last call's whole prompt over the model's context window (the `ctx N%` rule), and the run's cumulative USD when it spent any and every call was priced (a plan-metered run carries none); nothing while the window is unknown
 
-Everything agent6 says carries `[agent6]`, the model's final summary arrives bare, and the cost receipt goes to stderr.
-
 ## Review findings
 
 Findings and dispositions appear as `[agent6]` transcript notices, not native review threads.
@@ -55,29 +51,22 @@ The advertised commands act on the conversation's recorded run:
 
 - `/findings [--all]` lists open findings, or also resolved findings with `--all`.
 - `/review-queue` lists the repository's sessions in [review queue](usage.md#the-review-queue) order under group headings, and needs no run in the thread.
-  A needs-answer, blocked, unverified or awaiting-merge row names the CLI command that acts on it.
 - `/answer <question-id> <text>...` answers a pending question, with options or without; a queued question's answer reaches the run at its next turn, and an ended run's is delivered by the next prompt, which resumes it.
-  A question the model queued shows in the thread as a line naming it and its options.
 - `/fix ID --resume` confirms **Resume to fix** as a follow-up prompt when the session is idle.
   It uses the stored report, leaves the finding open, and refuses a missing resume point rather than starting a new run.
 - `/resolve ID --as DISPOSITION --reason "TEXT" [--duplicate-of ID]` records the operator's conclusion.
-  Dispositions are `fixed`, `false_positive`, `intentional`, `wont_fix`, `duplicate`, and `pre_existing`.
 - `/reopen ID --reason "TEXT"` reopens a finding.
 
-Reasons must be nonblank and at most 2,000 characters.
 Live disposition actions use the worker's IPC queue; their notices arrive when recorded.
 Fix does not support mid-run steering through ACP.
 
 ## Receipts
 
-The end message includes a short evidence summary and points to `agent6 sessions receipt <id>`.
 The advertised `/receipt` command reads [testing, review, risk and reversal evidence](usage.md#session-receipts) without calling the worker or rerunning checks.
 Ask for a reversal in a subsequent prompt or a new isolated run; displayed git commands are explanations, not executable actions.
 
 ## Code-review rule sources
 
-Code-review starts appear as session messages with the panel ID, base tree, rule completeness, source paths, blob IDs and byte counts.
-An incomplete rule set names its refusal reason; an empty complete set says that no base rules exist.
 See [Code-review rules](usage.md#code-review-rules) for discovery and limits.
 
 ## Approvals
@@ -111,7 +100,6 @@ A session is one conversation in one directory.
   A run `agent6 resume` would refuse (a fan-out coordinator, a lane, a run whose worktree is gone, a run with no checkpoint) is left out.
   Without `cwd` it covers every repository the connection has a session open in.
 - `session/resume` opens a conversation on a recorded run by that id, so an editor reopens its thread after a restart.
-  The next prompt resumes the run with its text as the steering instruction, as every follow-up prompt does.
   `session/resume` refuses a plan, an ask, a run whose worker is alive, or a run `agent6 resume` would refuse.
   It also refuses a run this connection has open for another directory or with a prompt in flight.
 - `session/load` opens the recorded run like `session/resume`, replays its journal as ordered `session/update` notifications, then returns.
@@ -126,7 +114,6 @@ A session is one conversation in one directory.
 
 - `session/delete`: the operator removes a run's record (`agent6 sessions remove`).
 - Mid-run steering: ACP has no message for a prompt while the previous prompt is running.
-  A session's follow-up is the next prompt, which resumes the run with that text as its first steering instruction.
 - `fs/*` and `terminal/*`: ACP lets the client own the filesystem and the terminal, and agent6 keeps both behind the jail the operator configured.
 - Free-text answers to a waiting `ask_user` question: the editor gets option buttons only, so a waiting question without options is unanswered and not queued (see the [frontend cases](#approvals)); `/answer` takes any text.
 - Embedded resources in a prompt: text and `resource_link` blocks are read (a link rides in as its uri; the workspace boundary still decides what it reaches)
@@ -141,7 +128,6 @@ A session is one conversation in one directory.
 ## As an MCP server
 
 `agent6 mcp serve` speaks MCP over stdio, so another agent (an editor's own, or a second agent6 with `[mcp.servers]`) can use agent6's jail and run state.
-It is the inverse of `[mcp]` in the config, which is agent6 as an MCP client.
 The cwd's config decides everything: the sandbox the commands run in, and which tools exist at all.
 
 Five tools, of which a default config publishes two:
@@ -155,7 +141,6 @@ Five tools, of which a default config publishes two:
 | `apply_patch_in_sandbox` (a patch, then the gate) | either of the two above |
 
 `run_commands = "ask"` withholds the command tools: the MCP boundary has no operator to prompt.
-A client that calls a withheld tool by name is told which setting withheld it.
 
 ```jsonc
 // Zed: settings.json -- agent6's jail as another agent's tool surface

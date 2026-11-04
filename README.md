@@ -4,7 +4,7 @@
 - Saves conversations, tool activity, and Git checkpoints so you can inspect, resume, or fork a session from an earlier turn.
 - Shows the task graph, token usage and compaction as they happen.
 - Pinned instructions survive compaction; repository memory carries facts across runs.
-- Verifies work with a configured or inferred command, checking the starting tree by default, and reports whether the result passed, failed, or remains unverified.
+- The model can run a configured or inferred verification command; agent6 reports the result or marks the final tree unverified.
 - Reviews the diff with a panel of models you configure, keeps each finding open until you resolve it, and refuses to merge over an open blocking finding.
 - Runs [parallel attempts][parallel-runs] in isolated clones with `--parallel N` or a list of models, then ranks the results for you to choose which to merge.
 - Defines long-running workflows in editable [TOML state machines][state-machines], combining agent runs, tool calls, waits, and branches with offline tests, crash recovery, and replay from recorded results.

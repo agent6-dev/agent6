@@ -1,7 +1,6 @@
 # Security
 
 agent6 treats the LLM as untrusted.
-Each section states what is enforced and what is not.
 
 ## Reporting
 
@@ -73,12 +72,6 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - `full` `sandbox.isolation` does not expose them; under `sandbox.network = "host"` a daemon on an abstract unix socket (an X server) is scoped out on Landlock ABI 6 and reachable below it, warned
 
 ## Defense layers
-
-`agent6 check sandbox` prints separate filesystem enforcement sections for the file tools and jailed commands, with one row per policy path in each scope, parents before children and root and home boundary rows where no grant covers them.
-The `rw`, `ro` and `--` markers show access; `sys`, `net` and `tool` tags show purpose, and annotations combine discovery and configuration details.
-The Git row shows configured and effective protection, and each granted device has its own row.
-It also prints a line per MCP server, the network, the approval mode and the secrets posture, then runs the jail probes.
-The network probe reads `[SKIP]` under `partial` and `none` `sandbox.isolation`, which have no network namespace.
 
 ### 1. Trust boundary
 
@@ -193,7 +186,6 @@ Each `--security-opt` flag on this page turns off a protection of the container 
       The row names each refusal
     - a fork's execution or a `run --worktree` run (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `full` `sandbox.isolation`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
       The main checkout's `.git` is read-only only under `full` `sandbox.isolation` with `protect_git`, so a worktree's is the more confined of the two.
-      The model's prompt says so
     - the granted dir is the one agent6 recorded when it added the worktree (the manifest's `worktree_git_dir`, taken from the repository it ran in).
       The worktree's own `.git` pointer is never the source: a jailed command can rewrite it under `partial` `sandbox.isolation`.
       The policy builder refuses when the pointer no longer resolves to the record.
@@ -448,7 +440,6 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
     - The token is an HMAC-SHA256 keyed by the secret, never the secret.
       The page keeps it in storage scoped to its origin (host and port) and sends it in a header, never a cookie: a browser sends a cookie to every port of the host, so a page a jailed command serves on a forwarded port would receive it on the first visit.
       The page shell, assets and JSON responses carry `Content-Security-Policy: frame-ancestors 'none'`, so such a page cannot frame the signed-in UI either.
-      A browser that signed in before the token kept a cookie: the page's response expires it, and the token's derivation changed, so a stale cookie another local server collects opens nothing.
 - With `telemetry.metrics = "prometheus"` and `web.metrics_route = "on"` (default: `off`), `/metrics` uses the existing listener and requires `Authorization: Bearer <web-secret>`, never a cookie or browser sign-in token.
 - The server renders folded state and drives typed contracts.
   New-work spawns fixed argv with the task behind `--`, and machine-run is allow-listed to authored files.
@@ -517,7 +508,6 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
   Reversal guidance uses recorded object IDs and checks commit relationships through read-only git operations.
   A missing stamp or object cannot authorize a guessed reversal.
   See [Session receipts](usage.md#session-receipts) for evidence limits.
-- The web and TUI **Ask a run to revert** action only fills a new-work composer; it never executes displayed git commands.
 
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
@@ -670,6 +660,9 @@ The exception is `notify-send`: it has no stdin mode, so a machine `notify` mess
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.
 
+<details markdown="1">
+<summary>Allowed host-side subprocesses by module</summary>
+
 - `vcs/git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
 - `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
@@ -711,6 +704,8 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/tui/clipboard.py`: `tmux load-buffer -w -` with fixed argv and the copied transcript text on stdin.
 - `ui/tui/conversation.py`: the operator's `$PAGER`, argv from the environment, transcript text on stdin.
 
+</details>
+
 ## Skills
 
 - A skill is operator-installed config: install only from trusted sources
@@ -732,12 +727,7 @@ The structural defenses above confine a model that follows an injection.
 
 ## Known limitations
 
-- `full` `sandbox.isolation` requires user namespaces and refuses on distros that disable them.
-- AppArmor on Ubuntu blocks unprivileged user namespaces without a profile
-    - `agent6 system apparmor install` adds the profile that `full` `sandbox.isolation` needs, scoped to the launcher
 - seccomp is required; kernels that block it from unprivileged callers make the jail fail closed.
-- Devcontainers under Docker, or rootful Podman on an AppArmor host, get `partial` `sandbox.isolation` by default.
-  The container bounds filesystem damage, and jailed commands share its network ([Network](#5-network))
 - Under `full` `sandbox.isolation` in a Docker or Podman container, the jail's `/proc` is empty and `ps` fails.
   Docker's `--security-opt systempaths=unconfined` or Podman's `--security-opt unmask=ALL` lets the jail mount its own `/proc`.
   Under Podman's default seccomp profile, jailed commands also see the container's hostname.
@@ -759,8 +749,6 @@ The structural defenses above confine a model that follows an injection.
 `read_file` sends supported static images and PDFs from the workspace or an explicit read grant to the calling provider.
 The read uses `Workspace.resolve_read` and `open_contained`, retaining hidden-path, regular-file and symlink-race checks.
 It reads media under the 10 MiB document cap plus one byte, checks image containers without decoding pixels, and recognizes PDFs by their header.
-Image limits are 2 MiB each, 4 MiB total and four per turn and request; PDFs allow 10 MiB each and one per turn and request.
-It refuses a `start_line` other than 1, unsupported formats and detected animation rather than resizing or truncating them.
 
 Transcripts, snapshots and checkpoints omit recognized payloads and retain metadata (path, media type, SHA-256 and byte size).
 A resume or fork needs a fresh `read_file`; it never reopens a saved path automatically.

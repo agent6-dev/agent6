@@ -35,17 +35,12 @@ Restart the shell afterwards.
 
 ## Shell completion
 
-One command installs tab-completion.
-
-- detects your shell
 - rerunning is safe and refreshes it
 
 ```sh
 agent6 completions          # or: agent6 completions bash|zsh|fish|xonsh
 ```
 
-- bash/zsh: a marker-guarded source line in the rc file, pointing at a script under the config dir
-- fish/xonsh: a file in the auto-loaded native location (`fish/completions`, `xonsh/rc.d`), no rc edit
 - `--print bash` emits the script instead, for `eval` or a dotfiles repo
 
 ## Check the install
@@ -70,8 +65,6 @@ For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolcha
 - Linux on x86_64 or aarch64 for the sandbox
 - Unprivileged user namespaces for `full` `sandbox.isolation`
 - A Rust toolchain to build from source (the PyPI wheels bundle `agent6-jail`)
-
-The jail uses Landlock, seccomp, and user namespaces.
 
 - On other architectures and on macOS, `sandbox.isolation = "auto"` resolves to `none`: commands run as ordinary subprocesses behind a startup warning, and an explicit `full` or `partial` refuses.
 - On Windows, use WSL.

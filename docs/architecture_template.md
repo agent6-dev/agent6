@@ -16,8 +16,6 @@ Any layer may also use the shared substrate: <!-- generated: substrate-names -->
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `git_command.py`.
-It runs each git command with a 120-second timeout.
-By default, it switches off the repository's hooks, fsmonitor, external diff, textconv, commit signing, and filter and merge drivers.
 `git_policy.py` holds those switches and the hook and driver policy; `errors.py` owns `GitError`.
 
 - **ui** ([src/agent6/ui/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/ui)): the presentation layer and composition root, over the shared read-model fold (`viewmodel`)
@@ -25,7 +23,6 @@ By default, it switches off the repository's hooks, fsmonitor, external diff, te
     - `ui/mcp_server.py`: agent6 as an MCP server
     - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
-    - never imports `agent6.ui`
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
 - **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_diff` (the single call behind `agent6 review`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `review_seat`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
   `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
@@ -205,7 +202,6 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
 - tier 2, `summarise_at_chars`: the elided history is summarised by the `reviewer` model; the conversation restarts from the task, that summary, the pins and decisions block, and the last `keep_recent_chars` (default 80000) of history verbatim
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
-- compaction is visible: events carry the elisions and the restart summary, every view marks them in place, `/status` shows counts
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
 
@@ -222,7 +218,6 @@ A fact file is `<name>.md` under the name rule, a regular file; any other entry 
 Outside the store, `<state-dir>/decisions.md` holds the operator's rulings beside `memory-use.json`.
 The harness appends every `ask_user` answer and every steer that answered a question, verbatim with its question, session and time; an identical ruling already on file is recorded once.
 The model sees it first (a `<decisions>` block, re-shown after a compaction restart) and never opens or writes the file; `agent6 memory decisions` prints it.
-A `memory/DECISIONS.md` with no `decisions.md` beside the store is renamed once, by the next run start, `run --parallel` or `agent6 memory` command, which says so; a run start creates an empty `decisions.md`, and a `memory/DECISIONS.md` beside one is reported and ignored, never merged.
 A finish-time check reports any ruling missing from the file.
 
 **Skills** resolve at run start from `<data-dir>/skills/` plus `[skills].extra_dirs`, through one resolution: the `<skills>` index and what `use_skill` serves cannot diverge.
@@ -252,7 +247,6 @@ A refresh or exchange reports success after persistence, or failure after its en
 Recovery reports the answer to the one post-401 retry, not the decision to rotate.
 A sibling adoption without a refresh, a cached read and an initial 403 refusal emit nothing.
 Holders and transports built without an observer emit nothing.
-The transcript fold produces no item for this event, as for other unknown events.
 ChatGPT model listings read through the holder with refresh disabled and fall back to the cache on failure.
 
 `ui/cli/connect_oauth.py` selects and runs browser, device and paste flows through the resolved profile.
@@ -376,7 +370,6 @@ The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_and_locate`, the p
 ## Enforcement layering
 
 - `git_ops.py` runs outside the jail, in the agent's own process, so the read-only bind of `.git` stops the worker without stopping the harness's commits.
-- Run state is out of reach of jailed commands because it lives outside the workspace, at `<state-dir>`, unreachable from the repo cwd.
 
 [security.md](security.md) states which guarantee each layer provides.
 
@@ -405,7 +398,6 @@ One live run-mode worker per checkout is the level above (`sessions/lock.py`, a 
 Run-mode workers share one working tree, so a second would interleave two runs' edits into each other's chain commits.
 A second `agent6 run` parks.
 The submitted task is saved verbatim in the new run's manifest (`parked_task`, with `parked_reason`, shown as "parked · checkout busy" in listings), and `agent6 resume <id>` starts it once the checkout is free.
-The message also offers `agent6 run --worktree "<task>"`, which runs it at once in its own worktree, and a `/parallel 1 -- <task>` steer that hands it to the live run as an isolated lane.
 Plan and ask expose no edit tools and spawn freely; a `run --parallel` fan-out takes no checkout lock, and its lanes work in isolated clones.
 
 Files that are untracked at start are the operator's: the run records them (`untracked-at-start`) and neither commits them nor counts them as dirt.
@@ -488,7 +480,6 @@ A worktree two sessions name (an `/undo` fork and its source) stays while either
 
 The clone sweep deletes a group dir of `lane-*` clones once the origin reaches every one of their tips, and leaves every other directory under `[workspace].base_dir` alone.
 A clone with no lane session record stays because a spawn timeout can leave a child alive before its first write, even after the coordinator exits.
-Prune names each kept group with its reason, and for a missing lane record the command that removes it.
 
 The rebuild (`graph/replay.py`) undoes every journal-stamped mutation newer than that version, so a fork's tasks, statuses, cursor, and journal match the turn its conversation came from.
 Node content the journal never records (title, rationale, acceptance, paths) is immutable after creation and comes from the current nodes; `notes` and `updated_at` cannot be unwound and stay current.

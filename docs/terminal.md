@@ -10,124 +10,58 @@ Every image is from a recorded run; click to enlarge.
 
 ## Hub
 
-`agent6 tui` lists every session for the repository in [review queue](usage.md#the-review-queue) order with six columns: updated, status (the mode folded in), review (the group, blank for `other`, then the reason and a fan-out's lanes by group), cost, id, and task; by activity the review column is not shown.
-Below 100 columns `updated` keeps only the time for today's runs and only the date for older ones, a status drops its reason and the review column hides; below 80, cost hides too.
-
-- Enter opens a run
-- `n`: an empty conversation to start a run, plan, or ask (mode, preset and model picked above the composer)
-    - the model box shows the model the config resolves for the mode and preset, re-resolved whenever either changes, and a pick overrides it for this run
-    - a refusal shows in the conversation, with the text kept in the composer
-- `l`: the selected run's event log; `m`: merge its branch (`sessions merge`); `d`: delete its history (`sessions remove`), both after a confirm
-- Space: expand or fold a fan-out's lanes (one row with its lane count otherwise)
-- `s`: switch between review-queue and activity order, remembered in `ui.toml` beside the theme
-- `c`: the config page; `M`: the machines screen; `r`: refresh; `?`: the keys; `q`: quit
-
 The new-work composer accepts `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
-Its model hints stay active until the `--` separator.
 
 ![The hub](screenshots/out/01-hub.png)
 
 ## Conversation
 
 Opening a run lands on its conversation: the task, the model's reasoning and every tool call, following live.
-The conversation opens with the task headline and the session's policy line, as `agent6 attach` does.
-A live run keeps a steer bar at the bottom; the pane above it streams the model call and the tool calls in flight until their results land.
 The composer takes the [steer directives](usage.md#follow-and-steer-a-run).
 
-- `Ctrl+T` cycles the thinking and tool detail: hidden, collapsed, expanded
 - `Ctrl+C` copies the selection, or the whole transcript when nothing is selected
 - `Ctrl+Z` leaves the view: a run started with `agent6 run --tui` detaches after its current turn (`agent6 attach` reattaches); one opened with `attach --tui` or from the hub keeps running as it was
-- `Ctrl+_` undoes typing in the composer
 
-An approval shows inline at the conversation's tail with an answer row above the bar, and collapses to one dim line once answered.
-The dashboard and the machine watch dock the same row.
-
-- the keys are the CLI prompt's: `y` allow, `a` allow all this session, `n` deny, `d` deny all this session
-- the composer keeps the focus, so a message typed when a prompt arrives stays a message; Tab moves the focus off it and the letters answer wherever it lands, Enter answering the focused button
 - on a terminal narrower than a modal's button row the later buttons are off screen; the question modal's fields and Ctrl+S still answer
-- a question the model queued pops no modal: a notification names it, Run › Answer a question… opens it, and Esc there keeps it pending; a question a dead run left waiting opens from the same menu item, its answer saved for the resume
 
 ![A run transcript](screenshots/out/05-transcript.png)
 
 ## Run dashboard
 
 `Ctrl+D` toggles the dashboard: task graph beside live reasoning, tool calls with results, event log and latest commit diff side by side.
-Before the first model call, the header names the role and model from the manifest and says `starting` while the run launches; the spinner runs only while a model call is in flight.
-
-- the diff pane opens on the latest commit; its selector walks the per-step commits, `cumulative` shows the chain up to one, and the task tree and cost line follow it; a run whose model owns git has no chain and the pane says so
-- the composer bar steers a live run or resumes a finished one, under the preset and model picked in the row above it (the first entries name what a resume without flags runs under); `/` completes the directives, Ctrl-R searches past messages
-- `/shells` lists the run's background commands; `/restate` replays the conversation since your last message
-- the View menu maximizes the focused pane
-- under 28 rows the dashboard shows one pane row at a time under a summary line (the execution's tool call count and the last call), and Tab unfolds the rest
-- on a finished plan, Run > Run this plan starts `agent6 run --from` on it and, from the hub, opens the new run; the plan session stays as it was
-- on a finished run, Run > Review this run… runs `agent6 sessions review` on it (a model call that can take minutes) and opens the markdown in a modal; a live run is refused until it ends
 
 ![The run dashboard](screenshots/out/02-run-dashboard.png)
 
 ## Findings
 
 Open Findings from the hub's View menu (`v`) or the run dashboard's View menu (`Ctrl+F`).
-Use ↑↓ to select a finding and read its recorded diff and action history.
-A finding on a [pre-existing line](usage.md#session-findings) also shows the mapped base range and its blame commits.
-The screen shows open severity counts and the panel's rejection decision separately.
-
-`f` submits Fix through the steer bridge; a stopped run requires a **Resume to fix** confirmation.
-`s` resolves with a disposition and reason; `o` reopens with a reason.
-Fix leaves the finding open, and a failed or unknown delivery stays visible.
-`r` refreshes the journal; the screen also polls while open.
 
 ![The findings screen](screenshots/out/06-findings.png)
 
 ## Receipts
 
 Open **Receipt** (`e`) from the Findings screen to inspect [recorded evidence](usage.md#session-receipts).
-The screen shows Testing, Review, Risk and How to revert, with expandable stdout and stderr for each verification attempt.
-**Ask a run to revert** opens New work with a proposed task.
 
 ![A receipt](screenshots/out/07-receipt.png)
 
 ## Code-review rule sources
 
-The conversation, log and selected finding's panel details show the panel ID, base tree, rule completeness, source paths, blob IDs and byte counts.
-Missing source metadata in an older journal is marked as unrecorded.
 See [Code-review rules](usage.md#code-review-rules) for discovery and limits.
 
 ## Event log
-
-The View menu's Full log opens the structural events of the run's log, formatted as the dashboard's log pane formats them, scrollable over the whole run.
 
 ![The event log](screenshots/out/09-logs.png)
 
 ## Configuration
 
 The config page shows every setting, its effective value, and the layer that set it: `default`, `preset`, `global`, `repo`, or `flag` (a `--config FILE`).
-`/` filters by name.
 Editing a role's provider or model opens one Model editor with a provider chooser and live model suggestions; unlisted model ids are accepted.
-Save writes both fields while keeping the target layer's other role settings.
 
-The Edit menu and Ctrl+P palette offer entry forms:
-
-- **Add provider…** (`a`): add or update a `[providers.<name>]` entry, with format and URL prefilled for known provider names.
-- **Add MCP server…** (`c`): add or update a `[mcp.servers.<name>]` entry.
-  Enter either a URL or a command line; shell quoting splits the command into argv, without running a shell.
-- **Add skill…** (`s`): set `skills.state.<name>` to `enabled`, `disabled` or `always`.
-  It does not install the skill.
-
-Forms save to global config by default and offer repo config as a target.
 In a named-entry form, a blank field keeps an existing value or uses the schema default.
 
 **Remove entry** (`x`) confirms the selected entry's name and config layer before removing the whole entry, including its subtables.
 It removes from the highest layer holding the entry, and accepts only global or repo config.
 Values from lower layers may become visible.
-Skill states have individual rows, so Remove drops only the selected skill's state.
-**Unset override** (`d`) drops only the selected leaf.
-
-- **Add reviewer…** (`v`) in the Edit menu, palette and footer appends to the ordered `review.reviewers` list.
-    - Its form takes `focus` (required), `provider`, `model`, `effort` and `temperature`, with the same save-target chooser.
-    - Set `provider` and `model` together, or leave both blank to inherit the reviewer role.
-    - Blank sampling fields inherit the route's settings.
-- **Remove reviewer** (`Shift+X`) on the `review.reviewers` row opens a chooser by position and focus, then confirms removal from the roster's source layer (global or repo).
-- Both actions save the whole list; removing the last reviewer writes `[]` so a lower layer's roster stays hidden.
 
 ![The config page](screenshots/out/03-config.png)
 
@@ -156,9 +90,6 @@ Skill states have individual rows, so Remove drops only the selected skill's sta
 
 An [agent state machine](state-machines.md) runs in the terminal like anything else: author the file, read its graph, watch it execute.
 Here `code-fixer` runs a fix loop: an agent state edits the repo to make a failing check pass, a tool state re-runs it, and the machine routes on the result until the check is green or the attempt budget is spent.
-
-- the machines screen (`M` on the hub): `v` (or Enter) opens the parsed file, `R` runs it, `w` watches its instance, `c` creates a draft, `r` refreshes
-- the watch screen (also `agent6 attach --tui <id>`): `s` steers the current agent state, `m` messages a waiting instance (`machine poke`), `x` stops it at the next transition
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox">
   <source src="/screenshots/out/machine-demo.webm" type="video/webm">

@@ -14,14 +14,12 @@ Nested dictionary keys use dots and array items use `[]`.
 
 ## Support levels
 
-- **Public:** an integration surface documented here, not a promise of compatibility before 1.0.
-- **Durable but private:** saved state agent6 needs to resume or replay, not an integration API.
-- **Disposable:** derived caches and live coordination files that do not define saved history.
+[Data contracts](data-contracts.md#support-levels) defines the support levels.
 
-All public shapes may change before 1.0 without a compatibility shim.
+Any release before 1.0 may change a format without a compatibility shim.
 
-- **Durable but private:** [snapshots and transcripts](data-contracts.md) preserve run history.
-- **Disposable:** [coordination files](architecture.md#session-state-on-disk) serve live workers.
+- **Durable but private:** snapshots preserve run history; transcripts retain diagnostic history.
+- **Disposable:** caches and live [coordination files](architecture.md#session-state-on-disk).
 - Config TOML is public; [Configuration](config.md) owns its generated setting reference.
 - Machine definitions are public; see [Agent state machines](state-machines.md).
 
