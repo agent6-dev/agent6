@@ -475,6 +475,7 @@ banned-from = [
     "agent6.ui.tui.dashboard",
     "agent6.ui.tui.dashboard_header",
     "agent6.ui.tui.diff_pane",
+    "agent6.ui.tui.files",
     "agent6.ui.tui.forms",
     "agent6.ui.tui.home",
     "agent6.ui.tui.logview",

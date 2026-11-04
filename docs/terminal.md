@@ -14,6 +14,11 @@ The new-work composer accepts `/parallel [SPEC --] TASK` ([grammar and examples]
 
 ![The hub](screenshots/out/01-hub.png)
 
+## Files
+
+The Files screen opens from the hub and shows the working tree's files.
+A Markdown file opens rendered, and `s` shows its source.
+
 ## Conversation
 
 Opening a run lands on its conversation: the task, the model's reasoning and every tool call, following live.

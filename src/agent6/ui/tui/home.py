@@ -26,12 +26,14 @@ except ImportError as e:  # pragma: no cover
     ) from e
 
 # Reached only once the textual guard above passed.
+from agent6 import errors
 from agent6.config import ConfigError, layer
 from agent6.models import choices
 from agent6.sessions import layout
 from agent6.ui import keymap, spawn
 from agent6.ui.tui import (
     config_page,
+    files,
     logview,
     machines,
     menubar,
@@ -143,6 +145,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         menubar.Menu(
             "View",
             (
+                menubar.MenuItem("Open files", "open_files"),
                 menubar.MenuItem("View logs", "view_logs"),
                 menubar.MenuItem(keymap.FINDINGS, "view_findings"),
                 menubar.MenuItem("Fold/expand lanes", "toggle_lanes"),
@@ -168,6 +171,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         ("delete_selected", "Delete run"),
         ("open_config", "Config"),
         ("open_machines", "Machines"),
+        ("open_files", "Files"),
         ("help", "Help"),
         ("quit", "Quit"),
     )
@@ -573,6 +577,15 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
             return
         self.app.push_screen(config_page.ConfigScreen(self.repo_cwd, self.config_paths))
+
+    def action_open_files(self) -> None:
+        """Push the working-tree file browser."""
+        try:
+            page = files.FilesScreen(self.repo_cwd)
+        except errors.GitError as exc:
+            self.app.notify(f"Could not open files: {exc}", severity="error")
+            return
+        self.app.push_screen(page)
 
     def action_open_machines(self) -> None:
         """Push the machines screen."""

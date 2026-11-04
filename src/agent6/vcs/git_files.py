@@ -403,6 +403,27 @@ def tree_files(path: pathlib.Path, rev: str) -> tuple[TreeFile, ...]:
     return tuple(rows)
 
 
+def ignored_paths(path: pathlib.Path) -> frozenset[pathlib.Path]:
+    """Return ignored files and directories from one working-tree listing.
+
+    Args:
+        path: The repository root.
+
+    Returns:
+        Paths under the root, with each wholly ignored directory listed once.
+
+    Raises:
+        GitError: Git cannot list the ignored paths.
+    """
+    return frozenset(
+        path / name
+        for name in git_command.nul_fields(
+            path, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"
+        )
+        if name
+    )
+
+
 def worktree_tree_files(path: pathlib.Path, *, ignored: bool = False) -> tuple[TreeFile, ...]:
     """Return working-tree files, excluding Git's ignored files unless requested.
 
