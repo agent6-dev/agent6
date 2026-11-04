@@ -97,7 +97,7 @@ def test_shared_holder_accepts_a_bound_chatgpt_profile(gcfg: pathlib.Path) -> No
 
 def test_a_configured_grant_keeps_its_original_binding(gcfg: pathlib.Path) -> None:
     """Profile resolution must not invalidate an existing configured sign-in."""
-    fingerprint = "0f54bf70aabedb2a4d3826affdd412ef"
+    fingerprint = "e7efc70de66a76e1f169a28681e239b3"
     entry = _entry()
     assert oauth.binding_fingerprint(entry) == fingerprint
     stored = _store(entry, binding=fingerprint)
@@ -850,3 +850,14 @@ def test_pinned_holder_refuses_an_unidentified_stored_grant(
     stored = secret_store.load_oauth_grant("work")
     assert stored is not None and stored.account_id is None
     assert holder.account_id() == "account-a"
+
+
+def test_the_binding_fingerprint_keeps_its_own_labels() -> None:
+    """A config key rename (api_format to backend) leaves every stored grant bound."""
+    from agent6.config import ChatGPTProviderEntry
+    from agent6.providers import oauth
+
+    assert (
+        oauth.binding_fingerprint(ChatGPTProviderEntry(backend="chatgpt"))
+        == "b3f70f3c5de620dd003b139dd0fcbe46"
+    )

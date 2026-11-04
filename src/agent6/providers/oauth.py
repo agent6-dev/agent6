@@ -127,7 +127,8 @@ def binding_fingerprint(entry: _OAuthEntry) -> str:
         assert config is not None
         settings = config.model_dump(mode="json", exclude={"refresh_skew_s"})
     facts: dict[str, Any] = {
-        "backend": entry.backend,
+        # The binding's own label: a config key rename must not rebind every stored grant.
+        "api_format": entry.backend,
         "deployment": entry.deployment,
         "base_url": entry.base_url,
         "extra_query": dict(sorted(entry.extra_query.items())),
