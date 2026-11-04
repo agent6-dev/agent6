@@ -23,14 +23,14 @@ from agent6.config import (
 from agent6.providers import OpenAIProvider, chatgpt, oauth, oauth_protocol, provider_types
 
 
-@pytest.mark.parametrize("state", ["legacy", "rebound"])
+@pytest.mark.parametrize("state", ["old_format", "rebound"])
 def test_chatgpt_binding_refuses_before_provider_construction(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, state: str
 ) -> None:
     """Inference and usage cannot acquire a provider from an unbound sign-in."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     entry = ChatGPTProviderEntry(api_format="chatgpt")
-    if state == "legacy":
+    if state == "old_format":
         secret_store.save_secret(
             "work",
             "",
@@ -51,7 +51,11 @@ def test_chatgpt_binding_refuses_before_provider_construction(
     cfg = Config(
         providers={"work": entry}, models=ModelsConfig(worker=RoleModel(provider="work", model="m"))
     )
-    message = "predates credential binding" if state == "legacy" else "other provider settings"
+    message = (
+        "No ChatGPT sign-in stored for provider 'work'"
+        if state == "old_format"
+        else "other provider settings"
+    )
     with pytest.raises(provider_types.ProviderError, match=message) as refused:
         role_providers.build_role_provider(
             cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()

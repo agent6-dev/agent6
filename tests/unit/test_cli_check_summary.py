@@ -27,7 +27,7 @@ from agent6.vcs import git_policy
 
 
 @pytest.mark.parametrize("name", ["chatgpt", "work"])
-@pytest.mark.parametrize("state", ["missing", "legacy", "rebound", "contradiction"])
+@pytest.mark.parametrize("state", ["missing", "old_format", "rebound", "contradiction"])
 def test_chatgpt_diagnosis_is_shared_by_check_and_model(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -47,7 +47,7 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
     entry = ChatGPTProviderEntry(api_format="chatgpt")
     claim = json.dumps({"https://api.openai.com/auth": {"chatgpt_account_id": "claim"}})
     access = "e30." + base64.urlsafe_b64encode(claim.encode()).decode().rstrip("=") + ".sig"
-    if state == "legacy":
+    if state == "old_format":
         secret_store.save_secret(
             name,
             "",
@@ -75,7 +75,7 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
     assert f"agent6 connect {name}`" in cause
     assert {
         "missing": "No ChatGPT sign-in",
-        "legacy": "predates credential binding",
+        "old_format": f"No ChatGPT sign-in stored for provider {name!r}",
         "rebound": "other provider settings",
         "contradiction": "does not match its own token",
     }[state] in cause

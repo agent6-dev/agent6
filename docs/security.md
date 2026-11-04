@@ -567,8 +567,9 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
 - Bound `StoredGrant` records may carry an `account_id`; records without it remain readable.
   Raw id tokens and plan labels are not stored.
 - ChatGPT grants are bound to their fixed sign-in profile and provider transport settings like configured grants.
-  Legacy records are never bound automatically; `agent6 connect <name>` replaces them after a successful sign-in.
-  Logout sends no credentials for legacy, rebound or contradictory-account records and removes them locally only.
+  Only the current grant format is accepted.
+  `agent6 connect <name>` replaces an unusable entry after a successful sign-in.
+  Logout sends no credentials for records outside the current format, rebound grants or contradictory-account grants and removes them locally only.
 - A configured issuer (`[providers.<name>].oauth`) names the only other hosts a sign-in dials: its endpoints are https, or plain http on a literal loopback address, carry no userinfo or fragment, and are never discovered; the stored grant is bound to those settings and to the entry's transport settings (`api_format`, `base_url`, `deployment`, `auth_style`, `extra_query`, `extra_headers`).
     - the grant is sent only while its binding matches the entry's transport and issuer settings; a mismatch refuses before any request, naming `agent6 connect <name>`
     - a refresh or a second exchange runs under the secrets file's lock, follows no redirect, and scrubs the tokens it sent from any error

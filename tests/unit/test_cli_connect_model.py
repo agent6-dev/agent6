@@ -896,7 +896,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
     config.write_text(
         '[providers.keyed]\napi_format = "anthropic"\napi_key_env = "CST_API_KEY"\n'
         '[providers.chatgpt]\napi_format = "chatgpt"\n'
-        '[providers.legacy]\napi_format = "chatgpt"\n'
+        '[providers.old_format]\napi_format = "chatgpt"\n'
         '[providers.issuer]\napi_format = "openai"\n'
         '[providers.issuer.oauth]\nissuer = "https://login.example"\n'
         'client_id = "agent6"\nauthorization_endpoint = "https://login.example/auth"\n'
@@ -916,7 +916,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
         now=1000.0,
     )
     secret_store.save_oauth_grant("chatgpt", grant)
-    secret_store.save_secret("legacy", "", extra={"oauth_access_token": "legacy-secret"})
+    secret_store.save_secret("old_format", "", extra={"oauth_access_token": "old-format-secret"})
     secret_store.save_secret("stored", "sk-stored-secret")
     before = (config.read_bytes(), paths.secrets_path().read_bytes())
 
@@ -955,7 +955,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
     expected = [
         ["keyed", "anthropic", "CST_API_KEY", "ok"],
         ["chatgpt", "chatgpt", "ChatGPT", "sign-in", "ok", "acct-7", "expires", "in", "42", "min"],
-        ["legacy", "chatgpt", "ChatGPT", "sign-in", "legacy"],
+        ["old_format", "chatgpt", "ChatGPT", "sign-in", "missing"],
         ["issuer", "openai", "login.example", "missing"],
         ["claude", "claude_code", "none", "ok"],
         ["stored", "anthropic", "secrets.toml", "ok"],
@@ -968,7 +968,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
         (
             "verified",
             "verified",
-            "skipped: legacy",
+            "skipped: missing",
             "skipped: missing",
             "verified",
             "verified",
@@ -995,7 +995,7 @@ def test_connect_status_lists_local_credentials_without_secrets(
         "sk-stored-secret",
         _grant_jwt(),
         "refresh-secret",
-        "legacy-secret",
+        "old-format-secret",
         "command-secret",
     ):
         assert secret not in captured.out + captured.err
@@ -1084,18 +1084,18 @@ def test_connect_status_reads_explicit_config(
     assert "extra openai none ok verified" in " ".join(capsys.readouterr().out.split())
 
 
-@pytest.mark.parametrize("state", ["legacy", "rebound"])
+@pytest.mark.parametrize("state", ["old_format", "rebound"])
 def test_logout_unbound_chatgpt_is_local_only(
     iso: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     state: str,
 ) -> None:
-    """Logout cannot send a legacy or rebound bearer and keeps the provider config."""
+    """Logout removes old-format and rebound entries locally and keeps the provider config."""
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text('[providers.work]\napi_format = "chatgpt"\n')
-    if state == "legacy":
+    if state == "old_format":
         secret_store.save_secret(
             "work",
             "",
@@ -1124,21 +1124,26 @@ def test_logout_unbound_chatgpt_is_local_only(
     output = capsys.readouterr()
     assert "locally only" in output.out + output.err
     assert "Revoked" not in output.out
+    if state == "old_format":
+        assert (
+            "No ChatGPT sign-in stored for provider 'work';"
+            " run `agent6 connect work` to sign in again. Not revoked."
+        ) in output.err
     assert secret_store.load_secrets().get("providers", {}) == {}
     assert config.read_text() == '[providers.work]\napi_format = "chatgpt"\n'
 
 
-def test_chatgpt_connect_replaces_legacy_atomically_with_bound_grant(
+def test_chatgpt_connect_replaces_old_format_entry_atomically_with_bound_grant(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The published replacement is bound and contains no legacy-only fields or id token."""
+    """The published replacement is bound and contains no obsolete fields or id token."""
     secret_store.save_secret(
         "chatgpt",
         "",
         extra={
             "oauth_access_token": "old",
             "oauth_refresh_token": "old-refresh",
-            "legacy_only": "discard",
+            "obsolete_field": "discard",
         },
     )
     secret_store.save_secret("sibling", "keep")
@@ -1164,7 +1169,7 @@ def test_chatgpt_connect_replaces_legacy_atomically_with_bound_grant(
     monkeypatch.setattr(connect_oauth, "paste_callback", paste)
     monkeypatch.setattr(oauth_protocol, "post_form", exchange)
     assert main(["connect", "chatgpt", "--no-verify"]) == 0
-    assert len(published) == 1 and "legacy_only" not in published[0]
+    assert len(published) == 1 and "obsolete_field" not in published[0]
     grant = secret_store.load_oauth_grant("chatgpt")
     assert grant is not None
     assert grant.binding == oauth.binding_fingerprint(ChatGPTProviderEntry(api_format="chatgpt"))
@@ -1178,12 +1183,13 @@ def test_chatgpt_connect_replaces_legacy_atomically_with_bound_grant(
 def test_logout_without_config_reports_local_removal(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A legacy grant without a provider entry can only be removed locally."""
+    """An old-format entry without provider config can only be removed locally."""
     secret_store.save_secret("chatgpt", "", extra={"oauth_access_token": "old"})
     assert main(["connect", "chatgpt", "--logout"]) == 0
     output = capsys.readouterr()
     assert "locally only" in output.out
     assert "Revoked" not in output.out
+    assert secret_store.load_secrets().get("providers", {}) == {}
 
 
 class _TokenResp:

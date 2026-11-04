@@ -158,7 +158,7 @@ class BoundGrantError(provider_types.ProviderError):
     def __init__(
         self,
         provider: str,
-        cause: Literal["missing", "legacy", "rebound", "account mismatch"],
+        cause: Literal["missing", "rebound", "account mismatch"],
         why: str,
     ) -> None:
         super().__init__(str(_reconnect(provider, why)), status_code=401)
@@ -179,24 +179,12 @@ def load_bound_grant(
         The grant, with its account claim filled in when metadata omitted it.
 
     Raises:
-        BoundGrantError: The grant is absent, legacy, rebound or contradicts its account claim.
+        BoundGrantError: The grant is absent, rebound or contradicts its account claim.
     """
     profile = profile_for(entry)
     label = f"{profile.label} " if profile.label else ""
-    data = secrets if secrets is not None else secret_store.load_secrets()
-    grant = secret_store.load_oauth_grant(provider_name, secrets=data)
+    grant = secret_store.load_oauth_grant(provider_name, secrets=secrets)
     if grant is None:
-        providers = data.get("providers")
-        raw = providers.get(provider_name) if isinstance(providers, dict) else None
-        if (
-            entry.api_format == "chatgpt"
-            and isinstance(raw, dict)
-            and raw.get("oauth_access_token")
-            and not raw.get("oauth_version")
-        ):
-            raise BoundGrantError(
-                provider_name, "legacy", "This ChatGPT sign-in predates credential binding"
-            )
         raise BoundGrantError(
             provider_name, "missing", f"No {label}sign-in stored for provider {provider_name!r}"
         )

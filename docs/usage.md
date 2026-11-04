@@ -29,7 +29,7 @@ A provider whose sign-in is not built in takes a hand-written [`[providers.<name
 Connect reports the saved grant separately from any live check.
 
 `--logout` attempts revocation only for a bound grant at its issuer's revocation endpoint and removes it locally either way.
-Legacy or rebound grants are removed locally only; the provider configuration stays.
+Rebound grants are removed locally only; the provider configuration stays.
 
 `agent6 check config` reports local credential refusals and exits 1; a passing local check does not verify remote authentication.
 `agent6 model` keeps its assignments and catalog visible and warns with the same sign-in cause and reconnect command.

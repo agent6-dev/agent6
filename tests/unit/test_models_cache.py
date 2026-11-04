@@ -24,10 +24,10 @@ from agent6.models import registry as models_registry
 from agent6.providers import oauth, oauth_protocol, provider_types, transport
 
 
-def test_chatgpt_listing_refuses_legacy_before_sending_a_bearer(
+def test_chatgpt_listing_refuses_old_format_entry_before_sending_a_bearer(
     cache_home: pathlib.Path, tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A legacy listing cannot send the stored bearer to an unbound destination."""
+    """A listing with an old-format entry reports a missing sign-in without sending a bearer."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     secret_store.save_secret(
         "work",
@@ -40,9 +40,13 @@ def test_chatgpt_listing_refuses_legacy_before_sending_a_bearer(
     )
     with (
         mock.patch.object(transport, "http_request") as request,
-        pytest.raises(provider_types.ProviderError, match="predates credential binding"),
+        pytest.raises(
+            oauth.BoundGrantError,
+            match=r"No ChatGPT sign-in stored for provider 'work'.*agent6 connect work",
+        ) as refused,
     ):
         models_cache._fetch("work", ChatGPTProviderEntry(api_format="chatgpt"), None, 1)
+    assert refused.value.cause == "missing"
     request.assert_not_called()
 
 

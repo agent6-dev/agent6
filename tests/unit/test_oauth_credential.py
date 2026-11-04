@@ -613,10 +613,10 @@ def test_shared_holder_pins_first_account_before_refresh_or_adoption(
     assert secret_store.paths.secrets_path().read_bytes() == before
 
 
-@pytest.mark.parametrize("kind", ["missing", "legacy", "rebound", "contradiction", "valid"])
+@pytest.mark.parametrize("kind", ["missing", "old_format", "rebound", "contradiction", "valid"])
 def test_read_only_bound_grant_validation(gcfg: pathlib.Path, kind: str) -> None:
     entry = ChatGPTProviderEntry(api_format="chatgpt")
-    if kind == "legacy":
+    if kind == "old_format":
         secret_store.save_secret(
             "work",
             "",
@@ -642,13 +642,19 @@ def test_read_only_bound_grant_validation(gcfg: pathlib.Path, kind: str) -> None
     else:
         message = {
             "missing": "No ChatGPT sign-in",
-            "legacy": "predates credential binding",
+            "old_format": "No ChatGPT sign-in",
             "rebound": "other provider settings",
             "contradiction": "does not match its own token",
         }[kind]
-        with pytest.raises(provider_types.ProviderError, match=message) as refused:
+        with pytest.raises(oauth.BoundGrantError, match=message) as refused:
             oauth.load_bound_grant("work", entry, secrets=secrets)
         assert refused.value.status_code == 401 and "agent6 connect work" in str(refused.value)
+        if kind in ("missing", "old_format"):
+            assert refused.value.cause == "missing"
+            assert str(refused.value) == (
+                "No ChatGPT sign-in stored for provider 'work';"
+                " run `agent6 connect work` to sign in again."
+            )
     assert (path.read_bytes() if path.exists() else None) == before
 
 

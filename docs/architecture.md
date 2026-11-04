@@ -308,7 +308,8 @@ ChatGPT model listings read through the holder with refresh disabled and fall ba
 
 `ui/cli/connect_oauth.py` selects and runs browser, device and paste flows through the resolved profile.
 ChatGPT's proprietary device flow falls back to the displayed authorization URL and pasted callback on refusal or cancellation.
-Legacy ChatGPT records refuse with `agent6 connect <name>`; a successful connect replaces the entry atomically.
+Entries outside the current grant format read as `missing` with the `agent6 connect <name>` remedy.
+A successful connect replaces the entry atomically.
 `app/session_setup.py::sign_in_refusal` shares the bound-grant diagnosis between run preflight, `check config` and `model`.
 `connect --status` reads the same validator's `BoundGrantError.cause` and checks each locally usable credential without refreshing or exchanging it.
 The bound store's security rules are in [Security](security.md#8-secrets-and-connect).

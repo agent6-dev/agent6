@@ -314,7 +314,7 @@ def _chatgpt_models_endpoint(
         entry's extra headers, the stored access token and account id, and `originator`.
 
     Raises:
-        ProviderError: The sign-in is absent, legacy, rebound or contradicts its account claim.
+        ProviderError: The sign-in is absent, rebound or contradicts its account claim.
     """
     credential = oauth.OAuthCredential(provider_name, entry)
     token = credential.token(refresh=False)
