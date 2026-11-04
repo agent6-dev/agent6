@@ -40,7 +40,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from agent6 import budget as agent6_budget
-from agent6 import portable
+from agent6 import kinds, portable
 from agent6.providers import (
     claude_code_protocol,
     claude_code_session,
@@ -125,6 +125,7 @@ class ClaudeCodeProvider:
         binary: The Claude Code binary.
         effort: The reasoning effort passed on argv.
         transcript_sink: Where each round is recorded.
+        provider_name: The configured provider entry; empty for an unnamed direct client.
         budget: The run's tracker; None skips metering.
         context_tokens: The model's window; a live context near it restarts the session.
     """
@@ -134,6 +135,7 @@ class ClaudeCodeProvider:
     effort: str | None = None
     transcript_sink: provider_types.TranscriptRecorder | None = None
     budget: agent6_budget.BudgetTracker | None = None
+    provider_name: str = ""
     context_tokens: int | None = None
     # The live session; a list, since the dataclass is frozen.
     _cell: list[claude_code_session.Session | None] = dataclasses.field(
@@ -428,7 +430,6 @@ class ClaudeCodeProvider:
             output_tokens=output_tokens,
             cache_read_tokens=cache_read,
             cache_creation_tokens=cache_creation,
-            cost_usd=0.0,
             raw={
                 "content": r.blocks,
                 "model": s.resolved_model,
@@ -534,12 +535,11 @@ class ClaudeCodeProvider:
             )
         # The round was generated and the plan window moved, whatever the input side reported.
         self.budget.record(
-            model=s.resolved_model or self.model,
+            route=kinds.ModelRoute(self.provider_name, self.model),
             input_tokens=inp,
             output_tokens=out,
             cache_read_tokens=cache_read,
             cache_creation_tokens=cache_creation,
-            cost_usd=0.0,
             plan_usage=s.plan,
         )
         if inp + cache_read + cache_creation <= 0:

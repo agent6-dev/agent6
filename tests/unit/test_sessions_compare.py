@@ -20,7 +20,7 @@ from typing import Any, cast
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import role_providers
 from agent6.config import Config
 from agent6.harness import judge as harness_judge
@@ -455,7 +455,7 @@ class _CostingFakeProvider(_FakeProvider):
     def call(self, **kw: Any) -> Any:
         assert self.budget is not None
         self.budget.record(
-            model="reviewer-default",
+            route=kinds.ModelRoute("reviewer-default", "reviewer-default"),
             input_tokens=1000,
             output_tokens=100,
             cache_read_tokens=0,
@@ -667,7 +667,7 @@ class _UnpricedFakeProvider(_FakeProvider):
     def call(self, **kw: Any) -> Any:
         assert self.budget is not None
         self.budget.record(
-            model="unpriced-mystery-model",
+            route=kinds.ModelRoute("unpriced-mystery-model", "unpriced-mystery-model"),
             input_tokens=1000,
             output_tokens=100,
             cache_read_tokens=0,

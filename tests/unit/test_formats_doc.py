@@ -43,6 +43,7 @@ def test_formats_page_is_not_stale() -> None:
         ("`/api/meta` payload", "ui.web.server._Handler._route"),
         ("`/api/git/diff` payload", "ui.web.git_model.diff_payload"),
         ("`agent6 ps` JSON row", "agent6.ui.cli.ps_cmd._Row"),
+        ("Token + cost summary", "budget.BudgetTracker.format_summary"),
     ),
 )
 def test_surface_headings_keep_the_producer_on_the_source_line(heading: str, producer: str) -> None:

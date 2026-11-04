@@ -247,9 +247,9 @@ def parse_response(  # noqa: C901, PLR0912, PLR0915  # one branch per provider d
         )
     enriched_raw = {**data, "content": raw_content}
     # A gateway's `usage.cost` (OpenRouter) is authoritative; a bool would read as a phantom dollar.
-    reported_cost = 0.0
+    reported_cost = None
     raw_cost = usage.get("cost")
-    if isinstance(raw_cost, int | float) and not isinstance(raw_cost, bool) and raw_cost > 0:
+    if isinstance(raw_cost, int | float) and not isinstance(raw_cost, bool) and raw_cost >= 0:
         reported_cost = float(raw_cost)
     return provider_types.ProviderResponse(
         text=text,

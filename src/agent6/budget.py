@@ -24,6 +24,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+from agent6 import kinds
 from agent6.models import pricing
 
 # No static price table: an unknown price is honest, an outdated hardcoded one is wrong.
@@ -150,7 +151,7 @@ class PlanUsage:
 
 @dataclasses.dataclass(slots=True)
 class ModelUsage:
-    """One model's usage totals: the tracker's live counters, and a snapshot row when copied.
+    """One route's usage totals: the tracker's live counters, and a snapshot row when copied.
 
     Attributes:
         input_tokens: Input tokens over every call.
@@ -166,7 +167,7 @@ class ModelUsage:
         unreported_output_tokens: Output tokens of those calls.
         unreported_cache_read_tokens: Cache-read tokens of those calls.
         unreported_cache_creation_tokens: Cache-creation tokens of those calls.
-        percent_metered: A plan reading metered a call under this model.
+        percent_metered: A plan reading metered a call under this route.
     """
 
     input_tokens: int = 0
@@ -185,7 +186,7 @@ class ModelUsage:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class _ModelCost:
-    """One model's resolved cost.
+    """One route's resolved cost.
 
     Attributes:
         usd: The figure.
@@ -219,8 +220,7 @@ def format_usd(usd: float, *, partial: bool = False) -> str:
 def _billed_apart_from_plan(t: ModelUsage) -> bool:
     """Return whether a plan-metered bucket also holds calls that cost money.
 
-    One model id can reach both a subscription provider and a paid API, and the bucket
-    is keyed by the id, so the plan's $0 must not stand for the API dollars.
+    A route can carry both plan readings and dollar charges.
 
     Args:
         t: The bucket.
@@ -237,8 +237,8 @@ def _billed_apart_from_plan(t: ModelUsage) -> bool:
     )
 
 
-def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost | None:
-    """Return one model's cost, the one owner of the pricing arithmetic.
+def _model_cost_usd(route: kinds.ModelRoute, t: ModelUsage) -> _ModelCost | None:
+    """Return one route's cost, the one owner of the pricing arithmetic.
 
     The enforced ceiling and the printed summary both read this. Reported cost is
     authoritative for the calls that carried it; the price table prices only the
@@ -246,9 +246,8 @@ def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost
     times input; cache reads at the listed rate, else 0.1 times input.
 
     Args:
-        model: The model id.
+        route: The provider and model billed.
         t: Its usage totals.
-        provider: The provider entry it is routed through.
 
     Returns:
         The cost, or None when the model has no cached price and reported nothing.
@@ -256,8 +255,8 @@ def _model_cost_usd(model: str, t: ModelUsage, provider: str = "") -> _ModelCost
     if t.percent_metered and not _billed_apart_from_plan(t):
         # Included-plan calls are an authoritative $0, never table-priced.
         return _ModelCost(0.0, reported=True, estimated=False)
-    reported = t.reported_cost_usd > 0.0
-    price = pricing.lookup_price(model, provider)
+    reported = t.reported_calls > 0
+    price = pricing.lookup_price(route.model, route.provider)
     if price is None:
         if reported:
             # Dropping the reported dollars would zero real spend out of the USD cap.
@@ -313,7 +312,7 @@ class BudgetSnapshot:
         plans: One entry per provider entry that reported a plan, the latest last.
         exhausted: A ledger crossed its cap.
         exhausted_reason: Why, or "".
-        per_model: The usage totals by model id.
+        per_model: The usage totals by provider/model route.
     """
 
     input_total: int
@@ -327,7 +326,7 @@ class BudgetSnapshot:
     plans: dict[str, PlanSpend]
     exhausted: bool
     exhausted_reason: str
-    per_model: dict[str, ModelUsage]
+    per_model: dict[kinds.ModelRoute, ModelUsage]
 
     @property
     def plan_latest(self) -> PlanUsage | None:
@@ -366,7 +365,7 @@ class BudgetTracker:
     max_plan_points: float
     allow_plan_overage: bool = False
     _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    _per_model: dict[str, ModelUsage] = dataclasses.field(default_factory=dict)
+    _per_model: dict[kinds.ModelRoute, ModelUsage] = dataclasses.field(default_factory=dict)
     _input_total: int = 0
     _output_total: int = 0
     _cache_read_total: int = 0
@@ -378,7 +377,7 @@ class BudgetTracker:
     # Per (provider entry, window): the high-water reading, and this run's consumption.
     _plan_last_window: dict[tuple[str, str], PlanWindow] = dataclasses.field(default_factory=dict)
     _plan_consumed_by_window: dict[tuple[str, str], float] = dataclasses.field(default_factory=dict)
-    # Model id to the provider's plan reader, the request the preflight makes.
+    # Provider entry to its plan reader, the request the preflight makes.
     _plan_readers: dict[str, Callable[[], PlanUsage | None]] = dataclasses.field(
         default_factory=dict
     )
@@ -386,35 +385,28 @@ class BudgetTracker:
     # Purchased credits seen leaving each account this run, in dollars; folds into the USD meter.
     _credits_last_usd: dict[str, float] = dataclasses.field(default_factory=dict)
     _credits_spent_usd: float = 0.0
-    # Model id to the provider entry that bills it, so a model two providers list is priced right.
-    _routes: dict[str, str] = dataclasses.field(default_factory=dict)
-
-    def note_route(self, model: str, provider: str) -> None:
-        """Record which provider entry a model is called through."""
-        with self._lock:
-            self._routes[model] = provider
 
     def record(
         self,
         *,
-        model: str,
+        route: kinds.ModelRoute,
         input_tokens: int,
         output_tokens: int,
         cache_read_tokens: int,
         cache_creation_tokens: int,
-        cost_usd: float = 0.0,
+        cost_usd: float | None = None,
         plan_usage: PlanUsage | None = None,
     ) -> None:
         """Add one provider response's usage to the running totals.
 
         Args:
-            model: The model id.
+            route: The provider and model billed.
             input_tokens: The call's input tokens.
             output_tokens: The call's output tokens.
             cache_read_tokens: The call's cache-read tokens.
             cache_creation_tokens: The call's cache-creation tokens.
-            cost_usd: The provider-reported cost; 0.0 leaves the call to a table price,
-                or to the fallback ledger when there is none.
+            cost_usd: The provider-reported cost, including zero; None uses a table price,
+                or the fallback ledger when there is none.
             plan_usage: A plan reading, which meters the call in percentage points at an
                 authoritative $0; a call that would use purchased credits or extra usage
                 refuses unless `allow_plan_overage` is set.
@@ -425,8 +417,9 @@ class BudgetTracker:
             output_tokens = max(output_tokens, 0)
             cache_read_tokens = max(cache_read_tokens, 0)
             cache_creation_tokens = max(cache_creation_tokens, 0)
-            cost_usd = max(cost_usd, 0.0)
-            totals = self._per_model.setdefault(model, ModelUsage())
+            if cost_usd is not None:
+                cost_usd = max(cost_usd, 0.0)
+            totals = self._per_model.setdefault(route, ModelUsage())
             totals.input_tokens += input_tokens
             totals.output_tokens += output_tokens
             totals.cache_read_tokens += cache_read_tokens
@@ -435,8 +428,8 @@ class BudgetTracker:
             if plan_usage is not None:
                 totals.reported_calls += 1
                 totals.percent_metered = True
-                self._note_plan_usage(self._routes.get(model, model), plan_usage)
-            elif cost_usd > 0.0:
+                self._note_plan_usage(route.provider, plan_usage)
+            elif cost_usd is not None:
                 totals.reported_cost_usd += cost_usd
                 totals.reported_calls += 1
             else:
@@ -450,19 +443,19 @@ class BudgetTracker:
             self._cache_creation_total += cache_creation_tokens
             metered = (
                 plan_usage is not None
-                or cost_usd > 0.0
-                or pricing.lookup_price(model, self._routes.get(model, "")) is not None
+                or cost_usd is not None
+                or pricing.lookup_price(route.model, route.provider) is not None
             )
             if not metered:
                 self._unmetered_tokens += input_tokens + output_tokens
             if plan_usage is None and metered and self.max_usd == 0.0:
                 self._exceeded_reason = (
                     "USD budget is 0: metered calls are refused"
-                    f" (model {model!r} is priced; raise [budget].max_usd)"
+                    f" (route {route.spec!r} is priced; raise [budget].max_usd)"
                 )
             if not metered and self.max_tokens_fallback == 0:
                 self._exceeded_reason = (
-                    f"unmetered call refused: model {model!r} has no reported cost and no"
+                    f"unmetered call refused: route {route.spec!r} has no reported cost and no"
                     " price data, and [budget].max_tokens_fallback is 0"
                 )
             elif (
@@ -472,7 +465,7 @@ class BudgetTracker:
                     f"fallback token budget exhausted: {self._unmetered_tokens} unmetered"
                     f" tokens >= {self.max_tokens_fallback}"
                 )
-            self._check_ceilings(model, plan_usage)
+            self._check_ceilings(route.provider, plan_usage)
 
     def _plan_consumed(self, route: str = "") -> float:
         """Return this run's consumption on its binding window, narrowed to one route when given."""
@@ -528,7 +521,7 @@ class BudgetTracker:
         self._plans.pop(route, None)
         self._plans[route] = plan
 
-    def _check_ceilings(self, model: str, plan_usage: PlanUsage | None = None) -> None:
+    def _check_ceilings(self, provider: str, plan_usage: PlanUsage | None = None) -> None:
         """Check the combined USD and plan-point ledgers with the lock held."""
         would_spend_credits = (
             plan_usage is not None
@@ -553,7 +546,7 @@ class BudgetTracker:
         elif plan_usage is not None and self.max_plan_points == 0.0:
             self._exceeded_reason = (
                 "percent budget is 0: plan-metered calls are refused"
-                f" (model {model!r} draws on a subscription plan;"
+                f" (provider {provider!r} draws on a subscription plan;"
                 " raise [budget].max_plan_points)"
             )
         elif self.max_plan_points > 0.0 and self._plan_consumed() >= self.max_plan_points:
@@ -574,15 +567,15 @@ class BudgetTracker:
                     " (includes cache_read/cache_creation cost and purchased credits)"
                 )
 
-    def register_plan_reader(self, model: str, reader: Callable[[], PlanUsage | None]) -> None:
-        """Keep the request that reads a model's plan, for `settle`.
+    def register_plan_reader(self, provider: str, reader: Callable[[], PlanUsage | None]) -> None:
+        """Keep the request that reads a provider's plan, for `settle`.
 
         Args:
-            model: The model id.
+            provider: The provider entry.
             reader: Returns a fresh reading, or None when the plan cannot be read.
         """
         with self._lock:
-            self._plan_readers[model] = reader
+            self._plan_readers[provider] = reader
 
     def settle(self) -> bool:
         """Read each metered plan once more, so the run's last calls count.
@@ -600,33 +593,33 @@ class BudgetTracker:
             self._settled = True
             metered = {route for route, _window in self._plan_last_window}
             readers = [
-                (model, reader)
-                for model, reader in self._plan_readers.items()
-                if self._routes.get(model, model) in metered
+                (provider, reader)
+                for provider, reader in self._plan_readers.items()
+                if provider in metered
             ]
         landed = False
-        for model, reader in readers:
+        for provider, reader in readers:
             plan = reader()
             if plan is not None:
                 landed = True
                 with self._lock:
-                    self._note_plan_usage(self._routes.get(model, model), plan)
-                    self._check_ceilings(model, plan)
+                    self._note_plan_usage(provider, plan)
+                    self._check_ceilings(provider, plan)
         return landed
 
-    def record_plan_preflight(self, model: str, plan: PlanUsage) -> None:
+    def record_plan_preflight(self, provider: str, plan: PlanUsage) -> None:
         """Record a reading taken before the first plan-metered call.
 
         It is the baseline every later delta counts from, and the credit guard's first
         look, so a run that would draw on purchased credits refuses before its first call.
 
         Args:
-            model: The model id.
+            provider: The provider entry.
             plan: The reading.
         """
         with self._lock:
-            self._note_plan_usage(self._routes.get(model, model), plan)
-            self._check_ceilings(model, plan)
+            self._note_plan_usage(provider, plan)
+            self._check_ceilings(provider, plan)
 
     def check(self) -> None:
         """Stop the next call when a ledger update crossed a ceiling.
@@ -671,7 +664,8 @@ class BudgetTracker:
         """Return a point-in-time copy of every counter."""
         with self._lock:
             per_model = {
-                model: dataclasses.replace(t) for model, t in sorted(self._per_model.items())
+                route: dataclasses.replace(t)
+                for route, t in sorted(self._per_model.items(), key=lambda row: row[0].spec)
             }
             return BudgetSnapshot(
                 input_total=self._input_total,
@@ -711,8 +705,8 @@ class BudgetTracker:
         """
         total_usd = self._credits_spent_usd
         any_unknown = False
-        for model, t in self._per_model.items():
-            cost = _model_cost_usd(model, t, self._routes.get(model, ""))
+        for route, t in self._per_model.items():
+            cost = _model_cost_usd(route, t)
             if cost is None:
                 any_unknown = True
                 continue
@@ -721,21 +715,21 @@ class BudgetTracker:
         return total_usd, any_unknown
 
     def _model_lines(self, snap: BudgetSnapshot) -> tuple[list[str], int, int, bool]:
-        """Return one summary line per model.
+        """Return one summary line per provider/model route.
 
         Args:
             snap: The counters to print.
 
         Returns:
-            The lines, how many models were priced, how many the USD ledger meters (a
+            The lines, how many routes were priced, how many the USD ledger meters (a
             plan's calls cost dollars nowhere), and whether any figure is an estimate.
         """
         lines: list[str] = []
         priced = 0
         metered = 0
         any_estimated = False
-        for model, totals in snap.per_model.items():
-            cost = _model_cost_usd(model, totals, self._routes.get(model, ""))
+        for route, totals in snap.per_model.items():
+            cost = _model_cost_usd(route, totals)
             subscription = totals.percent_metered and not _billed_apart_from_plan(totals)
             if cost is None:
                 cost_str = "$? (unknown price)"
@@ -757,7 +751,7 @@ class BudgetTracker:
                     note += " (cache rates assumed: 0.1x read, 1.25x write)"
                 cost_str = f"{format_usd(cost.usd)}{note}"
             lines.append(
-                f"  {model}: "
+                f"  {route.spec}: "
                 f"in={totals.input_tokens} out={totals.output_tokens} "
                 f"cache_r={totals.cache_read_tokens} "
                 f"cache_c={totals.cache_creation_tokens} "
@@ -773,6 +767,24 @@ class BudgetTracker:
 
         Returns:
             The summary.
+
+        Attributes:
+            route: Each usage line starts with the provider/model route, such as
+                `chatgpt/gpt-6-astra`.
+            in: Fresh input tokens for the route, or all routes on the TOTAL line.
+            out: Output tokens for the route, or all routes on the TOTAL line.
+            cache_r: Cache-read tokens for the route.
+            cache_c: Cache-creation tokens for the route.
+            calls: Calls recorded for the route.
+            cost: USD spend, reported or estimated from that route's prices.
+                The TOTAL includes purchased credits spent.
+                `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls.
+            of: The USD cap when a route is USD-metered; `unlimited` means no cap.
+            unmetered: Tokens counted against the fallback cap, followed by that cap.
+            plan: One plan usage line per provider, with its binding window's used percent,
+                observed window movement in points, optional cap, reset time and credit balance.
+                Account-wide movement includes other consumers.
+            STATUS: The budget stop reason, when exhausted and requested by the caller.
         """
         snap = self.snapshot()
         lines = ["Token + cost summary:"]

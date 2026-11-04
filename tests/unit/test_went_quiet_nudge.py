@@ -19,6 +19,7 @@ import types
 from typing import Any
 from unittest import mock
 
+from agent6 import kinds
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.providers import ProviderResponse
 from agent6.sessions import event_log
@@ -362,7 +363,7 @@ def test_a_plan_metered_empty_turn_says_spent_not_billed(tmp_path: pathlib.Path)
     wf.events = event_log.EventSink(tmp_path / "logs.jsonl")
     wf.budget = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     wf.budget.record(
-        model="gpt-5.6-sol",
+        route=kinds.ModelRoute("gpt-5.6-sol", "gpt-5.6-sol"),
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,

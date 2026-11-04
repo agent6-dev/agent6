@@ -30,14 +30,14 @@ class ProviderUsage:
         output_tokens: Completion tokens billed.
         cache_read_tokens: Prompt tokens served from the cache.
         cache_creation_tokens: Prompt tokens written to the cache.
-        cost_usd: The reported cost; 0 means no authoritative figure.
+        cost_usd: The reported cost; None means unreported and zero means a free call.
     """
 
     input_tokens: int
     output_tokens: int
     cache_read_tokens: int
     cache_creation_tokens: int
-    cost_usd: float = 0.0
+    cost_usd: float | None = None
 
 
 class ProviderError(Exception):
@@ -399,7 +399,7 @@ class ProviderResponse:
         cache_read_tokens: Prompt tokens served from the cache.
         cache_creation_tokens: Prompt tokens written to the cache.
         cost_usd: The gateway-reported cost of this call (OpenRouter's `usage.cost`);
-            0 means no authoritative figure, and the price table estimates instead.
+            None means unreported, so the price table estimates instead; zero means a free call.
         raw: The response body as received.
         refused: Tool-use ids the provider's own front-end answered with an error
             before agent6 could run them, with its text; the loop records the error
@@ -413,7 +413,7 @@ class ProviderResponse:
     output_tokens: int
     cache_read_tokens: int
     cache_creation_tokens: int
-    cost_usd: float = 0.0
+    cost_usd: float | None = None
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     refused: dict[str, str] = dataclasses.field(default_factory=dict)
 

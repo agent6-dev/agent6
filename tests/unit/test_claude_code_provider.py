@@ -327,7 +327,7 @@ def test_tool_round_returns_at_message_stop_with_bare_names_and_plan_metered_bud
         {"type": "tool_use", "id": "toolu_1", "name": "read_file", "input": {"path": "a"}},
     ]
     assert (resp.input_tokens, resp.output_tokens, resp.cache_read_tokens) == (1200, 40, 300)
-    assert resp.cost_usd == 0.0
+    assert resp.cost_usd is None
     assert _tool_answers(cap) == []  # the CLI is still blocked on tools/call
     budget = provider.budget
     assert budget is not None

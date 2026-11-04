@@ -29,7 +29,7 @@ from typing import Any
 import httpx2
 
 from agent6 import budget as agent6_budget
-from agent6 import media
+from agent6 import kinds, media
 from agent6.providers import provider_types, transport
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
@@ -234,13 +234,13 @@ def safe_poll(fn: Callable[[], bool] | None) -> bool:
 
 def record_billed_usage(
     budget: agent6_budget.BudgetTracker | None,
-    model: str,
+    route: kinds.ModelRoute,
     *,
     input_tokens: int,
     output_tokens: int,
     cache_read_tokens: int = 0,
     cache_creation_tokens: int = 0,
-    cost_usd: float = 0.0,
+    cost_usd: float | None = None,
     plan_usage: agent6_budget.PlanUsage | None = None,
 ) -> None:
     """Record what a call that did not complete already cost.
@@ -252,24 +252,24 @@ def record_billed_usage(
 
     Args:
         budget: The run's tracker; None records nothing.
-        model: The model billed.
+        route: The provider and model billed.
         input_tokens: Prompt tokens reported.
         output_tokens: Completion tokens reported.
         cache_read_tokens: Cache-read tokens reported.
         cache_creation_tokens: Cache-write tokens reported.
-        cost_usd: The gateway-reported cost.
+        cost_usd: The gateway-reported cost, including zero; None means unreported.
         plan_usage: The plan window the response reported.
     """
     if budget is None:
         return
     if (
         plan_usage is None
-        and cost_usd <= 0
+        and cost_usd is None
         and not (input_tokens or output_tokens or cache_read_tokens or cache_creation_tokens)
     ):
         return
     budget.record(
-        model=model,
+        route=route,
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         cache_read_tokens=cache_read_tokens,

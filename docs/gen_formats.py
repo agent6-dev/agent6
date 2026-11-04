@@ -533,6 +533,17 @@ def build_markdown() -> str:
         "`ps --json` emits an array of `_Row` records, including nested lanes."
     )
     sections.extend(p.render() for p in CLI)
+    summary = _node(module_path("budget"), "BudgetTracker.format_summary")
+    sections.append(
+        "## CLI text\n\n### Token + cost summary\n\n"
+        "The end-of-run summary groups usage by provider/model route.\n"
+        "The journal's `budget.update` event carries the cumulative totals above.\n\n"
+        f"Source: [`budget.BudgetTracker.format_summary`]({_BLOB}src/agent6/budget.py).\n\n"
+        + _table(
+            Field(name, "text", meaning)
+            for name, meaning in descriptions(ast.get_docstring(summary) or "").items()
+        )
+    )
     sections.append("## Session snapshots\n\n**Support: public.**")
     sections.append(
         "`attach --json`, `/api/session/<id>` and `/api/draft/<name>` read `SessionState` "

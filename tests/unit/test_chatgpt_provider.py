@@ -17,6 +17,7 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.app import conversation_state
 from agent6.config import ChatGPTProviderEntry, secret_store
 from agent6.providers import (
@@ -55,6 +56,7 @@ def signed_in(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> oauth.
 def _provider(credential: oauth.OAuthCredential, **kwargs: Any) -> chatgpt.ChatGPTProvider:
     return chatgpt.ChatGPTProvider(
         model="gpt-5-codex",
+        provider_name="chatgpt",
         credential=credential,
         account_id="acct-1",
         base_url="https://chatgpt.com/backend-api/codex",
@@ -300,7 +302,7 @@ def test_stream_deltas_feed_callbacks_and_usage_normalises(
     assert pieces == ["hel", "lo"]
     assert resp.text == "hello" and resp.stop_reason == "end_turn"
     assert (resp.input_tokens, resp.cache_read_tokens, resp.output_tokens) == (35, 7, 9)
-    assert resp.cost_usd == 0.0
+    assert resp.cost_usd is None
 
 
 def test_tool_call_and_reasoning_items_parse(signed_in: oauth.OAuthCredential) -> None:
@@ -729,7 +731,7 @@ def test_plan_usage_headers_feed_the_percent_budget(
     assert snap.plan_latest.used_percent == 37.0
     assert snap.plan_latest.window_minutes == 10080
     assert snap.unmetered_tokens == 0
-    assert "plan usage (gpt-5-codex): 37% of the 7-day window" in provider.budget.format_summary()
+    assert "plan usage (chatgpt): 37% of the 7-day window" in provider.budget.format_summary()
 
 
 def test_http_error_plan_headers_reach_the_budget(
@@ -1355,7 +1357,9 @@ def test_a_completed_round_the_guard_refuses_still_books_its_plan_window(
     ):
         provider.call(system="s", messages=[{"role": "user", "content": "x"}])
     snap = budget.snapshot()
-    assert "gpt-5-codex" in snap.per_model, "the refused round is on the ledger"
+    assert kinds.ModelRoute("chatgpt", "gpt-5-codex") in snap.per_model, (
+        "the refused round is on the ledger"
+    )
     assert snap.plan_latest is not None and snap.plan_latest.used_percent == 37.0
 
 

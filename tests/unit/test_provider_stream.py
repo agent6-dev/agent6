@@ -21,6 +21,7 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.providers import provider_types, stream_lifecycle
 
 
@@ -425,7 +426,7 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
         credential=None,
         transcript_sink=None,
         budget=None,
-        model="m",
+        route=kinds.ModelRoute("", "m"),
         facts=transport.request_headers.RequestFacts(target="inference", model="m"),
         build_headers=lambda _k, _f: {},
         adapt_400=lambda _s, _t, _b: False,
@@ -465,17 +466,18 @@ def test_a_raising_abort_poll_leaves_the_watchdog_alive(monkeypatch: pytest.Monk
         _call(should_abort=boom, should_interrupt=boom).run(_drain)
 
 
-def test_reported_cost_without_token_counts_is_recorded() -> None:
+@pytest.mark.parametrize("cost", [0.0, 0.25])
+def test_reported_cost_without_token_counts_is_recorded(cost: float) -> None:
     budget = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
 
     stream_lifecycle.record_billed_usage(
         budget,
-        "openrouter/model",
+        kinds.ModelRoute("", "openrouter/model"),
         input_tokens=0,
         output_tokens=0,
-        cost_usd=0.25,
+        cost_usd=cost,
     )
 
-    usage = budget.snapshot().per_model["openrouter/model"]
+    usage = budget.snapshot().per_model[kinds.ModelRoute("", "openrouter/model")]
     assert usage.calls == 1
-    assert usage.reported_cost_usd == 0.25
+    assert usage.reported_cost_usd == cost

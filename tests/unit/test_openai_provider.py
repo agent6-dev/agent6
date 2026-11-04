@@ -69,6 +69,24 @@ def test_call_translates_messages_and_parses_usage() -> None:
     assert resp.cache_read_tokens == 40
 
 
+@pytest.mark.parametrize("reported_cost", [None, 0.0, 0.25])
+def test_unreported_cost_stays_distinct_from_a_reported_free_call(
+    reported_cost: float | None,
+) -> None:
+    """The parsed response preserves absence so accounting can estimate only unreported calls."""
+    usage: dict[str, Any] = {"prompt_tokens": 100, "completion_tokens": 10}
+    if reported_cost is not None:
+        usage["cost"] = reported_cost
+    response = _fake_response(
+        {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}], "usage": usage}
+    )
+    provider = openai.OpenAIProvider(api_key="test", model="m")
+    with mock.patch("agent6.providers.transport.http_post", return_value=response):
+        parsed = provider.call(system="s", messages=[])
+    assert parsed.cost_usd == reported_cost
+    assert parsed.usage.cost_usd == reported_cost
+
+
 def test_openai_direct_reasoning_uses_top_level_reasoning_effort() -> None:
     """Direct OpenAI reasoning models take a top-level `reasoning_effort`.
 

@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from agent6 import budget
+from agent6 import budget, kinds
 
 
 @pytest.fixture(autouse=True)
@@ -28,10 +28,10 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPa
 
 
 def _rec(
-    bt: budget.BudgetTracker, model: str, tokens_in: int, tokens_out: int, cost: float = 0.0
+    bt: budget.BudgetTracker, model: str, tokens_in: int, tokens_out: int, cost: float | None = None
 ) -> None:
     bt.record(
-        model=model,
+        route=kinds.ModelRoute(model, model),
         input_tokens=tokens_in,
         output_tokens=tokens_out,
         cache_read_tokens=0,
@@ -98,7 +98,7 @@ def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
     """
     bt = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("plan", "claude-sonnet-4-5"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
@@ -111,7 +111,9 @@ def test_a_plan_call_zeroes_only_its_own_calls_not_the_model_id() -> None:
     with pytest.raises(budget.BudgetExceededError, match="USD"):
         bt.check()
     summary = bt.format_summary()
-    assert "$1.05" in summary and "(subscription)" not in summary
+    assert "$1.05" in summary
+    assert "plan/claude-sonnet-4-5: in=10 out=10" in summary
+    assert "$0.0000 (subscription)" in summary
 
 
 def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:
@@ -119,7 +121,7 @@ def test_a_pure_subscription_model_still_costs_an_authoritative_zero() -> None:
     bt = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1)
     for _ in range(3):
         bt.record(
-            model="unpriced-plan-model",
+            route=kinds.ModelRoute("unpriced-plan-model", "unpriced-plan-model"),
             input_tokens=5_000,
             output_tokens=5_000,
             cache_read_tokens=0,

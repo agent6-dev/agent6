@@ -12,7 +12,7 @@ import httpx2
 import pydantic
 import pytest
 
-from agent6 import __version__, config
+from agent6 import __version__, config, kinds
 from agent6 import budget as agent6_budget
 from agent6.app import conversation_state, role_providers
 from agent6.config import Config, OpenAIProviderEntry, secret_store
@@ -283,7 +283,7 @@ def test_every_attempt_mints_its_own_request_id_and_reports_it(
         credential=_Cred(),
         transcript_sink=None,
         budget=None,
-        model="m",
+        route=kinds.ModelRoute("", "m"),
         facts=request_headers.call_facts("m", (False, False), _context(observe=observed.append)),
         build_headers=lambda token, facts: hs.render(facts),
         adapt_400=lambda _s, _t, _b: False,

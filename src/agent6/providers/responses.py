@@ -16,6 +16,7 @@ from typing import Any
 import httpx2
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.providers import (
     provider_types,
     request_headers,
@@ -71,6 +72,7 @@ class ResponsesProvider:
         timeout_s: The read budget in seconds.
         auth_observer: Receives settled authentication outcomes; None observes nothing.
         transcript_sink: Where each round-trip is recorded; None records nothing.
+        provider_name: The configured provider entry; empty for an unnamed direct client.
         budget: The run's tracker; None skips metering.
         reasoning_effort: The default effort; `off` sends `none`, None sends nothing.
         credential: A short-lived bearer source; a 401 re-mints it once.
@@ -89,6 +91,7 @@ class ResponsesProvider:
     transcript_sink: provider_types.TranscriptRecorder | None = None
     auth_observer: provider_types.AuthObserver | None = None
     budget: agent6_budget.BudgetTracker | None = None
+    provider_name: str = ""
     reasoning_effort: str | None = None
     credential: provider_types.BearerCredential | None = None
     # Latched on a 400 naming `temperature` so the rest of the run omits it; a list, since
@@ -236,7 +239,7 @@ class ResponsesProvider:
             auth_observer=self.auth_observer,
             transcript_sink=self.transcript_sink,
             budget=self.budget,
-            model=self.model,
+            route=kinds.ModelRoute(self.provider_name, self.model),
             facts=request_headers.call_facts(
                 self.model, request_headers.responses_body_facts(body), context
             ),
@@ -331,7 +334,7 @@ class ResponsesProvider:
             )
             stream_lifecycle.record_billed_usage(
                 self.budget,
-                self.model,
+                kinds.ModelRoute(self.provider_name, self.model),
                 input_tokens=billed.input_tokens,
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
@@ -350,5 +353,7 @@ class ResponsesProvider:
             if isinstance(exc, provider_types.ProviderError):
                 exc.usage = billed_usage
             raise
-        transport.meter_completion(self.budget, self.model, parsed, _LABEL)
+        transport.meter_completion(
+            self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, _LABEL
+        )
         return parsed

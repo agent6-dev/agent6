@@ -764,7 +764,7 @@ def test_boolean_reported_cost_reads_as_absent() -> None:
             "usage": {"prompt_tokens": 500, "completion_tokens": 100, "cost": True},
         }
     )
-    assert resp.cost_usd == 0.0
+    assert resp.cost_usd is None
 
 
 def test_credential_refresh_roundtrip_is_recorded(tmp_path: Any) -> None:

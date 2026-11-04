@@ -216,7 +216,6 @@ def _provider_from_entry(
     Raises:
         ProviderError: The entry lacks a credential, or the effort has no equivalent.
     """
-    budget.note_route(model, provider_name)
     if isinstance(entry, ClaudeCodeProviderEntry):
         if effort == "off":
             raise ProviderError(
@@ -230,6 +229,7 @@ def _provider_from_entry(
             effort=effort,
             transcript_sink=transcript_sink,
             budget=budget,
+            provider_name=provider_name,
             context_tokens=models_registry.context_window(provider_name, model),
         )
 
@@ -265,6 +265,7 @@ def _provider_from_entry(
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
+            provider_name=provider_name,
             reasoning_effort=effort,
         )
     key = secret_store.resolve_api_key(provider_name, entry.api_key_env)
@@ -294,6 +295,7 @@ def _provider_from_entry(
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
+            provider_name=provider_name,
             effort=effort,
             extra_headers=extra_headers,
             extra_body=extra_body,
@@ -313,6 +315,7 @@ def _provider_from_entry(
             timeout_s=entry.http_timeout_s,
             transcript_sink=transcript_sink,
             budget=budget,
+            provider_name=provider_name,
             reasoning_effort=effort,
             credential=credential,
             auth_observer=auth_observer,
@@ -329,6 +332,7 @@ def _provider_from_entry(
         timeout_s=entry.http_timeout_s,
         transcript_sink=transcript_sink,
         budget=budget,
+        provider_name=provider_name,
         reasoning_effort=effort,
         credential=credential,
         auth_observer=auth_observer,
@@ -358,7 +362,7 @@ def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, int |
         "cache_read": usage.cache_read_tokens,
         "cache_creation": usage.cache_creation_tokens,
     }
-    if usage.cost_usd > 0:
+    if usage.cost_usd is not None:
         fields["cost_usd"] = usage.cost_usd
     return fields
 

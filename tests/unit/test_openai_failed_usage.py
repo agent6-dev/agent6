@@ -11,7 +11,7 @@ from unittest import mock
 import httpx2
 import pytest
 
-from agent6 import budget
+from agent6 import budget, kinds
 from agent6.app import role_providers
 from agent6.providers import openai, provider_types, stream_lifecycle
 from agent6.sessions import event_log
@@ -66,7 +66,7 @@ class _Stream(httpx2.SyncByteStream):
     "failure",
     ["http_error", "provider_error", "malformed_delta", "abort", "truncated", "failed_completion"],
 )
-@pytest.mark.parametrize("reported_cost", [None, 0.25])
+@pytest.mark.parametrize("reported_cost", [None, 0.0, 0.25])
 def test_failed_stream_usage_reaches_the_journal_and_telemetry(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -86,7 +86,9 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     wrapper = role_providers.InstrumentedProvider(
-        inner=openai.OpenAIProvider(api_key="test", model="test-model", budget=tracker),
+        inner=openai.OpenAIProvider(
+            api_key="test", model="test-model", provider_name="test-provider", budget=tracker
+        ),
         role="worker",
         model="test-model",
         provider_name="test-provider",
@@ -115,8 +117,10 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
         snap.cache_read_total,
         snap.cache_creation_total,
     ) == (100, 10, 25, 0)
-    assert snap.per_model["test-model"].calls == 1
-    assert snap.per_model["test-model"].reported_cost_usd == (reported_cost or 0.0)
+    assert snap.per_model[kinds.ModelRoute("test-provider", "test-model")].calls == 1
+    assert snap.per_model[kinds.ModelRoute("test-provider", "test-model")].reported_cost_usd == (
+        reported_cost or 0.0
+    )
 
     rows = [json.loads(line) for line in events.path.read_text().splitlines()]
     (call,) = [row for row in rows if row["type"] == "role.call"]
@@ -143,10 +147,10 @@ def test_failed_stream_usage_reaches_the_journal_and_telemetry(
         assert counters[("agent6_tokens_total", (*labels, ("type", kind)))] == total
     assert counters[("agent6_model_calls_total", (labels[0], ("outcome", "error"), labels[1]))] == 1
     if reported_cost is not None:
-        assert counters[("agent6_cost_usd_total", ())] == reported_cost
+        assert counters.get(("agent6_cost_usd_total", ()), 0.0) == reported_cost
 
 
-@pytest.mark.parametrize("reported_cost", [None, 0.25])
+@pytest.mark.parametrize("reported_cost", [None, 0.0, 0.25])
 def test_successful_stream_reports_the_same_usage_fields(
     tmp_path: pathlib.Path, reported_cost: float | None
 ) -> None:
@@ -157,7 +161,9 @@ def test_successful_stream_reports_the_same_usage_fields(
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     wrapper = role_providers.InstrumentedProvider(
-        inner=openai.OpenAIProvider(api_key="test", model="test-model", budget=tracker),
+        inner=openai.OpenAIProvider(
+            api_key="test", model="test-model", provider_name="test-provider", budget=tracker
+        ),
         role="worker",
         model="test-model",
         provider_name="test-provider",
@@ -195,7 +201,9 @@ def test_failure_before_usage_does_not_invent_tokens(
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     wrapper = role_providers.InstrumentedProvider(
-        inner=openai.OpenAIProvider(api_key="test", model="test-model", budget=tracker),
+        inner=openai.OpenAIProvider(
+            api_key="test", model="test-model", provider_name="test-provider", budget=tracker
+        ),
         role="worker",
         model="test-model",
         provider_name="test-provider",

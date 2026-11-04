@@ -9,7 +9,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import budget
+from agent6 import budget, kinds
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def test_usd_ceiling_counts_cache_tokens_token_caps_would_miss() -> None:
     t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=-1, max_plan_points=-1)
     # sonnet-4 input $3/M, cache_creation 1.25x = $3.75/M; 300k * 3.75/1e6 = $1.125 > $1.
     t.record(
-        model="claude-sonnet-4-20250514",
+        route=kinds.ModelRoute("claude-sonnet-4-20250514", "claude-sonnet-4-20250514"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
@@ -58,7 +58,7 @@ def test_usd_ceiling_off_when_unlimited() -> None:
     # max_usd = -1 (unlimited): the same heavy-cache call trips nothing.
     t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     t.record(
-        model="claude-sonnet-4-20250514",
+        route=kinds.ModelRoute("claude-sonnet-4-20250514", "claude-sonnet-4-20250514"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
@@ -75,11 +75,15 @@ def test_negative_usage_never_reduces_the_ledger() -> None:
     """
     t = _t()
     t.record(
-        model="m", input_tokens=5, output_tokens=3, cache_read_tokens=1, cache_creation_tokens=2
+        route=kinds.ModelRoute("m", "m"),
+        input_tokens=5,
+        output_tokens=3,
+        cache_read_tokens=1,
+        cache_creation_tokens=2,
     )
     before = t.snapshot()
     t.record(
-        model="m",
+        route=kinds.ModelRoute("m", "m"),
         input_tokens=-500,
         output_tokens=-500,
         cache_read_tokens=-500,
@@ -97,10 +101,18 @@ def test_negative_usage_never_reduces_the_ledger() -> None:
 def test_record_accumulates() -> None:
     t = _t()
     t.record(
-        model="m", input_tokens=5, output_tokens=3, cache_read_tokens=1, cache_creation_tokens=2
+        route=kinds.ModelRoute("m", "m"),
+        input_tokens=5,
+        output_tokens=3,
+        cache_read_tokens=1,
+        cache_creation_tokens=2,
     )
     t.record(
-        model="m", input_tokens=4, output_tokens=2, cache_read_tokens=0, cache_creation_tokens=0
+        route=kinds.ModelRoute("m", "m"),
+        input_tokens=4,
+        output_tokens=2,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
     )
     snap = t.snapshot()
     assert snap.input_total == 9
@@ -115,7 +127,11 @@ def test_fallback_ceiling_hard_stop() -> None:
     # The unmetered ledger sums input and output; the call that reaches the cap exhausts it.
     t = _t(fallback=10)
     t.record(
-        model="m", input_tokens=7, output_tokens=3, cache_read_tokens=0, cache_creation_tokens=0
+        route=kinds.ModelRoute("m", "m"),
+        input_tokens=7,
+        output_tokens=3,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
     )
     assert t.is_exhausted()
     with pytest.raises(budget.BudgetExceededError, match="fallback token budget"):
@@ -125,33 +141,45 @@ def test_fallback_ceiling_hard_stop() -> None:
 def test_per_model_tracking() -> None:
     t = _t(fallback=1000)
     t.record(
-        model="a", input_tokens=10, output_tokens=2, cache_read_tokens=0, cache_creation_tokens=0
+        route=kinds.ModelRoute("a", "a"),
+        input_tokens=10,
+        output_tokens=2,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
     )
     t.record(
-        model="b", input_tokens=20, output_tokens=4, cache_read_tokens=0, cache_creation_tokens=0
+        route=kinds.ModelRoute("b", "b"),
+        input_tokens=20,
+        output_tokens=4,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
     )
     t.record(
-        model="a", input_tokens=5, output_tokens=1, cache_read_tokens=0, cache_creation_tokens=0
+        route=kinds.ModelRoute("a", "a"),
+        input_tokens=5,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
     )
     pm = t.snapshot().per_model
-    assert pm["a"].input_tokens == 15
-    assert pm["a"].calls == 2
-    assert pm["b"].input_tokens == 20
-    assert pm["b"].calls == 1
+    assert pm[kinds.ModelRoute("a", "a")].input_tokens == 15
+    assert pm[kinds.ModelRoute("a", "a")].calls == 2
+    assert pm[kinds.ModelRoute("b", "b")].input_tokens == 20
+    assert pm[kinds.ModelRoute("b", "b")].calls == 1
 
 
 def test_format_summary_renders_known_and_unknown_prices() -> None:
     # claude-sonnet-4-5 is priced by the fixture: 1000 in + 100 out = $0.003 + $0.0015 = $0.0045.
     t = _t(fallback=10000)
     t.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1000,
         output_tokens=100,
         cache_read_tokens=0,
         cache_creation_tokens=0,
     )
     t.record(
-        model="totally-fake-model",
+        route=kinds.ModelRoute("totally-fake-model", "totally-fake-model"),
         input_tokens=500,
         output_tokens=50,
         cache_read_tokens=0,
@@ -179,7 +207,11 @@ def test_format_summary_marks_exhausted() -> None:
     """A standalone cost summary identifies a reached cap even when a call crosses it."""
     t = _t(fallback=5)
     t.record(
-        model="m", input_tokens=10, output_tokens=0, cache_read_tokens=0, cache_creation_tokens=0
+        route=kinds.ModelRoute("m", "m"),
+        input_tokens=10,
+        output_tokens=0,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
     )
     assert "STATUS: fallback token budget exhausted" in t.format_summary()
 
@@ -218,7 +250,7 @@ def test_percent_meter_sawtooth_and_cap() -> None:
 
     def rec(pct: float, resets_at: float = 2e9) -> None:
         t.record(
-            model="gpt-5.6-sol",
+            route=kinds.ModelRoute("gpt-5.6-sol", "gpt-5.6-sol"),
             input_tokens=1000,
             output_tokens=50,
             cache_read_tokens=0,
@@ -250,10 +282,9 @@ def test_percent_meter_sawtooth_and_cap() -> None:
 def test_a_plan_cap_names_the_same_window_as_its_usage_line() -> None:
     """A plan cap error named the primary window where usage named the 7-day window."""
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=1)
-    tracker.note_route("m", "chatgpt")
-    tracker.record_plan_preflight("m", budget.PlanUsage.single(48, 10080, 2e9))
+    tracker.record_plan_preflight("chatgpt", budget.PlanUsage.single(48, 10080, 2e9))
     tracker.record(
-        model="m",
+        route=kinds.ModelRoute("chatgpt", "m"),
         input_tokens=5,
         output_tokens=0,
         cache_read_tokens=0,
@@ -268,7 +299,7 @@ def test_a_plan_cap_names_the_same_window_as_its_usage_line() -> None:
 def test_percent_zero_refuses_plan_metered_calls() -> None:
     t = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=0)
     t.record(
-        model="gpt-5.6-sol",
+        route=kinds.ModelRoute("gpt-5.6-sol", "gpt-5.6-sol"),
         input_tokens=10,
         output_tokens=1,
         cache_read_tokens=0,
@@ -292,7 +323,7 @@ def _plan_with_credits(used: float, *, unlimited: bool = False) -> budget.PlanUs
 
 def _record_plan(t: budget.BudgetTracker, plan: budget.PlanUsage) -> None:
     t.record(
-        model="gpt-5.6-sol",
+        route=kinds.ModelRoute("gpt-5.6-sol", "gpt-5.6-sol"),
         input_tokens=10,
         output_tokens=1,
         cache_read_tokens=0,
@@ -342,10 +373,9 @@ def test_summary_labels_shared_plan_movement(max_plan_points: float) -> None:
     tracker = budget.BudgetTracker(
         max_usd=-1, max_tokens_fallback=-1, max_plan_points=max_plan_points
     )
-    tracker.note_route("m", "claude")
-    tracker.record_plan_preflight("m", budget.PlanUsage.single(68, 10080, 0))
+    tracker.record_plan_preflight("claude", budget.PlanUsage.single(68, 10080, 0))
     # Another consumer uses seven points before this run's next reading.
-    tracker.record_plan_preflight("m", budget.PlanUsage.single(75, 10080, 0))
+    tracker.record_plan_preflight("claude", budget.PlanUsage.single(75, 10080, 0))
 
     cap = "" if max_plan_points == -1 else " of max_plan_points 10"
     assert (
@@ -369,7 +399,7 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
     """
     t = budget.BudgetTracker(max_usd=-1.0, max_tokens_fallback=-1, max_plan_points=5.0)
     t.record(
-        model="gpt-5.6-sol",
+        route=kinds.ModelRoute("gpt-5.6-sol", "gpt-5.6-sol"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
@@ -377,7 +407,7 @@ def test_fraction_remaining_counts_the_plan_percent_ledger() -> None:
         plan_usage=budget.PlanUsage.single(used_percent=40.0, window_minutes=300, resets_at=0.0),
     )
     t.record(
-        model="gpt-5.6-sol",
+        route=kinds.ModelRoute("gpt-5.6-sol", "gpt-5.6-sol"),
         input_tokens=10,
         output_tokens=10,
         cache_read_tokens=0,
@@ -398,7 +428,7 @@ def test_preflight_reading_seeds_the_baseline_and_guards_credits() -> None:
         "m", budget.PlanUsage.single(used_percent=40.0, window_minutes=10080, resets_at=0)
     )
     t.record(
-        model="m",
+        route=kinds.ModelRoute("m", "m"),
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
@@ -516,7 +546,7 @@ def test_plan_readings_enforce_combined_usd_spend(operation: str) -> None:
         max_usd=10, max_tokens_fallback=-1, max_plan_points=-1, allow_plan_overage=True
     )
     tracker.record(
-        model="api",
+        route=kinds.ModelRoute("api", "api"),
         input_tokens=1,
         output_tokens=1,
         cache_read_tokens=0,
@@ -567,12 +597,10 @@ def test_credit_balances_are_tracked_per_provider_entry() -> None:
     tracker = budget.BudgetTracker(
         max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1, allow_plan_overage=True
     )
-    tracker.note_route("model-a", "provider-a")
-    tracker.note_route("model-b", "provider-b")
 
-    def record(model: str, balance: str) -> None:
+    def record(route: kinds.ModelRoute, balance: str) -> None:
         tracker.record(
-            model=model,
+            route=route,
             input_tokens=1,
             output_tokens=1,
             cache_read_tokens=0,
@@ -586,9 +614,9 @@ def test_credit_balances_are_tracked_per_provider_entry() -> None:
             ),
         )
 
-    record("model-a", "$10.00")
-    record("model-b", "$100.00")
-    record("model-a", "$9.00")
+    record(kinds.ModelRoute("provider-a", "model-a"), "$10.00")
+    record(kinds.ModelRoute("provider-b", "model-b"), "$100.00")
+    record(kinds.ModelRoute("provider-a", "model-a"), "$9.00")
     assert tracker.estimate_usd()[0] == pytest.approx(1.0)
 
 
@@ -635,12 +663,12 @@ def test_an_all_unpriced_run_does_not_claim_a_usd_ceiling() -> None:
     """
     t = budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=2_000_000, max_plan_points=-1)
     t.record(
-        model="unpriced-xyz",
+        route=kinds.ModelRoute("unpriced-xyz", "unpriced-xyz"),
         input_tokens=10,
         output_tokens=5,
         cache_read_tokens=0,
         cache_creation_tokens=0,
-        cost_usd=0.0,
+        cost_usd=None,
     )
 
     total = next(ln for ln in t.format_summary().splitlines() if "TOTAL" in ln)
@@ -656,12 +684,10 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
     Two `primary` windows at different percents are two plans, not one plan that reset.
     """
     t = budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=100, max_plan_points=-1)
-    t.note_route("gpt-5.6-sol", "chatgpt")
-    t.note_route("claude-opus-5", "claude")
 
-    def rec(model: str, pct: float) -> None:
+    def rec(route: kinds.ModelRoute, pct: float) -> None:
         t.record(
-            model=model,
+            route=route,
             input_tokens=10,
             output_tokens=1,
             cache_read_tokens=0,
@@ -671,9 +697,11 @@ def test_each_subscription_plan_prints_its_own_named_line() -> None:
             ),
         )
 
-    rec("gpt-5.6-sol", 28.0)
-    rec("claude-opus-5", 54.0)
-    rec("gpt-5.6-sol", 29.0)  # +1 on the chatgpt plan; the claude plan is untouched
+    rec(kinds.ModelRoute("chatgpt", "gpt-5.6-sol"), 28.0)
+    rec(kinds.ModelRoute("claude", "claude-opus-5"), 54.0)
+    rec(
+        kinds.ModelRoute("chatgpt", "gpt-5.6-sol"), 29.0
+    )  # +1 on the chatgpt plan; the claude plan is untouched
     snap = t.snapshot()
     assert set(snap.plans) == {"chatgpt", "claude"}
     assert snap.plans["chatgpt"].consumed == pytest.approx(1.0)

@@ -74,7 +74,12 @@ EVENTS: tuple[EventSpec, ...] = (
         "budget.update",
         "The cumulative token, spend and subscription readings.",
         (
-            FieldSpec("usd_total", "float", True, "Cumulative spend in USD."),
+            FieldSpec(
+                "usd_total",
+                "float",
+                True,
+                "Cumulative USD spend across provider/model routes, including purchased credits.",
+            ),
             FieldSpec("input_total", "int", False, "Cumulative input tokens."),
             FieldSpec("output_total", "int", False, "Cumulative output tokens."),
             FieldSpec("cache_read_total", "int", False, "Cumulative cached input tokens."),
@@ -91,7 +96,13 @@ EVENTS: tuple[EventSpec, ...] = (
                 False,
                 "Provider-reported subscription usage percentage.",
             ),
-            FieldSpec("plan_consumed", "float", False, "Subscription points consumed by the run."),
+            FieldSpec(
+                "plan_consumed",
+                "float",
+                False,
+                "The largest observed plan movement in points across providers and windows;"
+                " account-wide, so includes other consumers.",
+            ),
             FieldSpec("plan_cap", "float", False, "Subscription points cap."),
             FieldSpec(
                 "plan_resets_at", "float", False, "Subscription window reset time in epoch seconds."
@@ -1163,7 +1174,12 @@ EVENTS: tuple[EventSpec, ...] = (
             FieldSpec(
                 "cache_creation", "int", False, "Cache-creation tokens used by this model call."
             ),
-            FieldSpec("cost_usd", "float", False, "Positive provider-reported cost in USD."),
+            FieldSpec(
+                "cost_usd",
+                "float",
+                False,
+                "Provider-reported USD cost; zero means free, absent means unreported.",
+            ),
             FieldSpec("stop_reason", "str", False, "The provider's response stop reason."),
             FieldSpec("error", "str", False, "The failure diagnostic."),
         ),

@@ -6,7 +6,7 @@ Authorised by the OAuth credential from `agent6 connect` plus the account id
 header. The backend is stream-only, so every call runs over SSE. With
 `store=false` the model's encrypted reasoning items replay verbatim, so its chain
 of thought survives across tool calls. Usage draws on the plan's limits, so
-`cost_usd` stays 0 while token counts are metered. The rating endpoints are never
+`cost_usd` stays None; plan readings meter the calls. The rating endpoints are never
 called: a rating would opt the turn into provider-side training.
 """
 
@@ -22,6 +22,7 @@ from typing import Any
 import httpx2
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.providers import (
     provider_types,
     request_headers,
@@ -196,6 +197,7 @@ class ChatGPTProvider:
         timeout_s: The read budget in seconds.
         auth_observer: Receives settled authentication outcomes; None observes nothing.
         transcript_sink: Where each round-trip is recorded.
+        provider_name: The configured provider entry; empty for an unnamed direct client.
         budget: The run's tracker; None skips metering and the preflight.
         reasoning_effort: The role's effort; unset takes the model's default, and
             "off" sends the wire's explicit "none".
@@ -214,6 +216,7 @@ class ChatGPTProvider:
     transcript_sink: provider_types.TranscriptRecorder | None = None
     auth_observer: provider_types.AuthObserver | None = None
     budget: agent6_budget.BudgetTracker | None = None
+    provider_name: str = ""
     reasoning_effort: str | None = None
     # One usage preflight per provider; a list, since the dataclass is frozen.
     _preflighted: list[bool] = dataclasses.field(default_factory=lambda: [False])
@@ -325,10 +328,10 @@ class ChatGPTProvider:
         if self.budget is not None:
             if not self._preflighted[0]:
                 self._preflighted[0] = True
-                self.budget.register_plan_reader(self.model, self.preflight)
+                self.budget.register_plan_reader(self.provider_name, self.preflight)
                 plan = self.preflight()
                 if plan is not None:
-                    self.budget.record_plan_preflight(self.model, plan)
+                    self.budget.record_plan_preflight(self.provider_name, plan)
             self.budget.check()
         url, _ = providers_wire.request_url(
             backend="chatgpt",
@@ -376,7 +379,7 @@ class ChatGPTProvider:
             auth_observer=self.auth_observer,
             transcript_sink=self.transcript_sink,
             budget=self.budget,
-            model=self.model,
+            route=kinds.ModelRoute(self.provider_name, self.model),
             facts=request_headers.call_facts(
                 self.model, request_headers.responses_body_facts(body), context
             ),
@@ -481,12 +484,11 @@ class ChatGPTProvider:
             )
             stream_lifecycle.record_billed_usage(
                 self.budget,
-                self.model,
+                kinds.ModelRoute(self.provider_name, self.model),
                 input_tokens=billed.input_tokens,
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
                 cache_creation_tokens=0,
-                cost_usd=0.0,
                 plan_usage=plan_usage,
             )
             return billed.usage if state.usage else None
@@ -514,12 +516,11 @@ class ChatGPTProvider:
                     usage=billed_usage,
                 )
             self.budget.record(
-                model=self.model,
+                route=kinds.ModelRoute(self.provider_name, self.model),
                 input_tokens=parsed.input_tokens,
                 output_tokens=parsed.output_tokens,
                 cache_read_tokens=parsed.cache_read_tokens,
                 cache_creation_tokens=0,
-                cost_usd=0.0,
                 plan_usage=plan_usage,
             )
         return parsed

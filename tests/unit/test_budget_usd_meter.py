@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from agent6 import budget
+from agent6 import budget, kinds
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ def test_estimate_usd_known_model() -> None:
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     # sonnet-4-5 is $3 / Mtok in, $15 / Mtok out.
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
@@ -56,7 +56,7 @@ def test_estimate_usd_known_model() -> None:
 def test_estimate_usd_unknown_model_flags_partial() -> None:
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="some-future-model-not-in-table",
+        route=kinds.ModelRoute("some-future-model-not-in-table", "some-future-model-not-in-table"),
         input_tokens=500_000,
         output_tokens=100_000,
         cache_read_tokens=0,
@@ -71,7 +71,7 @@ def test_estimate_usd_cache_read_priced_at_10_percent() -> None:
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     # sonnet at $3/Mtok input -> $0.30/Mtok for cache_read.
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,
@@ -88,7 +88,7 @@ def test_estimate_usd_cache_creation_priced_at_125_percent() -> None:
     """
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=0,
@@ -102,7 +102,7 @@ def test_estimate_usd_fresh_input_excludes_cache_creation() -> None:
     """cache_creation tokens are priced as their own term, never summed into the input term."""
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=0,
         cache_read_tokens=0,
@@ -117,14 +117,14 @@ def test_estimate_usd_matches_format_summary_total() -> None:
     """The live meter and the end-of-run summary must agree on the total."""
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=12_345,
         output_tokens=6_789,
         cache_read_tokens=100,
         cache_creation_tokens=42,
     )
     bt.record(
-        model="claude-haiku-4-5",
+        route=kinds.ModelRoute("claude-haiku-4-5", "claude-haiku-4-5"),
         input_tokens=500,
         output_tokens=200,
         cache_read_tokens=0,
@@ -141,7 +141,7 @@ def test_reported_cost_overrides_table_estimate() -> None:
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     # A priced model whose provider also reports a different cost, so the reported value wins.
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
@@ -157,11 +157,54 @@ def test_reported_cost_overrides_table_estimate() -> None:
     assert "cost=$99.99 of" in summary
 
 
+@pytest.mark.parametrize("model", ["claude-sonnet-4-5", "unknown"])
+def test_reported_zero_is_never_table_priced(model: str) -> None:
+    """A reported free call stays exact and does not consume fallback tokens."""
+    bt = budget.BudgetTracker(max_usd=1, max_tokens_fallback=0, max_plan_points=-1)
+    route = kinds.ModelRoute("testprovider", model)
+    bt.record(
+        route=route,
+        input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        cache_read_tokens=1_000_000,
+        cache_creation_tokens=1_000_000,
+        cost_usd=0.0,
+    )
+    assert bt.estimate_usd() == (0.0, False)
+    assert bt.snapshot().unmetered_tokens == 0
+    assert bt.snapshot().per_model[route].reported_calls == 1
+    bt.check()
+    assert "$0.0000 (reported)" in bt.format_summary()
+
+
+def test_unreported_call_after_free_call_is_estimated() -> None:
+    """A free call cannot hide or reprice a later unreported call on the same route."""
+    bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    route = kinds.ModelRoute("testprovider", "claude-sonnet-4-5")
+    bt.record(
+        route=route,
+        input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        cost_usd=0.0,
+    )
+    bt.record(
+        route=route,
+        input_tokens=1_000_000,
+        output_tokens=1_000_000,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+    )
+    assert bt.estimate_usd() == (18.0, False)
+    assert "(reported + estimated)" in bt.format_summary()
+
+
 def test_reported_cost_works_for_unknown_model() -> None:
     """A model not in the price table contributes its reported cost."""
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="future/unknown-model",
+        route=kinds.ModelRoute("future/unknown-model", "future/unknown-model"),
         input_tokens=10_000,
         output_tokens=2_000,
         cache_read_tokens=0,
@@ -180,7 +223,7 @@ def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
     """
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
@@ -188,7 +231,7 @@ def test_mixed_reported_cost_adds_table_estimate_for_unreported_calls() -> None:
         cost_usd=50.0,  # authoritative; this call's tokens must NOT be re-priced
     )
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=1_000_000,  # 1M @ $3*0.1/M = $0.30: cache banks per call too
@@ -207,7 +250,7 @@ def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
     """The enforced ceiling sees reported plus estimated spend."""
     bt = budget.BudgetTracker(max_usd=60.0, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
@@ -215,7 +258,7 @@ def test_mixed_reported_cost_counts_toward_usd_ceiling() -> None:
         cost_usd=50.0,
     )
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
@@ -233,7 +276,7 @@ def test_fraction_remaining_tracks_usd_ceiling() -> None:
     # Token caps huge so only the $5 USD ceiling binds; a cache-heavy turn counts zero toward them.
     bt = budget.BudgetTracker(max_usd=5.0, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=100_000,  # $0.30 fresh input
         output_tokens=100_000,  # $1.50 output
         cache_read_tokens=10_000_000,  # 10M @ $3*0.1/M = $3.00
@@ -249,7 +292,7 @@ def test_fraction_remaining_unlimited_usd_never_depletes() -> None:
     """With max_usd = -1, metered spend depletes nothing; only a positive cap can."""
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=1_000, max_plan_points=-1)
     bt.record(
-        model="claude-sonnet-4-5",
+        route=kinds.ModelRoute("claude-sonnet-4-5", "claude-sonnet-4-5"),
         input_tokens=5_000_000,
         output_tokens=1_000_000,  # ~$30 metered, uncapped
         cache_read_tokens=0,
@@ -257,7 +300,7 @@ def test_fraction_remaining_unlimited_usd_never_depletes() -> None:
     )
     assert bt.fraction_remaining() == 1.0
     bt.record(
-        model="local-unpriced",
+        route=kinds.ModelRoute("local-unpriced", "local-unpriced"),
         input_tokens=400,
         output_tokens=100,  # 500 of 1000 fallback tokens
         cache_read_tokens=0,
@@ -273,7 +316,7 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
     """
     bt = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="future/unpriced-model",
+        route=kinds.ModelRoute("future/unpriced-model", "future/unpriced-model"),
         input_tokens=1_000,
         output_tokens=500,
         cache_read_tokens=0,
@@ -281,7 +324,7 @@ def test_partially_reported_unpriced_model_keeps_the_reported_spend() -> None:
         cost_usd=0.60,  # the provider reported this call
     )
     bt.record(
-        model="future/unpriced-model",
+        route=kinds.ModelRoute("future/unpriced-model", "future/unpriced-model"),
         input_tokens=1_000,
         output_tokens=500,
         cache_read_tokens=0,
@@ -301,7 +344,7 @@ def test_a_sub_cent_cap_prints_at_the_spends_precision() -> None:
     assert budget.format_usd(10.0) == "$10.00"
     bt = budget.BudgetTracker(max_usd=0.004, max_tokens_fallback=-1, max_plan_points=-1)
     bt.record(
-        model="claude-haiku-4-5",
+        route=kinds.ModelRoute("claude-haiku-4-5", "claude-haiku-4-5"),
         input_tokens=5000,
         output_tokens=2000,
         cache_read_tokens=0,

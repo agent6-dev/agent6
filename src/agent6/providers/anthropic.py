@@ -18,6 +18,7 @@ from typing import Any
 import httpx2
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.providers import provider_types, request_headers, stream_lifecycle, transport, wire
 
 ANTHROPIC_DEFAULT_BASE_URL = "https://api.anthropic.com/v1"
@@ -293,6 +294,7 @@ class AnthropicProvider:
         timeout_s: The read budget in seconds.
         auth_observer: Receives settled authentication outcomes; None observes nothing.
         transcript_sink: Where each round-trip is recorded.
+        provider_name: The configured provider entry; empty for an unnamed direct client.
         budget: The run's tracker; None skips metering.
         effort: The reasoning level; anything but "off" enables extended thinking
             and drops `temperature`, which the wire rejects while thinking.
@@ -312,6 +314,7 @@ class AnthropicProvider:
     transcript_sink: provider_types.TranscriptRecorder | None = None
     auth_observer: provider_types.AuthObserver | None = None
     budget: agent6_budget.BudgetTracker | None = None
+    provider_name: str = ""
     effort: str | None = None
     extra_headers: request_headers.HeaderSet = dataclasses.field(
         default_factory=request_headers.HeaderSet
@@ -505,7 +508,7 @@ class AnthropicProvider:
             auth_observer=self.auth_observer,
             transcript_sink=self.transcript_sink,
             budget=self.budget,
-            model=self.model,
+            route=kinds.ModelRoute(self.provider_name, self.model),
             facts=request_headers.call_facts(
                 self.model, request_headers.anthropic_body_facts(body), context
             ),
@@ -824,7 +827,7 @@ class AnthropicProvider:
             """
             stream_lifecycle.record_billed_usage(
                 self.budget,
-                self.model,
+                kinds.ModelRoute(self.provider_name, self.model),
                 input_tokens=usage_input,
                 output_tokens=usage_output,
                 cache_read_tokens=usage_cache_read,
@@ -887,7 +890,9 @@ class AnthropicProvider:
         except provider_types.ProviderError as exc:
             exc.usage = _record_billed()
             raise
-        transport.meter_completion(self.budget, self.model, parsed, "Anthropic")
+        transport.meter_completion(
+            self.budget, kinds.ModelRoute(self.provider_name, self.model), parsed, "Anthropic"
+        )
         return parsed
 
 

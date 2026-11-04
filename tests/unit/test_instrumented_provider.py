@@ -17,6 +17,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.app import role_providers
 from agent6.providers import ProviderResponse
 
@@ -179,7 +180,7 @@ def test_a_failed_call_still_reports_what_it_spent(
 
     def _cut_stream(**_: object) -> ProviderResponse:
         budget.record(
-            model="anthropic/claude-haiku-4.5",
+            route=kinds.ModelRoute("anthropic/claude-haiku-4.5", "anthropic/claude-haiku-4.5"),
             input_tokens=50_000,
             output_tokens=120,
             cache_read_tokens=7_000,

@@ -18,6 +18,7 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.app import role_providers
 from agent6.providers import (
     AnthropicProvider,
@@ -64,7 +65,9 @@ def test_other_streams_keep_failed_usage_on_the_result(
     provider: Provider
     creation = 0
     if api_format == "anthropic":
-        provider = AnthropicProvider(api_key="k", model="m", budget=tracker)
+        provider = AnthropicProvider(
+            api_key="k", model="m", provider_name=api_format, budget=tracker
+        )
         creation = 7
         usage = {
             "input_tokens": 100,
@@ -80,6 +83,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
             credential.token.return_value = "test-token"
             provider = chatgpt.ChatGPTProvider(
                 model="m",
+                provider_name=api_format,
                 credential=credential,
                 account_id="account",
                 base_url="https://chatgpt.com/backend-api/codex",
@@ -87,7 +91,11 @@ def test_other_streams_keep_failed_usage_on_the_result(
             )
         else:
             provider = responses.ResponsesProvider(
-                api_key="k", model="m", base_url="https://example.test/v1", budget=tracker
+                api_key="k",
+                model="m",
+                provider_name=api_format,
+                base_url="https://example.test/v1",
+                budget=tracker,
             )
         usage = {
             "input_tokens": 125,
@@ -137,7 +145,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
         snap.cache_read_total,
         snap.cache_creation_total,
     ) == (100, 10, 25, creation)
-    assert snap.per_model["m"].calls == 1
+    assert snap.per_model[kinds.ModelRoute(api_format, "m")].calls == 1
     assert (
         result["tokens_in"],
         result["tokens_out"],

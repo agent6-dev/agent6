@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from agent6 import budget, paths
+from agent6 import budget, kinds, paths
 from agent6.app import role_providers, session_runtime
 from agent6.providers import ProviderResponse
 from agent6.ui.cli import cli_main
@@ -352,16 +352,15 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
     monkeypatch.setattr(cache, "list_models", no_models)
 
     def build(*_a: object, budget: agent6_budget.BudgetTracker, **_k: object) -> _Scripted:
-        budget.note_route("gpt-6-astra", "chatgpt")
         budget.record_plan_preflight(
-            "gpt-6-astra",
+            "chatgpt",
             agent6_budget.PlanUsage.single(48, 10080, time.time() + 148 * 3600),
         )
 
         def before_call(_i: int) -> None:
             budget.check()
             budget.record(
-                model="gpt-6-astra",
+                route=kinds.ModelRoute("chatgpt", "gpt-6-astra"),
                 input_tokens=10,
                 output_tokens=5,
                 cache_read_tokens=0,
@@ -467,7 +466,7 @@ def test_resume_applies_the_manifest_plan_points_cap(
     tracker.record_plan_preflight("m", budget.PlanUsage.single(40, 300, 0))
     tracker.check()
     tracker.record(
-        model="m",
+        route=kinds.ModelRoute("m", "m"),
         input_tokens=10,
         output_tokens=5,
         cache_read_tokens=0,

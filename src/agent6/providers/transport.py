@@ -20,7 +20,7 @@ from urllib import parse
 import httpx2
 
 from agent6 import budget as agent6_budget
-from agent6 import media
+from agent6 import kinds, media
 from agent6.config import surface_config
 from agent6.providers import media_errors, provider_types, request_headers
 
@@ -218,7 +218,7 @@ def _envelope_detail(err: object) -> str:
 
 def meter_completion(
     budget: agent6_budget.BudgetTracker | None,
-    model: str,
+    route: kinds.ModelRoute,
     parsed: provider_types.ProviderResponse,
     api_label: str,
 ) -> None:
@@ -232,7 +232,7 @@ def meter_completion(
 
     Args:
         budget: The run's tracker; None books nothing.
-        model: The model billed.
+        route: The provider and model billed.
         parsed: The parsed response.
         api_label: The name that leads the error.
 
@@ -241,7 +241,7 @@ def meter_completion(
     """
     if budget is not None:
         budget.record(
-            model=model,
+            route=route,
             input_tokens=parsed.input_tokens,
             output_tokens=parsed.output_tokens,
             cache_read_tokens=parsed.cache_read_tokens,
@@ -275,7 +275,7 @@ class ProviderCall:
         auth_observer: Receives the post-401 retry's outcome; None observes nothing.
         transcript_sink: Where each round-trip is recorded; None records nothing.
         budget: The run's tracker; None skips metering.
-        model: The model billed.
+        route: The provider and model billed.
         facts: The call's request facts; every attempt mints its own request id.
         build_headers: Builds the attempt's headers from its token and facts.
         adapt_400: Receives `(status, error_text, body)` and returns True after
@@ -297,7 +297,7 @@ class ProviderCall:
     credential: provider_types.BearerCredential | None
     transcript_sink: provider_types.TranscriptRecorder | None
     budget: agent6_budget.BudgetTracker | None
-    model: str
+    route: kinds.ModelRoute
     facts: request_headers.RequestFacts
     build_headers: Callable[[str, request_headers.RequestFacts], dict[str, str]]
     adapt_400: Callable[[int | None, str, dict[str, Any]], bool]
@@ -532,6 +532,6 @@ class ProviderCall:
             raise provider_types.ProviderError(
                 f"{self.api_label} 2xx body did not match the wire shape: {exc!r}"
             ) from exc
-        meter_completion(self.budget, self.model, parsed, self.api_label)
+        meter_completion(self.budget, self.route, parsed, self.api_label)
         self._observe_recovery(recovery_pending, resp.status_code)
         return parsed

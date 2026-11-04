@@ -11,6 +11,7 @@ from typing import Any
 import httpx2
 import pytest
 
+from agent6 import kinds
 from agent6.config import OAuthExchangeConfig
 from agent6.providers import ProviderError, oauth_chatgpt, oauth_exchange, oauth_protocol, transport
 
@@ -77,7 +78,7 @@ def test_a_redirect_line_shows_no_location(monkeypatch: pytest.MonkeyPatch) -> N
         credential=None,
         transcript_sink=None,
         budget=None,
-        model="m",
+        route=kinds.ModelRoute("", "m"),
         facts=transport.request_headers.RequestFacts(target="inference", model="m"),
         build_headers=lambda _k, _f: {},
         adapt_400=lambda _s, _t, _b: False,

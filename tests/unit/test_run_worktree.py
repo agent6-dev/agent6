@@ -476,7 +476,7 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
         def call(self, **_kw: Any) -> ProviderResponse:
             self.tracker.check()
             self.tracker.record(
-                model="m",
+                route=kinds.ModelRoute("m", "m"),
                 input_tokens=10,
                 output_tokens=5,
                 cache_read_tokens=0,

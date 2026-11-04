@@ -9,6 +9,7 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.models import cache as models_cache  # pyright: ignore[reportPrivateUsage]
 from agent6.models import pricing as models_pricing
 
@@ -157,9 +158,8 @@ def test_a_model_two_providers_list_is_priced_by_its_route(
         0.1, 0.2
     )
     budget = agent6_budget.BudgetTracker(max_usd=100.0, max_tokens_fallback=-1, max_plan_points=-1)
-    budget.note_route("openai/gpt-4o", "openrouter")
     budget.record(
-        model="openai/gpt-4o",
+        route=kinds.ModelRoute("openrouter", "openai/gpt-4o"),
         input_tokens=1_000_000,
         output_tokens=1_000_000,
         cache_read_tokens=0,
@@ -213,7 +213,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     )
     listed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     listed.record(
-        model="openai/gpt-x",
+        route=kinds.ModelRoute("openai/gpt-x", "openai/gpt-x"),
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,
@@ -222,7 +222,7 @@ def test_a_listing_that_publishes_cache_rates_prices_them(
     assert listed.estimate_usd()[0] == pytest.approx(1.0)  # the listed 0.5x, not 0.1x
     assumed = agent6_budget.BudgetTracker(max_usd=10.0, max_tokens_fallback=-1, max_plan_points=-1)
     assumed.record(
-        model="listed-only/plain",
+        route=kinds.ModelRoute("listed-only/plain", "listed-only/plain"),
         input_tokens=0,
         output_tokens=0,
         cache_read_tokens=1_000_000,

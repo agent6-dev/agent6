@@ -12,7 +12,7 @@ import pathlib
 
 import pytest
 
-from agent6 import budget, errors
+from agent6 import budget, errors, kinds
 from agent6.app import finalize as _finalize
 from agent6.app import reporter
 from agent6.harness import advice, loop_snapshot
@@ -136,7 +136,7 @@ def test_a_budget_stop_prints_its_detail_once(
     )
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=5, max_plan_points=-1)
     tracker.record(
-        model="unpriced",
+        route=kinds.ModelRoute("unpriced", "unpriced"),
         input_tokens=5,
         output_tokens=0,
         cache_read_tokens=0,

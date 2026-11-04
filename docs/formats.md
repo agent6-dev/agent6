@@ -91,7 +91,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `usd_total` | `float` | Cumulative spend in USD. |
+| `usd_total` | `float` | Cumulative USD spend across provider/model routes, including purchased credits. |
 | `input_total` | `int, optional` | Cumulative input tokens. |
 | `output_total` | `int, optional` | Cumulative output tokens. |
 | `cache_read_total` | `int, optional` | Cumulative cached input tokens. |
@@ -101,7 +101,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `tokens_unmetered` | `int, optional` | Tokens with no known price. |
 | `tokens_fallback_cap` | `int, optional` | Token cap used for unpriced usage. |
 | `plan_used_percent` | `float, optional` | Provider-reported subscription usage percentage. |
-| `plan_consumed` | `float, optional` | Subscription points consumed by the run. |
+| `plan_consumed` | `float, optional` | The largest observed plan movement in points across providers and windows; account-wide, so includes other consumers. |
 | `plan_cap` | `float, optional` | Subscription points cap. |
 | `plan_resets_at` | `float, optional` | Subscription window reset time in epoch seconds. |
 | `plan_windows` | `list, optional` | Every provider-reported subscription window. |
@@ -1204,7 +1204,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `tokens_out` | `int, optional` | Output tokens used by this model call. |
 | `cache_read` | `int, optional` | Cached input tokens used by this model call. |
 | `cache_creation` | `int, optional` | Cache-creation tokens used by this model call. |
-| `cost_usd` | `float, optional` | Positive provider-reported cost in USD. |
+| `cost_usd` | `float, optional` | Provider-reported USD cost; zero means free, absent means unreported. |
 | `stop_reason` | `str, optional` | The provider's response stop reason. |
 | `error` | `str, optional` | The failure diagnostic. |
 
@@ -1482,6 +1482,29 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `base_branch` | `JSON` | The base branch, or null when unknown. |
 | `merged_into` | `JSON` | The merge destination, or null when not merged. |
 | `pins` | `JSON` | The operator's active pinned instructions. |
+
+## CLI text
+
+### Token + cost summary
+
+The end-of-run summary groups usage by provider/model route.
+The journal's `budget.update` event carries the cumulative totals above.
+
+Source: [`budget.BudgetTracker.format_summary`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/budget.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `route` | `text` | Each usage line starts with the provider/model route, such as `chatgpt/gpt-6-astra`. |
+| `in` | `text` | Fresh input tokens for the route, or all routes on the TOTAL line. |
+| `out` | `text` | Output tokens for the route, or all routes on the TOTAL line. |
+| `cache_r` | `text` | Cache-read tokens for the route. |
+| `cache_c` | `text` | Cache-creation tokens for the route. |
+| `calls` | `text` | Calls recorded for the route. |
+| `cost` | `text` | USD spend, reported or estimated from that route's prices. The TOTAL includes purchased credits spent. `=` marks an exact total, `~` an estimate or lower bound, and `+` unpriced calls. |
+| `of` | `text` | The USD cap when a route is USD-metered; `unlimited` means no cap. |
+| `unmetered` | `text` | Tokens counted against the fallback cap, followed by that cap. |
+| `plan` | `text` | One plan usage line per provider, with its binding window's used percent, observed window movement in points, optional cap, reset time and credit balance. Account-wide movement includes other consumers. |
+| `STATUS` | `text` | The budget stop reason, when exhausted and requested by the caller. |
 
 ## Session snapshots
 

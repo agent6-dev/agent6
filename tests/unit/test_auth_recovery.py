@@ -11,7 +11,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from agent6 import config
+from agent6 import config, kinds
 from agent6.config import secret_store
 from agent6.providers import oauth, oauth_protocol, provider_types, request_headers, transport
 
@@ -43,7 +43,7 @@ def _call(cred: provider_types.BearerCredential, *, adapt_attempts: int) -> tran
         credential=cred,
         transcript_sink=None,
         budget=None,
-        model="m",
+        route=kinds.ModelRoute("", "m"),
         facts=request_headers.RequestFacts(target="inference", model="m"),
         build_headers=lambda token, _facts: {"authorization": f"Bearer {token}"},
         adapt_400=lambda _s, _t, _b: False,
