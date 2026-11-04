@@ -13,7 +13,7 @@ import pytest
 from agent6 import child_env
 from agent6.app import session_setup
 from agent6.config import Config
-from agent6.ui.cli import ask, review_cmds, sessions_cmds, skills_cmds
+from agent6.ui.cli import ask, sessions_cmds, skills_cmds
 from agent6.vcs import git_command, git_policy, git_read
 
 
@@ -127,7 +127,7 @@ def test_shell_git_overrides_do_not_reach_the_command_or_driver_probe(
         assert name not in env
 
 
-@pytest.mark.parametrize("reader", ["runner", "drivers", "ask", "review", "sessions", "skills"])
+@pytest.mark.parametrize("reader", ["runner", "drivers", "ask", "sessions", "skills"])
 def test_shell_git_dir_cannot_redirect_host_reads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, reader: str
 ) -> None:
@@ -152,8 +152,6 @@ def test_shell_git_dir_cannot_redirect_host_reads(
     elif reader == "ask":
         diff = ask._git_diff_text(root, "HEAD")[1]
         assert "-repo\n+changed" in diff
-    elif reader == "review":
-        assert review_cmds._is_checked_out("git", root, head)
     elif reader == "sessions":
         assert sessions_cmds._dirty_worktree_note(root, "main") == ""
     else:

@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from agent6.vcs import git_ops, git_read, review
+from agent6.vcs import git_ops, git_read
 
 
 def _git(root: pathlib.Path, *args: str) -> str:
@@ -19,7 +19,7 @@ def _git(root: pathlib.Path, *args: str) -> str:
 
 
 @pytest.mark.parametrize("linked", [False, True], ids=["main", "linked"])
-@pytest.mark.parametrize("operation", ["review", "diff", "snapshot", "restore", "sync"])
+@pytest.mark.parametrize("operation", ["diff", "snapshot", "restore", "sync"])
 def test_temporary_indexes_do_not_write_shared_indexes(
     tmp_path: pathlib.Path, linked: bool, operation: str
 ) -> None:
@@ -43,10 +43,7 @@ def test_temporary_indexes_do_not_write_shared_indexes(
     assert before
     index = (gitdir / "index").read_bytes()
 
-    if operation == "review":
-        compared = review.comparison(root, base="", head="HEAD", paths=())
-        assert "+untracked" in compared.diff
-    elif operation == "diff":
+    if operation == "diff":
         assert "+untracked" in git_read.diff_since(root, "HEAD")
     elif operation == "snapshot":
         tree = git_read.worktree_tree(root, "HEAD", ())

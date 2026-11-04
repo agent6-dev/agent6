@@ -491,11 +491,6 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
       By default, these flags switch off the repository's hooks, fsmonitor, external diff, textconv, commit signing, and filter and merge drivers.
     - `sessions diff` and `ask` read only.
     - `skills install` clones with fixed argv.
-    - By default, `review` runs no repository code.
-      It leaves the shared index and checkout untouched.
-      It writes Git objects only for selected, non-hidden changes.
-      Ignored untracked files stay out.
-      The prompt and saved review name omitted dirty submodule contents and untracked repositories.
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
   A branch's or chain ref's line carries the sha to undelete it.
 - Host-side git calls use `git_policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.
@@ -688,7 +683,6 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
     - `plan_watch.py` and `steer_tty.py`: `$EDITOR` for plan and steer editing
-    - `review_cmds.py`: `git status` with fixed argv and `git log` with an operator-supplied revision, both with git hardening and the curated git environment
     - `sessions_cmds.py` and `ask.py`: `git diff` / `log` for the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
     - `history_cmds.py`: `rg` for history search
     - `live.py`: the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`

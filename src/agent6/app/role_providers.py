@@ -613,31 +613,23 @@ def reviewer_seat_provider(
     )
 
 
-# The lenses cycled when no explicit seats are configured.
-_DEFAULT_FOCUS = ("security", "correctness", "tests", "over-engineering", "edge-cases")
-
-
 def build_review_seats(
     cfg: Config,
     *,
     transcript_sink: TranscriptSink,
     budget: agent6_budget.BudgetTracker,
-    n: int,
-    focus: tuple[str, ...] = (),
     events: event_log.EventSink | None = None,
     conversations: conversation_state.Conversations | None = None,
 ) -> list[review_gate.ReviewSeat]:
     """Build the review-panel seats, one per roster entry.
 
-    `cfg.review.reviewers` names the roster; otherwise `n` seats cycle the focus values.
+    `cfg.review.reviewers` names the roster; an empty roster builds one security seat.
     Each entry resolves its route and sampling settings before the provider is built.
 
     Args:
         cfg: The run's config.
         transcript_sink: The recorder the seats' round-trips go to.
         budget: The tracker the seats bill.
-        n: The seat count when the config names no roster.
-        focus: The focus values to cycle; the built-in set when empty.
         events: The sink each seat's events go to; None leaves the seats uninstrumented,
             so their spend reaches no surface.
         conversations: The session's conversation state; None holds one per seat.
@@ -648,10 +640,7 @@ def build_review_seats(
     Raises:
         ProviderError: An entry has no resolved route or names a missing provider.
     """
-    pool = focus or _DEFAULT_FOCUS
-    roster = cfg.review.reviewers or tuple(
-        ReviewerConfig(focus=pool[i % len(pool)]) for i in range(max(1, n))
-    )
+    roster = cfg.review.reviewers or (ReviewerConfig(focus="security"),)
     reviewer = cfg.models.resolve("reviewer")
     resolved = [(entry.focus, entry.resolve(reviewer)) for entry in roster]
     for seat_focus, rm in resolved:

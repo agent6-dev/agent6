@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Build the tool surface each mode exposes to the model.
 
-The list comes from the dispatcher's availability plus the mode's extras; the read-only review
-surface is shared by the in-loop panel and `agent6 review`.
+The list comes from the dispatcher's availability plus the mode's extras.
+The in-loop panel uses the read-only review surface.
 """
 
 from __future__ import annotations

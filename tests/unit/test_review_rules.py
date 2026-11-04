@@ -8,13 +8,10 @@ from unittest import mock
 
 import pytest
 
-from agent6 import errors, paths
-from agent6.app import role_providers, session_setup
-from agent6.config import layer
+from agent6 import errors
 from agent6.harness import (
     loop_state,
     repo_context,
-    review_diff,
     review_gate,
     review_panel,
     review_seat,
@@ -22,11 +19,12 @@ from agent6.harness import (
 )
 from agent6.sessions import event_log
 from agent6.vcs import git_files, git_read
-from tests.unit import test_review_diff_collect, test_review_gate, test_review_saved
+from tests import review_helpers
+from tests.unit import test_review_gate
 
 
 def _git(root: pathlib.Path, *args: str) -> str:
-    return test_review_diff_collect._git(root, *args).strip()
+    return review_helpers.git(root, *args).strip()
 
 
 @pytest.fixture
@@ -285,62 +283,6 @@ def test_in_loop_records_base_rules_and_sends_exact_text(repo: pathlib.Path, lin
     assert all("base rule" not in json.dumps(row) for row in rows)
 
 
-@pytest.mark.parametrize("reviewers", [0, 1])
-@pytest.mark.parametrize("linked", [False, True], ids=["regular", "linked"])
-def test_cli_uses_base_rules_and_records_the_compared_trees(
-    repo: pathlib.Path, reviewers: int, monkeypatch: pytest.MonkeyPatch, linked: bool
-) -> None:
-    from agent6.ui.cli import review_cmds
-
-    name = "docs/agents.md" if linked else "AGENTS.md"
-    (repo / "docs").mkdir()
-    (repo / name).write_text("base rule\n")
-    if linked:
-        (repo / "AGENTS.md").symlink_to(name)
-    (repo / "foo.py").write_text("x = 1\n")
-    tree = _commit(repo)
-    (repo / "AGENTS.md").unlink()
-    if linked:
-        (repo / name).write_text("checkout rule\n")
-    (repo / "foo.py").write_text("x = 2\n")
-    provider = mock.MagicMock()
-    provider.call.return_value = test_review_gate._resp(
-        '{"verdict":"pass","findings":[]}' if reviewers else "LGTM"
-    )
-    monkeypatch.chdir(repo)
-    monkeypatch.setenv("XDG_STATE_HOME", str(repo / "state"))
-    monkeypatch.setattr(
-        layer,
-        "load_effective",
-        mock.Mock(return_value=mock.Mock(config=test_review_saved._reviewer_config())),
-    )
-    monkeypatch.setattr(session_setup, "check_provider_keys", mock.Mock(return_value=None))
-    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=provider))
-    monkeypatch.setattr(
-        role_providers,
-        "build_review_seats",
-        mock.Mock(return_value=[review_gate.ReviewSeat("s", "m", provider)]),
-    )
-    assert review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=reviewers) == 0
-    message = provider.call.call_args.kwargs["messages"][0]["content"]
-    assert "REVIEW RULES (base tree):\nAGENTS.md (blob " in message
-    rules_message = message.partition("\n\nDIFF:")[0]
-    assert "base rule\n" in rules_message and "checkout rule" not in rules_message
-    journals = list((paths.state_dir(repo) / "reviews").glob("*.jsonl"))
-    assert len(journals) == 1
-    rows = [json.loads(line) for line in journals[0].read_text().splitlines()]
-    start = next(row for row in rows if row["type"] == "loop.review.start")
-    assert start["target"]["base_tree"] == tree
-    assert start["target"]["head_tree"] != tree
-    assert start["rule_sources"] == [
-        {
-            "path": "AGENTS.md",
-            "blob_id": _git(repo, "rev-parse", f"{tree}:{name}"),
-            "supplied_bytes": 10,
-        }
-    ]
-
-
 @pytest.mark.parametrize("head_link", [False, True])
 def test_hidden_rules_are_refused_before_blob_read(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, head_link: bool
@@ -366,58 +308,9 @@ def test_dangling_base_directory_link_is_not_an_absent_rule(repo: pathlib.Path) 
     assert not rules.complete and rules.reason and "not a regular file" in rules.reason
 
 
-@pytest.mark.parametrize("complete", [False, True], ids=["refusal", "sources"])
-@pytest.mark.parametrize("reviewers", [0, 1])
-def test_cli_rule_notices_escape_directory_controls(
-    repo: pathlib.Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    complete: bool,
-    reviewers: int,
-) -> None:
-    """Neither the source notice nor the separate CLI refusal may emit a directory's OSC."""
-    from agent6.ui.cli import review_cmds
-
-    leaf = repo / "dir\x1b]52;c;c2VjcmV0\x07"
-    leaf.mkdir()
-    (leaf / "AGENTS.md").write_bytes(b"rule" if complete else b"\xff")
-    (leaf / "foo.py").write_text("old\n")
-    _commit(repo)
-    (leaf / "foo.py").write_text("new\n")
-    provider = mock.Mock()
-    provider.call.return_value = test_review_gate._resp(
-        '{"verdict":"pass","findings":[]}' if reviewers else "LGTM"
-    )
-    monkeypatch.chdir(leaf)
-    monkeypatch.setenv("XDG_STATE_HOME", str(repo / "state"))
-    monkeypatch.setattr(
-        layer,
-        "load_effective",
-        mock.Mock(return_value=mock.Mock(config=test_review_saved._reviewer_config())),
-    )
-    monkeypatch.setattr(session_setup, "check_provider_keys", mock.Mock(return_value=None))
-    monkeypatch.setattr(role_providers, "build_role_provider", mock.Mock(return_value=provider))
-    monkeypatch.setattr(
-        role_providers,
-        "build_review_seats",
-        mock.Mock(return_value=[review_gate.ReviewSeat("s", "m", provider)]),
-    )
-    assert review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=reviewers) == (
-        0 if complete else 2
-    )
-    rendered = capsys.readouterr().err
-    assert "\x1b" not in rendered and "\x07" not in rendered, repr(rendered)
-    assert r"dir\u001b]52;c;c2VjcmV0\u0007/AGENTS.md" in rendered
-
-
-def test_unborn_comparison_reports_no_base_rules(repo: pathlib.Path) -> None:
-    from agent6.vcs import review
-
+def test_unborn_tree_has_no_base_rules(repo: pathlib.Path) -> None:
     (repo / "AGENTS.md").write_text("uncommitted rule")
-    compared = review.comparison(repo, base="", head="HEAD", paths=())
-    assert compared.target.base_commit is None
-    assert "AGENTS.md" in compared.diff
-    rules = repo_context.review_rules(repo, compared.target.base_tree)
+    rules = repo_context.review_rules(repo, git_read.EMPTY_TREE)
     assert rules.complete and rules.sources == ()
     assert "No base rules exist." in review_seat.build_user_message(
         review_panel.ReviewContext(rules=rules)
@@ -485,7 +378,7 @@ def test_malicious_rules_do_not_add_tools_or_change_grounding(repo: pathlib.Path
     assert not result.blocked and result.merged_findings[0].severity == "warn"
 
 
-def test_both_prompt_builders_supply_whole_rule_text(repo: pathlib.Path) -> None:
+def test_seat_prompt_supplies_whole_rule_text(repo: pathlib.Path) -> None:
     body = " " + "x" * 9000 + "\n"
     (repo / "AGENTS.md").write_text(body)
     tree = _commit(repo)
@@ -494,15 +387,6 @@ def test_both_prompt_builders_supply_whole_rule_text(repo: pathlib.Path) -> None
     assert review_seat.build_user_message(
         review_panel.ReviewContext(task="t", rules=rules, diff="d")
     ) == (f"TASK:\nt\n\n{expected}\n\nVERIFY: not run.\n\nDIFF:\nd")
-    provider = mock.MagicMock()
-    provider.call.return_value = test_review_gate._resp("LGTM")
-    review_diff.review_diff(
-        provider, diff="d", rules=rules, recent_log="log", extra_context="extra"
-    )
-    assert provider.call.call_args.kwargs["messages"] == [
-        {"role": "user", "content": (f"{expected}\n\nRECENT COMMITS:\nlog\n\nextra\n\nDIFF:\nd")}
-    ]
-    assert "tools" not in provider.call.call_args.kwargs
 
 
 def test_the_review_target_is_the_worktree_while_edits_sit_uncommitted(repo: pathlib.Path) -> None:

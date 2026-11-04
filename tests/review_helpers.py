@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import pathlib
+import shutil
 import subprocess
 
 import pydantic
@@ -9,6 +10,20 @@ import pydantic
 from agent6 import paths, review_records
 from agent6.sessions import event_log, layout
 from agent6.vcs import review
+
+
+def git(root: pathlib.Path, *args: str) -> str:
+    """Run Git in a test repository and return its stdout."""
+    git = shutil.which("git")
+    assert git is not None
+    out = subprocess.run(
+        [git, "-c", "commit.gpgsign=false", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return out.stdout
 
 
 def reviewed_session(cwd: pathlib.Path) -> layout.SessionLayout:

@@ -4,22 +4,56 @@
 
 Its own module, imported by the dispatcher for this verb alone, so the provider stack loads
 for no other `sessions` verb.
+`save_review` writes the rendered reviews in `<state-dir>/reviews/`.
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
+import time
 
 from agent6 import budget as agent6_budget
 from agent6 import paths
 from agent6.app import role_providers, session_setup
-from agent6.config import ConfigError
+from agent6.config import ConfigError, layer
 from agent6.harness import repo_context, review_session
 from agent6.providers import ProviderError, TranscriptSink
 from agent6.sessions import id
-from agent6.ui.cli import common, review_cmds
+from agent6.ui.cli import common
 from agent6.viewmodel import scan_session_log, session_is_live
+
+
+def save_review(reviews_dir: pathlib.Path, *, label: str, body: str) -> pathlib.Path:
+    """Write one rendered review under the reviews dir, beside the provider transcripts.
+
+    The file is `<utc-stamp>-review.md`: a `# review: <label>` line, then the body.
+    The operator finds a session's review by searching the directory.
+
+    Args:
+        reviews_dir: The `<state-dir>/reviews/` directory.
+        label: What was reviewed.
+        body: The review text.
+
+    Returns:
+        The file's path.
+    """
+    paths.mkdir_for_real_user(reviews_dir)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    content = f"# review: {label}\n\n{body.rstrip()}\n".encode()
+    n = 1
+    while True:
+        path = reviews_dir / (f"{stamp}-review.md" if n == 1 else f"{stamp}-{n}-review.md")
+        # An exclusive create claims the name, so two reviews in one second never collide.
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            n += 1
+            continue
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(content)
+        return path
 
 
 def _cmd_sessions_review(  # noqa: PLR0911
@@ -59,7 +93,9 @@ def _cmd_sessions_review(  # noqa: PLR0911
         common.error(f"{layout.session_id} never started; there is no record to review.")
         return 2
     try:
-        cfg = review_cmds._reviewer_config(config_paths, model)
+        cfg = layer.load_effective(cwd, config_paths).config
+        if model:
+            cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", model))
     except ConfigError as exc:
         common.error(str(exc))
         return 2
@@ -93,7 +129,7 @@ def _cmd_sessions_review(  # noqa: PLR0911
         print(str(exc), file=sys.stderr)  # the reason names the ledger that ran out
         return 3
     print(text, flush=True)
-    saved = review_cmds.save_review(reviews_dir, label=f"run {layout.session_id}", body=text)
+    saved = save_review(reviews_dir, label=f"run {layout.session_id}", body=text)
     print(f"[agent6] review saved: {saved}", file=sys.stderr)
     budget.settle()
     print(budget.format_summary(), file=sys.stderr)

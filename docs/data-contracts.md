@@ -97,7 +97,7 @@ Fold review evidence and operator history for every session reader.
 Public fields: [Formats](formats.md#reviewview).
 
 - **Written by:** viewmodel/{session_log, state}
-- **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{log_line, receipt, review_queue, state_types, state_view, telemetry, transcript, transcript_text}
+- **Read by:** app/review_actions, ui/acp/review, ui/cli/sessions_findings, ui/tui/review, ui/web/review_routes, viewmodel/{log_line, receipt, review_queue, state_types, state_view, telemetry, transcript, transcript_text}
 - **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (4 test files exercise it)
 
 ## Review records
@@ -129,8 +129,8 @@ Define immutable review evidence and validate review boundary payloads.
 Public fields: [Formats](formats.md#typed-records).
 
 - **Written by:** app/review_actions, harness/{review_gate, review_history, review_panel, review_seat}, ui/cli/sessions_findings, ui/web/review_routes, vcs/review
-- **Read by:** harness/{loop_state, repo_context, review_diff, run_chain}, ui/acp/review, ui/cli/review_cmds, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
-- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (21 test files exercise it)
+- **Read by:** harness/{loop_state, repo_context, run_chain}, ui/acp/review, ui/tui/{diff_pane, review}, vcs/review_rule_reader, viewmodel/review
+- **Guarded by:** [test_review_action_execution.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_action_execution.py), [test_review_actions.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_actions.py), [test_review_loop.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_loop.py), [test_review_panel.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_panel.py), [test_review_records.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_records.py), [test_review_seat.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_review_seat.py), [test_findings.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_findings.py) (19 test files exercise it)
 
 ## Conversation
 

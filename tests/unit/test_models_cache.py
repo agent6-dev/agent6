@@ -514,7 +514,6 @@ def test_review_seats_resolve_their_own_modality_facts(
         cfg,
         transcript_sink=provider_types.TranscriptSink(cache_home / "transcripts"),
         budget=budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=10000, max_plan_points=0),
-        n=1,
     )
     assert worker.image == "unsupported"
     assert seats[0].media_input.image == "supported"

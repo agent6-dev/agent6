@@ -180,8 +180,7 @@ uv run ruff check && uv run ruff format --check && \
 
 ### Self-review
 
-- agent6 reviews its own source via `agent6 review`, into `$XDG_STATE_HOME/agent6/<repo-id>/reviews/`, a path the jail hides from a run.
-- The operator reads a module's review there before working on it.
+- agent6 reviews its own source with `agent6 ask "/review <range>"`; `sessions review` output lands in `$XDG_STATE_HOME/agent6/<repo-id>/reviews/`, a path the jail hides from a run.
 
 ## Security invariants
 

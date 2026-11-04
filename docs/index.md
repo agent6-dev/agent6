@@ -95,7 +95,6 @@ Other commands:
 | --- | --- |
 | `agent6 plan "task"` | plan a change; `agent6 run --from <plan-id>` carries it out |
 | `agent6 ask "question"` | ask about the repository |
-| `agent6 review` | review a diff |
 | `agent6 attach <id>` | follow a live session |
 | `agent6 steer <id> "instruction"` | direct the next steps |
 | `agent6 sessions findings <id>` | list a session's review findings |

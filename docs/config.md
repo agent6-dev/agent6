@@ -297,7 +297,7 @@ Role routing:
 | Field | Default | Meaning |
 |---|---|---|
 | `worker` | none | model for `agent6 run`, `ask`, run resumes, machine agent states and the model-written squash message |
-| `reviewer` | none | model for `agent6 review`, `sessions review`, the `sessions compare` and `--parallel` judge, verify-command inference, the in-loop review panel, context summariser and gister, and prompt reviser; fallback to `models.worker` when unset |
+| `reviewer` | none | model for `sessions review`, the `sessions compare` and `--parallel` judge, verify-command inference, the in-loop review panel, context summariser and gister, and prompt reviser; fallback to `models.worker` when unset |
 | `planner` | none | model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset |
 
 <!-- the three roles are the same shape, so the table is rendered once -->
@@ -437,14 +437,14 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 | Field | Default | Meaning |
 |---|---|---|
-| `trigger` | `"off"` | in-loop panel over the diff so far, findings sent to the model as a message; `review.trigger = "off"`: never; `review.trigger = "on_verify_fail"`: after each failed verify; `review.trigger = "before_finish"`: on `finish_session`, finish rejectable by a gating `review.block_on`; `review.trigger = "periodic"`: every `review.interval_turns` turns; no `review.reviewers`: one seat on `[models.reviewer]`, also used by `agent6 review` |
+| `trigger` | `"off"` | in-loop panel over the diff so far, findings sent to the model as a message; `review.trigger = "off"`: never; `review.trigger = "on_verify_fail"`: after each failed verify; `review.trigger = "before_finish"`: on `finish_session`, finish rejectable by a gating `review.block_on`; `review.trigger = "periodic"`: every `review.interval_turns` turns; no `review.reviewers`: one seat on `[models.reviewer]` |
 | `interval_turns` | `10` | Turns between panels when `trigger = "periodic"`. |
 | `block_on` | `"none"` | effect of panel `block` verdicts; `review.block_on = "none"`: guidance only; `review.block_on = "any"`: finish rejected by one blocking seat; `review.block_on = "model_quorum"`: `review.min_blocking_models` distinct provider/model routes required to block; `review.block_on = "all"`: every seat required to block, abstentions counted as no block; gating only with `review.trigger = "before_finish"`, other triggers advisory |
 | `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two seats on one route counted once, even with different focus or effort |
 | `max_review_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
-| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `provider`, `model`, `temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned route: role-model defaults, `provider` and `model` required together; empty roster: built-in focuses cycled through `security`, `correctness`, `tests`, `over-engineering`, `edge-cases`, one seat when `review.trigger` is on; one-off roster via `agent6 review --reviewers N --focus ...` |
-| `concurrency` | `1` | simultaneous in-loop panel seats; `review.concurrency = 1`: one after another; `agent6 review`: all seats always parallel |
+| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `provider`, `model`, `temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned route: role-model defaults, `provider` and `model` required together; empty roster: one `security` seat when `review.trigger` is on |
+| `concurrency` | `1` | simultaneous in-loop panel seats; `review.concurrency = 1`: one after another |
 | `scope` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `repo` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat, and it reads the checkout, so the reviewed head must be checked out with a clean tree). |
 | `repo_max_turns` | `20` | provider-call cap for a `review.scope = "repo"` seat, tool calls included; no verdict within the cap: abstention, reported by the panel |
 

@@ -39,14 +39,12 @@ def test_repo_max_turns_requires_a_positive_call_budget(value: int) -> None:
     )
 
 
-@pytest.mark.parametrize("command", ["run", "review"])
 def test_configured_repo_call_budget_reaches_the_seat(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    command: str,
 ) -> None:
-    """Both panel paths stop a tool-only seat at the configured budget and name it."""
+    """The in-loop panel stops a tool-only seat at the configured budget and names it."""
     repo = test_run_lifecycle_bugfix._setup(tmp_path, monkeypatch)
     config = tmp_path / "review.toml"
     config.write_text(
@@ -65,17 +63,13 @@ def test_configured_repo_call_budget_reaches_the_seat(
     )
     aggregate = mock.Mock(wraps=review_panel.aggregate_verdicts)
     monkeypatch.setattr(review_panel, "aggregate_verdicts", aggregate)
-    if command == "run":
-        worker = test_run_lifecycle_bugfix._Scripted(
-            [test_run_lifecycle_bugfix._edit("a.py", "x = 2\n")]
-        )
-        monkeypatch.setattr(
-            role_providers, "build_role_provider", test_run_lifecycle_bugfix._use(worker)
-        )
-        argv = ["run", "--session-id", "review-TURNS1", "Update x"]
-    else:
-        (repo / "a.py").write_text("x = 2\n", encoding="utf-8")
-        argv = ["review", "--reviewers", "1", "--scope", "repo"]
+    worker = test_run_lifecycle_bugfix._Scripted(
+        [test_run_lifecycle_bugfix._edit("a.py", "x = 2\n")]
+    )
+    monkeypatch.setattr(
+        role_providers, "build_role_provider", test_run_lifecycle_bugfix._use(worker)
+    )
+    argv = ["run", "--session-id", "review-TURNS1", "Update x"]
 
     rc = cli_main(["--config", str(config), *argv])
 
@@ -86,13 +80,9 @@ def test_configured_repo_call_budget_reaches_the_seat(
     assert verdict.error == "repo: no verdict within 2 calls"
     assert "at most 2 replies" in seat_call.call_args_list[0].kwargs["system"]
     assert "x = 2" in json.dumps(seat_call.call_args_list[1].kwargs["messages"])
-    if command == "run":
-        session = paths.state_dir(repo) / "sessions" / "runs" / "review-TURNS1"
-        snapshot = (session / "loop_state.json").read_text(encoding="utf-8")
-        assert "review inconclusive: all 1 seats abstained" in snapshot
-    else:
-        assert "INCONCLUSIVE" in captured.out
-        assert "abstain: repo: no verdict within 2 calls" in captured.err
+    session = paths.state_dir(repo) / "sessions" / "runs" / "review-TURNS1"
+    snapshot = (session / "loop_state.json").read_text(encoding="utf-8")
+    assert "review inconclusive: all 1 seats abstained" in snapshot
 
 
 @pytest.mark.parametrize("route", [{"provider": "o"}, {"model": "m"}])
@@ -212,7 +202,7 @@ def test_reviewer_sampling_reaches_provider_call(
         )
 
     seats = role_providers.build_review_seats(
-        cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock(), n=1
+        cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
     )
     with mock.patch("agent6.providers.transport.http_post", side_effect=post):
         result = review_gate.run_panel(
@@ -261,7 +251,7 @@ def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
         }
     )
     seats = role_providers.build_review_seats(
-        cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock(), n=1
+        cfg, transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
     )
     assert len(seats) == 1
     assert seats[0].model == "o/rm"

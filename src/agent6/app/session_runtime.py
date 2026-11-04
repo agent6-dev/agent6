@@ -242,7 +242,6 @@ def build_session_providers(
             cfg,
             transcript_sink=transcript_sink,
             budget=budget,
-            n=1,
             events=events,
             conversations=conversations,
         )

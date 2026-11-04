@@ -6,12 +6,13 @@ from unittest import mock
 from agent6.harness import loop_state, review_gate, run_chain
 from agent6.sessions import event_log
 from agent6.vcs import git_read
-from tests.unit import test_review_diff_collect, test_review_gate
+from tests import review_helpers
+from tests.unit import test_review_gate
 
 
 def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Path) -> None:
     """Review the chain commit even when the workspace changes during a seat call."""
-    git = test_review_diff_collect._git
+    git = review_helpers.git
     git(tmp_path, "init", "-q")
     (tmp_path / "foo.py").write_text("x = 1\n")
     git(tmp_path, "add", "foo.py")
@@ -70,7 +71,7 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
 
 
 def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Path) -> None:
-    git = test_review_diff_collect._git
+    git = review_helpers.git
     git(tmp_path, "init", "-q")
     (tmp_path / "AGENTS.md").write_text("head-only rule")
     chain = run_chain.RunChain(

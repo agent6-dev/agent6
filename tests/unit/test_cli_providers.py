@@ -142,13 +142,20 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
     assert sink.for_seat.call_args == mock.call("summariser")
 
     sink = mock.MagicMock()
-    role_providers.build_review_seats(cfg, transcript_sink=sink, budget=mock.MagicMock(), n=1)
+    role_providers.build_review_seats(cfg, transcript_sink=sink, budget=mock.MagicMock())
     assert sink.for_seat.call_args == mock.call("review:security")
 
     # Each instrumented seat carries its roster index, so concurrent seats' calls pair up.
-    unpinned = cfg.model_copy(update={"review": ReviewConfig(trigger="on_verify_fail")})
+    unpinned = cfg.model_copy(
+        update={
+            "review": ReviewConfig(
+                trigger="on_verify_fail",
+                reviewers=(ReviewerConfig(focus="security"), ReviewerConfig(focus="correctness")),
+            )
+        }
+    )
     seats = role_providers.build_review_seats(
-        unpinned, transcript_sink=sink, budget=mock.MagicMock(), n=2, events=mock.MagicMock()
+        unpinned, transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
     )
     assert [getattr(s.provider, "seat_index", None) for s in seats] == [0, 1]
 

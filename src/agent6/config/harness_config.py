@@ -544,7 +544,7 @@ class ReviewConfig(pydantic.BaseModel):
             'failed verify; `review.trigger = "before_finish"`: on `finish_session`, finish '
             'rejectable by a gating `review.block_on`; `review.trigger = "periodic"`: every '
             "`review.interval_turns` turns; no `review.reviewers`: one seat on "
-            "`[models.reviewer]`, also used by `agent6 review`"
+            "`[models.reviewer]`"
         ),
     )
     interval_turns: int = pydantic.Field(
@@ -599,17 +599,14 @@ class ReviewConfig(pydantic.BaseModel):
             "ordered panel roster of tables with `focus` and optional `provider`, `model`, "
             "`temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned "
             "route: role-model defaults, `provider` and `model` required together; empty "
-            "roster: built-in focuses cycled through `security`, `correctness`, `tests`, "
-            "`over-engineering`, `edge-cases`, one seat when `review.trigger` is on; one-off "
-            "roster via `agent6 review --reviewers N --focus ...`"
+            "roster: one `security` seat when `review.trigger` is on"
         ),
     )
     concurrency: int = pydantic.Field(
         ge=1,
         default=1,
         description=(
-            "simultaneous in-loop panel seats; `review.concurrency = 1`: one after another; "
-            "`agent6 review`: all seats always parallel"
+            "simultaneous in-loop panel seats; `review.concurrency = 1`: one after another"
         ),
     )
     scope: ReviewScope = pydantic.Field(

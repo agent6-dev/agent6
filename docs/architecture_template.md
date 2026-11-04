@@ -24,7 +24,7 @@ Only its modules import the runner, `git_command.py`.
     - the write helpers: `ui/spawn`, `ui/notify`, `ui/steer` (the steer-file seam every front-end writes) and `ui/btw` (the side question a run answers without losing its place)
 - **app** ([src/agent6/app/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/app)): the pipelines composed over the engine: run/resume/fork/machine-agent lifecycles, merge and finalize, provider construction, the sandbox cross-checks (`app.confine`), the `--parallel` fan-out
     - what it cannot do itself (own a terminal, render, spawn detached) arrives as frozen injected callables (`SessionFrontend`, `LaneRuntime`); output goes through the injected `Reporter`
-- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_diff` (the single call behind `agent6 review`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `review_seat`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
+- **harness** ([src/agent6/harness/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/harness)): `loop` (the agent loop behind `agent6 run` and `resume`), `review_session` (the read-only pass behind `agent6 sessions review`) and the review panel (`review_panel`, `review_seat`, `review_gate`); the agent loop makes its own provider calls through `provider_call`.
   `harness/loop_resume.py` owns snapshot carryover and persistence; `harness/loop_steer.py` applies steering at turn and execution boundaries.
 - **tools** ([src/agent6/tools/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/tools)): the fixed tool surface the LLM sees, plus dispatch.
   `harness/toolset.py` picks the subset each mode exposes, and appends the MCP tools in the modes that edit.
@@ -42,7 +42,7 @@ Only its modules import the runner, `git_command.py`.
   `paths.project_root` refuses any pack until `unpack` imports it or the operator deletes it.
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
 
-Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `review`, the in-loop panel and the loop's side calls (the context summariser and gister, the prompt reviser).
+Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `sessions review`, the in-loop panel and the loop's side calls (the context summariser and gister, the prompt reviser).
 Unset roles fall back to `worker`.
 
 ## Units of work
@@ -77,7 +77,7 @@ A run keeps one message history with one provider and one model.
 - the model drives by calling tools; the harness dispatches, snapshots, tracks budget
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
-- `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `loop.review.start` records the paths, blob IDs, byte counts and completeness, shared by the panel and standalone code review
+- `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `loop.review.start` records the paths, blob IDs, byte counts and completeness for the panel
 - under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
 An in-loop panel records the run base and reviewed head's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
@@ -275,9 +275,7 @@ The table routes <!-- generated: tool-names -->.
 
 ## A review
 
-A single read-only pass ([harness/review_diff.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_diff.py)) over a diff: the working tree, a branch against a base, or an arbitrary range.
-It prints a markdown review, and makes no edits, no commits, and no `run_command`; `--reviewers N` runs the adversarial panel instead, which returns structured findings.
-Either output is also saved as `<stamp>-review.md` under `<state-dir>/reviews/`, beside the provider transcripts.
+The in-loop review panel returns structured findings over the run's diff.
 
 [Review records](data-contracts.md#review-records) owns the shared findings, seat replies, verdicts, immutable target identifiers, observations and operator request models in `review_records.py`.
 
@@ -311,7 +309,7 @@ The web Findings card reads the same review fold as the merge guard.
 `client_git_diff.js` owns each diff request's lifetime; `client_review.js` attaches findings through the source renderer's line attributes only when both comparison trees match.
 Reviewed file links keep the panel and side, so Files reads the cited version rather than the working tree.
 
-`agent6 sessions review <id>` ([harness/review_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_session.py)) reviews a finished session's record the same way: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
+`agent6 sessions review <id>` ([harness/review_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_session.py)) reviews a finished session's record: the journal folds into a digest (the task, the steers and rulings, the verify runs, the tool errors, the harness notices, the memory facts the session wrote, the conversation's tail, every list capped and the cap named), the reviewer role reads it beside the repo's memory index, and the markdown names how the run ended, what went wrong and why, what the operator corrected, candidate memory facts and AGENTS.md lines with their evidence, and the memory entries the record contradicts.
 It writes nothing to the repo or the memory: the operator turns a candidate into `agent6 memory add` or an AGENTS.md line, or leaves it.
 
 ## Parallel runs
@@ -567,7 +565,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
 | Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (pure strings the loop, review, judge, and machine assemble; `revision.py` holds the loop's prompt-revision, summariser, gist and restart-notice prompts) |
-| Review pass | [harness/review_diff.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/review_diff.py); the panel is `harness/review_panel.py`, `harness/review_seat.py` and `harness/review_gate.py` |
+| Review panel | `harness/review_panel.py`, `harness/review_seat.py` and `harness/review_gate.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |
 | Git policy | [git_policy.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/vcs/git_policy.py) |

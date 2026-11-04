@@ -64,7 +64,7 @@ class ModelsConfig(pydantic.BaseModel):
     reviewer: harness_config.RoleModel | None = pydantic.Field(
         default=None,
         description=(
-            "model for `agent6 review`, `sessions review`, the `sessions compare` and "
+            "model for `sessions review`, the `sessions compare` and "
             "`--parallel` judge, verify-command inference, the in-loop review panel, context "
             "summariser and gister, and prompt reviser; fallback to `models.worker` when unset"
         ),

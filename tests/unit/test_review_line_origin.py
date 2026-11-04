@@ -10,14 +10,14 @@ import pytest
 from agent6 import review_records
 from agent6.harness import review_history
 from agent6.vcs import git_files, git_read
-from tests.unit.test_review_diff_collect import _git
+from tests import review_helpers
 
 
 def _commit(root: pathlib.Path, text: bytes, name: str = "code.py") -> str:
     (root / name).write_bytes(text)
-    _git(root, "add", ".")
-    _git(root, "commit", "-qm", "edit")
-    return _git(root, "rev-parse", "HEAD").strip()
+    review_helpers.git(root, "add", ".")
+    review_helpers.git(root, "commit", "-qm", "edit")
+    return review_helpers.git(root, "rev-parse", "HEAD").strip()
 
 
 def _target(root: pathlib.Path, base: str | None, head: str) -> review_records.ReviewTarget:
@@ -94,7 +94,7 @@ def test_observation_classifies_bytes_not_hunk_membership(
     kind: str,
     base_line: int | None,
 ) -> None:
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     base = _commit(tmp_path, before)
     head = _commit(tmp_path, after)
     observation = _observe(tmp_path, _target(tmp_path, base, head), start, end, side=side)
@@ -112,11 +112,11 @@ def test_observation_classifies_bytes_not_hunk_membership(
 
 
 def test_pure_rename_preserves_an_exact_range(tmp_path: pathlib.Path) -> None:
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     base = _commit(tmp_path, b"first\nsecond\n")
-    _git(tmp_path, "mv", "code.py", "renamed.py")
-    _git(tmp_path, "commit", "-qm", "rename")
-    head = _git(tmp_path, "rev-parse", "HEAD").strip()
+    review_helpers.git(tmp_path, "mv", "code.py", "renamed.py")
+    review_helpers.git(tmp_path, "commit", "-qm", "rename")
+    head = review_helpers.git(tmp_path, "rev-parse", "HEAD").strip()
     origin = _observe(tmp_path, _target(tmp_path, base, head), 1, 2, path="renamed.py").line_origin
     assert origin.kind == "pre_existing"
     assert origin.base_location == review_records.ReviewLocation(
@@ -134,9 +134,9 @@ def test_historical_control_path_keeps_the_finding_with_a_safe_reason(
     tmp_path: pathlib.Path, old_path: str, quoted_path: str
 ) -> None:
     """An unsupported historical path leaves a finding with explicit unknown attribution."""
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     base = _commit(tmp_path, b"first\nsecond\nthird\nfourth\n", old_path)
-    _git(tmp_path, "mv", old_path, "code.py")
+    review_helpers.git(tmp_path, "mv", old_path, "code.py")
     head = _commit(tmp_path, b"changed\nsecond\nthird\nfourth\n")
     observation = _observe(tmp_path, _target(tmp_path, base, head), 2)
     assert observation.finding.severity == "block"
@@ -154,7 +154,7 @@ def test_historical_control_path_keeps_the_finding_with_a_safe_reason(
 def test_unavailable_or_unsupported_evidence_is_unknown(
     tmp_path: pathlib.Path, evidence: str
 ) -> None:
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     base = _commit(tmp_path, b"old\ncontext\n")
     head = _commit(tmp_path, b"new\ncontext\n")
     target = _target(tmp_path, base, head)
@@ -164,9 +164,9 @@ def test_unavailable_or_unsupported_evidence_is_unknown(
     elif evidence == "symlink":
         (tmp_path / "code.py").unlink()
         (tmp_path / "code.py").symlink_to("outside")
-        _git(tmp_path, "add", ".")
-        _git(tmp_path, "commit", "-qm", "link")
-        target = _target(tmp_path, base, _git(tmp_path, "rev-parse", "HEAD").strip())
+        review_helpers.git(tmp_path, "add", ".")
+        review_helpers.git(tmp_path, "commit", "-qm", "link")
+        target = _target(tmp_path, base, review_helpers.git(tmp_path, "rev-parse", "HEAD").strip())
     elif evidence == "history":
         target = dataclasses.replace(target, base_commit="f" * 40)
     elif evidence == "tree":
@@ -181,7 +181,7 @@ def test_oversized_evidence_is_unknown_without_blame(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, limit: str
 ) -> None:
     """Real oversized blobs and patches stop classification before attribution."""
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     size = 4 * 1024 * 1024
     if limit == "blob":
         before = b"context\n" + b"a" * size + b"\n"
@@ -195,7 +195,7 @@ def test_oversized_evidence_is_unknown_without_blame(
     base = _commit(tmp_path, before)
     head = _commit(tmp_path, after)
     if limit == "patch":
-        assert len(_git(tmp_path, "diff", base, head, "--").encode()) > size
+        assert len(review_helpers.git(tmp_path, "diff", base, head, "--").encode()) > size
     blame = mock.Mock(side_effect=AssertionError("oversized evidence reached blame"))
     monkeypatch.setattr(git_files, "blame_lines", blame)
     origin = _observe(tmp_path, _target(tmp_path, base, head), 1).line_origin
@@ -204,17 +204,17 @@ def test_oversized_evidence_is_unknown_without_blame(
 
 
 def test_root_commit_additions_are_changed(tmp_path: pathlib.Path) -> None:
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     head = _commit(tmp_path, b"first\n")
     assert _observe(tmp_path, _target(tmp_path, None, head), 1).line_origin.kind == "changed"
 
 
 def test_blame_is_bounded_and_ignore_revs_are_honoured(tmp_path: pathlib.Path) -> None:
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     first = _commit(tmp_path, b"one\ntwo\nthree\n")
     second = _commit(tmp_path, b"one\nTWO\nthree\n")
     (tmp_path / ".git-blame-ignore-revs").write_text(second + "\n")
-    _git(tmp_path, "config", "blame.ignoreRevsFile", ".git-blame-ignore-revs")
+    review_helpers.git(tmp_path, "config", "blame.ignoreRevsFile", ".git-blame-ignore-revs")
     rows = git_files.blame_lines(
         tmp_path, second, "code.py", b"one\nTWO\nthree\n", start_line=2, lines=1
     )
@@ -228,7 +228,7 @@ def test_blame_is_bounded_and_ignore_revs_are_honoured(tmp_path: pathlib.Path) -
 def test_author_and_time_do_not_classify_lines(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, author: str, date: str
 ) -> None:
-    _git(tmp_path, "init", "-q")
+    review_helpers.git(tmp_path, "init", "-q")
     base = _commit(tmp_path, b"old\ncontext\n")
     monkeypatch.setenv("GIT_AUTHOR_NAME", author)
     monkeypatch.setenv("GIT_AUTHOR_DATE", date)

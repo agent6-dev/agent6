@@ -9,13 +9,13 @@ import pathlib
 
 from agent6 import __version__, paths
 from agent6.ui.cli import (
+    check_args,
     common,
     completers,
     config_args,
     machine_args,
     mcp_args,
     plan_args,
-    review_args,
     run_args,
     sessions_args,
     skills_args,
@@ -200,7 +200,7 @@ def _directories_epilog() -> str:
 # The `agent6 --help` groups, in this order: start work, act on a live run, front-ends, records,
 # context and tools, setup.
 COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("work", ("run", "plan", "ask", "resume", "fork", "review", "machine")),
+    ("work", ("run", "plan", "ask", "resume", "fork", "machine")),
     ("control", ("attach", "steer", "stop", "answer", "exec", "forward")),
     ("front-ends", ("tui", "web", "acp")),
     ("sessions", ("sessions", "ps", "history", "telemetry")),
@@ -278,8 +278,6 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     plan_args._add_plan_parser(sub)
 
     plan_args._add_ask_parser(sub)
-
-    review_args._add_review_parser(sub)
 
     watch_args._add_attach_parser(sub)
     watch_args._add_steer_parser(sub)
@@ -417,7 +415,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
 
     config_args._add_config_parser(sub)
 
-    review_args._add_check_parser(sub)
+    check_args.add_check_parser(sub)
 
     prompt_p = common._sub(
         sub,
@@ -478,7 +476,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Print the completion script to stdout instead of installing it.",
     )
 
-    review_args._add_system_parser(sub)
+    check_args.add_system_parser(sub)
 
     skills_args._add_skills_parser(sub)
 

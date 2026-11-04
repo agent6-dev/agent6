@@ -93,7 +93,7 @@ def _route(
     sink = provider_types.TranscriptSink(tmp_path / "transcripts")
     if builder == "panel":
         wrapped = role_providers.build_review_seats(
-            cfg, transcript_sink=sink, budget=tracker, n=1, events=events if observed else None
+            cfg, transcript_sink=sink, budget=tracker, events=events if observed else None
         )[0].provider
     else:
         wrapped = role_providers.reviewer_seat_provider(

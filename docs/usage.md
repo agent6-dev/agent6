@@ -35,7 +35,7 @@ agent6 routes three model roles; `reviewer` and `planner` fall back to `worker` 
 | Role       | Set with            | Used by                                                                                              |
 | ---------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
 | `worker`   | `[models.worker]`   | `agent6 run`, `agent6 ask`, their resumes, and machine agent states without a pinned model |
-| `reviewer` | `[models.reviewer]` | `agent6 review`, the in-loop review panel, the context summariser, the gister and the prompt reviser |
+| `reviewer` | `[models.reviewer]` | the in-loop review panel, the context summariser, the gister and the prompt reviser |
 | `planner`  | `[models.planner]`  | `agent6 plan`                                                                                        |
 
 ```sh
@@ -295,15 +295,15 @@ State is snapshotted before each model call and checkpointed per turn.
 - when `stash` refuses over a file the run also changed, its printed `git restore --source ...` command discards only your edit and keeps the run's last tree; plain `git restore FILE` returns to HEAD, which can remove the run's work
 - a new untracked file is left out of the run's commits as yours, unless the last execution died mid-turn (a kill, a crash): a command of that turn may have written it, so the run keeps it, and the resume names up to four files either way
 
-Exit codes for `agent6 run`, `ask`, `resume` and `review --reviewers N`, for scripts to branch on:
+Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 
 | Code | Meaning |
 |---|---|
-| `0` | finished with a green gate, or nothing to gate on; a review panel's PASS |
-| `1` | ended unfinished: out of turns, stuck, a provider error, a crash; a review panel whose every seat abstained |
+| `0` | finished with a green gate, or nothing to gate on |
+| `1` | ended unfinished: out of turns, stuck, a provider error, a crash |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted, including a `run --parallel` fan-out whose every lane stopped at its cap |
-| `4` | finished over a red or timed-out verify gate, or a never-run gate under `verify_when = "finish"` or `"turn"`; a review panel's BLOCK |
+| `4` | finished over a red or timed-out verify gate, or a never-run gate under `verify_when = "finish"` or `"turn"` |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
 | `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask, plan or fan-out (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
@@ -366,24 +366,13 @@ agent6 plan "refactor the config loader"      # no edit tools; run --from <id> e
 agent6 plan show <session-id>                 # print the plan
 agent6 plan edit <session-id>                 # open plan.md in $EDITOR (answer its open questions)
 agent6 resume <session-id> --steer "answered" # the planner re-reads and revises
-agent6 review --base origin/main --head HEAD  # review from the merge base; --path P narrows, --model M picks the reviewer
-agent6 review --base origin/main..HEAD        # explicit two-dot range reviews the endpoint diff
 agent6 sessions review <session-id>           # read-only review of a finished run's record
 agent6 ask "how does the task-graph curator work?"
 ```
 
-- `review --reviewers 3 --focus security,correctness,tests`: build a one-off panel on the resolved reviewer role, with findings checked against the diff.
-  Each finding cites a repository-relative path on the base or head side, with an inclusive line range or a file-level location.
-  Configure [`review.reviewers`](config.md#review) tables to give each reviewer a `focus`, `provider`, `model`, `effort` and `temperature`.
-- `review --reviewers 3 --scope repo`: let the panel read the checkout through read-only tools instead of making one call over the diff (`--scope diff`).
-  Each repo seat makes at most `review.repo_max_turns` provider calls (default 20) and abstains if it has no verdict after them.
-  `review.block_on` sets when grounded findings block; `model_quorum` counts each distinct provider/model route once.
 - `sessions review` reports how the run ended, what went wrong, what you corrected, and candidate memory facts and AGENTS.md lines with their evidence; it touches no repo or memory file (`agent6 memory add` lands a candidate)
-- every review is saved under `<state-dir>/reviews/`; the path prints on stderr
+- every `sessions review` is saved under `<state-dir>/reviews/`; the path prints on stderr
 - `ask` runs in any directory; `run` and `plan` need a git repository
-
-Working-tree reviews name selected, non-hidden dirty submodules on stderr because their contents are not reviewed.
-Run `agent6 review` inside a submodule to review its changes.
 
 In-loop panels record their findings and reviewed tree IDs in the session journal.
 An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
@@ -405,8 +394,7 @@ The combined rule text must fit within 64 KiB of UTF-8 bytes; an oversized set r
 Reduce the base-tree rule files to proceed.
 
 The review journal records each supplied path, blob ID and byte count once at panel start.
-Standalone `agent6 review` also records the base and head tree IDs it compared, without creating review refs or a checkout.
-These rules apply to the in-loop panel and `agent6 review`, not to `sessions review` or the worker's own `AGENTS.md` loading.
+These rules apply to the in-loop panel, not to `sessions review` or the worker's own `AGENTS.md` loading.
 
 ## Session findings
 

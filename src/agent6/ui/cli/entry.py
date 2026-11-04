@@ -966,22 +966,6 @@ def _dispatch_init(args: argparse.Namespace) -> int:
     )
 
 
-def _dispatch_review(args: argparse.Namespace) -> int:
-    """Return the exit code of `agent6 review`."""
-    from agent6.ui.cli import review_cmds
-
-    return review_cmds._cmd_review(
-        args.config,
-        base=args.base,
-        head=args.head,
-        paths=tuple(args.paths),
-        model=args.model,
-        reviewers=args.reviewers,
-        focus=args.focus,
-        scope=args.scope,
-    )
-
-
 def _dispatch_mcp(args: argparse.Namespace) -> int:
     """Return the exit code of a `agent6 mcp` verb."""
     from agent6.ui import mcp_server
@@ -1110,7 +1094,6 @@ _DISPATCH: dict[str, Callable[[argparse.Namespace], int]] = {
     "init": _dispatch_init,
     "pack": _dispatch_pack,
     "unpack": _dispatch_pack,
-    "review": _dispatch_review,
     "machine": _dispatch_machine,
     "mcp": _dispatch_mcp,
     "acp": _dispatch_acp,

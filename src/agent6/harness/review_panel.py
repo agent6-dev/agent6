@@ -39,7 +39,7 @@ class ReviewContext:
         task: The run's task.
         rules: The complete base-tree rules and their sources.
         diff: The immutable delta from the run base to the chain commit.
-        verify_ok: The gate's result; None when none ran (none configured, or `agent6 review`).
+        verify_ok: The gate's result; None when none ran.
         verify_output: The gate's output.
         focus: The seat's focus text.
         prior_findings: Findings already injected, for dedup; they never re-count.

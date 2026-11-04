@@ -59,7 +59,6 @@ ALLOWED = {
     "vcs/git_command.py",
     "vcs/git_ops.py",
     "vcs/git_policy.py",
-    "ui/cli/review_cmds.py",
     "ui/cli/sessions_cmds.py",
     "ui/cli/skills_cmds.py",
     "ui/cli/system_cmds.py",
@@ -81,14 +80,6 @@ def test_direct_subprocess_stays_on_the_allowlist() -> None:
     stale = ALLOWED - matches
     assert not unexpected, f"unreviewed direct subprocess use: {sorted(unexpected)}"
     assert not stale, f"allow-list entries with no match left (prune them): {sorted(stale)}"
-
-
-def test_review_git_reads_have_their_own_allowlist_reason() -> None:
-    """The review allowlist entry names both direct git calls and their operator input."""
-    doc = (pathlib.Path(__file__).resolve().parents[2] / "docs/security.md").read_text()
-    (line,) = [line for line in doc.splitlines() if line.strip().startswith("- `review_cmds.py`:")]
-    assert "`git status`" in line and "`git log`" in line
-    assert "operator" in line
 
 
 # Every stdlib call that RUNS something. The allow-list above is only as good as

@@ -181,6 +181,22 @@ def test_the_command_list_is_grouped_and_complete() -> None:
             assert f"\n    {name} " in block, name
 
 
+@pytest.mark.parametrize("args", [["review"], ["review", "--help"]])
+def test_review_is_only_a_sessions_subcommand(
+    args: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review must not be accepted or advertised as a top-level command."""
+    parser = cli_parser.build_parser()
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(args)
+    assert exc.value.code == 2
+    assert "invalid choice: 'review'" in capsys.readouterr().err
+    assert "\n    review " not in parser.format_help()
+    parsed = parser.parse_args(["sessions", "review", "run-AAAA11"])
+    assert parsed.sessions_command == "review"
+    assert parsed.session_id == "run-AAAA11"
+
+
 def test_every_subparser_has_a_description() -> None:
     # Each add_parser carries its whole help string as the description.
     parser = cli_parser.build_parser()

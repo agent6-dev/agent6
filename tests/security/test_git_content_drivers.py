@@ -207,23 +207,6 @@ def test_blame_keeps_an_author_time_python_cannot_date(tmp_path: pathlib.Path) -
     assert rows[0].sha == head and rows[0].date == "@100000000000000"
 
 
-def test_the_review_diff_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path) -> None:
-    """`agent6 review`'s working-tree diff carries the per-name driver overrides.
-
-    Its temporary index and diff reads keep repository clean filters disabled.
-    """
-    from agent6.vcs import review
-
-    marker = tmp_path / "pwned"
-    root = _repo(tmp_path / "r")
-    _poison_clean_filter(root, marker)
-    git_policy.set_repo_driver_policy(False)
-
-    proc = review.comparison(root, base="", head="HEAD", paths=())
-    assert "f.txt" in proc.diff, proc.diff
-    assert not marker.exists(), "the repo's clean filter ran a host command"
-
-
 def test_blame_refuses_an_ignore_revs_file_outside_the_repository(tmp_path: pathlib.Path) -> None:
     """Host-side blame does not open a `blame.ignoreRevsFile` outside the repository.
 

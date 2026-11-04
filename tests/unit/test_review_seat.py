@@ -298,7 +298,7 @@ def test_run_panel_concurrent_preserves_order_and_aggregates() -> None:
     assert res.blocked is True and res.n_block == 3
 
 
-# --- `review --model` re-routes the reviewer; a pinned seat keeps its own ---
+# A routed reviewer leaves pinned seats on their configured models.
 
 
 def _cfg_with_reviewers(reviewers: tuple[dict[str, str], ...]) -> Any:
@@ -324,8 +324,7 @@ def _stub_seat_provider(*_a: Any, **_k: Any) -> Provider:
 def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
     """A routed reviewer leaves pinned seats alone.
 
-    `review --model X` re-routes the reviewer role; a seat pinned to a provider and model in
-    `[review].reviewers` is the operator's own choice and keeps it.
+    A seat pinned to a provider and model in `[review].reviewers` keeps that route.
     """
     from agent6.app import role_providers
 
@@ -339,7 +338,7 @@ def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
     cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
     seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=1
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
     )
     assert [s.model for s in seats] == [
         "anthropic/claude-opus-4-8",
@@ -357,13 +356,13 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
     )
 
     seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=1
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
     )
     assert seats[0].model == "anthropic/claude-opus-4-8"  # unchanged when no --model
 
 
 def test_a_bare_focus_seat_follows_the_routed_reviewer(monkeypatch: Any) -> None:
-    """A bare-focus seat routes via the reviewer role, so `review --model` reaches it."""
+    """A bare-focus seat inherits the reviewer role's route."""
     from agent6.app import role_providers
 
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
@@ -371,7 +370,7 @@ def test_a_bare_focus_seat_follows_the_routed_reviewer(monkeypatch: Any) -> None
     cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
 
     seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=1
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
     )
     assert seats[0].model == "anthropic/claude-haiku-override"
 
@@ -390,7 +389,7 @@ def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -
         )
     )
     seats = role_providers.build_review_seats(
-        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None), n=2
+        cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
     )
     assert [seat.model for seat in seats] == [
         "anthropic/reviewer-default",
@@ -602,9 +601,7 @@ def test_repo_review_honors_verdict_alongside_tool_use_on_last_turn() -> None:
 def test_run_panel_concurrent_seats_run_on_daemon_threads() -> None:
     """The seat pool must not block process exit.
 
-    An in-flight seat call is a non-streaming POST with no abort hook, and ThreadPoolExecutor
-    workers are joined at interpreter exit, Ctrl-C on `agent6 review` hung until every seat
-    finished. Daemon threads die with the process.
+    ThreadPoolExecutor workers are joined at interpreter exit; daemon threads die with it.
     """
     import threading
 
@@ -702,8 +699,7 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
 
     Only InstrumentedProvider emits budget.update, so a bare seat provider spends real money no
     surface shows: the tracker enforces, the log never hears, and the run's cost is under-reported.
-    With the run's sink each seat is wrapped; `agent6 review` has no session log, passes no sink,
-    and stays bare.
+    With the run's sink each seat is wrapped; without a sink it stays bare.
     """
     from agent6.app import role_providers
 
@@ -716,7 +712,7 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
     )
     kw: dict[str, Any] = {"transcript_sink": cast(Any, mock.MagicMock()), "budget": cast(Any, None)}
 
-    seats = role_providers.build_review_seats(cfg, n=1, events=cast(Any, mock.MagicMock()), **kw)
+    seats = role_providers.build_review_seats(cfg, events=cast(Any, mock.MagicMock()), **kw)
     assert [type(s.provider) for s in seats] == [
         role_providers.InstrumentedProvider,
         role_providers.InstrumentedProvider,
@@ -724,19 +720,19 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
 
     assert not any(
         isinstance(s.provider, role_providers.InstrumentedProvider)
-        for s in role_providers.build_review_seats(cfg, n=1, **kw)
+        for s in role_providers.build_review_seats(cfg, **kw)
     )
 
     # The simple form (no configured seats) wraps the same way.
     simple_cfg = _cfg_with_reviewers(())
     (seat,) = role_providers.build_review_seats(
-        simple_cfg, n=1, events=cast(Any, mock.MagicMock()), **kw
+        simple_cfg, events=cast(Any, mock.MagicMock()), **kw
     )
     assert isinstance(seat.provider, role_providers.InstrumentedProvider)
 
 
-def test_focus_values_cycle_on_the_resolved_reviewer_route(monkeypatch: Any) -> None:
-    """The one-off roster cycles arbitrary focuses on the resolved reviewer role."""
+def test_empty_roster_builds_one_security_seat_on_the_reviewer_route(monkeypatch: Any) -> None:
+    """An empty roster still builds the in-loop panel's default seat."""
     from agent6.app import role_providers
 
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
@@ -744,12 +740,8 @@ def test_focus_values_cycle_on_the_resolved_reviewer_route(monkeypatch: Any) -> 
         _cfg_with_reviewers(()),
         transcript_sink=cast(Any, mock.MagicMock()),
         budget=cast(Any, None),
-        n=3,
-        focus=("security", "runtime cost"),
     )
     assert [(s.focus, s.model) for s in seats] == [
-        ("security", "anthropic/reviewer-default"),
-        ("runtime cost", "anthropic/reviewer-default"),
         ("security", "anthropic/reviewer-default"),
     ]
 

@@ -11,17 +11,11 @@ gaps, and uncited claims are mechanically downgraded and can never stall a run.
 from __future__ import annotations
 
 import dataclasses
-import json
-import pathlib
 from typing import Any, Literal
-from unittest import mock
 
 from agent6 import review_records
-from agent6.app import role_providers, session_setup
-from agent6.config import layer
-from agent6.harness import review_gate, review_panel
+from agent6.harness import review_panel
 from agent6.vcs import review
-from tests.unit import test_review_diff_collect
 
 # A real unified diff touching foo.py new-lines 10..14 and creating bar.py 1..2.
 SAMPLE_DIFF = """\
@@ -521,151 +515,6 @@ def test_range_block_with_unchanged_start_still_gates() -> None:
     assert res.merged_findings[0].severity == "block"
 
 
-def test_all_abstain_panel_prints_inconclusive_not_pass(
-    monkeypatch: Any, capsys: Any, tmp_path: pathlib.Path
-) -> None:
-    """An all-abstain panel prints INCONCLUSIVE, never PASS.
-
-    Three seats, three abstains and real dollars spent produce no review; "0 blocking" is not a
-    verdict. `run_panel` already short-circuits on an all-abstain panel; the printed verdict is the
-    CLI's, so this pins the CLI.
-    """
-    from agent6 import budget
-    from agent6.config import Config
-    from agent6.providers import TranscriptSink
-    from agent6.ui.cli import review_cmds
-
-    class _Seat:
-        focus = "security"
-        scope = "diff"
-        model = "test"
-        temperature = 0.0
-
-    abstain = review_records.ReviewVerdict(
-        seat_index=0,
-        focus="security",
-        model_route="moonshotai/kimi-k3",
-        verdict="abstain",
-        error="unparseable reviewer output",
-    )
-    res = review_panel.PanelResult(
-        panel_id="cli",
-        block_on="none",
-        blocked=False,
-        merged_findings=(),
-        per_seat=(abstain, abstain, abstain),
-        n_block=0,
-        n_abstain=3,
-    )
-
-    def _fake_seats(*_a: object, **_k: object) -> list[_Seat]:
-        return [_Seat(), _Seat(), _Seat()]
-
-    def _fake_panel(*_a: object, **_k: object) -> review_panel.PanelResult:
-        return res
-
-    monkeypatch.setattr(role_providers, "build_review_seats", _fake_seats)
-    monkeypatch.setattr(review_gate, "run_panel", _fake_panel)
-    rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
-        Config(),
-        git="git",
-        root=pathlib.Path.cwd(),
-        base="main",
-        head="topic",
-        label="main..topic",
-        diff="d",
-        rules=review_records.ReviewRules(),
-        target=review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions"),
-        journal=mock.MagicMock(),
-        panel_id="cli",
-        reviewers=3,
-        focus="security,correctness,tests",
-        transcript_sink=TranscriptSink(tmp_path),
-        reviews_dir=tmp_path / "reviews",
-        budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
-    )
-    out, err = capsys.readouterr()
-    assert "main..topic" in err
-    assert "VERDICT: PASS" not in out
-    assert "INCONCLUSIVE" in out
-    assert "abstained" in out  # the why is on the verdict line, not buried in stderr
-    assert rc == 1  # a panel that reviewed nothing is not a success
-    (record_path,) = tuple(tmp_path.glob("*.json"))
-    record = json.loads(record_path.read_text(encoding="utf-8"))
-    assert record["response"]["body"]["stdout"] == out
-
-
-def test_review_exit_code_is_consistent_across_verdicts(
-    monkeypatch: Any, capsys: Any, tmp_path: pathlib.Path
-) -> None:
-    """The exit code carries the verdict consistently: PASS 0, INCONCLUSIVE 1, BLOCK 2.
-
-    A BLOCK left at 0 lets a CI gate pass a security block while failing on 'nothing reviewed'.
-    """
-    from agent6 import budget
-    from agent6.config import Config
-    from agent6.ui.cli import review_cmds
-
-    class _Seat:
-        focus = "security"
-        scope = "diff"
-        model = "test"
-        temperature = 0.0
-
-    block = _seat("m1", _block("security", _location("foo.py", 11)))  # a real gating verdict
-    passing = _seat("m2", seat="s2")
-
-    def run(
-        per_seat: tuple[review_records.ReviewVerdict, ...],
-        *,
-        blocked: bool,
-        findings: tuple[Any, ...],
-    ) -> int:
-        res = review_panel.PanelResult(
-            panel_id="cli",
-            block_on="any",
-            blocked=blocked,
-            merged_findings=findings,
-            per_seat=per_seat,
-            n_block=1 if blocked else 0,
-            n_abstain=sum(1 for v in per_seat if v.error),
-        )
-
-        def _seats(*_a: object, **_k: object) -> list[_Seat]:
-            return [_Seat()]
-
-        def _panel(*_a: object, **_k: object) -> review_panel.PanelResult:
-            return res
-
-        monkeypatch.setattr(role_providers, "build_review_seats", _seats)
-        monkeypatch.setattr(review_gate, "run_panel", _panel)
-        rc = review_cmds._run_review_panel(  # pyright: ignore[reportPrivateUsage]
-            Config(),
-            git="git",
-            root=pathlib.Path.cwd(),
-            base="",
-            head="HEAD",
-            label="working tree vs HEAD",
-            diff="d",
-            rules=review_records.ReviewRules(),
-            target=review_records.ReviewTarget("b", "bt", "h", "ht", "h", (), "revisions"),
-            journal=mock.MagicMock(),
-            panel_id="cli",
-            reviewers=1,
-            focus="security",
-            transcript_sink=mock.MagicMock(),
-            reviews_dir=tmp_path,
-            budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
-        )
-        capsys.readouterr()
-        return rc
-
-    assert run((passing,), blocked=False, findings=()) == 0  # PASS
-    assert run((block,), blocked=True, findings=block.findings) == 4  # BLOCK, run's 4
-    abstain = _seat("m3", seat="s3", error="starved")
-    assert run((abstain,), blocked=False, findings=()) == 1  # INCONCLUSIVE
-
-
 def test_output_cap_truncated_case_folds_both_spellings() -> None:
     from agent6.providers import ProviderResponse, output_cap_truncated
 
@@ -726,91 +575,6 @@ def test_panel_is_inconclusive_owner() -> None:
     assert review_panel.panel_is_inconclusive(empty) is False  # nothing to be inconclusive about
 
 
-def test_the_panel_refuses_unreadable_base_rules(
-    monkeypatch: Any, tmp_path: pathlib.Path, capsys: Any
-) -> None:
-    from agent6 import errors
-    from agent6.config import Config
-    from agent6.ui.cli import review_cmds
-    from agent6.vcs import git_files
-    from tests.unit import test_review_saved
-
-    test_review_saved._repo_with_a_change(tmp_path)
-    (tmp_path / "AGENTS.md").write_text("rule")
-    test_review_diff_collect._git(tmp_path, "add", "AGENTS.md")
-    test_review_diff_collect._git(tmp_path, "commit", "-qm", "rules")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    monkeypatch.setattr(layer, "load_effective", mock.Mock(return_value=mock.Mock(config=Config())))
-    monkeypatch.setattr(
-        git_files, "blob_at", mock.Mock(side_effect=errors.GitError("unreadable object"))
-    )
-    panel = mock.Mock()
-    monkeypatch.setattr(review_cmds, "_run_review_panel", panel)
-    assert review_cmds._cmd_review((), base="", head="HEAD", paths=(), reviewers=1) == 2
-    assert "AGENTS.md: unreadable object" in capsys.readouterr().err
-    panel.assert_not_called()
-
-
-def test_the_panel_reviews_under_the_freeform_reviews_label(
-    monkeypatch: Any, tmp_path: Any, capsys: Any
-) -> None:
-    """One label for both reviews.
-
-    The panel's header and transcript named the range alone, dropping the `-- paths` the freeform
-    review's label carries.
-    """
-    import types
-
-    from agent6.config import Config
-    from agent6.ui.cli import review_cmds
-
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    seen: dict[str, str] = {}
-
-    def _fake_panel(_cfg: Config, **kwargs: Any) -> int:
-        seen["label"] = kwargs["label"]
-        return 0
-
-    def _fake_effective(*_a: object, **_k: object) -> types.SimpleNamespace:
-        return types.SimpleNamespace(config=Config())
-
-    def _runnable(_self: Config, _role: str) -> None:
-        return None
-
-    def _no_key_error(_cfg: Config) -> None:
-        return None
-
-    monkeypatch.setattr(layer, "load_effective", _fake_effective)
-    monkeypatch.setattr(Config, "require_runnable", _runnable)
-    monkeypatch.setattr(session_setup, "check_provider_keys", _no_key_error)
-    monkeypatch.setattr(review_cmds, "_run_review_panel", _fake_panel)
-    test_review_diff_collect._git(tmp_path, "init", "-q", "-b", "main")
-    test_review_diff_collect._git(tmp_path, "config", "user.name", "t")
-    test_review_diff_collect._git(tmp_path, "config", "user.email", "t@t")
-    test_review_diff_collect._git(tmp_path, "commit", "--allow-empty", "-qm", "init")
-    start = test_review_diff_collect._git(tmp_path, "rev-parse", "HEAD").strip()
-    (tmp_path / "src").mkdir()
-    (tmp_path / "src/x.py").write_text("x = 1\n")
-    test_review_diff_collect._git(tmp_path, "checkout", "-qb", "topic")
-    test_review_diff_collect._git(tmp_path, "add", "src/x.py")
-    test_review_diff_collect._git(tmp_path, "commit", "-qm", "change")
-    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        (), base="main", head="HEAD", paths=("src/x.py",), reviewers=1
-    )
-    assert rc == 0
-    assert seen["label"] == f"main...HEAD -- src/x.py (from {start})"
-    captured = capsys.readouterr()
-    assert f"[agent6] reviewing: main...HEAD -- src/x.py (from {start})\n" in captured.err
-    (tmp_path / "src/x.py").write_text("x = 2\n")
-    rc = review_cmds._cmd_review(  # pyright: ignore[reportPrivateUsage]
-        (), base="", head="HEAD", paths=("src/x.py",), reviewers=1
-    )
-    assert rc == 0
-    assert seen["label"] == "working tree vs HEAD -- src/x.py"
-
-
 def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
     """A file touched without hunks is recorded with no ranges: grounded by path, not by line.
 
@@ -846,8 +610,7 @@ def test_diff_touched_ranges_records_a_file_touched_without_hunks() -> None:
 def test_the_seat_prompt_says_verify_was_not_run_without_a_result() -> None:
     """The seat prompt says verify was not run when there is no result.
 
-    `agent6 review` runs no verify command and the loop has none when none is configured; "none
-    configured" is wrong for a review of a repo that has one.
+    A configured gate may not have run yet.
     """
     from agent6.harness import review_seat  # pyright: ignore[reportPrivateUsage]
 

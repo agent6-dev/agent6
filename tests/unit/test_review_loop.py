@@ -27,7 +27,7 @@ from agent6.harness import (
 from agent6.sessions import event_log
 from agent6.tools import results
 from agent6.vcs import git_read
-from tests.unit import test_review_diff_collect
+from tests import review_helpers
 from tests.unit.test_review_gate import (
     _exec,  # pyright: ignore[reportPrivateUsage]
     _finish_tool_use,  # pyright: ignore[reportPrivateUsage]
@@ -234,7 +234,7 @@ def test_panels_count_and_inject_each_finding_once(
 
 def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) -> None:
     """Keep a finding known across unrelated edits, but count it again on a changed blob."""
-    git = test_review_diff_collect._git
+    git = review_helpers.git
     root = tmp_path / "repo"
     root.mkdir()
     git(root, "init", "-q")
@@ -599,7 +599,7 @@ def test_panel_risk_round_trips_into_the_receipt(tmp_path: pathlib.Path, repeat:
     from agent6.sessions import layout, manifest
     from agent6.viewmodel import receipt
 
-    git = test_review_diff_collect._git
+    git = review_helpers.git
     root = tmp_path / "repo"
     root.mkdir()
     git(root, "init", "-q")
