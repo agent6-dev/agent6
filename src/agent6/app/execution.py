@@ -90,6 +90,7 @@ class ExecutionInputs:
         worktree_git_dir: The repository git dir of a session in its own worktree, the one
             grant its jail makes beyond the workspace.
         worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
+        base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
     """
 
     session_id: str
@@ -117,6 +118,7 @@ class ExecutionInputs:
     resume_steer: str = ""
     worktree_git_dir: pathlib.Path | None = None
     worker_lock_fd: int | None = None
+    base_rules: str | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -473,6 +475,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 base_sha=inputs.base_sha,
             ),
             config=cfg,
+            base_rules=inputs.base_rules,
             standing_goal=inputs.standing_goal,
             interactive=inputs.interactive and mode == "run",
             initial_pins=inputs.pins,

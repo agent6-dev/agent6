@@ -96,6 +96,7 @@ def write_session_manifest(
     forked_from_sha: str | None = None,
     worktree: pathlib.Path | None = None,
     worktree_git_dir: pathlib.Path | None = None,
+    review_base_tree: str = "",
     workspace_set_up: bool = False,
     fanout: manifest.FanoutStamp | None = None,
     budget: manifest.BudgetStamp | None = None,
@@ -118,6 +119,7 @@ def write_session_manifest(
         driver_from_flag: The driver model came from `--model`.
         gate: A fork's pin of the source's (verify command, origin).
         isolation: The resolved isolation level.
+        review_base_tree: The base tree of a `/review` session; "" otherwise.
         parent_session_id: A fork's source run.
         forked_from_turn: The turn a fork was cut at.
         forked_from_sha: The workspace sha at that turn.
@@ -172,6 +174,7 @@ def write_session_manifest(
         forked_from_sha=forked_from_sha,
         worktree=worktree,
         worktree_git_dir=worktree_git_dir,
+        review_base_tree=review_base_tree,
         workspace_set_up=workspace_set_up,
         parallel=lineage,
         fanout=fanout,

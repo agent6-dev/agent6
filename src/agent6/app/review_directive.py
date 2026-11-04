@@ -21,12 +21,14 @@ class ReviewDirectiveError(Exception):
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class ReviewWorld:
-    """The resolved comparison, first message and checkout requirement."""
+    """The resolved comparison, first message, checkout requirement, head branch and rules."""
 
     target: review_records.ReviewTarget
     message: str
     needs_worktree: bool
     empty: bool
+    head_branch: str = ""
+    rules: str = ""
 
 
 def build(root: pathlib.Path, target: str, *, hide: tuple[str, ...] = ()) -> ReviewWorld:
@@ -103,7 +105,23 @@ def build(root: pathlib.Path, target: str, *, hide: tuple[str, ...] = ()) -> Rev
         parts.append(
             "Untracked repositories not in the patch: " + ", ".join(compared.untracked_repositories)
         )
-    return ReviewWorld(resolved, "\n\n".join(parts), needs_worktree, False)
+    return ReviewWorld(
+        resolved,
+        "\n\n".join(parts),
+        needs_worktree,
+        False,
+        head_branch=_head_branch(root, resolved, status, head_name),
+        rules=rules.text,
+    )
+
+
+def _head_branch(
+    root: pathlib.Path, resolved: review_records.ReviewTarget, status: git_read.GitStatus, name: str
+) -> str:
+    """Return the local branch the reviewed head is, or "" for a commit or a tag."""
+    if resolved.head_commit is None or resolved.head_commit == status.head_sha:
+        return status.branch
+    return name if git_read.branch_exists(root, name) else ""
 
 
 def live(target: str, *, root: pathlib.Path, hide: tuple[str, ...] = ()) -> tuple[bool, str]:

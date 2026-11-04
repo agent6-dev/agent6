@@ -283,6 +283,7 @@ class SessionManifest(pydantic.BaseModel):
         base_sha: The commit the run's un-landed work starts from: where it started, or the
             commit a resume continued from after its work landed.
         base_branch: The branch that commit was on.
+        review_base_tree: The base tree of a `/review` session, whose AGENTS.md binds it.
         run_branch: The run's own branch, or None.
         git_control: `[git].control` at start; a `model` run has no chain or branch, and the
             git surfaces refuse through `model_git_refusal`.
@@ -328,6 +329,7 @@ class SessionManifest(pydantic.BaseModel):
     continued_task: str = ""
     base_sha: str = ""
     base_branch: str = ""
+    review_base_tree: str = ""
     run_branch: str | None = None
     git_control: str = "agent6"
     models: ModelsBrief = ModelsBrief()

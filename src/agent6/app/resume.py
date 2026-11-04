@@ -498,6 +498,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         ):
             return 2
 
+        if manifest.worktree is not None and manifest.worktree_git_dir is not None:
+            cfg = cfg.with_hidden_in_checkout(manifest.worktree_git_dir.parent, cwd)
         if not lock.hold_workspace(cwd):
             reporter.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
             return 2
@@ -785,6 +787,13 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 resuming=True,
                 worktree_git_dir=manifest.worktree_git_dir,
                 worker_lock_fd=worker_lock_fd,
+                base_rules=(
+                    repo_context.review_rules(
+                        cwd, manifest.review_base_tree, cfg.sandbox.hide_paths
+                    ).text
+                    if manifest.review_base_tree
+                    else None
+                ),
             ),
             frontend=frontend,
             reporter=reporter,

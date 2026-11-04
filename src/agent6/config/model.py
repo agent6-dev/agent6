@@ -641,6 +641,33 @@ class Config(pydantic.BaseModel):
         data.setdefault("sandbox", {})["run_commands"] = "ask"
         return Config.model_validate(data)
 
+    def with_hidden_in_checkout(self, origin: pathlib.Path, checkout: pathlib.Path) -> Config:
+        """Hide each `sandbox.hide_paths` entry under origin at its path under checkout too.
+
+        A worktree holds its own copy of every tracked file, so an entry named by its path
+        in the originating repository hides nothing there on its own.
+
+        Args:
+            origin: The repository the entries name.
+            checkout: The worktree whose copies are hidden as well.
+
+        Returns:
+            The widened config; self when no entry lies under origin.
+        """
+        origin, checkout = origin.resolve(), checkout.resolve()
+        added = [
+            str(checkout / resolved.relative_to(origin))
+            for resolved in (pathlib.Path(entry).resolve() for entry in self.sandbox.hide_paths)
+            if resolved != origin and resolved.is_relative_to(origin)
+        ]
+        if not added:
+            return self
+        data = self.model_dump(mode="python")
+        data.setdefault("sandbox", {})["hide_paths"] = list(
+            dict.fromkeys((*self.sandbox.hide_paths, *added))
+        )
+        return Config.model_validate(data)
+
     def with_decompose(self, value: Literal["on", "off"]) -> Config:
         """Return a copy with `prompt.decompose` pinned, so the engine never sees `auto`.
 

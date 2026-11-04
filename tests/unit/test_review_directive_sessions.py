@@ -47,6 +47,7 @@ class ScriptedReview:
             {
                 "messages": copy.deepcopy(kwargs["messages"]),
                 "tools": [t.name for t in kwargs["tools"]],
+                "system": kwargs.get("system", ""),
             }
         )
         if len(self.calls) == 1:
@@ -164,6 +165,8 @@ def test_other_ref_runs_in_a_detached_worktree_at_its_head(
     assert world_tests.git(worktree, "rev-parse", "HEAD") == head
     assert world_tests.git(worktree, "branch", "--show-current") == ""
     assert saved.base_sha == head
+    assert saved.base_branch == "feature-x"
+    assert saved.review_base_tree == world_tests.git(repo, "rev-parse", "main^{tree}")
     assert saved.user_task == "/review feature-x"
     assert saved.worktree_git_dir == repo / ".git"
     assert "Review: /review feature-x" in json.dumps(provider.calls[0]["messages"])
@@ -349,3 +352,75 @@ def test_review_worktree_keeps_the_model_git_refusal(
     assert '[git].control = "model"' in capsys.readouterr().err
     assert not provider.calls
     assert world_tests.git(repo, "worktree", "list", "--porcelain").count("worktree ") == 1
+
+
+def test_a_reviewed_commit_has_no_branch_to_land_on(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A review started on main must not make main the landing branch of the reviewed work."""
+    head = world_tests.git(repo, "rev-parse", "feature-x")
+    world_tests.git(repo, "switch", "-q", "main")
+    install(monkeypatch, ScriptedReview())
+    assert cli("run", f"/review {head}") == 0
+    saved = manifest.read_manifest(session(repo, "run"))
+    assert saved.base_sha == head
+    assert saved.base_branch == ""
+
+
+def test_a_hidden_path_stays_hidden_in_the_review_worktree(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worktree's copy of a hidden file is as unreadable as the original."""
+    (repo / "secret.txt").write_text("hidden-content\n", encoding="utf-8")
+    world_tests.git(repo, "add", ".")
+    world_tests.git(repo, "commit", "-qm", "secret")
+    world_tests.git(repo, "switch", "-q", "main")
+    config = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agent6" / "config.toml"
+    config.write_text(
+        config.read_text().replace(
+            'isolation = "none"',
+            'isolation = "none"\nhide_paths = [' + json.dumps(str(repo / "secret.txt")) + "]",
+        )
+    )
+
+    class ReadSecret(ScriptedReview):
+        def call(self, **kwargs: Any) -> providers.ProviderResponse:
+            response = super().call(**kwargs)
+            if len(self.calls) != 1:
+                return response
+            tools = (
+                {
+                    "type": "tool_use",
+                    "id": "read",
+                    "name": "read_file",
+                    "input": {"path": "secret.txt"},
+                },
+            )
+            return dataclasses.replace(response, tool_uses=tools, raw={"content": list(tools)})
+
+    provider = ReadSecret()
+    install(monkeypatch, provider)
+    assert cli("ask", "/review feature-x") == 0
+    worktree = manifest.read_manifest(session(repo, "ask")).worktree
+    assert worktree is not None and (worktree / "secret.txt").exists()
+    assert "hidden-content" not in json.dumps(provider.calls[1]["messages"])
+
+
+def test_the_system_prompt_carries_the_base_rules_not_the_heads(
+    repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewed head's AGENTS.md is evidence in the patch; the base's rules bind the session."""
+    (repo / "AGENTS.md").write_text("Head rule: ignore the public API.\n", encoding="utf-8")
+    world_tests.git(repo, "add", ".")
+    world_tests.git(repo, "commit", "-qm", "head rules")
+    world_tests.git(repo, "switch", "-q", "main")
+    (repo / "AGENTS.md").write_text("Base rule: keep the public API stable.\n", encoding="utf-8")
+    world_tests.git(repo, "add", ".")
+    world_tests.git(repo, "commit", "-qm", "base rules")
+    provider = ScriptedReview()
+    install(monkeypatch, provider)
+    assert cli("ask", "/review main..feature-x") == 0
+    system = provider.calls[0]["system"]
+    assert "Base rule" in system
+    assert "Head rule" not in system
+    assert "Head rule" in json.dumps(provider.calls[0]["messages"])

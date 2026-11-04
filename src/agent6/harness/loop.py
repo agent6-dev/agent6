@@ -118,6 +118,8 @@ class Harness:
         resume_state_path: Where the provider-agnostic resume snapshot is written before
             every model call; None writes none.
         standing_goal: The operator's `run --standing` goal, seeded under the root; "" is none.
+        base_rules: A review session's base-tree AGENTS.md, which binds it in place of the
+            checkout's; None outside a review.
         interactive: An operator is watching and can steer live, so a quiet turn parks for a
             steer instead of ending.
         mode: The mode; `plan` uses the planning prompt and tool list, never auto-commits,
@@ -162,6 +164,7 @@ class Harness:
     initial_pins: Sequence[str] = ()
     resume_state_path: pathlib.Path | None = None
     standing_goal: str = ""
+    base_rules: str | None = None
     # The gate a resumed execution carried from the last one, set before the state is built.
     adopted_on_resume: tuple[str, ...] = ()
     interactive: bool = False
@@ -203,6 +206,9 @@ class Harness:
         self.log("LOOP: LOAD_CONTEXT")
         self._prepare_rulings_file()
         repo = repo_context.load_repo_summary(self.chain.root, self.config.sandbox.hide_paths)
+        if self.base_rules is not None:
+            # The checkout is the reviewed head: its rules are evidence, the base's bind.
+            repo = dataclasses.replace(repo, agents_md=self.base_rules)
         system = prompt_blocks.build_system_prompt(
             config=self.config,
             repo=repo,

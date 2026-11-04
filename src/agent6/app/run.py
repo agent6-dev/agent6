@@ -218,6 +218,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     base_sha, base_branch = git.base_sha, git.base_branch
     if review_world is not None:
         base_sha = review_world.target.head_commit or review_world.target.base_commit or ""
+        base_branch = review_world.head_branch
     if worktree and not base_sha:
         reporter.refuse(
             "--worktree starts from HEAD's commit, and this repository has none. Commit first"
@@ -310,6 +311,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             reporter.error(f"could not add the run's worktree at {path}: {exc}")
             return 1
         cwd = checkout.worktree
+        cfg = cfg.with_hidden_in_checkout(repo, cwd)
     worktree_git_dir = checkout.git_dir if checkout is not None else None
     worker_lock_fd: int | None = None
     try:
@@ -430,6 +432,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             isolation=isolation,
             worktree=checkout.worktree if checkout is not None else None,
             worktree_git_dir=worktree_git_dir,
+            review_base_tree=review_world.target.base_tree if review_world is not None else "",
             budget=budget_overrides.stamp() if budget_overrides is not None else None,
         )
         if parked is not None:
@@ -596,6 +599,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 pins=tuple(pins),
                 worktree_git_dir=worktree_git_dir,
                 worker_lock_fd=worker_lock_fd,
+                base_rules=review_world.rules if review_world is not None else None,
             ),
             frontend=frontend,
             reporter=reporter,

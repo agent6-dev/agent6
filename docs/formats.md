@@ -2403,6 +2403,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `continued_task` | `str` | The latest resume steer, clipped the same way; the fallback for the continuation line. |
 | `base_sha` | `str` | The commit the run's un-landed work starts from: where it started, or the commit a resume continued from after its work landed. |
 | `base_branch` | `str` | The branch that commit was on. |
+| `review_base_tree` | `str` | The base tree of a `/review` session, whose AGENTS.md binds it. |
 | `run_branch` | `str \| None` | The run's own branch, or None. |
 | `git_control` | `str` | `[git].control` at start; a `model` run has no chain or branch, and the git surfaces refuse through `model_git_refusal`. |
 | `models` | `ModelsBrief` | The models the run resolved. |
