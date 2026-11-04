@@ -1,8 +1,9 @@
 name: pypi
 
-# Publishes to PyPI via Trusted Publishing (OpenID Connect) on release.
-# Reuses the amd64 + arm64 wheels + the sdist built by build.yml. No API
-# tokens stored.
+# Publishes to PyPI via Trusted Publishing (OpenID Connect) on release, after
+# the whole ci workflow (lint, the wheels, the suite on every platform, the
+# sandbox smoke) passes on the release commit; the wheels and the sdist come
+# from that run. No API tokens stored.
 #
 # One-time PyPI setup: configure a Trusted Publisher for the `agent6`
 # project pointing at this repository + workflow + environment "pypi".
@@ -15,12 +16,12 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    uses: ./.github/workflows/build.yml
+  verify:
+    uses: ./.github/workflows/ci.yml
 
   publish:
     name: publish to PyPI (Trusted Publishing)
-    needs: build
+    needs: verify
     runs-on: ubuntu-24.04
     environment:
       name: pypi
