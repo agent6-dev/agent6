@@ -167,7 +167,7 @@ function paintFindings(cards, state) {
   }
   const counts = review.open_counts || {};
   host.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
-  host.appendChild(el('div', 'muted', 'Review: ' + (review.completion || 'unknown') + ' · freshness: ' + (review.freshness || 'unknown')));
+  host.appendChild(el('div', 'muted', 'Review: ' + (review.summary || 'unknown')));
   const guard = reviewMergeReason(review);
   host.appendChild(el('div', guard ? 'err' : 'muted', guard || 'Merge: no open block findings.'));
   if (review.legacy_notice) host.appendChild(el('div', 'muted', review.legacy_notice));

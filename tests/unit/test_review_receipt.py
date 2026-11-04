@@ -202,6 +202,53 @@ def test_legacy_receipt_marks_unknown_capture_and_no_gate(tmp_path: pathlib.Path
     assert "No verification recorded" in receipt.render(receipt.read_receipt(tmp_path, tmp_path))
 
 
+@pytest.mark.parametrize(
+    "stdout,stderr,notice",
+    [
+        (False, False, ""),
+        (True, False, "Output: stdout truncated"),
+        (False, True, "Output: stderr truncated"),
+        (True, True, "Output: stdout truncated; stderr truncated"),
+        (None, False, "Output: capture completeness unknown"),
+    ],
+)
+def test_attempt_summary_names_only_cut_streams(
+    stdout: bool | None, stderr: bool | None, notice: str
+) -> None:
+    """Complete captures add no per-attempt noise, and unknown capture stays unknown."""
+    from agent6.viewmodel import receipt
+
+    summary = receipt.verification_summary(
+        _record(stdout_truncated=stdout, stderr_truncated=stderr)
+    )
+    output = [line for line in summary.splitlines() if line.startswith("Output")]
+    assert output == ([notice] if notice else [])
+    assert "2000" not in summary and "complete capture" not in summary
+
+
+def test_receipt_cli_states_the_cap_once_for_multiple_attempts(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The CLI receipt keeps one output cap and each attempt's truncation evidence."""
+    import json
+
+    from agent6.ui.cli import main
+    from tests import review_helpers
+
+    saved = review_helpers.reviewed_session(tmp_path)
+    with saved.logs_path.open("a", encoding="utf-8") as stream:
+        for cut in (False, True):
+            row = dataclasses.asdict(_record(stdout_truncated=cut, stderr_truncated=False))
+            stream.write(json.dumps({"type": "verify.end", **row}) + "\n")
+    monkeypatch.chdir(tmp_path)
+    assert main(["sessions", "receipt", saved.session_id]) == 0
+    out = capsys.readouterr().out
+    assert "Testing (output cap: 2000 characters per stream)\n" in out
+    assert out.count("2000 characters") == 1
+    assert out.count("stdout truncated") == 1
+    assert "complete capture" not in out
+
+
 def test_receipt_cli_is_read_only(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -316,6 +363,24 @@ def test_summary_states_the_outcome_once() -> None:
     assert receipt.verification_summary(_record()).startswith("v: denied, full gate\n")
     passed = _record(outcome="passed", exit_code=0)
     assert receipt.verification_summary(passed).startswith("v: passed, exit 0, full gate\n")
+
+
+@pytest.mark.parametrize("unreadable", [False, True])
+def test_receipt_review_names_absent_panels_but_preserves_read_failures(
+    tmp_path: pathlib.Path, unreadable: bool
+) -> None:
+    """No panel is a known absence, not an unknown review result."""
+    from agent6.viewmodel import receipt
+
+    (tmp_path / "manifest.json").write_text("{}")
+    (tmp_path / "logs.jsonl").write_text('{"type":' if unreadable else "")
+    text = receipt.render(receipt.read_receipt(tmp_path, tmp_path))
+    if unreadable:
+        assert "Review: unknown · freshness: unknown" in text
+        assert "no panel ran" not in text
+    else:
+        assert "Review: no panel ran\n" in text
+        assert "freshness:" not in text
 
 
 def test_receipt_payload_carries_the_rendered_text(tmp_path: pathlib.Path) -> None:

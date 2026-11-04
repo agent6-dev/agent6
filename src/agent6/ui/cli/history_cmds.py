@@ -17,7 +17,7 @@ from agent6 import paths
 from agent6.graph import storage
 from agent6.sessions import id
 from agent6.sessions import layout as sessions_layout
-from agent6.ui.cli import common, task_tree
+from agent6.ui.cli import common, history_transcripts, task_tree
 from agent6.viewmodel import transcript_render
 
 
@@ -56,13 +56,30 @@ def _cmd_history_search(query: str, *, fixed: bool, session_id: str) -> int:
     argv: list[str] = [rg, "--json"]
     if fixed:
         argv.append("--fixed-strings")
-    argv.extend(["--", query, *(str(t) for t in targets)])
-    completed = subprocess.run(argv, check=False, capture_output=True, text=True)
+    completed = subprocess.run(
+        [*argv, "--glob", "!**/transcripts/*.json", "--", query, *(str(t) for t in targets)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     hits = _parse_rg_matches(completed.stdout)
-    incomplete = completed.returncode not in (0, 1)  # 1 == no matches, not an error
+    conversation = history_transcripts.search_text(targets)
+    searched = subprocess.run(
+        [*argv, "--", query],
+        input=conversation.text,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    hits.extend(_parse_rg_matches(searched.stdout, sources=conversation.sources))
+    incomplete = bool(conversation.errors) or any(
+        result.returncode not in (0, 1) for result in (completed, searched)
+    )
     if incomplete:
         common.error("search incomplete: some files were not read.")
-        sys.stderr.write(completed.stderr)
+        sys.stderr.write(completed.stderr + searched.stderr)
+        for error in conversation.errors:
+            common.error(error)
     if hits or not incomplete:
         _render_history_hits(
             hits, targets[0] if session_id else paths.state_dir(cwd) / sessions_layout.SESSIONS_ROOT
@@ -198,7 +215,7 @@ def _field_snippet(raw: str, start: int, end: int) -> str | None:
     return None
 
 
-def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
+def _parse_rg_matches(rg_json: str, *, sources: tuple[pathlib.Path, ...] = ()) -> list[_SearchHit]:
     """Turn `rg --json` output into readable hits.
 
     A match line is parsed as a logs.jsonl event when it is one, for its type and
@@ -208,6 +225,7 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
 
     Args:
         rg_json: The `rg --json` output.
+        sources: The source file per line when rg searched transcript content on stdin.
 
     Returns:
         The hits, in rg's order.
@@ -221,7 +239,11 @@ def _parse_rg_matches(rg_json: str) -> list[_SearchHit]:
         if rec.get("type") != "match":
             continue
         data = rec.get("data", {})
-        path = pathlib.Path(_rg_bytes(data.get("path")).decode("utf-8", "replace"))
+        path = (
+            sources[data["line_number"] - 1]
+            if sources
+            else pathlib.Path(_rg_bytes(data.get("path")).decode("utf-8", "replace"))
+        )
         raw_bytes = _rg_bytes(data.get("lines")).rstrip(b"\n")
         raw = raw_bytes.decode("utf-8", "replace")
         subs = data.get("submatches") or []
@@ -423,8 +445,8 @@ def _window(text: str, start: int) -> str:
 def _render_history_hits(hits: list[_SearchHit], target: pathlib.Path) -> None:
     """Print the hits grouped by session, a faded header once, then one line per hit.
 
-    Identical snippets within a session (the same system-prompt boilerplate matched in
-    every transcript) collapse to one line with an `(xN)` count.
+    Identical snippets within a session's cumulative transcripts collapse to one line
+    with an `(xN)` count.
 
     Args:
         hits: The hits, in rg's order.

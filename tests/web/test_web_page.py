@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "e1752e84f934d4febdadf29a74d3049ba30c7a93a9a99cf9a2910c9b0f93d0be"
+PAGE_SHA256 = "4dcce8dba75c0d232aa7badbf5561e28180a3ac2b4d3fcf5e96697686b8d0317"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -143,6 +143,36 @@ def test_the_plan_bar_meters_this_executions_points() -> None:
     client = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "(b.plan_consumed || 0) - (b.plan_prior_executions || 0)" in client
     assert "executionPt / planCap" in client
+
+
+def test_list_headings_require_distinct_groups() -> None:
+    """A single group adds no heading; mixed groups retain their boundaries."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is needed to exercise the web client")
+    client = page.CLIENT_JS
+    render = client[client.index("function listCard(") : client.index("const expandedFanouts")]
+    setup = """
+const assert = require('node:assert/strict');
+function el(tag, cls, text) {
+  return {tag, cls, text, children: [], appendChild(child) { this.children.push(child); }};
+}
+"""
+    scenario = """
+for (const [entries, expected] of [
+  [[], []], [['Other'], []], [['Other', 'Other'], []],
+  [['Unverified', 'Other'], ['Unverified', 'Other']],
+]) {
+  const card = listCard('Sessions', entries, 'none', () => {}, e => e);
+  const rows = card.children[1].children;
+  assert.deepEqual(rows.filter(r => r.cls === 'group').map(r => r.text), expected);
+  assert.equal(rows.filter(r => r.cls === 'item').length, entries.length);
+}
+"""
+    result = subprocess.run(
+        [node, "-e", setup + render + scenario], check=False, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_the_sessions_card_folds_a_fan_outs_lanes() -> None:

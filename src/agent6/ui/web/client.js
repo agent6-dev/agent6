@@ -454,15 +454,16 @@ function createMachineDock() {
 }
 
 // A list card: h2 title + one clickable row per entry.
-// `groupOf` names an entry's group; a heading opens each run of entries sharing one.
+// Headings separate groups only when the list contains more than one.
 function listCard(title, entries, empty, paint, groupOf) {
   const card = el('div', 'card');
   card.appendChild(el('h2', null, title));
   const list = el('div', 'list');
   if (!entries.length) list.appendChild(el('div', 'empty', empty));
+  const grouped = groupOf && new Set(entries.map(groupOf)).size > 1;
   let group = null;
   for (const e of entries) {
-    if (groupOf) {
+    if (grouped) {
       const next = groupOf(e);
       if (next !== group) { list.appendChild(el('div', 'group', next)); group = next; }
     }

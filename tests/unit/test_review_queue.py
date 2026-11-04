@@ -149,13 +149,35 @@ CASES = [
         "unverified",
     ),
     (
-        "no gate",
+        "gate never ran",
         [_START, {**_END, "all_passed": None, "verified": "unverified", "final_verify_id": None}],
         _facts("finished"),
         "unverified",
-        "gate unverified",
+        "gate never ran",
         "unreviewed",
         "unverified",
+    ),
+    (
+        "gate not configured",
+        [_START, {**_END, "all_passed": None, "verified": "not_applicable"}],
+        _facts("finished"),
+        "unverified",
+        "gate not configured",
+        "unreviewed",
+        "not_applicable",
+    ),
+    (
+        "gate red at base",
+        [
+            _START,
+            *_verify_rows(exit_code=1),
+            {**_END, "all_passed": False, "verified": "failed", "reason": "gate_red_at_base"},
+        ],
+        _facts("finished"),
+        "unverified",
+        "gate red at base",
+        "unreviewed",
+        "failed",
     ),
     (
         "failed gate",
@@ -203,7 +225,7 @@ CASES = [
         ],
         _facts("finished"),
         "unverified",
-        "gate unverified",
+        "",
         "complete",
         "unverified",
     ),
@@ -375,12 +397,6 @@ def test_a_panel_without_its_completion_reads_running_only_while_the_worker_live
     assert review_queue.review_state(scan.review, live=True) == "running"
     assert review_queue.review_state(scan.review, live=False) == "incomplete"
     assert review_queue.classify(scan, _facts("running", alive=True)).reason == "review running"
-
-
-def test_every_entry_carries_a_reason(tmp_path: pathlib.Path) -> None:
-    """No queue entry reads blank: each row of the listing says why it sits where it does."""
-    for _case, rows, facts, *_rest in CASES:
-        assert review_queue.classify(_scan(rows, tmp_path), facts).reason, _case
 
 
 def test_a_block_dates_the_queue_entry_from_its_first_observation(tmp_path: pathlib.Path) -> None:

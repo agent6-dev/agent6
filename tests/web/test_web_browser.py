@@ -105,6 +105,70 @@ def open_page(browser: Browser) -> Iterator[Callable[[int], tuple[Page, list[str
             context.close()
 
 
+@pytest.mark.parametrize("mixed", [False, True])
+def test_hub_headings_only_separate_distinct_groups(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    mixed: bool,
+) -> None:
+    """The hub omits a lone Other heading but labels each group in a mixed list."""
+    from playwright.sync_api import expect
+
+    for index in range(2):
+        session = paths.state_dir(tmp_path) / "sessions" / "runs" / f"group-{index}"
+        session.mkdir(parents=True)
+        mode = "run" if mixed and index else "ask"
+        rows = [
+            {"type": "session.start", "mode": mode, "user_task": f"group task {index}"},
+            {"type": "session.end", "reason": "finish_session", "verified": "unverified"},
+        ]
+        (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/")
+    card = page.locator(".card").filter(
+        has=page.get_by_role("heading", name="Sessions", exact=True)
+    )
+    expect(card.locator(".item")).to_have_count(2)
+    if mixed:
+        expect(card.locator(".group")).to_have_text(["Unverified", "Other"])
+    else:
+        expect(card.locator(".group")).to_have_count(0)
+    assert not errors
+
+
+@pytest.mark.parametrize("unreadable", [False, True])
+def test_unreviewed_run_names_the_absent_panel(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    unreadable: bool,
+) -> None:
+    """An unreviewed run says no panel ran unless its journal cannot be read."""
+    from playwright.sync_api import expect
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "unreviewed"
+    session.mkdir(parents=True)
+    (session / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run", "user_task": "No review"})
+        + "\n"
+        + (
+            json.dumps({"type": "loop.review.panel", "panel_id": "broken", "target": {}}) + "\n"
+            if unreadable
+            else ""
+        )
+    )
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    expected = "Review: unknown · freshness: unknown" if unreadable else "Review: no panel ran"
+    expect(page.get_by_text(expected, exact=True)).to_have_count(1)
+    if not unreadable:
+        expect(page.get_by_text("Review: unknown · freshness: unknown", exact=True)).to_have_count(
+            0
+        )
+    assert not errors
+
+
 def test_expanded_task_keeps_the_full_operator_words(
     port: int,
     tmp_path: pathlib.Path,

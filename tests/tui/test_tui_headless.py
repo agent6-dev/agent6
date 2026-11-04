@@ -1223,6 +1223,36 @@ def test_working_timer_anchors_to_the_last_events_ts_not_the_attach(tmp_path: pa
     asyncio.run(scenario())
 
 
+@pytest.mark.parametrize("context_window", [None, 327680])
+def test_subscription_header_separates_every_segment(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, context_window: int | None
+) -> None:
+    """A subscription run keeps the same gap around status, cost and budget segments."""
+    from agent6.viewmodel import state_view
+
+    def cached_context_window(_provider: str, _model: str) -> int | None:
+        return context_window
+
+    monkeypatch.setattr(state_view, "cached_context_window", cached_context_window)
+    fixture = pathlib.Path(__file__).parent / "fixtures" / "subscription_run.jsonl"
+    (tmp_path / "logs.jsonl").write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(tmp_path)
+        async with app.run_test(size=(150, 40)) as pilot:
+            await waits.wait_for(pilot, lambda: app.state.finished, "the saved run")
+            await _show_dashboard(pilot)
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", widgets.Static).render()).splitlines()[0]
+            assert top == (
+                "agent6  passed  tasks: 1/1  cost: 0pt  budget: 0%  plan: 52% (run 0/10pt)"
+                + ("  ctx: 2%" if context_window else "")
+            )
+
+    asyncio.run(scenario())
+
+
 def test_plan_meter_reads_this_executions_points_after_a_resume(tmp_path: pathlib.Path) -> None:
     """The header meters this execution's plan points against the cap it re-armed.
 

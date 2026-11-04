@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
+import pathlib
 from typing import Any
 
+from agent6 import paths
+from agent6.sessions import event_log, layout
 from tests.web import test_client_review, test_review_evidence, test_web_git
 
 evidence = test_review_evidence.evidence
@@ -16,6 +20,45 @@ def test_receipt_route_reads_evidence(evidence: tuple[int, dict[str, Any]]) -> N
     assert payload["revert"]["kind"] == "not_recorded"
     assert payload["review"]["panels"]
     assert payload["text"].startswith("Receipt review-run\n")
+
+
+def test_receipt_route_and_card_state_the_output_cap_once(
+    tmp_path: pathlib.Path, evidence: tuple[int, dict[str, Any]]
+) -> None:
+    """The web card retains truncation notes without repeating the cap for every attempt."""
+    saved = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
+    sink = event_log.EventSink(saved.logs_path)
+    for cut in (False, True):
+        sink.emit(
+            "verify.end",
+            cmd=["pytest"],
+            exit_code=0,
+            stdout_tail="out",
+            stderr_tail="",
+            stdout_truncated=cut,
+            stderr_truncated=False,
+            scoped=False,
+            selected_paths=[],
+            outcome="passed",
+            duration_s=0.2,
+            timeout_s=60.0,
+            baseline=False,
+            reason="",
+        )
+    port, _ = evidence
+    code, payload = test_web_git._get(port, "/api/session/review-run/receipt")
+    assert code == 200
+    assert "Testing (output cap: 2000 characters per stream)\n" in payload["text"]
+    test_client_review._run(
+        f"const receipt = {json.dumps(payload)};"
+        + """
+const host = el('div');
+drawReceipt(host, receipt);
+assert.equal(host.textContent.split('2000 characters').length - 1, 1);
+assert.equal(host.textContent.split('stdout truncated').length - 1, 1);
+assert.ok(!host.textContent.includes('complete capture'));
+"""
+    )
 
 
 def test_receipt_client_uses_literal_risk_and_existing_new_work() -> None:

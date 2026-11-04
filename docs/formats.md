@@ -2278,6 +2278,7 @@ Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/m
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `summary` | `JSON` | The shared review label, distinguishing absent panels from unreadable evidence. |
 | `merge_guard` | `JSON` | The open-block and unreadable-evidence merge facts. |
 | `rule_sources` | `JSON` | The latest panel's recorded rule sources. |
 | `rules_complete` | `JSON` | Whether all rule sources were supplied, or null when unrecorded. |

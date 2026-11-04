@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+import pathlib
 import shutil
 import subprocess
 from importlib import resources
 
 import pytest
 
+from agent6.viewmodel import review, session_log
 from tests.web.test_web_files_client import _DOM
 
 
@@ -77,6 +80,26 @@ const patch = parseUnifiedDiff('diff --git a/old.txt b/new.txt\n'
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("unreadable", [False, True])
+def test_findings_card_uses_the_shared_review_summary(
+    tmp_path: pathlib.Path, unreadable: bool
+) -> None:
+    """The Findings card distinguishes an absent panel from unreadable journal evidence."""
+    log = tmp_path / "logs.jsonl"
+    log.write_text('{"type":' if unreadable else "")
+    payload = review.as_dict(session_log.scan_session_log(log).review)
+    expected = "Review: unknown · freshness: unknown" if unreadable else "Review: no panel ran"
+    _run(
+        f"const review = {json.dumps(payload)}; const expected = {json.dumps(expected)};"
+        + """
+const cards = {_id: 'run', _base: '/api/session/run', findings: el('div')};
+paintFindings(cards, {finished: true, review});
+assert.ok(cards.findings.textContent.includes(expected), cards.findings.textContent);
+if (expected.includes('no panel')) assert.ok(!cards.findings.textContent.includes('freshness:'));
+"""
+    )
 
 
 def test_line_origin_badge_uses_the_observation_and_links_immutable_base_evidence() -> None:

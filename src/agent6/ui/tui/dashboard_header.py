@@ -88,31 +88,36 @@ class RunHeader(widgets.Static):
             plan_consumed=ds.budget.plan_consumed,
             plan_used_percent=ds.budget.plan_used_percent,
         ) or agent6_budget.format_usd(0.0)
-        cost = f"[b]{cell}[/]"
+        segments = ["[b]agent6[/]"]
+        if finished:
+            segments.append(finished)
+        segments.extend((step, f"cost: [b]{cell}[/]"))
         # This execution's metered spend against its cap: a resume re-arms the cap while
         # usd_total stays cumulative.
-        budget = ""
         if ds.budget.usd_cap > 0:
             execution_usd = ds.budget.usd_total - ds.budget.usd_prior_executions
-            budget = f"   budget: {min(execution_usd / ds.budget.usd_cap, 1.0):.0%}"
+            segments.append(f"budget: {min(execution_usd / ds.budget.usd_cap, 1.0):.0%}")
         if ds.budget.tokens_unmetered and ds.budget.tokens_fallback_cap > 0:
             unmet = min(ds.budget.tokens_unmetered / ds.budget.tokens_fallback_cap, 1.0)
-            budget += f"   unmetered: {unmet:.0%}"
+            segments.append(f"unmetered: {unmet:.0%}")
         if ds.budget.plan_used_percent > 0:
-            budget += f"   plan: {ds.budget.plan_used_percent:g}%"
+            plan = f"plan: {ds.budget.plan_used_percent:g}%"
             if ds.budget.plan_cap > 0:
                 # This execution's points against the cap a resume re-armed.
                 execution_pt = ds.budget.plan_consumed - ds.budget.plan_prior_executions
-                budget += f" (run {execution_pt:g}/{ds.budget.plan_cap:g}pt)"
+                plan += f" (run {execution_pt:g}/{ds.budget.plan_cap:g}pt)"
+            segments.append(plan)
+        if as_of:
+            segments.append(as_of.strip())
         pct = tui.context_pct()
-        ctx = f"   ctx: {pct}%" if pct is not None else ""
-        status = f"{finished}   " if finished else ""
+        if pct is not None:
+            segments.append(f"ctx: {pct}%")
         lead = f"role: {role_line} · task: "
         task = markup.escape(
             tui.task_label().line(max_chars=120).replace("\n", "\n" + " " * len(lead))
         )
         header = text.Text.from_markup(
-            f"[b]agent6[/]  {status}{step}   cost: {cost}{budget}{as_of}{ctx}\n"
+            "  ".join(segments) + "\n"
             f"role: {markup.escape(role_line)} · task: {task}"
             f"{markup.escape(self._lineage_top())}{markup.escape(self._branch_top())}"
             f"{markup.escape(self._pins_top(s))}{markup.escape(self._serving_top())}"

@@ -221,16 +221,21 @@ def verification_summary(record: evidence.VerificationEvidence) -> str:
     baseline = "baseline; " if record.baseline else ""
     code = f"exit {record.exit_code}, " if record.exit_code is not None else ""
     reason = f"Reason: {record.reason}\n" if record.reason else ""
+    capture = [
+        f"{name} truncated"
+        for name, cut in (("stdout", record.stdout_truncated), ("stderr", record.stderr_truncated))
+        if cut
+    ]
+    if record.stdout_truncated is None or record.stderr_truncated is None:
+        capture.append("capture completeness unknown")
+    output = "\nOutput: " + "; ".join(capture) if capture else ""
     return (
         f"{record.verify_id or 'unrecorded id'}: {baseline}{record.outcome}, {code}{scope}\n"
         f"{reason}"
         f"Command: {shlex.join(record.cmd)}\n"
         f"Tested tree: {record.tree_before or 'unknown'}; after: {record.tree_after or 'unknown'}\n"
         f"Selected paths: {', '.join(record.selected_paths) or 'none'}\n"
-        f"Duration: {record.duration_s:.2f}s; timeout: {record.timeout_s:g}s\n"
-        "Output cap: 2000 characters per stream; "
-        f"stdout {evidence.capture_label(record.stdout_truncated)}; "
-        f"stderr {evidence.capture_label(record.stderr_truncated)}"
+        f"Duration: {record.duration_s:.2f}s; timeout: {record.timeout_s:g}s{output}"
     )
 
 
@@ -300,7 +305,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         f"Execution: {view.execution_id or 'unknown'}",
         f"Source tip: {view.source_tip or 'unknown'}",
         "",
-        "Testing",
+        "Testing (output cap: 2000 characters per stream)",
         f"{word}: {view.end_tree or 'unknown'}",
     ]
     for record in view.verifications:
@@ -312,7 +317,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         (
             "",
             "Review",
-            f"{view.review.completion}; freshness: {view.review.freshness}",
+            f"Review: {view.review.summary}",
             f"Open findings: {view.review.open_counts.block} block, "
             f"{view.review.open_counts.warn} warn, {view.review.open_counts.nit} nit",
         )

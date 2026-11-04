@@ -112,7 +112,6 @@ REVIEW_TEXT = {
     ),
     "no_hunk": "No cited hunk is available in this preview.",
     "truncated": "\n… (truncated)",
-    "panel": "Panel {panel_id}: block_on={block_on}, rejected={blocked}, disarmed={disarmed}",
 }
 # The review queue's groups as the hub names them.
 QUEUE_TEXT = {

@@ -270,12 +270,7 @@ class FindingsScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             body += "\n" + keymap.REVIEW_TEXT["history"].format(action=label, reason=reason)
         panel = next(p for p in self._view.panels if p.panel_id == observation.panel_id)
         if panel.result is not None:
-            body += "\n" + keymap.REVIEW_TEXT["panel"].format(
-                panel_id=panel.panel_id,
-                block_on=panel.result.block_on,
-                blocked=panel.result.blocked,
-                disarmed=panel.result.disarmed,
-            )
+            body += "\n" + review.panel_text(panel.result)
         body += "\n" + review.rules_notice(panel)
         detail.update(body)
         self.query_one(diff_pane.DiffPane).show_review(self._cwd, panel.target, report.location)

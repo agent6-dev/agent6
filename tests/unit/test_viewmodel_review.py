@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from agent6 import review_records
-from agent6.viewmodel import session_log, state, state_view
+from agent6.viewmodel import review, session_log, state, state_view
 
 
 def _target(**changes: Any) -> review_records.ReviewTarget:
@@ -86,6 +86,30 @@ def test_open_findings_survive_later_events(later: dict[str, Any]) -> None:
     assert result.review.open_counts.block == 1
     assert result.review.findings[0].status == "open"
     assert result.review.merge_guard.open_block_ids == ("f1",)
+
+
+@pytest.mark.parametrize(
+    "rule,blocked,disarmed,words",
+    [
+        ("none", False, False, "nothing"),
+        ("any", True, False, "any blocking seat"),
+        ("all", True, False, "every seat blocking"),
+        ("model_quorum", False, True, "a quorum of distinct models"),
+    ],
+)
+def test_panel_notices_use_words_and_short_ids(
+    rule: str, blocked: bool, disarmed: bool, words: str
+) -> None:
+    """Panel notices expose each fact without Python flag syntax or full-length ids."""
+    panel = _panel("60caa1e5c123456789abcdef0123456789", findings=False)
+    panel.update(block_on=rule, blocked=blocked, disarmed=disarmed)
+    notice = review.notice_texts(panel)[0]
+    assert notice.splitlines() == [
+        "Panel 60caa1e5c123: complete",
+        f"Blocks on {words}.",
+        f"Worker finish: {'rejected' if blocked else 'not rejected'}.",
+        f"Rejection cap: {'reached' if disarmed else 'not reached'}.",
+    ]
 
 
 def test_repeated_observation_preserves_resolution_and_history(tmp_path: pathlib.Path) -> None:
@@ -189,6 +213,28 @@ def test_legacy_and_missing_evidence_are_not_clean(rows: list[dict[str, Any]]) -
     assert view.freshness == "unknown"
     assert view.findings == ()
     assert bool(view.legacy_notice) == bool(rows)
+
+
+@pytest.mark.parametrize(
+    "journal,expected",
+    [
+        ("", "no panel ran"),
+        ('{"type":"loop.review.panel","blocked":false}\n', "unknown · freshness: unknown"),
+        ('{"type":"loop.review.panel",', "unknown · freshness: unknown"),
+        (None, "unknown · freshness: unknown"),
+    ],
+)
+def test_review_summary_distinguishes_no_panel_from_unreadable_evidence(
+    tmp_path: pathlib.Path, journal: str | None, expected: str
+) -> None:
+    """Only a readable journal without panel evidence can say no panel ran."""
+    log = tmp_path / "logs.jsonl"
+    if journal is None:
+        log.mkdir()
+    else:
+        log.write_text(journal, encoding="utf-8")
+    view = session_log.scan_session_log(log).review
+    assert review.as_dict(view)["summary"] == expected
 
 
 def test_corrupt_new_evidence_keeps_its_reason(tmp_path: pathlib.Path) -> None:

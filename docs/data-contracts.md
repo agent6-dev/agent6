@@ -101,7 +101,7 @@ Public fields: [Formats](formats.md#reviewview).
 
 - **Written by:** viewmodel/{session_log, state}
 - **Read by:** app/review_actions, ui/acp/review, ui/cli/{review_cmds, sessions_findings}, ui/tui/review, ui/web/review_routes, viewmodel/{log_line, receipt, review_queue, state_types, state_view, telemetry, transcript, transcript_text}
-- **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (3 test files exercise it)
+- **Guarded by:** [test_viewmodel_review.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_review.py) (4 test files exercise it)
 
 ## Review records
 
@@ -315,4 +315,4 @@ Public fields: [Formats](formats.md#session-snapshots).
 
 - **Written by:** viewmodel/{machine_state, state_view}
 - **Read by:** ui/acp/updates, ui/cli/steer_menu, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (9 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (10 test files exercise it)

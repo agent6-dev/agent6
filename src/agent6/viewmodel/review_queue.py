@@ -230,8 +230,18 @@ def _classify(
             oldest_open_at=min(opened, default=scan.end_ep),
         )
     if ended_run and not facts.fanout and not full_pass:
+        reason = f"gate {gate}"
+        if scan.end_reason == "gate_red_at_base":
+            reason = "gate red at base"
+        elif gate == "not_applicable":
+            reason = "gate not configured"
+        elif gate == "unverified":
+            no_attempt = not (
+                scan.verifications or scan.evidence_notes or scan.baseline_ok is not None
+            )
+            reason = "gate never ran" if no_attempt else ""
         return dataclasses.replace(
-            entry, group="unverified", reason=f"gate {gate}", oldest_open_at=scan.end_ep
+            entry, group="unverified", reason=reason, oldest_open_at=scan.end_ep
         )
     clean = (
         ended_run

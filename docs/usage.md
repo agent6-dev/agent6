@@ -210,7 +210,8 @@ The end block adds `running command was cut short` when the stop ended a running
 `--after-turn` leaves `running · stopping after this turn` in listings until the turn ends, then prints `operator stopped the run after turn N`.
 A starting or waiting run keeps that status and adds `stopping after this turn` beside its other details.
 
-`history search` keeps the matches it read if a file disappears or another search error occurs, prints `search incomplete: some files were not read.` and the error, and exits with code 2.
+`history search` searches transcript conversations without system prompts, skill indexes or tool declarations.
+It keeps the matches it read if a file disappears or another search error occurs, prints `search incomplete: some files were not read.` and the error, and exits with code 2.
 It does not report `no matches` when the search is incomplete.
 
 A session's cost covers every execution, in dollars or in plan points, and in both for a run that spent both (`1pt + $0.03`); `sessions list`, `sessions show`, the end-of-run total and the fan-out report print the same figure.

@@ -222,7 +222,14 @@ _VERIFY_LINES = {
 }
 
 
-def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resume: str | None) -> None:
+def _print_end_facts(
+    scan: LogScan,
+    session_id: str,
+    *,
+    gated: bool,
+    resume: str | None,
+    attempts: tuple[str, ...],
+) -> None:
     """Print unanswered questions, the gate's word and an unfinished run's resume command.
 
     Args:
@@ -232,6 +239,7 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resume: str
         resume: "" when the session stopped short of its end and a bare resume continues it,
             why a resume would refuse when it stopped short but cannot, None for an end that
             needs no resume.
+        attempts: The transcript's verification attempt lines.
     """
     failed = scan.end_reason == "setup_command_failed"
     setup = scan.setup_output
@@ -258,6 +266,10 @@ def _print_end_facts(scan: LogScan, session_id: str, *, gated: bool, resume: str
         if scan.baseline_ok is not None:
             verify += f" ({'green' if scan.baseline_ok else 'red'} before the run)"
         print(f"verify:     {verify}")
+    elif attempts:
+        print("verify:")
+    for attempt in attempts:
+        print("            " + attempt.replace("\n", "\n" + " " * 12))
     if resume == "":
         print(f"resume with:  agent6 resume {session_id}")
     elif resume is not None:
@@ -495,6 +507,13 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         target.name,
         gated=mode_display == "run",
         resume=listing.resume_blocker(target) if status in _RESUMABLE else None,
+        attempts=tuple(
+            item.body
+            for item in transcript.fold_transcript(
+                list(tail.tail_events(layout.logs_path, follow=False)), worker_dead=not alive
+            )
+            if item.kind == "verify"
+        ),
     )
     if changes.line:
         print(f"changes:    {changes.line}")
@@ -504,11 +523,6 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         print(f"{'pins:' if i == 0 else '':<12}{pin}")
     _print_listening_ports(target)
     _print_task_tree(target)
-    for item in transcript.fold_transcript(
-        list(tail.tail_events(layout.logs_path, follow=False)), worker_dead=not alive
-    ):
-        if item.kind == "verify":
-            print(item.body)
     return 0
 
 

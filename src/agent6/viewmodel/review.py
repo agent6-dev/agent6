@@ -193,6 +193,15 @@ class ReviewView:
     event_ids: tuple[str, ...] = ()
 
     @property
+    def summary(self) -> str:
+        """Return the review state without mistaking absent panels for unreadable evidence."""
+        if self.read_failure or self.legacy_notice:
+            return "unknown · freshness: unknown"
+        if not self.panels:
+            return "no panel ran"
+        return f"{self.completion} · freshness: {self.freshness}"
+
+    @property
     def rule_sources(self) -> tuple[review_records.RuleSource, ...]:
         """Return the latest panel's recorded rule sources."""
         return self.panels[-1].rule_sources if self.panels else ()
@@ -480,6 +489,29 @@ def apply_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
     return result.for_comparison(result.comparison) if result.comparison is not None else result
 
 
+def panel_text(panel: review_records.ReviewPanel) -> str:
+    """Render a panel's completion and worker-finish policy.
+
+    Args:
+        panel: The recorded panel result.
+
+    Returns:
+        One fact per line, with a twelve-character panel id.
+    """
+    rule = {
+        "none": "nothing",
+        "any": "any blocking seat",
+        "all": "every seat blocking",
+        "model_quorum": "a quorum of distinct models",
+    }[panel.block_on]
+    return (
+        f"Panel {panel.panel_id[:12]}: {panel.completion}\n"
+        f"Blocks on {rule}.\n"
+        f"Worker finish: {'rejected' if panel.blocked else 'not rejected'}.\n"
+        f"Rejection cap: {'reached' if panel.disarmed else 'not reached'}."
+    )
+
+
 def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
     """Render review evidence and dispositions as shared transcript notices.
 
@@ -495,10 +527,7 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
             if "target" not in event:
                 return ("Review has legacy count-only evidence; findings are unavailable.",)
             panel = review_records.ReviewPanel.model_validate(event_log.payload(event))
-            lines = [
-                f"Review {panel.panel_id}: {panel.completion}; "
-                f"block_on={panel.block_on}, rejected={panel.blocked}, disarmed={panel.disarmed}"
-            ]
+            lines = [panel_text(panel)]
             lines.extend(
                 f"Finding {o.finding_id} · {o.finding.severity} · {o.finding.location}\n"
                 f"{o.finding.title}\n{o.finding.detail}"
@@ -507,7 +536,7 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
             return tuple(lines)
         if kind == "loop.review.skipped":
             skipped = _Skipped.model_validate(event)
-            return (f"Review {skipped.panel_id} skipped: {skipped.reason}",)
+            return (f"Review {skipped.panel_id[:12]} skipped: {skipped.reason}",)
         if kind not in _ACTION_EVENTS:
             return ()
         action = ActionRecord.model_validate(event)
@@ -538,6 +567,7 @@ def as_dict(view: ReviewView) -> dict[str, Any]:
     """Return JSON-ready evidence, including nested boundary models and merge facts.
 
     Attributes:
+        summary: The shared review label, distinguishing absent panels from unreadable evidence.
         merge_guard: The open-block and unreadable-evidence merge facts.
         rule_sources: The latest panel's recorded rule sources.
         rules_complete: Whether all rule sources were supplied, or null when unrecorded.
@@ -550,6 +580,7 @@ def as_dict(view: ReviewView) -> dict[str, Any]:
         The JSON-safe review with computed merge and attribution facts.
     """
     result = pydantic.TypeAdapter(ReviewView).dump_python(view, mode="json")
+    result["summary"] = view.summary
     result["merge_guard"] = dataclasses.asdict(view.merge_guard)
     for row, finding in zip(result["findings"], view.findings, strict=True):
         row["line_origin"] = finding.line_origin.model_dump(mode="json")
@@ -576,7 +607,7 @@ def rules_notice(event: Mapping[str, Any] | PanelView) -> str:
     else:
         status = "rules complete" if start.rules_complete else "rules incomplete"
     base_tree = start.target.base_tree if start.target else "unrecorded"
-    lines = [f"Panel {start.panel_id}: {status} (base tree {base_tree})"]
+    lines = [f"Panel {start.panel_id[:12]}: {status} (base tree {base_tree})"]
     if start.rules_reason:
         lines.append(terminal.printable_name(start.rules_reason))
     if start.rules_complete and not start.rule_sources:

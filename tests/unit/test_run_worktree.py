@@ -1337,10 +1337,11 @@ def test_dispatch_setup_keeps_timeout_and_wraps_jail_unavailability(
         assert "namespace unavailable" in prepared.problem
         assert prepared.result is None
     else:
-        assert seen[0].timeout_s > 0
+        setup_policy = next(policy for policy in seen if policy.argv == ("true",))
+        assert setup_policy.timeout_s > 0
         assert prepared.result is not None
         assert prepared.result.returncode == 124
-        assert prepared.result.duration_s == seen[0].timeout_s
+        assert prepared.result.duration_s == setup_policy.timeout_s
 
 
 class _FailingSetup:

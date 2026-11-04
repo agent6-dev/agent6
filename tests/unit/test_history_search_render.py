@@ -61,6 +61,91 @@ def test_search_read_error_keeps_hits_and_reports_incomplete(
     assert "No such file or directory" in output.err
 
 
+@pytest.mark.parametrize("wire", ["anthropic", "openai", "responses"])
+@pytest.mark.parametrize("fixed", [False, True])
+def test_search_excludes_prompt_sections_but_keeps_conversation(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    wire: str,
+    fixed: bool,
+) -> None:
+    """Provider prompts and skill indexes do not crowd out conversation search hits."""
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is required")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="search")
+    layout.ensure()
+    messages: list[dict[str, object]] = [
+        {"role": "user", "content": "operator NEEDLE"},
+        {"role": "assistant", "content": "model NEEDLE"},
+        {"role": "tool", "content": "result NEEDLE"},
+    ]
+    prompt = "system NEEDLE <skills>skillindex NEEDLE</skills>"
+    body: dict[str, object] = {"tools": [{"description": "declaration NEEDLE"}]}
+    if wire == "openai":
+        messages.insert(0, {"role": "system", "content": prompt})
+        messages.insert(1, {"role": "developer", "content": "developer NEEDLE"})
+        body["messages"] = messages
+    elif wire == "anthropic":
+        messages[-1] = {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "call1", "content": "result NEEDLE"}
+            ],
+        }
+        body.update(system=[{"type": "text", "text": prompt}], messages=messages)
+    else:
+        messages[-1] = {
+            "type": "function_call_output",
+            "call_id": "call1",
+            "output": "result NEEDLE",
+        }
+        body.update(instructions=prompt, input=messages)
+    call = {"name": "run_command", "arguments": '{"instructions": "toolcall NEEDLE"}'}
+    responses = {
+        "anthropic": {
+            "role": "assistant",
+            "content": [{"type": "tool_use", "id": "call2", "name": "run_command", "input": call}],
+        },
+        "openai": {
+            "choices": [{"message": {"role": "assistant", "tool_calls": [{"function": call}]}}]
+        },
+        "responses": {"output": [{"type": "function_call", "call_id": "call2", **call}]},
+    }
+    record = {"request": {"body": body}, "response": {"body": responses[wire]}}
+    (layout.transcripts_dir / "0001.json").write_text(
+        json.dumps(record, indent=2), encoding="utf-8"
+    )
+    assert history_cmds._cmd_history_search("NEEDLE", fixed=fixed, session_id="") == 0
+    out = capsys.readouterr().out
+    for word in ("operator", "model", "result", "toolcall"):
+        assert f"{word} NEEDLE" in out
+    for word in ("system", "skillindex", "developer", "declaration"):
+        assert f"{word} NEEDLE" not in out
+    assert history_cmds._cmd_history_search("skillindex", fixed=fixed, session_id="") == 1
+    assert "no matches" in capsys.readouterr().out
+
+
+def test_search_reports_unreadable_transcripts_without_dropping_other_hits(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A malformed transcript cannot silently turn a partial search into a complete one."""
+    if shutil.which("rg") is None:
+        pytest.skip("ripgrep is required")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="search")
+    layout.ensure()
+    (layout.transcripts_dir / "0001.json").write_text('{"request":', encoding="utf-8")
+    layout.logs_path.write_text(json.dumps({"text": "operator NEEDLE"}), encoding="utf-8")
+    assert history_cmds._cmd_history_search("NEEDLE", fixed=True, session_id="") == 2
+    out = capsys.readouterr()
+    assert "operator NEEDLE" in out.out
+    assert "search incomplete" in out.err and "0001.json" in out.err
+
+
 def _rg_match(path: str, line: str, col: int) -> str:
     return json.dumps(
         {

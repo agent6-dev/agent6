@@ -80,6 +80,32 @@ def test_open_select_and_preview_recorded_trees(
     assert git("status", "--porcelain") == before
 
 
+def test_finding_detail_uses_panel_words_and_short_ids(tmp_path: pathlib.Path) -> None:
+    """The Findings pane uses the shared panel facts and shortens every panel label."""
+    saved = review_helpers.reviewed_session(tmp_path)
+    panel = json.loads(saved.logs_path.read_text())
+    panel_id = "60caa1e5c123456789abcdef0123456789"
+    panel["panel_id"] = panel_id
+    for finding in panel["findings"]:
+        finding["panel_id"] = panel_id
+    saved.logs_path.write_text(json.dumps(panel) + "\n")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(saved.state_dir, tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("v")
+            await pilot.pause()
+            detail = _shown(app.screen.query_one("#finding-detail", widgets.Static))
+            assert (
+                "Panel 60caa1e5c123: complete\nBlocks on nothing.\n"
+                "Worker finish: not rejected.\nRejection cap: not reached."
+            ) in detail
+            assert panel_id not in detail
+            assert "block_on=" not in detail
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("kind", ["pre_existing", "changed", "unknown"])
 def test_selected_finding_shows_only_pre_existing_line_origin(
     tmp_path: pathlib.Path, kind: str
@@ -333,9 +359,11 @@ def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
         async with app.run_test(size=(120, 45)) as pilot:
             app.push_screen(review.ReceiptScreen(saved.session_dir, tmp_path))
             await pilot.pause()
-            assert "capture completeness unknown" in _shown(
-                app.screen.query_one("#receipt-summary", widgets.Static)
-            )
+            summary = _shown(app.screen.query_one("#receipt-summary", widgets.Static))
+            assert "capture completeness unknown" in summary
+            assert "Testing (output cap: 2000 characters per stream)\n" in summary
+            assert summary.count("2000 characters") == 1
+            assert "complete capture" not in summary
             outputs = list(app.screen.query(widgets.Collapsible))
             assert len(outputs) == 2 and outputs[0].collapsed
             outputs[0].collapsed = False

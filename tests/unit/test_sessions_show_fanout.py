@@ -517,6 +517,37 @@ def test_show_json_and_the_listing_name_the_end_reason_alike(
     assert (lanes["fan-l1"]["end_reason"], lanes["fan-l1"]["reason"]) == ("finish_session", "")
 
 
+def test_show_nests_attempts_directly_under_the_verify_field(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verification attempts stay with their summary instead of trailing the other fields."""
+    _log(
+        fan_out,
+        "fan-l1",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "t"},
+            {"type": "verify.end", "exit_code": 1, "duration_s": 2.5},
+            {"type": "verify.end", "exit_code": 0, "duration_s": 1.2},
+            {"type": "loop.pin.added", "text": "Keep the regression checks"},
+            {
+                "type": "session.end",
+                "all_passed": True,
+                "reason": "finish_session",
+                "verified": "passed",
+            },
+        ],
+    )
+    assert main(["sessions", "show", "fan-l1"]) == 0
+    out = capsys.readouterr().out
+    assert (
+        "verify:     green on the final tree\n"
+        "            verify: ✗ exit 1 · 2.5s\n"
+        "            verify: ✓ pass · 1.2s\n"
+    ) in out
+    assert out.count("verify:") == 3
+    assert out.index("verify: ✓ pass") < out.index("pins:       Keep the regression checks")
+
+
 def test_show_names_the_start_gates_verdict_beside_the_final_one(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
