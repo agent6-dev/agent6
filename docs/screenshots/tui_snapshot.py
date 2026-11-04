@@ -54,9 +54,8 @@ def _find_chromium() -> str | None:
 
 
 def _svg_to_png(svg: Path, png: Path) -> bool:
-    if rsvg := shutil.which("rsvg-convert"):
-        subprocess.run([rsvg, "-o", str(png), str(svg)], check=False)
-        return png.exists()
+    # Chromium first: rsvg-convert drops a text run's leading spaces, so a header's segments
+    # and a tool line's name and argument run together in its PNG.
     if chrome := _find_chromium():
         subprocess.run(
             [
@@ -72,6 +71,9 @@ def _svg_to_png(svg: Path, png: Path) -> bool:
             check=False,
             capture_output=True,
         )
+        return png.exists()
+    if rsvg := shutil.which("rsvg-convert"):
+        subprocess.run([rsvg, "-o", str(png), str(svg)], check=False)
         return png.exists()
     return False
 
