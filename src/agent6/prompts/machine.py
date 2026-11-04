@@ -88,7 +88,7 @@ grammar. Terminal states end the machine.
     kind = "agent"
     # The state runs the operator's effective worker model; `model` is not a
     # field. Pin a specific one only when you must, in a
-    # `[states.review.config.models.worker]` table (`provider`, `model`): a model
+    # `[states.review.config.models.worker]` table (`model = "provider/model"`): a model
     # the operator hasn't configured passes `machine check` but dies at run time.
     prompt = "Review the change and return a verdict."
     output_schema = "verdict"                # finish_session payload validated against this

@@ -159,13 +159,13 @@ def test_a_plaintext_nonloopback_credential_warns_instead_of_refusing() -> None:
         {
             "providers": {
                 "corp": {
-                    "api_format": "openai",
+                    "backend": "openai",
                     "base_url": "http://llm.corp.internal/v1",
                     "api_key_env": "CORP_KEY",
                 },
-                "tls": {"api_format": "openai", "base_url": "https://llm.corp.internal/v1"},
+                "tls": {"backend": "openai", "base_url": "https://llm.corp.internal/v1"},
                 "open": {
-                    "api_format": "openai",
+                    "backend": "openai",
                     "base_url": "http://llm.corp.internal/v1",
                     "auth_style": "none",
                 },
@@ -234,7 +234,7 @@ def test_a_provider_key_is_never_passed_to_an_mcp_server(
     global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True)
     global_cfg.write_text(
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\napi_key_env = "OPENROUTER_API_KEY"\n',
         encoding="utf-8",
     )

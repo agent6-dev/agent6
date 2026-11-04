@@ -132,18 +132,16 @@ cat > "$WORKDIR/agent6.toml" <<EOF
 config_version = 1
 
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 api_key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 extra_headers = { "HTTP-Referer" = "https://github.com/agent6-dev/agent6", "X-Title" = "agent6-bench" }
 
 [models.worker]
-provider = "openrouter"
-model = "$MODEL"
+model = "openrouter/$MODEL"
 
 [models.reviewer]
-provider = "openrouter"
-model = "$MODEL"
+model = "openrouter/$MODEL"
 
 [sandbox]
 isolation = "auto"

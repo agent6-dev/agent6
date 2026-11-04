@@ -170,9 +170,9 @@ def test_an_unset_effort_shows_what_the_openai_wire_actually_sends(
     monkeypatch.delenv("AGENT6_REASONING_EFFORT", raising=False)
     eff = _effort_config(
         tmp_path,
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n',
+        '[models.worker]\nmodel = "openrouter/moonshotai/kimi-k2.6"\n',
     )
 
     resolved = registry.resolved_adaptive_values(eff.config)
@@ -185,9 +185,9 @@ def test_a_model_that_takes_no_reasoning_knob_keeps_the_unset_row(tmp_path: path
     """Only a resolution the wire really applies replaces `(unset)`."""
     eff = _effort_config(
         tmp_path,
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "qwen/qwen3-coder"\n',
+        '[models.worker]\nmodel = "openrouter/qwen/qwen3-coder"\n',
     )
 
     assert "models.worker.effort" not in registry.resolved_adaptive_values(eff.config)
@@ -197,8 +197,8 @@ def test_an_unset_anthropic_effort_resolves_to_off(tmp_path: pathlib.Path) -> No
     """Anthropic sends no thinking at all when the role leaves effort unset."""
     eff = _effort_config(
         tmp_path,
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-opus-5"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-opus-5"\n',
     )
 
     assert registry.resolved_adaptive_values(eff.config)["models.worker.effort"] == "off"
@@ -208,9 +208,9 @@ def test_a_configured_effort_is_not_marked_resolved(tmp_path: pathlib.Path) -> N
     """The row shows the operator's own value, with its layer, not a default."""
     eff = _effort_config(
         tmp_path,
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n'
+        '[models.worker]\nmodel = "openrouter/moonshotai/kimi-k2.6"\n'
         'effort = "high"\n',
     )
 
@@ -227,9 +227,9 @@ def test_the_env_override_is_the_value_shown(
     monkeypatch.setenv("AGENT6_REASONING_EFFORT", "medium")
     eff = _effort_config(
         tmp_path,
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "moonshotai/kimi-k2.6"\n',
+        '[models.worker]\nmodel = "openrouter/moonshotai/kimi-k2.6"\n',
     )
 
     assert registry.resolved_adaptive_values(eff.config)["models.worker.effort"] == "medium"
@@ -309,7 +309,7 @@ def test_mapping_credentials_are_masked(
     """Unmarked mapping fields reveal keys but never credential values."""
     cfg = tmp_path / "credentials.toml"
     cfg.write_text(
-        f'[providers.demo]\napi_format = "openai"\n{field} = {{ token = "secret-value" }}\n',
+        f'[providers.demo]\nbackend = "openai"\n{field} = {{ token = "secret-value" }}\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)

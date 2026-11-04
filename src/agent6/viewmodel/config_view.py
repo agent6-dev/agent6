@@ -199,7 +199,7 @@ def field_schema(model_cls: type[pydantic.BaseModel], parts: list[str]) -> Field
     """
     name = parts[0]
     fi = getattr(model_cls, "model_fields", {}).get(name)
-    if fi is None:
+    if fi is None or fi.exclude:
         return None
     ann = fi.annotation
     extra = fi.json_schema_extra
@@ -240,14 +240,10 @@ def _configured_choices(eff: layer_data.EffectiveConfig, leaf: str) -> tuple[str
         leaf: The dotted leaf path.
 
     Returns:
-        The preset names for `preset`, the configured provider names for a
-        `models.<role>.provider` leaf, else None.
+        The preset names for `preset`, else None.
     """
     if leaf == "preset":
         return eff.presets or tuple(layer_presets.preset_names(eff.layers))
-    parts = io.split_key(leaf)
-    if len(parts) == 3 and parts[0] == "models" and parts[2] == "provider":
-        return tuple(sorted(eff.config.providers)) or None
     return None
 
 

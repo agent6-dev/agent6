@@ -27,11 +27,10 @@ from agent6.viewmodel import config_view
 
 _GLOBAL = """\
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 
 [models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "anthropic/claude-sonnet-4-5"
 
 [sandbox]
 run_commands = "ask"
@@ -286,15 +285,14 @@ def test_a_dynamic_leaf_in_an_unselected_preset_is_readable(repo: pathlib.Path) 
     global_path.write_text(
         global_path.read_text(encoding="utf-8")
         + "\n[presets.demo.models.reviewer]\n"
-        + 'provider = "anthropic"\n'
-        + 'model = "claude-haiku"\n',
+        + 'model = "anthropic/claude-haiku"\n',
         encoding="utf-8",
     )
 
     assert layer.effective_leaf(
         layer.load_effective(repo), "presets.demo.models.reviewer.model"
     ) == (
-        "claude-haiku",
+        "anthropic/claude-haiku",
         "preset demo (global)",
     )
 
@@ -360,7 +358,7 @@ def test_set_config_value_rejects_a_masked_invalid_provider_base_url(repo: pathl
     drops the validator.
     """
     paths_mod.repo_config_path(repo).write_text(
-        '[providers.x]\napi_format = "openai"\nbase_url = "https://good.example/v1"\n',
+        '[providers.x]\nbackend = "openai"\nbase_url = "https://good.example/v1"\n',
         encoding="utf-8",
     )
     gpath = repo.parent / "g" / "agent6" / "config.toml"
@@ -440,7 +438,7 @@ def test_a_dict_typed_leaf_is_replaced_whole(
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
         "[providers.openrouter]\n"
-        'api_format = "openai"\n'
+        'backend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
         'extra_body = { provider = { sort = "throughput" } }  # prefer fast backends\n',
         encoding="utf-8",
@@ -500,7 +498,7 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: pathlib.Path) -> N
     """set_config_table validates each leaf, not the table dict as one."""
     # The repo layer masks models.worker.effort, so only the per-leaf check catches the bad value.
     paths_mod.repo_config_path(repo).write_text(
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude"\nthinking = "off"\n',
+        '[models.worker]\nmodel = "anthropic/claude"\nthinking = "off"\n',
         encoding="utf-8",
     )
     gpath = repo.parent / "g" / "agent6" / "config.toml"
@@ -509,7 +507,7 @@ def test_set_config_table_rejects_a_masked_invalid_leaf(repo: pathlib.Path) -> N
     err = write.set_config_table(
         repo,
         "models.worker",
-        {"provider": "anthropic", "model": "claude", "effort": "garbage_level"},
+        {"model": "anthropic/claude", "effort": "garbage_level"},
         to_repo=False,
     )
 
@@ -572,17 +570,17 @@ def test_a_bad_leaf_from_a_machine_overlay_names_its_layer(repo: pathlib.Path) -
 def test_deep_merge_replaces_provider_when_kind_changes() -> None:
     # A lower layer's kind-specific keys do not survive a kind change.
 
-    base = {"providers": {"p": {"api_format": "anthropic", "api_key_env": "X"}}}
-    override = {"providers": {"p": {"api_format": "openai", "base_url": "Y"}}}
+    base = {"providers": {"p": {"backend": "anthropic", "api_key_env": "X"}}}
+    override = {"providers": {"p": {"backend": "openai", "base_url": "Y"}}}
     merged = layer_data.deep_merge(base, override)
-    assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Y"}
+    assert merged["providers"]["p"] == {"backend": "openai", "base_url": "Y"}
 
 
 def test_deep_merge_still_merges_when_kind_unchanged() -> None:
-    base = {"providers": {"p": {"api_format": "openai", "base_url": "Y", "api_key_env": "X"}}}
+    base = {"providers": {"p": {"backend": "openai", "base_url": "Y", "api_key_env": "X"}}}
     override = {"providers": {"p": {"base_url": "Z"}}}
     merged = layer_data.deep_merge(base, override)
-    assert merged["providers"]["p"] == {"api_format": "openai", "base_url": "Z", "api_key_env": "X"}
+    assert merged["providers"]["p"] == {"backend": "openai", "base_url": "Z", "api_key_env": "X"}
 
 
 def test_fix_finds_a_preset_definition_that_is_not_a_table(repo: pathlib.Path) -> None:
@@ -631,7 +629,7 @@ def test_materialize_roundtrips(repo: pathlib.Path, tmp_path: pathlib.Path) -> N
     reloaded = load_config(out)
     assert reloaded.harness.verify_command == ("pytest", "-q")
     assert reloaded.sandbox.run_commands == "allow"
-    assert reloaded.providers["anthropic"].api_format == "anthropic"
+    assert reloaded.providers["anthropic"].backend == "anthropic"
 
 
 @pytest.mark.parametrize(
@@ -663,12 +661,12 @@ def test_materialize_selective_keeps_named_models_and_dict_values() -> None:
         {
             "providers": {
                 "team-provider": {
-                    "api_format": "openai",
+                    "backend": "openai",
                     "base_url": "https://p.example/v1",
                     "extra_body": {"nested": {"enabled": True}, "steps": [{"count": 2}]},
                 }
             },
-            "models": {"worker": {"provider": "team-provider", "model": "lane-model"}},
+            "models": {"worker": {"model": "team-provider/lane-model"}},
         }
     )
 
@@ -693,7 +691,7 @@ def test_materialize_roundtrips_nested_objects_in_arrays(
     gpath.write_text(
         gpath.read_text(encoding="utf-8")
         + "\n[providers.gw]\n"
-        + 'api_format = "openai"\n'
+        + 'backend = "openai"\n'
         + 'base_url = "https://gw.example.com/v1"\n'
         + "[providers.gw.extra_body]\n"
         + 'models = [{name = "a", options = {weight = 2, tags = ["x"]}}, {name = "b"}]\n'
@@ -722,28 +720,28 @@ def test_missing_flag_file_errors(repo: pathlib.Path, tmp_path: pathlib.Path) ->
 def test_provenance_survives_a_format_changing_provider_replace(repo: pathlib.Path) -> None:
     """Provenance is stamped in the same walk as the merge.
 
-    _deep_merge replaces a provider entry whole when api_format flips between layers, so a separate
+    _deep_merge replaces a provider entry whole when backend flips between layers, so a separate
     pass would keep the discarded layer's stale source entries.
     """
     gpath = repo.parent / "g" / "agent6" / "config.toml"
     gpath.write_text(
         gpath.read_text(encoding="utf-8")
         + "\n[providers.foo]\n"
-        + 'api_format = "openai"\n'
+        + 'backend = "openai"\n'
         + 'base_url = "https://x.example/v1"\n'
         + "http_timeout_s = 30.0\n",
         encoding="utf-8",
     )
     rpath = paths_mod.repo_config_path(repo)
     rpath.write_text(
-        rpath.read_text(encoding="utf-8") + '\n[providers.foo]\napi_format = "anthropic"\n',
+        rpath.read_text(encoding="utf-8") + '\n[providers.foo]\nbackend = "anthropic"\n',
         encoding="utf-8",
     )
     eff = layer.load_effective(repo)
     foo = eff.config.providers["foo"]
-    assert foo.api_format == "anthropic"
+    assert foo.backend == "anthropic"
     assert foo.base_url == "https://api.anthropic.com/v1"  # refilled default
-    assert eff.sources["providers.foo.api_format"] == "repo"
+    assert eff.sources["providers.foo.backend"] == "repo"
     # The refilled defaults are DEFAULTS, not phantom global values.
     assert eff.sources["providers.foo.base_url"] == "default"
     assert eff.sources["providers.foo.http_timeout_s"] == "default"
@@ -772,7 +770,7 @@ def test_materialize_quotes_non_bare_keys(repo: pathlib.Path, tmp_path: pathlib.
         {
             "providers": {
                 "local": {
-                    "api_format": "openai",
+                    "backend": "openai",
                     "extra_body": {"some.options": {"my key": "value"}},
                 },
             },
@@ -969,30 +967,32 @@ def test_an_optional_section_is_written_leaf_by_leaf(repo: pathlib.Path) -> None
     """An optional `[table]` section (`models.worker`, `harness.metric`) is written leaf by leaf."""
     rcfg = paths_mod.repo_config_path(repo)
     rcfg.write_text(
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-sonnet-4-5"\n', encoding="utf-8"
+        '[models.worker]\nmodel = "anthropic/claude-sonnet-4-5"\neffort = "high"\n',
+        encoding="utf-8",
     )
 
     assert (
-        write.set_config_value(repo, "models.worker", '{ model = "gpt-y" }', to_repo=True) is None
+        write.set_config_value(repo, "models.worker", '{ model = "anthropic/gpt-y" }', to_repo=True)
+        is None
     )
 
     text = rcfg.read_text(encoding="utf-8")
     assert "[models.worker]" in text
-    assert 'model = "gpt-y"' in text
-    assert 'provider = "anthropic"' in text, "a section's other leaves survive"
+    assert 'model = "anthropic/gpt-y"' in text
+    assert 'effort = "high"' in text, "a section's other leaves survive"
 
 
 def test_a_name_keyed_table_is_written_entry_by_entry(repo: pathlib.Path) -> None:
     """`providers` and `mcp.servers` are written entry by entry, never replaced whole."""
     rcfg = paths_mod.repo_config_path(repo)
     rcfg.write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "A"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\napi_key_env = "A"\n', encoding="utf-8"
     )
 
     err = write.set_config_value(
         repo,
         "providers",
-        '{ ollama = { api_format = "openai", base_url = "http://localhost:11434/v1" } }',
+        '{ ollama = { backend = "openai", base_url = "http://localhost:11434/v1" } }',
         to_repo=True,
     )
 
@@ -1038,7 +1038,7 @@ def test_set_config_leaves_refuses_a_headerless_ancestor(
     The file is untouched.
     """
     rcfg = paths_mod.repo_config_path(repo)
-    before = '[providers]\nanthropic = { api_format = "anthropic" }\n'
+    before = '[providers]\nanthropic = { backend = "anthropic" }\n'
     rcfg.write_text(before, encoding="utf-8")
 
     with pytest.raises(errors.OperatorError, match="not a plain"):
@@ -1057,7 +1057,7 @@ def test_set_config_leaves_rolls_back_a_partial_multi_leaf_write(
     A later leaf's error rolls back the earlier ones.
     """
     rcfg = paths_mod.repo_config_path(repo)
-    before = '[providers.anthropic]\napi_format = "anthropic"\n'
+    before = '[providers.anthropic]\nbackend = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
 
     real = io.upsert_toml_leaf
@@ -1093,7 +1093,7 @@ def test_leaves_partial_write_without_the_lock_is_kept_and_says_so(
 
     monkeypatch.setattr(portable, "_acquire_lock", _no_lock)
     rcfg = paths_mod.repo_config_path(repo)
-    before = '[providers.anthropic]\napi_format = "anthropic"\n'
+    before = '[providers.anthropic]\nbackend = "anthropic"\n'
     rcfg.write_text(before, encoding="utf-8")
     real = io.upsert_toml_leaf
     calls = {"n": 0}

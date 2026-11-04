@@ -100,7 +100,7 @@ function addEntry(table, refresh) {
   for (const spec of table.fields) {
     const field = el(spec.choices.length ? 'select' : 'input', 'field');
     if (spec.choices.length) {
-      const values = ['api_format', 'state'].includes(spec.name) ? spec.choices : ['', ...spec.choices];
+      const values = ['backend', 'state'].includes(spec.name) ? spec.choices : ['', ...spec.choices];
       for (const value of values) {
         const option = el('option', null, value || 'blank = unchanged, or default');
         option.value = value; field.appendChild(option);
@@ -112,7 +112,7 @@ function addEntry(table, refresh) {
     fields[spec.name] = labelled(spec.name, field);
   }
   if (table.path === 'providers') {
-    const format = fields.api_format, baseUrl = fields.base_url;
+    const format = fields.backend, baseUrl = fields.base_url;
     let autofilled = '';
     name.oninput = () => {
       const preset = Object.hasOwn(table.defaults, name.value.trim()) ? table.defaults[name.value.trim()] : null;
@@ -121,7 +121,7 @@ function addEntry(table, refresh) {
         autofilled = '';
         return;
       }
-      format.value = preset.api_format;
+      format.value = preset.backend;
       if (baseUrl.value === '' || baseUrl.value === autofilled) { autofilled = preset.base_url || ''; baseUrl.value = autofilled; }
     };
   }
@@ -167,9 +167,9 @@ async function addReviewer(refresh) {
   box.style.width = 'min(560px, 92vw)';
   box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'add reviewer');
   box.appendChild(el('h2', null, 'Add reviewer'));
-  box.appendChild(el('div', 'sub muted', 'Focus is required. Set provider and model together, or leave both blank. Blank optional fields inherit the route\'s settings.'));
+  box.appendChild(el('div', 'sub muted', 'Focus is required. Set model to provider/model, or leave it blank. Blank optional fields inherit the route\'s settings.'));
   const fields = {};
-  for (const name of ['focus', 'provider', 'model', 'effort', 'temperature']) {
+  for (const name of ['focus', 'model', 'effort', 'temperature']) {
     const label = el('label', 'sub muted', name); label.style.display = 'block'; label.style.marginTop = '8px';
     const field = el(choices[name] ? 'select' : 'input', 'field');
     field.id = 'reviewer-' + name; label.htmlFor = field.id;
@@ -286,7 +286,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   const box = el('div', 'card'); box.style.width = 'min(560px, 92vw)';
   box.setAttribute('role', 'dialog');
   box.setAttribute('aria-label', 'edit ' + key);
-  const role = /^models\.(planner|worker|reviewer)(?:\.(provider|model))?$/.exec(key)?.[1];
+  const role = /^models\.(planner|worker|reviewer)(?:\.model)?$/.exec(key)?.[1];
   const section = role ? 'models.' + role : null;
   const title = el('h2', null, role ? 'Model: ' + role : key);
   title.style.textTransform = 'none'; // a config key is a case-sensitive identifier
@@ -300,25 +300,14 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     desc.appendChild(descriptionNode(s.description));
     box.appendChild(desc);
   }
-  let field, provider, combo;
+  let field, combo;
   const choices = s.choices || (s.type === 'bool' ? ['true', 'false'] : null);
   if (role) {
-    provider = el('select', 'field'); provider.id = 'cfg-provider';
-    const names = Object.keys(data).map(k => /^providers\.([^.]+)\.api_format$/.exec(k)?.[1]).filter(Boolean).sort();
-    for (const name of ['', ...names]) {
-      const option = el('option', null, name || (names.length ? 'Choose a provider' : 'Add a provider first'));
-      option.value = name; provider.appendChild(option);
-    }
-    provider.value = data[section + '.provider']?.value || '';
-    const providerLabel = el('label', 'sub muted', 'Provider'); providerLabel.htmlFor = provider.id;
-    box.appendChild(providerLabel); box.appendChild(provider);
     combo = configCombobox(data[section + '.model']?.input || '');
     field = combo.field; field.id = 'cfg-model';
     const modelLabel = el('label', 'sub muted', 'Model'); modelLabel.htmlFor = field.id;
     box.appendChild(modelLabel); box.appendChild(combo.element);
-    const load = () => combo.load('/api/config/suggest/' + section + '.model?provider=' + encodeURIComponent(provider.value));
-    provider.onchange = () => { field.value = ''; load(); };
-    load();
+    combo.load('/api/config/suggest/' + section + '.model');
   } else if (choices) {
     field = el('select', 'field');
     for (const c of choices) { const o = el('option', null, c); o.value = c; field.appendChild(o); }
@@ -397,17 +386,14 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     if (!s.value || !s.value.length) roster.appendChild(el('div', 'sub muted', 'The reviewer roster is empty.'));
     box.insertBefore(roster, field);
   }
-  (provider || field).focus();
+  field.focus();
   const submit = async () => {
     save.disabled = true;
     try {
       // A string-valued leaf travels as a TOML string, as the TUI sends it, so
       // `true`, `42` or `[a]` typed into a str field stays a string.
-      if (provider && (!provider.value || !field.value.trim())) throw new Error('Provider and model are required.');
-      const value = provider
-        ? `{ provider = ${JSON.stringify(provider.value)}, model = ${JSON.stringify(field.value.trim())} }`
-        : s.type === 'str' ? JSON.stringify(field.value) : field.value;
-      const d = await postJSON('/api/config', { key: section || key, value, repo: repoCb.checked });
+      const value = role || s.type === 'str' ? JSON.stringify(field.value) : field.value;
+      const d = await postJSON('/api/config', { key: role ? section + '.model' : key, value, repo: repoCb.checked });
       toast(d.message || 'set ' + key); close(); await refresh();
     } catch (e) { toast(e.message, true); save.disabled = false; }
   };

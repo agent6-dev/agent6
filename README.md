@@ -41,7 +41,7 @@ agent6 model worker         # choose a model
 ```
 
 Use Anthropic or any OpenAI-compatible endpoint, including OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, and LM Studio.
-A provider entry can also use the Responses API (`providers.<name>.api_format = "responses"`) or sign in at a [configured OAuth issuer][oauth].
+A provider entry can also use the Responses API (`providers.<name>.backend = "responses"`) or sign in at a [configured OAuth issuer][oauth].
 For subscriptions, replace `agent6 connect` with `agent6 connect chatgpt` or `agent6 connect claude`; the latter uses your installed, signed-in Claude Code binary.
 `agent6 completions` installs tab completion for your shell.
 

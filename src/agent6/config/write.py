@@ -195,7 +195,7 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
     """Validate a `providers.<name>.<leaf>` write against the union members directly.
 
     A minimal standalone dict lacks the entry's discriminator, so each member is tried with
-    its own `api_format` seeded; a partial entry stays writable.
+    its own `backend` seeded; a partial entry stays writable.
 
     Args:
         key: The dotted key, for the message.
@@ -215,9 +215,9 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
     for member in PROVIDER_MEMBERS:
         if leaf not in member.model_fields:
             continue
-        fmt = get_args(member.model_fields["api_format"].annotation)[0]
+        fmt = get_args(member.model_fields["backend"].annotation)[0]
         try:
-            member.model_validate({"api_format": fmt, leaf: value})
+            member.model_validate({"backend": fmt, leaf: value})
             return None
         except pydantic.ValidationError as exc:
             issues = exc.errors()
@@ -701,7 +701,7 @@ class EntryTable:
 
 
 ENTRY_TABLES: tuple[EntryTable, ...] = (
-    EntryTable("providers", "provider", ("api_format", "deployment", "base_url", "api_key_env")),
+    EntryTable("providers", "provider", ("backend", "deployment", "base_url", "api_key_env")),
     EntryTable("mcp.servers", "MCP server", ("command", "url", "token_env", "enabled", "approve")),
     EntryTable("skills.state", "skill", ("state",), leaf=True),
 )
@@ -772,7 +772,7 @@ def entry_field_description(table: EntryTable, field: str) -> str:
     return next((info.description or "" for info in _entry_fields(table, field)), "")
 
 
-REVIEWER_FIELDS = ("focus", "provider", "model", "effort", "temperature")
+REVIEWER_FIELDS = ("focus", "model", "effort", "temperature")
 
 
 def reviewer_choices() -> dict[str, list[str]]:
@@ -941,12 +941,12 @@ def entry_of(key: str) -> tuple[EntryTable, str] | None:
 # The well-known names `agent6 connect` and the add-provider form land on the right host;
 # `_default_base_url` knows only api.openai.com for the `openai` format.
 PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
-    "anthropic": {"api_format": "anthropic"},
-    "chatgpt": {"api_format": "chatgpt"},
-    "claude": {"api_format": "claude_code"},
-    "openai": {"api_format": "openai", "base_url": "https://api.openai.com/v1"},
-    "openrouter": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
-    "ollama": {"api_format": "openai", "base_url": "http://localhost:11434/v1"},
+    "anthropic": {"backend": "anthropic"},
+    "chatgpt": {"backend": "chatgpt"},
+    "claude": {"backend": "claude_code"},
+    "openai": {"backend": "openai", "base_url": "https://api.openai.com/v1"},
+    "openrouter": {"backend": "openai", "base_url": "https://openrouter.ai/api/v1"},
+    "ollama": {"backend": "openai", "base_url": "http://localhost:11434/v1"},
 }
 
 

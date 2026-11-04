@@ -86,9 +86,11 @@ def test_configured_repo_call_budget_reaches_the_seat(
 
 
 @pytest.mark.parametrize("route", [{"provider": "o"}, {"model": "m"}])
-def test_reviewer_requires_provider_and_model_together(route: dict[str, str]) -> None:
+def test_reviewer_refuses_split_or_unqualified_routes(route: dict[str, str]) -> None:
     """A partial route is refused with both field names, not silently inherited."""
-    with pytest.raises(pydantic.ValidationError, match=r"provider.*model.*together"):
+    with pytest.raises(
+        pydantic.ValidationError, match=r"model.*provider/model|provider and model are one setting"
+    ):
         ReviewConfig.model_validate({"reviewers": [{"focus": "security", **route}]})
 
 
@@ -118,13 +120,13 @@ def test_model_quorum_checks_resolved_routes(role: str) -> None:
     with pytest.raises(pydantic.ValidationError, match=r"min_blocking_models=2.*distinct"):
         Config.model_validate(
             {
-                "models": {role: {"provider": "o", "model": "m"}},
+                "models": {role: {"model": "o/m"}},
                 "review": {
                     "block_on": "model_quorum",
                     "min_blocking_models": 2,
                     "reviewers": [
                         {"focus": "security"},
-                        {"focus": "tests", "provider": "o", "model": "m", "effort": "high"},
+                        {"focus": "tests", "model": "o/m", "effort": "high"},
                     ],
                 },
             }
@@ -134,12 +136,12 @@ def test_model_quorum_checks_resolved_routes(role: str) -> None:
 def test_model_quorum_accepts_distinct_resolved_routes() -> None:
     cfg = Config.model_validate(
         {
-            "models": {"reviewer": {"provider": "o", "model": "m"}},
+            "models": {"reviewer": {"model": "o/m"}},
             "review": {
                 "block_on": "model_quorum",
                 "reviewers": [
                     {"focus": "security"},
-                    {"focus": "tests", "provider": "other", "model": "m"},
+                    {"focus": "tests", "model": "other/m"},
                 ],
             },
         }
@@ -172,10 +174,10 @@ def test_reviewer_sampling_reaches_provider_call(
     scope: str, pinned: bool, overrides: dict[str, object], effort: str, temperature: float
 ) -> None:
     """Both review scopes send per-entry settings, including off and zero, to the provider."""
-    route = {"provider": "o", "model": "moonshotai/kimi-k2"}
+    route = {"model": "o/moonshotai/kimi-k2"}
     cfg = Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {"reviewer": {**route, "effort": "medium", "temperature": 0.7}},
             "review": {
                 "scope": scope,
@@ -242,10 +244,10 @@ def test_reviewers_are_one_serializable_config_leaf() -> None:
 def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
     cfg = Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {
-                "worker": {"provider": "o", "model": "m"},
-                "reviewer": {"provider": "o", "model": "rm"},
+                "worker": {"model": "o/m"},
+                "reviewer": {"model": "o/rm"},
             },
             "review": {"trigger": "before_finish"},
         }

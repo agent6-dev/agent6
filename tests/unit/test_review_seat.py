@@ -306,8 +306,8 @@ def _cfg_with_reviewers(reviewers: tuple[dict[str, str], ...]) -> Any:
 
     return Config.model_validate(
         {
-            "providers": {"anthropic": {"api_format": "anthropic", "api_key_env": "FAKE_KEY"}},
-            "models": {"reviewer": {"provider": "anthropic", "model": "reviewer-default"}},
+            "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "FAKE_KEY"}},
+            "models": {"reviewer": {"model": "anthropic/reviewer-default"}},
             "review": {"trigger": "before_finish", "reviewers": list(reviewers)},
         }
     )
@@ -331,8 +331,8 @@ def test_a_routed_reviewer_leaves_pinned_seats_alone(monkeypatch: Any) -> None:
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
     cfg = _cfg_with_reviewers(
         (
-            {"focus": "security", "provider": "anthropic", "model": "claude-opus-4-8"},
-            {"focus": "correctness", "provider": "anthropic", "model": "some-model"},
+            {"focus": "security", "model": "anthropic/claude-opus-4-8"},
+            {"focus": "correctness", "model": "anthropic/some-model"},
         )
     )
     cfg = cfg.with_model_route("reviewer", cfg.model_route("reviewer", "claude-haiku-override"))
@@ -351,9 +351,7 @@ def test_build_review_seats_no_override_keeps_pinned_models(monkeypatch: Any) ->
     from agent6.app import role_providers
 
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
-    cfg = _cfg_with_reviewers(
-        ({"focus": "security", "provider": "anthropic", "model": "claude-opus-4-8"},)
-    )
+    cfg = _cfg_with_reviewers(({"focus": "security", "model": "anthropic/claude-opus-4-8"},))
 
     seats = role_providers.build_review_seats(
         cfg, transcript_sink=cast(Any, mock.MagicMock()), budget=cast(Any, None)
@@ -385,7 +383,7 @@ def test_bare_and_pinned_routes_to_the_same_model_count_once(monkeypatch: Any) -
     cfg = _cfg_with_reviewers(
         (
             {"focus": "correctness"},
-            {"focus": "security", "provider": "anthropic", "model": "reviewer-default"},
+            {"focus": "security", "model": "anthropic/reviewer-default"},
         )
     )
     seats = role_providers.build_review_seats(
@@ -706,7 +704,7 @@ def test_seats_are_instrumented_when_the_run_passes_its_event_sink(monkeypatch: 
     monkeypatch.setattr(role_providers, "_provider_from_entry", _stub_seat_provider)
     cfg = _cfg_with_reviewers(
         (
-            {"focus": "security", "provider": "anthropic", "model": "claude-opus-4-8"},
+            {"focus": "security", "model": "anthropic/claude-opus-4-8"},
             {"focus": "correctness"},
         )
     )

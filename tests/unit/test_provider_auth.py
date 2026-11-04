@@ -43,7 +43,7 @@ def _route(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
-    api_format: str = "openai",
+    backend: str = "openai",
     exchange: bool = False,
     expired: bool = False,
     observed: bool = True,
@@ -57,8 +57,8 @@ def _route(
     event_log.EventSink,
 ]:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
-    entry: dict[str, Any] = {"api_format": api_format, "base_url": "https://models.example/v1"}
-    if api_format != "chatgpt":
+    entry: dict[str, Any] = {"backend": backend, "base_url": "https://models.example/v1"}
+    if backend != "chatgpt":
         entry["auth_style"] = "bearer"
         oauth_settings: dict[str, Any] = {
             "issuer": "https://login.example",
@@ -70,7 +70,7 @@ def _route(
             oauth_settings["exchange"] = {"endpoint": "https://exchange.example/token"}
         entry["oauth"] = oauth_settings
     cfg = config.Config.model_validate(
-        {"providers": {"work": entry}, "models": {"worker": {"provider": "work", "model": "m"}}}
+        {"providers": {"work": entry}, "models": {"worker": {"model": "work/m"}}}
     )
     bound_entry = cfg.providers["work"]
     assert not isinstance(bound_entry, config.ClaudeCodeProviderEntry)
@@ -143,19 +143,19 @@ def _serve(
     monkeypatch.setattr(transport, method, request)
 
 
-@pytest.mark.parametrize("api_format", ["openai", "anthropic", "responses", "chatgpt"])
+@pytest.mark.parametrize("backend", ["openai", "anthropic", "responses", "chatgpt"])
 @pytest.mark.parametrize("status", [200, 400])
 @pytest.mark.parametrize("builder", ["seat", "panel"])
 def test_refresh_journals_only_the_persisted_or_refused_outcome(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    api_format: str,
+    backend: str,
     status: int,
     builder: str,
 ) -> None:
     """Both OAuth profiles and side-call builders emit exactly three safe payload fields."""
     _, holder, events = _route(
-        tmp_path, monkeypatch, api_format=api_format, expired=True, builder=builder
+        tmp_path, monkeypatch, backend=backend, expired=True, builder=builder
     )
     persisted: list[str] = []
 

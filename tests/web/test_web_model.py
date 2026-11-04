@@ -449,8 +449,8 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: path
     """
     cfg = tmp_path / "c.toml"
     cfg.write_text(
-        '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
-        '[models.worker]\nprovider = "o"\nmodel = "claude-haiku-4-5"\n',
+        '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "o/claude-haiku-4-5"\n',
         encoding="utf-8",
     )
     payload = model.config_payload(tmp_path, (cfg,))
@@ -486,7 +486,7 @@ def test_config_payload_masks_provider_mapping_entries(tmp_path: pathlib.Path) -
     """Provider entries keep their provenance without exposing values in any wire field."""
     cfg = tmp_path / "c.toml"
     cfg.write_text(
-        '[providers.demo]\napi_format = "openai"\n'
+        '[providers.demo]\nbackend = "openai"\n'
         'extra_headers = { token = "header-s3kr1t" }\n'
         'extra_query = { token = "query-s3kr1t" }\n'
         'extra_body = { token = "body-s3kr1t", nested = { token = "nested-s3kr1t" } }\n',
@@ -514,8 +514,7 @@ def test_config_entry_rows_name_the_whole_entrys_highest_layer(tmp_path: pathlib
     global_config = paths.global_config_path()
     global_config.parent.mkdir(parents=True, exist_ok=True)
     global_config.write_text(
-        '[providers.o]\napi_format = "openai"\n'
-        '[skills.state]\nalpha = "always"\nbeta = "enabled"\n',
+        '[providers.o]\nbackend = "openai"\n[skills.state]\nalpha = "always"\nbeta = "enabled"\n',
         encoding="utf-8",
     )
     repo_config = paths.repo_config_path(tmp_path)
@@ -557,14 +556,13 @@ def test_config_entry_rows_name_the_whole_entrys_highest_layer(tmp_path: pathlib
 def test_config_suggestions_providers_and_models(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # `provider` offers the configured names as choices; `model` suggests the provider's cached ids.
-
+    """Model suggestions are qualified routes; the payload has no provider leaf."""
     cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "kimi"\n',
+        '[models.worker]\nmodel = "openrouter/kimi"\n',
         encoding="utf-8",
     )
     seen: dict[str, object] = {}
@@ -575,10 +573,13 @@ def test_config_suggestions_providers_and_models(
 
     monkeypatch.setattr(models_cache, "list_models", _fake_list)
     payload = model.config_payload(tmp_path)
-    assert payload["models.worker.provider"]["choices"] == ["openrouter"]
+    assert "models.worker.provider" not in payload
     assert payload["preset"]["choices"] == ["deep_review", "no_review", "none", "review"]
     assert model.config_suggestions(tmp_path, "models.worker.provider") == []
-    assert model.config_suggestions(tmp_path, "models.worker.model") == ["kimi", "qwen3"]
+    assert model.config_suggestions(tmp_path, "models.worker.model") == [
+        "openrouter/kimi",
+        "openrouter/qwen3",
+    ]
     assert seen["provider"] == "openrouter"
     assert model.config_suggestions(tmp_path, "preset") == [
         "deep_review",
@@ -598,9 +599,9 @@ def test_model_suggestions_use_the_unsaved_provider(
     cfg = paths.global_config_path()
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text(
-        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
-        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
-        '[models.worker]\nprovider = "a"\nmodel = "old"\n'
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nmodel = "a/old"\n'
     )
     before = cfg.read_text()
 
@@ -608,8 +609,8 @@ def test_model_suggestions_use_the_unsaved_provider(
         return [provider + "-live"]
 
     monkeypatch.setattr(models_cache, "list_models", listing)
-    assert model.config_suggestions(tmp_path, "models.worker.model", provider="b") == ["b-live"]
-    assert model.config_suggestions(tmp_path, "models.planner.model", provider="b") == ["b-live"]
+    assert model.config_suggestions(tmp_path, "models.worker.model", provider="b") == ["b/b-live"]
+    assert model.config_suggestions(tmp_path, "models.planner.model", provider="b") == ["b/b-live"]
     assert model.config_suggestions(tmp_path, "models.worker.model", provider="unknown") == []
     assert cfg.read_text() == before
 
@@ -621,9 +622,9 @@ def test_config_suggestions_parallel_models_pseudo_key(
     cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "role-only-model"\n',
+        '[models.worker]\nmodel = "openrouter/role-only-model"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
@@ -647,9 +648,9 @@ def test_parallel_models_suggestions_span_every_provider(
     cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
-        '[providers.w]\napi_format = "openai"\nbase_url = "https://w.example/v1"\n'
-        '[providers.s]\napi_format = "openai"\nbase_url = "https://s.example/v1"\n'
-        '[models.worker]\nprovider = "w"\nmodel = "base-model"\n',
+        '[providers.w]\nbackend = "openai"\nbase_url = "https://w.example/v1"\n'
+        '[providers.s]\nbackend = "openai"\nbase_url = "https://s.example/v1"\n'
+        '[models.worker]\nmodel = "w/base-model"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))

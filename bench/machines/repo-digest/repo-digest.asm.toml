@@ -70,8 +70,7 @@ timeout_s = 180
 on = { ok = "write", failed = "empty", budget_exhausted = "empty", timeout = "empty" }
 
 [states.summarize.config.models.worker]
-provider = "anthropic"
-model = "claude-haiku-4-5"
+model = "anthropic/claude-haiku-4-5"
 
 [states.write]
 kind = "tool"

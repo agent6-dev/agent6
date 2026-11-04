@@ -38,8 +38,8 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
     gdir = tmp_path / "cfg"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))

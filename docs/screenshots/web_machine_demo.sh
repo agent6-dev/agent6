@@ -56,17 +56,14 @@ branch_per_run = true
 name = "agent6 demo"
 email = "demo@agent6.dev"
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:${PROXY_PORT}/api/v1"
 [models.worker]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 [models.planner]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 [models.reviewer]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 EOF
 printf '[providers.openrouter]\napi_key = "unused-in-replay"\n' > "$XDG_CONFIG_HOME/agent6/secrets.toml"
 chmod 600 "$XDG_CONFIG_HOME/agent6/secrets.toml"

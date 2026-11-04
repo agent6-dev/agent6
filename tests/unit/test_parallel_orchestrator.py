@@ -320,8 +320,8 @@ def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "allo
     # dispatch itself. The refusal has its own test.
     return Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"provider": "o", "model": model}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"worker": {"model": "o/" + model}},
             "sandbox": {"run_commands": run_commands},
         }
     )
@@ -1054,8 +1054,8 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
     command = f"echo ran >> .setup-count; echo setup-out; echo setup-err >&2; exit {exit_code}"
     cfg = Config.model_validate(
         {
-            "providers": {"p": {"api_format": "openai", "base_url": "http://127.0.0.1:1"}},
-            "models": {"worker": {"provider": "p", "model": "m"}},
+            "providers": {"p": {"backend": "openai", "base_url": "http://127.0.0.1:1"}},
+            "models": {"worker": {"model": "p/m"}},
             "sandbox": {
                 "isolation": "none",
                 "home": "cache",
@@ -2712,10 +2712,10 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
     cfg = Config.model_validate(
         {
             "providers": {
-                "o": {"api_format": "openai", "base_url": "https://x/v1"},
-                "p": {"api_format": "openai", "base_url": "https://p/v1"},
+                "o": {"backend": "openai", "base_url": "https://x/v1"},
+                "p": {"backend": "openai", "base_url": "https://p/v1"},
             },
-            "models": {"worker": {"provider": "o", "model": "base"}},
+            "models": {"worker": {"model": "o/base"}},
         }
     )
     spec = subrun.LaneSpec(
@@ -2729,10 +2729,8 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
             encoding="utf-8"
         )
     )
-    assert (written["models"]["worker"]["provider"], written["models"]["worker"]["model"]) == (
-        "p",
-        "other",
-    )
+    assert "provider" not in written["models"]["worker"]
+    assert written["models"]["worker"]["model"] == "p/other"
 
 
 def test_a_fanout_where_every_lane_failed_crowns_nobody(
@@ -2940,10 +2938,10 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
 
     cfg = Config.model_validate(
         {
-            "providers": {"p": {"api_format": "openai", "api_key_env": "K"}},
+            "providers": {"p": {"backend": "openai", "api_key_env": "K"}},
             "models": {
-                "worker": {"provider": "p", "model": "m"},
-                "reviewer": {"provider": "p", "model": "judge"},
+                "worker": {"model": "p/m"},
+                "reviewer": {"model": "p/judge"},
             },
             "budget": {"max_usd": 10.0},
         }

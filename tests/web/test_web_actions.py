@@ -69,9 +69,9 @@ def test_model_section_write_preserves_the_target_layers_siblings(
     global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True, exist_ok=True)
     global_path.write_text(
-        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
-        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
-        '[models.worker]\nprovider = "a"\nmodel = "old"\neffort = "high"\n'
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nmodel = "a/old"\neffort = "high"\n'
         "temperature = 0.4\n"
     )
     repo_path = paths.repo_config_path(tmp_path)
@@ -79,18 +79,17 @@ def test_model_section_write_preserves_the_target_layers_siblings(
     repo_path.write_text('[models.worker]\neffort = "low"\ntemperature = 0.8\n')
     target = repo_path if repo else global_path
     ok, message = actions.set_config(
-        tmp_path, "models.worker", '{provider = "b", model = "not-in-catalog"}', repo=repo
+        tmp_path, "models.worker", '{model = "b/not-in-catalog"}', repo=repo
     )
     assert ok, message
     assert io.read_toml_file(target)["models"]["worker"] == {
-        "provider": "b",
-        "model": "not-in-catalog",
+        "model": "b/not-in-catalog",
         "effort": "low" if repo else "high",
         "temperature": 0.8 if repo else 0.4,
     }
     before = target.read_text()
     ok, message = actions.set_config(
-        tmp_path, "models.worker", '{provider = "a", model = "bad", effort = "invalid"}', repo=repo
+        tmp_path, "models.worker", '{model = "a/bad", effort = "invalid"}', repo=repo
     )
     assert not ok and "effort" in message
     assert target.read_text() == before

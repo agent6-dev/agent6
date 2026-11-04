@@ -50,14 +50,13 @@ def test_cmd_init_reports_invalid_config_cleanly(
     global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True, exist_ok=True)
     global_cfg.write_text(
-        '[providers.openrouter]\napi_format = "openai"\n'
-        'base_url = "https://openrouter.ai/api/v1"\n',
+        '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://openrouter.ai/api/v1"\n',
         encoding="utf-8",
     )
     # Invalid per-repo config: worker references a provider that does not exist.
     cfgp = paths.repo_config_path(repo)
     cfgp.parent.mkdir(parents=True, exist_ok=True)
-    cfgp.write_text('[models.worker]\nprovider = "typoprovider"\nmodel = "x/y"\n', encoding="utf-8")
+    cfgp.write_text('[models.worker]\nmodel = "typoprovider/x/y"\n', encoding="utf-8")
 
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
@@ -274,9 +273,9 @@ def test_init_next_steps_name_only_what_is_still_missing(
     global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True, exist_ok=True)
     global_cfg.write_text(
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "m"\n'
+        '[models.worker]\nmodel = "openrouter/m"\n'
         "[harness]\nverify_command = ['true']\n",
         encoding="utf-8",
     )

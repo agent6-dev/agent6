@@ -41,7 +41,7 @@ class _OAuthEntry(Protocol):
     @property
     def deployment(self) -> str: ...
     @property
-    def api_format(self) -> str: ...
+    def backend(self) -> str: ...
     @property
     def auth_style(self) -> str: ...
     @property
@@ -64,7 +64,7 @@ def profile_for(entry: _OAuthEntry) -> oauth_profile.OAuthProfile:
     Raises:
         ProviderError: The entry has no OAuth sign-in.
     """
-    if entry.api_format == "chatgpt":
+    if entry.backend == "chatgpt":
         return oauth_chatgpt.PROFILE
     config = entry.oauth
     if config is None:
@@ -104,7 +104,7 @@ def binding_fingerprint(entry: _OAuthEntry) -> str:
     Returns:
         A hex digest.
     """
-    if entry.api_format == "chatgpt":
+    if entry.backend == "chatgpt":
         profile = profile_for(entry)
         settings: dict[str, Any] = {
             "issuer": profile.issuer,
@@ -127,7 +127,7 @@ def binding_fingerprint(entry: _OAuthEntry) -> str:
         assert config is not None
         settings = config.model_dump(mode="json", exclude={"refresh_skew_s"})
     facts: dict[str, Any] = {
-        "api_format": entry.api_format,
+        "backend": entry.backend,
         "deployment": entry.deployment,
         "base_url": entry.base_url,
         "extra_query": dict(sorted(entry.extra_query.items())),

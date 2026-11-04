@@ -106,8 +106,8 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
     """Lane routing and post-load budget changes survive a lane config reload."""
     _write_repo_config(
         repo,
-        '[providers.p]\napi_format = "openai"\nbase_url = "https://p.example/v1"\n'
-        '[models.worker]\nprovider = "p"\nmodel = "origin-model"\n',
+        '[providers.p]\nbackend = "openai"\nbase_url = "https://p.example/v1"\n'
+        '[models.worker]\nmodel = "p/origin-model"\n',
     )
     origin = layer.load_effective(repo)
     cfg = origin.config.with_budget_overrides(max_usd=3.5)
@@ -122,7 +122,7 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
-    assert written["models"]["worker"]["model"] == "lane-model"
+    assert written["models"]["worker"]["model"] == "p/lane-model"
     assert written["budget"]["max_usd"] == 3.5
     assert lane.config.model_route("worker", "lane-model") == kinds.ModelRoute("p", "lane-model")
     assert lane.config.budget.max_usd == 3.5

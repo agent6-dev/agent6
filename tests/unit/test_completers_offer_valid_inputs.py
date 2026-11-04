@@ -383,7 +383,7 @@ def test_model_provider_completion_reads_the_typed_config(
     monkeypatch.chdir(tmp_path)
     custom = tmp_path / "custom.toml"
     custom.write_text(
-        '[providers.myprovider]\napi_format = "openai"\nbase_url = "https://example.invalid/v1"\n',
+        '[providers.myprovider]\nbackend = "openai"\nbase_url = "https://example.invalid/v1"\n',
         encoding="utf-8",
     )
     assert "myprovider" in model._connected_providers((custom,))
@@ -414,8 +414,8 @@ def test_model_verb_completion_offers_the_typed_configs_routes(
     (cache / "anthropic.json").write_text(json.dumps({"models": ["claude-a"]}), encoding="utf-8")
     custom = tmp_path / "custom.toml"
     custom.write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     offered = completers._complete_model_verb_values(  # pyright: ignore[reportPrivateUsage]

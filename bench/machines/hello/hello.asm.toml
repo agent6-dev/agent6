@@ -25,8 +25,7 @@ timeout_s = 120
 on = { ok = "done", failed = "fail", budget_exhausted = "fail", timeout = "fail" }
 
 [states.greet.config.models.worker]
-provider = "anthropic"
-model = "claude-haiku-4-5"
+model = "anthropic/claude-haiku-4-5"
 
 [states.done]
 kind = "terminal"

@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import Literal
+from typing import Any, Literal
 
 import pydantic
 
@@ -29,11 +29,15 @@ class RoleModel(pydantic.BaseModel):
 
     provider: str = pydantic.Field(
         min_length=1,
+        exclude=True,
         description="A `[providers.<name>]` entry, by name.",
     )
     model: str = pydantic.Field(
         min_length=1,
-        description="Model id as that provider names it (`agent6 model` lists them).",
+        description=(
+            "Fully qualified provider/model route (`agent6 model` lists them); the first "
+            "segment names a `[providers.<name>]` entry, the rest is the model id verbatim."
+        ),
     )
     temperature: float | None = pydantic.Field(
         default=0.0,
@@ -54,10 +58,15 @@ class RoleModel(pydantic.BaseModel):
             "reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; "
             "top tiers where offered by the model, collapsed to Anthropic's highest; unset: "
             '`effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, '
-            'none sent with `api_format = "chatgpt"`, `"responses"` or `"claude_code"` '
+            'none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` '
             "(the model's default), as printed by `agent6 config show`"
         ),
     )
+
+    @pydantic.field_serializer("model")
+    def _serialize_route(self, model: str) -> str:
+        """Return the qualified settings leaf."""
+        return f"{self.provider}/{model}"
 
 
 class ReviewerConfig(pydantic.BaseModel):
@@ -66,11 +75,10 @@ class ReviewerConfig(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     focus: str = pydantic.Field(min_length=1, pattern=r"\S", description="A short review stance.")
-    provider: str | None = pydantic.Field(
-        default=None, min_length=1, description="A provider name; requires `model` too."
-    )
     model: str | None = pydantic.Field(
-        default=None, min_length=1, description="A model id; requires `provider` too."
+        default=None,
+        min_length=1,
+        description="A provider/model route; inherits the reviewer role when unset.",
     )
     temperature: float | None = pydantic.Field(
         default=None,
@@ -88,19 +96,24 @@ class ReviewerConfig(pydantic.BaseModel):
         ),
     )
 
-    @pydantic.model_validator(mode="after")
-    def _check_route(self) -> ReviewerConfig:
-        """Refuse a partial provider/model route.
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def _check_route(cls, data: Any) -> Any:
+        """Refuse the split route and validate a qualified model setting.
+
+        Args:
+            data: The raw reviewer entry.
 
         Returns:
-            The validated entry.
+            The entry unchanged.
 
         Raises:
-            ValueError: Only one routing field is set.
+            ValueError: A split or unqualified route.
         """
-        if (self.provider is None) != (self.model is None):
-            raise ValueError("reviewer provider and model must be set together or both omitted")
-        return self
+        validation.refuse_split_model(data, "review.reviewers")
+        if isinstance(data, dict) and isinstance(data.get("model"), str):
+            validation.model_route(data["model"])
+        return data
 
     def resolve(self, reviewer: RoleModel | None) -> RoleModel | None:
         """Resolve the route and apply explicit sampling settings.
@@ -112,11 +125,10 @@ class ReviewerConfig(pydantic.BaseModel):
             A pinned route uses RoleModel defaults; an unpinned route inherits the role.
             None when neither supplies a route.
         """
-        route = (
-            RoleModel(provider=self.provider, model=self.model)
-            if self.provider is not None and self.model is not None
-            else reviewer
-        )
+        route = reviewer
+        if self.model is not None:
+            pinned = validation.model_route(self.model)
+            route = RoleModel(provider=pinned.provider, model=pinned.model)
         if route is None:
             return None
         return RoleModel(
@@ -596,9 +608,9 @@ class ReviewConfig(pydantic.BaseModel):
         strict=False,
         json_schema_extra={"display_safe": True},
         description=(
-            "ordered panel roster of tables with `focus` and optional `provider`, `model`, "
+            "ordered panel roster of tables with `focus` and optional `model`, "
             "`temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned "
-            "route: role-model defaults, `provider` and `model` required together; empty "
+            "route: role-model defaults, `model` is a provider/model route; empty "
             "roster: one `security` seat when `review.trigger` is on"
         ),
     )
@@ -679,7 +691,7 @@ class BudgetConfig(pydantic.BaseModel):
     allow_plan_overage: bool = pydantic.Field(
         default=False,
         description=(
-            'plan overage for `api_format = "chatgpt"` or `"claude_code"`: purchased credits or '
+            'plan overage for `backend = "chatgpt"` or `"claude_code"`: purchased credits or '
             "extra usage after the included window, possible auto top-up through the saved "
             "payment method; `budget.allow_plan_overage = false`: circuit breaker, not a "
             "guarantee; account windows and credit state read at chatgpt preflight and from "

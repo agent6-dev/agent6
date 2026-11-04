@@ -100,8 +100,8 @@ def test_entry_edits_preserve_a_concurrent_sibling(
     [
         (
             "providers",
-            {"api_format": "openai", "base_url": " https://example.com/v1 "},
-            {"api_format": "openai", "base_url": "https://example.com/v1"},
+            {"backend": "openai", "base_url": " https://example.com/v1 "},
+            {"backend": "openai", "base_url": "https://example.com/v1"},
         ),
         (
             "mcp.servers",
@@ -177,7 +177,6 @@ def test_add_reviewer_uses_target_resolution(tmp_path: pathlib.Path, *, to_repo:
             tmp_path,
             {
                 "focus": " tests ",
-                "provider": " ",
                 "model": "",
                 "effort": "high",
                 "temperature": "0",
@@ -288,7 +287,7 @@ def test_bad_entry_input_leaves_config_untouched(tmp_path: pathlib.Path) -> None
         (
             "providers",
             {
-                "api_format": ["anthropic", "openai", "chatgpt", "responses", "claude_code"],
+                "backend": ["anthropic", "openai", "chatgpt", "responses", "claude_code"],
                 "deployment": ["direct", "vertex", "azure"],
             },
             "base_url",

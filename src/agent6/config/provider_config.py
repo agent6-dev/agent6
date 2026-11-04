@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `[providers.*]` model: one entry per endpoint, discriminated by wire format."""
+"""The `[providers.*]` model: one entry per backend."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import pydantic
 
 from agent6.config import header_config, oauth_config, sandbox_config, validation
 
-ApiFormat = Literal["anthropic", "openai", "chatgpt", "responses", "claude_code"]
+Backend = Literal["anthropic", "openai", "chatgpt", "responses", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
@@ -72,11 +72,11 @@ _OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1"
 _CHATGPT_DEFAULT_BASE_URL = "https://chatgpt.com/backend-api/codex"
 
 
-def _default_base_url(api_format: str, deployment: str) -> str | None:
+def _default_base_url(backend: str, deployment: str) -> str | None:
     """Return the default `base_url` for a format and deployment.
 
     Args:
-        api_format: The wire format.
+        backend: The wire format.
         deployment: The deployment profile.
 
     Returns:
@@ -85,18 +85,18 @@ def _default_base_url(api_format: str, deployment: str) -> str | None:
     """
     if deployment != "direct":
         return None
-    if api_format == "anthropic":
+    if backend == "anthropic":
         return _ANTHROPIC_DEFAULT_BASE_URL
-    if api_format == "responses":
+    if backend == "responses":
         return None  # no vendor default: the endpoint is whatever the operator stood up
-    return _CHATGPT_DEFAULT_BASE_URL if api_format == "chatgpt" else _OPENAI_DEFAULT_BASE_URL
+    return _CHATGPT_DEFAULT_BASE_URL if backend == "chatgpt" else _OPENAI_DEFAULT_BASE_URL
 
 
-def _default_auth_style(api_format: str, deployment: str) -> str:
+def _default_auth_style(backend: str, deployment: str) -> str:
     """Return the default `auth_style` for a format and deployment.
 
     Args:
-        api_format: The wire format.
+        backend: The wire format.
         deployment: The deployment profile.
 
     Returns:
@@ -106,11 +106,11 @@ def _default_auth_style(api_format: str, deployment: str) -> str:
         return "api_key_header"
     if deployment == "vertex":
         return "bearer"
-    return "x_api_key" if api_format == "anthropic" else "bearer"
+    return "x_api_key" if backend == "anthropic" else "bearer"
 
 
-_API_FORMAT_DESCRIPTION = (
-    "The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, "
+_BACKEND_DESCRIPTION = (
+    "The backend: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, "
     "OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` "
     "(the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on "
     "a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in "
@@ -149,15 +149,15 @@ def _require_json_shaped(value: Any, path: str) -> None:
 class _ProviderBase(pydantic.BaseModel):
     """The transport and auth fields every HTTP provider shares.
 
-    `api_format` selects the wire dialect, `deployment` the URL profile, and the auth fields
+    `backend` selects the wire dialect, `deployment` the URL profile, and the auth fields
     the credential; the three compose freely. `base_url` and `auth_style` default from the
-    first two in `_fill_defaults`, so an entry naming only `api_format` is usable.
+    first two in `_fill_defaults`, so an entry naming only `backend` is usable.
     """
 
     model_config = validation.MODEL_CONFIG
 
-    # Declared here so api_format leads every subclass's model_fields; each subclass narrows it.
-    api_format: ApiFormat
+    # Declared here so backend leads every subclass's model_fields; each subclass narrows it.
+    backend: Backend
     deployment: Deployment = pydantic.Field(
         default="direct",
         description=(
@@ -170,7 +170,7 @@ class _ProviderBase(pydantic.BaseModel):
         default="",
         description=(
             "provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); "
-            'required for `deployment = "vertex"` or `"azure"` and for `api_format = "responses"`; '
+            'required for `deployment = "vertex"` or `"azure"` and for `backend = "responses"`; '
             "a ChatGPT sign-in also dials its fixed OAuth authority, and a configured `oauth` "
             "table its issuer and exchange endpoints"
         ),
@@ -262,16 +262,16 @@ class _ProviderBase(pydantic.BaseModel):
         """
         if not isinstance(data, dict):
             return data
-        fmt = data.get("api_format")
+        fmt = data.get("backend")
         dep = data.get("deployment", "direct")
         if fmt == "anthropic" and dep == "azure":
-            raise ValueError("deployment 'azure' requires api_format 'openai'")
+            raise ValueError("deployment 'azure' requires backend 'openai'")
         if fmt in ("chatgpt", "responses") and dep != "direct":
-            raise ValueError(f"api_format {fmt!r} supports deployment 'direct' only")
+            raise ValueError(f"backend {fmt!r} supports deployment 'direct' only")
         if not data.get("base_url"):
             default = _default_base_url(fmt, dep) if isinstance(fmt, str) else None
             if default is None:
-                what = f"api_format {fmt!r}" if fmt == "responses" else f"deployment {dep!r}"
+                what = f"backend {fmt!r}" if fmt == "responses" else f"deployment {dep!r}"
                 raise ValueError(f"base_url is required for {what}")
             data["base_url"] = default
         if not data.get("auth_style") and isinstance(fmt, str):
@@ -400,13 +400,13 @@ class AnthropicProviderEntry(_ProviderBase):
     """
 
     # The narrowing override is sound: the model is frozen, so nothing writes the wider type.
-    api_format: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
+    backend: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        pydantic.Field(description=_BACKEND_DESCRIPTION)
     )
     prompt_caching: bool = pydantic.Field(
         default=True,
         description=(
-            'prompt caching for `api_format = "anthropic"` only; system prompt, tools and '
+            'prompt caching for `backend = "anthropic"` only; system prompt, tools and '
             "growing conversation re-read at 0.1x the input price"
         ),
     )
@@ -420,8 +420,8 @@ class OpenAIProviderEntry(_ProviderBase):
     (the deployment name in the URL, the api-version query, the `api-key` header).
     """
 
-    api_format: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
+    backend: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        pydantic.Field(description=_BACKEND_DESCRIPTION)
     )
 
 
@@ -433,8 +433,8 @@ class ChatGPTProviderEntry(_ProviderBase):
     `base_url` and OpenAI's fixed OAuth authority (the issuer and client id are constants).
     """
 
-    api_format: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
+    backend: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        pydantic.Field(description=_BACKEND_DESCRIPTION)
     )
 
     @pydantic.field_validator("base_url")
@@ -492,19 +492,19 @@ class ChatGPTProviderEntry(_ProviderBase):
         """
         if self.oauth is not None:
             raise ValueError(
-                "api_format 'chatgpt' signs in at its fixed issuer; a custom oauth table"
+                "backend 'chatgpt' signs in at its fixed issuer; a custom oauth table"
                 " belongs on an openai, anthropic or responses entry"
             )
         if self.api_key_env or self.token_command:
             named = "api_key_env" if self.api_key_env else "token_command"
             raise ValueError(
-                f"api_format 'chatgpt' authenticates with the OAuth tokens"
+                f"backend 'chatgpt' authenticates with the OAuth tokens"
                 f" `agent6 connect <name>` stores, so {named} would never be used;"
                 " drop it"
             )
         if self.auth_style != "bearer":
             raise ValueError(
-                "api_format 'chatgpt' always sends its OAuth token as"
+                "backend 'chatgpt' always sends its OAuth token as"
                 f" `Authorization: Bearer`; auth_style {self.auth_style!r} is not honoured,"
                 " drop it"
             )
@@ -519,8 +519,8 @@ class ResponsesProviderEntry(_ProviderBase):
     its usage meters tokens like any keyed endpoint.
     """
 
-    api_format: Literal["responses"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_API_FORMAT_DESCRIPTION)
+    backend: Literal["responses"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        pydantic.Field(description=_BACKEND_DESCRIPTION)
     )
 
 
@@ -534,12 +534,12 @@ class ClaudeCodeProviderEntry(pydantic.BaseModel):
 
     model_config = validation.MODEL_CONFIG
 
-    api_format: Literal["claude_code"] = pydantic.Field(description=_API_FORMAT_DESCRIPTION)
+    backend: Literal["claude_code"] = pydantic.Field(description=_BACKEND_DESCRIPTION)
     binary: str = pydantic.Field(
         default="claude",
         min_length=1,
         description=(
-            'executable for `api_format = "claude_code"` only; a name on PATH or an absolute path'
+            'executable for `backend = "claude_code"` only; a name on PATH or an absolute path'
         ),
     )
 
@@ -550,7 +550,7 @@ ProviderEntry = Annotated[
     | ChatGPTProviderEntry
     | ResponsesProviderEntry
     | ClaudeCodeProviderEntry,
-    pydantic.Discriminator("api_format"),
+    pydantic.Discriminator("backend"),
 ]
 
 

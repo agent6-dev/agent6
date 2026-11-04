@@ -216,19 +216,17 @@ class EntryRemoveBody(_Body):
 
 
 class ReviewerBody(_Body):
-    """The add-reviewer form's five fields and save target.
+    """The add-reviewer form's four fields and save target.
 
     Attributes:
         focus: The reviewer's required focus text.
-        provider: The provider name, paired with model or left empty.
-        model: The model identifier, paired with provider or left empty.
+        model: A provider/model route, empty to inherit the reviewer role.
         effort: The reasoning effort override, empty for the default.
         temperature: The sampling temperature as text, empty for the default.
         repo: Whether to write repo config rather than global config.
     """
 
     focus: str
-    provider: str = ""
     model: str = ""
     effort: str = ""
     temperature: str = ""

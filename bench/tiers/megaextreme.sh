@@ -10,21 +10,19 @@ tier_toml() {
 config_version = 1
 
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
 # Thinker roles use opus: decomposition and review judgement benefit from
 # the stronger reasoning model on harder tasks.
 [models.reviewer]
-provider = "anthropic"
-model = "claude-opus-4-5"
+model = "anthropic/claude-opus-4-5"
 
 # Worker stays on sonnet — it's the better pure code generator and we
 # want fast iteration on the actual edits.
 [models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "anthropic/claude-sonnet-4-5"
 
 [sandbox]
 isolation = "auto"

@@ -46,7 +46,7 @@ def preset_name(name: str) -> str:
 
 
 class ModelsConfig(pydantic.BaseModel):
-    """The `[models]` table: the provider and model per role.
+    """The `[models]` table: a qualified model route per role.
 
     Every role is optional at load; `Config.require_runnable` requires the one a command
     uses. `planner` and `reviewer` fall back to `worker`.
@@ -75,6 +75,45 @@ class ModelsConfig(pydantic.BaseModel):
             "model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset"
         ),
     )
+
+    @pydantic.field_validator("worker", "reviewer", "planner", mode="before")
+    @classmethod
+    def _parse_route(cls, data: Any, info: pydantic.ValidationInfo) -> Any:
+        """Resolve a role's scalar route while accepting resolved objects internally.
+
+        Args:
+            data: The settings table or resolved role.
+            info: The role's field name.
+
+        Returns:
+            The resolved role fields, or the object unchanged.
+
+        Raises:
+            ValueError: A split route.
+            pydantic.ValidationError: An unqualified route.
+        """
+        validation.refuse_split_model(data, f"models.{info.field_name}")
+        if data == {}:
+            return None
+        if isinstance(data, dict) and isinstance(data.get("model"), str):
+            try:
+                route = validation.model_route(data["model"])
+            except ValueError as exc:
+                # Writers validate the leaf even when a higher layer masks it.
+                error = pydantic.ValidationError.from_exception_data(
+                    cls.__name__,
+                    [
+                        {
+                            "type": "value_error",
+                            "loc": ("model",),
+                            "input": data["model"],
+                            "ctx": {"error": exc},
+                        }
+                    ],
+                )
+                raise error from exc
+            return {**data, "provider": route.provider, "model": route.model}
+        return data
 
     def configured(self) -> dict[str, harness_config.RoleModel]:
         """Return the roles explicitly set.
@@ -204,6 +243,29 @@ class Config(pydantic.BaseModel):
         ),
     )
 
+    @pydantic.field_validator("providers", mode="before")
+    @classmethod
+    def _refuse_old_backend_key(cls, entries: Any) -> Any:
+        """Refuse the old discriminator with the replacement line.
+
+        Args:
+            entries: The raw provider table.
+
+        Returns:
+            The table unchanged.
+
+        Raises:
+            ValueError: An entry holds the old key.
+        """
+        if isinstance(entries, dict):
+            for name, entry in entries.items():
+                if isinstance(entry, dict) and "api_format" in entry:
+                    replacement = io.format_toml_value(entry["api_format"])
+                    raise ValueError(
+                        f"[providers.{name}] api_format was renamed: backend = {replacement}"
+                    )
+        return entries
+
     @pydantic.field_validator("providers")
     @classmethod
     def _valid_provider_names(
@@ -250,7 +312,7 @@ class Config(pydantic.BaseModel):
 
     @pydantic.model_validator(mode="after")
     def _cross_validate_provider_routing(self) -> Config:
-        """Refuse a configured role naming a provider absent from a non-empty `[providers]`.
+        """Refuse a route naming a provider absent from a non-empty `[providers]`.
 
         An empty or partial config is valid at load; `require_runnable` checks completeness.
 
@@ -258,13 +320,19 @@ class Config(pydantic.BaseModel):
             The model unchanged.
 
         Raises:
-            ValueError: A role names an unknown provider.
+            ValueError: A role or pinned reviewer names an unknown provider.
         """
-        for role, rm in self.models.configured().items():
+        routes = {f"models.{role}.model": rm for role, rm in self.models.configured().items()}
+        routes.update(
+            (f"review.reviewers.{index}.model", route)
+            for index, entry in enumerate(self.review.reviewers)
+            if (route := entry.resolve(None)) is not None
+        )
+        for key, rm in routes.items():
             if self.providers and rm.provider not in self.providers:
                 known = ", ".join(sorted(self.providers)) or "(none)"
                 raise ValueError(
-                    f"models.{role}.provider = {rm.provider!r} but"
+                    f"{key} = {f'{rm.provider}/{rm.model}'!r} but"
                     f" [providers.{rm.provider}] is not configured."
                     f" Known providers: {known}."
                 )
@@ -430,7 +498,7 @@ class Config(pydantic.BaseModel):
         """
         base = self.models.resolve(role)
         entry = base.model_dump(mode="python") if base is not None else {}
-        entry["provider"], entry["model"] = route.provider, route.model
+        entry["model"] = f"{route.provider}/{route.model}"
         data = self.model_dump(mode="python")
         data.setdefault("models", {})[role] = entry
         return Config.model_validate(data)
@@ -614,14 +682,15 @@ class Config(pydantic.BaseModel):
         if rm.provider not in self.providers:
             known = ", ".join(sorted(self.providers)) or "(none)"
             raise validation.ConfigError(
-                f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}]"
+                f"models.{role}.model = {f'{rm.provider}/{rm.model}'!r} but"
+                f" [providers.{rm.provider}]"
                 f" is not configured. Known providers: {known}."
             )
 
 
 # pydantic's own message for a missing discriminator names neither the key nor its values.
-_MISSING_API_FORMAT = (
-    'set api_format = "anthropic", "openai", "chatgpt", "responses" or "claude_code"'
+_MISSING_BACKEND = (
+    'set backend = "anthropic", "openai", "chatgpt", "responses" or "claude_code"'
     " (see docs/config.md)"
 )
 
@@ -646,7 +715,7 @@ def _format_validation_error(
         loc = io.render_key(str(part) for part in issue["loc"]) or "<root>"
         msg = issue["msg"]
         if issue["type"] == "union_tag_not_found" and loc.startswith("providers."):
-            msg = _MISSING_API_FORMAT
+            msg = _MISSING_BACKEND
         elif issue["type"] == "extra_forbidden" and loc == "context":
             msg = "rename the context table to [compaction]; keep its keys and values"
         lines.append(f"  - {loc}: {msg} (type={issue['type']})")

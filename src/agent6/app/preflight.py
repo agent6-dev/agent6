@@ -84,8 +84,8 @@ def budget_preflight(
     if routes is None:
         reachable = {(role, rm.provider, rm.model) for role, rm in cfg.models.configured().items()}
         for entry in cfg.review.reviewers:
-            if entry.provider is not None and entry.model is not None:
-                reachable.add((f"review seat {entry.focus}", entry.provider, entry.model))
+            if route := entry.resolve(None):
+                reachable.add((f"review seat {entry.focus}", route.provider, route.model))
     else:
         # A machine's states carry routes with no role of the run's config.
         reachable = {("", prov, m) for prov, m in routes if m}

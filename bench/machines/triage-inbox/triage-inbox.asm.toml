@@ -69,8 +69,7 @@ timeout_s = 120
 on = { ok = "route", failed = "ack", budget_exhausted = "drained", timeout = "ack" }
 
 [states.classify.config.models.worker]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 
 [states.route]
 kind = "branch"

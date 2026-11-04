@@ -91,7 +91,7 @@ The model sees the fixed tool set in `src/agent6/tools/schema.py`, plus the tool
 - no `shell`, no `write_file`, no `eval`
 - adding a tool needs a security review note ([AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md))
 
-Under `api_format = "claude_code"` the model runs inside the operator's installed Claude Code binary, unjailed, as the operator, with every built-in tool off (`--tools ""`).
+Under `backend = "claude_code"` the model runs inside the operator's installed Claude Code binary, unjailed, as the operator, with every built-in tool off (`--tools ""`).
 Its only reach into the machine is agent6's tools served over the sdk MCP tunnel, so the dispatcher, the jail, and the approval gates are unchanged.
 The binary holds the operator's Claude login exactly as an interactive `claude` does, and agent6 never reads it.
 
@@ -666,7 +666,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `sandbox/jail_jobs.py`: detached jail commands and the plain background spawn under `sandbox.isolation = "none"`.
 - `sandbox/jail_session.py`: persistent jail launcher sessions and their teardown.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
-- `providers/claude_code.py` and `providers/claude_code_session.py`: the `api_format = "claude_code"` provider and its session lifecycle helpers run the Claude Code binary the operator connected with fixed argv from operator configuration, never model output (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
+- `providers/claude_code.py` and `providers/claude_code_session.py`: the `backend = "claude_code"` provider and its session lifecycle helpers run the Claude Code binary the operator connected with fixed argv from operator configuration, never model output (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
   Prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.
   Curated environment, `--tools ""`, `--allowedTools mcp__agent6`, `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`, `--no-session-persistence`; CLAUDE.md, auto-memory, and auto-compaction off by environment; `system/init` is audited so a tool outside `mcp__agent6__*` or an API-key source refuses the run.
   Unjailed: it needs the operator's login under `$HOME` and its own egress, at the agent process's trust tier.
@@ -729,7 +729,7 @@ The structural defenses above confine a model that follows an injection.
 - agent6 installed inside the project it works on (pip into the project's own venv) puts the running agent's code in the jail's writable workspace
     - a jailed command can rewrite it; agent6 runs the rewrite as you, outside the jail
     - install agent6 outside the tree (pipx, `uv tool`); agent6 warns at run entry on this shape
-- Claude Code (`api_format = "claude_code"`) appends the account email to every system prompt it sends and has no switch for it.
+- Claude Code (`backend = "claude_code"`) appends the account email to every system prompt it sends and has no switch for it.
   The model can echo it, and agent6 scrubs it only from returned text, never from tool inputs (an edit carrying it lands as written)
     - managed settings (`/etc/claude-code/managed-settings.json`) still apply inside the child.
       The `system/init` audit refuses the run when the tool list differs from what agent6 offered or `apiKeySource` is not `none`, and checks nothing else.

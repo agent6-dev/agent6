@@ -153,8 +153,8 @@ def test_machine_agent_wires_the_summariser_seat(
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -194,7 +194,7 @@ def test_machine_agent_wires_the_summariser_seat(
     req = agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,
-        overlay={"models": {"worker": {"provider": "anthropic", "model": "claude-x"}}},
+        overlay={"models": {"worker": {"model": "anthropic/claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
         request=contracts.AgentRequest(prompt="go", timeout_s=5.0),

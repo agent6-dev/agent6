@@ -69,7 +69,7 @@ def test_a_redirect_line_shows_no_location(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(transport, "http_post", fake_post)
     call = transport.ProviderCall(
         api_label="OpenAI",
-        api_format="openai",
+        backend="openai",
         url="https://api.test/v1/chat/completions",
         body={"model": "m"},
         timeout_s=5.0,

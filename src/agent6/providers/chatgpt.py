@@ -331,7 +331,7 @@ class ChatGPTProvider:
                     self.budget.record_plan_preflight(self.model, plan)
             self.budget.check()
         url, _ = providers_wire.request_url(
-            api_format="chatgpt",
+            backend="chatgpt",
             deployment="direct",
             base_url=self.base_url,
             model=self.model,
@@ -367,7 +367,7 @@ class ChatGPTProvider:
 
         return transport.ProviderCall(
             api_label="ChatGPT",
-            api_format="chatgpt",
+            backend="chatgpt",
             url=url,
             body=body,
             timeout_s=self.timeout_s,
@@ -444,7 +444,7 @@ class ChatGPTProvider:
 
         call = stream_lifecycle.SseCall(
             api_label="ChatGPT",
-            api_format="chatgpt",
+            backend="chatgpt",
             url=url,
             headers=stream_headers,
             body=body,

@@ -174,7 +174,8 @@ def build_role_provider(
     entry = cfg.providers.get(rm.provider)
     if entry is None:  # pragma: no cover - blocked by config validation
         raise ProviderError(
-            f"models.{role}.provider = {rm.provider!r} but [providers.{rm.provider}] missing"
+            f"models.{role}.model = {f'{rm.provider}/{rm.model}'!r} but"
+            f" [providers.{rm.provider}] missing"
         )
     return _provider_from_entry(
         rm.provider,

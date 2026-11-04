@@ -236,11 +236,10 @@ def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
                 "[agent6]",
                 "config_version = 1",
                 "[providers.anthropic]",
-                'api_format = "anthropic"',
+                'backend = "anthropic"',
                 'api_key_env = "ANTHROPIC_API_KEY"',
                 "[models.worker]",
-                'provider = "anthropic"',
-                'model = "x"',
+                'model = "anthropic/x"',
             )
         ),
         encoding="utf-8",

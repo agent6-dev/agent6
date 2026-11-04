@@ -23,7 +23,7 @@ def _cfg(model: str, provider_block: dict[str, object]) -> Config:
     return Config.model_validate(
         {
             "providers": provider_block,
-            "models": {"worker": {"provider": next(iter(provider_block)), "model": model}},
+            "models": {"worker": {"model": next(iter(provider_block)) + "/" + model}},
         }
     )
 
@@ -43,7 +43,7 @@ def test_claude_only_config_refreshes_the_catalog(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(cache, "list_models", _models)
     cfg = _cfg(
         "claude-opus-5",
-        {"anthropic": {"api_format": "anthropic", "api_key_env": "X_KEY"}},
+        {"anthropic": {"backend": "anthropic", "api_key_env": "X_KEY"}},
     )
     assert session_setup.check_provider_keys(cfg) is None
     assert called, "bare claude-* with no openrouter provider must refresh the catalog"
@@ -68,7 +68,7 @@ def test_openrouter_config_does_not_double_refresh(monkeypatch: pytest.MonkeyPat
         "claude-opus-5",
         {
             "openrouter": {
-                "api_format": "openai",
+                "backend": "openai",
                 "api_key_env": "X_KEY",
                 "base_url": "https://openrouter.ai/api/v1",
             }
@@ -92,16 +92,14 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
     cfg = Config.model_validate(
         {
             "providers": {
-                "main": {"api_format": "anthropic", "auth_style": "none"},
-                "seatp": {"api_format": "anthropic", "api_key_env": "SEAT_KEY"},
+                "main": {"backend": "anthropic", "auth_style": "none"},
+                "seatp": {"backend": "anthropic", "api_key_env": "SEAT_KEY"},
             },
             "models": {
-                "worker": {"provider": "main", "model": "m"},
-                "reviewer": {"provider": "main", "model": "m"},
+                "worker": {"model": "main/m"},
+                "reviewer": {"model": "main/m"},
             },
-            "review": {
-                "reviewers": [{"focus": "security", "provider": "seatp", "model": "judge-1"}]
-            },
+            "review": {"reviewers": [{"focus": "security", "model": "seatp/judge-1"}]},
         }
     )
     err = session_setup.check_provider_keys(cfg)
@@ -112,11 +110,9 @@ def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     cfg = Config.model_validate(
         {
-            "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
-            "models": {"worker": {"provider": "main", "model": "m"}},
-            "review": {
-                "reviewers": [{"focus": "security", "provider": "ghost", "model": "judge-1"}]
-            },
+            "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
+            "models": {"worker": {"model": "main/m"}},
+            "review": {"reviewers": [{"focus": "security", "model": "ghost/judge-1"}]},
         }
     )
     err = session_setup.check_provider_keys(cfg)
@@ -132,8 +128,8 @@ def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     cfg = Config.model_validate(
         {
-            "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
-            "models": {"worker": {"provider": "main", "model": "m"}},
+            "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
+            "models": {"worker": {"model": "main/m"}},
         }
     )
     err = session_setup.check_provider_keys(cfg, extra_providers=["pinned-ghost"])
@@ -150,13 +146,9 @@ def test_budget_preflight_prices_a_seat_pinned_model() -> None:
 
     cfg = Config.model_validate(
         {
-            "providers": {"main": {"api_format": "anthropic", "auth_style": "none"}},
-            "models": {"worker": {"provider": "main", "model": "claude-opus-5"}},
-            "review": {
-                "reviewers": [
-                    {"focus": "security", "provider": "main", "model": "very-unpriced-model"}
-                ]
-            },
+            "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
+            "models": {"worker": {"model": "main/claude-opus-5"}},
+            "review": {"reviewers": [{"focus": "security", "model": "main/very-unpriced-model"}]},
             "budget": {"max_tokens_fallback": 0},
         }
     )
@@ -178,7 +170,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
     from agent6.providers import oauth, oauth_protocol
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    cfg = _cfg("gpt-5-codex", {"chatgpt": {"api_format": "chatgpt"}})
+    cfg = _cfg("gpt-5-codex", {"chatgpt": {"backend": "chatgpt"}})
     err = session_setup.check_provider_keys(cfg)
     assert err is not None and "agent6 connect chatgpt" in err
 
@@ -186,7 +178,7 @@ def test_chatgpt_provider_without_sign_in_is_refused_statically(
         "chatgpt",
         oauth.stored_grant_for(
             oauth_protocol.TokenGrant("AT", "RT", 3600),
-            ChatGPTProviderEntry(api_format="chatgpt"),
+            ChatGPTProviderEntry(backend="chatgpt"),
             now=0,
         ),
     )
@@ -207,11 +199,11 @@ def test_budget_notices_name_every_configured_role(capsys: pytest.CaptureFixture
 
     cfg = Config.model_validate(
         {
-            "providers": {"chatgpt": {"api_format": "chatgpt"}, "local": {"api_format": "openai"}},
+            "providers": {"chatgpt": {"backend": "chatgpt"}, "local": {"backend": "openai"}},
             "models": {
-                "worker": {"provider": "chatgpt", "model": "plan-model"},
-                "planner": {"provider": "chatgpt", "model": "plan-model"},
-                "reviewer": {"provider": "local", "model": "unpriced-model"},
+                "worker": {"model": "chatgpt/plan-model"},
+                "planner": {"model": "chatgpt/plan-model"},
+                "reviewer": {"model": "local/unpriced-model"},
             },
         }
     )
@@ -231,7 +223,7 @@ def test_plan_metered_routes_skip_the_fallback_note(
     """
     from agent6.app import preflight
 
-    cfg = _cfg("gpt-5.6-sol", {"chatgpt": {"api_format": "chatgpt"}})
+    cfg = _cfg("gpt-5.6-sol", {"chatgpt": {"backend": "chatgpt"}})
     assert preflight.budget_preflight(cfg) is None
     out = capsys.readouterr().err
     assert "fallback tokens" not in out
@@ -239,8 +231,8 @@ def test_plan_metered_routes_skip_the_fallback_note(
 
     refused = Config.model_validate(
         {
-            "providers": {"chatgpt": {"api_format": "chatgpt"}},
-            "models": {"worker": {"provider": "chatgpt", "model": "gpt-5.6-sol"}},
+            "providers": {"chatgpt": {"backend": "chatgpt"}},
+            "models": {"worker": {"model": "chatgpt/gpt-5.6-sol"}},
             "budget": {"max_plan_points": 0},
         }
     )
@@ -263,8 +255,8 @@ def test_a_plan_cap_under_three_points_is_flagged_at_run_start(
     def _with_cap(cap: float) -> str:
         cfg = Config.model_validate(
             {
-                "providers": {"chatgpt": {"api_format": "chatgpt"}},
-                "models": {"worker": {"provider": "chatgpt", "model": "gpt-5.6-sol"}},
+                "providers": {"chatgpt": {"backend": "chatgpt"}},
+                "models": {"worker": {"model": "chatgpt/gpt-5.6-sol"}},
                 "budget": {"max_plan_points": cap},
             }
         )
@@ -293,7 +285,7 @@ def test_claude_code_routes_are_plan_metered(
     """
     from agent6.app import preflight
 
-    cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code"}})
+    cfg = _cfg("claude-haiku-4-5", {"claude": {"backend": "claude_code"}})
     assert preflight.budget_preflight(cfg) is None
     out = capsys.readouterr().err
     assert "fallback tokens" not in out
@@ -301,8 +293,8 @@ def test_claude_code_routes_are_plan_metered(
 
     refused = Config.model_validate(
         {
-            "providers": {"claude": {"api_format": "claude_code"}},
-            "models": {"worker": {"provider": "claude", "model": "claude-haiku-4-5"}},
+            "providers": {"claude": {"backend": "claude_code"}},
+            "models": {"worker": {"model": "claude/claude-haiku-4-5"}},
             "budget": {"max_plan_points": 0},
         }
     )
@@ -333,7 +325,7 @@ def test_claude_code_route_needs_a_signed_in_binary(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(secret_store, "load_secrets", dict)
     monkeypatch.setattr(providers_claude_code, "login_status", signed_out)
-    cfg = _cfg("claude-haiku-4-5", {"claude": {"api_format": "claude_code", "binary": "/opt/cc"}})
+    cfg = _cfg("claude-haiku-4-5", {"claude": {"backend": "claude_code", "binary": "/opt/cc"}})
     err = session_setup.check_provider_keys(cfg)
     assert err is not None and "[providers.claude]" in err and "/opt/cc says" in err
     monkeypatch.setattr(providers_claude_code, "login_status", signed_in)
@@ -352,7 +344,7 @@ def test_machine_pins_carry_their_provider_into_the_notes(
 
     cfg = _cfg(
         "anthropic-model",
-        {"anthropic": {"api_format": "anthropic"}, "chatgpt": {"api_format": "chatgpt"}},
+        {"anthropic": {"backend": "anthropic"}, "chatgpt": {"backend": "chatgpt"}},
     )
     assert preflight.budget_preflight(cfg, routes=[("chatgpt", "gpt-5.6-sol")]) is None
     err = capsys.readouterr().err
@@ -385,12 +377,12 @@ def test_budget_preflight_prices_a_route_from_its_own_card(
         {
             "providers": {
                 "gateway": {
-                    "api_format": "openai",
+                    "backend": "openai",
                     "auth_style": "none",
                     "base_url": "https://gw.example/v1",
                 }
             },
-            "models": {"worker": {"provider": "gateway", "model": "x/model"}},
+            "models": {"worker": {"model": "gateway/x/model"}},
             "budget": {"max_tokens_fallback": 0},
         }
     )

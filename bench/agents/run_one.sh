@@ -67,7 +67,7 @@ dirty_tree = "include"
 CFG
     if [ -n "$A6_MODEL" ]; then
       for role in worker planner reviewer; do
-        printf '[models.%s]\nprovider = "%s"\nmodel = "%s"\n' "$role" "$A6_PROVIDER" "$A6_MODEL" >> "$A6_CFG"
+        printf '[models.%s]\nmodel = "%s/%s"\n' "$role" "$A6_PROVIDER" "$A6_MODEL" >> "$A6_CFG"
       done
     fi
     BUDGET_FLAGS="--max-usd 0.60"

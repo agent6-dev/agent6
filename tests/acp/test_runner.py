@@ -1950,8 +1950,8 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
     config_dir = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agent6"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(repo)
@@ -1997,8 +1997,8 @@ def test_a_missing_provider_key_refuses_the_prompt_before_any_state(
     config_dir = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agent6"
     config_dir.mkdir(parents=True)
     (config_dir / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

@@ -25,17 +25,15 @@ _VALID_TOML = """
 config_version = 1
 
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
 [models.worker]
-provider = "anthropic"
-model = "claude-x"
+model = "anthropic/claude-x"
 
 [models.reviewer]
-provider = "anthropic"
-model = "claude-x"
+model = "anthropic/claude-x"
 
 [sandbox]
 isolation = "auto"
@@ -64,6 +62,14 @@ def test_loads_valid_config(tmp_path: pathlib.Path) -> None:
     assert cfg.agent6.config_version == 1
     assert cfg.sandbox.isolation == "auto"
     assert cfg.harness.verify_command == ("true",)
+
+
+@pytest.mark.parametrize("extra", ["", 'backend = "anthropic"\n'])
+def test_old_provider_discriminator_names_replacement(tmp_path: pathlib.Path, extra: str) -> None:
+    """The old provider key refuses even beside its replacement."""
+    with pytest.raises(ConfigError) as exc:
+        load_config(_write(tmp_path, '[providers.p]\napi_format = "anthropic"\n' + extra))
+    assert '[providers.p] api_format was renamed: backend = "anthropic"' in str(exc.value)
 
 
 def test_missing_file_raises(tmp_path: pathlib.Path) -> None:
@@ -291,7 +297,7 @@ def test_memory_limit_rejects_negative(tmp_path: pathlib.Path) -> None:
 def test_openai_base_url_accepts_http_and_https(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",
-        '[providers.local]\napi_format = "openai"\nbase_url = "http://localhost:11434/v1"\n\n[models.worker]',
+        '[providers.local]\nbackend = "openai"\nbase_url = "http://localhost:11434/v1"\n\n[models.worker]',
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.providers["local"].base_url == "http://localhost:11434/v1"  # type: ignore[union-attr]
@@ -301,8 +307,7 @@ def test_openai_base_url_rejects_schemeless(tmp_path: pathlib.Path) -> None:
     # The classic paste error: an API key dropped into the base_url field.
     body = _VALID_TOML.replace(
         "[models.worker]",
-        '[providers.bad]\napi_format = "openai"\nbase_url = "sk-or-v1-not-a-url"\n'
-        "\n[models.worker]",
+        '[providers.bad]\nbackend = "openai"\nbase_url = "sk-or-v1-not-a-url"\n\n[models.worker]',
     )
     with pytest.raises(ConfigError, match=r"base_url"):
         load_config(_write(tmp_path, body))
@@ -311,7 +316,7 @@ def test_openai_base_url_rejects_schemeless(tmp_path: pathlib.Path) -> None:
 def test_openai_base_url_rejects_hostless(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         "[models.worker]",
-        '[providers.bad]\napi_format = "openai"\nbase_url = "https://"\n\n[models.worker]',
+        '[providers.bad]\nbackend = "openai"\nbase_url = "https://"\n\n[models.worker]',
     )
     with pytest.raises(ConfigError, match=r"base_url"):
         load_config(_write(tmp_path, body))
@@ -328,8 +333,8 @@ def test_role_temperature_defaults_to_zero(tmp_path: pathlib.Path) -> None:
 
 def test_role_temperature_override(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = 0.7',
+        '[models.worker]\nmodel = "anthropic/claude-x"',
+        '[models.worker]\nmodel = "anthropic/claude-x"\ntemperature = 0.7',
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.models.worker is not None
@@ -344,8 +349,8 @@ def test_role_temperature_nan_rejected(tmp_path: pathlib.Path) -> None:
 
     assert RoleModel(provider="p", model="m", temperature=None).temperature is None
     body = _VALID_TOML.replace(
-        '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"',
-        '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = nan',
+        '[models.reviewer]\nmodel = "anthropic/claude-x"',
+        '[models.reviewer]\nmodel = "anthropic/claude-x"\ntemperature = nan',
     )
     # nan is rejected by the bounds; the provider default is reached by omitting the field or None.
     with pytest.raises(ConfigError):
@@ -354,8 +359,8 @@ def test_role_temperature_nan_rejected(tmp_path: pathlib.Path) -> None:
 
 def test_role_temperature_out_of_range(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\ntemperature = 3.0',
+        '[models.worker]\nmodel = "anthropic/claude-x"',
+        '[models.worker]\nmodel = "anthropic/claude-x"\ntemperature = 3.0',
     )
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
@@ -425,8 +430,8 @@ def test_revise_prompt_invalid_mode_rejected(tmp_path: pathlib.Path) -> None:
 
 def test_role_routes_to_unconfigured_provider_rejected(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
-        '[models.reviewer]\nprovider = "anthropic"\nmodel = "claude-x"',
-        '[models.reviewer]\nprovider = "openrouter"\nmodel = "gpt-x"',
+        '[models.reviewer]\nmodel = "anthropic/claude-x"',
+        '[models.reviewer]\nmodel = "openrouter/gpt-x"',
     )
     with pytest.raises(ConfigError, match="openrouter"):
         load_config(_write(tmp_path, body))
@@ -435,7 +440,7 @@ def test_role_routes_to_unconfigured_provider_rejected(tmp_path: pathlib.Path) -
 def test_no_providers_loads_but_not_runnable(tmp_path: pathlib.Path) -> None:
     # A config with no providers is valid; require_runnable refuses to start without one.
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[providers.anthropic]\nbackend = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
         "",
     )
@@ -448,12 +453,12 @@ def test_no_providers_loads_but_not_runnable(tmp_path: pathlib.Path) -> None:
 def test_openai_provider_with_no_api_key_env_loads(tmp_path: pathlib.Path) -> None:
     """Ollama-style local endpoint: api_key_env is omitted entirely."""
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[providers.anthropic]\nbackend = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
-        '[providers.ollama]\napi_format = "openai"\nbase_url = "http://localhost:11434/v1"\n',
+        '[providers.ollama]\nbackend = "openai"\nbase_url = "http://localhost:11434/v1"\n',
     )
     # Re-route every role to the ollama provider since anthropic is now gone.
-    body = body.replace('provider = "anthropic"', 'provider = "ollama"')
+    body = body.replace('model = "anthropic/', 'model = "ollama/')
     cfg = load_config(_write(tmp_path, body))
     ollama = cfg.providers["ollama"]
     from agent6.config import OpenAIProviderEntry
@@ -463,16 +468,16 @@ def test_openai_provider_with_no_api_key_env_loads(tmp_path: pathlib.Path) -> No
 
 
 def test_chatgpt_provider_defaults_and_refusals(tmp_path: pathlib.Path) -> None:
-    """A bare api_format = "chatgpt" fills the Codex defaults.
+    """A bare backend = "chatgpt" fills the Codex defaults.
 
     The other formats' knobs are refused by name.
     """
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[providers.anthropic]\nbackend = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
-        '[providers.chatgpt]\napi_format = "chatgpt"\n',
+        '[providers.chatgpt]\nbackend = "chatgpt"\n',
     )
-    body = body.replace('provider = "anthropic"', 'provider = "chatgpt"')
+    body = body.replace('model = "anthropic/', 'model = "chatgpt/')
     cfg = load_config(_write(tmp_path, body))
     from agent6.config import ChatGPTProviderEntry
 
@@ -489,8 +494,8 @@ def test_chatgpt_provider_defaults_and_refusals(tmp_path: pathlib.Path) -> None:
         ('oauth_issuer = "https://auth.example.com"\n', "oauth_issuer"),
     ):
         bad = body.replace(
-            '[providers.chatgpt]\napi_format = "chatgpt"\n',
-            '[providers.chatgpt]\napi_format = "chatgpt"\n' + extra,
+            '[providers.chatgpt]\nbackend = "chatgpt"\n',
+            '[providers.chatgpt]\nbackend = "chatgpt"\n' + extra,
         )
         with pytest.raises(ConfigError) as exc:
             load_config(_write(tmp_path, bad))
@@ -498,16 +503,16 @@ def test_chatgpt_provider_defaults_and_refusals(tmp_path: pathlib.Path) -> None:
 
 
 def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: pathlib.Path) -> None:
-    """A bare api_format = "claude_code" validates with binary "claude".
+    """A bare backend = "claude_code" validates with binary "claude".
 
     HTTP and auth knobs are refused.
     """
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[providers.anthropic]\nbackend = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
-        '[providers.claude]\napi_format = "claude_code"\n',
+        '[providers.claude]\nbackend = "claude_code"\n',
     )
-    body = body.replace('provider = "anthropic"', 'provider = "claude"')
+    body = body.replace('model = "anthropic/', 'model = "claude/')
     cfg = load_config(_write(tmp_path, body))
     from agent6.config import ClaudeCodeProviderEntry, plan_metered
 
@@ -529,8 +534,8 @@ def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: pathlib.Pa
         ('binary = ""\n', "binary"),
     ):
         bad = body.replace(
-            '[providers.claude]\napi_format = "claude_code"\n',
-            '[providers.claude]\napi_format = "claude_code"\n' + extra,
+            '[providers.claude]\nbackend = "claude_code"\n',
+            '[providers.claude]\nbackend = "claude_code"\n' + extra,
         )
         with pytest.raises(ConfigError) as exc:
             load_config(_write(tmp_path, bad))
@@ -540,21 +545,21 @@ def test_claude_code_provider_entry_has_no_transport_fields(tmp_path: pathlib.Pa
 def test_multiple_openai_providers_load(tmp_path: pathlib.Path) -> None:
     """Both OpenAI and OpenRouter side-by-side, distinct keys, routed per role."""
     body = _VALID_TOML.replace(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
+        '[providers.anthropic]\nbackend = "anthropic"\n'
         'api_key_env = "ANTHROPIC_API_KEY"\nprompt_caching = true\n',
         (
-            '[providers.openai]\napi_format = "openai"\n'
+            '[providers.openai]\nbackend = "openai"\n'
             'api_key_env = "OPENAI_API_KEY"\n\n'
-            '[providers.openrouter]\napi_format = "openai"\n'
+            '[providers.openrouter]\nbackend = "openai"\n'
             'api_key_env = "OPENROUTER_API_KEY"\n'
             'base_url = "https://openrouter.ai/api/v1"\n'
         ),
     )
     body = body.replace(
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"',
-        '[models.worker]\nprovider = "openai"\nmodel = "gpt-x"',
+        '[models.worker]\nmodel = "anthropic/claude-x"',
+        '[models.worker]\nmodel = "openai/gpt-x"',
     )
-    body = body.replace('provider = "anthropic"', 'provider = "openrouter"')
+    body = body.replace('model = "anthropic/', 'model = "openrouter/')
     cfg = load_config(_write(tmp_path, body))
     assert set(cfg.providers) == {"openai", "openrouter"}
     assert cfg.models.worker is not None
@@ -596,16 +601,14 @@ def test_operational_fields_have_defaults(tmp_path: pathlib.Path) -> None:
     """
     body = """
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [models.worker]
-provider = "anthropic"
-model = "claude-x"
+model = "anthropic/claude-x"
 
 [models.reviewer]
-provider = "anthropic"
-model = "claude-x"
+model = "anthropic/claude-x"
 
 [sandbox]
 isolation = "auto"
@@ -764,7 +767,7 @@ def test_bool_for_number_rejected(tmp_path: pathlib.Path) -> None:
 def test_provider_timeout_rejects_non_finite(tmp_path: pathlib.Path) -> None:
     # TOML parses inf as a float; an infinite HTTP timeout is a config error, not an OverflowError.
     body = _with_openai_provider(
-        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        '[providers.gw]\nbackend = "openai"\nbase_url = "https://gw.example.com/v1"\n'
         "http_timeout_s = inf"
     )
     with pytest.raises(ConfigError, match="http_timeout_s"):
@@ -774,7 +777,7 @@ def test_provider_timeout_rejects_non_finite(tmp_path: pathlib.Path) -> None:
 def test_extra_body_rejects_a_toml_date(tmp_path: pathlib.Path) -> None:
     # TOML parses bare dates into objects JSON cannot carry; refused at load, not at serialization.
     body = _with_openai_provider(
-        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        '[providers.gw]\nbackend = "openai"\nbase_url = "https://gw.example.com/v1"\n'
         "[providers.gw.extra_body]\nsince = 2026-01-01\n"
     )
     with pytest.raises(ConfigError, match=r"extra_body\.since.*date"):
@@ -822,7 +825,7 @@ def _with_openai_provider(block: str) -> str:
 
 def test_token_command_parses(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        '[providers.gw]\nbackend = "openai"\nbase_url = "https://gw.example.com/v1"\n'
         'token_command = ["mint-token", "--json"]\ntoken_command_ttl_s = 60.0'
     )
     cfg = load_config(_write(tmp_path, body))
@@ -833,7 +836,7 @@ def test_token_command_parses(tmp_path: pathlib.Path) -> None:
 
 def test_token_command_ttl_defaults_to_300(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint-token"]'
+        '[providers.gw]\nbackend = "openai"\ntoken_command = ["mint-token"]'
     )
     cfg = load_config(_write(tmp_path, body))
     assert cfg.providers["gw"].token_command_ttl_s == 300.0  # type: ignore[union-attr]
@@ -843,17 +846,17 @@ def test_token_command_empty_reads_as_unset_and_a_blank_element_refuses(
     tmp_path: pathlib.Path,
 ) -> None:
     """An empty `token_command` reads as unset; an empty element is refused as a typo."""
-    body = _with_openai_provider('[providers.gw]\napi_format = "openai"\ntoken_command = []')
+    body = _with_openai_provider('[providers.gw]\nbackend = "openai"\ntoken_command = []')
     entry = load_config(_write(tmp_path, body)).providers["gw"]
     assert entry.token_command == ()  # type: ignore[union-attr]
-    body = _with_openai_provider('[providers.gw]\napi_format = "openai"\ntoken_command = [""]')
+    body = _with_openai_provider('[providers.gw]\nbackend = "openai"\ntoken_command = [""]')
     with pytest.raises(ConfigError, match="token_command"):
         load_config(_write(tmp_path, body))
 
 
 def test_token_command_rejects_blank_arg(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint", "  "]'
+        '[providers.gw]\nbackend = "openai"\ntoken_command = ["mint", "  "]'
     )
     with pytest.raises(ConfigError, match="token_command"):
         load_config(_write(tmp_path, body))
@@ -861,7 +864,7 @@ def test_token_command_rejects_blank_arg(tmp_path: pathlib.Path) -> None:
 
 def test_token_command_ttl_must_be_positive(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.gw]\napi_format = "openai"\ntoken_command = ["mint"]\ntoken_command_ttl_s = 0'
+        '[providers.gw]\nbackend = "openai"\ntoken_command = ["mint"]\ntoken_command_ttl_s = 0'
     )
     with pytest.raises(ConfigError, match="token_command_ttl_s"):
         load_config(_write(tmp_path, body))
@@ -884,7 +887,7 @@ def test_deployment_and_auth_defaults(tmp_path: pathlib.Path) -> None:
 
 def test_vertex_anthropic_defaults_bearer(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.v]\napi_format = "anthropic"\ndeployment = "vertex"\n'
+        '[providers.v]\nbackend = "anthropic"\ndeployment = "vertex"\n'
         f'base_url = "{_VERTEX_CLAUDE}"'
     )
     cfg = load_config(_write(tmp_path, body))
@@ -895,23 +898,23 @@ def test_vertex_anthropic_defaults_bearer(tmp_path: pathlib.Path) -> None:
 
 
 def test_non_direct_deployment_requires_base_url(tmp_path: pathlib.Path) -> None:
-    body = _with_openai_provider('[providers.v]\napi_format = "anthropic"\ndeployment = "vertex"')
+    body = _with_openai_provider('[providers.v]\nbackend = "anthropic"\ndeployment = "vertex"')
     with pytest.raises(ConfigError, match="base_url is required"):
         load_config(_write(tmp_path, body))
 
 
 def test_azure_requires_openai_format(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.a]\napi_format = "anthropic"\ndeployment = "azure"\n'
+        '[providers.a]\nbackend = "anthropic"\ndeployment = "azure"\n'
         'base_url = "https://r.openai.azure.com"\nextra_query = { "api-version" = "2024-06-01" }'
     )
-    with pytest.raises(ConfigError, match="api_format 'openai'"):
+    with pytest.raises(ConfigError, match="backend 'openai'"):
         load_config(_write(tmp_path, body))
 
 
 def test_azure_requires_api_version_query(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.a]\napi_format = "openai"\ndeployment = "azure"\nbase_url = "https://r.openai.azure.com"'
+        '[providers.a]\nbackend = "openai"\ndeployment = "azure"\nbase_url = "https://r.openai.azure.com"'
     )
     with pytest.raises(ConfigError, match="extra_query"):
         load_config(_write(tmp_path, body))
@@ -919,7 +922,7 @@ def test_azure_requires_api_version_query(tmp_path: pathlib.Path) -> None:
 
 def test_azure_defaults_api_key_header(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.a]\napi_format = "openai"\ndeployment = "azure"\n'
+        '[providers.a]\nbackend = "openai"\ndeployment = "azure"\n'
         'base_url = "https://r.openai.azure.com"\nextra_query = { "api-version" = "2024-06-01" }'
     )
     cfg = load_config(_write(tmp_path, body))
@@ -928,14 +931,14 @@ def test_azure_defaults_api_key_header(tmp_path: pathlib.Path) -> None:
 
 def test_unknown_deployment_rejected(tmp_path: pathlib.Path) -> None:
     body = _with_openai_provider(
-        '[providers.x]\napi_format = "openai"\ndeployment = "bedrock"\nbase_url = "https://x.example.com"'
+        '[providers.x]\nbackend = "openai"\ndeployment = "bedrock"\nbase_url = "https://x.example.com"'
     )
     with pytest.raises(ConfigError, match="deployment"):
         load_config(_write(tmp_path, body))
 
 
 def test_explicit_auth_style_preserved(tmp_path: pathlib.Path) -> None:
-    body = _with_openai_provider('[providers.x]\napi_format = "openai"\nauth_style = "none"')
+    body = _with_openai_provider('[providers.x]\nbackend = "openai"\nauth_style = "none"')
     cfg = load_config(_write(tmp_path, body))
     assert cfg.providers["x"].auth_style == "none"  # type: ignore[union-attr]
 
@@ -949,7 +952,7 @@ def test_none_auth_with_a_credential_source_is_refused(
 ) -> None:
     """auth_style = 'none' with api_key_env or token_command is refused as a contradiction."""
     body = _with_openai_provider(
-        f'[providers.x]\napi_format = "openai"\nauth_style = "none"\n{cred_line}'
+        f'[providers.x]\nbackend = "openai"\nauth_style = "none"\n{cred_line}'
     )
     with pytest.raises(ConfigError, match="auth_style"):
         load_config(_write(tmp_path, body))
@@ -1042,8 +1045,8 @@ def test_the_skills_dir_can_be_granted_to_the_jail(
         load_config(_write(tmp_path, body))
 
 
-def test_api_format_discriminates_the_provider_entry(tmp_path: pathlib.Path) -> None:
-    """`api_format` routes a `[providers.*]` block to its entry class.
+def test_backend_discriminates_the_provider_entry(tmp_path: pathlib.Path) -> None:
+    """`backend` routes a `[providers.*]` block to its entry class.
 
     Declared on the shared base so it leads every entry's order; each subclass's annotation stays
     the single-value literal the union discriminates on and `config/write.py` reflects over.
@@ -1051,25 +1054,25 @@ def test_api_format_discriminates_the_provider_entry(tmp_path: pathlib.Path) -> 
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert isinstance(cfg.providers["anthropic"], AnthropicProviderEntry)
 
-    body = _VALID_TOML.replace('api_format = "anthropic"', 'api_format = "openai"').replace(
+    body = _VALID_TOML.replace('backend = "anthropic"', 'backend = "openai"').replace(
         "prompt_caching = true\n", ""
     )
     cfg = load_config(_write(tmp_path, body))
     assert isinstance(cfg.providers["anthropic"], OpenAIProviderEntry)
 
-    assert get_args(AnthropicProviderEntry.model_fields["api_format"].annotation) == ("anthropic",)
-    assert get_args(OpenAIProviderEntry.model_fields["api_format"].annotation) == ("openai",)
-    assert next(iter(AnthropicProviderEntry.model_fields)) == "api_format"
-    assert next(iter(OpenAIProviderEntry.model_fields)) == "api_format"
+    assert get_args(AnthropicProviderEntry.model_fields["backend"].annotation) == ("anthropic",)
+    assert get_args(OpenAIProviderEntry.model_fields["backend"].annotation) == ("openai",)
+    assert next(iter(AnthropicProviderEntry.model_fields)) == "backend"
+    assert next(iter(OpenAIProviderEntry.model_fields)) == "backend"
 
 
-def test_a_provider_block_without_api_format_names_the_key(tmp_path: pathlib.Path) -> None:
-    """A provider block without api_format is refused naming the key and its values."""
+def test_a_provider_block_without_backend_names_the_key(tmp_path: pathlib.Path) -> None:
+    """A provider block without backend is refused naming the key and its values."""
     cfg = tmp_path / "config.toml"
     cfg.write_text('[providers.anthropic]\napi_key_env = "K"\n', encoding="utf-8")
     with pytest.raises(ConfigError) as exc:
         load_config(cfg)
-    assert 'set api_format = "anthropic", "openai", "chatgpt", "responses" or "claude_code"' in str(
+    assert 'set backend = "anthropic", "openai", "chatgpt", "responses" or "claude_code"' in str(
         exc.value
     )
 
@@ -1086,7 +1089,7 @@ def test_chatgpt_oauth_endpoints_are_constants_not_config() -> None:
     assert oauth_chatgpt.CHATGPT_CLIENT_ID
     with pytest.raises(ValueError, match="oauth_issuer"):
         ChatGPTProviderEntry.model_validate(
-            {"api_format": "chatgpt", "oauth_issuer": "https://auth.example.com"}
+            {"backend": "chatgpt", "oauth_issuer": "https://auth.example.com"}
         )
 
 
@@ -1140,7 +1143,7 @@ def test_cleartext_rejection_is_scheme_case_insensitive(tmp_path: pathlib.Path) 
     `HTTP://` is cleartext.
     """
     for field, extra in (("base_url", 'base_url = "HTTP://api.example.com/codex"'),):
-        body = _VALID_TOML + f'\n[providers.gpt]\napi_format = "chatgpt"\n{extra}\n'
+        body = _VALID_TOML + f'\n[providers.gpt]\nbackend = "chatgpt"\n{extra}\n'
         d = tmp_path / field
         d.mkdir()
         with pytest.raises(ConfigError, match="https"):
@@ -1165,10 +1168,10 @@ def test_with_model_route_names_a_provider_or_keeps_the_roles(tmp_path: pathlib.
     """
     body = (
         _VALID_TOML.replace(
-            '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
-            '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\neffort = "high"\n',
+            '[models.worker]\nmodel = "anthropic/claude-x"\n',
+            '[models.worker]\nmodel = "anthropic/claude-x"\neffort = "high"\n',
         )
-        + '\n[providers.openrouter]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
+        + '\n[providers.openrouter]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
     )
     cfg = load_config(_write(tmp_path, body))
     route = cfg.model_route("worker", "openrouter/moonshotai/kimi-k2.6")

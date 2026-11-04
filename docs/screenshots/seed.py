@@ -60,25 +60,22 @@ max_tokens_fallback = 2000000
 verify_command = ["uv", "run", "pytest", "-x"]
 
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 base_url = "https://openrouter.ai/api/v1"
 api_key_env = "OPENROUTER_API_KEY"
 
 [models.worker]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 
 [models.reviewer]
-provider = "anthropic"
-model = "claude-sonnet-4-6"
+model = "anthropic/claude-sonnet-4-6"
 
 [models.planner]
-provider = "anthropic"
-model = "claude-sonnet-4-6"
+model = "anthropic/claude-sonnet-4-6"
 """
 
 UI_TOML = '[ui]\ntheme = "agent6-dark"\n'

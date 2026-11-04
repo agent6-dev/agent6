@@ -16,7 +16,7 @@ The key lands in `~/.config/agent6/secrets.toml` (mode `0600`), shared across ev
 It refreshes and spends nothing and exits 0 even for a refusal.
 
 ```text
-name        api_format   authentication   state                                     live
+name        backend   authentication   state                                     live
 openrouter  openai       secrets.toml     ok                                        verified
 chatgpt     chatgpt      ChatGPT sign-in  ok <account-id> expires in 9 d 19 h       verified
 claude      claude_code  none             ok                                        verified
@@ -30,6 +30,7 @@ Rebound grants are removed locally only; the provider configuration stays.
 
 `agent6 check config` reports local credential refusals and exits 1; a passing local check does not verify remote authentication.
 
+Each role stores `model = "provider/model"`; the CLI also accepts a bare id on its current provider.
 agent6 routes three model roles; `reviewer` and `planner` fall back to `worker` when unset.
 
 | Role       | Set with            | Used by                                                                                              |

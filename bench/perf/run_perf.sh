@@ -157,17 +157,15 @@ cat > "$WORKDIR/agent6.toml" <<EOF
 config_version = 1
 
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
 [models.worker]
-provider = "anthropic"
-model = "$MODEL"
+model = "anthropic/$MODEL"
 
 [models.reviewer]
-provider = "anthropic"
-model = "$MODEL"
+model = "anthropic/$MODEL"
 
 [sandbox]
 isolation = "auto"

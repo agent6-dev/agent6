@@ -34,7 +34,7 @@ def test_a_base_url_carries_no_userinfo_or_fragment(url: str, word: str) -> None
 def test_a_provider_block_with_userinfo_refuses_at_load(tmp_path: pathlib.Path) -> None:
     cfg = tmp_path / "agent6.toml"
     cfg.write_text(
-        '[providers.p]\napi_format = "openai"\nbase_url = "https://u:p@models.example/v1"\n',
+        '[providers.p]\nbackend = "openai"\nbase_url = "https://u:p@models.example/v1"\n',
         encoding="utf-8",
     )
     with pytest.raises(Exception, match="userinfo"):
@@ -186,7 +186,7 @@ def test_a_redirecting_model_endpoint_is_refused_without_a_second_request(
     monkeypatch.setattr(transport, "http_post", fake_post)
     call = transport.ProviderCall(
         api_label="OpenAI",
-        api_format="openai",
+        backend="openai",
         url="https://api.test/v1/chat/completions",
         body={"model": "m"},
         timeout_s=5.0,

@@ -64,15 +64,15 @@ It can be empty or absent when the global config supplies a provider and model.
 One backend per block; `<name>` is referenced from `[models.<role>]`.
 Provider names must match `[A-Za-z0-9_-]+`: one or more ASCII letters, digits, hyphens or underscores.
 
-Three orthogonal choices describe an HTTP backend: **`api_format`** (the wire dialect), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env`, `token_command` or `oauth`).
-A minimal block is just `api_format` (plus `base_url` for a non-default host).
+Three orthogonal choices describe an HTTP backend: **`backend`** (the wire dialect), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env`, `token_command` or `oauth`).
+A minimal block is just `backend` (plus `base_url` for a non-default host).
 
 | Field | Default | Meaning |
 |---|---|---|
 | `providers` | `{}` | provider endpoints by name (`[providers.<name>]`), referenced by `[models.*]` roles; names: one or more ASCII letters, digits, `-` or `_`; written by `agent6 connect` |
-| `<name>.api_format` | *(required)* | The wire format: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` (the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key). |
+| `<name>.backend` | *(required)* | The backend: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` (the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in Claude Code binary on a Claude subscription; no HTTP endpoint, no key). |
 | `<name>.deployment` | `"direct"` | `direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format only): the URL shape and where the model name and API version go. |
-| `<name>.base_url` | per (format, deployment) | provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `deployment = "vertex"` or `"azure"` and for `api_format = "responses"`; a ChatGPT sign-in also dials its fixed OAuth authority, and a configured `oauth` table its issuer and exchange endpoints |
+| `<name>.base_url` | per (format, deployment) | provider API endpoint's host and path prefix (`https://api.anthropic.com/v1`); required for `deployment = "vertex"` or `"azure"` and for `backend = "responses"`; a ChatGPT sign-in also dials its fixed OAuth authority, and a configured `oauth` table its issuer and exchange endpoints |
 | `<name>.auth_style` | per (format, deployment) | How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local endpoint). |
 | `<name>.api_key_env` | none | environment variable holding the API key; precedence over `secrets.toml`; unset for a key stored by `agent6 connect` or an unauthenticated local endpoint |
 | `<name>.token_command` | `[]` | argv command printing a short-lived bearer token to stdout; re-run after `token_command_ttl_s` and once after a `401` or `403`; precedence over `api_key_env` |
@@ -82,8 +82,8 @@ A minimal block is just `api_format` (plus `base_url` for a non-default host).
 | `<name>.extra_query` | `{}` | Extra URL query parameters on every request (Azure's `api-version`). |
 | `<name>.oauth` | none | a configured OAuth issuer and public-client registration: `agent6 connect <name>` signs in there and stores the grant in `secrets.toml`; requires `auth_style = "bearer"`, replaces `api_key_env` and `token_command`; a stored grant is bound to these settings and the entry's transport settings |
 | `<name>.http_timeout_s` | `600.0` | Seconds one HTTP call may take to read or write; the connect phase is capped at 20 s. |
-| `<name>.prompt_caching` | `true` | prompt caching for `api_format = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
-| `<name>.binary` | `"claude"` | executable for `api_format = "claude_code"` only; a name on PATH or an absolute path |
+| `<name>.prompt_caching` | `true` | prompt caching for `backend = "anthropic"` only; system prompt, tools and growing conversation re-read at 0.1x the input price |
+| `<name>.binary` | `"claude"` | executable for `backend = "claude_code"` only; a name on PATH or an absolute path |
 
 ### Request headers
 
@@ -115,7 +115,7 @@ The transport owns `authorization`, `proxy-authorization`, `x-api-key`, `api-key
 
 `[providers.<name>.oauth]` names an issuer and the public-client registration the operator made there; `agent6 connect <name>` signs in with authorization code and PKCE (`authorization_endpoint`, a loopback redirect or a pasted callback) or the device grant (`device_authorization_endpoint`), and stores the grant in `secrets.toml`.
 Every endpoint is https, or plain http on `127.0.0.1` or `[::1]` for a local service; nothing is discovered, no client secret exists, and no redirect is followed.
-A stored grant is bound to the entry's transport settings (`api_format`, `deployment`, `base_url`, `auth_style`, `extra_query`, `extra_headers`) and its issuer settings: change any of them and the next run refuses until `agent6 connect <name>` runs again.
+A stored grant is bound to the entry's transport settings (`backend`, `deployment`, `base_url`, `auth_style`, `extra_query`, `extra_headers`) and its issuer settings: change any of them and the next run refuses until `agent6 connect <name>` runs again.
 `[providers.<name>.oauth.exchange]` adds one second exchange when the model endpoint takes a token other than the issuer's: one `GET` or `POST` with the issuer's bearer, whose named top-level fields are the token and its expiry.
 
 | Field | Default | Meaning |
@@ -142,7 +142,7 @@ A stored grant is bound to the entry's transport settings (`api_format`, `deploy
 
 ```toml
 [providers.work]
-api_format = "openai"
+backend = "openai"
 base_url = "https://models.example/v1"
 
 [providers.work.oauth]
@@ -161,11 +161,11 @@ redirect_uri = "http://127.0.0.1:8765/auth/callback"
 ```toml
 # Anthropic direct (default)
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 
 # Gemini on Vertex (OpenAI-compatible endpoint)
 [providers.vertex-gemini]
-api_format = "openai"
+backend = "openai"
 deployment = "vertex"
 base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/endpoints/openapi"
 token_command = ["gcloud", "auth", "print-access-token"]
@@ -173,33 +173,32 @@ token_command = ["gcloud", "auth", "print-access-token"]
 # Claude on Vertex (model in the URL, anthropic_version in the body: handled
 # by deployment = "vertex")
 [providers.vertex-claude]
-api_format = "anthropic"
+backend = "anthropic"
 deployment = "vertex"
 base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/publishers/anthropic/models"
 token_command = ["gcloud", "auth", "print-access-token"]
 
 # Azure OpenAI (the model id is the deployment name; api-version required)
 [providers.azure]
-api_format = "openai"
+backend = "openai"
 deployment = "azure"
 base_url = "https://RESOURCE.openai.azure.com"
 api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
 
-### Responses API endpoint (`api_format = "responses"`)
+### Responses API endpoint (`backend = "responses"`)
 
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
 A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it; usage meters tokens like any keyed endpoint, priced from the catalog when the model is known.
 
 ```toml
 [providers.work]
-api_format = "responses"
+backend = "responses"
 base_url = "https://models.example/v1"
 
 [models.worker]
-provider = "work"
-model = "reasoning-model"
+model = "work/reasoning-model"
 ```
 
 - The system prompt goes as `instructions`, tools as flat function tools, tool results as `function_call_output`, the output cap as `max_output_tokens`; `store = false` always, and encrypted reasoning items are replayed to this endpoint and model only.
@@ -207,7 +206,7 @@ model = "reasoning-model"
 - `extra_body` never sets `store`, `previous_response_id`, `conversation`, `background`, `max_output_tokens`, `parallel_tool_calls`, `text`, `response_format` or the structural fields.
 - Streaming runs when a surface watches the call; a JSON response serves the rest.
 
-### ChatGPT subscription (`api_format = "chatgpt"`)
+### ChatGPT subscription (`backend = "chatgpt"`)
 
 Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Responses backend.
 The `session-id` header and `prompt_cache_key` carry the [shared conversation id](#request-headers).
@@ -231,7 +230,7 @@ agent6 model worker chatgpt/gpt-5.6-sol
   `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0.
 
-### Claude Code subscription (`api_format = "claude_code"`)
+### Claude Code subscription (`backend = "claude_code"`)
 
 Runs the worker inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
 
@@ -270,7 +269,7 @@ Pin it with `extra_body.provider` ([routing docs](https://openrouter.ai/docs/fea
 
 ```toml
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 base_url = "https://openrouter.ai/api/v1"
 extra_body = { provider = { sort = "throughput" } }  # prefer fast backends
 # Alternatives: { order = ["DeepInfra"], allow_fallbacks = true }
@@ -301,12 +300,15 @@ Role routing:
 | `planner` | none | model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset |
 
 <!-- the three roles are the same shape, so the table is rendered once -->
+A persisted `model` is fully qualified: `model = "openrouter/openai/gpt-4.1-mini"`.
+The first segment names a `[providers.*]` entry; everything after the first slash is the model id verbatim.
+`effort` and `temperature` are sibling keys.
+
 | Field | Default | Meaning |
 |---|---|---|
-| `provider` | *(required)* | A `[providers.<name>]` entry, by name. |
-| `model` | *(required)* | Model id as that provider names it (`agent6 model` lists them). |
+| `model` | *(required)* | Fully qualified provider/model route (`agent6 model` lists them); the first segment names a `[providers.<name>]` entry, the rest is the model id verbatim. |
 | `temperature` | `0.0` | sampling temperature, `temperature = 0.0` to `2.0`, sent where the wire accepts one (not with Anthropic thinking or on `chatgpt` or `claude_code`, dropped for the run after a 400 naming it); `extra_body.temperature` wins; TOML omission: `temperature = 0.0` |
-| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, none sent with `api_format = "chatgpt"`, `"responses"` or `"claude_code"` (the model's default), as printed by `agent6 config show` |
+| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` (the model's default), as printed by `agent6 config show` |
 
 ## `[sandbox]`
 
@@ -397,8 +399,8 @@ preset = "myteam"
 trigger = "before_finish"
 block_on = "any"
 reviewers = [
-  { focus = "security", provider = "anthropic", model = "claude-opus-4-8" },
-  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
+  { focus = "security", model = "anthropic/claude-opus-4-8" },
+  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
 ]
 ```
 
@@ -443,7 +445,7 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 | `min_blocking_models` | `2` | distinct provider/model routes required to block with `review.block_on = "model_quorum"`; two seats on one route counted once, even with different focus or effort |
 | `max_review_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
-| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `provider`, `model`, `temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned route: role-model defaults, `provider` and `model` required together; empty roster: one `security` seat when `review.trigger` is on |
+| `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; routing omitted: inherited `[models.reviewer]`; pinned route: role-model defaults, `model` is a provider/model route; empty roster: one `security` seat when `review.trigger` is on |
 | `concurrency` | `1` | simultaneous in-loop panel seats; `review.concurrency = 1`: one after another |
 | `scope` | `"diff"` | How much a seat reads: `diff` (one call over the diff, the task, and the verify result) or `repo` (a read-only tool-using reviewer that also reads the repo around the diff to catch cross-file impact; several calls per seat, and it reads the checkout, so the reviewed head must be checked out with a clean tree). |
 | `repo_max_turns` | `20` | provider-call cap for a `review.scope = "repo"` seat, tool calls included; no verdict within the cap: abstention, reported by the panel |
@@ -456,12 +458,11 @@ Each `reviewers` entry has these fields:
 | Field | Default | Meaning |
 |---|---|---|
 | `focus` | *(required)* | A short review stance. |
-| `provider` | none | A provider name; requires `model` too. |
-| `model` | none | A model id; requires `provider` too. |
+| `model` | none | A provider/model route; inherits the reviewer role when unset. |
 | `temperature` | none | sampling temperature; route's value when unset; `temperature = 0.0` an explicit override |
 | `effort` | none | reasoning effort; route's value when unset; `effort = "off"` an explicit override |
 
-Set `provider` and `model` together to pin a route; omit both to inherit the resolved reviewer role.
+Set `model = "provider/model"` to pin a route; omit it to inherit the resolved reviewer role.
 An unpinned entry inherits the role's sampling settings; a pinned entry defaults to `temperature = 0.0` and unset effort.
 Explicit `effort = "off"` and `temperature = 0.0` override inherited values.
 `model_quorum` requires at least `min_blocking_models` distinct resolved provider/model routes at config validation.
@@ -478,7 +479,7 @@ block_on = "any"
 min_blocking_models = 2
 reviewers = [
   { focus = "security" },
-  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
+  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
 ]
 ```
 
@@ -537,7 +538,7 @@ All three: `-1` unlimited, `0` refuse that ledger up front, `> 0` the cap.
 | `max_usd` | `10.0` | cap on the metered spend of one run (provider-reported cost, else price times tokens at the model's fetched rates, cache-aware); at the cap: resumable end (`budget_exhausted`); fresh budget per resumed execution; `budget.max_usd = -1`: unlimited; `budget.max_usd = 0`: every metered call refused; per-run override: `--max-usd` |
 | `max_tokens_fallback` | `2000000` | input-plus-output token cap for unpriceable calls (local models, models without price data); `budget.max_tokens_fallback = -1`: unlimited; `budget.max_tokens_fallback = 0`: unmeterable models refused; per-run override: `--max-tokens-fallback` |
 | `max_plan_points` | `-1.0` | subscription-plan percentage-point cap per run; rise in the account's reported used-percent, summed across window resets (values above 100 meaningful), largest movement across multiple windows; a window counts as reset when its reported reset time moves later by more than a minute; a lower reading whose reset time has not moved counts nothing; one more reading at the end of the run; whole-percent readings, each tick counted as a full point; early stop at the cap, never late; in-flight call still completed; account-global readings include other runs' spend; `budget.max_plan_points = -1`: unlimited; `budget.max_plan_points = 0`: plan-metered calls refused; per-run override: `--max-plan-points` |
-| `allow_plan_overage` | `false` | plan overage for `api_format = "chatgpt"` or `"claude_code"`: purchased credits or extra usage after the included window, possible auto top-up through the saved payment method; `budget.allow_plan_overage = false`: circuit breaker, not a guarantee; account windows and credit state read at chatgpt preflight and from every response's headers, or from every claude_code round's rate-limit event; with `budget.allow_plan_overage = false`, exhausted window and credits present: stop at the next boundary, in-flight call still completed; `budget.allow_plan_overage = true`: chatgpt credit-balance drop read as dollars against `budget.max_usd`; no claude_code credit-balance reading, extra usage not metered by `budget.max_usd`; included-plan usage unaffected |
+| `allow_plan_overage` | `false` | plan overage for `backend = "chatgpt"` or `"claude_code"`: purchased credits or extra usage after the included window, possible auto top-up through the saved payment method; `budget.allow_plan_overage = false`: circuit breaker, not a guarantee; account windows and credit state read at chatgpt preflight and from every response's headers, or from every claude_code round's rate-limit event; with `budget.allow_plan_overage = false`, exhausted window and credits present: stop at the next boundary, in-flight call still completed; `budget.allow_plan_overage = true`: chatgpt credit-balance drop read as dollars against `budget.max_usd`; no claude_code credit-balance reading, extra usage not metered by `budget.max_usd`; included-plan usage unaffected |
 
 `--max-usd` / `--max-tokens-fallback` / `--max-plan-points` override per run.
 A flag's value is recorded with the run: a resume without that flag runs under it again, and a flag on the resume replaces it for later resumes too.

@@ -292,10 +292,10 @@ def test_plan_run_stamps_the_planner_as_its_driver(tmp_path: pathlib.Path) -> No
 
     cfg = Config.model_validate(
         {
-            "providers": {"anthropic": {"api_format": "anthropic"}},
+            "providers": {"anthropic": {"backend": "anthropic"}},
             "models": {
-                "worker": {"provider": "anthropic", "model": "worker-model"},
-                "planner": {"provider": "anthropic", "model": "planner-model"},
+                "worker": {"model": "anthropic/worker-model"},
+                "planner": {"model": "anthropic/planner-model"},
             },
         }
     )
@@ -499,7 +499,7 @@ def test_a_execution_restamps_the_models_and_policy_it_runs_under(tmp_path: path
     )
     cfg = Config.model_validate(
         {
-            "models": {"worker": {"provider": "anthropic", "model": "new-model"}},
+            "models": {"worker": {"model": "anthropic/new-model"}},
             "sandbox": {"run_commands": "ask"},
             "git": {"commit_per_turn": False},
         }

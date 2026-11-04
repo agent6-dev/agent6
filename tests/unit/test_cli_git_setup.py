@@ -298,11 +298,10 @@ def test_an_unanswerable_run_creates_no_session(
                 "[agent6]",
                 "config_version = 1",
                 "[providers.anthropic]",
-                'api_format = "anthropic"',
+                'backend = "anthropic"',
                 'api_key_env = "ANTHROPIC_API_KEY"',
                 "[models.worker]",
-                'provider = "anthropic"',
-                'model = "x"',
+                'model = "anthropic/x"',
             )
         ),
         encoding="utf-8",

@@ -801,12 +801,15 @@ def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.
     body = VALID_MACHINE.replace(
         'kind  = "agent"',
         'kind  = "agent"\nmax_usd = 1.5\n'
-        'config = { models = { worker = { model = "claude-sonnet-4-5", effort = "high" } } }',
+        'config = { models = { worker = { model = "anthropic/claude-sonnet-4-5", '
+        'effort = "high" } } }',
     )
     state = semantics.load_machine(_write(tmp_path, body)).states["classify"]
     assert isinstance(state, schema.AgentState)
     assert state.max_usd == 1.5
-    assert state.config == {"models": {"worker": {"model": "claude-sonnet-4-5", "effort": "high"}}}
+    assert state.config == {
+        "models": {"worker": {"model": "anthropic/claude-sonnet-4-5", "effort": "high"}}
+    }
     assert set(schema.AgentState.model_fields) == {
         "kind",
         "notify",
@@ -825,7 +828,7 @@ def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.
     ("line", "leaf"),
     [
         ('model = "claude-sonnet-4-5"', "models.worker.model"),
-        ('provider = "anthropic"', "models.worker.provider"),
+        ('provider = "anthropic"', "models.worker.model"),
         ('effort = "high"', "models.worker.effort"),
         ("temperature = 0.2", "models.worker.temperature"),
         ("max_tokens_fallback = 100000", "budget.max_tokens_fallback"),
@@ -874,7 +877,7 @@ def test_machine_config_overlay_rejects_providers(tmp_path: pathlib.Path) -> Non
         VALID_MACHINE
         + """
 [config.providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 """
     )
     problems = _problems(tmp_path, body)

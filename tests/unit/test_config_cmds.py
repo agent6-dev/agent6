@@ -153,7 +153,7 @@ def test_config_set_names_the_inline_table_a_leaf_lives_in(
     cfg = gdir / "agent6" / "config.toml"
     cfg.write_text(
         "[providers.openrouter]\n"
-        'api_format = "openai"\n'
+        'backend = "openai"\n'
         'base_url = "https://o.example/v1"\n'
         'extra_body = { provider = { sort = "throughput" } }\n',
         encoding="utf-8",
@@ -265,7 +265,7 @@ def test_config_get_suggests_a_key_from_the_layers_it_was_given(
     monkeypatch.chdir(tmp_path)
     overlay = tmp_path / "overlay.toml"
     overlay.write_text(
-        '[providers.zz]\napi_format = "openai"\nbase_url = "https://zz.test/v1"\n',
+        '[providers.zz]\nbackend = "openai"\nbase_url = "https://zz.test/v1"\n',
         encoding="utf-8",
     )
     assert main(["--config", str(overlay), "config", "get", "providers.zz.base_ur"]) == 2
@@ -581,7 +581,7 @@ def test_config_set_sub_leaf_on_an_existing_provider(
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
     gpath.write_text(
-        '[providers.op]\napi_format = "openai"\nbase_url = "https://x.test/v1"\n', encoding="utf-8"
+        '[providers.op]\nbackend = "openai"\nbase_url = "https://x.test/v1"\n', encoding="utf-8"
     )
     monkeypatch.chdir(tmp_path)
     assert main(["config", "set", "providers.op.base_url", "https://y.test/v1"]) == 0
@@ -595,9 +595,9 @@ def test_config_set_submodel_inline_table_completed_by_a_lower_layer(
 
     gpath = paths.global_config_path()
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text('[models.worker]\nmodel = "m"\n', encoding="utf-8")
+    gpath.write_text('[models.worker]\nmodel = "p/m"\n', encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "--repo", "models.worker", '{ provider = "p" }']) == 0
+    assert main(["config", "set", "--repo", "models.worker", '{ effort = "high" }']) == 0
 
 
 # --- `config fix`: drop invalid entries, print what was dropped and where -------
@@ -688,18 +688,18 @@ def test_config_fix_accepts_a_table_completed_by_the_repo_layer(
     monkeypatch.chdir(repo)
     global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True)
-    global_path.write_text('[models.worker]\nmodel = "m"\n', encoding="utf-8")
+    global_path.write_text('[models.worker]\nmodel = "p/m"\n', encoding="utf-8")
     repo_path = paths.repo_config_path(repo)
     repo_path.parent.mkdir(parents=True)
     repo_path.write_text(
-        '[providers.p]\napi_format = "openai"\nbase_url = "https://p.example/v1"\n'
-        '[models.worker]\nprovider = "p"\n',
+        '[providers.p]\nbackend = "openai"\nbase_url = "https://p.example/v1"\n'
+        '[models.worker]\neffort = "high"\n',
         encoding="utf-8",
     )
 
     assert main(["config", "fix"]) == 0
     assert "nothing to fix" in capsys.readouterr().out.lower()
-    assert 'model = "m"' in global_path.read_text(encoding="utf-8")
+    assert 'model = "p/m"' in global_path.read_text(encoding="utf-8")
 
 
 def test_config_fix_drops_an_invalid_unselected_preset_leaf(
@@ -849,7 +849,7 @@ def test_config_set_unknown_provider_key_speaks_human(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "providers.p.api_format", "anthropic"]) == 0
+    assert main(["config", "set", "providers.p.backend", "anthropic"]) == 0
     capsys.readouterr()
     rc = main(["config", "set", "providers.p.bogus_key", "x"])
     assert rc == 2
@@ -867,7 +867,7 @@ def test_config_set_invalid_provider_value_names_the_field(
     from agent6.ui.cli import main
 
     monkeypatch.chdir(tmp_path)
-    assert main(["config", "set", "providers.p.api_format", "anthropic"]) == 0
+    assert main(["config", "set", "providers.p.backend", "anthropic"]) == 0
     capsys.readouterr()
     rc = main(["config", "set", "providers.p.http_timeout_s", "not-a-number"])
     assert rc == 2

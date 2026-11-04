@@ -51,7 +51,7 @@ def test_a_configured_provider_key_is_stripped_from_gits_environment(
         Config.model_validate(
             {
                 "providers": {
-                    "anthropic": {"api_format": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}
+                    "anthropic": {"backend": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}
                 }
             }
         )
@@ -70,7 +70,7 @@ def test_a_variable_that_is_not_a_provider_key_is_left_alone(
         Config.model_validate(
             {
                 "providers": {
-                    "anthropic": {"api_format": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}
+                    "anthropic": {"backend": "anthropic", "api_key_env": "ANTHROPIC_API_KEY"}
                 }
             }
         )
@@ -179,7 +179,7 @@ def test_a_loaded_config_keeps_its_provider_key_out_of_git_without_the_git_ops_p
     """`sessions diff` and `skills install` spawn git and never call `apply_git_ops_policy`."""
     monkeypatch.setenv("PROBE_PROVIDER_KEY", "sk-secret")
     Config.model_validate(
-        {"providers": {"probe": {"api_format": "anthropic", "api_key_env": "PROBE_PROVIDER_KEY"}}}
+        {"providers": {"probe": {"backend": "anthropic", "api_key_env": "PROBE_PROVIDER_KEY"}}}
     )
     for env in _captured_git_envs(monkeypatch, tmp_path):
         assert "PROBE_PROVIDER_KEY" not in env, "a provider key reached git's environment"

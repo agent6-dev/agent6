@@ -35,7 +35,7 @@ class _AlwaysRefreshing:
 def _call(cred: provider_types.BearerCredential, *, adapt_attempts: int) -> transport.ProviderCall:
     return transport.ProviderCall(
         api_label="OpenAI",
-        api_format="openai",
+        backend="openai",
         url="https://api.test/v1/chat/completions",
         body={"model": "m"},
         timeout_s=5.0,
@@ -100,7 +100,7 @@ def test_a_stale_401_retries_once_with_the_current_bearer(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
     entry = config.OpenAIProviderEntry.model_validate(
         {
-            "api_format": "openai",
+            "backend": "openai",
             "base_url": "https://models.example/v1",
             "oauth": {
                 "issuer": "https://login.example",

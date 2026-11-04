@@ -55,17 +55,14 @@ branch_per_run = true
 name = "agent6 demo"
 email = "demo@agent6.dev"
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:${PORT}/api/v1"
 [models.worker]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 [models.planner]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 [models.reviewer]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 EOF
 
 # The demo repo holds the machine bundle + the buggy source it fixes.

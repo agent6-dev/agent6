@@ -31,7 +31,7 @@ def config_home(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> path
                 "[agent6]",
                 "config_version = 1",
                 "[providers.anthropic]",
-                'api_format = "anthropic"',
+                'backend = "anthropic"',
                 'api_key_env = "AGENT6_TEST_KEY"',
             )
         ),

@@ -424,7 +424,7 @@ def test_direct_config_also_refuses_a_provider_key_in_pass_env() -> None:
     with pytest.raises(Exception, match="never passes a provider key"):
         Config.model_validate(
             {
-                "providers": {"anthropic": {"api_format": "anthropic", "api_key_env": "ANTH_KEY"}},
+                "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "ANTH_KEY"}},
                 "mcp": {"servers": {"s": {"command": ["srv"], "pass_env": ["ANTH_KEY"]}}},
             }
         )

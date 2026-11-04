@@ -40,15 +40,13 @@ isolation = "none"
 run_commands = "deny"
 
 [models.worker]
-provider = "p"
-model = "m"
+model = "p/m"
 
 [models.planner]
-provider = "p"
-model = "m"
+model = "p/m"
 
 [providers.p]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:1"
 api_key_env = "PROBE_KEY"
 
@@ -211,8 +209,8 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     # OpenAI-compat endpoint legitimately runs keyless, so it would not).
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
-        '[models.worker]\nprovider = "anth"\nmodel = "claude-sonnet-4-5"\n'
-        '[providers.anth]\napi_format = "anthropic"\napi_key_env = "ANTH_KEY_UNSET"\n'
+        '[models.worker]\nmodel = "anth/claude-sonnet-4-5"\n'
+        '[providers.anth]\nbackend = "anthropic"\napi_key_env = "ANTH_KEY_UNSET"\n'
         '[review]\ntrigger = "off"\n',
         encoding="utf-8",
     )
@@ -330,8 +328,8 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
     _setup(tmp_path, monkeypatch)
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
-        '[models.worker]\nprovider = "chatgpt"\nmodel = "gpt-6-astra"\n'
-        '[providers.chatgpt]\napi_format = "chatgpt"\n'
+        '[models.worker]\nmodel = "chatgpt/gpt-6-astra"\n'
+        '[providers.chatgpt]\nbackend = "chatgpt"\n'
         '[review]\ntrigger = "off"\n'
         "[harness]\nverify_infer = false\n",
         encoding="utf-8",
@@ -343,7 +341,7 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
         "chatgpt",
         oauth.stored_grant_for(
             oauth_protocol.TokenGrant("test-access", "test-refresh", 3600),
-            ChatGPTProviderEntry(api_format="chatgpt"),
+            ChatGPTProviderEntry(backend="chatgpt"),
             now=time.time(),
         ),
     )

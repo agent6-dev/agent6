@@ -239,7 +239,7 @@ def test_bench_container_config_template_validates() -> None:
     assert review is not None and verify is not None, "the config blocks moved"
     stub = {
         "PROVIDER_BLOCK": (
-            '[providers.openrouter]\napi_format = "openai"\napi_key_env = "K"\n'
+            '[providers.openrouter]\nbackend = "openai"\napi_key_env = "K"\n'
             'base_url = "https://openrouter.ai/api/v1"'
         ),
         "PROVIDER": "openrouter",
@@ -269,8 +269,8 @@ def test_bench_container_config_template_validates() -> None:
         {
             **stub,
             "AGENT6_SB_REVIEWERS": (
-                '[{ focus = "security", provider = "openrouter", model = "a", effort = "high" }, '
-                '{ focus = "tests", provider = "anthropic", model = "b" }]'
+                '[{ focus = "security", model = "openrouter/a", effort = "high" }, '
+                '{ focus = "tests", model = "anthropic/b" }]'
             ),
         },
         {**stub, "AGENT6_SB_VERIFY": "none"},
@@ -292,8 +292,8 @@ def test_bench_container_config_template_validates() -> None:
             assert data["budget"]["max_plan_points"] == 40
         if env.get("AGENT6_SB_REVIEWERS"):
             assert data["review"]["reviewers"] == [
-                {"focus": "security", "provider": "openrouter", "model": "a", "effort": "high"},
-                {"focus": "tests", "provider": "anthropic", "model": "b"},
+                {"focus": "security", "model": "openrouter/a", "effort": "high"},
+                {"focus": "tests", "model": "anthropic/b"},
             ]
         if env.get("AGENT6_SB_VERIFY") == "none":
             assert data["harness"]["verify_infer"] is False

@@ -15,6 +15,8 @@ from typing import Annotated, Any, Literal
 
 import pydantic
 
+from agent6.config import validation
+
 __all__ = [
     "AgentState",
     "BranchState",
@@ -509,6 +511,16 @@ def protected_overlay_error(config: dict[str, Any], *, state: str = "") -> str |
     Returns:
         The refusal message; None when every key is allowed.
     """
+    models = config.get("models", {})
+    if isinstance(models, dict):
+        for role, settings in models.items():
+            where = f"states.{state}.config" if state else "config"
+            try:
+                validation.refuse_split_model(settings, f"{where}.models.{role}")
+                if isinstance(settings, dict) and isinstance(settings.get("model"), str):
+                    validation.model_route(settings["model"])
+            except ValueError as exc:
+                return str(exc)
     for head, value in config.items():
         keys = [head, *(f"{head}.{leaf}" for leaf in value)] if isinstance(value, dict) else [head]
         for key in keys:

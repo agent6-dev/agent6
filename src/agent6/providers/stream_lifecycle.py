@@ -285,7 +285,7 @@ class SseCall:
 
     Attributes:
         api_label: The name that leads API error messages ("OpenAI", "Anthropic").
-        api_format: The wire format ("openai", "anthropic", "chatgpt", "responses").
+        backend: The wire format ("openai", "anthropic", "chatgpt", "responses").
         url: The URL dialled.
         headers: The request headers.
         body: The request body.
@@ -297,7 +297,7 @@ class SseCall:
     """
 
     api_label: str
-    api_format: str
+    backend: str
     url: str
     headers: dict[str, str]
     body: dict[str, Any]
@@ -375,7 +375,7 @@ class SseCall:
                 return
 
         watchdog = threading.Thread(
-            target=_watchdog, name=f"agent6-{self.api_format}-sse-watchdog", daemon=True
+            target=_watchdog, name=f"agent6-{self.backend}-sse-watchdog", daemon=True
         )
         watchdog.start()
 
@@ -431,7 +431,7 @@ class SseCall:
             _raise_watchdog(exc)
             self.record(status=0, response=f"HTTPError: {exc}")
             raise provider_types.ProviderError(
-                f"HTTP error streaming from {self.url} ({self.api_format} format): {exc}"
+                f"HTTP error streaming from {self.url} ({self.backend} format): {exc}"
             ) from exc
         finally:
             watchdog_stop.set()

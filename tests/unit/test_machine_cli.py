@@ -1071,11 +1071,10 @@ def test_machine_start_and_resume_share_one_begin_and_setup_source(
 [agent6]
 config_version = 1
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 [models.worker]
-provider = "anthropic"
-model = "x"
+model = "anthropic/x"
 """,
         encoding="utf-8",
     )
@@ -1134,11 +1133,10 @@ def test_fresh_instance_refuses_unmerged_visible_branch(
                 "[agent6]",
                 "config_version = 1",
                 "[providers.anthropic]",
-                'api_format = "anthropic"',
+                'backend = "anthropic"',
                 'api_key_env = "ANTHROPIC_API_KEY"',
                 "[models.worker]",
-                'provider = "anthropic"',
-                'model = "x"',
+                'model = "anthropic/x"',
             )
         ),
         encoding="utf-8",
@@ -1183,7 +1181,7 @@ def test_fresh_instance_refuses_unmerged_visible_branch(
 def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A state whose `config` table pins provider and model runs without a worker default."""
+    """A state whose `config` table pins a model route runs without a worker default."""
     from agent6.machine import AgentExecResult
 
     monkeypatch.chdir(tmp_path)
@@ -1191,12 +1189,12 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     machine = tmp_path / "pinned.asm.toml"
     machine.write_text(
-        AGENT_MACHINE_HARD + '\n[states.judge.config.models.worker]\nprovider = "p"\nmodel = "m"\n',
+        AGENT_MACHINE_HARD + '\n[states.judge.config.models.worker]\nmodel = "p/m"\n',
         encoding="utf-8",
     )
     cfg = tmp_path / "config.toml"
     cfg.write_text(
-        '[providers.p]\napi_format = "openai"\nbase_url = "http://127.0.0.1:9"\n',
+        '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9"\n',
         encoding="utf-8",
     )
 
@@ -1268,7 +1266,7 @@ def test_machine_preflight_judges_the_states_routes(
             "plan",
             oauth.stored_grant_for(
                 oauth_protocol.TokenGrant("AT", "RT", 3600),
-                ChatGPTProviderEntry(api_format="chatgpt"),
+                ChatGPTProviderEntry(backend="chatgpt"),
                 now=0,
             ),
         )
@@ -1282,21 +1280,17 @@ def test_machine_preflight_judges_the_states_routes(
     config = tmp_path / "config.toml"
     config.write_text(
         '[sandbox]\nisolation = "none"\n'
-        '[providers.plan]\napi_format = "chatgpt"\n'
-        '[providers.paid]\napi_format = "openai"\nbase_url = "http://127.0.0.1:9"\n'
-        '[models.worker]\nprovider = "plan"\nmodel = "plan-model"\n'
+        '[providers.plan]\nbackend = "chatgpt"\n'
+        '[providers.paid]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9"\n'
+        '[models.worker]\nmodel = "plan/plan-model"\n'
         f"[budget]\nmax_plan_points = {percent}\n"
-        + (f'[models.{role}]\nprovider = "plan"\nmodel = "plan-model"\n' if role else ""),
+        + (f'[models.{role}]\nmodel = "plan/plan-model"\n' if role else ""),
         encoding="utf-8",
     )
     machine = tmp_path / "pinned.asm.toml"
     machine.write_text(
         AGENT_MACHINE_HARD
-        + (
-            '\n[states.judge.config.models.worker]\nprovider = "paid"\nmodel = "priced-model"\n'
-            if pin
-            else ""
-        ),
+        + ('\n[states.judge.config.models.worker]\nmodel = "paid/priced-model"\n' if pin else ""),
         encoding="utf-8",
     )
 
@@ -1318,8 +1312,8 @@ def test_machine_run_end_line_carries_spend_and_tokens(
     config = tmp_path / "config.toml"
     config.write_text(
         '[sandbox]\nisolation = "none"\n'
-        '[providers.p]\napi_format = "openai"\nbase_url = "http://127.0.0.1:9"\n'
-        '[models.worker]\nprovider = "p"\nmodel = "m"\n',
+        '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9"\n'
+        '[models.worker]\nmodel = "p/m"\n',
         encoding="utf-8",
     )
     machine = tmp_path / "spend.asm.toml"
@@ -1500,13 +1494,12 @@ def test_a_fresh_instance_over_a_stale_chain_is_refused(
     cfg = tmp_path / "agent6.toml"
     cfg.write_text(
         """[providers.p]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:9"
 api_key_env = "AGENT6_TEST_KEY"
 
 [models.worker]
-provider = "p"
-model = "m"
+model = "p/m"
 """,
         encoding="utf-8",
     )
@@ -1592,13 +1585,12 @@ def test_a_fresh_instance_over_a_merged_chain_starts_from_head(
     cfg = tmp_path / "agent6.toml"
     cfg.write_text(
         """[providers.p]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:9"
 api_key_env = "AGENT6_TEST_KEY"
 
 [models.worker]
-provider = "p"
-model = "m"
+model = "p/m"
 """,
         encoding="utf-8",
     )

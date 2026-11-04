@@ -25,11 +25,10 @@ hide_paths = [{hide}]
 dirty_tree = "{dirty}"
 
 [models.worker]
-provider = "p"
-model = "m"
+model = "p/m"
 
 [providers.p]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:1"
 api_key_env = "PROBE_KEY"
 

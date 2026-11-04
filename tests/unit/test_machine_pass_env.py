@@ -68,7 +68,7 @@ def test_the_operator_allowlist_is_never_a_machine_overlay_or_a_provider_key(
     with pytest.raises(ValueError, match="never passes a provider key to a machine's tool"):
         Config.model_validate(
             {
-                "providers": {"anthropic": {"api_format": "anthropic", "api_key_env": "MY_KEY"}},
+                "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "MY_KEY"}},
                 "machine": {"pass_env": ["MY_KEY"]},
             }
         )

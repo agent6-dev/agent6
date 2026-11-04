@@ -101,8 +101,8 @@ def _configure_worker() -> None:
     cfg_home = paths.global_config_dir()
     cfg_home.mkdir(parents=True, exist_ok=True)
     (cfg_home / "config.toml").write_text(
-        '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
-        '[models.worker]\nprovider = "o"\nmodel = "base"\n',
+        '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "o/base"\n',
         encoding="utf-8",
     )
 
@@ -138,8 +138,8 @@ def _provider_cfg() -> object:
 
     return Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"provider": "o", "model": "moonshotai/kimi-k2.6"}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"worker": {"model": "o/moonshotai/kimi-k2.6"}},
         }
     )
 
@@ -195,10 +195,10 @@ def test_parallel_validation_uses_the_picked_model_provider(
     cfg = Config.model_validate(
         {
             "providers": {
-                "o": {"api_format": "openai", "base_url": "https://o/v1"},
-                "q": {"api_format": "openai", "base_url": "https://q/v1"},
+                "o": {"backend": "openai", "base_url": "https://o/v1"},
+                "q": {"backend": "openai", "base_url": "https://q/v1"},
             },
-            "models": {"worker": {"provider": "o", "model": "o-model"}},
+            "models": {"worker": {"model": "o/o-model"}},
         }
     )
 

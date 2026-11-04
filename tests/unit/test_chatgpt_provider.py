@@ -44,7 +44,7 @@ def _replay(item: dict[str, Any]) -> dict[str, Any]:
 def signed_in(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> oauth.OAuthCredential:
     """A gcfg-backed credential holding an unexpired sign-in."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("AT0", "RT1", 3600), entry, now=time.time()
     )
@@ -1293,7 +1293,7 @@ class _FlakyCredential(oauth.OAuthCredential):
     """The signed-in credential, raising once from `token()`."""
 
     def __init__(self) -> None:
-        super().__init__("chatgpt", ChatGPTProviderEntry(api_format="chatgpt"))
+        super().__init__("chatgpt", ChatGPTProviderEntry(backend="chatgpt"))
         self.faults = 1
 
     def token(self, *, refresh: bool = True) -> str:

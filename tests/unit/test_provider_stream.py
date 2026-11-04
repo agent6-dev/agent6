@@ -38,7 +38,7 @@ def _call(
 ) -> stream_lifecycle.SseCall:
     kwargs: dict[str, Any] = {
         "api_label": "OpenAI",
-        "api_format": "openai",
+        "backend": "openai",
         "url": "https://api.test/v1/chat/completions",
         "headers": {"accept": "text/event-stream"},
         "body": {"model": "m", "stream": True},
@@ -165,7 +165,7 @@ def test_idle_kill_after_output_reports_mid_stream(monkeypatch: pytest.MonkeyPat
             provider_types.ProviderError, match=r"Anthropic SSE stream idle .* mid-stream"
         ),
     ):
-        _call(api_label="Anthropic", api_format="anthropic").run(consume)
+        _call(api_label="Anthropic", backend="anthropic").run(consume)
 
 
 def test_idle_budget_prefers_the_thinking_phase_over_mid_stream() -> None:
@@ -205,7 +205,7 @@ def test_idle_kill_in_thinking_reports_mid_thinking(monkeypatch: pytest.MonkeyPa
             provider_types.ProviderError, match=r"Anthropic SSE stream idle .* mid-thinking"
         ),
     ):
-        _call(api_label="Anthropic", api_format="anthropic").run(consume)
+        _call(api_label="Anthropic", backend="anthropic").run(consume)
 
 
 def test_abort_classifies_as_provider_aborted(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -317,7 +317,7 @@ def test_transport_error_names_the_wire_format() -> None:
             provider_types.ProviderError, match=r"HTTP error streaming from .* \(anthropic format\)"
         ),
     ):
-        _call(api_label="Anthropic", api_format="anthropic").run(_drain)
+        _call(api_label="Anthropic", backend="anthropic").run(_drain)
 
 
 class _LinesResponse:
@@ -417,7 +417,7 @@ def test_a_malformed_2xx_body_normalizes_at_the_transport_seam() -> None:
 
     call = transport.ProviderCall(
         api_label="OpenAI",
-        api_format="openai",
+        backend="openai",
         url="https://api.test/v1/chat/completions",
         body={"model": "m"},
         timeout_s=5.0,

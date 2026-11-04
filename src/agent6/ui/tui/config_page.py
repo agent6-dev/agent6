@@ -673,9 +673,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
             return
 
-        role = re.fullmatch(
-            r"models\.(planner|worker|reviewer)(?:\.(provider|model))?", setting.key
-        )
+        role = re.fullmatch(r"models\.(planner|worker|reviewer)(?:\.model)?", setting.key)
         if role is not None and self._eff is not None:
             self.app.push_screen(
                 config_model.ModelModal(

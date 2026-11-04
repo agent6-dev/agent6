@@ -67,6 +67,8 @@ def leaves() -> dict[str, tuple[str, str]]:
 
     def walk(model: type[pydantic.BaseModel], prefix: str) -> None:
         for name, field in model.model_fields.items():
+            if field.exclude:
+                continue
             path = f"{prefix}{name}"
             nested = _sections_of(field.annotation)
             if field.description or not nested:

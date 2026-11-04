@@ -97,12 +97,11 @@ def test_explicit_config_reaches_each_agent_state(
     explicit.write_text(
         """\
 [providers.local]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:9"
 
 [models.worker]
-provider = "local"
-model = "test-model"
+model = "local/test-model"
 
 [harness]
 max_turns = 17
@@ -148,12 +147,11 @@ def test_a_states_own_budget_is_judged_before_it_runs(
     explicit.write_text(
         """\
 [providers.local]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:9"
 
 [models.worker]
-provider = "local"
-model = "test-model"
+model = "local/test-model"
 
 [budget]
 max_tokens_fallback = 0

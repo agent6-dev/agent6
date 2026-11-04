@@ -193,23 +193,6 @@ def resume_defaults(
     )
 
 
-def model_role_provider(eff: layer_data.EffectiveConfig, key: str) -> str | None:
-    """Return the provider whose model ids a `models.<role>.model` leaf takes.
-
-    Args:
-        eff: The effective config.
-        key: The config leaf.
-
-    Returns:
-        The provider's name, or None for any other leaf.
-    """
-    parts = io.split_key(key)
-    if len(parts) != 3 or parts[0] != "models" or parts[2] != "model":
-        return None
-    role = getattr(eff.config.models, parts[1], None)
-    return getattr(role, "provider", None) or None
-
-
 def config_value_choices(eff: layer_data.EffectiveConfig, key: str) -> list[str]:
     """Return what a chooser offers for an open-text config leaf.
 
@@ -220,9 +203,20 @@ def config_value_choices(eff: layer_data.EffectiveConfig, key: str) -> list[str]
         key: The leaf, or the pseudo-key `parallel.models` for a `/parallel` autocomplete.
 
     Returns:
-        The role's provider's model ids, every lane route for `parallel.models`, else [].
+        Qualified model routes for a role or `parallel.models`, else [].
     """
     if key == "parallel.models":
         return route_choices(eff.config)
-    provider = model_role_provider(eff, key)
-    return provider_model_choices(eff.config, provider) if provider else []
+    parts = io.split_key(key)
+    if (
+        len(parts) == 3
+        and parts[0] == "models"
+        and parts[1] in validate.ROLES
+        and parts[2] == "model"
+    ):
+        return sorted(
+            f"{provider}/{model}"
+            for provider in eff.config.providers
+            for model in provider_model_choices(eff.config, provider)
+        )
+    return []

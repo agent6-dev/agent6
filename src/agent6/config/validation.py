@@ -4,16 +4,52 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+import json
+from typing import Annotated, Any
 
 import pydantic
 import pydantic.fields
 
-from agent6 import errors
+from agent6 import errors, kinds
 
 
 class ConfigError(errors.OperatorError):
     """The config file is missing, malformed or invalid: the operator's file, so a refusal."""
+
+
+def model_route(spec: str) -> kinds.ModelRoute:
+    """Parse a persisted, fully qualified route at its first slash.
+
+    Args:
+        spec: The provider/model setting.
+
+    Returns:
+        The provider and verbatim model id.
+
+    Raises:
+        ValueError: The provider or model id is missing.
+    """
+    provider, slash, model = spec.partition("/")
+    if not slash or not provider.strip() or not model.strip():
+        raise ValueError('model must be fully qualified: model = "provider/model"')
+    return kinds.ModelRoute(provider, model)
+
+
+def refuse_split_model(data: Any, where: str) -> None:
+    """Refuse a settings table holding the old provider leaf.
+
+    Args:
+        data: The raw settings table.
+        where: The table's path.
+
+    Raises:
+        ValueError: The table holds provider, with or without model.
+    """
+    if isinstance(data, dict) and "provider" in data:
+        route = f"{data['provider']}/{data.get('model', '<model>')}"
+        raise ValueError(
+            f"[{where}] provider and model are one setting now: model = {json.dumps(route)}"
+        )
 
 
 # strict: TOML delivers native types, so a typo must not coerce ("5" is not an int).

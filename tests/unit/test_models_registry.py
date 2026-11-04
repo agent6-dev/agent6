@@ -23,8 +23,8 @@ def cache_home(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathl
 def _cfg(model: str, decompose: str = "auto") -> Config:
     return Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"provider": "o", "model": model}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"worker": {"model": "o/" + model}},
             "prompt": {"decompose": decompose},
         }
     )
@@ -58,8 +58,8 @@ def test_claude_minor_versions_size_compaction_from_family(
     """Claude minor ids inherit the family's window instead of fixed compaction defaults."""
     cfg = Config.model_validate(
         {
-            "providers": {"claude": {"api_format": "claude_code"}},
-            "models": {"worker": {"provider": "claude", "model": model + suffix}},
+            "providers": {"claude": {"backend": "claude_code"}},
+            "models": {"worker": {"model": "claude/" + model + suffix}},
         }
     )
     logs: list[str] = []

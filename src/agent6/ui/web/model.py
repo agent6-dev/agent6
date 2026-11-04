@@ -565,7 +565,10 @@ def config_suggestions(
         return []
     if provider is not None and re.fullmatch(r"models\.(planner|worker|reviewer)\.model", key):
         return (
-            choices.provider_model_choices(eff.config, provider)
+            [
+                f"{provider}/{model}"
+                for model in choices.provider_model_choices(eff.config, provider)
+            ]
             if provider in eff.config.providers
             else []
         )

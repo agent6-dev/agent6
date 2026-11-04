@@ -268,10 +268,10 @@ def _role_cfg(extra: dict[str, object]) -> Config:
     # Callers setenv("K", ...) so provider construction finds the key.
     return Config.model_validate(
         {
-            "providers": {"anthropic": {"api_format": "anthropic", "api_key_env": "K"}},
+            "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "K"}},
             "models": {
-                "worker": {"provider": "anthropic", "model": "m"},
-                "reviewer": {"provider": "anthropic", "model": "m"},
+                "worker": {"model": "anthropic/m"},
+                "reviewer": {"model": "anthropic/m"},
             },
             **extra,
         }
@@ -671,10 +671,10 @@ def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: pathl
     repo = _repo(tmp_path)
     sub = Config.model_validate(
         {
-            "providers": {"gpt": {"api_format": "chatgpt"}},
+            "providers": {"gpt": {"backend": "chatgpt"}},
             "models": {
-                "worker": {"provider": "gpt", "model": "gpt-5.6-sol"},
-                "reviewer": {"provider": "gpt", "model": "gpt-5.6-sol"},
+                "worker": {"model": "gpt/gpt-5.6-sol"},
+                "reviewer": {"model": "gpt/gpt-5.6-sol"},
             },
             "budget": {"max_plan_points": 3},
         }

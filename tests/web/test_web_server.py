@@ -1749,7 +1749,7 @@ def test_config_suggest_endpoint_accepts_the_selected_provider(
 
     cfg = paths.global_config_path()
     cfg.parent.mkdir(parents=True, exist_ok=True)
-    cfg.write_text('[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n')
+    cfg.write_text('[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n')
 
     def listing(provider: str, *_: object) -> list[str]:
         return [provider + "-live"]
@@ -1758,7 +1758,7 @@ def test_config_suggest_endpoint_accepts_the_selected_provider(
     _, port = server
     status, body, _ = _get(port, "/api/config/suggest/models.worker.model?provider=b")
     assert status == 200
-    assert json.loads(body) == {"values": ["b-live"]}
+    assert json.loads(body) == {"values": ["b/b-live"]}
 
 
 def test_steer_compact_directive_routes_to_compact_request(
@@ -2523,14 +2523,14 @@ def test_config_writes_report_shadowing_layers(
     target.parent.mkdir(parents=True, exist_ok=True)
     initial = (
         '[sandbox]\nrun_commands = "allow"\n'
-        '[providers.local]\napi_format = "openai"\nbase_url = "https://old.test/v1"\n'
+        '[providers.local]\nbackend = "openai"\nbase_url = "https://old.test/v1"\n'
         '[review]\nreviewers = [{ focus = "old" }]\n'
         '[skills.state]\nalpha = "always"\n'
     )
     target.write_text(initial)
     overlay = (
         '[sandbox]\nrun_commands = "deny"\n'
-        '[providers.local]\napi_format = "openai"\nbase_url = "https://mask.test/v1"\n'
+        '[providers.local]\nbackend = "openai"\nbase_url = "https://mask.test/v1"\n'
         '[review]\nreviewers = [{ focus = "mask" }]\n'
         '[skills.state]\nalpha = "enabled"\n'
     )
@@ -2568,9 +2568,9 @@ def test_the_config_entry_tables_serve_the_form_schema(
         (
             "providers",
             "provider",
-            ["api_format", "deployment", "base_url", "api_key_env"],
+            ["backend", "deployment", "base_url", "api_key_env"],
             {
-                "api_format": ["anthropic", "openai", "chatgpt", "responses", "claude_code"],
+                "backend": ["anthropic", "openai", "chatgpt", "responses", "claude_code"],
                 "deployment": ["direct", "vertex", "azure"],
             },
             "base_url",
@@ -2603,7 +2603,7 @@ def test_the_config_entry_tables_serve_the_form_schema(
         } == choices
         assert description in fields[described_field]["description"]
     assert tables["providers"]["defaults"]["openrouter"] == {
-        "api_format": "openai",
+        "backend": "openai",
         "base_url": "https://openrouter.ai/api/v1",
     }
 
@@ -2614,8 +2614,8 @@ def test_the_config_entry_tables_serve_the_form_schema(
     [
         (
             "providers",
-            {"api_format": "openai", "base_url": " https://example.com/v1 "},
-            {"api_format": "openai", "base_url": "https://example.com/v1"},
+            {"backend": "openai", "base_url": " https://example.com/v1 "},
+            {"backend": "openai", "base_url": "https://example.com/v1"},
         ),
         (
             "mcp.servers",
@@ -2684,7 +2684,7 @@ def test_the_entry_routes_refuse_unknown_tables_and_empty_names(
     _srv, port = server
     body: dict[str, object] = {"table": table, "name": name}
     if route == "/api/config/entry":
-        body["fields"] = {"api_format": "openai"}
+        body["fields"] = {"backend": "openai"}
     status, data = _post(port, route, body)
     assert status == 422 and error in str(data["error"]), data
     assert not paths.global_config_path().exists()
@@ -2699,7 +2699,7 @@ def test_provider_entry_routes_use_the_schema_name_refusal(
     _srv, port = server
     body: dict[str, object] = {"table": "providers", "name": name}
     if route == "/api/config/entry":
-        body["fields"] = {"api_format": "openai"}
+        body["fields"] = {"backend": "openai"}
     status, data = _post(port, route, body)
     expected = (
         f"provider name {name!r} is not a valid TOML bare key"
@@ -2721,6 +2721,18 @@ def test_the_entry_route_refuses_unknown_fields(server: tuple[web_server.WebServ
     assert not paths.global_config_path().exists()
 
 
+def test_reviewer_body_has_one_route_field() -> None:
+    """The add-reviewer payload carries a qualified model without a provider field."""
+    body = web_server.ReviewerBody.model_validate({"focus": "tests", "model": "p/vendor/id"})
+    assert body.model_dump() == {
+        "focus": "tests",
+        "model": "p/vendor/id",
+        "effort": "",
+        "temperature": "",
+        "repo": False,
+    }
+
+
 def test_config_reviewer_append_and_positional_removal(
     server: tuple[web_server.WebServer, int],
 ) -> None:
@@ -2736,7 +2748,7 @@ def test_config_reviewer_append_and_positional_removal(
     status, data = _post(
         port,
         "/api/config/reviewer",
-        {"focus": "tests", "provider": "", "model": " ", "temperature": "0.5", "repo": True},
+        {"focus": "tests", "model": "p/vendor/id", "temperature": "0.5", "repo": True},
     )
     assert status == 200 and data["ok"] is True, data
     status, data = _post(port, "/api/config/reviewer/remove", {"index": 0, "repo": True})
@@ -2744,7 +2756,7 @@ def test_config_reviewer_append_and_positional_removal(
     status, body, _ = _get(port, "/api/config")
     assert status == 200
     setting = json.loads(body)["review.reviewers"]
-    assert setting["value"] == [{"focus": "tests", "temperature": 0.5}]
+    assert setting["value"] == [{"focus": "tests", "model": "p/vendor/id", "temperature": 0.5}]
     assert setting["source"] == "repo"
     status, data = _post(port, "/api/config/reviewer/remove", {"index": 0, "repo": True})
     assert status == 200 and data["ok"] is True, data
@@ -2758,7 +2770,7 @@ def test_config_reviewer_append_and_positional_removal(
     ("route", "body", "status"),
     [
         ("reviewer", {"focus": " "}, 422),
-        ("reviewer", {"focus": "tests", "provider": "p"}, 422),
+        ("reviewer", {"focus": "tests", "provider": "p"}, 400),
         ("reviewer", {"focus": "tests", "temperature": "hot"}, 422),
         ("reviewer", {"focus": "tests", "unknown": "value"}, 400),
         ("reviewer/remove", {"index": -1}, 400),
@@ -2787,7 +2799,7 @@ def test_re_adding_a_provider_keeps_its_other_keys(
         {
             "table": "providers",
             "name": "openrouter",
-            "fields": {"api_format": "openai", "base_url": "https://openrouter.ai/api/v1"},
+            "fields": {"backend": "openai", "base_url": "https://openrouter.ai/api/v1"},
         },
     )
     assert status == 200 and data["ok"] is True, data
@@ -2797,7 +2809,7 @@ def test_re_adding_a_provider_keeps_its_other_keys(
         {
             "table": "providers",
             "name": "openrouter",
-            "fields": {"api_format": "openai", "api_key_env": "OPENROUTER_KEY", "base_url": " "},
+            "fields": {"backend": "openai", "api_key_env": "OPENROUTER_KEY", "base_url": " "},
         },
     )
     assert status == 200 and data["ok"] is True, data
@@ -2815,7 +2827,7 @@ def test_the_provider_form_writes_a_chosen_direct_over_an_existing_deployment(
     cfg = paths.global_config_path()
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text(
-        '[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        '[providers.az]\nbackend = "openai"\ndeployment = "azure"\n'
         'base_url = "https://res.openai.azure.com"\n'
         'extra_query = { "api-version" = "2024-10-21" }\n',
         encoding="utf-8",
@@ -2827,7 +2839,7 @@ def test_the_provider_form_writes_a_chosen_direct_over_an_existing_deployment(
             "table": "providers",
             "name": "az",
             "fields": {
-                "api_format": "openai",
+                "backend": "openai",
                 "deployment": "direct",
                 "base_url": "https://api.openai.com/v1",
             },
@@ -2846,7 +2858,7 @@ def test_the_provider_form_keeps_an_existing_deployment_when_left_blank(
     cfg = paths.global_config_path()
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text(
-        '[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        '[providers.az]\nbackend = "openai"\ndeployment = "azure"\n'
         'base_url = "https://res.openai.azure.com"\n'
         'extra_query = { "api-version" = "2024-10-21" }\n',
         encoding="utf-8",
@@ -2854,7 +2866,7 @@ def test_the_provider_form_keeps_an_existing_deployment_when_left_blank(
     status, data = _post(
         port,
         "/api/config/entry",
-        {"table": "providers", "name": "az", "fields": {"api_format": "openai", "deployment": ""}},
+        {"table": "providers", "name": "az", "fields": {"backend": "openai", "deployment": ""}},
     )
     assert status == 200 and data["ok"] is True, data
     status, body, _ = _get(port, "/api/config")
@@ -2872,12 +2884,12 @@ def test_the_provider_form_takes_claude_code_with_a_blank_deployment(
         {
             "table": "providers",
             "name": "cc",
-            "fields": {"api_format": "claude_code", "deployment": ""},
+            "fields": {"backend": "claude_code", "deployment": ""},
         },
     )
     assert status == 200 and data["ok"] is True, data
     status, body, _ = _get(port, "/api/config")
-    assert json.loads(body)["providers.cc.api_format"]["value"] == "claude_code"
+    assert json.loads(body)["providers.cc.backend"]["value"] == "claude_code"
 
 
 def test_the_provider_form_refuses_a_deployment_for_claude_code(
@@ -2891,7 +2903,7 @@ def test_the_provider_form_refuses_a_deployment_for_claude_code(
         {
             "table": "providers",
             "name": "cc",
-            "fields": {"api_format": "claude_code", "deployment": "direct"},
+            "fields": {"backend": "claude_code", "deployment": "direct"},
         },
     )
     assert status == 422 and data["ok"] is False and "deployment" in str(data["error"]), data
@@ -2911,10 +2923,10 @@ def test_routes_payload_lists_every_route_and_the_modes_default(
     xdg = tmp_path / "xdg-config"
     (xdg / "agent6").mkdir(parents=True)
     (xdg / "agent6" / "config.toml").write_text(
-        '[providers.o]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
-        '[models.worker]\nprovider = "o"\nmodel = "m"\n'
-        '[models.planner]\nprovider = "o"\nmodel = "p"\n'
-        '[presets.fast.models.worker]\nmodel = "f"\n',
+        '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "o/m"\n'
+        '[models.planner]\nmodel = "o/p"\n'
+        '[presets.fast.models.worker]\nmodel = "o/f"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg))

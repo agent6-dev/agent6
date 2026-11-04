@@ -16,7 +16,7 @@ from agent6.ui.cli import main
 def test_schema_refuses_names_that_cannot_be_one_bare_key(name: str) -> None:
     """Provider names cannot create extra dotted components or require TOML quoting."""
     with pytest.raises(pydantic.ValidationError) as caught:
-        Config.model_validate({"providers": {name: {"api_format": "openai"}}})
+        Config.model_validate({"providers": {name: {"backend": "openai"}}})
     expected = (
         (
             f"provider name {name!r} is not a valid TOML bare key"
@@ -36,12 +36,12 @@ def test_bare_provider_names_roundtrip_through_the_editor(
 ) -> None:
     """Bare-key names remain valid, including leading digits and double underscores."""
     table = next(t for t in write.ENTRY_TABLES if t.path == "providers")
-    assert write.add_entry(tmp_path, table, name, {"api_format": "openai"}) is None
+    assert write.add_entry(tmp_path, table, name, {"backend": "openai"}) is None
     assert (
         write.set_config_value(tmp_path, f"providers.{name}.base_url", "https://p.test/v1") is None
     )
     config = Config.model_validate(io.read_toml_file(paths.global_config_path()))
-    assert config.providers[name].api_format == "openai"
+    assert config.providers[name].backend == "openai"
 
 
 @pytest.mark.parametrize("editor", ["add", "remove", "leaf", "table", "leaves", "whole", "preset"])
@@ -56,28 +56,28 @@ def test_provider_writers_use_the_schema_name_refusal(tmp_path: pathlib.Path, ed
     try:
         match editor:
             case "add":
-                error = write.add_entry(tmp_path, table, name, {"api_format": "openai"})
+                error = write.add_entry(tmp_path, table, name, {"backend": "openai"})
             case "remove":
                 error = write.remove_entry(tmp_path, table, name).error
             case "leaf":
                 error = write.set_config_value(
-                    tmp_path, f"providers.{io.toml_key(name)}.api_format", "openai"
+                    tmp_path, f"providers.{io.toml_key(name)}.backend", "openai"
                 )
             case "table":
                 error = write.set_config_table(
-                    tmp_path, f"providers.{io.toml_key(name)}", {"api_format": "openai"}
+                    tmp_path, f"providers.{io.toml_key(name)}", {"backend": "openai"}
                 )
             case "leaves":
                 error = write.set_config_leaves(
-                    tmp_path, f"providers.{io.toml_key(name)}", {"api_format": "openai"}
+                    tmp_path, f"providers.{io.toml_key(name)}", {"backend": "openai"}
                 )
             case "whole":
                 error = write.set_config_value(
-                    tmp_path, "providers", '{ "bad name" = { api_format = "openai" } }'
+                    tmp_path, "providers", '{ "bad name" = { backend = "openai" } }'
                 )
             case _:
                 error = write.set_config_value(
-                    tmp_path, f"presets.custom.providers.{io.toml_key(name)}.api_format", "openai"
+                    tmp_path, f"presets.custom.providers.{io.toml_key(name)}.backend", "openai"
                 )
     except ConfigError as exc:
         error = str(exc)
@@ -87,9 +87,7 @@ def test_provider_writers_use_the_schema_name_refusal(tmp_path: pathlib.Path, ed
 
 def test_whole_provider_table_refuses_a_dotted_name(tmp_path: pathlib.Path) -> None:
     """A provider map keeps name boundaries while validating keys before serialization."""
-    error = write.set_config_value(
-        tmp_path, "providers", '{ "bad.name" = { api_format = "openai" } }'
-    )
+    error = write.set_config_value(tmp_path, "providers", '{ "bad.name" = { backend = "openai" } }')
     assert error == (
         "provider name 'bad.name' is not a valid TOML bare key"
         " (use only ASCII letters, digits, '-', '_')."
@@ -109,7 +107,7 @@ def test_cli_provider_names_use_the_schema_refusal(
     argv = (
         ["connect", "bad name"]
         if command == "connect"
-        else ["config", "set", 'providers."bad name".api_format', "openai"]
+        else ["config", "set", 'providers."bad name".backend', "openai"]
     )
     assert main(argv) == 2
     assert (

@@ -655,8 +655,8 @@ def test_set_refuses_a_machine_file_holding_a_protected_table(
 def test_a_provider_leaf_error_names_every_valid_value(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A provider leaf error names every valid value of the `api_format` discriminator."""
-    assert _run(["config", "set", "providers.p.api_format", "nonsense"]) == 2
+    """A provider leaf error names every valid value of the `backend` discriminator."""
+    assert _run(["config", "set", "providers.p.backend", "nonsense"]) == 2
     err = capsys.readouterr().err
     assert "anthropic" in err
     assert "openai" in err
@@ -921,7 +921,7 @@ def test_nonempty_mapping_stays_gettable_and_unsettable(
     iso: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A mapping can be set, inspected per entry and unset as a whole table."""
-    assert _run(["config", "set", "providers.demo.api_format", "openai"]) == 0
+    assert _run(["config", "set", "providers.demo.backend", "openai"]) == 0
     assert (
         _run(
             [
@@ -987,7 +987,7 @@ def test_mapping_entries_can_be_read_written_and_unset(
     )
     prefix = "config." if target == "machine" else ""
     if key.startswith("providers."):
-        assert _run(["config", "set", *flags, "providers.demo.api_format", "openai"]) == 0
+        assert _run(["config", "set", *flags, "providers.demo.backend", "openai"]) == 0
     assert _run(["config", "set", *flags, f"{key}.alpha", first]) == 0
     assert _run(["config", "set", *flags, f"{key}.beta", second]) == 0
     capsys.readouterr()

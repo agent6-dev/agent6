@@ -23,7 +23,7 @@ _CFG = {
     "sandbox": {"run_commands": "allow", "isolation": "none"},
     "providers": {
         "anthropic": {
-            "api_format": "anthropic",
+            "backend": "anthropic",
             "base_url": "https://api.anthropic.com",
             "api_key_env": "ANTHROPIC_API_KEY",
         }

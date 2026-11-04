@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Build the auth header and the request URL every provider dials.
 
-Three knobs stay orthogonal: `api_format` selects the wire dialect (the provider
+Three knobs stay orthogonal: `backend` selects the wire dialect (the provider
 modules own body shaping, parsing and SSE), `deployment` decides the URL shape and
 whether the model id rides in the path or the body, and `auth` decides the header.
 This is the one place a credential becomes a header and `base_url` becomes the URL
@@ -18,7 +18,7 @@ from urllib import parse
 
 from agent6.providers import provider_types
 
-ApiFormat = Literal["anthropic", "openai", "chatgpt", "responses"]
+Backend = Literal["anthropic", "openai", "chatgpt", "responses"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
 
@@ -74,7 +74,7 @@ def _merge_query(url: str, extra_query: dict[str, str]) -> str:
 
 def request_url(
     *,
-    api_format: ApiFormat,
+    backend: Backend,
     deployment: Deployment,
     base_url: str,
     model: str,
@@ -84,7 +84,7 @@ def request_url(
     """Build the request URL and say whether the model id goes in the body.
 
     Args:
-        api_format: The wire dialect.
+        backend: The wire dialect.
         deployment: The URL profile.
         base_url: The endpoint's base URL.
         model: The model or deployment id.
@@ -97,16 +97,16 @@ def request_url(
     """
     base = base_url.rstrip("/")
     # A path-carried id is quoted to one segment so it cannot reshape the URL off the base host.
-    if deployment == "vertex" and api_format == "anthropic":
+    if deployment == "vertex" and backend == "anthropic":
         verb = "streamRawPredict" if streaming else "rawPredict"
         url, model_in_body = f"{base}/{parse.quote(model, safe='')}:{verb}", False
     elif deployment == "azure":
-        # api_format is validated to be "openai" for azure at config load.
+        # backend is validated to be "openai" for azure at config load.
         seg = parse.quote(model, safe="")
         url, model_in_body = f"{base}/openai/deployments/{seg}/chat/completions", False
-    elif api_format == "anthropic":
+    elif backend == "anthropic":
         url, model_in_body = f"{base}/messages", True
-    elif api_format in ("chatgpt", "responses"):
+    elif backend in ("chatgpt", "responses"):
         url, model_in_body = f"{base}/responses", True
     else:
         url, model_in_body = f"{base}/chat/completions", True

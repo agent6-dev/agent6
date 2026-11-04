@@ -45,7 +45,7 @@ def test_chatgpt_listing_refuses_old_format_entry_before_sending_a_bearer(
             match=r"No ChatGPT sign-in stored for provider 'work'.*agent6 connect work",
         ) as refused,
     ):
-        models_cache._fetch("work", ChatGPTProviderEntry(api_format="chatgpt"), None, 1)
+        models_cache._fetch("work", ChatGPTProviderEntry(backend="chatgpt"), None, 1)
     assert refused.value.cause == "missing"
     request.assert_not_called()
 
@@ -55,7 +55,7 @@ def test_chatgpt_listing_uses_holder_without_refresh_and_falls_back_to_cache(
 ) -> None:
     """An expired bound bearer goes through the holder without rotating during a listing."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     secret_store.save_oauth_grant(
         "work", oauth.stored_grant_for(oauth_protocol.TokenGrant("expired", "RT", 1), entry, now=1)
     )
@@ -100,7 +100,7 @@ def test_fetches_and_caches_openai(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(transport, "http_request", _ok_response(["gpt-x", "gpt-y"]))
-    entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://api.openai.com/v1")
     out = models_cache.list_models("openai", entry, "sk-test")
     assert out == ["gpt-x", "gpt-y"]
     cached = json.loads((cache_home / "models" / "openai.json").read_text())
@@ -110,8 +110,8 @@ def test_fetches_and_caches_openai(
 @pytest.mark.parametrize(
     "entry",
     [
-        OpenAIProviderEntry(api_format="openai", base_url="https://models.example/v1"),
-        ChatGPTProviderEntry(api_format="chatgpt", base_url="https://models.example/v1"),
+        OpenAIProviderEntry(backend="openai", base_url="https://models.example/v1"),
+        ChatGPTProviderEntry(backend="chatgpt", base_url="https://models.example/v1"),
     ],
 )
 @pytest.mark.parametrize("cap", [16, 1024])
@@ -173,7 +173,7 @@ def test_fresh_cache_skips_network(
         raise AssertionError("network must not be hit when cache is fresh")
 
     monkeypatch.setattr(transport, "http_request", _boom)
-    entry = AnthropicProviderEntry(api_format="anthropic")
+    entry = AnthropicProviderEntry(backend="anthropic")
     assert models_cache.list_models("anthropic", entry, "sk-test") == ["claude-cached"]
 
 
@@ -193,7 +193,7 @@ def test_stale_cache_used_on_network_error(
         raise httpx2.ConnectError("no route")
 
     monkeypatch.setattr(transport, "http_request", _fail)
-    entry = OpenAIProviderEntry(api_format="openai", base_url="https://openrouter.ai/api/v1")
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://openrouter.ai/api/v1")
     assert models_cache.list_models("openrouter", entry, None) == ["stale-1"]
 
 
@@ -204,7 +204,7 @@ def test_no_cache_network_error_returns_empty(
         raise httpx2.ConnectTimeout("slow")
 
     monkeypatch.setattr(transport, "http_request", _fail)
-    entry = OpenAIProviderEntry(api_format="openai")
+    entry = OpenAIProviderEntry(backend="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
 
@@ -217,7 +217,7 @@ def test_never_raises_on_bad_payload(
         )
 
     monkeypatch.setattr(transport, "http_request", _garbage)
-    entry = OpenAIProviderEntry(api_format="openai")
+    entry = OpenAIProviderEntry(backend="openai")
     assert models_cache.list_models("openai", entry, "sk") == []
 
 
@@ -236,7 +236,7 @@ def test_unsafe_provider_name_still_fetches(
 ) -> None:
     # An unsafe name skips the cache but still fetches live (never raises).
     monkeypatch.setattr(transport, "http_request", _ok_response(["m1"]))
-    entry = OpenAIProviderEntry(api_format="openai", base_url="https://api.openai.com/v1")
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://api.openai.com/v1")
     assert models_cache.list_models("../evil", entry, "sk") == ["m1"]
     assert not (cache_home / "models").exists()  # nothing written outside
 
@@ -267,7 +267,7 @@ def test_caches_context_length_and_reads_it_back(
             ]
         ),
     )
-    entry = OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://x/v1")
     models_cache.list_models("vendorx", entry, "k")
     cached = json.loads((cache_home / "models" / "vendorx.json").read_text())
     assert cached["context"] == {"vendor/big": 200000, "vendor/small": 8192}
@@ -286,7 +286,7 @@ def test_fetch_models_live_bypasses_ttl_and_signals_failure(
     path = cache_home / "models" / "o.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"models": ["stale-1"]}), encoding="utf-8")
-    entry = OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://x/v1")
     monkeypatch.setattr(transport, "http_request", _ok_response(["fresh-1"]))
     assert models_cache.fetch_models_live("o", entry, None) == ["fresh-1"]
     assert json.loads(path.read_text())["models"] == ["fresh-1"]
@@ -375,7 +375,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
     from agent6.config import ChatGPTProviderEntry, secret_store
 
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "g"))
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     secret_store.save_oauth_grant(
         "chatgpt",
         secret_store.StoredGrant(
@@ -406,7 +406,7 @@ def test_chatgpt_listing_fetches_with_the_sign_in(
         return httpx2.Response(200, json=body, request=httpx2.Request("GET", url))
 
     monkeypatch.setattr(transport, "http_request", _get)
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     ids = models_cache.list_models("chatgpt", entry, None, ttl_s=0)
     assert ids == ["gpt-5.6-sol"]
     assert str(seen["url"]).endswith("/models?client_version=1.0.0")
@@ -428,7 +428,7 @@ def test_chatgpt_listing_without_sign_in_fails_soft(
         pytest.fail("no sign-in: nothing to fetch with")
 
     monkeypatch.setattr(transport, "http_request", _never)
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     assert models_cache.list_models("chatgpt", entry, None, ttl_s=0) == []
 
 
@@ -436,7 +436,7 @@ def test_input_modalities_are_explicit_bound_and_fresh(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Only the exact endpoint, entry and model can consume a fresh listing's modalities."""
-    entry = OpenAIProviderEntry(api_format="openai", base_url="https://models.example/v1")
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://models.example/v1")
     payload = {
         "data": [
             {"id": "vision", "architecture": {"input_modalities": ["text", "image", "file"]}},
@@ -475,7 +475,7 @@ def test_legacy_listing_has_unknown_modalities(cache_home: pathlib.Path) -> None
     path = cache_home / "models/p.json"
     path.parent.mkdir(parents=True)
     path.write_text(json.dumps({"models": ["m"], "modalities": {"m": ["text"]}}))
-    entry = OpenAIProviderEntry(api_format="openai", base_url="https://models.example/v1")
+    entry = OpenAIProviderEntry(backend="openai", base_url="https://models.example/v1")
     fact = models_cache.cached_input_capabilities("p", entry, "m")
     assert (fact.image, fact.document) == ("unknown", "unknown")
 
@@ -490,9 +490,9 @@ def test_review_seats_resolve_their_own_modality_facts(
 
     cfg = Config.model_validate(
         {
-            "providers": {"p": {"api_format": "openai", "base_url": "https://models.example/v1"}},
-            "models": {"worker": {"provider": "p", "model": "text"}},
-            "review": {"reviewers": [{"focus": "ui", "provider": "p", "model": "vision"}]},
+            "providers": {"p": {"backend": "openai", "base_url": "https://models.example/v1"}},
+            "models": {"worker": {"model": "p/text"}},
+            "review": {"reviewers": [{"focus": "ui", "model": "p/vision"}]},
         }
     )
     payload = {

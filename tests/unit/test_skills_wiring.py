@@ -15,14 +15,12 @@ _VALID_TOML = """
 [agent6]
 config_version = 1
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 [models.worker]
-provider = "anthropic"
-model = "x"
+model = "anthropic/x"
 [models.reviewer]
-provider = "anthropic"
-model = "x"
+model = "anthropic/x"
 """
 
 

@@ -2631,15 +2631,14 @@ Source: [`agent6.ui.web.server.EntryRemoveBody`](https://github.com/agent6-dev/a
 
 ### ReviewerBody
 
-**Support: public.** The add-reviewer form's five fields and save target.
+**Support: public.** The add-reviewer form's four fields and save target.
 
 Source: [`agent6.ui.web.server.ReviewerBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `focus` | `str` | The reviewer's required focus text. |
-| `provider` | `str` | The provider name, paired with model or left empty. |
-| `model` | `str` | The model identifier, paired with provider or left empty. |
+| `model` | `str` | A provider/model route, empty to inherit the reviewer role. |
 | `effort` | `str` | The reasoning effort override, empty for the default. |
 | `temperature` | `str` | The sampling temperature as text, empty for the default. |
 | `repo` | `bool` | Whether to write repo config rather than global config. |

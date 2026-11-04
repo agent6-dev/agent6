@@ -266,7 +266,7 @@ class ProviderCall:
 
     Attributes:
         api_label: The name that leads API error messages ("OpenAI", "Anthropic").
-        api_format: The wire format ("openai", "anthropic", "chatgpt", "responses").
+        backend: The wire format ("openai", "anthropic", "chatgpt", "responses").
         url: The URL dialled.
         body: The request body; an adaptation mutates it in place.
         timeout_s: The read budget in seconds.
@@ -289,7 +289,7 @@ class ProviderCall:
     """
 
     api_label: str
-    api_format: str
+    backend: str
     url: str
     body: dict[str, Any]
     timeout_s: float
@@ -403,7 +403,7 @@ class ProviderCall:
             except httpx2.HTTPError as exc:
                 self.record(headers, 0, f"HTTPError: {exc}")
                 raise provider_types.ProviderError(
-                    f"HTTP error calling {self.url} ({self.api_format} format): "
+                    f"HTTP error calling {self.url} ({self.backend} format): "
                     f"{self._safe_text(str(exc), headers)}"
                 ) from exc
             recorded = False

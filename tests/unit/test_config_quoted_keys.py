@@ -18,7 +18,7 @@ def mapping_config(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> p
     target = paths.global_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
-        '[providers.demo]\napi_format = "openai"\n'
+        '[providers.demo]\nbackend = "openai"\n'
         '[providers.demo.extra_body]\n"a.b" = "literal"\n'
         '[providers.demo.extra_body.a]\nb = "nested"\n'
         '[skills.state]\n"org.some.skill" = "enabled"\n',

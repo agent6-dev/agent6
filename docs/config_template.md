@@ -61,8 +61,8 @@ It can be empty or absent when the global config supplies a provider and model.
 One backend per block; `<name>` is referenced from `[models.<role>]`.
 Provider names must match `[A-Za-z0-9_-]+`: one or more ASCII letters, digits, hyphens or underscores.
 
-Three orthogonal choices describe an HTTP backend: **`api_format`** (the wire dialect), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env`, `token_command` or `oauth`).
-A minimal block is just `api_format` (plus `base_url` for a non-default host).
+Three orthogonal choices describe an HTTP backend: **`backend`** (the wire dialect), **`deployment`** (URL/placement quirks of where it is hosted), and **auth** (`auth_style` + `api_key_env`, `token_command` or `oauth`).
+A minimal block is just `backend` (plus `base_url` for a non-default host).
 
 <!-- config-table: providers providers.<name> -->
 
@@ -92,14 +92,14 @@ The transport owns `authorization`, `proxy-authorization`, `x-api-key`, `api-key
 
 `[providers.<name>.oauth]` names an issuer and the public-client registration the operator made there; `agent6 connect <name>` signs in with authorization code and PKCE (`authorization_endpoint`, a loopback redirect or a pasted callback) or the device grant (`device_authorization_endpoint`), and stores the grant in `secrets.toml`.
 Every endpoint is https, or plain http on `127.0.0.1` or `[::1]` for a local service; nothing is discovered, no client secret exists, and no redirect is followed.
-A stored grant is bound to the entry's transport settings (`api_format`, `deployment`, `base_url`, `auth_style`, `extra_query`, `extra_headers`) and its issuer settings: change any of them and the next run refuses until `agent6 connect <name>` runs again.
+A stored grant is bound to the entry's transport settings (`backend`, `deployment`, `base_url`, `auth_style`, `extra_query`, `extra_headers`) and its issuer settings: change any of them and the next run refuses until `agent6 connect <name>` runs again.
 `[providers.<name>.oauth.exchange]` adds one second exchange when the model endpoint takes a token other than the issuer's: one `GET` or `POST` with the issuer's bearer, whose named top-level fields are the token and its expiry.
 
 <!-- config-table: providers.<name>.oauth providers.<name>.oauth.exchange -->
 
 ```toml
 [providers.work]
-api_format = "openai"
+backend = "openai"
 base_url = "https://models.example/v1"
 
 [providers.work.oauth]
@@ -118,11 +118,11 @@ redirect_uri = "http://127.0.0.1:8765/auth/callback"
 ```toml
 # Anthropic direct (default)
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 
 # Gemini on Vertex (OpenAI-compatible endpoint)
 [providers.vertex-gemini]
-api_format = "openai"
+backend = "openai"
 deployment = "vertex"
 base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/endpoints/openapi"
 token_command = ["gcloud", "auth", "print-access-token"]
@@ -130,33 +130,32 @@ token_command = ["gcloud", "auth", "print-access-token"]
 # Claude on Vertex (model in the URL, anthropic_version in the body: handled
 # by deployment = "vertex")
 [providers.vertex-claude]
-api_format = "anthropic"
+backend = "anthropic"
 deployment = "vertex"
 base_url = "https://LOCATION-aiplatform.googleapis.com/v1/projects/PROJ/locations/LOCATION/publishers/anthropic/models"
 token_command = ["gcloud", "auth", "print-access-token"]
 
 # Azure OpenAI (the model id is the deployment name; api-version required)
 [providers.azure]
-api_format = "openai"
+backend = "openai"
 deployment = "azure"
 base_url = "https://RESOURCE.openai.azure.com"
 api_key_env = "AZURE_OPENAI_API_KEY"
 extra_query = { "api-version" = "2024-06-01" }
 ```
 
-### Responses API endpoint (`api_format = "responses"`)
+### Responses API endpoint (`backend = "responses"`)
 
 The Responses API on an endpoint the operator names: `/responses` is appended to `base_url`, which has no vendor default, and `direct` is the only deployment.
 A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#configured-oauth) issuer authenticates it; usage meters tokens like any keyed endpoint, priced from the catalog when the model is known.
 
 ```toml
 [providers.work]
-api_format = "responses"
+backend = "responses"
 base_url = "https://models.example/v1"
 
 [models.worker]
-provider = "work"
-model = "reasoning-model"
+model = "work/reasoning-model"
 ```
 
 - The system prompt goes as `instructions`, tools as flat function tools, tool results as `function_call_output`, the output cap as `max_output_tokens`; `store = false` always, and encrypted reasoning items are replayed to this endpoint and model only.
@@ -164,7 +163,7 @@ model = "reasoning-model"
 - `extra_body` never sets `store`, `previous_response_id`, `conversation`, `background`, `max_output_tokens`, `parallel_tool_calls`, `text`, `response_format` or the structural fields.
 - Streaming runs when a surface watches the call; a JSON response serves the rest.
 
-### ChatGPT subscription (`api_format = "chatgpt"`)
+### ChatGPT subscription (`backend = "chatgpt"`)
 
 Uses a ChatGPT plan (Plus/Pro/Business) instead of an API key, over the Codex Responses backend.
 The `session-id` header and `prompt_cache_key` carry the [shared conversation id](#request-headers).
@@ -188,7 +187,7 @@ agent6 model worker chatgpt/gpt-5.6-sol
   `[budget].max_plan_points` caps the points one run may consume (`--max-plan-points` per run).
   Dollar figures stay an authoritative $0.
 
-### Claude Code subscription (`api_format = "claude_code"`)
+### Claude Code subscription (`backend = "claude_code"`)
 
 Runs the worker inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
 
@@ -227,7 +226,7 @@ Pin it with `extra_body.provider` ([routing docs](https://openrouter.ai/docs/fea
 
 ```toml
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 base_url = "https://openrouter.ai/api/v1"
 extra_body = { provider = { sort = "throughput" } }  # prefer fast backends
 # Alternatives: { order = ["DeepInfra"], allow_fallbacks = true }
@@ -254,6 +253,10 @@ Role routing:
 <!-- config-table: models -->
 
 <!-- the three roles are the same shape, so the table is rendered once -->
+A persisted `model` is fully qualified: `model = "openrouter/openai/gpt-4.1-mini"`.
+The first segment names a `[providers.*]` entry; everything after the first slash is the model id verbatim.
+`effort` and `temperature` are sibling keys.
+
 <!-- config-table: models.worker -->
 
 ## `[sandbox]`
@@ -309,8 +312,8 @@ preset = "myteam"
 trigger = "before_finish"
 block_on = "any"
 reviewers = [
-  { focus = "security", provider = "anthropic", model = "claude-opus-4-8" },
-  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
+  { focus = "security", model = "anthropic/claude-opus-4-8" },
+  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
 ]
 ```
 
@@ -336,7 +339,7 @@ Each `reviewers` entry has these fields:
 
 <!-- config-table: review.reviewers.<entry> -->
 
-Set `provider` and `model` together to pin a route; omit both to inherit the resolved reviewer role.
+Set `model = "provider/model"` to pin a route; omit it to inherit the resolved reviewer role.
 An unpinned entry inherits the role's sampling settings; a pinned entry defaults to `temperature = 0.0` and unset effort.
 Explicit `effort = "off"` and `temperature = 0.0` override inherited values.
 `model_quorum` requires at least `min_blocking_models` distinct resolved provider/model routes at config validation.
@@ -353,7 +356,7 @@ block_on = "any"
 min_blocking_models = 2
 reviewers = [
   { focus = "security" },
-  { focus = "correctness", provider = "openrouter", model = "moonshotai/kimi-k2", effort = "high" },
+  { focus = "correctness", model = "openrouter/moonshotai/kimi-k2", effort = "high" },
 ]
 ```
 

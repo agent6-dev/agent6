@@ -129,18 +129,18 @@ def show(provider: str, config_paths: tuple[pathlib.Path, ...]) -> int:
     except (ConfigError, secret_store.SecretsError) as exc:
         common.error(str(exc))
     else:
-        rows = [("name", "api_format", "authentication", "state", "live")]
+        rows = [("name", "backend", "authentication", "state", "live")]
         for name, entry in entries.items():
             if not provider or name == provider:
                 source, state = _credential_status(name, entry, secrets)
                 live = _live_status(name, entry, secrets, state)
-                rows.append((name, entry.api_format, source, state, live))
+                rows.append((name, entry.backend, source, state, live))
         if provider and provider not in entries:
             common.warn(f"provider {provider!r} is not configured.")
         widths = [max(len(row[i]) for row in rows) for i in range(4)]
-        for name, api_format, source, state, live in rows:
+        for name, backend, source, state, live in rows:
             print(
-                f"{name:<{widths[0]}}  {api_format:<{widths[1]}}  {source:<{widths[2]}}"
+                f"{name:<{widths[0]}}  {backend:<{widths[1]}}  {source:<{widths[2]}}"
                 f"  {state:<{widths[3]}}  {live}"
             )
     return 0

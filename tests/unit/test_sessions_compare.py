@@ -413,8 +413,8 @@ def _write_reviewer_config(repo: pathlib.Path) -> None:
     p = paths.repo_config_path(repo)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\napi_key_env = "FAKE_KEY_NOT_SET"\n\n'
-        '[models.reviewer]\nprovider = "anthropic"\nmodel = "reviewer-default"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\napi_key_env = "FAKE_KEY_NOT_SET"\n\n'
+        '[models.reviewer]\nmodel = "anthropic/reviewer-default"\n',
         encoding="utf-8",
     )
 
@@ -750,8 +750,8 @@ def test_compare_falls_back_to_mechanical_on_judge_error(
 def _reviewer_cfg() -> Config:
     return Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
-            "models": {"reviewer": {"provider": "o", "model": "reviewer-1"}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"reviewer": {"model": "o/reviewer-1"}},
         }
     )
 

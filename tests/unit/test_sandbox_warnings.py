@@ -247,7 +247,7 @@ def test_a_cleartext_credential_endpoint_warns_at_run_entry(
         {
             "providers": {
                 "corp": {
-                    "api_format": "openai",
+                    "backend": "openai",
                     "base_url": "http://llm.corp.internal/v1",
                     "api_key_env": "K",
                 }

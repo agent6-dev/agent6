@@ -212,12 +212,12 @@ class ReviewerModal(FormModal[None]):
         self._config_paths = config_paths
 
     def compose(self) -> app.ComposeResult:
-        """Yield the five fields and the save target."""
+        """Yield the reviewer fields and the save target."""
         choices = write.reviewer_choices()
         with containers.VerticalScroll(classes="reviewer-box"):
             yield textual_widgets.Static("Add reviewer")
             yield textual_widgets.Static(
-                "Focus is required. Set provider and model together, or leave both blank.\n"
+                "Focus is required. Set model to provider/model, or leave it blank.\n"
                 "Blank optional fields inherit the route's settings."
             )
             for field in write.REVIEWER_FIELDS:
@@ -409,7 +409,7 @@ class EntryModal(FormModal[None]):
                 )
                 if field in choices:
                     options = tuple(choices[field])
-                    if field not in ("api_format", "state"):
+                    if field not in ("backend", "state"):
                         options = ("blank = unchanged, or default", *options)
                     chooser = forms.ChoiceField(options, options[0], id=f"entry-{field}")
                     chooser.tooltip = description
@@ -437,7 +437,7 @@ class EntryModal(FormModal[None]):
 
     @textual.on(textual_widgets.Input.Changed, "#entry-name")
     def _prefill_from_preset(self, event: textual_widgets.Input.Changed) -> None:
-        """Prefill a known provider's api_format and base_url, as `agent6 connect` does.
+        """Prefill a known provider's backend and base_url, as `agent6 connect` does.
 
         Only a blank or autofilled base_url is overwritten, never a typed one.
 
@@ -453,7 +453,7 @@ class EntryModal(FormModal[None]):
                 baseurl.value = ""
             self._autofilled_baseurl = ""
             return
-        self.query_one("#entry-api_format", forms.ChoiceField).select_value(preset["api_format"])
+        self.query_one("#entry-backend", forms.ChoiceField).select_value(preset["backend"])
         if baseurl.value in ("", self._autofilled_baseurl):
             self._autofilled_baseurl = preset.get("base_url", "")
             baseurl.value = self._autofilled_baseurl

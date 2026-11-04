@@ -49,18 +49,18 @@ RESERVED_BODY = frozenset(
 )
 
 
-def replay_route(api_format: str, base_url: str, model: str) -> str:
+def replay_route(backend: str, base_url: str, model: str) -> str:
     """Return the fingerprint of the route a reasoning item may be replayed to.
 
     Args:
-        api_format: The wire format.
+        backend: The wire format.
         base_url: The endpoint.
         model: The model.
 
     Returns:
         A hex digest.
     """
-    canonical = json.dumps([api_format, base_url.rstrip("/"), model])
+    canonical = json.dumps([backend, base_url.rstrip("/"), model])
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 

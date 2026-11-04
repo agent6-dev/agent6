@@ -177,7 +177,7 @@ def role_effort(cfg: Config, role: kinds.RoleName) -> str | None:
     entry = cfg.providers.get(rm.provider)
     if entry is None:
         return None
-    match entry.api_format:
+    match entry.backend:
         case "anthropic":
             return rm.effort or "off"
         case "chatgpt" | "responses" | "claude_code":

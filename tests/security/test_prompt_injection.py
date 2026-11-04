@@ -22,15 +22,13 @@ _VALID_TOML = """
 [agent6]
 config_version = 1
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 [models.worker]
-provider = "anthropic"
-model = "x"
+model = "anthropic/x"
 [models.reviewer]
-provider = "anthropic"
-model = "x"
+model = "anthropic/x"
 [sandbox]
 isolation = "auto"
 run_commands = "deny"
@@ -302,6 +300,7 @@ def test_a_directory_swapped_after_the_check_is_not_listed(
     assert (root / "sub").is_symlink(), "the swap never happened; the test proves nothing"
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_a_file_swapped_after_the_check_is_not_parsed_into_the_index(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

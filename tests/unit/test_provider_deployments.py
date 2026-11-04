@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Wire-level checks for the api_format x deployment x auth provider model.
+"""Wire-level checks for the backend x deployment x auth provider model.
 
 URL shape, model placement (body or URL path), protocol-version placement and auth-header style,
 asserted by capturing the mocked HTTP request.
@@ -202,7 +202,7 @@ def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> 
     host the egress allow-list trusts.
     """
     vurl, in_body = wire.request_url(
-        api_format="anthropic",
+        backend="anthropic",
         deployment="vertex",
         base_url=_VERTEX_ANTHROPIC,
         model=raw,
@@ -210,7 +210,7 @@ def test_a_model_id_is_percent_quoted_in_the_url_path(raw: str, quoted: str) -> 
     )
     assert vurl == f"{_VERTEX_ANTHROPIC}/{quoted}:rawPredict" and in_body is False
     aurl, _ = wire.request_url(
-        api_format="openai",
+        backend="openai",
         deployment="azure",
         base_url="https://res.openai.azure.com",
         model=raw,

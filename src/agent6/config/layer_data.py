@@ -149,7 +149,7 @@ def discover_layers(
 def format_changed(val: object, existing: object) -> bool:
     """Return whether an override replaces the existing dict whole instead of merging.
 
-    The one rule the merge and the provenance walk share: a provider entry whose `api_format`
+    The one rule the merge and the provenance walk share: a provider entry whose `backend`
     changes between layers replaces, or the lower layer's format-specific keys would survive
     as an `extra_forbidden` error under the new format.
 
@@ -158,14 +158,14 @@ def format_changed(val: object, existing: object) -> bool:
         existing: The value beneath it.
 
     Returns:
-        True when both are dicts whose `api_format` differs.
+        True when both are dicts whose `backend` differs.
     """
     return (
         isinstance(val, dict)
         and isinstance(existing, dict)
-        and "api_format" in val
-        and "api_format" in existing
-        and val.get("api_format") != existing.get("api_format")
+        and "backend" in val
+        and "backend" in existing
+        and val.get("backend") != existing.get("backend")
     )
 
 
@@ -271,7 +271,8 @@ def config_leaves(config: config_model.Config) -> dict[str, Any]:
     out: dict[str, Any] = {}
 
     def walk(model: pydantic.BaseModel, prefix: tuple[str, ...]) -> None:
-        for name in type(model).model_fields:
+        serialized = model.model_dump()
+        for name in serialized:
             value = getattr(model, name)
             parts = (*prefix, name)
             path = io.render_key(parts)
@@ -291,7 +292,7 @@ def config_leaves(config: config_model.Config) -> dict[str, Any]:
                     for entry in value
                 )
             else:
-                out[path] = value
+                out[path] = serialized[name]
 
     walk(config, ())
     return out

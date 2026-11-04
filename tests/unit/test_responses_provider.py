@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`api_format = "responses"`: the generic Responses adapter over a configured endpoint."""
+"""`backend = "responses"`: the generic Responses adapter over a configured endpoint."""
 
 from __future__ import annotations
 
@@ -75,17 +75,17 @@ def _evt(data: dict[str, Any]) -> list[str]:
 
 def test_the_entry_needs_a_base_url_and_the_direct_deployment() -> None:
     entry = Config.model_validate(
-        {"providers": {"work": {"api_format": "responses", "base_url": _BASE}}}
+        {"providers": {"work": {"backend": "responses", "base_url": _BASE}}}
     ).providers["work"]
     assert isinstance(entry, ResponsesProviderEntry)
     assert (entry.auth_style, entry.deployment) == ("bearer", "direct")
     with pytest.raises(Exception, match="base_url is required"):
-        Config.model_validate({"providers": {"work": {"api_format": "responses"}}})
+        Config.model_validate({"providers": {"work": {"backend": "responses"}}})
     with pytest.raises(Exception, match="direct"):
         Config.model_validate(
             {
                 "providers": {
-                    "work": {"api_format": "responses", "base_url": _BASE, "deployment": "azure"}
+                    "work": {"backend": "responses", "base_url": _BASE, "deployment": "azure"}
                 }
             }
         )
@@ -93,13 +93,13 @@ def test_the_entry_needs_a_base_url_and_the_direct_deployment() -> None:
 
 def test_the_url_appends_responses_and_the_effort_passes_through() -> None:
     url, in_body = wire.request_url(
-        api_format="responses", deployment="direct", base_url=_BASE, model="r-1", streaming=True
+        backend="responses", deployment="direct", base_url=_BASE, model="r-1", streaming=True
     )
     assert (url, in_body) == (f"{_BASE}/responses", True)
     cfg = Config.model_validate(
         {
-            "providers": {"work": {"api_format": "responses", "base_url": _BASE}},
-            "models": {"worker": {"provider": "work", "model": "r-1", "effort": "high"}},
+            "providers": {"work": {"backend": "responses", "base_url": _BASE}},
+            "models": {"worker": {"model": "work/r-1", "effort": "high"}},
         }
     )
     assert registry.role_effort(cfg, "worker") == "high"

@@ -60,11 +60,10 @@ isolation = "none"
 run_commands = "deny"
 
 [models.worker]
-provider = "p"
-model = "m"
+model = "p/m"
 
 [providers.p]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:1"
 api_key_env = "PROBE_KEY"
 
@@ -686,7 +685,7 @@ def test_a_missing_provider_key_refuses_before_any_worktree(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A route that cannot run refuses with no worktree and no session dir."""
-    keyed = _CONFIG.replace('api_format = "openai"', 'api_format = "anthropic"')
+    keyed = _CONFIG.replace('backend = "openai"', 'backend = "anthropic"')
     repo = _repo(tmp_path, monkeypatch, config=keyed)
     monkeypatch.delenv("PROBE_KEY")
 

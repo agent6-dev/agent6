@@ -75,7 +75,7 @@ def test_connect_preserves_hand_edited_provider_keys(
     gc.parent.mkdir(parents=True, exist_ok=True)
     gc.write_text(
         "[providers.openrouter]\n"
-        'api_format = "openai"\n'
+        'backend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
         "# hand-added\n"
         "http_timeout_s = 120\n"
@@ -88,7 +88,7 @@ def test_connect_preserves_hand_edited_provider_keys(
     assert rc == 0
     text = gc.read_text(encoding="utf-8")
     assert "[providers.openrouter]" in text
-    assert 'api_format = "openai"' in text
+    assert 'backend = "openai"' in text
     assert "http_timeout_s = 120" in text
     assert "extra_body" in text
     assert "# hand-added" in text
@@ -96,7 +96,7 @@ def test_connect_preserves_hand_edited_provider_keys(
 
 _AZURE_BLOCK = (
     "[providers.az]\n"
-    'api_format = "openai"\n'
+    'backend = "openai"\n'
     'deployment = "azure"\n'
     'base_url = "https://res.openai.azure.com"\n'
     'extra_query = { "api-version" = "2024-10-21" }\n'
@@ -131,7 +131,7 @@ def _scripted_input(monkeypatch: pytest.MonkeyPatch, *answers: str) -> list[str]
         (_AZURE_BLOCK + "[budget]\nbogus_key = 1\n", "https://res.openai.azure.com"),
         ("", "https://api.openai.com/v1"),
         (
-            '[providers.az]\napi_format = "anthropic"\nbase_url = "https://proxy.example/v1"\n',
+            '[providers.az]\nbackend = "anthropic"\nbase_url = "https://proxy.example/v1"\n',
             "https://api.openai.com/v1",
         ),
     ],
@@ -172,10 +172,10 @@ def test_enter_at_the_base_url_prompt_keeps_the_url_it_shows(
 
 
 @pytest.mark.parametrize("broken", [False, True])
-def test_enter_at_the_api_format_prompt_keeps_an_existing_blocks_format(
+def test_enter_at_the_backend_prompt_keeps_an_existing_blocks_format(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, broken: bool
 ) -> None:
-    """Enter at the API format prompt keeps an existing block's format, which the prompt shows.
+    """Enter at the backend prompt keeps an existing block's format, which the prompt shows.
 
     The prompt offered `anthropic`, so Enter refused the azure block.
     """
@@ -185,11 +185,11 @@ def test_enter_at_the_api_format_prompt_keeps_an_existing_blocks_format(
     prompts = _scripted_input(monkeypatch, "", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
     rc = main(["connect", "az"])
-    api_format = tomllib.loads(gc.read_text())["providers"]["az"]["api_format"]
-    assert (rc, api_format, prompts[0]) == (
+    backend = tomllib.loads(gc.read_text())["providers"]["az"]["backend"]
+    assert (rc, backend, prompts[0]) == (
         0,
         "openai",
-        "API format for 'az' (anthropic/openai/chatgpt/responses/claude_code) [openai]: ",
+        "Backend for 'az' (anthropic/openai/chatgpt/responses/claude_code) [openai]: ",
     )
 
 
@@ -213,7 +213,7 @@ def test_connect_checks_effective_host_after_target_layer_edit(
     for path, host in ((global_path, "global"), (repo_path, "repo")):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
-            f'[providers.custom]\napi_format = "openai"\nbase_url = "https://{host}.example/v1"\n'
+            f'[providers.custom]\nbackend = "openai"\nbase_url = "https://{host}.example/v1"\n'
         )
     prompts = _scripted_input(monkeypatch, "", replacement)
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
@@ -237,7 +237,7 @@ def test_connect_checks_effective_host_after_target_layer_edit(
     for path, host in ((global_path, "global"), (repo_path, "repo")):
         expected = shown if (path == repo_path) == to_repo else f"https://{host}.example/v1"
         assert tomllib.loads(path.read_text())["providers"]["custom"] == {
-            "api_format": "openai",
+            "backend": "openai",
             "base_url": expected,
         }
     assert ("already holds" in out) is (to_repo and not replacement)
@@ -252,7 +252,7 @@ def test_connect_says_when_a_typed_url_is_kept_out_by_the_repo_layer(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Global and repo held the same URL, so no notice said the typed one never reaches a run."""
-    same = '[providers.custom]\napi_format = "openai"\nbase_url = "https://same.example/v1"\n'
+    same = '[providers.custom]\nbackend = "openai"\nbase_url = "https://same.example/v1"\n'
     for path in (paths.global_config_path(), paths.repo_config_path(tmp_path)):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(same)
@@ -274,7 +274,7 @@ def test_a_broken_config_still_offers_the_default_url_for_a_bare_openai_block(
     """With the config not loading, a block without base_url offered `Base URL []`; Enter failed."""
     gc = paths.global_config_path()
     gc.parent.mkdir(parents=True)
-    gc.write_text('[providers.az]\napi_format = "openai"\n[budget]\nbogus_key = 1\n')
+    gc.write_text('[providers.az]\nbackend = "openai"\n[budget]\nbogus_key = 1\n')
     prompts = _scripted_input(monkeypatch, "", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-az\n"))
     assert main(["connect", "az"]) == 0
@@ -290,13 +290,13 @@ def test_connect_writes_a_repo_only_providers_url_to_the_global_file(
     repo_path = paths.repo_config_path(tmp_path)
     repo_path.parent.mkdir(parents=True, exist_ok=True)
     repo_path.write_text(
-        '[providers.custom]\napi_format = "openai"\nbase_url = "https://repo.example/v1"\n'
+        '[providers.custom]\nbackend = "openai"\nbase_url = "https://repo.example/v1"\n'
     )
     _scripted_input(monkeypatch, "", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
     assert main(["connect", "custom"]) == 0
     saved = tomllib.loads(paths.global_config_path().read_text())["providers"]["custom"]
-    assert saved == {"api_format": "openai", "base_url": "https://repo.example/v1"}
+    assert saved == {"backend": "openai", "base_url": "https://repo.example/v1"}
 
 
 def test_a_preset_name_keeps_an_existing_blocks_other_format(
@@ -305,14 +305,14 @@ def test_a_preset_name_keeps_an_existing_blocks_other_format(
     """`connect claude` over an anthropic-format `[providers.claude]` rewrote it to claude_code."""
     gc = paths.global_config_path()
     gc.parent.mkdir(parents=True)
-    gc.write_text('[providers.claude]\napi_format = "anthropic"\n')
+    gc.write_text('[providers.claude]\nbackend = "anthropic"\n')
     prompts = _scripted_input(monkeypatch, "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant\n"))
     assert main(["connect", "claude"]) == 0
     assert prompts == [
-        "API format for 'claude' (anthropic/openai/chatgpt/responses/claude_code) [anthropic]: "
+        "Backend for 'claude' (anthropic/openai/chatgpt/responses/claude_code) [anthropic]: "
     ]
-    assert tomllib.loads(gc.read_text())["providers"]["claude"] == {"api_format": "anthropic"}
+    assert tomllib.loads(gc.read_text())["providers"]["claude"] == {"backend": "anthropic"}
     assert "already holds these values" in capsys.readouterr().out
 
 
@@ -322,7 +322,7 @@ def test_logout_reads_the_blocks_format_not_the_preset_name(
     """`--logout` on a custom-named claude_code block said "No stored credentials"."""
     gc = paths.global_config_path()
     gc.parent.mkdir(parents=True)
-    gc.write_text('[providers.cc]\napi_format = "claude_code"\n')
+    gc.write_text('[providers.cc]\nbackend = "claude_code"\n')
     assert main(["connect", "cc", "--logout"]) == 2
     assert "claude auth logout" in capsys.readouterr().err
 
@@ -348,7 +348,7 @@ def test_connect_auth_none_skips_key_check(
     """An auth-none block cannot validate a key it never sends."""
     gc = paths.global_config_path()
     gc.parent.mkdir(parents=True)
-    gc.write_text('[providers.local]\napi_format = "openai"\nauth_style = "none"\n')
+    gc.write_text('[providers.local]\nbackend = "openai"\nauth_style = "none"\n')
     _scripted_input(monkeypatch, "", "")
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-test\n"))
     monkeypatch.setattr(cache, "probe_provider_key", _REAL_PROBE)
@@ -515,9 +515,9 @@ def test_model_change_preserves_the_target_layers_other_fields(
     cfg = iso / "agent6" / "config.toml"
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text(
-        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
-        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
-        '[models.worker]\nprovider = "a"\nmodel = "old"\neffort = "high"\n'
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nmodel = "a/old"\neffort = "high"\n'
         "temperature = 0.4\n"
     )
     repo_cfg = paths.repo_config_path(tmp_path)
@@ -531,8 +531,7 @@ def test_model_change_preserves_the_target_layers_other_fields(
     assert main(args) == 0
     role = tomllib.loads((repo_cfg if to_repo else cfg).read_text())["models"]["worker"]
     assert role == {
-        "provider": "b",
-        "model": "new",
+        "model": "b/new",
         "effort": effort or ("low" if to_repo else "high"),
         "temperature": 0.8 if to_repo else 0.4,
     }
@@ -649,7 +648,7 @@ def test_model_piped_without_model_lists_the_catalog(
     # No tty and no model named: a listing, one id per line at exit 0, with the hint on stderr.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a", "claude-b"]))
@@ -673,7 +672,7 @@ def test_model_set_warns_when_the_provider_has_no_key(
     # A configured but keyless provider is valid config; the warning names the first run's refusal.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.config.secret_store.resolve_api_key", _key_stub(None))
     rc = main(["model", "worker", "anthropic/claude-x"])
@@ -691,7 +690,7 @@ def test_model_set_stays_quiet_when_the_key_resolves(
 ) -> None:
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.config.secret_store.resolve_api_key", _key_stub("sk-x"))
     rc = main(["model", "worker", "anthropic/claude-x"])
@@ -706,15 +705,15 @@ def test_model_set_keeps_an_openrouter_slug_on_the_roles_provider(
     config = tmp_path / "g" / "agent6" / "config.toml"
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        '[providers.openrouter]\napi_format = "openai"\nbase_url = "https://x/v1"\n'
-        '[models.worker]\nprovider = "openrouter"\nmodel = "old"\n',
+        '[providers.openrouter]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "openrouter/old"\n',
         encoding="utf-8",
     )
 
     assert main(["model", "worker", "moonshotai/kimi-k2.6"]) == 0
     text = config.read_text(encoding="utf-8")
-    assert 'provider = "openrouter"' in text
-    assert 'model = "moonshotai/kimi-k2.6"' in text
+    assert "provider =" not in text
+    assert 'model = "openrouter/moonshotai/kimi-k2.6"' in text
 
 
 def test_model_piped_unknown_provider_errors(
@@ -736,7 +735,7 @@ def test_model_stdout_piped_lists_even_with_a_tty_stdin(
     # Stdin stays a tty while stdout is piped: the listing triggers on the piped stdout.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a"]))
     rc = main(["model", "worker", "anthropic"])
@@ -771,7 +770,7 @@ def test_model_piped_listing_notes_an_ignored_thinking_flag(
 ) -> None:
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     monkeypatch.setattr("agent6.models.cache.list_models", _models_stub(["claude-a"]))
@@ -792,7 +791,7 @@ def test_model_interactive_prefill(
     # The operator picks the provider by default and the model by number from a mocked live list.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
 
     def fake_list_models(*a: object, **k: object) -> list[str]:
@@ -815,7 +814,7 @@ def test_model_all_interactive_prompts_once(
     # "all" prompts ONCE for provider/model (not per role), then applies to each.
     (tmp_path / "g" / "agent6").mkdir(parents=True, exist_ok=True)
     (tmp_path / "g" / "agent6" / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8"
+        '[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8"
     )
 
     def _models(*_a: object, **_k: object) -> list[str]:
@@ -894,25 +893,25 @@ def test_connect_status_lists_local_credentials_without_secrets(
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        '[providers.keyed]\napi_format = "anthropic"\napi_key_env = "CST_API_KEY"\n'
-        '[providers.chatgpt]\napi_format = "chatgpt"\n'
-        '[providers.old_format]\napi_format = "chatgpt"\n'
-        '[providers.issuer]\napi_format = "openai"\n'
+        '[providers.keyed]\nbackend = "anthropic"\napi_key_env = "CST_API_KEY"\n'
+        '[providers.chatgpt]\nbackend = "chatgpt"\n'
+        '[providers.old_format]\nbackend = "chatgpt"\n'
+        '[providers.issuer]\nbackend = "openai"\n'
         '[providers.issuer.oauth]\nissuer = "https://login.example"\n'
         'client_id = "agent6"\nauthorization_endpoint = "https://login.example/auth"\n'
         'token_endpoint = "https://login.example/token"\n'
-        '[providers.claude]\napi_format = "claude_code"\n'
-        '[providers.stored]\napi_format = "anthropic"\n'
-        '[providers.command]\napi_format = "anthropic"\ntoken_command = ["mint-token"]\n'
-        '[providers.local]\napi_format = "openai"\nauth_style = "none"\n'
-        '[providers.unset]\napi_format = "anthropic"\napi_key_env = "CST_UNSET_KEY"\n'
+        '[providers.claude]\nbackend = "claude_code"\n'
+        '[providers.stored]\nbackend = "anthropic"\n'
+        '[providers.command]\nbackend = "anthropic"\ntoken_command = ["mint-token"]\n'
+        '[providers.local]\nbackend = "openai"\nauth_style = "none"\n'
+        '[providers.unset]\nbackend = "anthropic"\napi_key_env = "CST_UNSET_KEY"\n'
     )
     monkeypatch.setenv("CST_API_KEY", "sk-env-secret")
     monkeypatch.delenv("CST_UNSET_KEY", raising=False)
     monkeypatch.setattr(time, "time", lambda: 1000.0)
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 42 * 60),
-        ChatGPTProviderEntry(api_format="chatgpt"),
+        ChatGPTProviderEntry(backend="chatgpt"),
         now=1000.0,
     )
     secret_store.save_oauth_grant("chatgpt", grant)
@@ -1021,11 +1020,11 @@ def test_connect_status_names_bound_grant_causes(
     """Status shares binding and account checks; an expired refreshable grant remains usable."""
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text('[providers.work]\napi_format = "chatgpt"\n')
+    config.write_text('[providers.work]\nbackend = "chatgpt"\n')
     monkeypatch.setattr(time, "time", lambda: 5000.0)
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant(_grant_jwt(), "refresh-secret", 3600),
-        ChatGPTProviderEntry(api_format="chatgpt"),
+        ChatGPTProviderEntry(backend="chatgpt"),
         now=1000.0,
     )
     secret_store.save_oauth_grant(
@@ -1073,7 +1072,7 @@ def test_connect_status_reads_explicit_config(
 ) -> None:
     """The read-only status mode honors the same explicit config layers as model listings."""
     config = tmp_path / "extra.toml"
-    config.write_text('[providers.extra]\napi_format = "openai"\nauth_style = "none"\n')
+    config.write_text('[providers.extra]\nbackend = "openai"\nauth_style = "none"\n')
 
     def request(method: str, url: str, **kwargs: object) -> httpx2.Response:
         assert kwargs["headers"] == {}
@@ -1094,7 +1093,7 @@ def test_logout_unbound_chatgpt_is_local_only(
     """Logout removes old-format and rebound entries locally and keeps the provider config."""
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text('[providers.work]\napi_format = "chatgpt"\n')
+    config.write_text('[providers.work]\nbackend = "chatgpt"\n')
     if state == "old_format":
         secret_store.save_secret(
             "work",
@@ -1108,7 +1107,7 @@ def test_logout_unbound_chatgpt_is_local_only(
     else:
         grant = oauth.stored_grant_for(
             oauth_protocol.TokenGrant("AT", "RT", 3600),
-            ChatGPTProviderEntry(api_format="chatgpt"),
+            ChatGPTProviderEntry(backend="chatgpt"),
             now=time.time(),
         )
         secret_store.save_oauth_grant("work", dataclasses.replace(grant, binding="other"))
@@ -1130,7 +1129,7 @@ def test_logout_unbound_chatgpt_is_local_only(
             " run `agent6 connect work` to sign in again. Not revoked."
         ) in output.err
     assert secret_store.load_secrets().get("providers", {}) == {}
-    assert config.read_text() == '[providers.work]\napi_format = "chatgpt"\n'
+    assert config.read_text() == '[providers.work]\nbackend = "chatgpt"\n'
 
 
 def test_chatgpt_connect_replaces_old_format_entry_atomically_with_bound_grant(
@@ -1172,7 +1171,7 @@ def test_chatgpt_connect_replaces_old_format_entry_atomically_with_bound_grant(
     assert len(published) == 1 and "obsolete_field" not in published[0]
     grant = secret_store.load_oauth_grant("chatgpt")
     assert grant is not None
-    assert grant.binding == oauth.binding_fingerprint(ChatGPTProviderEntry(api_format="chatgpt"))
+    assert grant.binding == oauth.binding_fingerprint(ChatGPTProviderEntry(backend="chatgpt"))
     assert secret_store.resolve_api_key("sibling", None) == "keep"
     output = capsys.readouterr().out
     assert "(0600), bound to [providers.chatgpt]" in output
@@ -1250,7 +1249,7 @@ def test_connect_chatgpt_paste_flow_signs_in_and_writes_config(
     assert tokens is not None and tokens.account_id == "acct-7"
 
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
-    assert "[providers.chatgpt]" in gc and 'api_format = "chatgpt"' in gc
+    assert "[providers.chatgpt]" in gc and 'backend = "chatgpt"' in gc
     out = capsys.readouterr().out
     assert "Signed in (plus plan)" in out
     assert "Data controls" in out and "never sends feedback" in out
@@ -1262,7 +1261,7 @@ def test_connect_claude_writes_the_format_only_and_stores_no_secret(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """`connect claude` writes `api_format` and no secret.
+    """`connect claude` writes `backend` and no secret.
 
     A signed-out binary warns with the remedy; `--logout` refuses, since agent6 holds no Claude Code
     credential.
@@ -1277,7 +1276,7 @@ def test_connect_claude_writes_the_format_only_and_stores_no_secret(
     monkeypatch.setattr("agent6.providers.claude_code.login_status", signed_in)
     assert main(["connect", "claude"]) == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
-    assert "[providers.claude]" in gc and 'api_format = "claude_code"' in gc
+    assert "[providers.claude]" in gc and 'backend = "claude_code"' in gc
     assert not (tmp_path / "g" / "agent6" / "secrets.toml").exists()
     assert "Claude Code (`claude` on PATH): signed in." in capsys.readouterr().out
 
@@ -1334,12 +1333,12 @@ def test_connect_logout_revokes_and_removes_tokens(
     """--logout revokes a ChatGPT grant at the issuer and removes the secrets entry."""
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
-    config.write_text('[providers.chatgpt]\napi_format = "chatgpt"\n')
+    config.write_text('[providers.chatgpt]\nbackend = "chatgpt"\n')
     secret_store.save_oauth_grant(
         "chatgpt",
         oauth.stored_grant_for(
             oauth_protocol.TokenGrant("AT", "RT", 3600),
-            ChatGPTProviderEntry(api_format="chatgpt"),
+            ChatGPTProviderEntry(backend="chatgpt"),
             now=time.time(),
         ),
     )
@@ -1432,13 +1431,13 @@ def test_connect_chatgpt_format_under_another_name_signs_in_as_itself(
     monkeypatch.setattr("agent6.providers.oauth_chatgpt.start_device_auth", fake_start)
     monkeypatch.setattr("agent6.providers.oauth_chatgpt.poll_device_auth", fake_poll)
 
-    def api_format(prompt: str = "") -> str:
+    def backend(prompt: str = "") -> str:
         return "chatgpt"
 
     def no_browser(_url: str) -> None:
         return
 
-    monkeypatch.setattr("builtins.input", api_format)
+    monkeypatch.setattr("builtins.input", backend)
     monkeypatch.setattr("webbrowser.open", no_browser)
 
     assert main(["connect", "codex"]) == 0
@@ -1489,10 +1488,10 @@ def test_connect_chatgpt_device_failure_falls_back_to_paste(
     assert secret_store.load_oauth_grant("chatgpt") is not None
 
 
-def test_connect_eof_at_the_api_format_prompt_says_why(
+def test_connect_eof_at_the_backend_prompt_says_why(
     iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """EOF at the api_format prompt names the abort: a custom provider name has no preset format."""
+    """EOF at the backend prompt names the abort: a custom provider name has no preset format."""
 
     def _eof(prompt: str = "") -> str:
         raise EOFError
@@ -1505,11 +1504,10 @@ def test_connect_eof_at_the_api_format_prompt_says_why(
 
 _WORKER_ONLY = """\
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 
 [models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "anthropic/claude-sonnet-4-5"
 """
 
 
@@ -1553,7 +1551,7 @@ def test_a_number_outside_the_model_list_is_refused(
     typed[:] = ["7"]
     # A provider name alone is that provider with the model still to pick.
     cfg = tmp_path / "custom.toml"
-    cfg.write_text('[providers.anthropic]\napi_format = "anthropic"\n', encoding="utf-8")
+    cfg.write_text('[providers.anthropic]\nbackend = "anthropic"\n', encoding="utf-8")
     assert main(["--config", str(cfg), "model", "worker", "anthropic"]) == 2
     err = capsys.readouterr().err
     assert err.count("ERROR") == 1 and "no model 7" in err

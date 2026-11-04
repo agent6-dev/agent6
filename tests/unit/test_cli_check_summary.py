@@ -41,10 +41,9 @@ def test_chatgpt_diagnosis_is_shared_by_check_and_model(
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        f'[providers.{name}]\napi_format = "chatgpt"\n'
-        f'[models.worker]\nprovider = "{name}"\nmodel = "m1"\n'
+        f'[providers.{name}]\nbackend = "chatgpt"\n[models.worker]\nmodel = "{name}/m1"\n'
     )
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     claim = json.dumps({"https://api.openai.com/auth": {"chatgpt_account_id": "claim"}})
     access = "e30." + base64.urlsafe_b64encode(claim.encode()).decode().rstrip("=") + ".sig"
     if state == "old_format":
@@ -104,12 +103,11 @@ def test_healthy_local_sign_in_check_does_not_claim_remote_acceptance(
     config = paths.global_config_path()
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
-        '[providers.chatgpt]\napi_format = "chatgpt"\n'
-        '[models.worker]\nprovider = "chatgpt"\nmodel = "m1"\n'
+        '[providers.chatgpt]\nbackend = "chatgpt"\n[models.worker]\nmodel = "chatgpt/m1"\n'
     )
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("AT", "RT", 3600),
-        ChatGPTProviderEntry(api_format="chatgpt"),
+        ChatGPTProviderEntry(backend="chatgpt"),
         now=time.time(),
     )
     secret_store.save_oauth_grant("chatgpt", dataclasses.replace(grant, account_id="account"))

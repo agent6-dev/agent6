@@ -46,15 +46,15 @@ else
   PROVIDER=openrouter
 fi
 PROVIDER_BLOCK='[providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
 [providers.chatgpt]
-api_format = "chatgpt"
+backend = "chatgpt"
 
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 api_key_env = "OPENROUTER_API_KEY"
 base_url = "https://openrouter.ai/api/v1"
 extra_headers = { "HTTP-Referer" = "https://github.com/agent6-dev/agent6", "X-Title" = "agent6-swebench" }'
@@ -121,13 +121,11 @@ config_version = 1
 $PROVIDER_BLOCK
 
 [models.worker]
-provider = "$PROVIDER"
-model = "$MODEL"
+model = "$PROVIDER/$MODEL"
 ${AGENT6_SB_EFFORT:+effort = \"$AGENT6_SB_EFFORT\"}
 
 [models.reviewer]
-provider = "$PROVIDER"
-model = "$MODEL"
+model = "$PROVIDER/$MODEL"
 
 [sandbox]
 # UNSANDBOXED: the container is the isolation. agent6's jail fights the container

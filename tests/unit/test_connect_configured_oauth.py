@@ -24,7 +24,7 @@ from agent6.ui.cli import main
 
 _CONFIG = """
 [providers.work]
-api_format = "openai"
+backend = "openai"
 base_url = "https://models.example/v1"
 
 [providers.work.oauth]
@@ -292,7 +292,7 @@ def test_the_run_preflight_wants_a_bound_grant(
     cfg = Config.model_validate(
         {
             **load_config(_write_config()).model_dump(mode="json", exclude_defaults=True),
-            "models": {"worker": {"provider": "work", "model": "m1"}},
+            "models": {"worker": {"model": "work/m1"}},
         }
     )
     entry = cfg.providers["work"]

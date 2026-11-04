@@ -21,7 +21,7 @@ from agent6.config import ChatGPTProviderEntry, Config, OpenAIProviderEntry, sec
 from agent6.providers import oauth, oauth_chatgpt, oauth_protocol, provider_types, transport
 
 _ENTRY: dict[str, Any] = {
-    "api_format": "openai",
+    "backend": "openai",
     "base_url": "https://models.example/v1",
     "oauth": {
         "issuer": "https://login.example",
@@ -90,14 +90,14 @@ def test_a_grant_round_trips_the_store_at_0600(gcfg: pathlib.Path) -> None:
 
 
 def test_shared_holder_accepts_a_bound_chatgpt_profile(gcfg: pathlib.Path) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry)
     assert oauth.OAuthCredential("work", entry, now=lambda: 2_000.0).token() == "AT1"
 
 
 def test_a_configured_grant_keeps_its_original_binding(gcfg: pathlib.Path) -> None:
     """Profile resolution must not invalidate an existing configured sign-in."""
-    fingerprint = "e7efc70de66a76e1f169a28681e239b3"
+    fingerprint = "0f54bf70aabedb2a4d3826affdd412ef"
     entry = _entry()
     assert oauth.binding_fingerprint(entry) == fingerprint
     stored = _store(entry, binding=fingerprint)
@@ -118,7 +118,7 @@ def test_configured_profile_preserves_settings_without_chatgpt_policies() -> Non
 
 
 def test_chatgpt_profile_keeps_registration_and_mixed_encodings() -> None:
-    profile = oauth.profile_for(ChatGPTProviderEntry(api_format="chatgpt"))
+    profile = oauth.profile_for(ChatGPTProviderEntry(backend="chatgpt"))
     assert profile is oauth_chatgpt.PROFILE
     assert profile.redirect_uri == "http://localhost:1455/auth/callback"
     assert profile.callback_host == "127.0.0.1"
@@ -154,7 +154,7 @@ def test_chatgpt_profile_keeps_registration_and_mixed_encodings() -> None:
 def test_chatgpt_binding_covers_effective_profile_settings(
     monkeypatch: pytest.MonkeyPatch, field: str, value: str
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     fingerprint = oauth.binding_fingerprint(entry)
     monkeypatch.setattr(
         oauth_chatgpt, "PROFILE", dataclasses.replace(oauth_chatgpt.PROFILE, **{field: value})
@@ -248,7 +248,7 @@ def test_only_a_current_bearers_401_arms_a_refresh(
     chatgpt: bool,
 ) -> None:
     """A late refusal of an old bearer must not rotate the shared holder's current grant."""
-    entry = ChatGPTProviderEntry(api_format="chatgpt") if chatgpt else _entry()
+    entry = ChatGPTProviderEntry(backend="chatgpt") if chatgpt else _entry()
     _store(entry)
     clock = {"now": 2_000.0}
     refreshes: list[str] = []
@@ -514,7 +514,7 @@ def _account_token(account: str) -> str:
 
 
 def test_id_token_only_account_is_persisted_without_identity_token(gcfg: pathlib.Path) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     identity = _account_token("account-a")
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("opaque", "RT", 3600, identity), entry, now=1000
@@ -531,16 +531,14 @@ def test_id_token_only_account_is_persisted_without_identity_token(gcfg: pathlib
 def test_initial_chatgpt_grant_requires_nonblank_refresh_token(refresh: str) -> None:
     grant = oauth_protocol.TokenGrant("AT", refresh, None)
     with pytest.raises(provider_types.ProviderError, match=r"ChatGPT.*no refresh_token"):
-        oauth.stored_grant_for(grant, ChatGPTProviderEntry(api_format="chatgpt"), now=1000)
+        oauth.stored_grant_for(grant, ChatGPTProviderEntry(backend="chatgpt"), now=1000)
     assert oauth.stored_grant_for(grant, _entry(), now=1000).refresh_token == refresh
 
 
 def test_chatgpt_omitted_expiry_uses_an_hour_but_configured_expiry_is_indefinite() -> None:
     grant = oauth_protocol.TokenGrant("AT", "RT", None)
     assert (
-        oauth.stored_grant_for(
-            grant, ChatGPTProviderEntry(api_format="chatgpt"), now=1000
-        ).expires_at
+        oauth.stored_grant_for(grant, ChatGPTProviderEntry(backend="chatgpt"), now=1000).expires_at
         == 4600
     )
     assert oauth.stored_grant_for(grant, _entry(), now=1000).expires_at is None
@@ -549,7 +547,7 @@ def test_chatgpt_omitted_expiry_uses_an_hour_but_configured_expiry_is_indefinite
 def test_chatgpt_uses_full_skew_and_keeps_account_on_partial_refresh(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry, account_id="account-a", expires_at=1400)
     calls: list[dict[str, str]] = []
 
@@ -577,7 +575,7 @@ def test_chatgpt_uses_full_skew_and_keeps_account_on_partial_refresh(
 
 
 def test_shared_holder_refuses_stored_account_contradiction(gcfg: pathlib.Path) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry, access_token=_account_token("claimed"), account_id="stored")
     with pytest.raises(
         provider_types.ProviderError,
@@ -591,7 +589,7 @@ def test_shared_holder_refuses_stored_account_contradiction(gcfg: pathlib.Path) 
 def test_shared_holder_pins_first_account_before_refresh_or_adoption(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str, stored_account: str | None
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     first = _account_token("account-a")
     _store(entry, access_token=first, account_id=stored_account)
     holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
@@ -615,7 +613,7 @@ def test_shared_holder_pins_first_account_before_refresh_or_adoption(
 
 @pytest.mark.parametrize("kind", ["missing", "old_format", "rebound", "contradiction", "valid"])
 def test_read_only_bound_grant_validation(gcfg: pathlib.Path, kind: str) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     if kind == "old_format":
         secret_store.save_secret(
             "work",
@@ -675,7 +673,7 @@ def test_refresh_errors_have_classified_codes(code: str) -> None:
 def test_shared_holder_rereads_once_after_reused_refresh(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, replacement: str
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     original = _store(entry, account_id="account-a")
     sleeps: list[float] = []
     calls: list[str] = []
@@ -718,7 +716,7 @@ def test_shared_holder_rereads_once_after_reused_refresh(
 def test_refresh_rescue_ignores_reused_token_words_in_prose(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry)
     sleeps: list[float] = []
 
@@ -739,7 +737,7 @@ def test_concurrent_holders_rotate_once_under_real_locks(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, shared: bool
 ) -> None:
     """Concurrent calls and independent holders consume a single-use token only once."""
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry, account_id="account-a")
     first = oauth.OAuthCredential("work", entry, now=lambda: 6000)
     second = first if shared else oauth.OAuthCredential("work", entry, now=lambda: 6000)
@@ -767,7 +765,7 @@ def test_concurrent_holders_rotate_once_under_real_locks(
 def test_shared_holder_refuses_an_unopenable_real_lock(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry)
     path = secret_store.paths.secrets_path()
     path.with_name(path.name + ".lock").mkdir()
@@ -783,7 +781,7 @@ def test_shared_holder_refuses_an_unopenable_real_lock(
 def test_shared_holder_adopts_same_account_sibling_after_401_without_rotation(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry, account_id="account-a")
     holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
     assert holder.token() == "AT1"
@@ -802,7 +800,7 @@ def test_shared_holder_adopts_same_account_sibling_after_401_without_rotation(
 def test_partial_refresh_preserves_the_pinned_account(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry, account_id="account-a")
     holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
     assert holder.account_id() == "account-a"
@@ -824,7 +822,7 @@ def test_pinned_holder_refuses_an_unidentified_stored_grant(
     gcfg: pathlib.Path, monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
     """A different sign-in without identity cannot inherit this run's pinned account."""
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     _store(entry, account_id="account-a")
     holder = oauth.OAuthCredential("work", entry, now=lambda: 2000)
     assert holder.token() == "AT1"

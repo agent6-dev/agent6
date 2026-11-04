@@ -39,12 +39,12 @@ def price_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> path
 def _cfg(worker: str, budget: dict[str, Any] | None = None, reviewer: str | None = None) -> Any:
     from agent6.config import Config
 
-    models: dict[str, Any] = {"worker": {"provider": "p", "model": worker}}
+    models: dict[str, Any] = {"worker": {"model": "p/" + worker}}
     if reviewer is not None:
-        models["reviewer"] = {"provider": "p", "model": reviewer}
+        models["reviewer"] = {"model": "p/" + reviewer}
     return Config.model_validate(
         {
-            "providers": {"p": {"api_format": "openai", "base_url": "http://localhost:1"}},
+            "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1"}},
             "models": models,
             **({"budget": budget} if budget else {}),
         }

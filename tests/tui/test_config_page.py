@@ -25,11 +25,10 @@ from agent6.viewmodel import config_view
 
 _GLOBAL = """\
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 
 [models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "anthropic/claude-sonnet-4-5"
 
 [sandbox]
 run_commands = "allow"
@@ -351,8 +350,8 @@ def test_edit_action_arrows_navigate(repo: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-def test_provider_field_is_a_picker_of_configured_providers(repo: pathlib.Path) -> None:
-    """Editing models.<role>.provider shows a chooser of the configured provider names."""
+def test_model_editor_has_one_qualified_route_field(repo: pathlib.Path) -> None:
+    """The Model editor exposes one qualified route field, not a provider chooser."""
 
     async def scenario() -> None:
         from agent6.ui.tui import forms
@@ -365,9 +364,7 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: pathlib.Path) 
             tbl = screen.query_one("#tbl-models", widgets.DataTable)
             tbl.focus()
             ridx = next(
-                r
-                for r in range(tbl.row_count)
-                if "worker" in str(tbl.get_row_at(r)[0]) and "provider" in str(tbl.get_row_at(r)[0])
+                r for r in range(tbl.row_count) if str(tbl.get_row_at(r)[0]) == "worker.model"
             )
             tbl.move_cursor(row=ridx)
             await pilot.pause()
@@ -375,9 +372,9 @@ def test_provider_field_is_a_picker_of_configured_providers(repo: pathlib.Path) 
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_model.ModelModal)
-            # A ChoiceField, not a plain Input: the configured providers were injected as choices.
-            field = modal.query_one("#model-provider", forms.ChoiceField)
-            assert field.value == "anthropic"
+            assert not modal.query("#model-provider")
+            field = modal.query_one("#model-name", forms.TypeaheadField)
+            assert field.value == "anthropic/claude-sonnet-4-5"
 
     asyncio.run(scenario())
 
@@ -416,32 +413,32 @@ def test_model_field_is_a_typeahead_picker(
             modal = app.screen
             assert isinstance(modal, config_model.ModelModal)
             field = modal.query_one("#model-name", forms.TypeaheadField)
-            assert field.value == "claude-sonnet-4-5"  # the current model
+            assert field.value == "anthropic/claude-sonnet-4-5"  # the current model
             field.focus()
             # First keystroke replaces + narrows; arrow highlights a match.
             await pilot.press("h")
             await pilot.pause()
             await pilot.press("down")
             await pilot.pause()
-            assert field.value == "claude-haiku-4-5"
+            assert field.value == "anthropic/claude-haiku-4-5"
 
     asyncio.run(scenario())
 
 
 @pytest.mark.parametrize("to_repo", [False, True])
-def test_paired_model_editor_resets_the_model_and_preserves_siblings(
+def test_scalar_model_editor_saves_one_key_and_preserves_siblings(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, to_repo: bool
 ) -> None:
-    """A role change clears the old model and saves both fields without replacing siblings."""
+    """A qualified route saves one key without replacing the sampling settings."""
     from agent6.config import io, write
 
     cfg = paths.global_config_path()
     cfg.write_text(
         cfg.read_text().replace(
-            'model = "claude-sonnet-4-5"',
-            'model = "claude-sonnet-4-5"\neffort = "high"\ntemperature = 0.4',
+            'model = "anthropic/claude-sonnet-4-5"',
+            'model = "anthropic/claude-sonnet-4-5"\neffort = "high"\ntemperature = 0.4',
         )
-        + '\n[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
+        + '\n[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n'
     )
     repo_cfg = paths.repo_config_path(repo)
     repo_cfg.parent.mkdir(parents=True, exist_ok=True)
@@ -463,7 +460,7 @@ def test_paired_model_editor_resets_the_model_and_preserves_siblings(
                 row=next(
                     r
                     for r in range(table.row_count)
-                    if str(table.get_row_at(r)[0]) == "worker.provider"
+                    if str(table.get_row_at(r)[0]) == "worker.model"
                 )
             )
             table.focus()
@@ -471,23 +468,15 @@ def test_paired_model_editor_resets_the_model_and_preserves_siblings(
             screen.action_edit()
             await pilot.pause()
             modal = app.screen
-            provider = modal.query_one("#model-provider", forms.ChoiceField)
-            provider.focus()
-            await pilot.press("down", "enter")
-            await pilot.pause()
+            assert not modal.query("#model-provider")
             field = modal.query_one("#model-name", forms.TypeaheadField)
-            assert field.value == ""
+            field.focus()
+            await pilot.press(*["backspace"] * len(field.value))
             modal.query(forms.ActionItem).first().focus()
             await pilot.press("enter")
             assert app.screen is modal
-            notes = [str(n.message) for n in app._notifications]  # pyright: ignore[reportPrivateUsage]
-            assert any("Provider and model are required" in note for note in notes)
             field.focus()
-            await pilot.press("down", "enter")
-            assert field.value == "b-live"
-            assert app.screen is modal
-            await pilot.press(*["backspace"] * len("b-live"), *"custom")
-            assert field.value == "custom"
+            await pilot.press(*"b/custom")
             target = modal.query_one("#model-target", forms.ChoiceField)
             target.select_value("repo config" if to_repo else "global config")
             before = (repo_cfg if to_repo else cfg).read_text()
@@ -509,8 +498,7 @@ def test_paired_model_editor_resets_the_model_and_preserves_siblings(
             await pilot.pause()
             assert app.screen is screen
             assert io.read_toml_file(repo_cfg if to_repo else cfg)["models"]["worker"] == {
-                "provider": "b",
-                "model": "custom",
+                "model": "b/custom",
                 "effort": "low" if to_repo else "high",
                 "temperature": 0.8 if to_repo else 0.4,
             }
@@ -1233,7 +1221,7 @@ def test_provider_form_uses_the_schema_name_refusal(repo: pathlib.Path, name: st
             modal = app.screen
             assert isinstance(modal, config_forms.EntryModal)
             modal.query_one("#entry-name", widgets.Input).value = name
-            modal.query_one("#entry-api_format", forms.ChoiceField).select_value("openai")
+            modal.query_one("#entry-backend", forms.ChoiceField).select_value("openai")
             modal.action_add()
             await pilot.pause()
             expected = (
@@ -1277,8 +1265,7 @@ def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
             modal = app.screen
             assert isinstance(modal, config_forms.ReviewerModal)
             modal.query_one("#reviewer-focus", widgets.Input).value = "security"
-            modal.query_one("#reviewer-provider", widgets.Input).value = "anthropic"
-            modal.query_one("#reviewer-model", widgets.Input).value = "claude-sonnet-4-5"
+            modal.query_one("#reviewer-model", widgets.Input).value = "anthropic/claude-sonnet-4-5"
             modal.query_one("#reviewer-effort", forms.ChoiceField).select_value("high")
             modal.query_one("#reviewer-temperature", widgets.Input).value = "0.5"
             modal.query_one("#reviewer-target", forms.ChoiceField).select_value("repo config")
@@ -1287,8 +1274,7 @@ def test_reviewer_form_and_positional_removal(repo: pathlib.Path) -> None:
             assert app.screen is screen
             roster = layer.load_effective(repo).config.review.reviewers
             assert [seat.focus for seat in roster] == ["tests", "tests", "security"]
-            assert roster[2].provider == "anthropic"
-            assert roster[2].model == "claude-sonnet-4-5"
+            assert roster[2].model == "anthropic/claude-sonnet-4-5"
             assert roster[2].effort == "high" and roster[2].temperature == 0.5
             table = screen.query_one("#tbl-review", widgets.DataTable)
             row = next(
@@ -1333,7 +1319,7 @@ def test_remove_entry_from_a_default_leaf(repo: pathlib.Path) -> None:
     """A default-valued provider leaf still belongs to a removable entry."""
     from agent6.config import write
 
-    assert write.set_config_leaves(repo, "providers.local", {"api_format": "openai"}) is None
+    assert write.set_config_leaves(repo, "providers.local", {"backend": "openai"}) is None
 
     async def scenario() -> None:
         app = _Host(repo)
@@ -1430,7 +1416,7 @@ def test_add_provider_via_form_persists(repo: pathlib.Path) -> None:
             modal = app.screen
             assert isinstance(modal, config_forms.EntryModal)
             modal.query_one("#entry-name", widgets.Input).value = "openrouter"
-            fmt = modal.query_one("#entry-api_format", forms.ChoiceField)
+            fmt = modal.query_one("#entry-backend", forms.ChoiceField)
             # A chooser round trip (up, down, Space), so the check holds however the union grows.
             fmt.focus()
             await pilot.pause()
@@ -1458,8 +1444,8 @@ def test_add_provider_preserves_existing_provider_fields(repo: pathlib.Path) -> 
     config_path = paths.global_config_dir() / "config.toml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8").replace(
-            'api_format = "anthropic"',
-            'api_format = "anthropic"\n# keep this tuning\nhttp_timeout_s = 120',
+            'backend = "anthropic"',
+            'backend = "anthropic"\n# keep this tuning\nhttp_timeout_s = 120',
             1,
         ),
         encoding="utf-8",
@@ -1506,11 +1492,11 @@ def test_add_provider_prefills_known_preset_base_url(repo: pathlib.Path) -> None
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_forms.EntryModal)
-            # Type only the name; leave api_format + base_url untouched.
+            # Type only the name; leave backend + base_url untouched.
             modal.query_one("#entry-name", widgets.Input).value = "openrouter"
             await pilot.pause()
             # Live prefill flipped the format dropdown and filled the URL field.
-            assert modal.query_one("#entry-api_format", forms.ChoiceField).value == "openai"
+            assert modal.query_one("#entry-backend", forms.ChoiceField).value == "openai"
             assert (
                 modal.query_one("#entry-base_url", widgets.Input).value
                 == "https://openrouter.ai/api/v1"
@@ -1584,7 +1570,7 @@ def test_add_provider_writes_a_chosen_direct_over_an_existing_deployment(
     config_path = paths.global_config_dir() / "config.toml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
-        + '\n[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        + '\n[providers.az]\nbackend = "openai"\ndeployment = "azure"\n'
         'base_url = "https://res.openai.azure.com"\n'
         'extra_query = { "api-version" = "2024-10-21" }\n',
         encoding="utf-8",
@@ -1603,7 +1589,7 @@ def test_add_provider_writes_a_chosen_direct_over_an_existing_deployment(
             modal = app.screen
             assert isinstance(modal, config_forms.EntryModal)
             modal.query_one("#entry-name", widgets.Input).value = "az"
-            modal.query_one("#entry-api_format", forms.ChoiceField).select_value("openai")
+            modal.query_one("#entry-backend", forms.ChoiceField).select_value("openai")
             modal.query_one("#entry-deployment", forms.ChoiceField).select_value("direct")
             modal.query_one("#entry-base_url", widgets.Input).value = "https://api.openai.com/v1"
             await pilot.pause()
@@ -1618,7 +1604,7 @@ def test_add_provider_writes_a_chosen_direct_over_an_existing_deployment(
 
 
 def _add_provider_by_form(
-    repo: pathlib.Path, name: str, api_format: str, deployment: str | None
+    repo: pathlib.Path, name: str, backend: str, deployment: str | None
 ) -> bool:
     """Fill the add-provider form, leaving the deployment chooser on its blank row when None.
 
@@ -1641,7 +1627,7 @@ def _add_provider_by_form(
             modal = app.screen
             assert isinstance(modal, config_forms.EntryModal)
             modal.query_one("#entry-name", widgets.Input).value = name
-            modal.query_one("#entry-api_format", forms.ChoiceField).select_value(api_format)
+            modal.query_one("#entry-backend", forms.ChoiceField).select_value(backend)
             if deployment is not None:
                 modal.query_one("#entry-deployment", forms.ChoiceField).select_value(deployment)
             await pilot.pause()
@@ -1658,7 +1644,7 @@ def test_add_provider_keeps_an_existing_deployment_when_left_blank(repo: pathlib
     config_path = paths.global_config_dir() / "config.toml"
     config_path.write_text(
         config_path.read_text(encoding="utf-8")
-        + '\n[providers.az]\napi_format = "openai"\ndeployment = "azure"\n'
+        + '\n[providers.az]\nbackend = "openai"\ndeployment = "azure"\n'
         'base_url = "https://res.openai.azure.com"\n'
         'extra_query = { "api-version" = "2024-10-21" }\n',
         encoding="utf-8",
@@ -1693,9 +1679,7 @@ def test_edit_base_url_prefills_preset_for_known_provider(repo: pathlib.Path) ->
         from agent6.config import write
 
         # An openrouter provider with NO base_url -> effective default api.openai.com.
-        assert (
-            write.set_config_table(repo, "providers.openrouter", {"api_format": "openai"}) is None
-        )
+        assert write.set_config_table(repo, "providers.openrouter", {"backend": "openai"}) is None
 
         app = _Host(repo)
         async with app.run_test(size=(110, 44)) as pilot:

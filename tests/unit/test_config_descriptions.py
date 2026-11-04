@@ -17,7 +17,7 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
             harness_config.RoleModel,
             "effort",
             (
-                'no thinking on Anthropic, none sent with `api_format = "chatgpt"`',
+                'no thinking on Anthropic, none sent with `backend = "chatgpt"`',
                 "(the model's default), as printed",
             ),
         ),
@@ -42,7 +42,7 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
                 "`extra_body.temperature` wins",
             ),
         ),
-        (provider_config.OpenAIProviderEntry, "base_url", ('and for `api_format = "responses"`',)),
+        (provider_config.OpenAIProviderEntry, "base_url", ('and for `backend = "responses"`',)),
         (
             provider_config.OpenAIProviderEntry,
             "base_url",

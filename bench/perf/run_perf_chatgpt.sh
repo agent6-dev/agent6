@@ -112,16 +112,14 @@ cat > "$WORKDIR/agent6.toml" <<EOF
 config_version = 1
 
 [providers.chatgpt]
-api_format = "chatgpt"
+backend = "chatgpt"
 
 [models.worker]
-provider = "chatgpt"
-model = "$MODEL"
+model = "chatgpt/$MODEL"
 effort = "$EFFORT"
 
 [models.reviewer]
-provider = "chatgpt"
-model = "$MODEL"
+model = "chatgpt/$MODEL"
 effort = "low"
 
 [sandbox]

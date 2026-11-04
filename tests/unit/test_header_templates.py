@@ -32,7 +32,7 @@ _HEX32 = "0123456789abcdef"
 def _entry(headers: dict[str, Any], **extra: Any) -> OpenAIProviderEntry:
     return OpenAIProviderEntry.model_validate(
         {
-            "api_format": "openai",
+            "backend": "openai",
             "base_url": "https://m.example/v1",
             "extra_headers": headers,
             **extra,
@@ -87,18 +87,18 @@ def test_an_unsendable_header_map_refuses_at_load(headers: dict[str, Any], word:
         _entry(headers)
 
 
-@pytest.mark.parametrize("api_format", ["anthropic", "chatgpt", "openai", "responses"])
+@pytest.mark.parametrize("backend", ["anthropic", "chatgpt", "openai", "responses"])
 @pytest.mark.parametrize("target", ["exchange", "oauth"])
-def test_a_credential_header_target_requires_an_oauth_setting(api_format: str, target: str) -> None:
+def test_a_credential_header_target_requires_an_oauth_setting(backend: str, target: str) -> None:
     """An API key or ChatGPT's fixed sign-in cannot render configured-issuer headers."""
     with pytest.raises(pydantic.ValidationError) as exc:
         Config.model_validate(
             {
                 "providers": {
                     "work": {
-                        "api_format": api_format,
+                        "backend": backend,
                         "base_url": "https://m.example/v1",
-                        "api_key_env": None if api_format == "chatgpt" else "WORK_KEY",
+                        "api_key_env": None if backend == "chatgpt" else "WORK_KEY",
                         "extra_headers": {
                             "x-static": "literal",
                             "X-Trace": {
@@ -146,7 +146,7 @@ def test_chatgpt_reserved_headers_stay_reserved_for_credential_targets(
             {
                 "providers": {
                     "work": {
-                        "api_format": "chatgpt",
+                        "backend": "chatgpt",
                         "extra_headers": {name: {"template": "{request_id}", "targets": [target]}},
                     }
                 }
@@ -275,7 +275,7 @@ def test_every_attempt_mints_its_own_request_id_and_reports_it(
     monkeypatch.setattr(transport, "http_post", fake_post)
     call = transport.ProviderCall(
         api_label="OpenAI",
-        api_format="openai",
+        backend="openai",
         url="https://api.test/v1/chat/completions",
         body={"model": "m"},
         timeout_s=5.0,
@@ -421,7 +421,7 @@ def test_an_oauth_targeted_template_reaches_the_token_endpoint_and_a_literal_doe
         {
             "providers": {
                 "work": {
-                    "api_format": "openai",
+                    "backend": "openai",
                     "base_url": "https://m.example/v1",
                     "extra_headers": {
                         "x-static": "literal",

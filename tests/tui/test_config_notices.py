@@ -42,7 +42,7 @@ def test_config_write_notices_name_a_shadowing_layer(
     target.parent.mkdir(parents=True, exist_ok=True)
     initial = (
         '[sandbox]\nrun_commands = "allow"\n'
-        '[providers.local]\napi_format = "openai"\nbase_url = "https://old.test/v1"\n'
+        '[providers.local]\nbackend = "openai"\nbase_url = "https://old.test/v1"\n'
         '[review]\nreviewers = [{ focus = "old" }]\n'
     )
     target.write_text(initial)
@@ -70,7 +70,7 @@ def test_config_write_notices_name_a_shadowing_layer(
             prefix = "presets.mask." if source == "preset" else ""
             overlay = (
                 f'[{prefix}sandbox]\nrun_commands = "deny"\n'
-                f'[{prefix}providers.local]\napi_format = "openai"\nbase_url = "https://mask.test/v1"\n'
+                f'[{prefix}providers.local]\nbackend = "openai"\nbase_url = "https://mask.test/v1"\n'
                 f'[{prefix}review]\nreviewers = [{{ focus = "mask" }}]\n'
             )
             if source == "preset":

@@ -17,19 +17,17 @@ from agent6.models import choices, validate
 
 _GLOBAL = """\
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 
 [providers.openrouter]
-api_format = "openai"
+backend = "openai"
 base_url = "https://x/v1"
 
 [models.worker]
-provider = "anthropic"
-model = "claude-x"
+model = "anthropic/claude-x"
 
 [models.reviewer]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 """
 
 
@@ -82,8 +80,8 @@ def test_route_choices_are_the_cached_listings_plus_the_configured_routes(
 def test_route_for_applies_the_worker_fallback() -> None:
     cfg = Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"provider": "o", "model": "m"}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"worker": {"model": "o/m"}},
         }
     )
     assert choices.route_for(cfg, "plan") == "o/m"
@@ -103,7 +101,7 @@ def test_a_hubs_picker_follows_the_preset_and_lists_every_route(
     config = tmp_path / "xdg" / "config" / "agent6" / "config.toml"
     config.write_text(
         config.read_text(encoding="utf-8")
-        + '\n[presets.fast.models.worker]\nmodel = "claude-fast"\n',
+        + '\n[presets.fast.models.worker]\nmodel = "anthropic/claude-fast"\n',
         encoding="utf-8",
     )
     assert choices.default_route(repo, (), "run", "") == "anthropic/claude-x"
@@ -135,7 +133,7 @@ def test_a_resume_rows_defaults_name_what_a_bare_resume_runs_under(
     config = tmp_path / "xdg" / "config" / "agent6" / "config.toml"
     config.write_text(
         config.read_text(encoding="utf-8")
-        + '\n[presets.fast.models.worker]\nmodel = "claude-fast"\n',
+        + '\n[presets.fast.models.worker]\nmodel = "anthropic/claude-fast"\n',
         encoding="utf-8",
     )
     run = tmp_path / "run"
@@ -222,7 +220,7 @@ def test_a_refused_flag_names_the_modes_provider_when_role_ids_collide(
     config = tmp_path / "xdg" / "config" / "agent6" / "config.toml"
     config.write_text(
         config.read_text(encoding="utf-8")
-        + '\n[models.planner]\nprovider = "openrouter"\nmodel = "planner-old"\n',
+        + '\n[models.planner]\nmodel = "openrouter/planner-old"\n',
         encoding="utf-8",
     )
 

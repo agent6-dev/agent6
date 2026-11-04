@@ -193,6 +193,58 @@ def test_session_details_label_the_lifecycle_status(
     assert not errors
 
 
+def test_config_model_editor_saves_one_qualified_leaf(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Model editor has one route field and saves only model, preserving sampling."""
+    import tomllib
+
+    from playwright.sync_api import expect
+
+    from agent6.models import cache
+
+    config = paths.global_config_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        '[providers.p]\nbackend = "openai"\n[models.worker]\n'
+        'model = "p/old"\neffort = "high"\ntemperature = 0.4\n'
+    )
+
+    def listing(*_args: object, **_kwargs: object) -> list[str]:
+        return ["vendor/new"]
+
+    monkeypatch.setattr(cache, "list_models", listing)
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/config")
+    page.get_by_role("button", name="edit models.worker.model", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    expect(dialog.locator("input:not([type=checkbox])")).to_have_count(1)
+    expect(dialog.locator("select")).to_have_count(0)
+    field = dialog.get_by_role("combobox")
+    expect(field).to_have_value("p/old")
+    field.fill("p/vendor")
+    page.get_by_role("option", name="p/vendor/new", exact=True).click()
+    with page.expect_request(
+        lambda request: request.method == "POST" and request.url.endswith("/api/config")
+    ) as saved:
+        dialog.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.post_data_json == {
+        "key": "models.worker.model",
+        "value": '"p/vendor/new"',
+        "repo": False,
+    }
+    expect(dialog).to_have_count(0)
+    assert tomllib.loads(config.read_text())["models"]["worker"] == {
+        "model": "p/vendor/new",
+        "effort": "high",
+        "temperature": 0.4,
+    }
+    assert not errors
+
+
 def test_expanded_task_keeps_the_full_operator_words(
     port: int,
     tmp_path: pathlib.Path,
@@ -449,7 +501,7 @@ def test_the_provider_form_writes_the_chosen_deployment(
     cfg_path = paths.global_config_path()
     cfg_path.parent.mkdir(parents=True, exist_ok=True)
     cfg_path.write_text(
-        '[providers.az]\napi_format = "openai"\ndeployment = "direct"\n'
+        '[providers.az]\nbackend = "openai"\ndeployment = "direct"\n'
         'base_url = "https://res.openai.azure.com"\n'
         'extra_query = { "api-version" = "2024-10-21" }\n',
         encoding="utf-8",
@@ -459,7 +511,7 @@ def test_the_provider_form_writes_the_chosen_deployment(
     page.get_by_role("button", name=re.compile(r"^Add provider", re.I)).click()
     dialog = page.get_by_role("dialog")
     dialog.locator("input[name='name']").fill("az")
-    dialog.locator("select[name='api_format']").select_option("openai")
+    dialog.locator("select[name='backend']").select_option("openai")
     dialog.locator("select[name='deployment']").select_option("azure")
     dialog.get_by_role("button", name="Add", exact=True).click()
     page.wait_for_function("() => !document.querySelector('[role=dialog]')")
@@ -554,41 +606,40 @@ def test_modified_only_includes_explicit_defaults_and_combines_with_search(
     assert not errors
 
 
-def test_the_paired_model_editor_selects_suggestions_without_saving(
+def test_the_model_editor_selects_qualified_suggestions_without_saving(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """Provider changes clear the model; selecting a suggestion never submits the editor."""
+    """Selecting a qualified suggestion never submits the editor."""
     from playwright.sync_api import expect
 
     cfg = paths.global_config_path()
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text(
-        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
-        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
-        '[models.worker]\nprovider = "a"\nmodel = "old"\neffort = "high"\n'
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nmodel = "a/old"\neffort = "high"\n'
         "temperature = 0.4\n"
     )
     page, errors = open_page(port)
     page.route(
         "**/api/config/suggest/**",
-        lambda route: route.fulfill(json={"values": ["alpha", "beta"]}),
+        lambda route: route.fulfill(json={"values": ["b/alpha", "b/beta"]}),
     )
     page.goto(f"http://127.0.0.1:{port}/#/config")
-    page.get_by_role("button", name="edit models.worker.provider", exact=True).click()
+    page.get_by_role("button", name="edit models.worker.model", exact=True).click()
     dialog = page.get_by_role("dialog")
-    dialog.get_by_label("Provider", exact=True).select_option("b")
     model = dialog.get_by_role("combobox", name="Model", exact=True)
-    expect(model).to_have_value("")
+    expect(model).to_have_value("a/old")
     model.focus()
     expect(dialog.get_by_role("listbox")).to_be_visible()
     model.press("ArrowDown")
     model.press("ArrowDown")
     model.press("ArrowUp")
     model.press("Enter")
-    expect(model).to_have_value("alpha")
+    expect(model).to_have_value("b/alpha")
     expect(dialog).to_be_visible()
-    assert 'provider = "a"' in cfg.read_text()
-    model.fill("newer-than-catalog")
+    assert 'model = "a/old"' in cfg.read_text()
+    model.fill("b/newer-than-catalog")
     expect(dialog.get_by_role("status")).to_contain_text("No matches")
     model.press("Escape")
     expect(dialog.get_by_role("listbox")).to_be_hidden()
@@ -599,28 +650,32 @@ def test_the_paired_model_editor_selects_suggestions_without_saving(
         "newer-than-catalog"
     )
     text = cfg.read_text()
-    assert 'provider = "b"' in text and 'effort = "high"' in text and "temperature = 0.4" in text
+    assert (
+        'model = "b/newer-than-catalog"' in text
+        and 'effort = "high"' in text
+        and "temperature = 0.4" in text
+    )
     assert not errors
 
 
-def test_model_catalog_ignores_a_stale_provider_response(
+def test_model_catalog_ignores_a_closed_editors_response(
     open_page: Callable[[int], tuple[Page, list[str]]], port: int
 ) -> None:
-    """An older listing cannot overwrite the selected provider's empty catalog."""
+    """A closed editor's listing cannot overwrite a new editor's empty catalog."""
     from playwright.sync_api import Route, expect
 
     cfg = paths.global_config_path()
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text(
-        '[providers.a]\napi_format = "openai"\nbase_url = "http://localhost:1"\n'
-        '[providers.b]\napi_format = "openai"\nbase_url = "http://localhost:2"\n'
-        '[models.worker]\nprovider = "a"\nmodel = "old"\n'
+        '[providers.a]\nbackend = "openai"\nbase_url = "http://localhost:1"\n'
+        '[providers.b]\nbackend = "openai"\nbase_url = "http://localhost:2"\n'
+        '[models.worker]\nmodel = "a/old"\n'
     )
     page, errors = open_page(port)
     held: list[Route] = []
 
     def listing(route: Route) -> None:
-        if "provider=a" in route.request.url:
+        if not held:
             held.append(route)
         else:
             route.fulfill(json={"values": []})
@@ -629,7 +684,10 @@ def test_model_catalog_ignores_a_stale_provider_response(
     page.goto(f"http://127.0.0.1:{port}/#/config")
     page.get_by_role("button", name="edit models.worker.model", exact=True).click()
     dialog = page.get_by_role("dialog")
-    dialog.get_by_label("Provider", exact=True).select_option("b")
+    expect(dialog.get_by_role("status")).to_contain_text("Loading models")
+    dialog.get_by_role("button", name="Cancel", exact=True).click()
+    page.get_by_role("button", name="edit models.worker.model", exact=True).click()
+    dialog = page.get_by_role("dialog")
     model = dialog.get_by_role("combobox", name="Model", exact=True)
     model.focus()
     expect(dialog.get_by_role("status")).to_contain_text("Catalog empty or unavailable")
@@ -637,10 +695,10 @@ def test_model_catalog_ignores_a_stale_provider_response(
     held[0].fulfill(json={"values": ["stale-model"]})
     page.wait_for_timeout(100)
     expect(dialog.get_by_role("option", name="stale-model", exact=True)).to_have_count(0)
-    model.fill("custom")
+    model.fill("b/custom")
     dialog.get_by_role("button", name="Save", exact=True).click()
     expect(dialog).to_have_count(0)
-    assert 'model = "custom"' in cfg.read_text()
+    assert 'model = "b/custom"' in cfg.read_text()
     assert not errors
 
 

@@ -13,7 +13,7 @@ from agent6.config import Config, OAuthConfig, OpenAIProviderEntry, load_config
 
 _WORK = """
 [providers.work]
-api_format = "openai"
+backend = "openai"
 base_url = "https://models.example/v1"
 
 [providers.work.oauth]
@@ -153,8 +153,8 @@ def test_a_configured_issuer_is_the_one_credential_source(
 
 def test_the_chatgpt_profile_takes_no_custom_issuer(tmp_path: pathlib.Path) -> None:
     text = _WORK.replace(
-        'api_format = "openai"\nbase_url = "https://models.example/v1"\n',
-        'api_format = "chatgpt"\n',
+        'backend = "openai"\nbase_url = "https://models.example/v1"\n',
+        'backend = "chatgpt"\n',
     )
     with pytest.raises(Exception, match="chatgpt"):
         _load(text, tmp_path)

@@ -534,13 +534,11 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
         "[providers.anthropic]\n"
-        'api_format = "anthropic"\n'
+        'backend = "anthropic"\n'
         "[models.worker]\n"
-        'provider = "anthropic"\n'
-        'model = "claude-base"\n'
+        'model = "anthropic/claude-base"\n'
         "[presets.fast.models.worker]\n"
-        'provider = "anthropic"\n'
-        'model = "claude-fast"\n',
+        'model = "anthropic/claude-fast"\n',
         encoding="utf-8",
     )
     repo = tmp_path / "repo"
@@ -1060,8 +1058,8 @@ def test_resume_of_an_undone_run_points_at_its_fork(
     gdir = paths.global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-base"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-base"\n',
         encoding="utf-8",
     )
     repo = tmp_path / "repo"
@@ -1469,8 +1467,8 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
 
     paths.global_config_dir().mkdir(parents=True, exist_ok=True)
     (paths.global_config_dir() / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "claude-x"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n'
+        '[models.worker]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
@@ -1620,8 +1618,7 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     gdir = paths.global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
-        '[providers.anthropic]\napi_format = "anthropic"\n'
-        '[models.worker]\nprovider = "anthropic"\nmodel = "m"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n[models.worker]\nmodel = "anthropic/m"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # headless under run_commands=ask

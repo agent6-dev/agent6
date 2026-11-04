@@ -306,7 +306,9 @@ def check_provider_keys(cfg: Config, extra_providers: Iterable[str] = ()) -> str
     except secret_store.SecretsError as exc:
         return str(exc)
     needed = {rm.provider for rm in cfg.models.configured().values()}
-    needed.update(entry.provider for entry in cfg.review.reviewers if entry.provider)
+    needed.update(
+        route.provider for entry in cfg.review.reviewers if (route := entry.resolve(None))
+    )
     needed.update(p for p in extra_providers if p)
     if absent := sorted(needed - cfg.providers.keys()):
         return (

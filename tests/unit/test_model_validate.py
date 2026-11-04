@@ -56,8 +56,8 @@ def _r(model: str, provider: str = "o") -> kinds.ModelRoute:
 def _cfg(model: str = "kimi-k2") -> Config:
     return Config.model_validate(
         {
-            "providers": {"o": {"api_format": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"provider": "o", "model": model}},
+            "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
+            "models": {"worker": {"model": "o/" + model}},
         }
     )
 
@@ -172,10 +172,10 @@ def _two_provider_cfg() -> Config:
     return Config.model_validate(
         {
             "providers": {
-                "w": {"api_format": "openai", "base_url": "https://w.example/v1"},
-                "s": {"api_format": "openai", "base_url": "https://s.example/v1"},
+                "w": {"backend": "openai", "base_url": "https://w.example/v1"},
+                "s": {"backend": "openai", "base_url": "https://s.example/v1"},
             },
-            "models": {"worker": {"provider": "w", "model": "w/base-model"}},
+            "models": {"worker": {"model": "w/w/base-model"}},
         }
     )
 
@@ -272,7 +272,7 @@ def test_known_models_excludes_sibling_provider_catalog(cache_home: pathlib.Path
 
 def test_a_route_needs_no_worker_role(cache_home: pathlib.Path) -> None:
     cfg = Config.model_validate(
-        {"providers": {"w": {"api_format": "openai", "base_url": "https://w.example/v1"}}}
+        {"providers": {"w": {"backend": "openai", "base_url": "https://w.example/v1"}}}
     )
     _write_cache(cache_home, "w", ["w/model-a"])
     v = validate.validate_spec_models([_r("w/model-a", "w")], cfg)

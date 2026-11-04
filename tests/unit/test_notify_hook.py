@@ -105,16 +105,14 @@ _MACHINE_CFG_BODY = """
 config_version = 1
 
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "anthropic/claude-sonnet-4-5"
 
 [models.reviewer]
-provider = "anthropic"
-model = "claude-opus-4-5"
+model = "anthropic/claude-opus-4-5"
 
 [harness]
 verify_command = ["true"]
@@ -188,17 +186,15 @@ def test_notify_in_config_loads(tmp_path: pathlib.Path) -> None:
 config_version = 1
 
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 prompt_caching = true
 
 [models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-5"
+model = "anthropic/claude-sonnet-4-5"
 
 [models.reviewer]
-provider = "anthropic"
-model = "claude-opus-4-5"
+model = "anthropic/claude-opus-4-5"
 
 [sandbox]
 isolation = "auto"

@@ -29,7 +29,7 @@ def test_chatgpt_binding_refuses_before_provider_construction(
 ) -> None:
     """Inference and usage cannot acquire a provider from an unbound sign-in."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     if state == "old_format":
         secret_store.save_secret(
             "work",
@@ -68,7 +68,7 @@ def test_chatgpt_construction_reads_account_through_shared_holder(
 ) -> None:
     """The adapter gets its account header from the bound holder, not stored metadata."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("AT", "RT", 3600), entry, now=time.time()
     )
@@ -94,7 +94,7 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     cfg = Config(
         providers={
             "openrouter": OpenAIProviderEntry(
-                api_format="openai",
+                backend="openai",
                 base_url="https://openrouter.ai/api/v1",
                 extra_headers={"X-Title": "agent6"},
                 extra_body={"provider": {"sort": "throughput"}},
@@ -118,7 +118,7 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
     from agent6.config import PromptConfig, ReviewConfig, ReviewerConfig
 
     cfg = Config(
-        providers={"o": OpenAIProviderEntry(api_format="openai", base_url="https://x/v1")},
+        providers={"o": OpenAIProviderEntry(backend="openai", base_url="https://x/v1")},
         models=ModelsConfig(
             worker=RoleModel(provider="o", model="m"),
             reviewer=RoleModel(provider="o", model="m"),

@@ -78,7 +78,7 @@ A run keeps one message history with one provider and one model.
 - multi-step work is the next tool call in the same conversation: no planner-to-worker handoff, no separate reviewer by default
 - the in-loop review panel is opt-in (`[review]`), layered on the same history
 - `repo_context.review_rules` loads base-tree rule blobs through `vcs.review_rule_reader`; `loop.review.start` records the paths, blob IDs, byte counts and completeness for the panel
-- under `api_format = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
+- under `backend = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
 An in-loop panel records the run base and reviewed head's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
 It does not capture a separate snapshot or move the operator's index, HEAD or run chain.

@@ -293,7 +293,7 @@ class OpenAIProvider:
 
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
         url, model_in_body = wire.request_url(
-            api_format="openai",
+            backend="openai",
             deployment=self.deployment,
             base_url=self.base_url,
             model=self.model,
@@ -356,7 +356,7 @@ class OpenAIProvider:
         # Streaming is the only reliable path through a gateway whose heartbeats corrupt a body.
         return transport.ProviderCall(
             api_label="OpenAI",
-            api_format="openai",
+            backend="openai",
             url=url,
             body=body,
             timeout_s=self.timeout_s,
@@ -452,7 +452,7 @@ class OpenAIProvider:
 
         call = stream_lifecycle.SseCall(
             api_label="OpenAI",
-            api_format="openai",
+            backend="openai",
             url=url,
             headers=stream_headers,
             body=body,

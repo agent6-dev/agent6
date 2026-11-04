@@ -58,7 +58,7 @@ def _runnable_cfg(git_cfg: GitConfig) -> Config:
     return Config(
         providers={
             "openrouter": OpenAIProviderEntry(
-                api_format="openai",
+                backend="openai",
                 base_url="https://openrouter.ai/api/v1",
             )
         },

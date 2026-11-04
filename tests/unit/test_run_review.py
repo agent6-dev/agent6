@@ -389,8 +389,8 @@ def test_run_review_hands_the_record_and_agents_md_to_the_reviewer() -> None:
 def _reviewer_config() -> Config:
     return Config.model_validate(
         {
-            "providers": {"local": {"api_format": "openai", "base_url": "https://example.test/v1"}},
-            "models": {"reviewer": {"provider": "local", "model": "reviewer"}},
+            "providers": {"local": {"backend": "openai", "base_url": "https://example.test/v1"}},
+            "models": {"reviewer": {"model": "local/reviewer"}},
         }
     )
 

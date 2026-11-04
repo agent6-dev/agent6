@@ -20,7 +20,7 @@ from agent6.viewmodel import config_view
 _POPULATED: dict[str, Any] = {
     "providers": {
         "acme": {
-            "api_format": "openai",
+            "backend": "openai",
             "base_url": "https://example.invalid/v1",
             "extra_body": {"routing": {"order": ["fast"]}},
             "extra_headers": {"X-Example": "value"},

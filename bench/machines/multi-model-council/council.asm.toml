@@ -40,8 +40,7 @@ timeout_s = 180
 on = { ok = "juror_b", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
 [states.juror_a.config.models.worker]
-provider = "anthropic"
-model = "claude-haiku-4-5"
+model = "anthropic/claude-haiku-4-5"
 temperature = 0.0
 
 [states.juror_b]
@@ -57,8 +56,7 @@ timeout_s = 180
 on = { ok = "compare", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
 [states.juror_b.config.models.worker]
-provider = "openrouter"
-model = "moonshotai/kimi-k2.6"
+model = "openrouter/moonshotai/kimi-k2.6"
 temperature = 0.0
 
 [states.compare]
@@ -86,8 +84,7 @@ timeout_s = 240
 on = { ok = "decided", failed = "stuck", budget_exhausted = "stuck", timeout = "stuck" }
 
 [states.tiebreak.config.models.worker]
-provider = "anthropic"
-model = "claude-sonnet-4-6"
+model = "anthropic/claude-sonnet-4-6"
 effort = "low"
 
 [states.consensus]

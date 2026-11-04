@@ -142,11 +142,11 @@ def test_upsert_toml_leaf_refuses_a_leaf_under_an_array_of_tables(tmp_path: path
 def test_upsert_toml_leaf_preserves_a_trailing_comment(tmp_path: pathlib.Path) -> None:
     """Replacing a single-line leaf keeps its trailing comment; a `#` in the string is not one."""
     p = tmp_path / "c.toml"
-    p.write_text('[models.worker]\nmodel = "old"  # the good one\n', encoding="utf-8")
-    io.upsert_toml_leaf(p, "models.worker.model", "new")
+    p.write_text('[models.worker]\nmodel = "p/old"  # the good one\n', encoding="utf-8")
+    io.upsert_toml_leaf(p, "models.worker.model", "p/new")
     out = p.read_text(encoding="utf-8")
-    assert 'model = "new"  # the good one' in out
-    assert tomllib.loads(out)["models"]["worker"]["model"] == "new"
+    assert 'model = "p/new"  # the good one' in out
+    assert tomllib.loads(out)["models"]["worker"]["model"] == "p/new"
 
     p.write_text('[a]\nx = "has # hash"\n', encoding="utf-8")
     io.upsert_toml_leaf(p, "a.x", "y")
@@ -327,7 +327,7 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: pathlib.Path) -
     # TOML even when the section already has the key.
     cfg = tmp_path / "config.toml"
     cfg.write_text(
-        '[providers.openrouter]\napi_format = "openai"\n'
+        '[providers.openrouter]\nbackend = "openai"\n'
         'extra_body = { provider = { sort = "throughput" } }\n',
         encoding="utf-8",
     )
@@ -338,7 +338,7 @@ def test_config_set_whole_extra_body_value_round_trips(tmp_path: pathlib.Path) -
     parsed = tomllib.loads(cfg.read_text(encoding="utf-8"))
     assert parsed["providers"]["openrouter"]["extra_body"] == {"provider": {"sort": "latency"}}
     # the sibling key survived the surgery
-    assert parsed["providers"]["openrouter"]["api_format"] == "openai"
+    assert parsed["providers"]["openrouter"]["backend"] == "openai"
 
 
 def test_control_chars_serialize_to_valid_toml(tmp_path: pathlib.Path) -> None:

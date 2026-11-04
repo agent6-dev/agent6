@@ -160,12 +160,11 @@ reason = "done"
 
 OPERATOR = """
 [providers.local]
-api_format = "openai"
+backend = "openai"
 base_url = "http://127.0.0.1:9"
 
 [models.worker]
-provider = "local"
-model = "test-model"
+model = "local/test-model"
 
 [sandbox]
 extra_read_paths = ["/srv/inbox", "/opt/toolchain"]
@@ -269,7 +268,7 @@ def test_a_state_that_runs_nothing_takes_no_config_table(tmp_path: pathlib.Path)
 @pytest.mark.parametrize(
     ("table", "needle"),
     [
-        ('[states.judge.config.providers.x]\napi_format = "openai"\n', "providers"),
+        ('[states.judge.config.providers.x]\nbackend = "openai"\n', "providers"),
         ("[states.judge.config.mcp]\nenabled = true\n", "mcp"),
         ('[states.judge.config.machine]\npass_env = ["X"]\n', "machine"),
         ("[states.judge.config.machine]\nsnapshot_keep = 2\n", "read once for the whole machine"),
@@ -321,7 +320,7 @@ def test_an_overlay_reaches_neither_the_host_nor_the_operators_money(
             "[states.judge.config] must not set skills.extra_dirs:",
         ),
         (
-            '[states.judge.config.providers.x]\napi_format = "openai"\n',
+            '[states.judge.config.providers.x]\nbackend = "openai"\n',
             "[states.judge.config] must not set providers.*:",
         ),
         (

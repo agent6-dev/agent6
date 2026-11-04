@@ -50,7 +50,7 @@ def test_status_probes_keys_and_command_tokens(
     """A status row probes once, reports the reply and bounds both command and request time."""
     command = 'token_command = ["mint-token"]\n' if credential == "command" else ""
     status_config.write_text(
-        '[providers.work]\napi_format = "openai"\n'
+        '[providers.work]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n' + command
     )
     secret_store.save_secret("work", "stored-secret")
@@ -83,7 +83,7 @@ def test_status_probes_keys_and_command_tokens(
     assert output.out.splitlines()[1].endswith(expected)
     assert output.out.splitlines()[0].split() == [
         "name",
-        "api_format",
+        "backend",
         "authentication",
         "state",
         "live",
@@ -104,8 +104,8 @@ def test_status_lists_with_bound_bearer_without_refresh_or_exchange(
     response: int,
 ) -> None:
     """Even an expired bearer is sent as stored, with no refresh, exchange or cache fallback."""
-    api_format = "chatgpt" if kind == "chatgpt" else "openai"
-    config = f'[providers.work]\napi_format = "{api_format}"\n'
+    backend = "chatgpt" if kind == "chatgpt" else "openai"
+    config = f'[providers.work]\nbackend = "{backend}"\n'
     if kind != "chatgpt":
         config += (
             'base_url = "https://models.example/v1"\n'
@@ -176,7 +176,7 @@ def test_status_checks_claude_code_login_without_a_model_call(
 ) -> None:
     """Claude Code uses the configured binary's login check, never a model invocation."""
     status_config.write_text(
-        '[providers.claude]\napi_format = "claude_code"\nbinary = "claude-work"\n'
+        '[providers.claude]\nbackend = "claude_code"\nbinary = "claude-work"\n'
     )
     commands: list[list[str]] = []
 
@@ -203,10 +203,10 @@ def test_status_checks_claude_code_login_without_a_model_call(
 @pytest.mark.parametrize(
     ("config", "reason"),
     [
-        ('api_format = "chatgpt"\n', "missing"),
-        ('api_format = "openai"\n', "key unset"),
+        ('backend = "chatgpt"\n', "missing"),
+        ('backend = "openai"\n', "key unset"),
         (
-            'api_format = "openai"\ndeployment = "azure"\nauth_style = "none"\n'
+            'backend = "openai"\ndeployment = "azure"\nauth_style = "none"\n'
             'base_url = "https://azure.example"\nextra_query = {api-version = "2025-01-01"}\n',
             "no /models listing for this deployment",
         ),
@@ -243,7 +243,7 @@ def test_status_token_life_uses_the_largest_two_units(
     monkeypatch: pytest.MonkeyPatch, remaining: int, expected: str
 ) -> None:
     """A token's life uses days and hours, hours and minutes, minutes, or expired."""
-    entry = ChatGPTProviderEntry(api_format="chatgpt")
+    entry = ChatGPTProviderEntry(backend="chatgpt")
     grant = oauth.stored_grant_for(
         oauth_protocol.TokenGrant("access-secret", "refresh-secret", remaining), entry, now=1000
     )

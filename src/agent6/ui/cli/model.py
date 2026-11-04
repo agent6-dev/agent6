@@ -162,7 +162,7 @@ def _warn_unusable_provider(config_paths: tuple[pathlib.Path, ...], provider: st
         if (err := claude_code.login_status(entry.binary)) is not None:
             common.warn(f"provider {provider!r}: {err}")
         return
-    if entry.api_format == "chatgpt" or entry.oauth is not None:
+    if entry.backend == "chatgpt" or entry.oauth is not None:
         if (err := session_setup.sign_in_refusal(provider, entry)) is not None:
             common.warn(err)
         return
@@ -270,7 +270,7 @@ def _cmd_model(
             return 2
         model = picked
     target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
-    fields: dict[str, io.ConfigLeafValue] = {"provider": provider, "model": model}
+    fields: dict[str, io.ConfigLeafValue] = {"model": f"{provider}/{model}"}
     if effort:
         fields["effort"] = effort
     roles: tuple[RoleName, ...] = (

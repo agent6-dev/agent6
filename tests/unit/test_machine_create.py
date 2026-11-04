@@ -154,8 +154,8 @@ def _stub_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
             {
                 "sandbox": {"isolation": "none"},
                 "budget": {"max_usd": 10.0},
-                "providers": {"openrouter": {"api_format": "openai", "api_key_env": "OR_KEY"}},
-                "models": {"worker": {"provider": "openrouter", "model": "test-model"}},
+                "providers": {"openrouter": {"backend": "openai", "api_key_env": "OR_KEY"}},
+                "models": {"worker": {"model": "openrouter/test-model"}},
             }
         )
         return types.SimpleNamespace(config=cfg, explicit_leaves=frozenset())
@@ -1327,7 +1327,7 @@ def test_create_runs_the_shared_isolation_preflight(
     cfg = Config(
         providers={
             "openrouter": OpenAIProviderEntry(
-                api_format="openai", base_url="https://openrouter.ai/api/v1"
+                backend="openai", base_url="https://openrouter.ai/api/v1"
             )
         },
         models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
@@ -1439,8 +1439,8 @@ def test_the_authoring_agent_drafts_in_a_workspace_of_its_own(
     assert state not in root.parents, "the workspace sits outside the state dir"
     assert isinstance(cfg, dict)
     # The operator's own settings ride as the overlay; the workspace's per-repo layer is empty.
-    assert cfg["models"]["worker"]["provider"] == "openrouter"
-    assert cfg["models"]["worker"]["model"] == "test-model"
+    assert "provider" not in cfg["models"]["worker"]
+    assert cfg["models"]["worker"]["model"] == "openrouter/test-model"
     assert cfg["sandbox"]["run_commands"] == "deny", "and it still carries no command tool"
     # A workspace that never ran has no state dir; rmtree reported that like a failure.
     assert "the drafting workspace stays" not in capsys.readouterr().err

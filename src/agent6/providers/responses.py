@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The generic Responses API adapter: `api_format = "responses"` on a configured endpoint.
+"""The generic Responses API adapter: `backend = "responses"` on a configured endpoint.
 
 Ordinary configured authentication (a key, a token command or a configured issuer), JSON
 or SSE, ordinary token accounting. The subscription profile lives in `chatgpt.py`; both
@@ -195,7 +195,7 @@ class ResponsesProvider:
         if self.budget is not None:
             self.budget.check()
         url, _ = wire.request_url(
-            api_format="responses",
+            backend="responses",
             deployment="direct",
             base_url=self.base_url,
             model=self.model,
@@ -227,7 +227,7 @@ class ResponsesProvider:
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
         return transport.ProviderCall(
             api_label=_LABEL,
-            api_format="responses",
+            backend="responses",
             url=url,
             body=body,
             timeout_s=self.timeout_s,
@@ -295,7 +295,7 @@ class ResponsesProvider:
         state = responses_codec.ResponsesStreamState()
         call = stream_lifecycle.SseCall(
             api_label=_LABEL,
-            api_format="responses",
+            backend="responses",
             url=url,
             headers=stream_headers,
             body=body,

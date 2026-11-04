@@ -242,20 +242,18 @@ _PROVIDER_TOML = """
 config_version = 1
 
 [providers.anthropic]
-api_format = "anthropic"
+backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 
 [models.reviewer]
-provider = "anthropic"
-model = "planner-model"
+model = "anthropic/planner-model"
 """
 
 _PLANNER_ONLY = (
     _PROVIDER_TOML
     + """
 [models.planner]
-provider = "anthropic"
-model = "planner-model"
+model = "anthropic/planner-model"
 """
 )
 
@@ -263,8 +261,7 @@ _PLANNER_AND_WORKER = (
     _PLANNER_ONLY
     + """
 [models.worker]
-provider = "anthropic"
-model = "worker-model"
+model = "anthropic/worker-model"
 """
 )
 
@@ -1399,8 +1396,8 @@ def test_a_parked_resume_hands_run_task_the_config_path(
     monkeypatch.setattr(run, "run_task", _capture_run_task)
     config_path = tmp_path / "custom.toml"
     config_path.write_text(
-        '[providers.local]\napi_format = "openai"\nbase_url = "https://example.test/v1"\n'
-        '[models.worker]\nprovider = "local"\nmodel = "m"\n',
+        '[providers.local]\nbackend = "openai"\nbase_url = "https://example.test/v1"\n'
+        '[models.worker]\nmodel = "local/m"\n',
         encoding="utf-8",
     )
 

@@ -72,11 +72,11 @@ class _Leaves:
     """The two leaves connect writes, as one file or the merged config holds them.
 
     Attributes:
-        api_format: The API format; "" when absent.
+        backend: The backend; "" when absent.
         base_url: The base URL; "" when absent.
     """
 
-    api_format: str
+    backend: str
     base_url: str
 
 
@@ -112,7 +112,7 @@ def _target_leaves(name: str, target: pathlib.Path) -> _Leaves:
     block = providers.get(name) if isinstance(providers, dict) else None
     if not isinstance(block, dict):
         return _Leaves("", "")
-    return _Leaves(str(block.get("api_format", "")), str(block.get("base_url", "")))
+    return _Leaves(str(block.get("backend", "")), str(block.get("base_url", "")))
 
 
 def _current(name: str, target: pathlib.Path, to_repo: bool) -> _Current:
@@ -137,13 +137,13 @@ def _current(name: str, target: pathlib.Path, to_repo: bool) -> _Current:
         return _Current(held, held, {})
     entry = eff.config.providers.get(name)
     effective = _Leaves(
-        entry.api_format if entry is not None else "",
+        entry.backend if entry is not None else "",
         entry.base_url if isinstance(entry, (OpenAIProviderEntry, ResponsesProviderEntry)) else "",
     )
     target_layer = "repo" if to_repo else "global"
     shadowed = {
         leaf: lyr
-        for leaf in ("api_format", "base_url")
+        for leaf in ("backend", "base_url")
         if (lyr := layer.shadowing_layer(eff, f"providers.{name}.{leaf}", target_layer)) is not None
     }
     return _Current(effective, held, shadowed)
@@ -154,7 +154,7 @@ def _shadow_notice(current: _Current, leaf: str, to_repo: bool, written: str) ->
 
     Args:
         current: The provider's current state.
-        leaf: `api_format` or `base_url`.
+        leaf: `backend` or `base_url`.
         to_repo: The target is the repo config.
         written: The value the target holds after this command.
     """
@@ -381,8 +381,8 @@ def _claude_code_check(name: str) -> None:
     common.warn(f"{err}\n  [providers.{name}] is written but not usable yet.")
 
 
-def _prompt_api_format(name: str, preset_format: str, current_format: str) -> str | None:
-    """Return the api_format for the provider: the block's, the preset's, or the answer.
+def _prompt_backend(name: str, preset_format: str, current_format: str) -> str | None:
+    """Return the backend for the provider: the block's, the preset's, or the answer.
 
     An existing block's format wins over a preset's; the prompt appears when the two differ
     or there is no preset, and Enter keeps the block's.
@@ -396,12 +396,12 @@ def _prompt_api_format(name: str, preset_format: str, current_format: str) -> st
         The format, or None (after printing why) on no input or an unknown value.
     """
     default = current_format or preset_format or "anthropic"
-    api_format = default if default == preset_format else ""
-    if not api_format:
+    backend = default if default == preset_format else ""
+    if not backend:
         try:
-            api_format = (
+            backend = (
                 input(
-                    f"API format for {name!r} (anthropic/openai/chatgpt/responses/claude_code)"
+                    f"Backend for {name!r} (anthropic/openai/chatgpt/responses/claude_code)"
                     f" [{default}]: "
                 ).strip()
                 or default
@@ -409,13 +409,13 @@ def _prompt_api_format(name: str, preset_format: str, current_format: str) -> st
         except EOFError:
             common.error("no input.")
             return None
-    if api_format not in ("anthropic", "openai", "chatgpt", "responses", "claude_code"):
+    if backend not in ("anthropic", "openai", "chatgpt", "responses", "claude_code"):
         common.error(
-            f"unknown api_format {api_format!r}"
+            f"unknown backend {backend!r}"
             " (expected anthropic, openai, chatgpt, responses or claude_code)."
         )
         return None
-    return api_format
+    return backend
 
 
 def _revoke(name: str, entry: ProviderEntry | None) -> bool:
@@ -466,7 +466,7 @@ def _revoke(name: str, entry: ProviderEntry | None) -> bool:
     return False
 
 
-def _cmd_logout(name: str, entry: ProviderEntry | None, api_format: str) -> int:
+def _cmd_logout(name: str, entry: ProviderEntry | None, backend: str) -> int:
     """Remove a provider's stored credentials (`connect --logout`).
 
     An OAuth grant is revoked at its issuer first, best effort: local removal proceeds
@@ -476,13 +476,13 @@ def _cmd_logout(name: str, entry: ProviderEntry | None, api_format: str) -> int:
     Args:
         name: The provider name.
         entry: The provider as the config holds it; None when the config does not load.
-        api_format: Its API format.
+        backend: Its backend.
 
     Returns:
         The exit code: 0, or 2 for a claude_code provider or a secrets file that cannot be
         written.
     """
-    if api_format == "claude_code":
+    if backend == "claude_code":
         print(
             "agent6 stores no Claude Code credentials; `claude auth logout` signs out.",
             file=sys.stderr,
@@ -505,7 +505,7 @@ def _cmd_logout(name: str, entry: ProviderEntry | None, api_format: str) -> int:
 
 def _write_shown_values(
     name: str,
-    api_format: str,
+    backend: str,
     current: _Current,
     preset_url: str,
     target: pathlib.Path,
@@ -517,7 +517,7 @@ def _write_shown_values(
 
     Args:
         name: The provider name.
-        api_format: The format the prompt settled.
+        backend: The format the prompt settled.
         current: The provider's current state.
         preset_url: The preset's URL; "" for a custom name.
         target: The config file connect edits.
@@ -527,12 +527,12 @@ def _write_shown_values(
         0 once written or already held; 2 after an invalid URL or a refused edit.
     """
     fields: dict[str, io.ConfigLeafValue] = {
-        "api_format": api_format if api_format != current.target.api_format else None
+        "backend": backend if backend != current.target.backend else None
     }
-    if api_format in ("openai", "responses"):
+    if backend in ("openai", "responses"):
         # A loaded block always carries a URL; the target's own leaves may not.
-        held = current.effective.base_url if current.effective.api_format == api_format else ""
-        vendor = OpenAIProviderEntry(api_format="openai").base_url if api_format == "openai" else ""
+        held = current.effective.base_url if current.effective.backend == backend else ""
+        vendor = OpenAIProviderEntry(backend="openai").base_url if backend == "openai" else ""
         offered = held or preset_url or vendor  # a Responses endpoint has no vendor default
         try:
             url = _prompt_base_url(offered)
@@ -551,12 +551,12 @@ def _write_shown_values(
     return 0
 
 
-def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int:
+def _credential_step(name: str, backend: str, flow: str, verify: bool) -> int:
     """Store what the provider signs requests with: a sign-in, a key, or nothing.
 
     Args:
         name: The provider name.
-        api_format: The format the prompt settled.
+        backend: The format the prompt settled.
         flow: The `--flow` value for ChatGPT or a configured issuer.
         verify: Use the key or configured-issuer grant once after storing it.
 
@@ -564,7 +564,7 @@ def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int
         The exit code.
     """
     entry = _current_entry(name)
-    if api_format == "claude_code":
+    if backend == "claude_code":
         _claude_code_check(name)
         return 0
     if isinstance(entry, ChatGPTProviderEntry) or (
@@ -572,7 +572,7 @@ def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int
         and entry.oauth is not None
     ):
         return _sign_in(name, entry, flow, verify)
-    if api_format == "chatgpt":
+    if backend == "chatgpt":
         common.error("the provider config does not load; run `agent6 check config`.")
         return 2
     try:
@@ -588,10 +588,10 @@ def _credential_step(name: str, api_format: str, flow: str, verify: bool) -> int
         print(f"Saved key to {saved} (0600).")
         if verify:
             _verify_key(entry, api_key)
-    elif api_format == "anthropic":
-        # The Anthropic api_format always sends a key, so a keyless block fails at the first run.
+    elif backend == "anthropic":
+        # The Anthropic backend always sends a key, so a keyless block fails at the first run.
         common.warn(
-            f"no key entered, but the Anthropic API format requires one.\n"
+            f"no key entered, but the Anthropic backend requires one.\n"
             f"  [providers.{name}] is written but not usable yet; rerun"
             " `agent6 connect`\n  (or set the api_key_env var) before `agent6 run`."
         )
@@ -647,7 +647,7 @@ def _cmd_connect(
     if name is None:
         return 2
     preset = write.PROVIDER_DEFAULTS.get(name)
-    preset_format = preset["api_format"] if preset else ""
+    preset_format = preset["backend"] if preset else ""
     target = paths.repo_config_path(pathlib.Path.cwd()) if to_repo else paths.global_config_path()
     try:
         current = _current(name, target, to_repo)
@@ -657,18 +657,16 @@ def _cmd_connect(
             return 2
         current = _Current(_Leaves("", ""), _Leaves("", ""), {})
     if logout:
-        return _cmd_logout(
-            name, _current_entry(name), current.effective.api_format or preset_format
-        )
+        return _cmd_logout(name, _current_entry(name), current.effective.backend or preset_format)
     print("agent6 connect: set up a model provider.")
-    api_format = _prompt_api_format(name, preset_format, current.effective.api_format)
-    if api_format is None:
+    backend = _prompt_backend(name, preset_format, current.effective.backend)
+    if backend is None:
         return 2
-    _shadow_notice(current, "api_format", to_repo, api_format)
+    _shadow_notice(current, "backend", to_repo, backend)
     preset_url = (preset or {}).get("base_url", "")
-    rc = _write_shown_values(name, api_format, current, preset_url, target, to_repo)
+    rc = _write_shown_values(name, backend, current, preset_url, target, to_repo)
     if rc == 0:
-        rc = _credential_step(name, api_format, flow or "auto", verify is not False)
+        rc = _credential_step(name, backend, flow or "auto", verify is not False)
     if rc == 0:
         print(
             "Next: `agent6 model worker "

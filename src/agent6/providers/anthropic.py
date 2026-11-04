@@ -409,7 +409,7 @@ class AnthropicProvider:
             self.budget.check()
         streaming = text_delta_callback is not None or thinking_delta_callback is not None
         url, model_in_body = wire.request_url(
-            api_format="anthropic",
+            backend="anthropic",
             deployment=self.deployment,
             base_url=self.base_url,
             model=self.model,
@@ -496,7 +496,7 @@ class AnthropicProvider:
 
         return transport.ProviderCall(
             api_label="Anthropic",
-            api_format="anthropic",
+            backend="anthropic",
             url=url,
             body=body,
             timeout_s=self.timeout_s,
@@ -594,7 +594,7 @@ class AnthropicProvider:
 
         call = stream_lifecycle.SseCall(
             api_label="Anthropic",
-            api_format="anthropic",
+            backend="anthropic",
             url=url,
             headers=stream_headers,
             body=body,

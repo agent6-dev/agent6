@@ -55,7 +55,7 @@ See [Code-review rules](usage.md#code-review-rules) for discovery and limits.
 ## Configuration
 
 The config page shows every setting, its effective value, and the layer that set it: `default`, `preset`, `global`, `repo`, or `flag` (a `--config FILE`).
-Editing a role's provider or model opens one Model editor with a provider chooser and live model suggestions; unlisted model ids are accepted.
+Editing a role's model opens one `provider/model` field with live suggestions; unlisted routes are accepted.
 
 In a named-entry form, a blank field keeps an existing value or uses the schema default.
 
