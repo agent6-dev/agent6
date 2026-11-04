@@ -161,7 +161,7 @@ def test_session_id_template_refuses_at_load_with_the_conversation_fact(
     path = tmp_path / "agent6.toml"
     path.write_text(
         "[agent6]\nconfig_version = 1\n"
-        '[providers.work]\napi_format = "openai"\nbase_url = "https://m.example/v1"\n'
+        '[providers.work]\nbackend = "openai"\nbase_url = "https://m.example/v1"\n'
         '[providers.work.extra_headers.x-conversation]\ntemplate = "{session_id}"\n',
         encoding="utf-8",
     )

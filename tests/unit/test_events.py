@@ -46,7 +46,7 @@ def test_reopen_drops_torn_tail_before_resumed_events(
 
     resumed = event_log.EventSink(path)
     resumed.emit(
-        "loop.resume.start",
+        "session.resume",
         session_id="session",
         user_task="task",
         steer="continue",
@@ -58,7 +58,7 @@ def test_reopen_drops_torn_tail_before_resumed_events(
     resumed.emit("role.text_delta", role="worker", text="done")
     resumed.emit("session.end", reason="finish_session", turns=1, all_passed=True)
 
-    expected = ["session.start", "loop.resume.start", "role.text_delta", "session.end"]
+    expected = ["session.start", "session.resume", "role.text_delta", "session.end"]
     assert [event["type"] for event in tail.tail_events(path, follow=False)] == expected
     assert [event["type"] for event in tail.LogTail(path).read()] == expected
     assert path.read_bytes().startswith(committed)

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import pathlib
 
+import pydantic
 import pytest
 
 from agent6.app import session_setup
@@ -108,15 +109,14 @@ def test_a_review_seat_provider_is_key_checked(monkeypatch: pytest.MonkeyPatch) 
 
 def test_a_seat_naming_an_absent_provider_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(secret_store, "load_secrets", dict)
-    cfg = Config.model_validate(
-        {
-            "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
-            "models": {"worker": {"model": "main/m"}},
-            "review": {"reviewers": [{"focus": "security", "model": "ghost/judge-1"}]},
-        }
-    )
-    err = session_setup.check_provider_keys(cfg)
-    assert err is not None and "ghost" in err
+    with pytest.raises(pydantic.ValidationError, match="ghost"):
+        Config.model_validate(
+            {
+                "providers": {"main": {"backend": "anthropic", "auth_style": "none"}},
+                "models": {"worker": {"model": "main/m"}},
+                "review": {"reviewers": [{"focus": "security", "model": "ghost/judge-1"}]},
+            }
+        )
 
 
 def test_machine_state_pins_ride_the_same_preflight(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -788,7 +788,7 @@ def test_extra_body_rejects_a_toml_date(tmp_path: pathlib.Path) -> None:
 def test_extra_body_rejects_nested_non_finite_floats(tmp_path: pathlib.Path, literal: str) -> None:
     """Config loading refuses non-finite extra_body floats with their full nested path."""
     body = _with_openai_provider(
-        '[providers.gw]\napi_format = "openai"\nbase_url = "https://gw.example.com/v1"\n'
+        '[providers.gw]\nbackend = "openai"\nbase_url = "https://gw.example.com/v1"\n'
         "[providers.gw.extra_body]\n"
         f"routing = {{ weights = [0.5, {{ value = {literal} }}] }}\n"
     )

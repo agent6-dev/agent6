@@ -80,7 +80,7 @@ def test_run_latest_commit_highlights_and_reuses_the_commit_payload(
     expect(page.locator(".card-diff .del span.hl-keyword")).to_have_text("def")
     expect(page.locator(".card-diff .add span.hl-keyword")).to_have_text("class")
     with log.open("a") as stream:
-        stream.write(json.dumps({"type": "loop.resume.start", "steer": "repaint marker"}) + "\n")
+        stream.write(json.dumps({"type": "session.resume", "steer": "repaint marker"}) + "\n")
     expect(page.locator(".card-head")).to_contain_text("repaint marker")
     expect(page.locator(".card-diff .add span.hl-keyword")).to_have_text("class")
     assert len(requests) == 1

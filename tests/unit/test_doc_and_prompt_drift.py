@@ -270,7 +270,7 @@ def test_bench_container_config_template_validates() -> None:
             **stub,
             "AGENT6_SB_REVIEWERS": (
                 '[{ focus = "security", model = "openrouter/a", effort = "high" }, '
-                '{ focus = "tests", model = "anthropic/b" }]'
+                '{ focus = "tests", model = "openrouter/b" }]'
             ),
         },
         {**stub, "AGENT6_SB_VERIFY": "none"},
@@ -293,7 +293,7 @@ def test_bench_container_config_template_validates() -> None:
         if env.get("AGENT6_SB_REVIEWERS"):
             assert data["review"]["reviewers"] == [
                 {"focus": "security", "model": "openrouter/a", "effort": "high"},
-                {"focus": "tests", "model": "anthropic/b"},
+                {"focus": "tests", "model": "openrouter/b"},
             ]
         if env.get("AGENT6_SB_VERIFY") == "none":
             assert data["harness"]["verify_infer"] is False
