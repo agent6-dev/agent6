@@ -304,6 +304,10 @@ class ProviderCaller:
         """
         attempts = max(1, self.retry_count + 1)
         attempt = 1
+        # One logical call: its retries share the call id, each attempt with its own request id.
+        context = request_headers.RequestContext.initiated_by(
+            initiator, call_context=provider_types.CallContext()
+        )
         while True:
             try:
                 resp = self.provider.call(
@@ -314,7 +318,7 @@ class ProviderCaller:
                     temperature=self.temperature,
                     should_abort=self.should_abort,
                     should_interrupt=self.should_interrupt,
-                    context=request_headers.RequestContext.initiated_by(initiator),
+                    context=context,
                 )
             except (ProviderAborted, ProviderInterrupted, provider_types.MediaInputError):
                 raise  # an operator stop or steer is handled, never retried

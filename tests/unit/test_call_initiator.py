@@ -7,7 +7,34 @@ from __future__ import annotations
 from typing import Any
 
 from agent6.harness import loop_conversation, provider_call
-from agent6.providers import ProviderResponse, request_headers
+from agent6.providers import ProviderError, ProviderResponse, provider_types, request_headers
+
+
+def _ok() -> ProviderResponse:
+    return ProviderResponse(
+        text="ok",
+        tool_uses=(),
+        stop_reason="end_turn",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_creation_tokens=0,
+        raw={},
+    )
+
+
+def _caller(provider: Any, *, retry_count: int = 0) -> provider_call.ProviderCaller:
+    return provider_call.ProviderCaller(
+        provider=provider,
+        retry_count=retry_count,
+        retry_delay_s=0.0,
+        retry_max_delay_s=0.0,
+        temperature=None,
+        should_abort=lambda: False,
+        should_interrupt=lambda: False,
+        log=lambda _m: None,
+        emit=lambda *_a, **_k: None,
+    )
 
 
 def test_the_initiator_follows_the_latest_notice_origin() -> None:
@@ -34,31 +61,30 @@ def test_the_caller_passes_the_initiator_as_a_partial_context() -> None:
     class _Provider:
         def call(self, **kw: Any) -> ProviderResponse:
             seen.append(kw["context"])
-            return ProviderResponse(
-                text="ok",
-                tool_uses=(),
-                stop_reason="end_turn",
-                input_tokens=1,
-                output_tokens=1,
-                cache_read_tokens=0,
-                cache_creation_tokens=0,
-                raw={},
-            )
+            return _ok()
 
-    caller = provider_call.ProviderCaller(
-        provider=_Provider(),  # type: ignore[arg-type]
-        retry_count=0,
-        retry_delay_s=0.0,
-        retry_max_delay_s=0.0,
-        temperature=None,
-        should_abort=lambda: False,
-        should_interrupt=lambda: False,
-        log=lambda _m: None,
-        emit=lambda *_a, **_k: None,
-    )
+    caller = _caller(_Provider())
     caller.call("s", [], [], 10, initiator="user")
     caller.call("s", [], [], 10)
     assert [c.initiator for c in seen] == ["user", "agent"]
     assert all(
         isinstance(c, request_headers.RequestContext) and c.conversation_id == "" for c in seen
     )
+
+
+def test_a_retried_call_keeps_its_logical_call_id() -> None:
+    """A transient error's retry carries the call id of the attempt it repeats."""
+    seen: list[str] = []
+
+    class _Flaky:
+        def call(self, **kw: Any) -> ProviderResponse:
+            # As the instrumented provider does: mint an id only when the caller sent none.
+            call_context = kw["context"].call_context or provider_types.CallContext()
+            seen.append(call_context.model_call_id)
+            if len(seen) == 1:
+                raise ProviderError("busy", status_code=503)
+            return _ok()
+
+    _caller(_Flaky(), retry_count=1).call("s", [], [], 10)
+    assert len(seen) == 2
+    assert len(set(seen)) == 1, seen
