@@ -1162,7 +1162,7 @@ EVENTS: tuple[EventSpec, ...] = (
     ),
     EventSpec(
         "role.result",
-        "A model call returned or failed.",
+        "A model call returned or failed. Failed calls include usage only when reported.",
         (
             FieldSpec("role", "str", True, "The calling model role."),
             FieldSpec("model", "str", True, "Model identifier."),
@@ -1179,6 +1179,7 @@ EVENTS: tuple[EventSpec, ...] = (
             FieldSpec(
                 "cache_creation", "int", False, "Cache-creation tokens used by this model call."
             ),
+            FieldSpec("cost_usd", "float", False, "Positive provider-reported cost in USD."),
             FieldSpec("stop_reason", "str", False, "The provider's response stop reason."),
             FieldSpec("error", "str", False, "The failure diagnostic."),
         ),

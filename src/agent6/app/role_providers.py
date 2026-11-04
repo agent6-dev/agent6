@@ -347,6 +347,21 @@ def role_temperature(cfg: Config, role: RoleName) -> float | None:
     return rm.temperature if rm is not None else None
 
 
+def _usage_fields(usage: provider_types.ProviderUsage | None) -> dict[str, int | float]:
+    """Return a result's reported usage fields; an unobserved usage stays absent."""
+    if usage is None:
+        return {}
+    fields: dict[str, int | float] = {
+        "tokens_in": usage.input_tokens,
+        "tokens_out": usage.output_tokens,
+        "cache_read": usage.cache_read_tokens,
+        "cache_creation": usage.cache_creation_tokens,
+    }
+    if usage.cost_usd > 0:
+        fields["cost_usd"] = usage.cost_usd
+    return fields
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class InstrumentedProvider:
     """Wrap a provider with `role.call`, `role.result` and `budget.update` emission.
@@ -464,7 +479,11 @@ class InstrumentedProvider:
                 exc.provider = self.provider_name  # the hint names the config key
             if self.events is not None:
                 self.events.emit(
-                    "role.result", **self._identity(model_call_id), ok=False, error=str(exc)[:200]
+                    "role.result",
+                    **self._identity(model_call_id),
+                    ok=False,
+                    error=str(exc)[:200],
+                    **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
                 )
             self._emit_budget()
             raise
@@ -476,10 +495,7 @@ class InstrumentedProvider:
                 ok=True,
                 # The settled prose: a headless run streams no deltas, so this is its only text.
                 text=resp.text,
-                tokens_in=resp.input_tokens,
-                tokens_out=resp.output_tokens,
-                cache_read=resp.cache_read_tokens,
-                cache_creation=resp.cache_creation_tokens,
+                **_usage_fields(resp.usage),
                 stop_reason=resp.stop_reason,
             )
         self._emit_budget()

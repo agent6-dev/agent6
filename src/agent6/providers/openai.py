@@ -590,10 +590,14 @@ class OpenAIProvider:
                     if args_piece:
                         tool_arg_buf.setdefault(idx, []).append(args_piece)
 
-        def _record_billed() -> None:
-            """Record what the turn cost so far, through the one owner of the usage mapping."""
+        def _record_billed() -> provider_types.ProviderUsage | None:
+            """Record what the turn cost so far, through the one owner of the usage mapping.
+
+            Returns:
+                The parsed usage; None when the stream reported none.
+            """
             if not usage:
-                return
+                return None
             billed = openai_parse.parse_response(
                 {"choices": [], "usage": usage},
                 tool_names=tool_names,
@@ -608,25 +612,29 @@ class OpenAIProvider:
                 cache_creation_tokens=billed.cache_creation_tokens,
                 cost_usd=billed.cost_usd,
             )
+            return billed.usage
 
         try:
             call.run(consume)
-        except BaseException:
+        except BaseException as exc:
             # A usage shape the parser refuses must not replace the reason the stream ended.
             with contextlib.suppress(provider_types.ProviderError):
-                _record_billed()
+                billed_usage = _record_billed()
+                if isinstance(exc, provider_types.ProviderError):
+                    exc.usage = billed_usage
             raise
 
         # A truncated turn returned as finished would read as the model going quiet.
         if not done_seen and not finish_reason:
-            _record_billed()
+            billed_usage = _record_billed()
             call.record(
                 status=0,
                 response="stream ended without [DONE] or finish_reason (truncated)",
             )
             raise provider_types.ProviderError(
                 f"OpenAI stream from {url} ended prematurely "
-                "(no [DONE], no finish_reason); upstream appears cut off."
+                "(no [DONE], no finish_reason); upstream appears cut off.",
+                usage=billed_usage,
             )
 
         final_tool_calls: list[dict[str, Any]] = []
@@ -667,8 +675,8 @@ class OpenAIProvider:
         if self.budget is not None:
             try:
                 _require_metered_usage(usage, source="OpenAI stream")
-            except provider_types.ProviderError:
-                _record_billed()
+            except provider_types.ProviderError as exc:
+                exc.usage = _record_billed()
                 raise
         parsed = openai_parse.parse_response(
             synthesised, tool_names=tool_names, tool_schemas=tool_schemas

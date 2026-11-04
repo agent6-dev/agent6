@@ -255,7 +255,8 @@ def meter_completion(
     ):
         raise provider_types.ProviderError(
             f"{api_label} response carries finish_reason='error' with no content:"
-            " the upstream failed this completion"
+            " the upstream failed this completion",
+            usage=parsed.usage,
         )
 
 

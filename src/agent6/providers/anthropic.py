@@ -588,6 +588,7 @@ class AnthropicProvider:
         usage_output = 0
         usage_cache_read = 0
         usage_cache_creation = 0
+        saw_usage = False
         saw_input_usage = False
         saw_output_usage = False
 
@@ -616,6 +617,7 @@ class AnthropicProvider:
             """
             nonlocal stop_reason, saw_message_stop, usage_input, usage_output
             nonlocal usage_cache_read, usage_cache_creation, saw_input_usage, saw_output_usage
+            nonlocal saw_usage
             for event_type, data_str in stream_lifecycle.sse_events(resp):
                 if not data_str:
                     continue
@@ -638,6 +640,7 @@ class AnthropicProvider:
                             "Anthropic response message_start.message was not an object"
                         )
                     u = _usage_mapping(msg.get("usage"))
+                    saw_usage = saw_usage or bool(u)
                     if "input_tokens" in u and u.get("input_tokens") is not None:
                         saw_input_usage = True
                     usage_input = _usage_count(u, "input_tokens")
@@ -783,6 +786,7 @@ class AnthropicProvider:
                             d.get("stop_reason"), "stop_reason", empty=False
                         )
                     u = _usage_mapping(evt.get("usage"))
+                    saw_usage = saw_usage or bool(u)
                     if u.get("output_tokens") is not None:
                         saw_output_usage = True
                         usage_output = _usage_count(u, "output_tokens")
@@ -812,8 +816,12 @@ class AnthropicProvider:
                         status_code=status,
                     )
 
-        def _record_billed() -> None:
-            """Record what the turn cost so far."""
+        def _record_billed() -> provider_types.ProviderUsage | None:
+            """Record what the turn cost so far.
+
+            Returns:
+                The observed usage; None when the stream reported none.
+            """
             stream_lifecycle.record_billed_usage(
                 self.budget,
                 self.model,
@@ -822,21 +830,32 @@ class AnthropicProvider:
                 cache_read_tokens=usage_cache_read,
                 cache_creation_tokens=usage_cache_creation,
             )
+            if not saw_usage:
+                return None
+            return provider_types.ProviderUsage(
+                input_tokens=usage_input,
+                output_tokens=usage_output,
+                cache_read_tokens=usage_cache_read,
+                cache_creation_tokens=usage_cache_creation,
+            )
 
         try:
             call.run(consume)
-        except BaseException:
+        except BaseException as exc:
             # Input usage arrives in `message_start`, so a turn ended early was billed.
-            _record_billed()
+            billed_usage = _record_billed()
+            if isinstance(exc, provider_types.ProviderError):
+                exc.usage = billed_usage
             raise
 
         # A truncated turn returned as finished would read as the model going quiet.
         if not saw_message_stop:
-            _record_billed()
+            billed_usage = _record_billed()
             call.record(status=0, response="stream ended without message_stop (truncated)")
             raise provider_types.ProviderError(
                 f"Anthropic SSE stream from {url} ended prematurely "
-                "(no message_stop); upstream appears cut off."
+                "(no message_stop); upstream appears cut off.",
+                usage=billed_usage,
             )
 
         synthesised: dict[str, Any] = {
@@ -860,13 +879,13 @@ class AnthropicProvider:
                         "budgeted runs require provider usage accounting"
                     )
                 _require_metered_usage(synthesised.get("usage"), source="Anthropic stream")
-            except provider_types.ProviderError:
-                _record_billed()
+            except provider_types.ProviderError as exc:
+                exc.usage = _record_billed()
                 raise
         try:
             parsed = _parse_response(synthesised)
-        except provider_types.ProviderError:
-            _record_billed()
+        except provider_types.ProviderError as exc:
+            exc.usage = _record_billed()
             raise
         transport.meter_completion(self.budget, self.model, parsed, "Anthropic")
         return parsed

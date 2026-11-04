@@ -1206,7 +1206,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 ### role.result
 
-**Support: public.** A model call returned or failed.
+**Support: public.** A model call returned or failed. Failed calls include usage only when reported.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1221,6 +1221,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `tokens_out` | `int, optional` | Output tokens used by this model call. |
 | `cache_read` | `int, optional` | Cached input tokens used by this model call. |
 | `cache_creation` | `int, optional` | Cache-creation tokens used by this model call. |
+| `cost_usd` | `float, optional` | Positive provider-reported cost in USD. |
 | `stop_reason` | `str, optional` | The provider's response stop reason. |
 | `error` | `str, optional` | The failure diagnostic. |
 

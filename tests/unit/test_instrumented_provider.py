@@ -123,13 +123,11 @@ def test_the_journal_records_what_the_assistant_said(tmp_path: pathlib.Path) -> 
 
     `read_session`, `/btw` and the transcript fold; a fixture can drift, the emitter cannot.
     """
-    import types
-
     from agent6.sessions import event_log
 
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     inner = mock.MagicMock()
-    inner.call.return_value = types.SimpleNamespace(
+    inner.call.return_value = ProviderResponse(
         text="the answer",
         tool_uses=(),
         refused={},

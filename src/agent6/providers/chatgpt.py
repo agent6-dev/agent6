@@ -468,10 +468,14 @@ class ChatGPTProvider:
                 thinking_delta_callback=thinking_delta_callback,
             )
 
-        def _record_billed() -> None:
-            """Record what the turn cost so far, and the plan window it moved."""
+        def _record_billed() -> provider_types.ProviderUsage | None:
+            """Record what the turn cost so far, and the plan window it moved.
+
+            Returns:
+                The parsed usage; None when only a plan window or nothing was reported.
+            """
             if not state.usage and plan_usage is None:
-                return
+                return None
             billed = responses_codec.parse_output_items(
                 [], usage=state.usage, stop_reason="", label="ChatGPT", route=self._route
             )
@@ -485,25 +489,29 @@ class ChatGPTProvider:
                 cost_usd=0.0,
                 plan_usage=plan_usage,
             )
+            return billed.usage if state.usage else None
 
         try:
             call.run(consume)
-        except BaseException:
-            _record_billed()
+        except BaseException as exc:
+            billed_usage = _record_billed()
+            if isinstance(exc, provider_types.ProviderError):
+                exc.usage = billed_usage
             raise
         try:
             parsed = responses_codec.finish_stream(
                 state, call=call, url=url, label="ChatGPT", route=self._route
             )
-        except provider_types.ProviderError:
-            _record_billed()
+        except provider_types.ProviderError as exc:
+            exc.usage = _record_billed()
             raise
         if self.budget is not None:
             if int(state.usage.get("input_tokens") or 0) <= 0:
-                _record_billed()
+                billed_usage = _record_billed()
                 raise provider_types.ProviderError(
                     "ChatGPT stream reported no usage input tokens;"
-                    " budgeted runs require provider usage accounting"
+                    " budgeted runs require provider usage accounting",
+                    usage=billed_usage,
                 )
             self.budget.record(
                 model=self.model,

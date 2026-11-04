@@ -318,10 +318,14 @@ class ResponsesProvider:
                 thinking_delta_callback=thinking_delta_callback,
             )
 
-        def record_billed() -> None:
-            """Record what the cut turn already cost."""
+        def record_billed() -> provider_types.ProviderUsage | None:
+            """Record what the cut turn already cost.
+
+            Returns:
+                The parsed usage; None when the stream reported none.
+            """
             if not state.usage:
-                return
+                return None
             billed = responses_codec.parse_output_items(
                 [], usage=state.usage, stop_reason="", label=_LABEL, route=self._route
             )
@@ -332,6 +336,7 @@ class ResponsesProvider:
                 output_tokens=billed.output_tokens,
                 cache_read_tokens=billed.cache_read_tokens,
             )
+            return billed.usage
 
         try:
             call.run(consume)
@@ -340,8 +345,10 @@ class ResponsesProvider:
             )
             if self.budget is not None:
                 _require_usage(state.usage)
-        except BaseException:
-            record_billed()
+        except BaseException as exc:
+            billed_usage = record_billed()
+            if isinstance(exc, provider_types.ProviderError):
+                exc.usage = billed_usage
             raise
         transport.meter_completion(self.budget, self.model, parsed, _LABEL)
         return parsed

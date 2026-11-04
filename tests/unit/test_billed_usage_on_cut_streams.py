@@ -18,7 +18,17 @@ import httpx2
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6.providers import AnthropicProvider, OpenAIProvider, ProviderError
+from agent6.app import role_providers
+from agent6.providers import (
+    AnthropicProvider,
+    OpenAIProvider,
+    Provider,
+    ProviderError,
+    chatgpt,
+    responses,
+)
+from agent6.sessions import event_log
+from agent6.viewmodel import telemetry
 from tests.unit.test_anthropic_streaming import FakeStreamResponse
 
 
@@ -42,6 +52,115 @@ def _cut(lines: list[str], at: int) -> _CutAfter:
 
 def _sse(event: str, data: dict[str, Any]) -> list[str]:
     return [f"event: {event}", f"data: {json.dumps(data)}", ""]
+
+
+@pytest.mark.parametrize("api_format", ["anthropic", "chatgpt", "responses"])
+@pytest.mark.parametrize("reported_usage", [False, True])
+def test_other_streams_keep_failed_usage_on_the_result(
+    tmp_path: pathlib.Path, api_format: str, reported_usage: bool
+) -> None:
+    """Failed streams retain per-call cache usage instead of exposing only a budget total."""
+    tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
+    provider: Provider
+    creation = 0
+    if api_format == "anthropic":
+        provider = AnthropicProvider(api_key="k", model="m", budget=tracker)
+        creation = 7
+        usage = {
+            "input_tokens": 100,
+            "output_tokens": 10,
+            "cache_read_input_tokens": 25,
+            "cache_creation_input_tokens": creation,
+        }
+        lines = _sse("message_start", {"message": {"usage": usage}}) if reported_usage else []
+        lines += _sse("error", {"error": {"type": "overloaded_error", "message": "busy"}})
+    else:
+        if api_format == "chatgpt":
+            credential = mock.Mock()
+            credential.token.return_value = "test-token"
+            provider = chatgpt.ChatGPTProvider(
+                model="m",
+                credential=credential,
+                account_id="account",
+                base_url="https://chatgpt.com/backend-api/codex",
+                budget=tracker,
+            )
+        else:
+            provider = responses.ResponsesProvider(
+                api_key="k", model="m", base_url="https://example.test/v1", budget=tracker
+            )
+        usage = {
+            "input_tokens": 125,
+            "output_tokens": 10,
+            "input_tokens_details": {"cached_tokens": 25},
+        }
+        lines = _sse(
+            "response.failed",
+            {
+                "type": "response.failed",
+                "response": {
+                    "status": "failed",
+                    "error": {"code": "server_error", "message": "busy"},
+                    **({"usage": usage} if reported_usage else {}),
+                },
+            },
+        )
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
+    wrapper = role_providers.InstrumentedProvider(
+        inner=provider,
+        role="worker",
+        model="m",
+        provider_name=api_format,
+        events=events,
+        budget=tracker,
+        stream_text=True,
+    )
+    with (
+        mock.patch("httpx2.stream", return_value=FakeStreamResponse(status_code=200, lines=lines)),
+        mock.patch("agent6.providers.transport.http_request", return_value=httpx2.Response(503)),
+        pytest.raises(ProviderError),
+    ):
+        wrapper.call(system="s", messages=[{"role": "user", "content": "hi"}])
+    snap = tracker.snapshot()
+    rows = [json.loads(line) for line in events.path.read_text().splitlines()]
+    (result,) = [row for row in rows if row["type"] == "role.result"]
+    if not reported_usage:
+        assert snap.per_model == {}
+        assert (
+            not {"tokens_in", "tokens_out", "cache_read", "cache_creation", "cost_usd"}
+            & result.keys()
+        )
+        return
+    assert (
+        snap.input_total,
+        snap.output_total,
+        snap.cache_read_total,
+        snap.cache_creation_total,
+    ) == (100, 10, 25, creation)
+    assert snap.per_model["m"].calls == 1
+    assert (
+        result["tokens_in"],
+        result["tokens_out"],
+        result["cache_read"],
+        result["cache_creation"],
+    ) == (100, 10, 25, creation)
+    assert result["ok"] is False
+    assert "cost_usd" not in result
+    fold = telemetry.TelemetryFold("failed-stream")
+    fold.feed({"type": "session.start", "execution_id": "e"})
+    for row in rows:
+        fold.feed(row)
+    counters = fold.metrics().counters
+    if creation:
+        assert (
+            counters[
+                (
+                    "agent6_tokens_total",
+                    (("model", "m"), ("provider", api_format), ("type", "cache_creation")),
+                )
+            ]
+            == creation
+        )
 
 
 def test_anthropic_records_what_a_cut_stream_already_cost(

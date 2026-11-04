@@ -21,6 +21,25 @@ from typing import Any, Literal, Protocol
 from agent6 import media, paths, portable
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class ProviderUsage:
+    """The usage one provider call reported, even if the call failed.
+
+    Attributes:
+        input_tokens: Fresh input tokens billed.
+        output_tokens: Completion tokens billed.
+        cache_read_tokens: Prompt tokens served from the cache.
+        cache_creation_tokens: Prompt tokens written to the cache.
+        cost_usd: The reported cost; 0 means no authoritative figure.
+    """
+
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_creation_tokens: int
+    cost_usd: float = 0.0
+
+
 class ProviderError(Exception):
     """A provider call failed.
 
@@ -36,6 +55,7 @@ class ProviderError(Exception):
             signed-out login); the retry wrapper re-raises it at once.
         attempts: The calls the retry wrapper spent before re-raising; 1 when it
             never retried.
+        usage: The failed call's reported usage; None when none was observed.
     """
 
     def __init__(
@@ -46,6 +66,7 @@ class ProviderError(Exception):
         provider: str = "",
         fatal: bool = False,
         attempts: int = 1,
+        usage: ProviderUsage | None = None,
     ) -> None:
         super().__init__(*args)
         self.status_code = status_code
@@ -53,6 +74,7 @@ class ProviderError(Exception):
         self.provider = provider
         self.fatal = fatal
         self.attempts = attempts
+        self.usage = usage
 
 
 class MediaInputError(ProviderError):
@@ -394,6 +416,17 @@ class ProviderResponse:
     cost_usd: float = 0.0
     raw: dict[str, Any] = dataclasses.field(default_factory=dict)
     refused: dict[str, str] = dataclasses.field(default_factory=dict)
+
+    @property
+    def usage(self) -> ProviderUsage:
+        """The response's usage, without its content."""
+        return ProviderUsage(
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            cache_read_tokens=self.cache_read_tokens,
+            cache_creation_tokens=self.cache_creation_tokens,
+            cost_usd=self.cost_usd,
+        )
 
 
 # The output-cap stop reasons (OpenAI "length", Anthropic "max_tokens"), case-folded.
