@@ -79,6 +79,7 @@
     "read_failure": null,
     "comparison": null,
     "event_ids": [],
+    "summary": "no panel ran",
     "merge_guard": {
       "open_block_ids": [],
       "read_failure": null
