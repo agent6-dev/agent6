@@ -29,6 +29,33 @@ def test_formats_page_is_not_stale() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("heading", "producer"),
+    (
+        ("`logs.jsonl` event envelope", "sessions.event_log.EventSink.emit"),
+        ("`sessions list --json` row", "viewmodel.listing.summary_row"),
+        ("`sessions list --json` group fields", "viewmodel.listing.row_json"),
+        ("`sessions show --json`", "ui.cli.sessions_show._cmd_status"),
+        (
+            "`attach --json` approval and commit-step fields",
+            "viewmodel.state_view.session_state_as_dict",
+        ),
+        ("`/api/meta` payload", "ui.web.server._Handler._route"),
+        ("`/api/git/diff` payload", "ui.web.git_model.diff_payload"),
+        ("`agent6 ps` JSON row", "agent6.ui.cli.ps_cmd._Row"),
+    ),
+)
+def test_surface_headings_keep_the_producer_on_the_source_line(heading: str, producer: str) -> None:
+    """Readers find a surface heading without losing its producer's source link."""
+    page = _generator().build_markdown()
+    marker = f"### {heading}\n\n"
+    assert marker in page
+    section = page.split(marker, 1)[1].split("\n##", 1)[0]
+    assert (
+        f"Source: [`{producer}`](https://github.com/agent6-dev/agent6/blob/master/src/" in section
+    )
+
+
 def test_source_links_name_the_tree_not_the_import_location(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -64,7 +91,7 @@ def test_event_meanings_come_from_registry(monkeypatch: pytest.MonkeyPatch) -> N
         ),
     )
     page = _generator().build_markdown()
-    assert "example.event" in page
+    assert "### example.event\n\n" in page
     assert "An optional count." in page
     assert "optional" in page
 

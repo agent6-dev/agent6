@@ -34,7 +34,7 @@ Integer values also satisfy the registry's `float` kind, but booleans do not.
 
 
 
-### sessions.event_log.EventSink.emit (payload)
+### `logs.jsonl` event envelope
 
 **Support: public.** Append one event under its envelope (`ENVELOPE_KEYS`), then notify the listeners.
 
@@ -1380,7 +1380,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 `sessions show --json` emits one `_cmd_status` object.
 `ps --json` emits an array of `_Row` records, including nested lanes.
 
-### viewmodel.listing.summary_row
+### `sessions list --json` row
 
 **Support: public.** Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
 
@@ -1417,7 +1417,7 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `review_queue` | `JSON` | The ReviewQueueEntry for this session. |
 | `lanes` | `JSON` | Nested listing rows for this coordinator's lanes. |
 
-### viewmodel.listing.row_json (out)
+### `sessions list --json` group fields
 
 **Support: public.** Return a listing row and its nested lanes as JSON.
 
@@ -1430,7 +1430,7 @@ Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob
 | `queue_group` | `JSON` | The group's review-queue placement. |
 | `lane_groups` | `JSON` | The number of lanes in each review-queue group. |
 
-### ui.cli.sessions_show._cmd_status
+### `sessions show --json`
 
 **Support: public.** Print a one-shot liveness and progress summary for a run.
 
@@ -1562,7 +1562,7 @@ The `row` additions belong to approvals and commit steps, not the snapshot root.
 
 Sources: [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py), [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py), [`branch_facts`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`manifest_header`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`session_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py).
 
-### viewmodel.state_view.session_state_as_dict (row)
+### `attach --json` approval and commit-step fields
 
 **Support: public.** Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
@@ -1613,7 +1613,7 @@ The response builders below name keys read directly from their dictionary litera
 Request bodies use the typed `Body` records below.
 Git blob responses carry bytes rather than JSON.
 
-### ui.web.sse.stream_session.send_frame (d)
+### `/api/session/<id>/events` frame fields
 
 **Support: public.** Send a session snapshot when its state changes.
 
@@ -1624,7 +1624,7 @@ Source: [`ui.web.sse.stream_session.send_frame`](https://github.com/agent6-dev/a
 | `stream_dead` | `JSON` | Whether the worker died without a journaled end. |
 | `last_event_age_s` | `JSON` | Seconds since the last event at frame emission. |
 
-### ui.web.sse.stream_machine (payload)
+### `/api/machine/<name>/events` snapshot frame
 
 **Support: public.** Stream one machine until it ends or the client leaves.
 
@@ -1635,7 +1635,7 @@ Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/
 | `machine` | `JSON` | The machine snapshot with its cumulative spend. |
 | `reasoning` | `JSON` | The newest agent-state session snapshot, empty before an execution. |
 
-### ui.web.sse.stream_machine
+### `/api/machine/<name>/events` frames
 
 **Support: public.** Stream one machine until it ends or the client leaves.
 
@@ -1648,7 +1648,7 @@ Source: [`ui.web.sse.stream_machine`](https://github.com/agent6-dev/agent6/blob/
 | `type` | `JSON` | The error frame kind when the machine cannot be read. |
 | `error` | `JSON` | The machine-read failure diagnostic. |
 
-### ui.web.sse._with_idle_age (fresh)
+### `/api/machine/<name>/events` reasoning age
 
 **Support: public.** Fill the reasoning fold's idle age in from its epoch.
 
@@ -1658,7 +1658,7 @@ Source: [`ui.web.sse._with_idle_age`](https://github.com/agent6-dev/agent6/blob/
 | --- | --- | --- |
 | `last_event_age_s` | `JSON` | Seconds since the reasoning snapshot's last event at frame emission. |
 
-### ui.web.server._Handler._route (/api/meta)
+### `/api/meta` payload
 
 **Support: public.** Dispatch a GET by path.
 
@@ -1670,7 +1670,7 @@ Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/b
 | `target` | `JSON` | The target selected when the server started. |
 | `target_kind` | `JSON` | Whether the target is a session, machine or draft. |
 
-### ui.web.server._Handler._route (/api/config/entry_tables)
+### `/api/config/entry_tables` payload
 
 **Support: public.** Dispatch a GET by path.
 
@@ -1688,7 +1688,7 @@ Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/b
 | `tables[].fields[].description` | `JSON` | The config model's field meaning. |
 | `tables[].defaults` | `JSON` | Known provider defaults, only on the providers table. |
 
-### ui.web.server._Handler._route (/api/config/suggest/)
+### `/api/config/suggest/<key>` payload
 
 **Support: public.** Dispatch a GET by path.
 
@@ -1698,7 +1698,7 @@ Source: [`ui.web.server._Handler._route`](https://github.com/agent6-dev/agent6/b
 | --- | --- | --- |
 | `values` | `JSON` | Suggestions for the requested config key. |
 
-### ui.web.server._Handler._login
+### `/api/login` result
 
 **Support: public.** Answer a sign-in: the token for the server's secret, 403 for any other.
 
@@ -1710,7 +1710,7 @@ Source: [`ui.web.server._Handler._login`](https://github.com/agent6-dev/agent6/b
 | `token` | `JSON` | The bearer token on a successful login. |
 | `error` | `JSON` | The refusal reason on a failed login. |
 
-### ui.web.server._Handler._send_sign_in_required
+### Web API sign-in refusal
 
 **Support: public.** Send 401; `login` tells the page to show its sign-in form.
 
@@ -1721,7 +1721,7 @@ Source: [`ui.web.server._Handler._send_sign_in_required`](https://github.com/age
 | `error` | `JSON` | The authentication refusal reason. |
 | `login` | `JSON` | Whether the client must sign in. |
 
-### ui.web.server._Handler._ok_or_err
+### Web POST result envelope
 
 **Support: public.** Send the payload under `ok`, or the error as 422.
 
@@ -1732,7 +1732,7 @@ Source: [`ui.web.server._Handler._ok_or_err`](https://github.com/agent6-dev/agen
 | `ok` | `JSON` | Whether the requested action succeeded. |
 | `error` | `JSON` | The failure reason when the action failed. |
 
-### ui.web.server._Handler._route_post
+### Web POST result fields
 
 **Support: public.** Dispatch a POST by path.
 
@@ -1744,7 +1744,7 @@ Source: [`ui.web.server._Handler._route_post`](https://github.com/agent6-dev/age
 | `message` | `JSON` | The action's result text. |
 | `draft` | `JSON` | The machine-authoring draft identifier. |
 
-### ui.web.actions.fork_run
+### `/api/session/<id>/fork` result
 
 **Support: public.** Fork a run at its latest checkpoint into a new, unstarted run.
 
@@ -1754,7 +1754,7 @@ Source: [`ui.web.actions.fork_run`](https://github.com/agent6-dev/agent6/blob/ma
 | --- | --- | --- |
 | `new_session_id` | `JSON` | The forked session identifier. |
 
-### ui.web.actions.undo_session
+### `/api/session/<id>/undo` result
 
 **Support: public.** Fork a finished run at the state before its last operator message, unstarted.
 
@@ -1766,7 +1766,7 @@ Source: [`ui.web.actions.undo_session`](https://github.com/agent6-dev/agent6/blo
 | `undone_text` | `JSON` | The instruction removed by undo. |
 | `notice` | `JSON` | The undo result message. |
 
-### ui.web.actions.run_plan
+### `/api/session/<id>/run_plan` result
 
 **Support: public.** Execute a finished plan by spawning `agent6 run --from <id>` detached.
 
@@ -1776,7 +1776,7 @@ Source: [`ui.web.actions.run_plan`](https://github.com/agent6-dev/agent6/blob/ma
 | --- | --- | --- |
 | `run_id` | `JSON` | The session created to execute the plan. |
 
-### ui.web.actions.review_run
+### `/api/session/<id>/review` result
 
 **Support: public.** Review a finished run's record through `agent6 sessions review`, a call of minutes.
 
@@ -1786,7 +1786,7 @@ Source: [`ui.web.actions.review_run`](https://github.com/agent6-dev/agent6/blob/
 | --- | --- | --- |
 | `review` | `JSON` | The completed run review as Markdown. |
 
-### ui.web.model.hub_payload
+### `/api/hub` payload
 
 **Support: public.** Return the hub: sessions in the given order, machines, drafts, machine files, presets.
 
@@ -1801,7 +1801,7 @@ Source: [`ui.web.model.hub_payload`](https://github.com/agent6-dev/agent6/blob/m
 | `presets` | `JSON` | Available preset names. |
 | `preset_default_label` | `JSON` | The composer's no-flag preset label. |
 
-### ui.web.model._machine_row (entry)
+### `/api/hub` machine row
 
 **Support: public.** Return one machine-instance row for the hub.
 
@@ -1818,7 +1818,7 @@ Source: [`ui.web.model._machine_row`](https://github.com/agent6-dev/agent6/blob/
 | `current` | `JSON` | The current state, absent for unreadable instances. |
 | `label` | `JSON` | The rendered status when a reason is available. |
 
-### ui.web.model.list_machine_files
+### `/api/hub` machine-file rows
 
 **Support: public.** Return the hub's machine-file rows.
 
@@ -1829,7 +1829,7 @@ Source: [`ui.web.model.list_machine_files`](https://github.com/agent6-dev/agent6
 | `[].path` | `JSON` | The path accepted by machine run. |
 | `[].name` | `JSON` | The machine file's basename. |
 
-### ui.web.model.routes_payload
+### `/api/routes` payload
 
 **Support: public.** Return the new-work composer's model picker.
 
@@ -1840,7 +1840,7 @@ Source: [`ui.web.model.routes_payload`](https://github.com/agent6-dev/agent6/blo
 | `routes` | `JSON` | The provider/model routes the config can run. |
 | `default_label` | `JSON` | The composer's no-flag model label. |
 
-### ui.web.model.resume_defaults_payload
+### `/api/session/<id>/resume_defaults` payload
 
 **Support: public.** Return the resume row's no-flag preset and model labels under a picked preset.
 
@@ -1851,7 +1851,7 @@ Source: [`ui.web.model.resume_defaults_payload`](https://github.com/agent6-dev/a
 | `preset_label` | `JSON` | The resume's no-flag preset label. |
 | `model_label` | `JSON` | The resume's no-flag model label under the selected preset. |
 
-### ui.web.model.conversation_payload
+### `/api/session/<id>/conversation` payload
 
 **Support: public.** Return a run's conversation and the operator's past inputs, from one read of the log.
 
@@ -1862,7 +1862,7 @@ Source: [`ui.web.model.conversation_payload`](https://github.com/agent6-dev/agen
 | `items` | `JSON` | The folded conversation items. |
 | `operator_inputs` | `JSON` | The operator's past inputs for composer history. |
 
-### ui.web.model.conversation_items (entry)
+### `/api/session/<id>/conversation` item
 
 **Support: public.** Fold events into rendered conversation items.
 
@@ -1874,7 +1874,7 @@ Source: [`ui.web.model.conversation_items`](https://github.com/agent6-dev/agent6
 | `lines` | `JSON` | Collapsed lines of text/style span pairs. |
 | `full` | `JSON` | Expanded lines of text/style span pairs, only when different from lines. |
 
-### ui.web.model.restate_payload
+### `/api/session/<id>/restate` payload
 
 **Support: public.** Return `/restate` for the web composer, over the session's whole journal.
 
@@ -1884,7 +1884,7 @@ Source: [`ui.web.model.restate_payload`](https://github.com/agent6-dev/agent6/bl
 | --- | --- | --- |
 | `text` | `JSON` | The rendered restatement of the session. |
 
-### ui.web.model.machine_conversation_payload
+### `/api/machine/<name>/conversation` payload
 
 **Support: public.** Return the conversation of the machine's newest agent-state execution, or no items.
 
@@ -1894,7 +1894,7 @@ Source: [`ui.web.model.machine_conversation_payload`](https://github.com/agent6-
 | --- | --- | --- |
 | `items` | `JSON` | The newest agent-state conversation, empty before any execution. |
 
-### ui.web.model.machine_reasoning_snapshot (snap)
+### `/api/machine/<name>/reasoning` fields
 
 **Support: public.** Return the session state of the machine's newest agent-state execution.
 
@@ -1905,7 +1905,7 @@ Source: [`ui.web.model.machine_reasoning_snapshot`](https://github.com/agent6-de
 | `state_dir` | `JSON` | The agent-state execution directory to echo when answering a prompt. |
 | `last_event_ep` | `JSON` | The last event time in epoch seconds, when known. |
 
-### ui.web.model._diff_payload
+### `/api/session/<id>/diff` payload
 
 **Support: public.** Return one step's patch, or the chain `base..sha` when cumulative and a base is known.
 
@@ -1918,7 +1918,7 @@ Source: [`ui.web.model._diff_payload`](https://github.com/agent6-dev/agent6/blob
 | `old_spans` | `JSON` | Base paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
 | `new_spans` | `JSON` | Head paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
 
-### viewmodel.config_view._leaf_json
+### `/api/config` setting
 
 **Support: public.** Return one leaf's JSON view, shared by the full dump and the single-key path.
 
@@ -1938,7 +1938,7 @@ Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent
 | `display` | `JSON` | The rendered effective value. |
 | `default_display` | `JSON` | The rendered default value. |
 
-### ui.web.model.config_payload (setting)
+### `/api/config` editing fields
 
 **Support: public.** Return the effective config per leaf, keyed by dotted key.
 
@@ -1952,7 +1952,7 @@ Source: [`ui.web.model.config_payload`](https://github.com/agent6-dev/agent6/blo
 | `entry.name` | `JSON` | The entry's name. |
 | `entry.source` | `JSON` | The highest config layer holding the entry. |
 
-### ui.web.git_model._ref_row
+### `/api/git/refs` ref row
 
 **Support: public.** Return one Git ref for the picker.
 
@@ -1966,7 +1966,7 @@ Source: [`ui.web.git_model._ref_row`](https://github.com/agent6-dev/agent6/blob/
 | `sha` | `JSON` | The ref's commit identifier. |
 | `head` | `JSON` | Whether this ref is the current branch. |
 
-### ui.web.git_model._file_row
+### Git changed-file row
 
 **Support: public.** Return one changed file.
 
@@ -1981,7 +1981,7 @@ Source: [`ui.web.git_model._file_row`](https://github.com/agent6-dev/agent6/blob
 | `deletions` | `JSON` | The number of deleted lines. |
 | `binary` | `JSON` | Whether Git reports a binary change. |
 
-### ui.web.git_model._log_row
+### `/api/git/graph` commit row
 
 **Support: public.** Return one commit graph row.
 
@@ -1998,7 +1998,7 @@ Source: [`ui.web.git_model._log_row`](https://github.com/agent6-dev/agent6/blob/
 | `subject` | `JSON` | The commit's first message line. |
 | `is_merge` | `JSON` | Whether the commit has more than one parent. |
 
-### ui.web.git_model._decorations (@append)
+### `/api/git/graph` ref decoration
 
 **Support: public.** Return the refs at each sha, in listing order.
 
@@ -2010,7 +2010,7 @@ Source: [`ui.web.git_model._decorations`](https://github.com/agent6-dev/agent6/b
 | `kind` | `JSON` | The ref's group. |
 | `head` | `JSON` | Whether this ref is the current branch. |
 
-### ui.web.git_model._endpoint
+### `/api/git/compare` endpoint
 
 **Support: public.** Return one side of a compare: the rev as sent, the sha it names, and its subject.
 
@@ -2023,7 +2023,7 @@ Source: [`ui.web.git_model._endpoint`](https://github.com/agent6-dev/agent6/blob
 | `short` | `JSON` | The abbreviated identifier, or WORKTREE. |
 | `subject` | `JSON` | The commit subject or working-tree label. |
 
-### ui.web.git_model.refs_payload
+### `/api/git/refs` payload
 
 **Support: public.** Return every ref with its kind and tip, and HEAD's sha and branch.
 
@@ -2036,7 +2036,7 @@ Source: [`ui.web.git_model.refs_payload`](https://github.com/agent6-dev/agent6/b
 | `head.branch` | `JSON` | The current branch name. |
 | `refs` | `JSON` | The selectable ref rows. |
 
-### ui.web.git_model.graph_payload
+### `/api/git/graph` payload
 
 **Support: public.** Return one page of the commit graph.
 
@@ -2051,7 +2051,7 @@ Source: [`ui.web.git_model.graph_payload`](https://github.com/agent6-dev/agent6/
 | `skip` | `JSON` | The number of commits skipped. |
 | `limit` | `JSON` | The effective page size. |
 
-### ui.web.git_model.commit_payload
+### `/api/git/commit/<rev>` payload
 
 **Support: public.** Return a commit's header, message, refs and the files it changed from its first parent.
 
@@ -2078,7 +2078,7 @@ Source: [`ui.web.git_model.commit_payload`](https://github.com/agent6-dev/agent6
 | `files` | `JSON` | Changed-file rows against the base. |
 | `truncated` | `JSON` | Whether the file list reached its cap. |
 
-### ui.web.git_model.compare_payload
+### `/api/git/compare` payload
 
 **Support: public.** Return the files that differ between two revisions, as `git diff base head` lists them.
 
@@ -2091,7 +2091,7 @@ Source: [`ui.web.git_model.compare_payload`](https://github.com/agent6-dev/agent
 | `files` | `JSON` | Changed-file rows between the endpoints. |
 | `truncated` | `JSON` | Whether the file list reached its cap. |
 
-### ui.web.git_model.worktree_payload
+### `/api/git/worktree` payload
 
 **Support: public.** Return the working tree's uncommitted files, tracked changes first.
 
@@ -2103,7 +2103,7 @@ Source: [`ui.web.git_model.worktree_payload`](https://github.com/agent6-dev/agen
 | `files` | `JSON` | Changed-file rows, with tracked changes before untracked files. |
 | `truncated` | `JSON` | Whether the file list reached its cap. |
 
-### ui.web.git_model.diff_payload
+### `/api/git/diff` payload
 
 **Support: public.** Return one file's unified diff between two revisions.
 
@@ -2126,7 +2126,7 @@ Source: [`ui.web.git_model.diff_payload`](https://github.com/agent6-dev/agent6/b
 | `truncated` | `JSON` | Whether the displayed content reached its cap. |
 | `max_bytes` | `JSON` | The byte cap, or null when whole content was requested. |
 
-### ui.web.git_model.search_payload
+### `/api/git/search` payload
 
 **Support: public.** Return the refs whose name contains the text and the commits whose message or sha does.
 
@@ -2138,7 +2138,7 @@ Source: [`ui.web.git_model.search_payload`](https://github.com/agent6-dev/agent6
 | `commits` | `JSON` | Matching commit rows. |
 | `truncated` | `JSON` | Whether either result list reached its cap. |
 
-### ui.web.git_model.tree_payload
+### `/api/git/tree` payload
 
 **Support: public.** Return the files at a revision or in the working tree.
 
@@ -2150,7 +2150,7 @@ Source: [`ui.web.git_model.tree_payload`](https://github.com/agent6-dev/agent6/b
 | `files` | `JSON` | TreeFile records in the selected tree. |
 | `truncated` | `JSON` | Whether the file list reached its cap. |
 
-### ui.web.git_model.text_payload
+### `/api/git/text` payload
 
 **Support: public.** Return a file's text at a revision or in the working tree, with its highlight spans.
 
@@ -2169,7 +2169,7 @@ Source: [`ui.web.git_model.text_payload`](https://github.com/agent6-dev/agent6/b
 | `language` | `JSON` | The tree-sitter language name, or an empty string when unknown. |
 | `spans` | `JSON` | Per-line highlight spans as start, end and CSS class triples. |
 
-### ui.web.git_model.blame_payload
+### `/api/git/blame` payload
 
 **Support: public.** Return per-line attribution with the text route's caps, refusals and digest.
 
@@ -2185,7 +2185,7 @@ Source: [`ui.web.git_model.blame_payload`](https://github.com/agent6-dev/agent6/
 | `truncated` | `JSON` | Whether the displayed text reached its cap. |
 | `max_bytes` | `JSON` | The byte cap, or null when whole content was requested. |
 
-### ui.web.review_routes.comparison
+### `/api/git/findings` payload
 
 **Support: public.** Return findings with exact comparison matches and links to their recorded targets.
 
@@ -2196,7 +2196,7 @@ Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6
 | `findings` | `JSON` | One comparison entry per recorded finding. |
 | `read_failures` | `JSON` | Diagnostics for unreadable review evidence. |
 
-### ui.web.review_routes.comparison (@append)
+### `/api/git/findings` finding
 
 **Support: public.** Return findings with exact comparison matches and links to their recorded targets.
 
@@ -2211,7 +2211,7 @@ Source: [`ui.web.review_routes.comparison`](https://github.com/agent6-dev/agent6
 | `observation` | `JSON` | The selected observation of the finding. |
 | `matches` | `JSON` | Whether both displayed trees match the observation's target. |
 
-### ui.web.review_routes.panel
+### `/api/reviews/<panel_id>` payload
 
 **Support: public.** Read a recorded comparison or file without consulting a mutable checkout.
 
@@ -2226,7 +2226,7 @@ Source: [`ui.web.review_routes.panel`](https://github.com/agent6-dev/agent6/blob
 | `files` | `JSON` | Changed-file records between the reviewed trees. |
 | `truncated` | `JSON` | Whether the changed-file list reached its cap. |
 
-### ui.web.review_routes._diff
+### `/api/reviews/<panel_id>/diff` payload
 
 **Support: public.** Return a file diff from the recorded review trees.
 
@@ -2248,7 +2248,7 @@ Source: [`ui.web.review_routes._diff`](https://github.com/agent6-dev/agent6/blob
 | `max_bytes` | `JSON` | The byte cap, or null when whole content was requested. |
 | `error` | `JSON` | The refusal diagnostic on an unsuccessful read. |
 
-### ui.web.review_routes._file
+### `/api/reviews/<panel_id>/file` payload
 
 **Support: public.** Return a file from one recorded review tree.
 
@@ -2268,7 +2268,7 @@ Source: [`ui.web.review_routes._file`](https://github.com/agent6-dev/agent6/blob
 | `spans` | `JSON` | Per-line highlight spans as start, end and CSS class triples. |
 | `error` | `JSON` | The refusal diagnostic on an unsuccessful read. |
 
-### viewmodel.review.as_dict (result)
+### `/api/session/<id>/findings` review fields
 
 **Support: public.** Return JSON-ready evidence, including nested boundary models and merge facts.
 
@@ -2281,7 +2281,7 @@ Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/m
 | `rule_sources` | `JSON` | The latest panel's recorded rule sources. |
 | `rules_complete` | `JSON` | Whether all rule sources were supplied, or null when unrecorded. |
 
-### viewmodel.review.as_dict (row)
+### `/api/session/<id>/findings` finding fields
 
 **Support: public.** Return JSON-ready evidence, including nested boundary models and merge facts.
 
@@ -2291,7 +2291,7 @@ Source: [`viewmodel.review.as_dict`](https://github.com/agent6-dev/agent6/blob/m
 | --- | --- | --- |
 | `line_origin` | `JSON` | The latest observation's attribution evidence, added to each finding. |
 
-### viewmodel.receipt.as_dict (payload)
+### `/api/session/<id>/receipt` fields
 
 **Support: public.** Return the JSON-safe receipt fields.
 
@@ -2355,7 +2355,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `compare` | `CompareStamp \| None` | A fan-out lane's compare stamp, or None. |
 | `fanout` | `FanoutStamp \| None` | A fan-out's own record on its coordinator, or None. |
 
-### _Row
+### `agent6 ps` JSON row
 
 **Support: public.** One live session or machine instance.
 

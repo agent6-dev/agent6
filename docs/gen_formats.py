@@ -303,6 +303,7 @@ class Producer:
 
     module: str
     symbol: str
+    surface: str
     variable: str = ""
     branch: str = ""
 
@@ -318,84 +319,112 @@ class Producer:
         fields = dictionary_fields(self.path, self.symbol, self.variable, self.branch)
         source = self.path.relative_to(_ROOT)
         return (
-            f"### {self.module}.{self.symbol}"
-            + (f" ({self.variable})" if self.variable else "")
-            + (f" ({self.branch})" if self.branch else "")
-            + f"\n\n**Support: public.** {meaning}\n\n"
-            + f"Source: [`{self.module}.{self.symbol}`]({_BLOB}{source}).\n\n"
-            + _table(fields)
+            f"### {self.surface}\n\n**Support: public.** {meaning}\n\n"
+            f"Source: [`{self.module}.{self.symbol}`]({_BLOB}{source}).\n\n" + _table(fields)
         )
 
 
 # These entries select producers; field names, types and meanings come from their code.
 CLI = (
-    Producer("viewmodel.listing", "summary_row"),
-    Producer("viewmodel.listing", "row_json", "out"),
-    Producer("ui.cli.sessions_show", "_cmd_status"),
+    Producer("viewmodel.listing", "summary_row", "`sessions list --json` row"),
+    Producer("viewmodel.listing", "row_json", "`sessions list --json` group fields", "out"),
+    Producer("ui.cli.sessions_show", "_cmd_status", "`sessions show --json`"),
 )
 SESSION = (
-    Producer("viewmodel.state_view", "session_state_as_dict", "d"),
-    Producer("viewmodel.state_view", "session_state_as_dict", "row"),
-    Producer("viewmodel.wire", "branch_facts", "out"),
-    Producer("viewmodel.wire", "manifest_header", "header"),
-    Producer("viewmodel.wire", "session_snapshot", "snap"),
+    Producer("viewmodel.state_view", "session_state_as_dict", "`attach --json` snapshot", "d"),
+    Producer(
+        "viewmodel.state_view",
+        "session_state_as_dict",
+        "`attach --json` approval and commit-step fields",
+        "row",
+    ),
+    Producer("viewmodel.wire", "branch_facts", "`attach --json` branch fields", "out"),
+    Producer("viewmodel.wire", "manifest_header", "`attach --json` header fields", "header"),
+    Producer("viewmodel.wire", "session_snapshot", "`/api/session/<id>` snapshot", "snap"),
 )
 MACHINE = (
-    Producer("viewmodel.machine_state", "machine_state_as_dict", "d"),
-    Producer("viewmodel.wire", "machine_snapshot", "d"),
+    Producer(
+        "viewmodel.machine_state", "machine_state_as_dict", "`attach --json` machine snapshot", "d"
+    ),
+    Producer("viewmodel.wire", "machine_snapshot", "`/api/machine/<name>` snapshot", "d"),
 )
 WEB = (
-    Producer("ui.web.sse", "stream_session.send_frame", "d"),
-    Producer("ui.web.sse", "stream_machine", "payload"),
-    Producer("ui.web.sse", "stream_machine"),
-    Producer("ui.web.sse", "_with_idle_age", "fresh"),
-    Producer("ui.web.server", "_Handler._route", branch="/api/meta"),
-    Producer("ui.web.server", "_Handler._route", branch="/api/config/entry_tables"),
-    Producer("ui.web.server", "_Handler._route", branch="/api/config/suggest/"),
-    Producer("ui.web.server", "_Handler._login"),
-    Producer("ui.web.server", "_Handler._send_sign_in_required"),
-    Producer("ui.web.server", "_Handler._ok_or_err"),
-    Producer("ui.web.server", "_Handler._route_post"),
-    Producer("ui.web.actions", "fork_run"),
-    Producer("ui.web.actions", "undo_session"),
-    Producer("ui.web.actions", "run_plan"),
-    Producer("ui.web.actions", "review_run"),
-    Producer("ui.web.model", "hub_payload"),
-    Producer("ui.web.model", "_machine_row", "entry"),
-    Producer("ui.web.model", "list_machine_files"),
-    Producer("ui.web.model", "routes_payload"),
-    Producer("ui.web.model", "resume_defaults_payload"),
-    Producer("ui.web.model", "conversation_payload"),
-    Producer("ui.web.model", "conversation_items", "entry"),
-    Producer("ui.web.model", "restate_payload"),
-    Producer("ui.web.model", "machine_conversation_payload"),
-    Producer("ui.web.model", "machine_reasoning_snapshot", "snap"),
-    Producer("ui.web.model", "_diff_payload"),
-    Producer("viewmodel.config_view", "_leaf_json"),
-    Producer("ui.web.model", "config_payload", "setting"),
-    Producer("ui.web.git_model", "_ref_row"),
-    Producer("ui.web.git_model", "_file_row"),
-    Producer("ui.web.git_model", "_log_row"),
-    Producer("ui.web.git_model", "_decorations", "@append"),
-    Producer("ui.web.git_model", "_endpoint"),
-    Producer("ui.web.git_model", "refs_payload"),
-    Producer("ui.web.git_model", "graph_payload"),
-    Producer("ui.web.git_model", "commit_payload"),
-    Producer("ui.web.git_model", "compare_payload"),
-    Producer("ui.web.git_model", "worktree_payload"),
-    Producer("ui.web.git_model", "diff_payload"),
-    Producer("ui.web.git_model", "search_payload"),
-    Producer("ui.web.git_model", "tree_payload"),
-    Producer("ui.web.git_model", "text_payload"),
-    Producer("ui.web.git_model", "blame_payload"),
-    Producer("ui.web.review_routes", "comparison"),
-    Producer("ui.web.review_routes", "comparison", "@append"),
-    Producer("ui.web.review_routes", "panel"),
-    Producer("ui.web.review_routes", "_diff"),
-    Producer("ui.web.review_routes", "_file"),
-    Producer("viewmodel.review", "as_dict", "result"),
-    Producer("viewmodel.review", "as_dict", "row"),
-    Producer("viewmodel.receipt", "as_dict", "payload"),
+    Producer(
+        "ui.web.sse", "stream_session.send_frame", "`/api/session/<id>/events` frame fields", "d"
+    ),
+    Producer(
+        "ui.web.sse", "stream_machine", "`/api/machine/<name>/events` snapshot frame", "payload"
+    ),
+    Producer("ui.web.sse", "stream_machine", "`/api/machine/<name>/events` frames"),
+    Producer("ui.web.sse", "_with_idle_age", "`/api/machine/<name>/events` reasoning age", "fresh"),
+    Producer("ui.web.server", "_Handler._route", "`/api/meta` payload", branch="/api/meta"),
+    Producer(
+        "ui.web.server",
+        "_Handler._route",
+        "`/api/config/entry_tables` payload",
+        branch="/api/config/entry_tables",
+    ),
+    Producer(
+        "ui.web.server",
+        "_Handler._route",
+        "`/api/config/suggest/<key>` payload",
+        branch="/api/config/suggest/",
+    ),
+    Producer("ui.web.server", "_Handler._login", "`/api/login` result"),
+    Producer("ui.web.server", "_Handler._send_sign_in_required", "Web API sign-in refusal"),
+    Producer("ui.web.server", "_Handler._ok_or_err", "Web POST result envelope"),
+    Producer("ui.web.server", "_Handler._route_post", "Web POST result fields"),
+    Producer("ui.web.actions", "fork_run", "`/api/session/<id>/fork` result"),
+    Producer("ui.web.actions", "undo_session", "`/api/session/<id>/undo` result"),
+    Producer("ui.web.actions", "run_plan", "`/api/session/<id>/run_plan` result"),
+    Producer("ui.web.actions", "review_run", "`/api/session/<id>/review` result"),
+    Producer("ui.web.model", "hub_payload", "`/api/hub` payload"),
+    Producer("ui.web.model", "_machine_row", "`/api/hub` machine row", "entry"),
+    Producer("ui.web.model", "list_machine_files", "`/api/hub` machine-file rows"),
+    Producer("ui.web.model", "routes_payload", "`/api/routes` payload"),
+    Producer(
+        "ui.web.model", "resume_defaults_payload", "`/api/session/<id>/resume_defaults` payload"
+    ),
+    Producer("ui.web.model", "conversation_payload", "`/api/session/<id>/conversation` payload"),
+    Producer(
+        "ui.web.model", "conversation_items", "`/api/session/<id>/conversation` item", "entry"
+    ),
+    Producer("ui.web.model", "restate_payload", "`/api/session/<id>/restate` payload"),
+    Producer(
+        "ui.web.model", "machine_conversation_payload", "`/api/machine/<name>/conversation` payload"
+    ),
+    Producer(
+        "ui.web.model",
+        "machine_reasoning_snapshot",
+        "`/api/machine/<name>/reasoning` fields",
+        "snap",
+    ),
+    Producer("ui.web.model", "_diff_payload", "`/api/session/<id>/diff` payload"),
+    Producer("viewmodel.config_view", "_leaf_json", "`/api/config` setting"),
+    Producer("ui.web.model", "config_payload", "`/api/config` editing fields", "setting"),
+    Producer("ui.web.git_model", "_ref_row", "`/api/git/refs` ref row"),
+    Producer("ui.web.git_model", "_file_row", "Git changed-file row"),
+    Producer("ui.web.git_model", "_log_row", "`/api/git/graph` commit row"),
+    Producer("ui.web.git_model", "_decorations", "`/api/git/graph` ref decoration", "@append"),
+    Producer("ui.web.git_model", "_endpoint", "`/api/git/compare` endpoint"),
+    Producer("ui.web.git_model", "refs_payload", "`/api/git/refs` payload"),
+    Producer("ui.web.git_model", "graph_payload", "`/api/git/graph` payload"),
+    Producer("ui.web.git_model", "commit_payload", "`/api/git/commit/<rev>` payload"),
+    Producer("ui.web.git_model", "compare_payload", "`/api/git/compare` payload"),
+    Producer("ui.web.git_model", "worktree_payload", "`/api/git/worktree` payload"),
+    Producer("ui.web.git_model", "diff_payload", "`/api/git/diff` payload"),
+    Producer("ui.web.git_model", "search_payload", "`/api/git/search` payload"),
+    Producer("ui.web.git_model", "tree_payload", "`/api/git/tree` payload"),
+    Producer("ui.web.git_model", "text_payload", "`/api/git/text` payload"),
+    Producer("ui.web.git_model", "blame_payload", "`/api/git/blame` payload"),
+    Producer("ui.web.review_routes", "comparison", "`/api/git/findings` payload"),
+    Producer("ui.web.review_routes", "comparison", "`/api/git/findings` finding", "@append"),
+    Producer("ui.web.review_routes", "panel", "`/api/reviews/<panel_id>` payload"),
+    Producer("ui.web.review_routes", "_diff", "`/api/reviews/<panel_id>/diff` payload"),
+    Producer("ui.web.review_routes", "_file", "`/api/reviews/<panel_id>/file` payload"),
+    Producer("viewmodel.review", "as_dict", "`/api/session/<id>/findings` review fields", "result"),
+    Producer("viewmodel.review", "as_dict", "`/api/session/<id>/findings` finding fields", "row"),
+    Producer("viewmodel.receipt", "as_dict", "`/api/session/<id>/receipt` fields", "payload"),
 )
 MODELS = (
     ("sessions.manifest", "SessionManifest"),
@@ -431,15 +460,22 @@ def _models() -> list[type[Any]]:
 def _model_section(cls: type[Any]) -> str:
     source = module_path(cls.__module__).relative_to(_ROOT)
     meaning = (inspect.getdoc(cls) or "").split("\n\n")[0].replace("\n", " ")
+    surface = cls.__name__
+    if cls.__module__ == "agent6.ui.cli.ps_cmd" and surface == "_Row":
+        surface = "`agent6 ps` JSON row"
     return (
-        f"### {cls.__name__}\n\n**Support: public.** {meaning}\n\n"
+        f"### {surface}\n\n**Support: public.** {meaning}\n\n"
         f"Source: [`{cls.__module__}.{cls.__name__}`]({_BLOB}{source}).\n\n"
         + _table(model_fields(cls))
     )
 
 
 def _journal() -> str:
-    parts = [Producer("sessions.event_log", "EventSink.emit", "payload").render()]
+    parts = [
+        Producer(
+            "sessions.event_log", "EventSink.emit", "`logs.jsonl` event envelope", "payload"
+        ).render()
+    ]
     for event in event_schema.EVENTS:
         fields = [
             Field(f.name, f.kind + ("" if f.required else ", optional"), f.meaning)

@@ -58,7 +58,7 @@ Public fields: [Formats](formats.md#cli-json).
 
 **_Row** &mdash; One live session or machine instance.
 
-Public fields: [Formats](formats.md#_row).
+Public fields: [Formats](formats.md#agent6-ps-json-row).
 
 - **Written by:** ui/cli/ps_cmd
 - **Read by:** ui/cli/entry

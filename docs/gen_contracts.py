@@ -90,7 +90,7 @@ CONTRACTS: tuple[Contract, ...] = (
         primary=("_Row",),
         writers=("ui/cli/ps_cmd.py",),
         pins=("tests/unit/test_ps.py",),
-        public_format="_row",
+        public_format="agent6-ps-json-row",
     ),
     Contract(
         title="Web payloads",
