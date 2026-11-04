@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Hold conversation ids and the completed-call counts that decide `is_first_turn`.
 
-Each role's calls to one provider form a conversation.
+Each role's calls to one provider form a conversation; review seats use panel id and seat index.
 Its id is minted here, never derived from a path, a name or a host.
 The ids and counts persist in `conversations.json` beside the session.
 A resume continues the same conversations; a fork starts new ones.
@@ -15,10 +15,11 @@ import json
 import pathlib
 import threading
 import uuid
+from collections.abc import Callable
 from typing import Any
 
 from agent6 import portable
-from agent6.providers import request_headers
+from agent6.providers import provider_types, request_headers
 
 FILE_NAME = "conversations.json"
 
@@ -31,9 +32,20 @@ class _Route:
     completed: int = 0
 
 
+def _route_key(role: str, provider: str, call_context: provider_types.CallContext | None) -> str:
+    """Return a panel seat key or a role and provider key."""
+    if (
+        call_context is not None
+        and call_context.panel_id is not None
+        and call_context.seat_index is not None
+    ):
+        return f"review:{call_context.panel_id}:{call_context.seat_index}"
+    return f"{role}@{provider}"
+
+
 @dataclasses.dataclass(slots=True)
 class Conversations:
-    """A session's conversations, one per role and provider.
+    """A session's conversations, one per role and provider or panel seat.
 
     Attributes:
         path: Where the state persists; None keeps it in memory for one process.
@@ -67,7 +79,8 @@ class Conversations:
         provider: str,
         *,
         initiator: str,
-        observe: Any = None,
+        observe: Callable[[request_headers.RequestFacts], None] | None = None,
+        call_context: provider_types.CallContext | None = None,
     ) -> request_headers.RequestContext:
         """Return the context of one model call, minting the conversation on first use.
 
@@ -76,15 +89,17 @@ class Conversations:
             provider: The provider entry's name.
             initiator: `user` or `agent`.
             observe: Receives each HTTP attempt's facts; None observes nothing.
+            call_context: The call's identity; panel seats have separate conversations.
 
         Returns:
             The context.
         """
         with self._lock:
-            route = self._routes.get(f"{role}@{provider}")
+            key = _route_key(role, provider, call_context)
+            route = self._routes.get(key)
             if route is None:
                 route = _Route(uuid.uuid4().hex)
-                self._routes[f"{role}@{provider}"] = route
+                self._routes[key] = route
                 self._persist()
             return request_headers.RequestContext(
                 conversation_id=route.id,
@@ -92,17 +107,21 @@ class Conversations:
                 is_subagent=self.is_subagent,
                 initiator=initiator,
                 observe=observe,
+                call_context=call_context,
             )
 
-    def completed(self, role: str, provider: str) -> None:
+    def completed(
+        self, role: str, provider: str, *, call_context: provider_types.CallContext | None = None
+    ) -> None:
         """Record one answered call of a conversation.
 
         Args:
             role: The calling role.
             provider: The provider entry's name.
+            call_context: The answered call's identity.
         """
         with self._lock:
-            route = self._routes.get(f"{role}@{provider}")
+            route = self._routes.get(_route_key(role, provider, call_context))
             if route is not None:
                 route.completed += 1
                 self._persist()

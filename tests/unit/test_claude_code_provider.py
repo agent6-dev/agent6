@@ -42,6 +42,7 @@ from agent6.providers import (
     claude_code_wire,
     stream_lifecycle,
 )
+from agent6.sessions import event_log
 from agent6.viewmodel import transcript_render
 
 FAKE = pathlib.Path(__file__).with_name("fake_claude.py")
@@ -282,6 +283,32 @@ def test_account_email_is_scrubbed_and_never_recorded(tmp_path: pathlib.Path) ->
     for path in (tmp_path / "transcripts").glob("*.json"):
         assert email not in path.read_text(encoding="utf-8")
     assert "Leak Org" not in json.dumps(resp.raw)
+
+
+def test_local_transcript_keeps_the_call_id_without_an_http_request_id(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A local process records its logical call identity without inventing an HTTP attempt."""
+    binary, _ = _install(tmp_path, {"turns": [[_round(text="ok")]]})
+    inner = _provider(binary, transcript_sink=TranscriptSink(tmp_path / "transcripts"))
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
+    provider = role_providers.InstrumentedProvider(
+        inner=inner,
+        role="worker",
+        model="claude-haiku-4-5",
+        provider_name="claude",
+        events=events,
+        budget=_budget(),
+    )
+    provider.call(system="s", messages=USER0)
+    provider.close()
+    rows = [json.loads(line) for line in events.path.read_text().splitlines()]
+    (call,) = [row for row in rows if row["type"] == "role.call"]
+    (path,) = (tmp_path / "transcripts").glob("*.json")
+    transcript = json.loads(path.read_text())
+    assert transcript["model_call_id"] == call["model_call_id"]
+    assert transcript["request_id"] == ""
+    assert not any(row["type"] == "provider.request" for row in rows)
 
 
 def test_system_init_audit_refuses_a_foreign_tool_or_an_api_key(tmp_path: pathlib.Path) -> None:

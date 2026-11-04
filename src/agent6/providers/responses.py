@@ -249,9 +249,10 @@ class ResponsesProvider:
             require_metered=lambda data: _require_usage(data.get("usage")),
             parse=self._parse_response,
             stream=(
-                lambda attempt_headers: self._call_streaming(
+                lambda attempt_headers, facts: self._call_streaming(
                     url=url,
                     headers=attempt_headers,
+                    facts=facts,
                     body=body,
                     text_delta_callback=text_delta_callback,
                     thinking_delta_callback=thinking_delta_callback,
@@ -268,6 +269,7 @@ class ResponsesProvider:
         *,
         url: str,
         headers: dict[str, str],
+        facts: request_headers.RequestFacts,
         body: dict[str, Any],
         text_delta_callback: Callable[[str], None] | None,
         thinking_delta_callback: Callable[[str], None] | None,
@@ -279,6 +281,7 @@ class ResponsesProvider:
         Args:
             url: The URL dialled.
             headers: The attempt's request headers.
+            facts: The attempt's identity and call context.
             body: The request body; `stream` is set on a copy.
             text_delta_callback: Receives visible text as it streams.
             thinking_delta_callback: Receives reasoning summaries as they stream.
@@ -304,6 +307,7 @@ class ResponsesProvider:
             body=body,
             timeout_s=self.timeout_s,
             transcript_sink=self.transcript_sink,
+            facts=facts,
             should_abort=should_abort,
             should_interrupt=should_interrupt,
         )

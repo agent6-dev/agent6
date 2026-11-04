@@ -30,7 +30,7 @@ import httpx2
 
 from agent6 import budget as agent6_budget
 from agent6 import kinds, media
-from agent6.providers import provider_types, transport
+from agent6.providers import provider_types, request_headers, transport
 
 STREAM_FIRST_DATA_TIMEOUT_S = 120.0
 STREAM_IDLE_TIMEOUT_S = 45.0
@@ -294,6 +294,7 @@ class SseCall:
         should_abort: Polled each watchdog tick; True ends the turn as aborted.
         should_interrupt: Polled each watchdog tick; True ends the turn as interrupted.
         response_headers: Receives the response headers once the stream opens.
+        facts: The HTTP attempt's identity and call context, when supplied.
     """
 
     api_label: str
@@ -306,6 +307,7 @@ class SseCall:
     should_abort: Callable[[], bool] | None
     should_interrupt: Callable[[], bool] | None
     response_headers: Callable[[Mapping[str, str]], None] | None = None
+    facts: request_headers.RequestFacts | None = None
 
     def record(self, *, status: int, response: dict[str, Any] | str) -> None:
         """Write one transcript entry for this request; nothing without a sink."""
@@ -316,8 +318,11 @@ class SseCall:
                 and media.input_modalities(self.body)
             ):
                 response = _MEDIA_ERROR_OMITTED
+            context = self.facts.context if self.facts is not None else None
             self.transcript_sink.record(
                 url=self.url,
+                call_context=context.call_context if context is not None else None,
+                request_id=self.facts.request_id if self.facts is not None else "",
                 request_headers=self.headers,
                 request_body=self.body,
                 response_status=status,

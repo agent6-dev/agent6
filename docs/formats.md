@@ -1150,7 +1150,10 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `role` | `str` | The calling model role. |
 | `provider` | `str` | Configured provider name. |
 | `model` | `str` | Model identifier. |
-| `request_id` | `str` | Request identifier used to correlate or deduplicate work. |
+| `model_call_id` | `str` | The logical model call that made this request. |
+| `panel_id` | `str, optional` | Review panel identifier. |
+| `seat_index` | `int, optional` | Zero-based review seat index. |
+| `request_id` | `str` | HTTP attempt identifier, also stored at the transcript's top level. |
 | `target` | `str` | The immutable review target, or provider request class. |
 
 ### question.answer
@@ -1181,6 +1184,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `panel_id` | `str, optional` | Review panel identifier. |
 | `role` | `str` | The calling model role. |
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
@@ -1193,6 +1197,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `panel_id` | `str, optional` | Review panel identifier. |
 | `role` | `str` | The calling model role. |
 | `model` | `str` | Model identifier. |
 | `provider` | `str` | Configured provider name. |
@@ -1372,6 +1377,35 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `exec_failed` | `bool` | Whether the setup command could not be executed. |
 | `stdout_tail` | `str` | Capped standard-output tail. |
 | `stderr_tail` | `str` | Capped standard-error tail. |
+
+## Provider transcripts
+
+**Support: durable but private.**
+
+`transcripts/<timestamp>-<seq>.json` holds one record per model round-trip.
+The sequence is padded to six digits in the filename.
+`model_call_id` joins a transcript to its logical call; `request_id` joins it to its `provider.request` event.
+Retries share the call id and have separate request ids.
+Older transcripts may omit these ids.
+Secret-bearing request headers are redacted, and their credential values of at least eight characters are scrubbed wherever they appear in the record.
+[Attachment payloads are omitted](security.md#media-retention) and replaced with metadata, so these files cannot replay the attachment bytes.
+
+Source: [`providers.provider_types.TranscriptSink.record`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/providers/provider_types.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `ts` | `JSON` | The UTC timestamp in `YYYYMMDDTHHMMSSffffffZ` form. |
+| `seq` | `JSON` | The run-global sequence, starting at 1 and continuing across resumes. |
+| `model_call_id` | `JSON` | The logical call id from `role.call`; null without a call context. |
+| `request_id` | `JSON` | The HTTP attempt id from `provider.request`; empty for a local process. |
+| `seat` | `JSON` | The role or review focus label, not a unique seat identity. |
+| `request` | `JSON` | The request sent to the provider. |
+| `request.url` | `JSON` | The URL dialled. |
+| `request.headers` | `JSON` | The request headers, with secret-bearing values redacted. |
+| `request.body` | `JSON` | The serialized request body. |
+| `response` | `JSON` | The provider's response or transport error. |
+| `response.status` | `JSON` | The HTTP status, or 0 for a transport error. |
+| `response.body` | `JSON` | The parsed response body or raw error text. |
 
 ## CLI JSON
 

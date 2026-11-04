@@ -57,6 +57,27 @@ def test_surface_headings_keep_the_producer_on_the_source_line(heading: str, pro
     )
 
 
+def test_transcript_reference_lists_the_written_keys(tmp_path: pathlib.Path) -> None:
+    """The transcript table follows the writer, including its call and request ids."""
+    import json
+
+    from agent6.providers import provider_types
+
+    path = provider_types.TranscriptSink(tmp_path).record(
+        request_headers={},
+        request_body={},
+        response_status=200,
+        response_body={},
+        call_context=provider_types.CallContext(),
+        request_id="attempt",
+    )
+    page = _generator().build_markdown()
+    assert "## Provider transcripts\n" in page
+    section = page.split("## Provider transcripts\n", 1)[1].split("\n## ", 1)[0]
+    assert "**Support: durable but private.**" in section
+    assert all(f"| `{key}` |" in section for key in json.loads(path.read_text()))
+
+
 def test_source_links_name_the_tree_not_the_import_location(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

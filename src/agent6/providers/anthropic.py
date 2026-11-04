@@ -520,9 +520,10 @@ class AnthropicProvider:
             ),
             parse=_parse_response,
             stream=(
-                lambda attempt_headers: self._call_streaming(
+                lambda attempt_headers, facts: self._call_streaming(
                     url=url,
                     headers=attempt_headers,
+                    facts=facts,
                     body=body,
                     text_delta_callback=text_delta_callback,
                     thinking_delta_callback=thinking_delta_callback,
@@ -539,6 +540,7 @@ class AnthropicProvider:
         *,
         url: str,
         headers: dict[str, str],
+        facts: request_headers.RequestFacts,
         body: dict[str, Any],
         text_delta_callback: Callable[[str], None] | None = None,
         thinking_delta_callback: Callable[[str], None] | None = None,
@@ -553,6 +555,7 @@ class AnthropicProvider:
         Args:
             url: The URL dialled.
             headers: The attempt's request headers.
+            facts: The attempt's identity and call context.
             body: The request body.
             text_delta_callback: Receives visible text as it streams.
             thinking_delta_callback: Receives reasoning text as it streams.
@@ -603,6 +606,7 @@ class AnthropicProvider:
             body=body,
             timeout_s=self.timeout_s,
             transcript_sink=self.transcript_sink,
+            facts=facts,
             should_abort=should_abort,
             should_interrupt=should_interrupt,
         )

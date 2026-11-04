@@ -19,6 +19,8 @@ from agent6.providers import (
     ProviderResponse,
     ToolDefinition,
     output_cap_truncated,
+    provider_types,
+    request_headers,
 )
 from agent6.tools import results
 from agent6.vcs import git_files
@@ -121,6 +123,7 @@ def structured_review(
     model_route: str,
     max_tokens: int = 1500,
     temperature: float | None = 0.0,
+    panel_id: str | None = None,
 ) -> review_records.ReviewVerdict:
     """Run one diff-scope seat.
 
@@ -132,6 +135,7 @@ def structured_review(
         model_route: The provider/model route, for the verdict.
         max_tokens: The output cap of the call.
         temperature: The sampling temperature.
+        panel_id: The panel's id, retained across its seat calls.
 
     Returns:
         The seat's verdict; a provider error or junk output abstains with `error` set.
@@ -143,6 +147,10 @@ def structured_review(
             messages=[{"role": "user", "content": build_user_message(ctx)}],
             max_tokens=max_tokens,
             temperature=temperature,
+            context=request_headers.RequestContext.initiated_by(
+                "agent",
+                call_context=provider_types.CallContext(panel_id=panel_id, seat_index=seat_index),
+            ),
         )
     except ProviderError as exc:
         return review_records.ReviewVerdict(
@@ -221,6 +229,7 @@ def repo_review(
     temperature: float | None = 0.0,
     recovery: provider_call.MediaRecovery | None = None,
     emit: Callable[..., None] | None = None,
+    panel_id: str | None = None,
 ) -> review_records.ReviewVerdict:
     """Run one repo-scope seat with at most `max_turns` provider calls.
 
@@ -237,6 +246,7 @@ def repo_review(
         temperature: The sampling temperature on every call.
         recovery: The seat's capability facts and execution-local rejections.
         emit: The journal emitter for delivery refusals.
+        panel_id: The panel's id, retained across its seat calls.
 
     Returns:
         The seat's verdict; a provider error or no valid verdict abstains with `error` set.
@@ -259,6 +269,12 @@ def repo_review(
                     tools=tools,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    context=request_headers.RequestContext.initiated_by(
+                        "agent",
+                        call_context=provider_types.CallContext(
+                            panel_id=panel_id, seat_index=seat_index
+                        ),
+                    ),
                 ),
                 conversation,
                 recovery,

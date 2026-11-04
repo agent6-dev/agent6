@@ -1102,10 +1102,15 @@ EVENTS: tuple[EventSpec, ...] = (
             FieldSpec("provider", "str", True, "Configured provider name."),
             FieldSpec("model", "str", True, "Model identifier."),
             FieldSpec(
+                "model_call_id", "str", True, "The logical model call that made this request."
+            ),
+            FieldSpec("panel_id", "str", False, "Review panel identifier."),
+            FieldSpec("seat_index", "int", False, "Zero-based review seat index."),
+            FieldSpec(
                 "request_id",
                 "str",
                 True,
-                "Request identifier used to correlate or deduplicate work.",
+                "HTTP attempt identifier, also stored at the transcript's top level.",
             ),
             FieldSpec(
                 "target", "str", True, "The immutable review target, or provider request class."
@@ -1146,6 +1151,7 @@ EVENTS: tuple[EventSpec, ...] = (
         "role.call",
         "A model call started for a role.",
         (
+            FieldSpec("panel_id", "str", False, "Review panel identifier."),
             FieldSpec("role", "str", True, "The calling model role."),
             FieldSpec("model", "str", True, "Model identifier."),
             FieldSpec("provider", "str", True, "Configured provider name."),
@@ -1159,6 +1165,7 @@ EVENTS: tuple[EventSpec, ...] = (
         "role.result",
         "A model call returned or failed. Failed calls include usage only when reported.",
         (
+            FieldSpec("panel_id", "str", False, "Review panel identifier."),
             FieldSpec("role", "str", True, "The calling model role."),
             FieldSpec("model", "str", True, "Model identifier."),
             FieldSpec("provider", "str", True, "Configured provider name."),

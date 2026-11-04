@@ -14,11 +14,36 @@ import json
 import math
 import pathlib
 import threading
+import uuid
 from collections.abc import Callable, Mapping
 from email import utils
 from typing import Any, Literal, Protocol
 
 from agent6 import media, paths, portable
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class CallContext:
+    """Identify one logical model call across its request attempts.
+
+    Attributes:
+        model_call_id: The call's id, shared by its events and transcripts.
+        panel_id: The review panel's id; None outside a panel.
+        seat_index: The seat's zero-based roster position; None outside a review seat.
+    """
+
+    model_call_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex)
+    panel_id: str | None = None
+    seat_index: int | None = None
+
+    def event_fields(self) -> dict[str, str | int]:
+        """Return the call identity, omitting absent seat fields."""
+        fields: dict[str, str | int] = {"model_call_id": self.model_call_id}
+        if self.panel_id is not None:
+            fields["panel_id"] = self.panel_id
+        if self.seat_index is not None:
+            fields["seat_index"] = self.seat_index
+        return fields
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -205,6 +230,8 @@ class TranscriptRecorder(Protocol):
         self,
         *,
         url: str = "",
+        call_context: CallContext | None = None,
+        request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
         response_status: int,
@@ -214,6 +241,8 @@ class TranscriptRecorder(Protocol):
 
         Args:
             url: The URL dialled.
+            call_context: The logical call identity; None when the caller supplies none.
+            request_id: The HTTP attempt id; empty for a local process.
             request_headers: The request headers; secrets are redacted on write.
             request_body: The request body.
             response_status: The HTTP status.
@@ -244,6 +273,8 @@ class RoleTranscriptSink:
         self,
         *,
         url: str = "",
+        call_context: CallContext | None = None,
+        request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
         response_status: int,
@@ -253,6 +284,8 @@ class RoleTranscriptSink:
 
         Args:
             url: The URL dialled.
+            call_context: The logical call identity; None when the caller supplies none.
+            request_id: The HTTP attempt id; empty for a local process.
             request_headers: The request headers.
             request_body: The request body.
             response_status: The HTTP status.
@@ -263,6 +296,8 @@ class RoleTranscriptSink:
         """
         return self.inner.record(
             url=url,
+            call_context=call_context,
+            request_id=request_id,
             request_headers=request_headers,
             request_body=request_body,
             response_status=response_status,
@@ -297,6 +332,8 @@ class TranscriptSink:
         self,
         *,
         url: str = "",
+        call_context: CallContext | None = None,
+        request_id: str = "",
         request_headers: dict[str, str],
         request_body: dict[str, Any],
         response_status: int,
@@ -305,8 +342,24 @@ class TranscriptSink:
     ) -> pathlib.Path:
         """Write one round-trip as the next transcript file.
 
+        Attributes:
+            ts: The UTC timestamp in `YYYYMMDDTHHMMSSffffffZ` form.
+            seq: The run-global sequence, starting at 1 and continuing across resumes.
+            model_call_id: The logical call id from `role.call`; null without a call context.
+            request_id: The HTTP attempt id from `provider.request`; empty for a local process.
+            seat: The role or review focus label, not a unique seat identity.
+            request: The request sent to the provider.
+            request.url: The URL dialled.
+            request.headers: The request headers, with secret-bearing values redacted.
+            request.body: The serialized request body.
+            response: The provider's response or transport error.
+            response.status: The HTTP status, or 0 for a transport error.
+            response.body: The parsed response body or raw error text.
+
         Args:
             url: The URL dialled.
+            call_context: The logical call identity; None when the caller supplies none.
+            request_id: The HTTP attempt id; empty for a local process.
             request_headers: The request headers; secrets are redacted on write.
             request_body: The request body.
             response_status: The HTTP status.
@@ -324,6 +377,8 @@ class TranscriptSink:
         payload = {
             "ts": ts,
             "seq": seq,
+            "model_call_id": call_context.model_call_id if call_context is not None else None,
+            "request_id": request_id,
             # Without it a compaction side-call's one-message request reads as a restart.
             "seat": seat,
             "request": {

@@ -526,7 +526,29 @@ Integer values also satisfy the registry's `float` kind, but booleans do not.
 
 def build_markdown() -> str:
     """Return the page without starting a server or reading a user's state."""
-    sections = [_HEADER, _journal(), "## CLI JSON"]
+    sections = [
+        _HEADER,
+        _journal(),
+        "## Provider transcripts\n\n**Support: durable but private.**\n\n"
+        "`transcripts/<timestamp>-<seq>.json` holds one record per model round-trip.\n"
+        "The sequence is padded to six digits in the filename.\n"
+        "`model_call_id` joins a transcript to its logical call; `request_id` joins it to "
+        "its `provider.request` event.\n"
+        "Retries share the call id and have separate request ids.\n"
+        "Older transcripts may omit these ids.\n"
+        "Secret-bearing request headers are redacted, and their credential values of at least "
+        "eight characters are scrubbed wherever they appear in the record.\n"
+        "[Attachment payloads are omitted](security.md#media-retention) and replaced with "
+        "metadata, so these files cannot replay the attachment bytes.\n\n"
+        f"Source: [`providers.provider_types.TranscriptSink.record`]"
+        f"({_BLOB}src/agent6/providers/provider_types.py).\n\n"
+        + _table(
+            dictionary_fields(
+                module_path("providers.provider_types"), "TranscriptSink.record", "payload"
+            )
+        ),
+        "## CLI JSON",
+    ]
     sections.append(
         "`sessions list --json` emits `summary_row` objects with `row_json` additions.\n"
         "`sessions show --json` emits one `_cmd_status` object.\n"

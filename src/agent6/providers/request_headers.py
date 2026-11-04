@@ -32,6 +32,7 @@ class RequestContext:
         initiator: `user` when the latest input is the operator's (the task, a steer, an
             answer), else `agent`.
         observe: Receives each HTTP attempt's facts; None observes nothing.
+        call_context: The logical call's identity; None outside an identified call.
     """
 
     conversation_id: str
@@ -39,18 +40,28 @@ class RequestContext:
     is_subagent: bool
     initiator: str
     observe: Callable[[RequestFacts], None] | None = None
+    call_context: provider_types.CallContext | None = None
 
     @classmethod
-    def initiated_by(cls, initiator: str) -> RequestContext:
+    def initiated_by(
+        cls, initiator: str, *, call_context: provider_types.CallContext | None = None
+    ) -> RequestContext:
         """Return the partial context a caller states the initiator with.
 
         Args:
             initiator: `user` or `agent`.
+            call_context: The logical call's identity, when the caller supplies it.
 
         Returns:
             A context with no conversation id; the application fills it in.
         """
-        return cls(conversation_id="", is_first_turn=False, is_subagent=False, initiator=initiator)
+        return cls(
+            conversation_id="",
+            is_first_turn=False,
+            is_subagent=False,
+            initiator=initiator,
+            call_context=call_context,
+        )
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

@@ -144,7 +144,9 @@ def test_a_stale_401_retries_once_with_the_current_bearer(
 
     call = _call(cred, adapt_attempts=1)
 
-    def fake_stream(headers: dict[str, str]) -> provider_types.ProviderResponse:
+    def fake_stream(
+        headers: dict[str, str], _facts: request_headers.RequestFacts
+    ) -> provider_types.ProviderResponse:
         response = fake_post(call.url, headers=headers)
         if response.status_code == 401:
             raise provider_types.ProviderError("refused", status_code=401)

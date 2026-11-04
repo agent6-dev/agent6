@@ -179,7 +179,6 @@ class ClaudeCodeProvider:
             ProviderError: The run is over budget, the child failed, or the round
                 could not be metered.
         """
-        del context  # a local process; there are no request headers to render
         del max_tokens, temperature, reasoning_effort
         if self.budget is not None:
             self.budget.check()
@@ -194,7 +193,9 @@ class ClaudeCodeProvider:
                 s = self._spawn(system, [], messages, watch)
             s.consumed = claude_code_wire.history_skeleton(messages)
             resp = self._read_round(s, watch, text_delta_callback, thinking_delta_callback)
-            self._record_transcript(s, system, messages, resp)
+            self._record_transcript(
+                s, system, messages, resp, context.call_context if context is not None else None
+            )
         except BaseException:
             if s is not None:
                 self._close(s)  # no half-consumed process survives an exceptional exit
@@ -554,6 +555,7 @@ class ClaudeCodeProvider:
         system: str,
         messages: list[dict[str, Any]],
         resp: provider_types.ProviderResponse,
+        call_context: provider_types.CallContext | None,
     ) -> None:
         """Record the round as one transcript entry, then clear the stdin log."""
         if self.transcript_sink is None:
@@ -561,6 +563,7 @@ class ClaudeCodeProvider:
             return
         self.transcript_sink.record(
             url=f"claude-code://{s.session_id}",
+            call_context=call_context,
             request_headers={},
             request_body={"system": system, "messages": messages, "stdin": list(s.stdin_log)},
             response_status=200,

@@ -520,11 +520,10 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its turn boundary |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
-**Provider transcripts** contain one JSON record per round-trip.
-The UTC timestamp uses `YYYYMMDDTHHMMSSffffffZ`; `seq` starts at 1, is padded to six digits in the filename, and continues across resumes.
-Each record holds `ts`, `seq`, `seat`, `request` (`url`, `headers`, `body`), and `response` (`status`, `body`).
-Secret-bearing request headers are redacted, and their credential values of at least eight characters are scrubbed wherever they appear in the record.
-[Attachment payloads are omitted](security.md#media-retention) and replaced with metadata, so these files cannot replay the attachment bytes.
+The [Formats reference](formats.md#provider-transcripts) describes provider transcript files and their call and request ids.
+Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.
+Review conversations use `(panel_id, seat_index)` rather than focus text, so identical seats remain separate.
+Calls with the same panel id and seat index continue the same conversation.
 
 `finish_planning` is `plan.md`'s only writer and `agent6 plan edit` its only editor.
 The planner re-reads it before every turn and is shown it whenever it differs from what it last saw.

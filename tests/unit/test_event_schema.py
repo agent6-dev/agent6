@@ -100,6 +100,17 @@ def test_registry_matches_writer_inventory() -> None:
     assert event_schema.spec_for("not.registered") is None
 
 
+def test_provider_request_registry_documents_call_and_seat_identity() -> None:
+    """The request schema includes its parent call and optional panel seat identity."""
+    from agent6.sessions import event_schema
+
+    fields = {field.name: field for field in event_schema.REGISTRY["provider.request"].fields}
+    assert {"model_call_id", "panel_id", "seat_index"} <= fields.keys()
+    assert fields["model_call_id"].kind == "str" and fields["model_call_id"].required
+    assert fields["panel_id"].kind == "str" and not fields["panel_id"].required
+    assert fields["seat_index"].kind == "int" and not fields["seat_index"].required
+
+
 def test_session_lifecycle_names_keep_creation_resume_and_end_distinct() -> None:
     """The registry names session creation, resumed executions and execution ends separately."""
     from agent6.sessions import event_schema

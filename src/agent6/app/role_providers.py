@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import dataclasses
-import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -434,14 +433,24 @@ class InstrumentedProvider:
         Raises:
             ProviderError: The inner call failed; the provider name is filled in.
         """
-        model_call_id = uuid.uuid4().hex
+        call_context = (context.call_context if context is not None else None) or (
+            provider_types.CallContext(seat_index=self.seat_index)
+        )
+        caller_observe = context.observe if context is not None else None
+
+        def observe(facts: request_headers.RequestFacts) -> None:
+            self._observe(facts)
+            if caller_observe is not None:
+                caller_observe(facts)
+
         if context is None or not context.conversation_id:
             initiator = context.initiator if context is not None else "agent"
             context = self.conversations.context(
-                self.role, self.provider_name, initiator=initiator, observe=self._observe
+                self.role, self.provider_name, initiator=initiator, call_context=call_context
             )
+        context = dataclasses.replace(context, call_context=call_context, observe=observe)
         if self.events is not None:
-            self.events.emit("role.call", **self._identity(model_call_id))
+            self.events.emit("role.call", **self._identity(call_context))
         # Every live view subscribes to the delta events; a caller callback chains through.
         role_for_event = self.role
         events = self.events
@@ -485,18 +494,18 @@ class InstrumentedProvider:
             if self.events is not None:
                 self.events.emit(
                     "role.result",
-                    **self._identity(model_call_id),
+                    **self._identity(call_context),
                     ok=False,
                     error=str(exc)[:200],
                     **_usage_fields(exc.usage if isinstance(exc, ProviderError) else None),
                 )
             self._emit_budget()
             raise
-        self.conversations.completed(self.role, self.provider_name)
+        self.conversations.completed(self.role, self.provider_name, call_context=call_context)
         if self.events is not None:
             self.events.emit(
                 "role.result",
-                **self._identity(model_call_id),
+                **self._identity(call_context),
                 ok=True,
                 # The settled prose: a headless run streams no deltas, so this is its only text.
                 text=resp.text,
@@ -506,23 +515,22 @@ class InstrumentedProvider:
         self._emit_budget()
         return resp
 
-    def _identity(self, model_call_id: str) -> dict[str, Any]:
+    def _identity(self, call_context: provider_types.CallContext) -> dict[str, Any]:
         """Return the fields that pair a `role.call` with its `role.result`."""
-        fields: dict[str, Any] = {
+        return {
             "role": self.role,
             "model": self.model,
             "provider": self.provider_name,
-            "model_call_id": model_call_id,
+            **call_context.event_fields(),
         }
-        if self.seat_index is not None:
-            fields["seat_index"] = self.seat_index
-        return fields
 
     def _observe(self, facts: request_headers.RequestFacts) -> None:
         """Emit `provider.request` for one HTTP attempt: its id and class, never a header value."""
         if self.events is not None:
+            assert facts.context is not None and facts.context.call_context is not None
             self.events.emit(
                 "provider.request",
+                **facts.context.call_context.event_fields(),
                 role=self.role,
                 provider=self.provider_name,
                 model=facts.model,

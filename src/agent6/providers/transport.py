@@ -284,8 +284,8 @@ class ProviderCall:
         adapt_attempts: One extra attempt per adaptation possible for this body.
         require_metered: Refuses a 2xx body that lacks usage when a budget is set.
         parse: Parses a 2xx body.
-        stream: Replaces the non-streaming POST when set; receives the attempt's
-            headers, and its errors flow through the same adapt and refresh logic.
+        stream: Replaces the non-streaming POST when set; receives the attempt's headers
+            and facts, and its errors flow through the same adapt and refresh logic.
     """
 
     api_label: str
@@ -304,7 +304,10 @@ class ProviderCall:
     adapt_attempts: int
     require_metered: Callable[[dict[str, Any]], None]
     parse: Callable[[dict[str, Any]], provider_types.ProviderResponse]
-    stream: Callable[[dict[str, str]], provider_types.ProviderResponse] | None = None
+    stream: (
+        Callable[[dict[str, str], request_headers.RequestFacts], provider_types.ProviderResponse]
+        | None
+    ) = None
     auth_observer: provider_types.AuthObserver | None = None
 
     def record(self, headers: dict[str, str], status: int, response: dict[str, Any] | str) -> None:
@@ -312,6 +315,8 @@ class ProviderCall:
         if self.transcript_sink is not None:
             self.transcript_sink.record(
                 url=self.url,
+                call_context=self.facts.context.call_context if self.facts.context else None,
+                request_id=self.facts.request_id,
                 request_headers=headers,
                 request_body=self.body,
                 response_status=status,
@@ -319,18 +324,10 @@ class ProviderCall:
             )
 
     def _attempt_headers(self, token: str) -> dict[str, str]:
-        """Mint one attempt's request id, build its headers and report the attempt.
-
-        Args:
-            token: The attempt's credential.
-
-        Returns:
-            The headers.
-        """
-        facts = self.facts.attempt()
-        headers = self.build_headers(token, facts)
-        if facts.context is not None and facts.context.observe is not None:
-            facts.context.observe(facts)
+        """Return the attempt's headers and report its facts to the caller."""
+        headers = self.build_headers(token, self.facts)
+        if self.facts.context is not None and self.facts.context.observe is not None:
+            self.facts.context.observe(self.facts)
         return headers
 
     def _observe_recovery(self, pending: bool, status: int | None) -> None:
@@ -359,11 +356,12 @@ class ProviderCall:
         recovery_pending = False
         for attempt in range(max_attempts):
             token = cred.token() if cred is not None else self.api_key
-            headers = self._attempt_headers(token)
+            call = dataclasses.replace(self, facts=self.facts.attempt())
+            headers = call._attempt_headers(token)
 
             if self.stream is not None:
                 try:
-                    result = self.stream(headers)
+                    result = self.stream(headers, call.facts)
                 except provider_types.ProviderError as exc:
                     self._observe_recovery(recovery_pending, exc.status_code)
                     recovery_pending = False
@@ -401,7 +399,7 @@ class ProviderCall:
                     timeout=self.timeout_s,
                 )
             except httpx2.HTTPError as exc:
-                self.record(headers, 0, f"HTTPError: {exc}")
+                call.record(headers, 0, f"HTTPError: {exc}")
                 raise provider_types.ProviderError(
                     f"HTTP error calling {self.url} ({self.backend} format): "
                     f"{self._safe_text(str(exc), headers)}"
@@ -414,7 +412,7 @@ class ProviderCall:
                 and resp.status_code in (401, 403)
             ):
                 # The transcript contract is one file per round-trip, the refused one included.
-                self.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
+                call.record(headers, resp.status_code, self._safe_text(resp.text, headers)[:8192])
                 recorded = True
                 if (
                     cred.invalidate(
@@ -438,7 +436,7 @@ class ProviderCall:
                 self._observe_recovery(recovery_pending, resp.status_code)
                 recovery_pending = False
                 if not recorded:
-                    self.record(
+                    call.record(
                         headers, resp.status_code, self._safe_text(resp.text, headers)[:8192]
                     )
                 media_errors.raise_rejection(resp.status_code, resp.text, self.body)
@@ -452,7 +450,7 @@ class ProviderCall:
                     status_code=resp.status_code,
                     retry_after_s=provider_types.parse_retry_after(resp.headers),
                 )
-            return self._decode_success(headers, resp, recovery_pending=recovery_pending)
+            return call._decode_success(headers, resp, recovery_pending=recovery_pending)
         raise provider_types.ProviderError(
             f"{self.api_label} auth retry exhausted"
         )  # pragma: no cover
