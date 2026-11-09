@@ -214,13 +214,13 @@ def settled_reason(state: loop_state.LoopState, ctx: advice.TurnContext) -> str:
     if state.verify.ever_passed:
         return "the worker settled, but edits after the last green verify were never re-verified"
     if not ctx.verify_command():
-        return "the worker settled after committing work; no verify command existed to gate it"
+        return "the worker settled; no verify command existed to gate it"
     if not ctx.gate_present():
         return (
-            "the worker settled after committing work; the verify command could not run"
+            "the worker settled; the verify command could not run"
             " (commands withheld, or the gate denied)"
         )
-    return "the worker settled after committing work; the verify never passed"
+    return "the worker settled; the verify never passed"
 
 
 def settled_end(state: loop_state.LoopState, ctx: advice.TurnContext) -> loop_snapshot.End:

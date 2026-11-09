@@ -374,6 +374,33 @@ def test_a_finish_call_a_metric_run_or_an_unseeded_run_disarms_it() -> None:
     assert isinstance(guards.verify_settled(_turn(9), gateless, ctx), advice.Stop)
 
 
+@pytest.mark.parametrize(
+    ("command", "allowed", "explanation"),
+    [
+        ((), False, "no verify command existed"),
+        (("true",), False, "could not run"),
+        (("true",), True, "the verify never passed"),
+    ],
+)
+def test_settled_uncommitted_work_does_not_claim_a_commit(
+    command: tuple[str, ...], allowed: bool, explanation: str
+) -> None:
+    """A settled stop can follow uncommitted edits under either Git policy."""
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    state.settled = guards.SettledGuard(tree="tree", idle=2, gateless_ever_edited=True)
+    ctx = turn_context(
+        tree_sha=lambda: "tree",
+        settled_stop_after=3,
+        verify_command=lambda: command,
+        gate_present=lambda: allowed,
+    )
+    stop = guards.verify_settled(_turn(4), state, ctx)
+    assert isinstance(stop, advice.Stop)
+    end = stop.end()
+    assert end.completed and end.reason == "settled"
+    assert explanation in end.summary and "committ" not in end.summary
+
+
 def test_the_settled_end_says_why_it_is_not_a_pass() -> None:
     ctx = turn_context(tree_green=lambda: False, open_subtasks=lambda: [("t1", "audit")])
     red = _green_state()
