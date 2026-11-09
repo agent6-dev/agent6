@@ -269,15 +269,20 @@ def test_config_model_editor_saves_one_qualified_leaf(
     expect(field).to_have_value("p/old")
     field.fill("p/vendor")
     page.get_by_role("option", name="p/vendor/new", exact=True).click()
-    with page.expect_request(
-        lambda request: request.method == "POST" and request.url.endswith("/api/config")
+    # The response waits for the config CLI; the dialog closes before the row refresh.
+    with page.expect_response(
+        lambda response: response.request.method == "POST" and response.url.endswith("/api/config")
     ) as saved:
         dialog.get_by_role("button", name="Save", exact=True).click()
-    assert saved.value.post_data_json == {
+    assert saved.value.ok, saved.value.text()
+    assert saved.value.request.post_data_json == {
         "key": "models.worker.model",
         "value": '"p/vendor/new"',
         "repo": False,
     }
+    expect(page.get_by_role("button", name="edit models.worker.model", exact=True)).to_contain_text(
+        "p/vendor/new"
+    )
     expect(dialog).to_have_count(0)
     assert tomllib.loads(config.read_text())["models"]["worker"] == {
         "model": "p/vendor/new",
@@ -584,9 +589,14 @@ def test_config_save_keeps_filter_scroll_and_row_focus(
     row.press("Enter")
     dialog = page.get_by_role("dialog")
     dialog.locator("select.field").select_option("deny")
-    dialog.get_by_role("button", name=action, exact=True).click()
-    expect(dialog).to_have_count(0)
+    # Allow the CLI round-trip to finish before checking the refreshed page.
+    with page.expect_response(
+        lambda response: response.request.method == "POST" and response.url.endswith("/api/config")
+    ) as saved:
+        dialog.get_by_role("button", name=action, exact=True).click()
+    assert saved.value.ok, saved.value.text()
     expect(row.locator(".val")).to_have_text("deny" if action == "Save" else "ask")
+    expect(dialog).to_have_count(0)
     expect(search).to_have_value("sandbox.")
     assert rows.all_text_contents() == before
     expect(row).to_be_focused()
@@ -686,11 +696,15 @@ def test_the_model_editor_selects_qualified_suggestions_without_saving(
     model.press("Escape")
     expect(dialog.get_by_role("listbox")).to_be_hidden()
     expect(dialog).to_be_visible()
-    dialog.get_by_role("button", name="Save", exact=True).click()
-    expect(dialog).to_have_count(0)
+    with page.expect_response(
+        lambda response: response.request.method == "POST" and response.url.endswith("/api/config")
+    ) as saved:
+        dialog.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.ok, saved.value.text()
     expect(page.get_by_role("button", name="edit models.worker.model", exact=True)).to_contain_text(
         "newer-than-catalog"
     )
+    expect(dialog).to_have_count(0)
     text = cfg.read_text()
     assert (
         'model = "b/newer-than-catalog"' in text
