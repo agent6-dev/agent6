@@ -132,6 +132,7 @@ def carry_back(
         lane: The lane number the note names.
         reporter: Receives the note.
     """
+    finalize.print_lane_config_notes(dest, reporter=reporter, prefix=f"lane {lane}: ")
     carried, known = memory.merge_decisions(lane_state, origin_state)
     if carried or known:
         already = f", {known} already recorded" if known else ""
@@ -401,6 +402,7 @@ def print_report(
         reporter.out("\nfailed lanes:")
         for res, err in failed:
             reporter.out(f"  - lane {res.spec.lane} [{res.spec.session_id}]: {err}")
+            finalize.print_lane_config_notes(res.session_dir, reporter=reporter)
             scan = session_log.scan_session_log(res.session_dir / sessions_layout.LOGS_NAME)
             for line in scan.setup_output.splitlines():
                 reporter.out(f"    {line}")

@@ -411,6 +411,15 @@ The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_and_locate`, the p
 
 **`agent6 run --parallel N|[provider/]model,...`** plans one `LaneSpec` per lane, each spawned as an ordinary detached `agent6 run` with its own jail and `run_commands` policy.
 
+`app.workdirs.write_lane_config` uses `config.lane_snapshot` to materialize the parent's resolved worker, planner, reviewer and helper routes and sampling settings, with the lane's worker route override applied.
+The snapshot keeps only the route in `models.default`; it omits sampling keys only for resolved `None` values.
+On the internal child path, `app.session_setup.load_session_config` replaces only `[models]` after normal layer discovery and preset selection, discarding lower-layer model values and their provenance.
+Other sections retain normal merging and explicit-default resets, including sandbox values and budgets; ordinary operator `--config` remains a merge.
+
+TOML cannot preserve a selected `None` temperature with the unchanged sampling vocabulary: the omitted key reloads as the existing `0.0` default.
+The snapshot records each affected field in `parallel.config_notes`, written with the lane's first manifest and printed in the lane's end report and fan-out lane report.
+These notes survive manifest rewrites, import and temporary config cleanup; they document the loss and do not override the child config.
+
 - the fan-out is a session of its own under the origin's runs, named by the fan-out id; `stop <id>` ends it with its lanes, and `resume` refuses it
     - a manifest with the fan-out stamp and no run branch
     - a journal: the dispatch, the judge's streamed `role.*` events (`role = "judge"`), `loop.parallel.compared` with the ranking and rationale, the judge's cost as its own spend, the end
@@ -670,6 +679,8 @@ agent6 also sets markers for its own children:
 - `AGENT6_SUBRUN=1`: subordinate work (a lane, a machine state, a `/btw` question), which never fans out itself ([Parallel runs](#parallel-runs)).
 - `AGENT6_STREAM_TO_LOG=1`: a detached spawn or lane emits its stream deltas as events with no console echo.
 - `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`: the lineage a lane's manifest records.
+- `AGENT6_LANE_CONFIG`: the internal snapshot path, required to match the child's sole `--config` file with `AGENT6_SUBRUN=1` and valid lane lineage; a mismatch or malformed snapshot refuses the load.
+- `AGENT6_LANE_CONFIG_NOTES`: a JSON array of serialization loss notes, validated before the lane records them in `parallel.config_notes`.
 - `AGENT6_LANE_GATE_SOURCE`: the origin of the verify gate the coordinator resolved, which a lane's manifest records.
 
 ## Pre-1.0 stability

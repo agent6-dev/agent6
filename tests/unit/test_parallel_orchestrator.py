@@ -1296,7 +1296,12 @@ def test_run_parallel_imports_branches_and_stamps_lineage(
     assert imported.is_dir() and not imported.is_symlink()
     # Lineage was stamped post-import.
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["parallel"] == {"group": "fan", "lane": 1, "coordinator": "fan"}
+    assert manifest["parallel"] == {
+        "group": "fan",
+        "lane": 1,
+        "coordinator": "fan",
+        "config_notes": [],
+    }
     assert (
         json.loads(
             (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text(
@@ -1427,7 +1432,12 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
         "group": "fan",
     }  # fmt: skip
     # The lineage stamp is untouched by the compare stamp (shared rewrite merges).
-    assert m1["parallel"] == {"group": "fan", "lane": 1, "coordinator": "fan"}
+    assert m1["parallel"] == {
+        "group": "fan",
+        "lane": 1,
+        "coordinator": "fan",
+        "config_notes": [],
+    }
 
 
 def test_compare_stamp_records_judge_rationale_truncated(
@@ -2718,7 +2728,9 @@ def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
     base = Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
     spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", route=None)
-    path = workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset({"git.branch_per_run"}))
+    path = workdirs.write_lane_config(
+        cfg, spec, explicit_leaves=frozenset({"git.branch_per_run"})
+    ).path
     written = tomllib.loads(path.read_text(encoding="utf-8"))
     assert written["git"]["branch_per_run"] is True
 
@@ -2743,7 +2755,7 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
         route=kinds.ModelRoute("p", "other"),
     )
     written = tomllib.loads(
-        workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).read_text(
+        workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).path.read_text(
             encoding="utf-8"
         )
     )
@@ -3082,6 +3094,113 @@ def test_lane_is_self_describing_from_birth(
         cfg=Config(),
     )
     assert sessions_manifest.read_manifest(layout2.session_dir).parallel is None
+
+
+def test_lane_sampling_notes_survive_import_and_reach_both_reports(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: app_lanes.LaneRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The production spawn passes a models-only snapshot and durable loss notes to its child."""
+    from agent6.app import finalize, session_setup
+    from agent6.config import RoleModel
+    from agent6.harness import loop_snapshot
+    from agent6.sessions import layout as sessions_layout
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
+            "models": {"default": {"model": "p/base", "effort": "high", "temperature": 0.7}},
+        }
+    )
+    cfg = cfg.model_copy(
+        update={
+            "models": cfg.models.model_copy(
+                update={"worker": RoleModel(effort=None, temperature=None)}
+            )
+        }
+    )
+    note = "models.worker.temperature: selected None; TOML key omitted; reload uses 0.0."
+    spec = subrun.LaneSpec(lane=1, session_id="notes-l1", workdir=tmp_path / "clone", route=None)
+
+    def child(argv: list[str], cwd: pathlib.Path, **kwargs: Any) -> tuple[pathlib.Path, str]:
+        config_path = pathlib.Path(argv[argv.index("--config") + 1])
+        env = kwargs["env"]
+        assert env["AGENT6_LANE_CONFIG"] == str(config_path)
+        with monkeypatch.context() as patch:
+            for name, value in env.items():
+                patch.setenv(name, value)
+            effective = session_setup.load_session_config(cwd, (config_path,), mode="run")
+            worker = effective.config.models.resolve("worker")
+            assert worker is not None and worker.effort is None and worker.temperature == 0.0
+            layout = sessions_layout.SessionLayout(
+                state_dir=paths.state_dir(cwd), session_id=spec.session_id
+            )
+            layout.ensure()
+            stamps.write_session_manifest(
+                layout,
+                session_id=spec.session_id,
+                user_task="t",
+                base_sha=git_read.status(cwd).head_sha,
+                base_branch="main",
+                run_branch=f"agent6/{spec.session_id}",
+                cfg=effective.config,
+            )
+            assert sessions_manifest.read_manifest(layout.session_dir).model_dump()["parallel"][
+                "config_notes"
+            ] == (note,)
+            stamps.stamp_execution(layout.session_dir, effective.config, "run", "none")
+        git_ops.create_branch(cwd, f"agent6/{spec.session_id}")
+        layout.logs_path.write_text(
+            json.dumps({"type": "session.stop", "reason": "finish_session"}) + "\n"
+        )
+        finalize.print_session_end(
+            loop_snapshot.SessionResult(
+                completed=True, reason="finish_session", summary="done", turns=1, tool_calls=0
+            ),
+            layout=layout,
+            cwd=cwd,
+            budget=session_setup.budget_tracker(cfg),
+            console_stream=False,
+            reporter=reporter.STDIO_REPORTER,
+        )
+        assert note in capsys.readouterr().out
+        return layout.session_dir, ""
+
+    result = app_lanes.bridge_spawner(
+        spec,
+        "t",
+        cfg=cfg,
+        explicit_leaves=frozenset(),
+        origin=origin,
+        max_usd=None,
+        fanout_id="notes",
+        coordinator="notes",
+        runtime=dataclasses.replace(runtime, spawn=child),
+    )
+    assert result.ok, result.error
+    batch = parallel_results.import_lanes(
+        [result],
+        origin=origin,
+        origin_state=paths.state_dir(origin),
+        base_sha=git_read.status(origin).head_sha,
+        task="t",
+    )
+    assert not batch.failed
+    assert note in "".join(capsys.readouterr())
+    workdirs.cleanup(
+        [spec],
+        origin=origin,
+        workdir_root=spec.workdir.parent,
+        base=spec.workdir.parent,
+        cfg=cfg,
+    )
+    imported = paths.state_dir(origin) / "sessions" / "runs" / spec.session_id
+    record = sessions_manifest.read_manifest(imported)
+    assert record.model_dump()["parallel"]["config_notes"] == (note,)
+    assert not (spec.workdir.parent / "lane-1-config.toml").exists()
 
 
 def test_sweep_keeps_a_clone_holding_unmerged_commits(

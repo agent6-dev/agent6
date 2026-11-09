@@ -7,6 +7,7 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import functools
+import json
 import os
 import pathlib
 import threading
@@ -179,7 +180,8 @@ def bridge_spawner(
         return subrun.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
-    config_path = workdirs.write_lane_config(cfg, spec, explicit_leaves=explicit_leaves)
+    config = workdirs.write_lane_config(cfg, spec, explicit_leaves=explicit_leaves)
+    config_path = config.path
     lane_state = paths.state_dir(spec.workdir)
     # The clone's state dir is empty; the origin's memory and rulings are seeded into it.
     memory.seed_store(paths.state_dir(origin), lane_state)
@@ -211,6 +213,8 @@ def bridge_spawner(
         "AGENT6_STREAM_TO_LOG": "1",
         "AGENT6_DETACHED_AWAY": lane_away,
         "AGENT6_SUBRUN": "1",
+        "AGENT6_LANE_CONFIG": str(config_path),
+        "AGENT6_LANE_CONFIG_NOTES": json.dumps(config.notes),
         # The lane's own manifest records its lineage, so a coordinator death orphans nothing.
         "AGENT6_PARALLEL_LINEAGE": f"{coordinator}:{fanout_id}:{spec.lane}",
         # Resolved in the origin, where the repo signals are; the lane stamps the same origin.

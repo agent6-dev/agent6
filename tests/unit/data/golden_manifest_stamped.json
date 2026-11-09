@@ -68,7 +68,8 @@
   "parallel": {
     "group": "p-abc",
     "lane": 1,
-    "coordinator": "p-abc"
+    "coordinator": "p-abc",
+    "config_notes": []
   },
   "compare": {
     "rank": 1,

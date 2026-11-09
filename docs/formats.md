@@ -2841,6 +2841,7 @@ Source: [`agent6.sessions.manifest.ParallelLineage`](https://github.com/agent6-d
 | `group` | `str` | The group it was dispatched in: the coordinator's id for `run --parallel`, `<coordinator>-p<n>` for a `/parallel` group. |
 | `lane` | `int` | Its number in the group. |
 | `coordinator` | `str` | The session that dispatched it, which every listing nests it under. |
+| `config_notes` | `tuple[str, ...]` | Resolved sampling values the lane's TOML snapshot could not preserve. |
 
 ### CompareStamp
 

@@ -1,0 +1,190 @@
+"""Lane snapshots preserve resolved sampling without inheriting child model overrides."""
+
+from __future__ import annotations
+
+import pathlib
+import tomllib
+
+import pytest
+
+from agent6 import kinds, paths
+from agent6.app import session_setup, stamps, workdirs
+from agent6.config import Config, ConfigError, RoleModel
+from agent6.harness import subrun
+
+
+@pytest.fixture
+def lane(tmp_path: pathlib.Path) -> subrun.LaneSpec:
+    return subrun.LaneSpec(
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "lane-1",
+        route=kinds.ModelRoute("p", "lane"),
+    )
+
+
+def resolved_config() -> Config:
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
+            "models": {
+                "default": {"model": "p/base", "effort": "high", "temperature": 0.7},
+                "planner": {"model": "p/plan", "effort": "off", "temperature": 0.0},
+                "reviewer": {"effort": "low", "temperature": 0.2},
+            },
+        }
+    )
+    # A resolved in-memory selection, not a new TOML spelling for None.
+    return cfg.model_copy(
+        update={
+            "models": cfg.models.model_copy(
+                update={"worker": RoleModel(effort=None, temperature=None)}
+            )
+        }
+    )
+
+
+def mark_lane(monkeypatch: pytest.MonkeyPatch, path: pathlib.Path) -> None:
+    monkeypatch.setenv("AGENT6_LANE_CONFIG", str(path))
+    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
+
+
+def test_snapshot_writes_resolved_roles(lane: subrun.LaneSpec) -> None:
+    path = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset()).path
+    models = tomllib.loads(path.read_text())["models"]
+    assert models == {
+        "default": {"model": "p/base"},
+        "worker": {"model": "p/lane"},
+        "planner": {"model": "p/plan", "effort": "off", "temperature": 0.0},
+        "reviewer": {"model": "p/base", "effort": "low", "temperature": 0.2},
+        "helper": {"model": "p/base", "effort": "high", "temperature": 0.7},
+    }
+
+
+def test_snapshot_reloads_resolved_sampling(
+    lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cfg = resolved_config()
+    path = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset()).path
+    mark_lane(monkeypatch, path)
+    effective = session_setup.load_session_config(lane.workdir, (path,), mode="run")
+    worker = effective.config.models.resolve("worker")
+    assert worker is not None
+    assert worker.effort is None
+    assert worker.temperature == 0.0  # TOML cannot preserve the selected None.
+    assert worker.model == "lane"
+    for role in ("planner", "reviewer", "helper"):
+        assert effective.config.models.resolve(role) == cfg.models.resolve(role)
+
+
+@pytest.mark.parametrize("internal", [True, False])
+def test_only_internal_snapshot_discards_global_model_contributions(
+    lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch, internal: bool
+) -> None:
+    global_path = paths.global_config_path()
+    global_path.parent.mkdir(parents=True, exist_ok=True)
+    global_path.write_text(
+        '[models.default]\nmodel = "p/global"\neffort = "high"\ntemperature = 0.7\n'
+        '[models.worker]\neffort = "max"\n'
+        '[sandbox]\nisolation = "partial"\nprotect_git = "off"\n'
+        "[budget]\nmax_usd = 19.0\n"
+    )
+    # Already-resolved snapshot shape isolates the loader loss from the writer loss.
+    path = lane.workdir.parent / "lane-1-config.toml"
+    path.write_text(
+        '[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:1/v1"\n'
+        + "".join(f'[models.{r}]\nmodel = "p/base"\n' for r in kinds.MODEL_ROLES)
+        + '[sandbox]\nprotect_git = "on"\n[budget]\nmax_usd = 3.5\n'
+    )
+    monkeypatch.setenv("AGENT6_SUBRUN", "1")
+    if internal:
+        mark_lane(monkeypatch, path)
+    effective = session_setup.load_session_config(lane.workdir, (path,), mode="run")
+    worker = effective.config.models.resolve("worker")
+    assert worker is not None
+    assert worker.effort == (None if internal else "max")
+    assert worker.temperature == (0.0 if internal else 0.7)
+    assert effective.sources["models.worker.effort"] == ("default" if internal else "global")
+    assert effective.config.sandbox.isolation == "partial"
+    assert effective.sources["sandbox.isolation"] == "global"
+    assert effective.config.sandbox.protect_git == "on"
+    assert effective.sources["sandbox.protect_git"] == f"flag ({path})"
+    assert "sandbox.home" not in effective.explicit_leaves
+    assert effective.config.budget.max_usd == 3.5
+    assert effective.sources["budget.max_usd"] == f"flag ({path})"
+
+
+@pytest.mark.parametrize("temperature", [None, 0.0, 0.6])
+def test_snapshot_notes_only_unrepresentable_temperatures(
+    lane: subrun.LaneSpec, temperature: float | None
+) -> None:
+    cfg = resolved_config()
+    cfg = cfg.model_copy(
+        update={
+            "models": cfg.models.model_copy(update={"worker": RoleModel(temperature=temperature)})
+        }
+    )
+    written = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset())
+    assert written.notes == (
+        ("models.worker.temperature: selected None; TOML key omitted; reload uses 0.0.",)
+        if temperature is None
+        else ()
+    )
+
+
+def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
+    lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    global_path = paths.global_config_path()
+    global_path.parent.mkdir(parents=True, exist_ok=True)
+    global_path.write_text(
+        'preset = "custom"\n[presets.custom.models.worker]\neffort = "max"\n'
+        '[presets.custom.sandbox]\nprotect_git = "off"\n'
+    )
+    written = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset())
+    mark_lane(monkeypatch, written.path)
+    effective = session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
+    worker = effective.config.models.resolve("worker")
+    assert worker is not None and worker.effort is None
+    assert effective.sources["models.worker.effort"] == "default"
+    assert effective.config.sandbox.protect_git == "off"
+    assert effective.sources["sandbox.protect_git"] == "preset"
+    assert "custom" in effective.presets
+
+
+@pytest.mark.parametrize("raw", ["{}", "[1]", "[null]", "not json", '"note"'])
+def test_lineage_refuses_malformed_config_notes(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
+    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
+    monkeypatch.setenv("AGENT6_LANE_CONFIG_NOTES", raw)
+    with pytest.raises(ConfigError, match="lane config notes"):
+        stamps.parallel_lineage()
+
+
+@pytest.mark.parametrize("broken", ["path", "subrun", "lineage", "models", "default_sampling"])
+def test_marked_snapshot_refuses_mismatch_or_malformed_models(
+    lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch, broken: str
+) -> None:
+    path = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset()).path
+    mark_lane(monkeypatch, path)
+    if broken == "path":
+        monkeypatch.setenv("AGENT6_LANE_CONFIG", str(path.with_suffix(".other")))
+    elif broken == "subrun":
+        monkeypatch.delenv("AGENT6_SUBRUN")
+    elif broken == "lineage":
+        monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "not-a-lane")
+    elif broken == "models":
+        path.write_text(
+            '[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:1/v1"\n'
+            '[models.default]\nmodel = "p/base"\n'
+        )
+    else:
+        path.write_text(
+            '[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:1/v1"\n'
+            '[models.default]\nmodel = "p/base"\neffort = "max"\n'
+            + "".join(
+                f'[models.{r}]\nmodel = "p/base"\n' for r in kinds.MODEL_ROLES if r != "default"
+            )
+        )
+    with pytest.raises(ConfigError, match="lane snapshot"):
+        session_setup.load_session_config(lane.workdir, (path,), mode="run")

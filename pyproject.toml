@@ -210,6 +210,7 @@ banned-from = [
     "agent6.config.harness_config",
     "agent6.config.header_config",
     "agent6.config.io",
+    "agent6.config.lane_snapshot",
     "agent6.config.layer",
     "agent6.config.layer_data",
     "agent6.config.layer_presets",

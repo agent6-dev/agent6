@@ -14,9 +14,11 @@ import pathlib
 from collections.abc import Mapping
 from typing import Any
 
+import pydantic
+
 from agent6 import __version__, kinds, portable, task_text
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, ReviewerConfig, RoleModel
+from agent6.config import Config, ConfigError, ReviewerConfig, RoleModel
 from agent6.models import registry
 from agent6.sessions import event_log, manifest
 from agent6.sessions import layout as sessions_layout
@@ -246,13 +248,24 @@ def parallel_lineage() -> manifest.ParallelLineage | None:
 
     Returns:
         The lineage, None outside a lane or when the value does not parse.
+
+    Raises:
+        ConfigError: The serialized lane config notes are not a JSON array of strings.
     """
     raw = os.environ.get("AGENT6_PARALLEL_LINEAGE", "")
     coordinator, _, rest = raw.partition(":")
     group, sep, lane = rest.rpartition(":")
     if not sep or not coordinator or not group or not lane.isdigit():
         return None
-    return manifest.ParallelLineage(group=group, lane=int(lane), coordinator=coordinator)
+    try:
+        notes = pydantic.TypeAdapter(tuple[str, ...]).validate_json(
+            os.environ.get("AGENT6_LANE_CONFIG_NOTES", "[]"), strict=True
+        )
+    except pydantic.ValidationError as exc:
+        raise ConfigError(f"invalid lane config notes: {exc}") from exc
+    return manifest.ParallelLineage(
+        group=group, lane=int(lane), coordinator=coordinator, config_notes=notes
+    )
 
 
 def stamp_parked(

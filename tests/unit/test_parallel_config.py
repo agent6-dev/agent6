@@ -66,7 +66,7 @@ def test_lane_config_carries_the_protect_git_word(repo: pathlib.Path, word: str)
 
     config_path = workdirs.write_lane_config(
         origin.config, spec, explicit_leaves=origin.explicit_leaves
-    )
+    ).path
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
     assert lane.config.sandbox.isolation == "partial"
@@ -93,7 +93,7 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
 
     config_path = workdirs.write_lane_config(
         origin.config, spec, explicit_leaves=origin.explicit_leaves
-    )
+    ).path
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 
@@ -118,7 +118,7 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
         route=kinds.ModelRoute("p", "lane-model"),
     )
 
-    config_path = workdirs.write_lane_config(cfg, spec, explicit_leaves=origin.explicit_leaves)
+    config_path = workdirs.write_lane_config(cfg, spec, explicit_leaves=origin.explicit_leaves).path
     written = tomllib.loads(config_path.read_text(encoding="utf-8"))
     lane = layer.load_effective(spec.workdir, explicit_paths=(config_path,))
 

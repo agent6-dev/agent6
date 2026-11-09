@@ -207,7 +207,12 @@ def test_show_on_a_lane_names_its_coordinator(
     assert "lane of:    fan (lane 1 of group fan)" in out
     assert main(["sessions", "show", "fan-l1", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["parallel"] == {"group": "fan", "lane": 1, "coordinator": "fan"}
+    assert data["parallel"] == {
+        "group": "fan",
+        "lane": 1,
+        "coordinator": "fan",
+        "config_notes": [],
+    }
     assert data["lanes"] == [] and data["fanout"] is None
 
 

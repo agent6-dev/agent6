@@ -229,6 +229,7 @@ class ParallelLineage(pydantic.BaseModel):
             `<coordinator>-p<n>` for a `/parallel` group.
         lane: Its number in the group.
         coordinator: The session that dispatched it, which every listing nests it under.
+        config_notes: Resolved sampling values the lane's TOML snapshot could not preserve.
     """
 
     model_config = _MODEL_CONFIG
@@ -236,6 +237,7 @@ class ParallelLineage(pydantic.BaseModel):
     group: str = ""
     lane: int = 0
     coordinator: str = ""
+    config_notes: tuple[str, ...] = ()
 
 
 class FanoutStamp(pydantic.BaseModel):

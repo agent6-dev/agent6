@@ -29,6 +29,7 @@ from agent6.config import (
     OpenAIProviderEntry,
     ProviderEntry,
     ResponsesProviderEntry,
+    lane_snapshot,
     layer,
     layer_data,
     plan_metered,
@@ -273,7 +274,12 @@ def load_session_config(
     Raises:
         ConfigError: The layers do not load, a flag fails validation, or the role cannot run.
     """
-    effective = layer.load_effective(cwd, config_paths, preset=preset)
+    snapshot_path = lane_snapshot.marked_path(config_paths)
+    effective = (
+        lane_snapshot.load(cwd, snapshot_path, preset=preset)
+        if snapshot_path is not None
+        else layer.load_effective(cwd, config_paths, preset=preset)
+    )
     cfg = effective.config
     apply_git_ops_policy(cfg)
     if budget_overrides is not None:

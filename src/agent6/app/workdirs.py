@@ -5,13 +5,14 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import pathlib
 import shlex
 import shutil
 from collections.abc import Callable
 
 from agent6 import errors, paths
-from agent6.config import Config, layer
+from agent6.config import Config, lane_snapshot
 from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -226,9 +227,17 @@ def sweep_fanout_clones(
     return swept, kept
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class LaneConfig:
+    """The generated lane config path and its serialization loss notes."""
+
+    path: pathlib.Path
+    notes: tuple[str, ...]
+
+
 def write_lane_config(
     cfg: Config, spec: subrun.LaneSpec, *, explicit_leaves: frozenset[str]
-) -> pathlib.Path:
+) -> LaneConfig:
     """Write the origin's explicit settings and non-default lane values to `--config`.
 
     The clone's per-repo config is empty; unset defaults stay defaults in the lane.
@@ -239,7 +248,7 @@ def write_lane_config(
         explicit_leaves: The dotted leaves the origin's config layers set.
 
     Returns:
-        The config file's path.
+        The config file's path and serialization loss notes.
     """
     lane_cfg = cfg.with_model_route("worker", spec.route) if spec.route else cfg
     # The import fetches the lane's branch, so branch_per_run stays on.
@@ -248,10 +257,9 @@ def write_lane_config(
     )
     config_path = spec.workdir.parent / f"lane-{spec.lane}-config.toml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        layer.materialize(lane_cfg, explicit_leaves=explicit_leaves), encoding="utf-8"
-    )
-    return config_path
+    snapshot = lane_snapshot.build(lane_cfg, explicit_leaves=explicit_leaves)
+    config_path.write_text(snapshot.text, encoding="utf-8")
+    return LaneConfig(config_path, snapshot.notes)
 
 
 def cleanup(

@@ -385,6 +385,23 @@ def settle_budget(budget: agent6_budget.BudgetTracker, events: event_log.EventSi
         events.emit("budget.update", **role_providers.budget_update_fields(budget))
 
 
+def print_lane_config_notes(
+    session_dir: pathlib.Path, *, reporter: app_reporter.Reporter, prefix: str = ""
+) -> None:
+    """Print recorded snapshot losses without inferring selections from the child config.
+
+    Args:
+        session_dir: The lane's current or imported session directory.
+        reporter: Receives the lines.
+        prefix: The lane label in a coordinator's report.
+    """
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        lineage = sessions_manifest.read_manifest(session_dir).parallel
+        if lineage is not None:
+            for note in lineage.config_notes:
+                reporter.out(f"  {prefix}config note: {note}")
+
+
 def print_session_end(
     result: loop_snapshot.SessionResult,
     *,
@@ -441,6 +458,7 @@ def print_session_end(
         reporter.out("    - install them into a standard bin dir (~/.local/bin, /usr/local/bin)")
         reporter.out("    - grant their real directories via [sandbox].extra_read_paths")
         reporter.out("    - run with --disable-sandbox")
+    print_lane_config_notes(layout.session_dir, reporter=reporter)
     _print_next_session(layout, completed=result.completed, reporter=reporter)
     _print_red_gate(result, layout=layout, reporter=reporter)
     _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
