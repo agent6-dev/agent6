@@ -477,8 +477,14 @@ def command_temp(
     Returns:
         A temporary directory to clean up when its commands end, or None under full isolation.
     """
-    # Keep paths short for Unix sockets, whose paths are capped at 108 bytes.
-    return None if isolation == "full" else tempfile.TemporaryDirectory(prefix=f"agent6-{name}-")
+    if isolation == "full":
+        return None
+    root = tempfile.gettempdir()
+    # The id's first 12 characters keep the directory recognisable; a root over 32 bytes (a
+    # nested run's TMPDIR) would leave a socket name no room under the 108-byte Unix path limit.
+    if len(os.fsencode(root)) > 32:
+        root = "/tmp"  # noqa: S108 - TemporaryDirectory creates private, random storage here
+    return tempfile.TemporaryDirectory(prefix=f"agent6-{name[:12]}-", dir=root)
 
 
 def jail_policy(

@@ -265,11 +265,12 @@ Every LLM tool call passes the same gates: audit events wrap it, the mode backst
 Commands and verify run jailed; file tools resolve through the workspace boundary.
 `tools/command_tools.py` holds jailed execution, command check-ins, and background read and stop handlers.
 `tools/dispatch.py` owns routing, approvals, verify and metric events, and the jail-session lifecycle.
-Under `partial` and `none` it gives commands a shared `TMPDIR` in a private `agent6-<session>-*` directory in the system temp dir (short enough for a Unix socket path, which a directory under the session record is not); under `full` the jail's own tmpfs `/tmp` is the run's.
+Under `partial` and `none` it gives commands a shared `TMPDIR` in a private `agent6-<session>-*` (the id's first 12 characters) directory in the system temp dir, falling back to `/tmp` when that root exceeds 32 bytes to leave room for Unix socket names.
+Under `full` the jail's own tmpfs `/tmp` is the run's.
 The start gate, verify tool, foreground commands and background commands use this directory; the dispatcher removes it after stopping commands at teardown.
 `agent6 exec SESSION -- CMD` and `agent6 exec --new` use the same rule, with a fresh directory per exec, removed when the command exits and never shared with a live run.
 Programs that ignore `TMPDIR` are not redirected by this environment setting.
-A killed agent can leave this directory behind; removing the session removes those files too.
+A killed agent can leave this directory behind in the system temp dir.
 CLI crash reports go beside the active session's log, or to the system temporary directory when no session has been attached.
 
 Command streams lose terminal escape sequences before their 20,000-character tail cap and the model's result-byte cap.

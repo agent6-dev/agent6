@@ -9,6 +9,7 @@ import json
 import os
 import pathlib
 import socket
+import tempfile
 from unittest import mock
 
 import pydantic
@@ -3041,7 +3042,7 @@ def test_command_temp_files_belong_to_session(
     """A short per-session temp dir, granted and removed with the dispatcher.
 
     A directory under the session record is longer than a Unix socket path allows (108 bytes),
-    so the directory lives in the system temp dir and carries the session's name.
+    so the directory lives in a short temp root and carries the first 12 characters of the id.
     """
     root = tmp_path / "repo"
     root.mkdir()
@@ -3052,7 +3053,7 @@ def test_command_temp_files_belong_to_session(
     )
     policy = runner._jail_policy(("true",))
     temp = pathlib.Path(dict(policy.env)["TMPDIR"])
-    assert temp.name.startswith("agent6-" + "t" * 60) and not temp.is_relative_to(session)
+    assert temp.name.startswith("agent6-" + "t" * 12 + "-") and not temp.is_relative_to(session)
     assert temp in policy.extra_rw_paths
     assert dict(runner._jail_policy(("true",)).env)["TMPDIR"] == str(temp)
     sock = socket.socket(socket.AF_UNIX)
@@ -3062,6 +3063,52 @@ def test_command_temp_files_belong_to_session(
     runner.close()
     assert not temp.exists()
     runner.close()
+
+
+@pytest.mark.parametrize("isolation", ["none", "partial"])
+@pytest.mark.parametrize("long_root,long_session", [(True, False), (False, True), (True, True)])
+def test_command_temp_socket_with_long_paths(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolation: kinds.IsolationLevel,
+    long_root: bool,
+    long_session: bool,
+) -> None:
+    """Long inherited TMPDIRs and session IDs still allow sockets and private cleanup."""
+    inherited = tmp_path / ("inherited-" + "x" * 100) if long_root else pathlib.Path("/tmp")
+    inherited.mkdir(exist_ok=True)
+    monkeypatch.setenv("TMPDIR", str(inherited))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    name = "session-" + "s" * 180 if long_session else "session"
+    runners = [
+        dispatch.ToolDispatcher(
+            root=tmp_path,
+            config=Config(),
+            isolation=isolation,
+            session_dir=tmp_path / (name + suffix),
+        )
+        for suffix in ("-a", "-b")
+    ]
+    temps: list[pathlib.Path] = []
+    try:
+        for runner in runners:
+            policy = runner._jail_policy(("true",))
+            temp = pathlib.Path(dict(policy.env)["TMPDIR"])
+            temps.append(temp)
+            with socket.socket(socket.AF_UNIX) as sock:
+                sock.bind(str(temp / "command-server.sock"))
+            assert temp in policy.extra_rw_paths
+            assert temp.stat().st_mode & 0o777 == 0o700
+            assert dict(runner._jail_policy(("true",)).env)["TMPDIR"] == str(temp)
+            (temp / "leftover").write_text("owned")
+        assert temps[0] != temps[1]
+        runners[0].close()
+        assert not temps[0].exists()
+        assert (temps[1] / "leftover").read_text() == "owned"
+    finally:
+        for runner in runners:
+            runner.close()
+    assert all(not temp.exists() for temp in temps)
 
 
 def test_full_isolation_leaves_tmpdir_to_the_jail(tmp_path: pathlib.Path) -> None:
