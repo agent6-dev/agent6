@@ -177,6 +177,8 @@ def _wf(
         "call": provider_call.CallSettings(retry_delay_s=0.01),  # keep tests fast
     }
     defaults.update(kw)
+    if not isinstance(getattr(defaults["dispatcher"], "execution_id", None), str):
+        defaults["dispatcher"].execution_id = "test-execution"
     return loop.Harness(**defaults)
 
 

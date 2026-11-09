@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
+
+import pytest
 
 from agent6 import paths
 from agent6.sessions import event_log, layout
-from tests.web import test_client_review, test_review_evidence, test_web_git
+from tests.web import test_client_review, test_review_evidence, test_web_browser, test_web_git
+
+if TYPE_CHECKING:
+    from playwright.sync_api import Page
 
 evidence = test_review_evidence.evidence
+open_page = test_web_browser.open_page
 
 
 def test_receipt_route_reads_evidence(evidence: tuple[int, dict[str, Any]]) -> None:
@@ -59,6 +66,43 @@ assert.equal(host.textContent.split('stdout truncated').length - 1, 1);
 assert.ok(!host.textContent.includes('complete capture'));
 """
     )
+
+
+@pytest.mark.browser
+def test_receipt_renders_job_settlement_separately_from_environment_lifecycle(
+    tmp_path: pathlib.Path,
+    evidence: tuple[int, dict[str, Any]],
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """The browser shows settled jobs without implying that their environment stopped."""
+    from playwright.sync_api import expect
+
+    saved = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
+    events = event_log.EventSink(saved.logs_path)
+    events.emit(
+        "execution.jobs",
+        execution_id="execution",
+        target_id="attached",
+        outcome="settled",
+        reason="",
+    )
+    events.emit(
+        "execution.environment",
+        execution_id="execution",
+        target_id="attached",
+        outcome="left_running",
+        reason="ownership unproved; stop by hand",
+    )
+    port, _ = evidence
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{saved.session_id}")
+    page.get_by_role("button", name="Receipt", exact=True).click()
+    summary = page.locator(".receipt > pre").first
+    expect(summary).to_be_visible()
+    lines = summary.inner_text().splitlines()
+    assert "Run jobs settled (target attached)" in lines
+    assert "Environment left running (target attached): ownership unproved; stop by hand" in lines
+    assert not errors, errors
 
 
 def test_receipt_client_uses_literal_risk_and_existing_new_work() -> None:

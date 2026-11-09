@@ -11,12 +11,12 @@ import contextlib
 import datetime
 import os
 import pathlib
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import pydantic
 
-from agent6 import __version__, kinds, portable, task_text
+from agent6 import __version__, evidence, kinds, portable, task_text
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError, ReviewerConfig, RoleModel
 from agent6.models import registry
@@ -364,6 +364,28 @@ def stamp_execution(
             }
         ),
     )
+
+
+def track_execution_targets(
+    session_dir: pathlib.Path, events: event_log.EventSink, *, note: Callable[[str], None]
+) -> None:
+    """Mirror journaled target history into the manifest, preserving older stamps."""
+
+    def record(event: dict[str, Any]) -> None:
+        if event.get("type") != "execution.target":
+            return
+        stamp = evidence.TARGET.validate_python(event)
+        try:
+            saved = manifest.read_manifest(session_dir)
+            targets = {**saved.execution_targets, stamp.target_id: stamp.target}
+            write_manifest(
+                session_dir / manifest.MANIFEST_NAME,
+                saved.model_copy(update={"execution_targets": targets}),
+            )
+        except (manifest.ManifestError, OSError) as exc:
+            note(f"could not record this execution's target in the manifest: {exc}")
+
+    events.subscribe(record)
 
 
 def stamp_workspace_set_up(session_dir: pathlib.Path) -> None:

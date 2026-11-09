@@ -24,6 +24,7 @@ from agent6.app import (
     review_actions,
     role_providers,
     session_setup,
+    stamps,
 )
 from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
@@ -378,6 +379,7 @@ def build_session_tools(
     mcp_manager: mcp_client.MCPManager | None,
     rm_role: RoleModel,
     command_access: command_tools.JailAccess | None = None,
+    execution_id: str | None = None,
     session_net: jail.SessionNetwork | None = None,
     worktree_git_dir: pathlib.Path | None = None,
 ) -> SessionTools:
@@ -390,6 +392,7 @@ def build_session_tools(
         layout: The session's directory layout.
         isolation: The isolation level.
         command_access: An already-prepared session; None prepares the local target here.
+        execution_id: The lifecycle's execution identity, or None to allocate one.
         mode: The run mode.
         events: The run's event sink.
         prompts: The operator prompt gate.
@@ -416,6 +419,7 @@ def build_session_tools(
         session_net=session_net,
         worktree_git_dir=worktree_git_dir,
     )
+    stamps.track_execution_targets(layout.session_dir, events, note=loop_log)
     try:
         dispatcher = dispatch.ToolDispatcher(
             root=cwd,
@@ -432,6 +436,7 @@ def build_session_tools(
             session_dir=layout.session_dir,
             findings=functools.partial(review_actions.findings_result, layout.session_dir),
             command_access=access,
+            execution_id=execution_id,
             session_net=session_net,
         )
     except BaseException:

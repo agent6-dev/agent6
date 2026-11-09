@@ -85,6 +85,9 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         The new state, or `state` itself when nothing changed.
     """
     etype = event.get("type", "")
+    targets = state.targets.observe(event)
+    if targets is not state.targets:
+        state = dataclasses.replace(state, targets=targets)
     review_view = review.apply_event(state.review, event)
     if review_view is not state.review:
         state = dataclasses.replace(state, review=review_view)

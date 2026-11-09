@@ -1,5 +1,5 @@
 {
-  "version": 10,
+  "version": 11,
   "agent6_version": "0.1.0",
   "session_id": "r-lane02",
   "mode": "run",
@@ -39,6 +39,7 @@
     "network": "",
     "commit_per_turn": true
   },
+  "execution_targets": {},
   "budget": {
     "max_usd": null,
     "max_tokens_fallback": null,

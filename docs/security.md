@@ -569,8 +569,10 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 
 **Receipt evidence**
 
-- Receipts read the journal and manifest, with no provider call or test execution.
-  Reversal guidance uses recorded object IDs and checks commit relationships through read-only git operations.
+- Receipts read the journal and manifest, with no provider call, test execution or environment probe.
+- Execution-target stamps persist environment inheritance policy and variable names, not variable values; they record user, HOME, workspace roots and effective controls explicitly.
+- Target and lifecycle observations grant no stop authority and do not prove restrictions beyond their recorded enforcement owner and probe state.
+- Reversal guidance uses recorded object IDs and checks commit relationships through read-only git operations.
   A missing stamp or object cannot authorize a guessed reversal.
   See [Session receipts](usage.md#session-receipts) for evidence limits.
 

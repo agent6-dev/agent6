@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import uuid
 from typing import Any, Literal
 from unittest import mock
 
@@ -94,7 +95,7 @@ def _seat(provider: Any, focus: str = "security", model: str = "m1") -> review_g
 
 
 def _disp() -> mock.MagicMock:
-    d = mock.MagicMock(last_verification=None, verify_withheld=False)
+    d = mock.MagicMock(last_verification=None, verify_withheld=False, execution_id=uuid.uuid4().hex)
     d.dispatch.return_value = results.RawResult(
         {"ok": True}
     )  # JSON-serializable (finish_session is dispatched)
@@ -106,6 +107,7 @@ def _begin() -> list[dict[str, Any]]:
 
 
 def _drive(wf: loop.Harness, messages: list[dict[str, Any]]) -> Any:
+    wf._emit_start("session.start", user_task="t", mode="run")  # pyright: ignore[reportPrivateUsage]
     conversation = loop_conversation.Conversation.from_wire(messages)
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="S",

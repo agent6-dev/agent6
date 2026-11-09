@@ -117,12 +117,11 @@ class RunHeader(widgets.Static):
         task = markup.escape(
             tui.task_label().line(max_chars=120).replace("\n", "\n" + " " * len(lead))
         )
+        launch = policy.session_policy(tui.session_dir, targets=ds.targets)
         header = text.Text.from_markup(
             "  ".join(segments) + "\n"
             f"role: {markup.escape(role_line)} · task: {task}"
-            + "".join(
-                f"\n{markup.escape(line)}" for line in policy.session_policy(tui.session_dir).models
-            )
+            + "".join(f"\n{markup.escape(line)}" for line in (*launch.models, *launch.environment))
             + f"{markup.escape(self._lineage_top())}{markup.escape(self._branch_top())}"
             f"{markup.escape(self._pins_top(s))}{markup.escape(self._serving_top())}"
             f"{markup.escape(self._compare_top())}"

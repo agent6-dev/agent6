@@ -57,7 +57,10 @@ def test_attempt_records_tree_id_scope_and_output_caps(
     )
     with mock.patch("agent6.sandbox.jail.run_in_jail", return_value=raw):
         result = dispatcher.run_verify(extra_argv=("tests/test_x.py",) if scoped else ())
-    start, end = _events(journal)
+    start, target, end = _events(journal)
+    assert target["type"] == "execution.target"
+    assert start["target_id"] is None
+    assert end["target_id"] == target["target_id"]
     assert end.get("verify_id"), end
     assert start["verify_id"] == end["verify_id"]
     assert end["tree_before"] == end["tree_after"] == git_read.tree_sha(repo, head)

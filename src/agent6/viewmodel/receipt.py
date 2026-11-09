@@ -134,6 +134,10 @@ class ReceiptView:
         revert: The reversal plan derived from recorded merge facts.
         evidence_notes: Diagnostics for absent or unreadable evidence.
         merged: The MergeStamp, or null without a recorded landing.
+        targets: The recorded execution targets, without runtime queries.
+        setups: Every recorded setup result.
+        jobs: Job-settlement observations.
+        environments: Environment lifecycle observations.
     """
 
     session_id: str
@@ -146,6 +150,10 @@ class ReceiptView:
     revert: RevertPlan
     evidence_notes: tuple[str, ...]
     merged: manifest.MergeStamp | None = None
+    targets: tuple[evidence.ExecutionTargetEvidence, ...] = ()
+    setups: tuple[evidence.SetupEvidence, ...] = ()
+    jobs: tuple[evidence.JobsObservation, ...] = ()
+    environments: tuple[evidence.EnvironmentObservation, ...] = ()
 
 
 def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
@@ -186,6 +194,10 @@ def read_receipt(session_dir: pathlib.Path, root: pathlib.Path) -> ReceiptView:
         revert_plan(root, saved.merged),
         tuple(notes),
         saved.merged,
+        fold.targets,
+        fold.setups,
+        fold.jobs,
+        fold.environments,
     )
 
 
@@ -233,6 +245,8 @@ def verification_summary(record: evidence.VerificationEvidence) -> str:
         f"{record.verify_id or 'unrecorded id'}: {baseline}{record.outcome}, {code}{scope}\n"
         f"{reason}"
         f"Command: {shlex.join(record.cmd)}\n"
+        f"Environment: {record.target_id or 'unknown'}; "
+        f"execution: {record.execution_id or 'unknown'}\n"
         f"Tested tree: {record.tree_before or 'unknown'}; after: {record.tree_after or 'unknown'}\n"
         f"Selected paths: {', '.join(record.selected_paths) or 'none'}\n"
         f"Duration: {record.duration_s:.2f}s; timeout: {record.timeout_s:g}s{output}"
@@ -278,6 +292,65 @@ def revert_request(view: ReceiptView) -> str:
     return "\n".join(lines)
 
 
+def environment_dict(view: ReceiptView | session_log.LogScan) -> dict[str, Any]:
+    """Return the shared environment evidence for session inspection surfaces."""
+    return {
+        "targets": [evidence.TARGET.dump_python(v, mode="json") for v in view.targets],
+        "setups": [evidence.SETUP.dump_python(v, mode="json") for v in view.setups],
+        "jobs": [evidence.JOBS.dump_python(v, mode="json") for v in view.jobs],
+        "environments": [
+            evidence.ENVIRONMENT.dump_python(v, mode="json") for v in view.environments
+        ],
+        "text": environment_summary(view),
+    }
+
+
+def environment_summary(view: ReceiptView | session_log.LogScan) -> str:
+    """Render target, setup and lifecycle facts from the shared journal fold.
+
+    Args:
+        view: The shared session or receipt fold.
+
+    Returns:
+        Stored observations as plain text, with unknown facts named.
+    """
+    lines: list[str] = []
+    for stamp in view.targets:
+        lines.extend(evidence.target_lines(stamp.target_id, stamp.target))
+        lines.append(f"Execution: {stamp.execution_id or 'unknown'}")
+    if not view.targets:
+        lines.append("Environment: unknown")
+    for setup in view.setups:
+        lines.append(
+            f"Setup: {shlex.join(setup.cmd)}; "
+            f"{evidence.result_label(setup.exit_code, 'unavailable')}; "
+            f"Environment: {setup.target_id or 'unknown'}; "
+            f"execution: {setup.execution_id or 'unknown'}"
+        )
+    for jobs in view.jobs:
+        label = "Run jobs settled" if jobs.outcome == "settled" else "Run job settlement unknown"
+        lines.append(
+            f"{label} (target {jobs.target_id or 'unknown'})"
+            + (f": {jobs.reason}" if jobs.reason else "")
+        )
+    if not view.jobs:
+        lines.append("Run job settlement unknown")
+    for env in view.environments:
+        label = {
+            "left_running": "Environment left running",
+            "stopped": "Environment stopped",
+            "unknown": "Environment lifecycle unknown",
+            "not_applicable": "Environment lifecycle not managed",
+        }[env.outcome]
+        lines.append(
+            f"{label} (target {env.target_id or 'unknown'})"
+            + (f": {env.reason}" if env.reason else "")
+        )
+    if not view.environments:
+        lines.append("Environment lifecycle unknown")
+    return "\n".join(lines)
+
+
 def render(view: ReceiptView, *, include_output: bool = True) -> str:
     """Render the shared receipt without interpreting model prose as test evidence.
 
@@ -304,6 +377,7 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
         f"Receipt {view.session_id}",
         f"Execution: {view.execution_id or 'unknown'}",
         f"Source tip: {view.source_tip or 'unknown'}",
+        environment_summary(view),
         "",
         "Testing (output cap: 2000 characters per stream)",
         f"{word}: {view.end_tree or 'unknown'}",

@@ -168,7 +168,7 @@ class Harness:
     # A snapshot write fault warns once, not every turn; it disables resume, never the run.
     snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
     turns_reached: int = dataclasses.field(default=0, init=False)
-    execution_id: str = dataclasses.field(default_factory=lambda: uuid.uuid4().hex, init=False)
+    _execution_started: bool = dataclasses.field(default=False, init=False)
 
     # ---- run / resume entry --------------------------------------------------
 
@@ -2106,6 +2106,11 @@ class Harness:
     # ---- the log and the events ----------------------------------------------
 
     @property
+    def execution_id(self) -> str:
+        """The identity shared with setup and command evidence, including before loop start."""
+        return self.dispatcher.execution_id
+
+    @property
     def session_id(self) -> str:
         """Return the session id, the run dir's name; "" without a log."""
         return self.events.path.parent.name if self.events is not None else ""
@@ -2121,9 +2126,10 @@ class Harness:
 
     def _emit_start(self, event_type: str, **fields: Any) -> None:
         """Emit a start-family event through the emitter that stamps the worker pid."""
-        self.execution_id = uuid.uuid4().hex
+        if self._execution_started:
+            self.dispatcher.execution_id = uuid.uuid4().hex
+        self._execution_started = True
         self.dispatcher.verify_tree = self.chain.tree_sha
-        self.dispatcher.execution_id = self.execution_id
         if self.events is not None:
             process.emit_session_start(
                 self.events,

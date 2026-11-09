@@ -390,8 +390,8 @@ def test_runs_show_reports_a_parked_run_as_parked(
 
     assert sessions_show._cmd_status("run-PARKED") == 0
     out = capsys.readouterr().out
-    assert "parked" in out
-    assert "unknown" not in out
+    assert "status:     parked" in out
+    assert "Environment: unknown" in out
 
 
 def test_parked_manifest_records_the_config_profile_not_the_sandbox_one(repo: pathlib.Path) -> None:

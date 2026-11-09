@@ -48,7 +48,7 @@ Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_show
 - **Read by:** ui/cli/entry
-- **Guarded by:** [test_sessions_show_fanout.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_show_fanout.py) (7 test files exercise it)
+- **Guarded by:** [test_sessions_show_fanout.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_show_fanout.py) (8 test files exercise it)
 
 ## Live process rows
 
@@ -156,7 +156,7 @@ Public fields: [Formats](formats.md#sessionmanifest).
 
 - **Written by:** app/stamps
 - **Read by:** app/{compare, execution, finalize, fork, fork_worktrees, lanes, merge, merge_message, parallel, parallel_results, preflight, resume, resume_chain, run, session_setup, stop, undo, workdirs, workspace_setup}, models/choices, sessions/layout, tools/sessions, ui/{directive_actions, mcp_server}, ui/acp/session, ui/cli/{ask, entry, net_cmds, sessions_cmds, sessions_compare, sessions_merge, sessions_show, steer_menu, stop_cmd}, ui/tui/{app, dashboard_header, diff_pane, home}, ui/web/{actions, model}, viewmodel/{comparison, format, listing, policy, receipt, session_status, state_view, wire}
-- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (38 test files exercise it)
+- **Guarded by:** [test_sessions_manifest.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_sessions_manifest.py) (39 test files exercise it)
 
 ## SessionSnapshot
 

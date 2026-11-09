@@ -12,9 +12,9 @@ import dataclasses
 import pathlib
 import shlex
 
-from agent6 import kinds
-from agent6.sessions import manifest
-from agent6.viewmodel import format
+from agent6 import evidence, kinds
+from agent6.sessions import layout, manifest
+from agent6.viewmodel import format, session_log
 
 
 def model_lines(m: manifest.SessionManifest) -> tuple[str, ...]:
@@ -54,6 +54,7 @@ class SessionPolicy:
         verify_gate: The pinned gate, its source and execution availability.
         mode: "run", "plan" or "ask"; an ask has no gate to name.
         models: The recorded per-role route, effort and origin lines.
+        environment: The journal's current execution target, empty when unknown.
     """
 
     model: str
@@ -63,6 +64,7 @@ class SessionPolicy:
     verify_gate: manifest.GateStamp
     mode: str = ""
     models: tuple[str, ...] = ()
+    environment: tuple[str, ...] = ()
 
     def gate(self) -> str:
         """Return the gate and its origin.
@@ -103,11 +105,12 @@ class SessionPolicy:
             self.network,
             self.run_commands,
             self.verify_gate.command,
+            self.environment,
         )
         if not any(known):
             return ""
         models = self.models or (self.model,)
-        parts = [p for p in (*models, self.short()) if p]
+        parts = [p for p in (*models, self.short(), *self.environment) if p]
         if self.mode != "ask":
             parts.append(self.gate())
         return " · ".join(parts)
@@ -132,11 +135,14 @@ def short_form(isolation: str, network: str, run_commands: str) -> str:
     return " · ".join(p for p in parts if p)
 
 
-def session_policy(session_dir: pathlib.Path) -> SessionPolicy:
-    """Fold a session dir's manifest into its policy facts.
+def session_policy(
+    session_dir: pathlib.Path, *, targets: evidence.ExecutionTargets | None = None
+) -> SessionPolicy:
+    """Fold a session's manifest and journal into its policy facts.
 
     Args:
         session_dir: The session's state dir.
+        targets: A live view's target fold; None reads the journal.
 
     Returns:
         The policy, all-empty when the manifest cannot be read.
@@ -145,11 +151,18 @@ def session_policy(session_dir: pathlib.Path) -> SessionPolicy:
         m = manifest.read_manifest(session_dir)
     except manifest.ManifestError:
         m = None
-    return manifest_policy(m)
+    target = (
+        targets.current
+        if targets is not None
+        else session_log.scan_session_log(session_dir / layout.LOGS_NAME).current_target
+    )
+    return manifest_policy(m, target=target)
 
 
-def manifest_policy(m: manifest.SessionManifest | None) -> SessionPolicy:
-    """Return the policy from an already-read manifest, or empty when unavailable."""
+def manifest_policy(
+    m: manifest.SessionManifest | None, *, target: evidence.ExecutionTargetEvidence | None = None
+) -> SessionPolicy:
+    """Return recorded launch policy with the journal's current target, never the mirror's last."""
     if m is None:
         return SessionPolicy("", "", "", "", manifest.GateStamp())
     driver = m.models.driver
@@ -163,4 +176,7 @@ def manifest_policy(m: manifest.SessionManifest | None) -> SessionPolicy:
         verify_gate=m.harness.gate,
         mode=m.mode,
         models=model_lines(m) if m.models.driver and m.models.driver.effort_source else (),
+        environment=(
+            evidence.target_lines(target.target_id, target.target) if target is not None else ()
+        ),
     )

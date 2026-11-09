@@ -297,7 +297,7 @@ class ComparisonStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 10
+MANIFEST_VERSION = 11
 MANIFEST_NAME = "manifest.json"
 
 
@@ -327,6 +327,7 @@ class SessionManifest(pydantic.BaseModel):
         models: The models the run resolved.
         harness: The strategy the run started with.
         policy: The policy the run launched under.
+        execution_targets: Recorded target facts by reference, empty in historical manifests.
         budget: The caps the run's or a resume's budget flags set (`--max-usd` and its siblings).
         parked_task: The verbatim task of a run submitted but never started; `agent6 resume`
             starts it fresh and its manifest rewrite clears this.
@@ -373,6 +374,7 @@ class SessionManifest(pydantic.BaseModel):
     models: ModelsBrief = ModelsBrief()
     harness: HarnessStamp = HarnessStamp()
     policy: PolicyStamp = PolicyStamp()
+    execution_targets: dict[str, kinds.ExecutionTargetStamp] = pydantic.Field(default_factory=dict)
     budget: BudgetStamp = BudgetStamp()
     parked_task: str = ""
     parked_operator_task: str | None = None

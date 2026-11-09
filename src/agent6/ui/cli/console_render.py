@@ -81,7 +81,7 @@ class ConsoleView:
         policy: Callable[[], str] | None = None,
         session_id: str = "",
     ) -> None:
-        # The policy line, read when the task prints: the gate is pinned between then and now.
+        # Read policy at execution start, after the gate and target are stamped.
         self._policy = policy
         # Names the run in the command that answers a queued question.
         self._session_id = session_id
@@ -202,10 +202,10 @@ class ConsoleView:
                 self._render(
                     dataclasses.replace(item, body="") if answered and item.kind == "done" else item
                 )
-                if item.kind == "task" and self._policy is not None:
-                    policy = self._policy()
-                    if policy:
-                        self._line(self._c("dim", f"  {policy}") + "\n")
+            if etype in events.SESSION_START_EVENTS and self._policy is not None:
+                policy = self._policy()
+                if policy:
+                    self._line(self._c("dim", f"  {policy}") + "\n")
 
     def _queued_question(self, event: dict[str, Any]) -> str:
         """Return the line for a question the model queued: its text and the ways to answer it."""

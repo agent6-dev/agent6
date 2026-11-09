@@ -5,15 +5,18 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import pathlib
+import uuid
 
-from agent6 import kinds
+from agent6 import evidence, kinds
 from agent6.app import reporter as app_reporter
 from agent6.app import workspace_setup
 from agent6.config import Config
 from agent6.machine import EngineError
 from agent6.sandbox import jail
 from agent6.sessions import event_log
+from agent6.tools import target_policy
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -30,10 +33,27 @@ class _Runner:
         return self.config.sandbox.run_commands
 
     def run_setup(self, argv: tuple[str, ...]) -> kinds.CommandResult:
+        execution_id, target_id = uuid.uuid4().hex, uuid.uuid4().hex
+        events = event_log.EventSink(self.events_log) if self.events_log is not None else None
+        if events is not None:
+            target = kinds.ExecutionTarget(
+                transport="local",
+                host_root=self.policy.cwd,
+                command_root=self.policy.cwd,
+                user=str(os.getuid()),
+                home=dict(self.policy.env).get("HOME"),
+                environment=kinds.ExecutionEnvironment(self.policy.env),
+                controls=target_policy.effective_controls(self.config, self.policy.isolation),
+            )
+            stamp = evidence.target_record(target_id, execution_id, target)
+            events.emit("execution.target", **evidence.TARGET.dump_python(stamp, mode="json"))
         result = jail.run_in_jail(dataclasses.replace(self.policy, argv=argv))
-        if self.events_log is not None:
-            event_log.EventSink(self.events_log).emit(
-                "workspace.setup", **kinds.workspace_setup_fields(result)
+        if events is not None:
+            events.emit(
+                "workspace.setup",
+                execution_id=execution_id,
+                target_id=target_id,
+                **kinds.workspace_setup_fields(result),
             )
         return result
 

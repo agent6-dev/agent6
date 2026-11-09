@@ -138,6 +138,7 @@ class _Dispatcher(_StubDispatcher):
 
     def __init__(self, compact_flag: list[bool]) -> None:
         self._compact_flag = compact_flag
+        self.execution_id = "test-execution"
 
     def set_run_root_node_id(self, node_id: str) -> None:  # pragma: no cover - resume execution
         return None

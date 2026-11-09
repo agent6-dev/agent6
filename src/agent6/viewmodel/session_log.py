@@ -80,7 +80,12 @@ class LogScan:
         source_tip: The most recent diff checkpoint's commit.
         verifications: Every recorded verification, including baseline observations.
         final_verify_id: The end event's verification id, absent if evidence is damaged.
-        evidence_notes: Missing or unreadable verification evidence.
+        evidence_notes: Missing or unreadable execution evidence.
+        targets: Immutable target observations, never inferred from current runtime state.
+        current_target: The journal's current target binding, None when unproved.
+        setups: Setup results with their recorded execution and target references.
+        jobs: Job-settlement observations, separate from environment lifecycle.
+        environments: Environment lifecycle observations, absent in historical journals.
     """
 
     saw_start: bool = False
@@ -135,6 +140,11 @@ class LogScan:
     final_verify_id: str | None = None
     end_ep: float | None = None
     evidence_notes: tuple[str, ...] = ()
+    targets: tuple[evidence.ExecutionTargetEvidence, ...] = ()
+    current_target: evidence.ExecutionTargetEvidence | None = None
+    setups: tuple[evidence.SetupEvidence, ...] = ()
+    jobs: tuple[evidence.JobsObservation, ...] = ()
+    environments: tuple[evidence.EnvironmentObservation, ...] = ()
 
     def gate_word(self) -> str:
         """Return `verification`, with `timed_out` for a red that is the gate running out its limit.
@@ -332,6 +342,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     verifications: list[evidence.VerificationEvidence] = []
     pending_verifications: set[str] = set()
     evidence_notes: list[str] = []
+    observations = evidence.ExecutionObservations()
     try:
         with logs.open(encoding="utf-8", errors="replace") as fh:
             for line_number, line in enumerate(fh, 1):
@@ -352,6 +363,10 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     continue
                 review_view = review.apply_event(review_view, ev)
                 etype = ev.get("type")
+                try:
+                    observations.observe(ev)
+                except (ValueError, TypeError) as exc:
+                    evidence_notes.append(f"journal line {line_number}: {exc}")
                 if etype in ("session.start", "session.resume"):
                     execution_id = ev.get("execution_id")
                     final_verify_id = None
@@ -520,6 +535,11 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         execution_id=execution_id,
         source_tip=source_tip,
         verifications=tuple(verifications),
+        targets=observations.targets.recorded,
+        current_target=observations.targets.current,
+        setups=tuple(observations.setups),
+        jobs=tuple(observations.jobs),
+        environments=tuple(observations.environments),
         final_verify_id=None if evidence_notes else final_verify_id,
         end_ep=end_ep,
         evidence_notes=tuple(evidence_notes)

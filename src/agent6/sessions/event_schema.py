@@ -133,6 +133,39 @@ EVENTS: tuple[EventSpec, ...] = (
         ),
     ),
     EventSpec(
+        "execution.environment",
+        "An environment lifecycle observation, independent of job settlement.",
+        (
+            FieldSpec("execution_id", "str", False, "Execution identifier."),
+            FieldSpec("target_id", "str", False, "Recorded target reference."),
+            FieldSpec("outcome", "str", True, "left_running, stopped, unknown or not_applicable."),
+            FieldSpec("reason", "str", True, "The observation's reason, not stop authority."),
+        ),
+    ),
+    EventSpec(
+        "execution.jobs",
+        "The command owner observed job settlement or could not confirm it.",
+        (
+            FieldSpec("execution_id", "str", False, "Execution identifier."),
+            FieldSpec("target_id", "str", False, "Recorded target reference."),
+            FieldSpec("outcome", "str", True, "settled or unknown."),
+            FieldSpec("reason", "str", True, "Why settlement is unknown, empty when confirmed."),
+        ),
+    ),
+    EventSpec(
+        "execution.target",
+        "Immutable target facts recorded before workspace commands.",
+        (
+            FieldSpec("execution_id", "str", False, "Execution identifier."),
+            FieldSpec(
+                "target_id", "str", True, "Host-issued evidence reference, not launcher identity."
+            ),
+            FieldSpec(
+                "target", "object", True, "ExecutionTargetStamp facts; null fields stay unobserved."
+            ),
+        ),
+    ),
+    EventSpec(
         "graph.update",
         "The task graph and its current focus.",
         (
@@ -1298,6 +1331,7 @@ EVENTS: tuple[EventSpec, ...] = (
         (
             FieldSpec("verify_id", "str", False, "Verification attempt identifier."),
             FieldSpec("execution_id", "str", False, "Execution identifier."),
+            FieldSpec("target_id", "str", False, "Recorded execution-target reference."),
             FieldSpec("cmd", "list", True, "Command argv."),
             FieldSpec(
                 "tree_before", "str", False, "Content identifier observed before verification."
@@ -1341,6 +1375,7 @@ EVENTS: tuple[EventSpec, ...] = (
             FieldSpec("call_id", "int", False, "The model tool call, absent for a harness gate."),
             FieldSpec("verify_id", "str", False, "Verification attempt identifier."),
             FieldSpec("execution_id", "str", False, "Execution identifier."),
+            FieldSpec("target_id", "str", False, "Recorded execution-target reference."),
             FieldSpec(
                 "tree_before", "str", False, "Content identifier observed before verification."
             ),
@@ -1356,6 +1391,8 @@ EVENTS: tuple[EventSpec, ...] = (
         "workspace.setup",
         "The workspace setup command finished.",
         (
+            FieldSpec("execution_id", "str", False, "Execution identifier."),
+            FieldSpec("target_id", "str", False, "Recorded execution-target reference."),
             FieldSpec("cmd", "list", True, "Command argv."),
             FieldSpec(
                 "exit_code", "int", False, "Command exit code; null if no exit was observed."

@@ -648,12 +648,23 @@ A run started from a hub, or detached mid-run with `/detach`, keeps going with n
   Its tool result carries `stopped_by_operator: true` and the output so far, without `still_running` or `background_id`, so the conversation a resume reads says the stop ended the command.
 - A check-in with no immediate stop still returns a running command and its background id.
 
-`evidence.VerificationEvidence` records each configured verification attempt, including harness-started attempts, with its ID, execution, command, scope, before and after trees, outcome and capture limits.
+`evidence.VerificationEvidence` records each configured verification attempt, including harness-started attempts, with its ID, execution, target reference, command, scope, before and after trees, outcome and capture limits.
 `VerifyVerdict` and `SessionSnapshot` carry the final verification ID and tested tree across resume.
 A pass covers the final tree only when both observations and the end tree match; commit identity alone does not invalidate unchanged content.
 `viewmodel/receipt.py` derives `ReceiptView` from the journal and manifest, with no second receipt file or duplicate event.
-The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call or verification run.
+The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` read that view without a provider call, verification run or environment probe.
 `VerifyRun` in `harness/review_session.py` retains IDs, trees and capture facts in the bounded digest supplied to `sessions review`.
+
+`execution.target` owns the immutable environment evidence for an execution; `app/stamps.py` mirrors its persistence-safe `kinds.ExecutionTargetStamp` into the manifest as history, not a current-target pointer.
+The stamp retains both roots, user, HOME, effective controls, environment inheritance policy and variable names, never environment values.
+Its host-issued `target_id` distinguishes observations without claiming a launcher instance or build version the protocol did not report.
+The dispatcher assigns `execution_id` before setup; setup, the baseline and later verification retain their own target references across resumes.
+A bare one-shot attempt has no target reference while approval is pending; its result names the target selected after approval.
+`evidence.ExecutionObservations` folds target, setup, job-settlement and environment-lifecycle records for `scan_session_log` and the receipt.
+Its `ExecutionTargets` fold also supplies the current environment to live views and run and resume start renderers, independent of manifest mirror writes.
+An execution boundary without matching target evidence clears that binding; invalid target records retain history but clear the displayed environment.
+Missing historical references stay unknown, even beside a newer manifest stamp.
+Start blocks and session inspection use these recorded facts, not the current config or runtime.
 
 The manifest's optional `MergeStamp.method` and `target_before` own reversal bounds.
 `RevertPlan` uses those facts and `vcs/commit_graph.py` to check parents and enumerate landed commits without depending on source refs.

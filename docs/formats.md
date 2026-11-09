@@ -128,6 +128,38 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `sha` | `str` | The commit identifier, possibly abbreviated. |
 | `patch` | `str` | The commit's patch, capped at 8000 bytes. |
 
+### execution.environment
+
+**Support: public.** An environment lifecycle observation, independent of job settlement.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | Execution identifier. |
+| `target_id` | `str, optional` | Recorded target reference. |
+| `outcome` | `str` | left_running, stopped, unknown or not_applicable. |
+| `reason` | `str` | The observation's reason, not stop authority. |
+
+### execution.jobs
+
+**Support: public.** The command owner observed job settlement or could not confirm it.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | Execution identifier. |
+| `target_id` | `str, optional` | Recorded target reference. |
+| `outcome` | `str` | settled or unknown. |
+| `reason` | `str` | Why settlement is unknown, empty when confirmed. |
+
+### execution.target
+
+**Support: public.** Immutable target facts recorded before workspace commands.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str, optional` | Execution identifier. |
+| `target_id` | `str` | Host-issued evidence reference, not launcher identity. |
+| `target` | `object` | ExecutionTargetStamp facts; null fields stay unobserved. |
+
 ### graph.update
 
 **Support: public.** The task graph and its current focus.
@@ -1307,6 +1339,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `verify_id` | `str, optional` | Verification attempt identifier. |
 | `execution_id` | `str, optional` | Execution identifier. |
+| `target_id` | `str, optional` | Recorded execution-target reference. |
 | `cmd` | `list` | Command argv. |
 | `tree_before` | `str, optional` | Content identifier observed before verification. |
 | `tree_after` | `str, optional` | Content identifier observed after verification. |
@@ -1333,6 +1366,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `call_id` | `int, optional` | The model tool call, absent for a harness gate. |
 | `verify_id` | `str, optional` | Verification attempt identifier. |
 | `execution_id` | `str, optional` | Execution identifier. |
+| `target_id` | `str, optional` | Recorded execution-target reference. |
 | `tree_before` | `str, optional` | Content identifier observed before verification. |
 | `cmd` | `list` | Command argv. |
 | `scoped` | `bool` | Whether verification ran only the selected nearby tests. |
@@ -1345,6 +1379,8 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `execution_id` | `str, optional` | Execution identifier. |
+| `target_id` | `str, optional` | Recorded execution-target reference. |
 | `cmd` | `list` | Command argv. |
 | `exit_code` | `int, optional` | Command exit code; null if no exit was observed. |
 | `duration_s` | `float` | Command duration in seconds. |
@@ -1509,6 +1545,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `plan_cap` | `float` | The subscription points cap. |
 | `unattended_questions` | `int` | Questions answered empty because nobody was attached. |
 | `setup_output` | `str \| None` | Retained setup output, or null when absent. |
+| `environment_evidence` | `dict[str, Any]` | Recorded targets, setup and lifecycle observations. |
 | `usd_partial` | `bool \| None` | Whether unpriced usage makes spend a lower bound, or null without a cost. |
 | `source_session_id` | `str \| None` | The source session used by run --from, or null. |
 | `parent_session_id` | `str \| None` | The fork parent, or null. |
@@ -2412,6 +2449,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `models` | `ModelsBrief` | The models the run resolved. |
 | `harness` | `HarnessStamp` | The strategy the run started with. |
 | `policy` | `PolicyStamp` | The policy the run launched under. |
+| `execution_targets` | `dict[str, ExecutionTargetStamp]` | Recorded target facts by reference, empty in historical manifests. |
 | `budget` | `BudgetStamp` | The caps the run's or a resume's budget flags set (`--max-usd` and its siblings). |
 | `parked_task` | `str` | The verbatim task of a run submitted but never started; `agent6 resume` starts it fresh and its manifest rewrite clears this. |
 | `parked_operator_task` | `str \| None` | The parked task before composition, when recorded. |
@@ -2498,6 +2536,10 @@ Source: [`agent6.viewmodel.receipt.ReceiptView`](https://github.com/agent6-dev/a
 | `revert` | `RevertPlan` | The reversal plan derived from recorded merge facts. |
 | `evidence_notes` | `tuple[str, ...]` | Diagnostics for absent or unreadable evidence. |
 | `merged` | `MergeStamp \| None` | The MergeStamp, or null without a recorded landing. |
+| `targets` | `tuple[ExecutionTargetEvidence, ...]` | The recorded execution targets, without runtime queries. |
+| `setups` | `tuple[SetupEvidence, ...]` | Every recorded setup result. |
+| `jobs` | `tuple[JobsObservation, ...]` | Job-settlement observations. |
+| `environments` | `tuple[EnvironmentObservation, ...]` | Environment lifecycle observations. |
 
 ### FindingAction
 
@@ -2790,6 +2832,28 @@ Source: [`agent6.sessions.manifest.PolicyStamp`](https://github.com/agent6-dev/a
 | `network` | `str` | The network the run's commands join, `session` or `host`; "" when the stamp names no level. A manifest an older agent6 wrote holds the configured word. |
 | `commit_per_turn` | `bool` | `[git].commit_per_turn` for the live execution; False means a dirty tree at the end is the deliverable, never a stranded commit. |
 
+### ExecutionTargetStamp
+
+**Support: public.** The persistence-safe projection of an ExecutionTarget, with unknown facts preserved.
+
+Source: [`agent6.kinds.ExecutionTargetStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/kinds.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `transport` | `str` | The recorded command transport, distinct from local confinement. |
+| `host_root` | `pathlib.Path` | The host workspace used by file tools. |
+| `command_root` | `pathlib.Path` | The workspace used by commands. |
+| `user` | `str \| None` | The selected command user, or None when unobserved. |
+| `home` | `str \| None` | The command HOME, or None when unobserved. |
+| `environment` | `ExecutionEnvironmentPolicy` | Inheritance policy and variable names, without values. |
+| `controls` | `tuple[EffectiveControl, ...]` | Configured and effective controls with their enforcement owners. |
+| `runtime_id` | `str \| None` | Observed runtime identity, or None when unknown. |
+| `container_id` | `str \| None` | Observed container identity, or None when unknown. |
+| `launcher_instance` | `str \| None` | Supervisor-reported instance identity, or None when unknown. |
+| `protocol_version` | `int \| None` | Observed supervisor protocol version, or None without a handshake. |
+| `launcher_version` | `str \| None` | Observed launcher build version, or None when unknown. |
+| `lifecycle_ref` | `str \| None` | Recorded lifecycle ownership reference, or None when unknown. |
+
 ### BudgetStamp
 
 **Support: public.** The caps the budget flags set; a resume without a flag runs under the recorded caps.
@@ -2969,6 +3033,18 @@ Source: [`agent6.viewmodel.review.ReviewView`](https://github.com/agent6-dev/age
 | `comparison` | `ReviewTarget \| None` | The target used to determine freshness, or null. |
 | `event_ids` | `tuple[str, ...]` | The durable event identifiers already folded. |
 
+### ExecutionTargets
+
+**Support: public.** Fold immutable target history and its current execution binding.
+
+Source: [`agent6.evidence.ExecutionTargets`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/evidence.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `recorded` | `tuple[ExecutionTargetEvidence, ...]` | Valid target stamps in observation order. |
+| `current` | `ExecutionTargetEvidence \| None` | The prepared or started execution's target, None when unproved. |
+| `error` | `str` | The latest target record's validation error, empty for a valid record. |
+
 ### BudgetView
 
 **Support: public.** The run's spend as every surface shows it.
@@ -3130,6 +3206,7 @@ Source: [`agent6.evidence.VerificationEvidence`](https://github.com/agent6-dev/a
 | `stderr_truncated` | `bool \| None` | Whether standard error was truncated, or null when unrecorded. |
 | `baseline` | `bool` | Whether this was the pre-run baseline attempt. |
 | `reason` | `str` | Why the command did not run, separate from its output. |
+| `target_id` | `str \| None` | The execution-target stamp, or null when unrecorded. |
 
 ### RevertPlan
 
@@ -3143,6 +3220,61 @@ Source: [`agent6.viewmodel.receipt.RevertPlan`](https://github.com/agent6-dev/ag
 | `commits` | `tuple[str, ...]` | The commits to reverse in order. |
 | `mainline` | `int \| None` | The merge parent to keep, or null when not needed. |
 | `explanation` | `str` | The evidence supporting the plan or requiring manual inspection. |
+
+### ExecutionTargetEvidence
+
+**Support: public.** Bind observed target facts to an execution, without inventing launcher identity.
+
+Source: [`agent6.evidence.ExecutionTargetEvidence`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/evidence.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `target_id` | `str` | A host-issued evidence reference, not a launcher instance identifier. |
+| `execution_id` | `str \| None` | The execution that selected the target, or None when unrecorded. |
+| `target` | `ExecutionTargetStamp` | Persistence-safe target facts; unknown observations remain None. |
+
+### SetupEvidence
+
+**Support: public.** Retain setup identity and output independently of later baseline attempts.
+
+Source: [`agent6.evidence.SetupEvidence`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/evidence.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str \| None` | The execution that ran setup, or None when unrecorded. |
+| `target_id` | `str \| None` | The setup target reference, or None when unrecorded. |
+| `cmd` | `tuple[str, ...]` | The setup command's argv. |
+| `exit_code` | `int \| None` | The observed exit code, or None when unknown. |
+| `duration_s` | `float` | Elapsed setup time in seconds. |
+| `exec_failed` | `bool` | Whether the command could not be executed. |
+| `stdout_tail` | `str` | Retained standard output. |
+| `stderr_tail` | `str` | Retained standard error. |
+
+### JobsObservation
+
+**Support: public.** Record whether the command owner confirmed job settlement, not environment shutdown.
+
+Source: [`agent6.evidence.JobsObservation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/evidence.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str \| None` | The execution whose jobs were observed, or None when unrecorded. |
+| `target_id` | `str \| None` | The observed target reference, or None when unrecorded. |
+| `outcome` | `Literal['settled', 'unknown']` | Whether the command owner confirmed settlement. |
+| `reason` | `str` | Why settlement is unknown; empty when confirmed. |
+
+### EnvironmentObservation
+
+**Support: public.** Record an environment lifecycle observation without granting stop authority.
+
+Source: [`agent6.evidence.EnvironmentObservation`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/evidence.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str \| None` | The execution observing the lifecycle, or None when unrecorded. |
+| `target_id` | `str \| None` | The observed target reference, or None when unrecorded. |
+| `outcome` | `Literal['left_running', 'stopped', 'unknown', 'not_applicable']` | The observed lifecycle state; not_applicable means the host is not managed. |
+| `reason` | `str` | The observation's explanation, not an authorization to stop anything. |
 
 ### FindingResolution
 
@@ -3182,6 +3314,33 @@ Source: [`agent6.sessions.manifest.GateStamp`](https://github.com/agent6-dev/age
 | `command` | `tuple[str, ...]` | The pinned argv; only operator config can replace it on resume. |
 | `source` | `Literal['', 'configured', 'inferred', 'adopted']` | `configured` from operator config, `inferred` from repo signals, `adopted` mid-run, or "" for no gate. |
 | `availability` | `Literal['ready', 'pending', 'withheld']` | `ready` after resolution, `pending` before resolution, or `withheld` when this execution cannot run the command. |
+
+### ExecutionEnvironmentPolicy
+
+**Support: public.** Persist environment policy and variable names, never their potentially secret values.
+
+Source: [`agent6.kinds.ExecutionEnvironmentPolicy`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/kinds.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `inherit` | `bool` | Whether commands inherit the target environment before applying variables. |
+| `variable_names` | `tuple[str, ...]` | Names explicitly supplied to commands, sorted; values are omitted. |
+
+### EffectiveControl
+
+**Support: public.** One configured sandbox leaf and the enforcement actually selected for it.
+
+Source: [`agent6.kinds.EffectiveControl`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/kinds.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `leaf` | `str` | The sandbox configuration field. |
+| `configured` | `str \| int \| tuple[str, ...]` | Its configured value before target resolution. |
+| `effective` | `str \| int \| tuple[str, ...]` | Its resolved value for this target. |
+| `behaviour` | `str` | The control's effective behaviour. |
+| `owner` | `Literal['agent6', 'container', 'host file tools', 'unsupported']` | What enforces the control, or unsupported when it is not enforced. |
+| `probe` | `Literal['not probed', 'resolved', 'prepared']` | How far target preparation confirmed the control. |
+| `reason` | `str` | The refusal or warning reason, if any. |
 
 ### PanelView
 

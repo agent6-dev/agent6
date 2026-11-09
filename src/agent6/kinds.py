@@ -329,7 +329,17 @@ ProbeState = Literal["not probed", "resolved", "prepared"]
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class EffectiveControl:
-    """One configured sandbox leaf and the enforcement actually selected for it."""
+    """One configured sandbox leaf and the enforcement actually selected for it.
+
+    Attributes:
+        leaf: The sandbox configuration field.
+        configured: Its configured value before target resolution.
+        effective: Its resolved value for this target.
+        behaviour: The control's effective behaviour.
+        owner: What enforces the control, or unsupported when it is not enforced.
+        probe: How far target preparation confirmed the control.
+        reason: The refusal or warning reason, if any.
+    """
 
     leaf: str
     configured: ControlValue
@@ -363,6 +373,54 @@ class ExecutionTarget:
     user: str | None
     home: str | None
     environment: ExecutionEnvironment
+    controls: tuple[EffectiveControl, ...] = ()
+    runtime_id: str | None = None
+    container_id: str | None = None
+    launcher_instance: str | None = None
+    protocol_version: int | None = None
+    launcher_version: str | None = None
+    lifecycle_ref: str | None = None
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExecutionEnvironmentPolicy:
+    """Persist environment policy and variable names, never their potentially secret values.
+
+    Attributes:
+        inherit: Whether commands inherit the target environment before applying variables.
+        variable_names: Names explicitly supplied to commands, sorted; values are omitted.
+    """
+
+    inherit: bool
+    variable_names: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExecutionTargetStamp:
+    """The persistence-safe projection of an ExecutionTarget, with unknown facts preserved.
+
+    Attributes:
+        transport: The recorded command transport, distinct from local confinement.
+        host_root: The host workspace used by file tools.
+        command_root: The workspace used by commands.
+        user: The selected command user, or None when unobserved.
+        home: The command HOME, or None when unobserved.
+        environment: Inheritance policy and variable names, without values.
+        controls: Configured and effective controls with their enforcement owners.
+        runtime_id: Observed runtime identity, or None when unknown.
+        container_id: Observed container identity, or None when unknown.
+        launcher_instance: Supervisor-reported instance identity, or None when unknown.
+        protocol_version: Observed supervisor protocol version, or None without a handshake.
+        launcher_version: Observed launcher build version, or None when unknown.
+        lifecycle_ref: Recorded lifecycle ownership reference, or None when unknown.
+    """
+
+    transport: str
+    host_root: pathlib.Path
+    command_root: pathlib.Path
+    user: str | None
+    home: str | None
+    environment: ExecutionEnvironmentPolicy
     controls: tuple[EffectiveControl, ...] = ()
     runtime_id: str | None = None
     container_id: str | None = None

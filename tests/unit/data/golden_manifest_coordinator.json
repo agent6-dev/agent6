@@ -1,5 +1,5 @@
 {
-  "version": 10,
+  "version": 11,
   "agent6_version": "",
   "session_id": "fan",
   "mode": "run",
@@ -34,6 +34,7 @@
     "network": "",
     "commit_per_turn": true
   },
+  "execution_targets": {},
   "budget": {
     "max_usd": null,
     "max_tokens_fallback": null,

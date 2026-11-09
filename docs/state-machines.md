@@ -745,6 +745,19 @@ A read failure after confirmed stop is persisted as a capture error alongside th
 A host copy failure retries from the last written byte while the capture remains available.
 These [job states](architecture.md#jail-job-ownership) are separate from the workflow's terminal states.
 
+## Execution lifecycle observations
+
+- `execution.target` records immutable environment facts separately from job and environment lifecycles.
+- The journal's target fold clears the current environment at an execution boundary without matching evidence; the manifest's history cannot supply it.
+- `execution.jobs` records `settled` only after the prepared supervisor confirms cleanup; a lost launcher or failed settlement records `unknown`.
+- Bare one-shot commands have no session-wide settlement observation and do not claim one.
+- `execution.environment` records `left_running`, `stopped`, `unknown` or `not_applicable`, with its reason and target reference.
+- Current local execution records `not_applicable`: agent6 does not manage the host's lifecycle.
+- A job-settlement observation grants no environment stop authority and cannot imply that an environment stopped.
+- `session.stop` ends the workflow; later teardown observations may follow it in the journal.
+- Receipt replay keeps these facts separate: “Run jobs settled” and “Environment left running” can both be true.
+- An absent lifecycle observation stays unknown; a successful verification cannot supply it.
+
 ## CLI surface
 
 | command                                   | effect                                            |

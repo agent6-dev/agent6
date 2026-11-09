@@ -223,7 +223,7 @@ def session_state_as_dict(
                 fallback_task = manifest.user_task
                 fallback_continued = manifest.continued_task
             d["mode"] = d["mode"] or manifest.mode
-        d["policy"] = policy.manifest_policy(manifest).line()
+        d["policy"] = policy.manifest_policy(manifest, target=state.targets.current).line()
         d["ports"] = process.listening_ports(session_dir)
         # On every frame: the run view streams from this dict.
         d["shells"] = background.roster_from_dir(session_dir / background.SHELLS_DIR)

@@ -39,6 +39,7 @@ depends_on = [
   "agent6.context.memory",
   "agent6.directive",
   "agent6.errors",
+  "agent6.evidence",
   "agent6.graph.curator",
   "agent6.graph.models",
   "agent6.graph.replay",
@@ -935,7 +936,7 @@ depends_on = ["agent6.config.layer_data", "agent6.config.model", "agent6.config.
 
 [[modules]]
 path = "agent6.evidence"
-depends_on = []
+depends_on = ["agent6.kinds"]
 
 [[modules]]
 path = "agent6.vcs.commit_graph"

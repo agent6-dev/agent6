@@ -1157,7 +1157,8 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
         (setup,) = [event for event in events if event["type"] == "workspace.setup"]
         assert setup["stdout_tail"] == "setup-out\n" and setup["stderr_tail"] == "setup-err\n"
         if exit_code:
-            assert "setup-out" in events[-1]["summary"] and command in events[-1]["summary"]
+            (end,) = [event for event in events if event["type"] == "session.stop"]
+            assert "setup-out" in end["summary"] and command in end["summary"]
     out, err = capsys.readouterr()
     shown = out if exit_code else err
     if exit_code:

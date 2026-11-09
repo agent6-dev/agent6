@@ -414,12 +414,16 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             mcp_manager=mcp_manager,
             session_net=session_net,
             command_access=access,
+            execution_id=execution_id,
             rm_role=session.rm_role,
             worktree_git_dir=inputs.worktree_git_dir,
         )
         curator = tools.curator
         dispatcher = tools.dispatcher
         cfg = tools.cfg
+        if not console_stream and not inputs.tui_enabled:
+            for line in policy.session_policy(layout.session_dir).environment:
+                reporter.note(line)
 
         # Before the chain exists: what the setup command leaves untracked is the workspace's
         # environment, so every commit leaves it out as it does the operator's files.
@@ -569,7 +573,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         loop_log(f"[agent6] LOOP: aborting -- {unready.splitlines()[0]}")
                         events.emit(
                             "session.stop",
-                            execution_id=wf.execution_id,
+                            execution_id=dispatcher.execution_id,
                             reason="setup_command_failed",
                             summary=unready,
                             turns=0,

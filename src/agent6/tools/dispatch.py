@@ -104,6 +104,7 @@ class ToolDispatcher:
             effective command policy; None leaves them unwired.
         findings: The session's findings reader behind `list_findings`; None refuses the tool.
         command_access: Prepared commands owned by this dispatcher; None selects local one-shots.
+        execution_id: The lifecycle's identity, or None to allocate one before setup.
         session_net: The run's session network; None makes the dispatcher's own.
     """
 
@@ -125,12 +126,15 @@ class ToolDispatcher:
         session_dir: pathlib.Path | None = None,
         findings: Callable[[], results.FindingsResult] | None = None,
         command_access: command_tools.JailAccess | None = None,
+        execution_id: str | None = None,
         session_net: jail.SessionNetwork | None = None,
         shared_writes: tuple[pathlib.Path, ...] = (),
     ) -> None:
         self._root = root.resolve()
         self.verify_tree: Callable[[], str] = self._verification_tree
-        self.execution_id: str | None = None
+        self._execution_id = execution_id or uuid.uuid4().hex
+        self.target_id: str | None = None
+        self._closed = False
         self.last_verification: evidence.VerificationEvidence | None = None
         self.verify_withheld = False
         self._config = config
@@ -236,6 +240,26 @@ class ToolDispatcher:
         self._index_lock = threading.Lock()
         # Resolved once on first use, a disk scan of the configured skill dirs.
         self._skills_cache: skills.ResolvedSkills | None = None
+        self._record_target(self.execution_target)
+
+    @property
+    def execution_id(self) -> str:
+        """The execution identity, assigned before setup can run."""
+        return self._execution_id
+
+    @execution_id.setter
+    def execution_id(self, value: str) -> None:
+        if value != self._execution_id:
+            self._execution_id = value
+            self._record_target(self.execution_target)
+
+    def _record_target(self, target: kinds.ExecutionTarget | None) -> None:
+        """Assign a host evidence reference, not an inferred launcher instance."""
+        self.target_id = None
+        if target is not None:
+            self.target_id = uuid.uuid4().hex
+            stamp = evidence.target_record(self.target_id, self.execution_id, target)
+            self._emit("execution.target", **evidence.TARGET.dump_python(stamp, mode="json"))
 
     @property
     def session_id(self) -> str:
@@ -486,19 +510,51 @@ class ToolDispatcher:
             self._shells.settle()
 
     def close(self) -> None:
-        """Stop the background commands and close the jail session; idempotent."""
-        if self._shells is not None:
-            self._shells.stop_all()
-        if self._command_access is not None:
-            error = self._command_access.close()
+        """Stop owned jobs and record settlement separately from environment lifecycle."""
+        if self._closed:
+            return
+        error = "job settlement not confirmed"
+        try:
+            try:
+                if self._shells is not None:
+                    self._shells.stop_all()
+            finally:
+                detail = self._command_access.close() if self._command_access is not None else ""
+            error = detail
+            self._closed = True
+        finally:
+            if self._own_session_net is not None:
+                self._own_session_net.close()
+                self._own_session_net = None
+            if self._command_tmp is not None:
+                self._command_tmp.cleanup()
+                self._command_tmp = None
             if error:
                 self._emit("jail.degraded", detail=error)
-        if self._own_session_net is not None:  # never the run's; that is its own to close
-            self._own_session_net.close()
-            self._own_session_net = None
-        if self._command_tmp is not None:
-            self._command_tmp.cleanup()
-            self._command_tmp = None
+            if self.target_id is not None:
+                reason = error or (
+                    ""
+                    if self.execution_target is not None
+                    else "No session-wide settlement observation for one-shot commands."
+                )
+                self._emit(
+                    "execution.jobs",
+                    execution_id=self.execution_id,
+                    target_id=self.target_id,
+                    outcome="unknown" if reason else "settled",
+                    reason=reason,
+                )
+                target = self.execution_target
+                local = target is None or target.transport == "local"
+                self._emit(
+                    "execution.environment",
+                    execution_id=self.execution_id,
+                    target_id=self.target_id,
+                    outcome="not_applicable" if local else "unknown",
+                    reason="Local host lifecycle is not managed by agent6."
+                    if local
+                    else "No lifecycle observation recorded.",
+                )
 
     def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
         """Adopt a verify command mid-run, once a gateless run's tree has materialized.
@@ -617,6 +673,7 @@ class ToolDispatcher:
         record = evidence.VerificationEvidence(
             verify_id=uuid.uuid4().hex,
             execution_id=self.execution_id,
+            target_id=self.target_id if self.execution_target is not None else None,
             cmd=argv,
             tree_before=self.verify_tree() or None,
             tree_after=None,
@@ -637,6 +694,7 @@ class ToolDispatcher:
             call_id=self._gating_call_id(),
             verify_id=record.verify_id,
             execution_id=record.execution_id,
+            target_id=record.target_id,
             tree_before=record.tree_before,
             cmd=list(argv),
             scoped=record.scoped,
@@ -650,11 +708,13 @@ class ToolDispatcher:
             if not self._config.harness.verify_command:
                 raise tool_errors.ToolError("no verify command configured")
             self._approve_command("run_verify_command", argv)
+            access = self._jail_access("verify_command")
+            record = dataclasses.replace(record, target_id=self.target_id)
             res = command_tools.run_argv_in_jail(
                 argv,
                 label="verify_command",
                 timeout_s=timeout_s,
-                access=self._jail_access("verify_command"),
+                access=access,
             )
         except (tool_errors.ToolError, KeyboardInterrupt) as exc:
             outcome = "interrupted" if isinstance(exc, KeyboardInterrupt) else "unavailable"
@@ -745,7 +805,12 @@ class ToolDispatcher:
             label="setup_command",
             access=self._jail_access("setup_command"),
         )
-        self._emit("workspace.setup", **kinds.workspace_setup_fields(res))
+        self._emit(
+            "workspace.setup",
+            execution_id=self.execution_id,
+            target_id=self.target_id,
+            **kinds.workspace_setup_fields(res),
+        )
         return res
 
     def _approve_command(self, name: str, argv: tuple[str, ...]) -> None:
@@ -1107,6 +1172,17 @@ class ToolDispatcher:
             return self._command_access
         try:
             policy = self._jail_policy(())
+            self._record_target(
+                kinds.ExecutionTarget(
+                    transport="local",
+                    host_root=policy.cwd,
+                    command_root=policy.cwd,
+                    user=str(os.getuid()),
+                    home=dict(policy.env).get("HOME"),
+                    environment=kinds.ExecutionEnvironment(policy.env),
+                    controls=target_policy.effective_controls(self._config, self.isolation),
+                )
+            )
             return command_tools.JailAccess(
                 policy=policy, session=None, grants=self._grants, network=self._net_for(policy)
             )

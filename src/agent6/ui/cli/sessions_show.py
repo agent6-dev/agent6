@@ -30,6 +30,7 @@ from agent6.viewmodel import (
     format,
     listing,
     policy,
+    receipt,
     scan_session_log,
     summarize_session_dir,
     tail,
@@ -346,6 +347,7 @@ class StatusJSON(TypedDict):
     plan_cap: float
     unattended_questions: int
     setup_output: str | None
+    environment_evidence: dict[str, Any]
     usd_partial: bool | None
     source_session_id: str | None
     parent_session_id: str | None
@@ -403,6 +405,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         plan_cap: The subscription points cap.
         unattended_questions: Questions answered empty because nobody was attached.
         setup_output: Retained setup output, or null when absent.
+        environment_evidence: Recorded targets, setup and lifecycle observations.
         usd_partial: Whether unpriced usage makes spend a lower bound, or null without a cost.
         source_session_id: The source session used by run --from, or null.
         parent_session_id: The fork parent, or null.
@@ -502,6 +505,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "plan_cap": scan.plan_cap,
             "unattended_questions": scan.unattended_questions,
             "setup_output": scan.setup_output or None,
+            "environment_evidence": receipt.environment_dict(scan),
             # An under-estimate when some spend was unpriced; the text render marks it too.
             "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
             "source_session_id": manifest.source_session_id,
@@ -555,7 +559,10 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         f"preset:     {manifest.harness.preset or '-'}"
         + "".join(f"\nmodels:     {line}" for line in policy.model_lines(manifest))
     )
-    print(f"status:     {state}{pid_note}")
+    print(
+        terminal.scrub_terminal_controls(receipt.environment_summary(scan))
+        + f"\nstatus:     {state}{pid_note}"
+    )
     print(f"turn:       {scan.turn if scan.turn is not None else '-'}")
     print(
         f"last event: {scan.last_type or '-'}"

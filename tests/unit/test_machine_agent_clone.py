@@ -332,8 +332,11 @@ reason = "setup failed"
         assert outcomes[0].duration_s == 2.5
     logs = list((tmp_path / "logs").glob("*/logs.jsonl"))
     assert len(logs) == 1
-    event = json.loads(logs[0].read_text())
+    target, event = [json.loads(line) for line in logs[0].read_text().splitlines()]
+    assert target["type"] == "execution.target"
     assert event["type"] == "workspace.setup"
+    assert event["target_id"] == target["target_id"]
+    assert event["execution_id"] == target["execution_id"]
     assert event["cmd"] == list(expected_setup)
     assert event["exit_code"] == setup_exit
     assert event["duration_s"] == 2.5
