@@ -333,6 +333,38 @@ Verification inference accepts an executable-availability callable: active runs 
 Mid-run gate adoption uses the same lookup.
 Source discovery still reads the host workspace.
 
+## Container discovery
+
+`sandbox/container.py::discover` accepts an internal frozen `ContainerOptions`, not a public config model.
+It returns a `ContainerDiscovery` with an exec prefix, unprepared `ExecutionTarget` facts and unexpanded `remote_env` metadata.
+No application path activates it or starts a container.
+Config conversion belongs in app/tools, not sandbox.
+
+- A nonempty `exec` bypasses runtime and definition discovery; each argv element is preserved unchanged, including sudo wrappers and an operator-installed devcontainer CLI.
+  The command root is the `workspace` override or the host root; runtime, container and user identities remain unknown.
+- Otherwise, an explicit `runtime` prefix selects the CLI; without one, discovery searches Docker then Podman found on PATH.
+  Runtime executables resolve against the caller's cwd/PATH and become absolute before queries change cwd; remaining explicit prefix arguments stay unchanged.
+  Automatic discovery queries symlink and hardlink aliases of one executable once, keeping the first name.
+  Distinct wrapper executables remain separate; select an explicit `runtime` when wrappers reach the same backend.
+  Each query appends fixed argv to that prefix, without a shell, automatic sudo or the devcontainer CLI.
+- Running queries are `ps --quiet --no-trunc --filter label=devcontainer.local_folder=<root>` for the lexical and resolved host roots, deduplicated when equal.
+  IDs are deduplicated within a runtime and sorted; several matches across either runtime refuse with their IDs rather than picking one.
+  A missing runtime or failed query is a refusal, not an empty result or permission to skip that runtime.
+- Only when no running match exists, `ps -a` with the same flags finds labelled containers for the no-running diagnostic.
+  It never selects a stopped container or starts one.
+  Existence of `.devcontainer.json` or `.devcontainer/devcontainer.json` also improves that diagnostic; contents are never opened, and editor-only custom definitions may be unobservable.
+- One match gets `inspect --type container <id>`; pydantic validates the JSON shape, then discovery checks identity, running state and workspace label before selection.
+  `devcontainer.metadata` accepts an object or ordered array of objects; the last supplied `remoteUser` wins over the runtime's `Config.User`, whose empty value means container UID 0.
+  `remoteEnv` merges in metadata order and stays unexpanded data, outside the target's execution environment.
+  Preparation must resolve supported container-only substitutions and refuse host or unsupported substitutions before use.
+- Bind sources resolve host aliases and parent mounts to candidate command roots.
+  The deepest destination mount covering a candidate must map back to the host workspace; a shadowed path or several different mappings refuses.
+  An absolute `workspace` override takes precedence and creates no mount.
+
+The derived prefix is `<runtime> exec -i --user <selected-user> <id>`, never a tty command.
+Discovery does not execute it, install a launcher, prove a live shared-tree mapping, observe HOME or acquire lifecycle ownership.
+The [security boundary](security.md#container-discovery-boundary) defines query bounds and runtime authority.
+
 ## Jail supervisor protocol
 
 `sandbox/jail_session.py` owns one serving launcher per run at every local isolation level.

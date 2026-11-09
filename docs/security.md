@@ -722,6 +722,28 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 - Front-ends render `machine.notify` as an overlay, and `attach` / TUI call `notify-send` with fixed argv, so a model message is inert data.
 - The out-of-band hook `[machine.notify].on_event` runs an operator argv on the host with the minimal `hook_env` env plus `AGENT6_MACHINE_*`.
 
+### Container discovery boundary
+
+`sandbox/container.py` is an internal, read-only discovery boundary, not an activated execution transport.
+Its host runtime CLI has the operator's authority, including daemon socket access and any privilege wrapper the operator supplies.
+Discovery never adds `sudo -n`; a refused socket query names `container.runtime` and the docker group rather than retrying with more privilege.
+The operator must trust the runtime executable, its context and its configuration; a remote daemon's mount paths do not prove a shared host tree.
+
+Only `ps` and `inspect` run, with fixed flags, a workspace label value and validated full hexadecimal container IDs.
+No model-chosen runtime flag enters this path.
+Each query has a 10-second deadline and a 1 MiB combined stdout/stderr cap; a failed query refuses instead of returning no matches.
+Discovery considers at most two runtime executables and two host-root spellings, and queries stopped labels only after no running match.
+The subprocess has no shell or stdin, starts outside the checkout, and inherits a curated host environment with runtime connection/context settings but without registered provider keys.
+Timeout or output overflow kills the owned client process group and waits at most one more second for its exit; this does not claim control over daemon-side work or privileged descendants that the host user cannot signal.
+
+Inspect JSON and the `devcontainer.metadata` label are untrusted pydantic inputs, not executable configuration.
+Validation errors omit their input values, including in exception chains.
+The selected user becomes one runtime argument; metadata environment values remain unexpanded and are not applied to a process.
+All other metadata fields, including lifecycle commands, are ignored.
+Repository definition files are checked only for existence, never read or parsed.
+A nonempty manual exec prefix is returned byte-for-byte without invoking it or discovery, and confers no identity, mapping proof or stop authority.
+There is no launcher transfer, model-command execution, mount creation, container start or container stop in discovery.
+
 ### 12. Host-side subprocess allowlist
 
 Every child process whose argv depends on model output runs through `run_in_jail`, `spawn_in_jail` or the prepared `JailSession` supervisor channel ([Sandbox](#2-sandbox)).
@@ -736,6 +758,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `vcs/git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
 - `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
+- `sandbox/container.py`: bounded, read-only `ps` and `inspect` queries through an operator-owned runtime prefix ([Container discovery boundary](#container-discovery-boundary)); no exemption for container command execution.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `sandbox.isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` `sandbox.isolation` level.
 - `sandbox/jail_session.py`: the serving launcher transport at every local isolation level; `sandbox/jail_jobs.py` persists its responses without spawning command processes.

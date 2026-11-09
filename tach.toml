@@ -712,6 +712,10 @@ path = "agent6.sandbox.detect"
 depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.landlock"]
 
 [[modules]]
+path = "agent6.sandbox.container"
+depends_on = ["agent6.child_env", "agent6.kinds", "agent6.sandbox"]
+
+[[modules]]
 path = "agent6.journal_tail"
 depends_on = []
 

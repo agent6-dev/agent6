@@ -333,6 +333,7 @@ banned-from = [
     "agent6.providers.transport",
     "agent6.providers.wire",
     "agent6.review_records",
+    "agent6.sandbox.container",
     "agent6.sandbox.detect",
     "agent6.sandbox.jail",
     "agent6.sandbox.jail_jobs",

@@ -43,6 +43,7 @@ ALLOWED = {
     "providers/claude_code_session.py",
     "providers/claude_code.py",
     "providers/token_command.py",
+    "sandbox/container.py",  # bounded ps/inspect discovery, never model-command execution
     "sandbox/detect.py",
     "sandbox/jail.py",
     "sandbox/jail_session.py",
