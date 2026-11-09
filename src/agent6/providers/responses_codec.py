@@ -435,6 +435,7 @@ def consume_stream(  # noqa: PLR0912
     Raises:
         ProviderError: A failed response or an unknown terminal status.
     """  # `error_of` builds the ProviderError named above
+    summary_pieces = 0
     for _event, data in stream_lifecycle.sse_events(resp):
         clock.mark_data()
         data_str = data.strip()
@@ -457,9 +458,15 @@ def consume_stream(  # noqa: PLR0912
             piece = str(evt.get("delta", ""))
             if piece:
                 clock.mark_output()
+                summary_pieces += 1
                 if thinking_delta_callback is not None:
                     with contextlib.suppress(Exception):
                         thinking_delta_callback(piece)
+        elif kind == "response.reasoning_summary_part.added" and summary_pieces:
+            # A new part is a new paragraph; the parts' own text carries no separator.
+            if thinking_delta_callback is not None:
+                with contextlib.suppress(Exception):
+                    thinking_delta_callback("\n\n")
         elif kind == "response.output_item.done":
             clock.mark_output()
             state.items.append(evt.get("item"))

@@ -252,7 +252,11 @@ def test_a_stream_feeds_the_callbacks_and_settles_on_the_terminal_response() -> 
     lines: list[str] = []
     lines += _evt({"type": "response.created", "response": {"id": "resp_1"}})
     lines += _evt({"type": "response.output_text.delta", "delta": "hel"})
+    part = {"type": "response.reasoning_summary_part.added", "part": {"type": "summary_text"}}
+    lines += _evt(part)
     lines += _evt({"type": "response.reasoning_summary_text.delta", "delta": "think"})
+    lines += _evt(part)
+    lines += _evt({"type": "response.reasoning_summary_text.delta", "delta": "more"})
     lines += _evt({"type": "response.output_text.delta", "delta": "lo"})
     lines += _evt({"type": "response.output_item.done", "item": _message("hello")})
     lines += _evt(
@@ -281,7 +285,8 @@ def test_a_stream_feeds_the_callbacks_and_settles_on_the_terminal_response() -> 
         )
     assert seen["url"] == f"{_BASE}/responses" and seen["body"]["stream"] is True
     assert seen["headers"]["accept"] == "text/event-stream"
-    assert (text, thinking) == (["hel", "lo"], ["think"])
+    # The second summary part starts a paragraph: the headings no longer run together.
+    assert (text, thinking) == (["hel", "lo"], ["think", "\n\n", "more"])
     assert resp.text == "hello" and resp.stop_reason == "end_turn"
     assert budget.snapshot().output_total == 9
 
