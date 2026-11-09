@@ -359,7 +359,9 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
     repo = _seeded_repo(tmp_path)
     chain = git_read.chain_ref_for("r-unv")
     subprocess.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
-    out = _end_output(tmp_path, "r-unv", unverified, capsys, manifest, cwd=repo)
+    out = _end_output(
+        tmp_path, "r-unv", unverified, capsys, {**manifest, "session_id": "r-unv"}, cwd=repo
+    )
     assert "the gate is red" not in out
     assert "no verify ran this execution" in out
 
@@ -782,7 +784,14 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
             ],
         )
         layout.manifest_path.write_text(
-            json.dumps({"mode": "run", "session_id": session_id, "base_branch": "main"}),
+            json.dumps(
+                {
+                    "mode": "run",
+                    "session_id": session_id,
+                    "base_branch": "main",
+                    "base_sha": git_read.status(repo).head_sha,
+                }
+            ),
             encoding="utf-8",
         )
         if session_id == "r-401-committed":
@@ -1501,6 +1510,7 @@ def test_a_run_that_left_no_tree_of_its_own_gets_no_git_footer_and_no_verify_err
         "session_id": "nochain",
         "run_branch": None,
         "base_branch": "main",
+        "base_sha": head,
     }
     out = _end_footer(tmp_path, repo, "nochain", harness, capsys, verification="unverified")
     assert "nothing verified" not in out and "--steer" not in out

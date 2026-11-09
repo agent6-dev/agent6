@@ -258,6 +258,7 @@ def _left_no_tree_of_its_own(
     manifest: sessions_manifest.SessionManifest | None,
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
+    hidden: frozenset[str],
 ) -> bool:
     """Return whether the run left no tree of its own to inspect or verify.
 
@@ -265,18 +266,21 @@ def _left_no_tree_of_its_own(
         manifest: The session's manifest, or None when it cannot be read.
         layout: The session's layout.
         cwd: The checkout.
+        hidden: The run's hidden paths inside the repository.
 
     Returns:
-        True with no chain commit under harness git control; under model git control,
-        True with HEAD at the run's base and no modified tracked file.
+        True only with no run commits, HEAD at the known base and no visible changes.
     """
-    if manifest is None or manifest.git_control != "model":
-        return git_read.chain_tip(cwd, git_read.chain_ref_for(layout.session_id)) is None
+    if manifest is None or not manifest.base_sha:
+        return False
     try:
-        st = git_read.status(cwd)
+        if wire.commits_ref(manifest, cwd):
+            return False
+        exclude = sessions_layout.read_untracked_at_start(layout.session_dir) | hidden
+        st = git_read.status(cwd, exclude=exclude)
     except errors.GitError:
         return False
-    return bool(manifest.base_sha) and st.head_sha == manifest.base_sha and not st.modified_count
+    return st.head_sha == manifest.base_sha and st.is_clean
 
 
 def _print_unverified(
@@ -285,6 +289,7 @@ def _print_unverified(
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
     reporter: app_reporter.Reporter,
+    hidden: frozenset[str],
 ) -> None:
     """Say what is missing after a gated end nothing observed.
 
@@ -297,13 +302,14 @@ def _print_unverified(
         layout: The session's layout.
         cwd: The checkout.
         reporter: Receives the lines.
+        hidden: The run's hidden paths inside the repository.
     """
     if result.verification != "unverified":
         return
     manifest = None
     with contextlib.suppress(sessions_manifest.ManifestError):
         manifest = sessions_manifest.read_manifest(layout.session_dir)
-    if _left_no_tree_of_its_own(manifest, layout, cwd):
+    if _left_no_tree_of_its_own(manifest, layout, cwd, hidden):
         return
     reporter.out(
         "\nnothing verified the final tree: no verify ran this execution, or edits landed"
@@ -437,7 +443,7 @@ def print_session_end(
         reporter.out("    - run with --disable-sandbox")
     _print_next_session(layout, completed=result.completed, reporter=reporter)
     _print_red_gate(result, layout=layout, reporter=reporter)
-    _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter)
+    _print_unverified(result, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
     _print_stale_gate(result, reporter=reporter)
     _print_settled(result, layout=layout, reporter=reporter)
     reporter.out("")
@@ -481,7 +487,7 @@ def _print_run_branch_footer(
         ):
             merged_into = manifest.merged.into or base_branch
     if result.completed and manifest is not None and manifest.git_control == "model":
-        _print_model_git_footer(manifest, layout=layout, cwd=cwd, reporter=reporter)
+        _print_model_git_footer(manifest, layout=layout, cwd=cwd, reporter=reporter, hidden=hidden)
     elif result.completed and merged_into:
         # auto_merge landed it, and auto_prune may have deleted the branch.
         reporter.out(f"\nchanges merged into {merged_into}")
@@ -533,6 +539,7 @@ def _print_model_git_footer(
     layout: sessions_layout.SessionLayout,
     cwd: pathlib.Path,
     reporter: app_reporter.Reporter,
+    hidden: frozenset[str],
 ) -> None:
     """Say where a model-controlled run's work is: an imported lane's ref, else the checkout.
 
@@ -541,22 +548,28 @@ def _print_model_git_footer(
         layout: The session's layout.
         cwd: The checkout.
         reporter: Receives the lines.
+        hidden: The run's hidden paths inside the repository.
     """
-    if _left_no_tree_of_its_own(manifest, layout, cwd):
+    if _left_no_tree_of_its_own(manifest, layout, cwd, hidden):
         return
     current = ""
     head = ""
     modified = 0
+    untracked = 0
     with contextlib.suppress(errors.GitError):
-        st = git_read.status(cwd)
+        exclude = sessions_layout.read_untracked_at_start(layout.session_dir) | hidden
+        st = git_read.status(cwd, exclude=exclude)
         current = st.branch
         head = st.head_sha[:12]
         modified = st.modified_count
+        untracked = st.untracked_count
     where = wire.commits_ref(manifest, cwd) or current or head or "the current checkout"
     reporter.out(f'\ngit was model-controlled ([git].control = "model"); its work is on {where}')
     if modified:
         reporter.out(f"  tracked files with uncommitted changes: {modified}")
-    reporter.out("  inspect it with plain git (log/diff); sessions merge does not apply")
+    if untracked:
+        reporter.out(f"  new untracked files: {untracked}")
+    reporter.out("  inspect it with plain git (status/log/diff); sessions merge does not apply")
 
 
 def _print_left_out(

@@ -463,6 +463,8 @@ The verify command is the success gate.
   `harness.verify_when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
 - With `harness.verify_at_start = true` and `harness.verify_when` set to `"finish"` or `"turn"`, a fresh run runs the gate once before its first turn, so a gate red at the base is known as that.
 - Under `finish` or `turn`, a red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
+- An unverified run's end guidance counts visible uncommitted changes and new untracked files as work, regardless of Git control or commit policy.
+  Files untracked at start, hidden paths and ignored output stay excluded.
 - The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, a red base says the gate was red there too.
 - A fork starts its own log without the parent's baseline; its base is the commit it forked from.
 - [`[harness]`](config.md#harness) has the inference order and `verify_when`.
