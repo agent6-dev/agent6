@@ -40,8 +40,12 @@ def test_every_command_runner_accepts_the_sandbox_opt_out(argv: list[str]) -> No
     """The operator's explicit sandbox opt-out has the same spelling on every runner."""
     from agent6.ui.cli import parser as cli_parser
 
-    args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(argv))
+    parser = cli_parser.build_parser()
+    args = parser.parse_args(cli_parser._inject_default_verb(argv))
     assert args.disable_sandbox is True
+    default_argv = [arg for arg in argv if arg != "--disable-sandbox"]
+    defaults = parser.parse_args(cli_parser._inject_default_verb(default_argv))
+    assert defaults.disable_sandbox is False
 
 
 def test_from_args_reads_both_flags() -> None:

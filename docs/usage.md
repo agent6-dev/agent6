@@ -447,7 +447,7 @@ The verify command is the success gate.
 ## Run options
 
 - `--disable-sandbox`: run commands on the host without filesystem, syscall or namespace confinement; use only on a disposable or already-isolated machine.
-  Available on `run`, `resume`, `fork`, `plan`, `ask`, `exec` (including `--new`) and `machine run`.
+  Commands that can run commands share this opt-out: `run`, `resume`, `fork`, `plan`, `ask`, `exec` (including `--new`) and `machine run`.
   Place it before the session or command in `exec`; it overrides recorded isolation for that command only.
   `AGENT6_DISABLE_SANDBOX=1` applies the same opt-out across verbs.
 
