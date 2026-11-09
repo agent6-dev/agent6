@@ -245,8 +245,8 @@ def test_a_command_started_mid_sweep_window_is_spared(
 
 def _launcher_pids(shells: background.BackgroundShells, shell_id: str) -> set[int]:
     shell = shells._get(shell_id)  # pyright: ignore[reportPrivateUsage]
-    assert isinstance(shell.job, jail_jobs.BackgroundJob), "these pin the per-command launcher"
-    return {shell.job.pid}
+    assert isinstance(shell.job, jail_jobs.SessionJob), "these pin the per-command launcher"
+    return {shell.job._session._proc.pid}  # pyright: ignore[reportPrivateUsage]
 
 
 def _alive(pid: int) -> bool:
@@ -285,8 +285,7 @@ def test_a_detached_child_of_a_background_command_dies_with_the_run(
 ) -> None:
     """`stop` sweeps the `setsid` child a background command left, under `partial` too.
 
-    `stop` kills the launcher's group, which by definition misses a child that left it, and
-    `run_in_jail`'s sweep can never catch it either: by then it is not new.
+    A process-group kill alone cannot reach a child that left the group.
     """
     beat = tmp_path / "beat"
     loop = f"for i in $(seq 60); do echo x >> {beat}; sleep 0.2; done"
@@ -477,7 +476,7 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: pathlib.Path) -> None:
     shells = background.BackgroundShells(tmp_path / "shells")
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     shell = shells._get(view.id)  # pyright: ignore[reportPrivateUsage]
-    real, shell.job = shell.job, cast("jail_jobs.BackgroundJob", _Unconfirmed())
+    real, shell.job = shell.job, cast("jail_jobs.SessionJob", _Unconfirmed())
     try:
         got = shells.stop(view.id)
     finally:
@@ -496,7 +495,7 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     """
     from agent6.tools import background as bg
 
-    def refuses(*_a: object, **_k: object) -> jail_jobs.BackgroundJob:
+    def refuses(*_a: object, **_k: object) -> jail_jobs.SessionJob:
         raise jail.JailUnavailableError("no launcher today")
 
     monkeypatch.setattr(jail_jobs, "start_in_jail", refuses)
@@ -509,14 +508,10 @@ def test_a_command_that_failed_to_start_is_not_listed_as_running(
     assert bg.roster_from_dir(root) == [], "a command that never started is listed on disk"
 
 
-def test_a_platform_without_proc_still_starts_a_background_command(
+def test_background_jobs_need_no_host_proc_scan(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A background command under `isolation = "none"` starts and is tracked without /proc.
-
-    The escapee sweep is a /proc mechanism and macOS resolves to `none`; a /proc read while
-    taking the descendant snapshot must not fail the start of a command already spawned.
-    """
+    """The job's supervisor handles descendants without a host-side /proc scan."""
     from agent6.sandbox import jail as jail_mod
 
     real_iterdir = pathlib.Path.iterdir
@@ -541,8 +536,7 @@ def test_a_platform_without_proc_still_starts_a_background_command(
 def test_an_unsandboxed_commands_exit_code_reaches_another_process(tmp_path: pathlib.Path) -> None:
     """Under `none`, the observed exit code is written down for other processes.
 
-    There is no launcher to write it, so the job records the code on the first observed
-    exit; otherwise `/shells` elsewhere reads the command as still running for the run's life.
+    The host persists the supervisor response when it first observes completion.
     """
     shells = background.BackgroundShells(tmp_path / "shells")
     done = shells.start(("/bin/sh", "-c", "exit 42"), _policy_for(tmp_path, "none"))
@@ -569,17 +563,13 @@ def test_a_stopped_unsandboxed_command_records_its_ending(tmp_path: pathlib.Path
 def test_a_stopped_jailed_command_records_its_ending(
     shells: background.BackgroundShells, tmp_path: pathlib.Path
 ) -> None:
-    """A stop of a jailed command is recorded for other processes, without inventing a code.
-
-    The stop SIGKILLs the launcher before it can write the exit code, so the record says the
-    command was stopped rather than claiming a number nobody saw.
-    """
+    """A stop persists the command's exit code from the supervisor response."""
     view = shells.start(("/bin/sh", "-c", "sleep 300"), _policy_for(tmp_path))
     assert _wait_state(shells, view.id, "running") == "running"
     shells.stop(view.id)
     lines = background.roster_from_dir(tmp_path / "shells")
     assert not any("still running" in line for line in lines), lines
-    assert any(f"[{view.id}] stopped" in line for line in lines), lines
+    assert any(f"[{view.id}] exited 137" in line for line in lines), lines
 
 
 def test_stopping_an_already_exited_command_keeps_its_exit_code(
@@ -595,32 +585,6 @@ def test_stopping_an_already_exited_command_keeps_its_exit_code(
     shells.stop_all()
     lines = background.roster_from_dir(tmp_path / "shells")
     assert any(f"[{view.id}] exited 42" in line for line in lines), lines
-
-
-def test_an_unreadable_result_is_never_clobbered_by_a_stop(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The stop record writes only over a result it read as empty.
-
-    A failed read says nothing about what is on disk, so writing anyway would replace a real
-    exit code with "stopped" on the strength of that failure.
-    """
-    outcome = tmp_path / "bg"
-    outcome.mkdir()
-    result = outcome / "result.json"
-    result.write_text('{"returncode": 42}', encoding="utf-8")
-
-    real_read = pathlib.Path.read_text
-
-    def _unreadable(self: pathlib.Path, *a: object, **k: object) -> str:
-        if self == result:
-            raise OSError(5, "Input/output error")
-        return real_read(self, *a, **k)  # pyright: ignore[reportArgumentType]
-
-    monkeypatch.setattr(pathlib.Path, "read_text", _unreadable)
-    jail_jobs.write_stopped(outcome)
-    monkeypatch.undo()
-    assert result.read_text(encoding="utf-8") == '{"returncode": 42}'
 
 
 def test_settle_records_an_ending_nobody_asked_about(
@@ -651,9 +615,7 @@ def test_an_unsandboxed_background_command_survives_a_siblings_stop(
 ) -> None:
     """Stopping one unsandboxed background command leaves its sibling running.
 
-    The sweep spares every launcher agent6 deliberately started, the unsandboxed branch's
-    included; an unregistered sibling would be swept, and its next status would read
-    poll() over a reaped pid, which CPython reports as returncode 0.
+    Each job belongs to its own supervisor, even without confinement.
     """
     shells = background.BackgroundShells(tmp_path / "shells")
     first = shells.start(("/bin/sh", "-c", "echo one; sleep 300"), _policy_for(tmp_path, "none"))
@@ -705,18 +667,12 @@ def test_the_disk_roster_is_in_start_order(tmp_path: pathlib.Path) -> None:
 class _HostSession:
     """The JailSession calls a SessionJob makes, over a real host pid."""
 
-    def open_job(self, pid: int, before: kinds.ChildSnapshot) -> None:
-        pass
-
-    def status_background(self, pid: int) -> jail_session.BackgroundStatus:
+    def status_background(self, handle: str) -> jail_session.BackgroundStatus:
         return jail_session.BackgroundStatus(running=True, returncode=None, error="")
 
-    def stop_background(self, pid: int) -> jail_session.Stopped:
-        os.kill(pid, signal.SIGKILL)
+    def stop_background(self, handle: str) -> jail_session.Stopped:
+        os.kill(int(handle), signal.SIGKILL)
         return jail_session.Stopped(returncode=-9, survivors=frozenset())
-
-    def sweep_for(self, pid: int, before: kinds.ChildSnapshot) -> frozenset[int]:
-        return frozenset()
 
 
 def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: pathlib.Path) -> None:
@@ -730,12 +686,11 @@ def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: pathlib.Path
         shells = background.BackgroundShells(tmp_path / "shells")
         handoff = kinds.BackgroundHandoff(
             argv=("sleep", "60"),
-            pid=proc.pid,
+            handle=str(proc.pid),
             log=str(tmp_path / "logs" / "gone.log"),
             stdout="",
             stderr="",
             duration_s=900.0,
-            before=kinds.ChildSnapshot(1, frozenset()),
         )
         with pytest.raises(background.BackgroundError):
             shells.adopt(handoff, session=cast(Any, _HostSession()))

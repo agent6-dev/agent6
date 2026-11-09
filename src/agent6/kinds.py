@@ -256,19 +256,6 @@ class CommandResult:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class ChildSnapshot:
-    """The agent's children when a command started.
-
-    Attributes:
-        seq: The command's start order in the session, so a stop can bound its sweep.
-        pids: The children's pids.
-    """
-
-    seq: int
-    pids: frozenset[int]
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
 class BackgroundHandoff:
     """A command that outlived its check-in and is still running.
 
@@ -277,21 +264,19 @@ class BackgroundHandoff:
 
     Attributes:
         argv: The command.
-        pid: Its pid.
+        handle: Its launcher-instance-scoped job handle.
         log: Where its output goes.
         stdout: What it printed before the hand-off.
         stderr: What it printed to stderr before the hand-off.
         duration_s: How long it had run at the hand-off.
-        before: The agent's children when it started, its stop's baseline.
     """
 
     argv: tuple[str, ...]
-    pid: int
+    handle: str
     log: str
     stdout: str
     stderr: str
     duration_s: float
-    before: ChildSnapshot
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

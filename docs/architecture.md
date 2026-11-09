@@ -314,16 +314,16 @@ The bound store's security rules are in [Security](security.md#8-secrets-and-con
 
 `sandbox/jail_session.py` owns one serving launcher per run at every local isolation level.
 `jail/src/session.rs` owns its newline-delimited JSON protocol on stdin and stdout.
-The initial policy selects `mode = "serve"`; after confinement setup, the launcher sends `{"ready":true,"protocol":1}`.
+The initial policy selects `mode = "serve"`; after confinement setup, the launcher sends `{"ready":true,"protocol":2}`.
 Python refuses malformed readiness or a different protocol version before sending any command.
 
 - Each `run`, `background`, `status` or `stop` request carries a positive, increasing `id`; its single response carries the same `id`.
 - Only one request may be active; Python is the command-channel writer, and the Rust serve loop is the response writer.
 - `{"kind":"cancel","id":N}` has no response of its own and applies only to the active request with that ID.
-  Cancellation requests early hand-back when `checkin_s > 0` and `log_dir` is set; otherwise it stops the active command's process group and returns its exit result.
+  Cancellation requests early hand-back when `checkin_s > 0` and `log_dir` is set; otherwise it stops the active job and returns its exit result.
 - Cancellation for any other ID is ignored, including one that races a completed request.
-- One nonblocking stdin reader belongs to the serve loop and is borrowed by the foreground command while it waits.
-  It consumes cancellation and EOF without waiting for the command deadline, and a partial frame never blocks command polling.
+- One nonblocking stdin reader belongs to the serve loop and is polled while it waits for the job supervisor.
+  It forwards cancellation and EOF over the private job channel without waiting for the command deadline; a partial frame never blocks command polling.
 - EOF stops the foreground command instead of handing it back, then ends the session and its background jobs.
   Malformed input also closes the session after command cleanup.
 
@@ -336,6 +336,20 @@ Startup diagnostics are surfaced once; the retained tail accompanies later proto
 Command stdout and stderr are captured separately from these protocol streams.
 Closing the session shuts stdin and discards pending response bytes while stderr keeps draining.
 Python waits up to 10 seconds for launcher exit before killing and reaping it.
+
+## Jail job ownership
+
+`jail/src/session.rs` resolves opaque handles in its own job table; handles combine a random launcher-instance identifier with the starting request's ID.
+Neither `status` nor `stop` accepts a command pid.
+`jail/src/jobs.rs` owns each job's private subreaper, control channel and retained stop response.
+The kernel reparents detached descendants to that job owner, so jobs and launchers sharing a PID namespace cannot claim each other's children.
+The [cleanup boundary and failure limits](security.md#owned-process-cleanup) apply under `full`, `partial` and `none`.
+
+`sandbox/jail_jobs.py` keeps the last terminal response and persists it on the host.
+An exit code received in status or stop remains authoritative after cleanup failure or transport loss.
+No completion response means an unknown outcome, even if the transport exits successfully.
+Closing a session discards unread command responses and reports unconfirmed cleanup if the supervisor does not exit cleanly.
+Host process snapshots are not part of the command-session lifecycle.
 
 ## Tool dispatch
 

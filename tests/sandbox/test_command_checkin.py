@@ -450,7 +450,7 @@ def test_command_channel_cancel_precedes_the_checkin(
         assert answer["id"] == 1
         if handback:
             assert answer["backgrounded"] is True
-            _send(proc, {"kind": "stop", "id": 2, "pid": answer["pid"]})
+            _send(proc, {"kind": "stop", "id": 2, "handle": answer["handle"]})
             assert _answer(proc)["stopped"] is True
         else:
             assert answer["returncode"] == 137 and not answer.get("backgrounded")

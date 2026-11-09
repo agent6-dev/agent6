@@ -82,7 +82,7 @@ class _Shell:
     id: str
     command: str
     dir: pathlib.Path
-    job: jail_jobs.BackgroundJob | jail_jobs.LocalJob | jail_jobs.SessionJob
+    job: jail_jobs.SessionJob
     # Opened before the command could exist: the one handle no jailed process can redirect.
     log_fd: int
     stopped: bool = False
@@ -164,7 +164,7 @@ class BackgroundShells:
         paths.mkdir_for_real_user(shell_dir)
         log_fd = self._open_log(shell_id)
         wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
-        job: jail_jobs.BackgroundJob | jail_jobs.LocalJob | jail_jobs.SessionJob
+        job: jail_jobs.SessionJob
         try:
             policy = policy_for(wrapped, (log_dir,))
             if session is None:
@@ -175,13 +175,10 @@ class BackgroundShells:
                 )
             else:
                 # The session is already confined; only the env comes from the policy.
-                # The baseline precedes the start: a sibling's reparented daemon is not this one's.
-                before = session.child_snapshot()
                 job = jail_jobs.SessionJob(
                     session,
                     session.start_background(wrapped, env=policy.env),
                     shell_dir,
-                    before=before,
                 )
         except (jail.JailUnavailableError, OSError) as exc:
             os.close(log_fd)
@@ -211,7 +208,7 @@ class BackgroundShells:
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
         paths.mkdir_for_real_user(shell_dir)
-        job = jail_jobs.SessionJob(session, handoff.pid, shell_dir, before=handoff.before)
+        job = jail_jobs.SessionJob(session, handoff.handle, shell_dir)
         command = shlex.join(handoff.argv)
         # The launcher created the log with O_EXCL|O_NOFOLLOW; this side never resolves it again.
         try:
@@ -250,20 +247,11 @@ class BackgroundShells:
         """
         meta = shell.dir / _META_NAME
         try:
-            # Written after the start: this file is the whole roster for another process.
-            # The host pid serves a stop from another process; a session command has none.
-            host = (
-                process.process_identity(shell.job.pid)
-                if isinstance(shell.job, (jail_jobs.LocalJob, jail_jobs.BackgroundJob))
-                else None
-            )
             meta.write_text(
                 json.dumps(
                     {
                         "id": shell.id,
                         "command": shell.command,
-                        "pid": host[0] if host else None,
-                        "pid_start": host[1] if host else None,
                     }
                 ),
                 encoding="utf-8",
@@ -493,8 +481,8 @@ def shells_text(session_dir: pathlib.Path) -> str:
 def shell_host_processes(root: pathlib.Path) -> list[process.ProcessIdentity]:
     """Return the live host processes the run's background commands recorded.
 
-    A command inside the session's namespaces records no host identity and dies with the
-    session. A stale record cannot target a recycled pid.
+    Only historical host-process records carry these identities. Supervisor-owned
+    jobs record no command pid. A stale record cannot target a recycled pid.
 
     Args:
         root: The run's shells dir.
@@ -568,10 +556,16 @@ def roster_from_dir(root: pathlib.Path) -> list[str]:
             continue
         code = record.get("returncode")
         if isinstance(code, int):
-            lines.append(f"[{d.name}] exited {code}: {command}")
+            detail = f" -- {record['error']}" if record.get("error") else ""
+            lines.append(f"[{d.name}] exited {code}: {command}{detail}")
         elif record.get("stopped"):
-            # A stop kills the launcher before it reports a code, so the stopper records the stop.
+            # Historical records can carry a stop without an observed exit code.
             lines.append(f"[{d.name}] stopped: {command}")
         else:
-            lines.append(f"[{d.name}] ended without a result: {command}")
+            ending = (
+                f"outcome unknown ({record['error']})"
+                if record.get("error")
+                else "ended without a result"
+            )
+            lines.append(f"[{d.name}] {ending}: {command}")
     return lines

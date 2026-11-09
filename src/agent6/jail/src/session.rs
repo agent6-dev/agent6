@@ -2,7 +2,9 @@
 // Copyright 2026 Eric Lesiuta
 //! Versioned, request-correlated supervisor protocol over standard streams.
 
-use std::collections::HashSet;
+use crate::jobs;
+use landlock::RulesetCreated;
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::num::NonZeroU64;
 use std::path::Path;
@@ -12,10 +14,10 @@ use serde::Deserialize;
 
 use crate::{default_memory_limit_mb, default_timeout, ChildSpec};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const FRAME_LIMIT: usize = 1024 * 1024;
 // Two 8 MiB captures, each byte escaped to at most six JSON bytes, plus metadata.
-const ANSWER_LIMIT: usize = 128 * 1024 * 1024;
+pub const ANSWER_LIMIT: usize = 128 * 1024 * 1024;
 
 /// One command to run against an already-established jail.
 // deny_unknown_fields, like Policy: a request naming a field this launcher
@@ -52,24 +54,19 @@ impl ChildRequest {
     }
 }
 
-/// What a serving launcher is asked to do. A backgrounded command's pid is
-/// namespace-local, so the launcher is the only process that can wait on it or
-/// signal it: `status` and `stop` name that pid and it does the work.
+/// Only handles issued by this supervisor may select a job record.
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 enum Request {
     /// Run to completion; answer with the result.
     Run(ChildRequest),
-    /// Start the command and answer at once, leaving it running. When stdin closes,
-    /// the PID namespace takes it down under `full`, and
-    /// `sweep_backgrounded` kills it at the other levels.
+    /// Start the command and retain ownership until stop or channel EOF.
     Background(ChildRequest),
     /// Report whether a backgrounded command is still running, reaping it and
     /// answering with its exit code once it is not.
-    Status { id: NonZeroU64, pid: i32 },
-    /// Kill a backgrounded command's process group, then reap it; in a PID
-    /// namespace, also sweep what the command left outside its group.
-    Stop { id: NonZeroU64, pid: i32 },
+    Status { id: NonZeroU64, handle: String },
+    /// Stop the job and its owned descendants, retaining the result.
+    Stop { id: NonZeroU64, handle: String },
     /// End the wait for this request; it has no separate answer.
     Cancel { id: NonZeroU64 },
 }
@@ -198,23 +195,30 @@ pub fn write_answer(answer: &serde_json::Value) -> io::Result<()> {
 }
 
 /// Only this loop writes answers; command capture never writes the protocol fd.
-pub fn serve(cwd: &Path, pid_namespaced: bool) -> ! {
-    let mut backgrounded = Vec::new();
-    let outcome = serve_requests(cwd, pid_namespaced, &mut backgrounded);
-    if !pid_namespaced {
-        let pids: Vec<i32> = backgrounded.iter().map(|(pid, _)| *pid).collect();
-        crate::sweep_backgrounded(&pids);
+pub fn serve(cwd: &Path, ruleset: Option<RulesetCreated>, required: bool) -> ! {
+    let mut children = jobs::Children::own().unwrap_or_else(|e| crate::die(e.to_string()));
+    let mut jobs = HashMap::new();
+    let outcome = jobs::validate(&ruleset, required)
+        .and_then(|_| serve_requests(cwd, &ruleset, required, &mut jobs));
+    for job in jobs.values_mut() {
+        job.stop();
     }
+    drop(jobs);
+    let cleanup = children.stop();
     if let Err(e) = outcome {
         crate::die(format!("serve: {e}"));
     }
-    std::process::exit(0)
+    match cleanup {
+        Ok(left) if left.is_empty() => std::process::exit(0),
+        other => crate::die(format!("owned-process cleanup failed: {other:?}")),
+    }
 }
 
 fn serve_requests(
     cwd: &Path,
-    pid_namespaced: bool,
-    backgrounded: &mut Vec<(i32, HashSet<i32>)>,
+    ruleset: &Option<RulesetCreated>,
+    required: bool,
+    jobs: &mut HashMap<String, jobs::Job>,
 ) -> io::Result<()> {
     // No second descriptor or reader: the active command polls this same stream.
     unsafe {
@@ -229,6 +233,12 @@ fn serve_requests(
         closed: false,
         error: None,
     };
+    let mut nonce = [0u8; 16];
+    if unsafe { libc::getrandom(nonce.as_mut_ptr().cast(), nonce.len(), 0) } != nonce.len() as isize
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let instance: String = nonce.iter().map(|b| format!("{b:02x}")).collect();
     write_answer(&serde_json::json!({"ready": true, "protocol": PROTOCOL_VERSION}))?;
     let mut last_id = 0;
     loop {
@@ -247,37 +257,42 @@ fn serve_requests(
             return Err(io::Error::other("request IDs must increase"));
         }
         last_id = id;
-        let before = if pid_namespaced {
-            crate::namespace_pids()
-        } else {
-            HashSet::new()
-        };
-        let outcome = match request {
-            Request::Run(child) => {
+        let mut answer = match request {
+            Request::Run(ref child) | Request::Background(ref child) => {
+                let background = matches!(request, Request::Background(_));
+                let fds: Vec<_> = jobs.values().filter_map(jobs::Job::fd).collect();
+                let mut job = jobs::Job::spawn(
+                    &child.child_spec(),
+                    cwd,
+                    background,
+                    ruleset,
+                    required,
+                    &fds,
+                )?;
                 let mut active = Active {
                     input: &mut input,
                     id,
                 };
-                crate::run_child(&child.child_spec(), cwd, Some(&mut active)).inspect(|answer| {
-                    if let Some(pid) = answer.get("pid").and_then(|p| p.as_i64()) {
-                        backgrounded.push((pid as i32, before));
-                    }
-                })
-            }
-            Request::Background(child) => {
-                crate::spawn_detached(&child.child_spec(), cwd).map(|pid| {
-                    backgrounded.push((pid, before));
-                    serde_json::json!({"pid": pid})
-                })
-            }
-            Request::Status { pid, .. } => Ok(crate::status_result(pid)),
-            Request::Stop { pid, .. } => {
-                let mut answer = crate::stop_result(pid);
-                if pid_namespaced {
-                    answer["survivors"] = crate::sweep_escapees_of(pid, backgrounded).into();
+                let mut answer = job.initial(&mut active)?;
+                if (background && answer.get("returncode").is_none())
+                    || answer.get("backgrounded").and_then(|v| v.as_bool()) == Some(true)
+                {
+                    let handle = format!("{instance}:{id}");
+                    answer["handle"] = handle.clone().into();
+                    jobs.insert(handle, job);
                 }
-                Ok(answer)
+                answer
             }
+            Request::Status { handle, .. } => match jobs.get_mut(&handle) {
+                Some(job) => job.status(),
+                None => {
+                    serde_json::json!({"running": false, "returncode": null, "error": "unknown job handle"})
+                }
+            },
+            Request::Stop { handle, .. } => match jobs.get_mut(&handle) {
+                Some(job) => job.stop(),
+                None => serde_json::json!({"stopped": false, "error": "unknown job handle"}),
+            },
             Request::Cancel { .. } => unreachable!(),
         };
         if let Some(e) = input.error.take() {
@@ -286,13 +301,6 @@ fn serve_requests(
         if input.closed {
             return Ok(());
         }
-        // Bad argv is a command failure, not a broken session.
-        let mut answer = outcome.unwrap_or_else(|e| {
-            serde_json::json!({
-                "returncode": 127, "stdout": "", "stderr": format!("child execution failed: {e}"),
-                "exec_failed": true,
-            })
-        });
         answer["id"] = id.into();
         write_answer(&answer)?;
     }

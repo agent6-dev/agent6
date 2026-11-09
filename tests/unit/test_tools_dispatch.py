@@ -1709,7 +1709,6 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     session.stop_background.return_value = jail_session.Stopped(
         returncode=-15, survivors=frozenset()
     )
-    session.sweep_for.return_value = frozenset()
     stopped = reason in ("stop now", "abort")
     duration = 8.0 if stopped else 10.0
 
@@ -1734,12 +1733,11 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
         assert interrupted() is stopped
         return kinds.BackgroundHandoff(
             argv=argv,
-            pid=42,
+            handle="42",
             log=str(log),
             stdout="starting\n",
             stderr="warning\n",
             duration_s=duration,
-            before=kinds.ChildSnapshot(1, frozenset()),
         )
 
     session.run.side_effect = run
@@ -1801,12 +1799,11 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
     session = mock.Mock(spec=jail_session.JailSession)
     session.run.return_value = kinds.BackgroundHandoff(
         argv=("sleep", "40"),
-        pid=42,
+        handle="42",
         log=str(log),
         stdout="starting\n",
         stderr="",
         duration_s=8.0,
-        before=kinds.ChildSnapshot(1, frozenset()),
     )
     session.status_background.return_value = jail_session.BackgroundStatus(
         running=True, returncode=None, error=""
@@ -1815,7 +1812,6 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
         jail_session.Stopped(returncode=-15, survivors=frozenset({777})),
         jail_session.Stopped(returncode=-15, survivors=frozenset()),
     ]
-    session.sweep_for.return_value = frozenset()
     try:
         with (
             mock.patch.object(

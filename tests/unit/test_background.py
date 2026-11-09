@@ -36,21 +36,15 @@ class _Job:
 
 class _Session:
     def __init__(self, survivors: frozenset[int] = frozenset()) -> None:
-        self.stopped: list[int] = []
+        self.stopped: list[str] = []
         self.survivors = survivors
 
-    def open_job(self, _pid: int, _before: kinds.ChildSnapshot) -> None:
-        pass
-
-    def status_background(self, _pid: int) -> jail_session.BackgroundStatus:
+    def status_background(self, _handle: str) -> jail_session.BackgroundStatus:
         return jail_session.BackgroundStatus(running=True, returncode=None, error="")
 
-    def stop_background(self, pid: int) -> jail_session.Stopped:
-        self.stopped.append(pid)
+    def stop_background(self, handle: str) -> jail_session.Stopped:
+        self.stopped.append(handle)
         return jail_session.Stopped(returncode=-9, survivors=self.survivors)
-
-    def sweep_for(self, _pid: int, _before: kinds.ChildSnapshot) -> frozenset[int]:
-        return frozenset()
 
 
 def _fail_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -232,18 +226,17 @@ def test_adopt_stops_a_command_when_its_metadata_cannot_be_recorded(
     shells = background.BackgroundShells(tmp_path / "shells")
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
-        pid=42,
+        handle="42",
         log=str(log),
         stdout="",
         stderr="",
         duration_s=900.0,
-        before=kinds.ChildSnapshot(1, frozenset()),
     )
 
     with pytest.raises(background.BackgroundError, match="could not record"):
         shells.adopt(handoff, session=cast(Any, session))
 
-    assert session.stopped == [42]
+    assert session.stopped == ["42"]
     assert shells.roster() == []
 
 
@@ -253,12 +246,11 @@ def test_adopt_retains_a_command_when_its_log_and_cleanup_fail(tmp_path: pathlib
     shells = background.BackgroundShells(tmp_path / "shells")
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
-        pid=42,
+        handle="42",
         log=str(tmp_path / "missing.log"),
         stdout="",
         stderr="",
         duration_s=900.0,
-        before=kinds.ChildSnapshot(1, frozenset()),
     )
 
     with pytest.raises(background.BackgroundError, match="stopping it failed"):
@@ -267,7 +259,7 @@ def test_adopt_retains_a_command_when_its_log_and_cleanup_fail(tmp_path: pathlib
     assert [view.state for view in shells.roster()] == ["stop failed"]
     session.survivors = frozenset()
     shells.stop("bg1")
-    assert session.stopped == [42, 42]
+    assert session.stopped == ["42", "42"]
 
 
 def test_any_running_reads_the_roster_live(

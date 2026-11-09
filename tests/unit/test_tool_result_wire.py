@@ -347,12 +347,11 @@ def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
     log.write_text("\x1b[32mout\x1b[0m\n", encoding="utf-8")
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
-        pid=42,
+        handle="42",
         log=str(log),
         stdout="\x1b[32mout\x1b[0m\n",
         stderr="\x1b[31merr\x1b[0m\n",
         duration_s=900.0,
-        before=kinds.ChildSnapshot(1, frozenset()),
     )
     session = mock.Mock(spec=jail_session.JailSession)
     session.run.return_value = handoff
@@ -362,7 +361,6 @@ def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
     session.stop_background.return_value = jail_session.Stopped(
         returncode=-9, survivors=frozenset()
     )
-    session.sweep_for.return_value = frozenset()
     d = dispatch.ToolDispatcher(
         root=tmp_path, config=_config(tmp_path), session_dir=tmp_path / "run"
     )

@@ -188,7 +188,7 @@ def test_a_worker_that_does_not_answer_is_killed_with_its_host_commands(
             proc.kill()
 
 
-def test_a_started_host_shell_records_its_process_identity(tmp_path: pathlib.Path) -> None:
+def test_a_started_shell_records_no_host_signal_authority(tmp_path: pathlib.Path) -> None:
     shells = background.BackgroundShells(tmp_path / "shells")
 
     def policy_for(argv: tuple[str, ...], rw: tuple[pathlib.Path, ...]) -> kinds.JailPolicy:
@@ -203,9 +203,8 @@ def test_a_started_host_shell_records_its_process_identity(tmp_path: pathlib.Pat
     try:
         view = shells.start(("/bin/sh", "-c", "sleep 60"), policy_for)
         meta = json.loads((tmp_path / "shells" / view.id / "meta.json").read_text(encoding="utf-8"))
-        identity = (meta["pid"], meta["pid_start"])
-        assert process.process_is_alive(identity)
-        assert background.shell_host_processes(tmp_path / "shells") == [identity]
+        assert "pid" not in meta and "pid_start" not in meta
+        assert background.shell_host_processes(tmp_path / "shells") == []
     finally:
         shells.stop_all()
 

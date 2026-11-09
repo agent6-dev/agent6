@@ -83,7 +83,7 @@ def test_a_backgrounded_server_answers_the_next_command(tmp_path: pathlib.Path) 
             "s.bind(('127.0.0.1',8731));s.listen(1);"
             "c,_=s.accept();c.sendall(b'alive');c.close()"
         )
-        assert session.start_background(("python3", "-c", listener)) > 0
+        assert session.start_background(("python3", "-c", listener))
         probe = _run(
             session,
             (
@@ -269,10 +269,15 @@ def test_a_backgrounded_command_stops_through_the_session(tmp_path: pathlib.Path
     """
     session = _session(tmp_path)
     try:
-        pid = session.start_background(("sleep", "300"))
+        marker = tmp_path / "command.pid"
+        handle = session.start_background(("sh", "-c", f"echo $$ > {marker}; exec sleep 300"))
+        deadline = time.monotonic() + 5
+        while not marker.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        pid = int(marker.read_text())
         alive = _run(session, ("sh", "-c", f"kill -0 {pid} && echo alive"))
         assert "alive" in alive.stdout, alive.stderr
-        session.stop_background(pid)
+        session.stop_background(handle)
         gone = _run(session, ("sh", "-c", f"kill -0 {pid} 2>/dev/null && echo alive || echo gone"))
         assert "gone" in gone.stdout, gone.stdout
     finally:
@@ -455,10 +460,10 @@ def _peer(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, body: str) ->
         "not json",
         "[]",
         '{"ready":true}',
-        '{"ready":false,"protocol":1}',
-        '{"ready":true,"protocol":2}',
+        '{"ready":false,"protocol":2}',
+        '{"ready":true,"protocol":1}',
         '{"ready":true,"protocol":true}',
-        '{"ready":true,"protocol":1,"extra":0}',
+        '{"ready":true,"protocol":2,"extra":0}',
         pytest.param("x" * 4097, id="oversized"),
     ],
 )
@@ -489,7 +494,7 @@ def test_session_rejects_an_uncorrelated_answer(
     _peer(
         tmp_path,
         monkeypatch,
-        'print(\'{"ready":true,"protocol":1}\', flush=True)\n'
+        'print(\'{"ready":true,"protocol":2}\', flush=True)\n'
         f"sys.stdin.readline()\nprint({json.dumps(answer)!r}, flush=True)\n",
     )
     session = jail_session.JailSession.open(
@@ -508,7 +513,7 @@ def test_session_drains_runtime_stderr_independently(
 ) -> None:
     """A transport's stderr cannot fill its pipe while Python waits for protocol stdout."""
     flood = "sys.stderr.write('x' * 1048576 + 'diagnostic tail\\n'); sys.stderr.flush()\n"
-    ready = 'print(\'{"ready":true,"protocol":1}\', flush=True)\n'
+    ready = 'print(\'{"ready":true,"protocol":2}\', flush=True)\n'
     request = "request = json.loads(sys.stdin.readline())\n"
     _peer(
         tmp_path,
@@ -550,7 +555,7 @@ def test_session_bounds_response_frames(
     _peer(
         tmp_path,
         monkeypatch,
-        'print(\'{"ready":true,"protocol":1}\', flush=True)\n'
+        'print(\'{"ready":true,"protocol":2}\', flush=True)\n'
         "sys.stdin.readline()\n"
         'sys.stdout.write(\'{"id":1,"stdout":"\' + \'x\' * (128 * 1024 * 1024) '
         '+ \'","returncode":0}\\n\'); sys.stdout.flush()\n',

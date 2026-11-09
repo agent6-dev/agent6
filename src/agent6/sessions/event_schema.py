@@ -120,7 +120,7 @@ EVENTS: tuple[EventSpec, ...] = (
         "A command was handed back as a background job.",
         (
             FieldSpec("id", "str", True, "Prompt, task or background-job identifier."),
-            FieldSpec("pid", "int", True, "Background process identifier."),
+            FieldSpec("handle", "str", True, "Launcher-instance-scoped job handle."),
             FieldSpec("seconds", "float", True, "Elapsed command time in seconds at handback."),
         ),
     ),

@@ -2,9 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """One serving launcher at every isolation level, `none` included.
 
-Only `full` has the PID namespace, so the two bounds it provides for free are explicit
-elsewhere: the launcher sweeps what it backgrounded when its request channel closes, and
-the Python side sweeps each command's escapees.
+Every level uses private job subreapers; cleanup does not depend on PID namespaces.
 """
 
 from __future__ import annotations
@@ -87,7 +85,12 @@ def test_a_backgrounded_command_dies_with_the_session(
     run that started it.
     """
     session = _session(tmp_path, isolation)
-    pid = session.start_background(("/bin/sh", "-c", "sleep 60"))
+    marker = tmp_path / "command.pid"
+    session.start_background(("/bin/sh", "-c", f"echo $$ > {marker}; exec sleep 60"))
+    deadline = time.monotonic() + 5
+    while not marker.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    pid = int(marker.read_text())
     assert _running(pid)
     session.close()
     time.sleep(1.0)
@@ -151,25 +154,16 @@ def test_a_backgrounded_setsid_daemon_dies_with_the_session(
 def test_a_backgrounded_setsid_daemon_dies_at_its_stop(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
-    """With no PID namespace, `stop_background` sweeps the session's escapees itself.
-
-    Taking only the launcher's tracked group down would answer "stopped" while the
-    command's `setsid` child ran on until the session closed.
-    """
+    """A background stop kills detached descendants without waiting for session close."""
     session = _session(tmp_path, isolation)
     marker = tmp_path / "daemon.pid"
     try:
-        # The baseline is taken before the command starts, as
-        # `BackgroundShells.start` takes it, so the daemon it leaves is this
-        # job's own and its stop sweeps it.
-        before = session.child_snapshot()
         job = jail_jobs.SessionJob(
             session,
             session.start_background(
                 ("/bin/sh", "-c", f"setsid sh -c 'echo $$ > {marker}; sleep 60' & sleep 0.4")
             ),
             tmp_path,
-            before=before,
         )
         time.sleep(1.0)
         assert marker.exists(), "the daemon never started; the test proves nothing"
@@ -200,13 +194,7 @@ def _alive_in_jail(session: jail_session.JailSession, pid: int) -> bool:
 def test_a_full_stop_sweeps_its_daemon_inside_the_namespace(
     tmp_path: pathlib.Path, older_first: bool
 ) -> None:
-    """Under `full` a stop sweeps the `setsid` daemon reparented onto the launcher.
-
-    The launcher is the namespace's init, so the daemon sits outside every group; the sweep
-    uses the window rule the agent applies outside a namespace: what appeared after the
-    stopped command started and before the next still-running one did, whichever order the
-    two stop in.
-    """
+    """A stop kills its detached descendants and spares a sibling job, in either stop order."""
 
     def daemonising(marker: str) -> tuple[str, ...]:
         inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
@@ -215,14 +203,12 @@ def test_a_full_stop_sweeps_its_daemon_inside_the_namespace(
     session = _session(tmp_path, "full")
     m1, m2 = tmp_path / "d1.pid", tmp_path / "d2.pid"
     try:
-        b1 = session.child_snapshot()
         job1 = jail_jobs.SessionJob(
-            session, session.start_background(daemonising(str(m1))), tmp_path / "j1", before=b1
+            session, session.start_background(daemonising(str(m1))), tmp_path / "j1"
         )
         time.sleep(1.0)
-        b2 = session.child_snapshot()
         job2 = jail_jobs.SessionJob(
-            session, session.start_background(daemonising(str(m2))), tmp_path / "j2", before=b2
+            session, session.start_background(daemonising(str(m2))), tmp_path / "j2"
         )
         time.sleep(1.0)
         assert m1.exists() and m2.exists(), "a daemon never started; the test proves nothing"
@@ -249,22 +235,18 @@ def test_a_full_stop_leaves_an_older_commands_late_child_alone(tmp_path: pathlib
     session = _session(tmp_path, "full")
     late = tmp_path / "late.pid"
     try:
-        b1 = session.child_snapshot()
         older = jail_jobs.SessionJob(
             session,
             session.start_background(
                 ("/bin/sh", "-c", f"sleep 2; sleep 60 & echo $! > {late}; wait")
             ),
             tmp_path / "j1",
-            before=b1,
         )
         time.sleep(0.5)
-        b2 = session.child_snapshot()
         younger = jail_jobs.SessionJob(
             session,
             session.start_background(("/bin/sh", "-c", "sleep 60")),
             tmp_path / "j2",
-            before=b2,
         )
         time.sleep(2.5)
         assert late.exists(), "the late child never started; the test proves nothing"
@@ -278,27 +260,18 @@ def test_a_full_stop_leaves_an_older_commands_late_child_alone(tmp_path: pathlib
 
 @pytest.mark.needs_namespaces
 def test_a_full_stop_sweeps_past_a_sibling_that_exited(tmp_path: pathlib.Path) -> None:
-    """Only a running command ends a sweep window; an exited one, reaped or a zombie, is no edge.
-
-    An exited background command in the window list would bound an older command's sweep and
-    spare a daemon the older one started after it.
-    """
+    """A sibling that exited cannot hide a late descendant from its owning job."""
     session = _session(tmp_path, "full")
     marker = tmp_path / "d.pid"
     inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
     try:
-        b1 = session.child_snapshot()
         older = jail_jobs.SessionJob(
             session,
             session.start_background(("/bin/sh", "-c", f"sleep 2; sh -c '{inner}'; sleep 60")),
             tmp_path / "j1",
-            before=b1,
         )
         time.sleep(0.5)
-        b2 = session.child_snapshot()
-        jail_jobs.SessionJob(
-            session, session.start_background(("/bin/true",)), tmp_path / "j2", before=b2
-        )
+        jail_jobs.SessionJob(session, session.start_background(("/bin/true",)), tmp_path / "j2")
         time.sleep(2.5)
         assert marker.exists(), "the daemon never started; the test proves nothing"
         daemon = int(marker.read_text().strip())
@@ -321,9 +294,10 @@ def test_a_full_stop_sweeps_a_daemons_own_setsid_child(tmp_path: pathlib.Path) -
     script = tmp_path / "daemon.sh"
     script.write_text(f"setsid sh -c 'echo $$ > {g}; sleep 60' &\necho $$ > {d}\nsleep 60\n")
     try:
-        b1 = session.child_snapshot()
-        pid = session.start_background(("/bin/sh", "-c", f"sh -c 'setsid sh {script} &'; sleep 60"))
-        job = jail_jobs.SessionJob(session, pid, tmp_path / "j", before=b1)
+        handle = session.start_background(
+            ("/bin/sh", "-c", f"sh -c 'setsid sh {script} &'; sleep 60")
+        )
+        job = jail_jobs.SessionJob(session, handle, tmp_path / "j")
         time.sleep(1.5)
         assert d.exists() and g.exists(), "the daemons never started; the test proves nothing"
         daemon, grandchild = int(d.read_text().strip()), int(g.read_text().strip())
@@ -338,19 +312,14 @@ def test_a_full_stop_sweeps_a_daemons_own_setsid_child(tmp_path: pathlib.Path) -
 def test_a_repeat_stop_after_the_launcher_died_keeps_the_recorded_exit(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A stop after the launcher is gone keeps the recorded exit code.
-
-    A stop asks the launcher every time (its sweep runs for a command that exited on its own
-    too); a launcher gone by then is not an error over the recorded exit.
-    """
+    """Losing the supervisor before cleanup cannot erase a previously observed exit code."""
     import os
     import signal
 
     session = _session(tmp_path, "none")
     try:
-        b1 = session.child_snapshot()
         job = jail_jobs.SessionJob(
-            session, session.start_background(("/bin/true",)), tmp_path / "j", before=b1
+            session, session.start_background(("/bin/true",)), tmp_path / "j"
         )
         deadline = time.monotonic() + 5
         while job.status().running and time.monotonic() < deadline:
@@ -369,16 +338,10 @@ def test_a_repeat_stop_after_the_launcher_died_keeps_the_recorded_exit(
 def test_a_stop_spares_a_sibling_background_commands_daemon(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel, older_first: bool
 ) -> None:
-    """A stop sweeps what appeared between its own command's start and the next live command's.
-
-    The session-open snapshot would kill the `setsid` daemon another still-running command
-    left; a per-job baseline would spare only the older sibling. The order the two stop in
-    does not matter.
-    """
+    """Each private job subreaper cleans only its own descendants, in either stop order."""
 
     def daemonising(marker: pathlib.Path) -> tuple[str, ...]:
-        # An inner shell that exits, so the daemon reparents onto the agent
-        # while the command itself keeps running.
+        # The intermediate exits while the command itself keeps running.
         inner = f'setsid sh -c "echo \\$\\$ > {marker}; sleep 60" &'
         return ("/bin/sh", "-c", f"sh -c '{inner}'; sleep 60")
 
@@ -386,14 +349,12 @@ def test_a_stop_spares_a_sibling_background_commands_daemon(
     m1, m2 = tmp_path / "d1.pid", tmp_path / "d2.pid"
     d1 = d2 = 0
     try:
-        b1 = session.child_snapshot()
         job1 = jail_jobs.SessionJob(
-            session, session.start_background(daemonising(m1)), tmp_path / "j1", before=b1
+            session, session.start_background(daemonising(m1)), tmp_path / "j1"
         )
         time.sleep(1.0)
-        b2 = session.child_snapshot()
         job2 = jail_jobs.SessionJob(
-            session, session.start_background(daemonising(m2)), tmp_path / "j2", before=b2
+            session, session.start_background(daemonising(m2)), tmp_path / "j2"
         )
         time.sleep(1.0)
         assert m1.exists() and m2.exists(), "a daemon never started; the test proves nothing"
@@ -452,7 +413,7 @@ def _serve_raw(cwd: pathlib.Path) -> subprocess.Popen[bytes]:
     spec = {"cwd": str(cwd), "argv": ["true"], "isolation": "none", "mode": "serve"}
     proc.stdin.write((json.dumps(spec) + "\n").encode())
     proc.stdin.flush()
-    assert json.loads(proc.stdout.readline()) == {"ready": True, "protocol": 1}
+    assert json.loads(proc.stdout.readline()) == {"ready": True, "protocol": 2}
     return proc
 
 
@@ -502,10 +463,11 @@ def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: pat
         # Per-stream renders, so these are exact however the two interleaved.
         assert answer["stdout"] == "out1\n"
         assert answer["stderr"] == "err1\n"
-        pid = answer["pid"]
-        assert isinstance(pid, int) and _running(pid), "the command was killed, not handed back"
+        handle = answer["handle"]
+        assert isinstance(handle, str)
+        assert _ask(proc, {"kind": "status", "handle": handle})["running"]
         log = pathlib.Path(str(answer["log"]))
-        assert log.name == f"converted-{pid}.log"
+        assert log.name.startswith("converted-")
 
         go.touch()
         deadline = time.monotonic() + 10.0
@@ -518,13 +480,13 @@ def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: pat
         assert set(lines) == {"out1", "err1", "out2"}, "the log stopped filling"
         assert lines[-1] == "out2", "output written after the hand-back landed out of order"
 
-        # The launcher keeps serving, and the handed-back pid is pollable.
+        # The launcher keeps serving, and the handed-back handle is pollable.
         assert (
             _ask(proc, {"kind": "run", "argv": ["/bin/echo", "next"], "timeout_s": 10})["stdout"]
             == "next\n"
         )
-        assert _ask(proc, {"kind": "status", "pid": pid})["running"] is True
-        assert _ask(proc, {"kind": "stop", "pid": pid})["stopped"] is True
+        assert _ask(proc, {"kind": "status", "handle": handle})["running"] is True
+        assert _ask(proc, {"kind": "stop", "handle": handle})["stopped"] is True
     finally:
         assert proc.stdin is not None
         proc.stdin.close()

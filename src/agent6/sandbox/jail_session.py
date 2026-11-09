@@ -8,9 +8,7 @@ import contextlib
 import dataclasses
 import json
 import os
-import pathlib
 import select
-import signal
 import subprocess
 import threading
 import time
@@ -24,7 +22,7 @@ from agent6.sandbox import jail
 
 # The answer wait's poll interval: an operator Stop reads as immediate at this cost.
 _ANSWER_POLL_S = 0.2
-_PROTOCOL_VERSION = 1
+_PROTOCOL_VERSION = 2
 _REQUEST_LIMIT = 1024 * 1024
 _READY_LIMIT = 4096
 _ANSWER_LIMIT = 128 * 1024 * 1024
@@ -156,8 +154,7 @@ class BackgroundStatus:
     Attributes:
         running: The process is alive; never an inference from output or age.
         returncode: The exit code once observed.
-        error: Why the fate is unknown (a launcher that exited without a result);
-            such a command is never reported as still running.
+        error: Why the outcome or descendant cleanup is unconfirmed.
     """
 
     running: bool
@@ -170,19 +167,22 @@ class Stopped:
     """A stop request's answer.
 
     Attributes:
-        returncode: The exit code, when this stop reaped the command.
-        survivors: Under a PID namespace, the pids the launcher's sweep could not kill.
+        returncode: The observed exit code, retained across status and stop.
+        survivors: Owned descendants the supervisor could not kill.
+        error: Why the supervisor could not confirm cleanup.
     """
 
     returncode: int | None
     survivors: frozenset[int]
+    error: str = ""
 
 
 def _abandon_launcher(proc: subprocess.Popen[bytes], stderr: _Stderr | None) -> None:
     """Kill, unregister and reap a launcher whose protocol cannot be trusted."""
     if proc.poll() is None:
         with contextlib.suppress(OSError):
-            os.killpg(proc.pid, signal.SIGKILL)
+            # Killing the group would also kill the job subreapers that handle channel loss.
+            proc.kill()
     with contextlib.suppress(subprocess.TimeoutExpired, OSError):
         proc.wait(timeout=5.0)
     if stderr is not None:
@@ -198,14 +198,13 @@ def _abandon_launcher(proc: subprocess.Popen[bytes], stderr: _Stderr | None) -> 
 class JailSession:
     """One long-lived launcher, serving every command of one run.
 
-    The launcher sets up its namespaces, rootfs, Landlock and seccomp once, then
-    reads one request per line, so the run's commands share a netns, a PID
-    namespace and a /tmp: a server one command starts is reachable by the next.
+    The launcher shares its confinement policy across commands, applying the
+    filesystem ruleset in each job owner. Under full isolation, commands share
+    a netns, PID namespace and /tmp: a server is reachable by later commands.
     Every isolation level serves, `none` included, so the capture and background
-    lifecycle are one implementation. Only `full` has the PID namespace, so
-    elsewhere the launcher sweeps what it backgrounded at EOF and this side sweeps
-    each command's escapees. Not thread-safe: one loop drives it, one command at a
-    time.
+    lifecycle are one implementation. The supervisor owns job handles, retained
+    outcomes and descendant cleanup at every level. Not thread-safe: one loop
+    drives it, one command at a time.
 
     Attributes:
         startup_stderr: What the launcher wrote to stderr during setup (a refused
@@ -214,21 +213,12 @@ class JailSession:
     """
 
     _proc: subprocess.Popen[bytes]
-    _binary: pathlib.Path
-    # Without a PID namespace a `setsid` escapee reparents here, so each command's sweep runs here.
-    _pid_namespaced: bool
     # Carried on every request: the launcher's own default would ignore the operator's cap.
     _memory_limit_mib: int
     startup_stderr: str = ""
     _stderr: _Stderr | None = None
     _request_id: int = 0
-    # What was already ours at open; without a PID namespace, anything beyond it at close is
-    # this session's escapee.
-    _opened_with: frozenset[int] = frozenset()
-    # The start snapshot of every background command not yet stopped, by pid: what a stop sweeps
-    # ends where the next of these began.
-    _live_jobs: dict[int, kinds.ChildSnapshot] = dataclasses.field(default_factory=dict)
-    _snapshots: int = 0
+    _close_error: str | None = None
 
     @classmethod
     def open(
@@ -249,7 +239,6 @@ class JailSession:
         """
         binary = jail.require_jail_binary()
         join_args, join_fds = jail.network_join_args(policy, session_net)
-        jail.become_subreaper()
         spec = jail.policy_spec(policy)
         spec["mode"] = "serve"
         data = _frame(spec)
@@ -260,6 +249,7 @@ class JailSession:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             pass_fds=join_fds,
+            die_with_agent=False,
         )
         assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
         stderr = _Stderr(proc.stderr)
@@ -285,15 +275,11 @@ class JailSession:
                 if err:
                     reason += f": {err}"
             raise jail.JailUnavailableError(reason) from exc
-        pid_namespaced = policy.isolation == "full"
         return cls(
             _proc=proc,
-            _binary=binary,
-            _pid_namespaced=pid_namespaced,
             _stderr=stderr,
             _memory_limit_mib=policy.memory_limit_mib,
             startup_stderr=startup_stderr,
-            _opened_with=frozenset() if pid_namespaced else frozenset(jail.own_children()),
         )
 
     def run(
@@ -308,9 +294,6 @@ class JailSession:
     ) -> kinds.CommandResult | kinds.BackgroundHandoff:
         """Run one command to completion in this session's namespaces.
 
-        Without a PID namespace the command's escapees reparent to this process
-        and are swept here; the sweep bounds a command's process lifetime.
-
         Args:
             argv: The command.
             env: Its environment entries.
@@ -324,52 +307,44 @@ class JailSession:
             The result, or the handoff of a command still running.
 
         Raises:
-            jail.JailUnavailableError: The launcher is gone, answered without a pid, or a
+            jail.JailUnavailableError: The launcher is gone, answered without a handle, or a
                 process the command left behind could not be killed.
         """
         start = time.monotonic()
-        before = self.child_snapshot()
-        answer: dict[str, object] = {}
-        survivors: frozenset[int] = frozenset()
-        try:
-            answer = self._request(
-                {
-                    "kind": "run",
-                    "argv": list(argv),
-                    "env": [list(p) for p in env],
-                    "timeout_s": timeout_s,
-                    "checkin_s": checkin_s,
-                    "log_dir": log_dir,
-                    # The launcher's wire key keeps the old suffix.
-                    "memory_limit_mb": self._memory_limit_mib,
-                },
-                interrupted=interrupted,
-            )
-        finally:
-            # A handed-back command is still running; its children are not escapees yet.
-            if not answer.get("backgrounded"):
-                survivors = self._sweep(before.pids)
-        if survivors:
-            raise jail.JailUnavailableError(jail.survivors_message(survivors))
+        answer = self._request(
+            {
+                "kind": "run",
+                "argv": list(argv),
+                "env": [list(p) for p in env],
+                "timeout_s": timeout_s,
+                "checkin_s": checkin_s,
+                "log_dir": log_dir,
+                # The launcher's wire key keeps the old suffix.
+                "memory_limit_mb": self._memory_limit_mib,
+            },
+            interrupted=interrupted,
+        )
+        listed = answer.get("survivors", [])
+        if listed:
+            raise jail.JailUnavailableError(f"command cleanup failed; surviving pids: {listed}")
         elapsed = time.monotonic() - start
         if answer.get("backgrounded"):
-            pid = answer.get("pid")
-            if not isinstance(pid, int):
-                raise jail.JailUnavailableError(f"jail session handed back no pid: {answer}")
+            handle = answer.get("handle")
+            if not isinstance(handle, str) or not handle:
+                raise jail.JailUnavailableError(f"jail session handed back no handle: {answer}")
             return kinds.BackgroundHandoff(
                 argv=argv,
-                pid=pid,
+                handle=handle,
                 log=str(answer.get("log", "")),
                 stdout=str(answer.get("stdout", "")),
                 stderr=str(answer.get("stderr", "")),
                 duration_s=elapsed,
-                before=before,
             )
         return jail.result_from_json(answer, argv, elapsed)
 
     def start_background(
         self, argv: tuple[str, ...], *, env: tuple[tuple[str, str], ...] = ()
-    ) -> int:
+    ) -> str:
         """Start a command and leave it running for later commands to reach.
 
         Args:
@@ -377,7 +352,7 @@ class JailSession:
             env: Its environment entries.
 
         Returns:
-            Its pid, namespace-local: only this session can report on it or stop it.
+            Its launcher-instance-scoped handle.
 
         Raises:
             jail.JailUnavailableError: The launcher started no command.
@@ -391,25 +366,24 @@ class JailSession:
                 "memory_limit_mb": self._memory_limit_mib,
             }
         )
-        pid = answer.get("pid")
-        if not isinstance(pid, int):
+        handle = answer.get("handle")
+        if not isinstance(handle, str) or not handle:
             raise jail.JailUnavailableError(f"jail session started no command: {answer}")
-        return pid
+        return handle
 
-    def status_background(self, pid: int) -> BackgroundStatus:
+    def status_background(self, handle: str) -> BackgroundStatus:
         """Return what a backgrounded command is doing.
 
         Args:
-            pid: The command's namespace-local pid.
+            handle: The command's launcher-instance-scoped handle.
 
         Returns:
-            The launcher's answer; after one carrying the exit code, asking again gets an
-            ECHILD `error`.
+            The launcher's retained answer, including any observed exit code.
 
         Raises:
             jail.JailUnavailableError: The launcher is gone.
         """
-        answer = self._request({"kind": "status", "pid": pid})
+        answer = self._request({"kind": "status", "handle": handle})
         code = answer.get("returncode")
         return BackgroundStatus(
             running=bool(answer.get("running")),
@@ -417,29 +391,30 @@ class JailSession:
             error=str(answer.get("error", "")),
         )
 
-    def stop_background(self, pid: int) -> Stopped:
-        """Kill a backgrounded command's group and, under a PID namespace, its escapees.
+    def stop_background(self, handle: str) -> Stopped:
+        """Stop a job and its descendants through its owning supervisor.
 
         Idempotent.
 
         Args:
-            pid: The command's namespace-local pid.
+            handle: The command's launcher-instance-scoped handle.
 
         Returns:
-            The stop's answer.
+            The observed exit code and any cleanup failure, independently.
 
         Raises:
-            jail.JailUnavailableError: The launcher refused or is gone.
+            jail.JailUnavailableError: The launcher did not answer.
         """
-        answer = self._request({"kind": "stop", "pid": pid})
-        if not answer.get("stopped"):
-            raise jail.JailUnavailableError(f"jail session could not stop {pid}: {answer}")
+        answer = self._request({"kind": "stop", "handle": handle})
         code = answer.get("returncode")
         listed = answer.get("survivors")
         survivors = cast(list[object], listed) if isinstance(listed, list) else []
         return Stopped(
             returncode=code if isinstance(code, int) else None,
             survivors=frozenset(p for p in survivors if isinstance(p, int)),
+            error=""
+            if answer.get("stopped")
+            else f"jail session could not stop {handle}: {answer}",
         )
 
     def _request(
@@ -489,12 +464,14 @@ class JailSession:
                 f"jail session protocol failed: {exc}" + (f": {err}" if err else "")
             ) from exc
 
-    def close(self) -> frozenset[int]:
-        """Close stdin, let EOF stop the launcher, then sweep command escapees.
+    def close(self) -> str:
+        """Close stdin and let the supervisor settle its owned jobs.
 
         Returns:
-            Pids the sweep could not kill; empty under a PID namespace.
+            An empty string after clean supervisor exit, otherwise why cleanup is unknown.
         """
+        if self._close_error is not None:
+            return self._close_error
         deadline = time.monotonic() + 10.0
         if self._proc.stdin is not None:
             with contextlib.suppress(ValueError, OSError):
@@ -513,55 +490,10 @@ class JailSession:
                         break
         with contextlib.suppress(subprocess.TimeoutExpired, OSError):
             self._proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        code = self._proc.poll()
+        detail = self._stderr.text() if self._stderr is not None else ""
+        self._close_error = (
+            "" if code == 0 else f"job cleanup unknown: jail supervisor exit {code}: {detail}"
+        )
         _abandon_launcher(self._proc, self._stderr)
-        return self._sweep(frozenset())
-
-    def child_snapshot(self) -> kinds.ChildSnapshot:
-        """Return the agent's children before a command starts.
-
-        What reparents onto the agent after this is that command's own until the
-        next command starts.
-
-        Returns:
-            The snapshot; empty under a PID namespace, which bounds them.
-        """
-        self._snapshots += 1
-        pids = frozenset() if self._pid_namespaced else frozenset(jail.own_children())
-        return kinds.ChildSnapshot(self._snapshots, pids)
-
-    def open_job(self, pid: int, before: kinds.ChildSnapshot) -> None:
-        """Record a background command's start snapshot until its stop."""
-        self._live_jobs[pid] = before
-
-    def sweep_for(self, pid: int, before: kinds.ChildSnapshot) -> frozenset[int]:
-        """Kill what a stopped command left outside its process group.
-
-        What appeared after it started and before the next still-running command
-        did, whichever order the two stop in; the close sweeps whatever is left.
-
-        Args:
-            pid: The command's pid.
-            before: The snapshot taken before it started.
-
-        Returns:
-            The pids the sweep could not kill.
-        """
-        self._live_jobs.pop(pid, None)
-        younger = [b for b in self._live_jobs.values() if b.seq > before.seq]
-        spare = before.pids
-        if younger:
-            spare |= frozenset(jail.own_children()) - min(younger, key=lambda b: b.seq).pids
-        return self._sweep(spare)
-
-    def _sweep(self, spare: frozenset[int]) -> frozenset[int]:
-        """Kill what the session's commands left outside their process groups.
-
-        Args:
-            spare: Pids that are not escapees.
-
-        Returns:
-            The pids it could not kill; none under a PID namespace.
-        """
-        if self._pid_namespaced:
-            return frozenset()
-        return jail.kill_escapees(self._opened_with | spare | {self._proc.pid})
+        return self._close_error

@@ -154,7 +154,7 @@ def run_model_command(
         if view.detail:
             raise tool_errors.ToolError(f"operator's stop could not end the command: {view.detail}")
     else:
-        emit("command.backgrounded", id=view.id, pid=outcome.pid, seconds=outcome.duration_s)
+        emit("command.backgrounded", id=view.id, handle=outcome.handle, seconds=outcome.duration_s)
     return results.ExecResult(
         returncode=view.returncode if stopped_by_operator else None,
         stdout=result_format.clip_tail(outcome.stdout),

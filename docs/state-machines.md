@@ -733,6 +733,13 @@ Moving the directory preserves its journal and recorded bundle, but does not rem
 
 ---
 
+## Command-session jobs
+
+Command-session jobs retain observed exit codes across status and stop.
+An exit code and a descendant cleanup failure can coexist; the host records and displays both.
+A lost supervisor channel without a completion response leaves the command outcome unknown, not successful or stopped; an earlier observed exit remains known.
+These [job states](architecture.md#jail-job-ownership) are separate from the workflow's terminal states.
+
 ## CLI surface
 
 | command                                   | effect                                            |

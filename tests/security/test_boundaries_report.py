@@ -54,7 +54,7 @@ def test_partial_ro_base_mirrors_the_launcher() -> None:
 
 
 def test_partial_rw_base_mirrors_the_launcher() -> None:
-    """The preflight's writable host regions are the base `apply_landlock_partial` grants."""
+    """The preflight's writable host regions are the base `landlock_partial` grants."""
     src = _MAIN_RS.read_text(encoding="utf-8")
     m = re.search(r"let mut rw_paths[^=]*=\s*vec!\[(.*?)\];", src, re.S)
     assert m, "`partial` rw_paths base not found in main.rs"
@@ -63,12 +63,12 @@ def test_partial_rw_base_mirrors_the_launcher() -> None:
 
 
 def test_partial_device_nodes_mirror_the_launcher() -> None:
-    """The preflight's device-node regions are the nodes `apply_landlock_partial` grants.
+    """The preflight's device-node regions are the nodes `landlock_partial` grants.
 
     The read loop names them all; the write loop for the sink devices names a subset.
     """
     src = _MAIN_RS.read_text(encoding="utf-8")
-    body = src[src.index("fn apply_landlock_partial") :].split("\nfn ", 1)[0]
+    body = src[src.index("fn landlock_partial") :].split("\nfn ", 1)[0]
     loops = [
         tuple(f"/dev/{n}" for n in re.findall(r'"([^"]+)"', m))
         for m in re.findall(r"for dev in \[(.*?)\]", body)
@@ -76,7 +76,7 @@ def test_partial_device_nodes_mirror_the_launcher() -> None:
     assert len(loops) == 2, "`partial` device-node rules not found in main.rs"
     assert loops[0] == confine.PARTIAL_DEVICE_NODES
     assert loops[1] == sandbox_paths.DEVICE_WRITES
-    full = src[src.index("fn apply_landlock_full") :].split("\nfn ", 1)[0]
+    full = src[src.index("fn landlock_full") :].split("\nfn ", 1)[0]
     writes = re.search(r"for dev in \[(.*?)\]", full)
     assert writes
     assert tuple(f"/dev/{n}" for n in re.findall(r'"([^"]+)"', writes[1])) == loops[1]

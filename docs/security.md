@@ -51,13 +51,8 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
     - every mount carries `nosuid` and `nodev`, except the bound `/dev` nodes (the builtin five: `null`, `zero`, `urandom`, `random`, `full`, plus any `sandbox.extra_device_paths` grant), which `nodev` would make unusable, and the private devpts, which carries `nosuid` and `noexec`
     - `/tmp` allows exec (toolchain helpers)
     - children write inside the jail's mount namespace (`full` `sandbox.isolation`) or the Landlock write grants (`partial`)
-    - a process a command leaves behind dies with the run at the latest
-        - `full` `sandbox.isolation`: the PID namespace takes the tree down at close.
-          Its launcher, the namespace's init, sweeps what a stopped background command left outside its process group (a `setsid` daemon reparented onto it).
-          The sweep covers what appeared after the command started and before the next still-running one did
-        - `partial` `sandbox.isolation`: the agent process holds `PR_SET_CHILD_SUBREAPER` and kills every process that appeared during the command
-    - a survivor the sweep cannot kill fails the command, and a background `stop` answers with its pids
-    - one still running when the run's jail session or a spawned MCP server closes is recorded as a `jail.degraded` event
+    - command-session jobs use supervisor-owned descendant cleanup at every isolation level ([Owned-process cleanup](#owned-process-cleanup))
+    - a survivor fails the foreground command or background stop; unconfirmed session cleanup emits `jail.degraded`
 
 **Does not hold**
 
@@ -232,17 +227,45 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a model's `run_command` in a run is not wall-clock killed: at `[harness].command_checkin_s` it is handed back as a background job ([config](config.md#harness)).
       Under `agent6 plan` and `agent6 ask`, in a machine state, without a jail session, or with `command_checkin_s = 0`, it is killed after 600 s
 - One launcher per run at every isolation level; under `full` `sandbox.isolation` its commands share that netns, PID namespace, and private `/tmp`, and under `partial` the host's network and `/tmp`
-    - EOF on the run's command channel stops the foreground process group without waiting for its deadline or handing it back.
-      Under `full`, session exit takes the PID namespace down; under `partial` and `none`, the launcher stops its tracked background groups and Python sweeps escaped descendants
+    - EOF on the run's command channel stops the foreground job without waiting for its deadline or handing it back.
+      The supervisor stops its owned jobs and descendants at every isolation level, without scanning the shared PID namespace
     - a launcher that cannot start leaves each command its own
 - The policy arrives as JSON on a pipe from agent6, validated against a strict schema; unknown fields are refused.
 - The [supervisor protocol](architecture.md#jail-supervisor-protocol) uses stdin for requests and request-correlated cancellation, stdout for responses, and stderr for launcher diagnostics.
   One nonblocking reader owns stdin even while a foreground command runs, and only the serve loop writes responses.
     - captured commands receive `/dev/null` on stdin and separate stdout/stderr pipes; detached commands receive `/dev/null` on all three streams
-    - commands do not inherit the protocol streams; dumpable 0 on the launcher and the child's capability drop prevent reopening its descriptors through `/proc/<pid>/fd`
+    - commands do not inherit the protocol streams or private job channels; dumpable 0 on both supervisor layers and the child's capability drop prevent unprivileged same-user children from reopening their descriptors through `/proc/<pid>/fd`
     - protocol version, request IDs and frame-size checks reject incompatible or malformed peers; they do not authenticate a launcher the operator selected or provide confinement under `none`
-    - malformed input stops the active group before closing the session; stale cancellation IDs cannot stop another request
+    - malformed input stops the active job before closing the session; stale cancellation IDs cannot stop another request
     - Python drains launcher stderr independently with bounded retention, so diagnostics cannot fill that pipe while it waits for a response
+
+### Owned-process cleanup
+
+The serving launcher owns a table of instance-scoped job handles, not client-supplied pids.
+Each job has a private subreaper process, so `setsid` and double-fork descendants stay with that job even when another job starts later.
+The session supervisor also sets `PR_SET_CHILD_SUBREAPER`, including outside a private PID namespace.
+No cleanup assumes PID 1 or sweeps unrelated processes in a shared namespace.
+
+- Each subreaper opens its own `/proc/thread-self/children` before filesystem Landlock enforcement.
+  The descriptor is close-on-exec and grants no command extra `/proc` access.
+- The session supervisor prepares and validates the filesystem ruleset; each job subreaper applies it before spawning the command.
+  The trusted session supervisor retains filesystem access needed to create later subreapers, while seccomp and the abstract-socket scope remain shared across the session.
+- Cleanup signals only children held unreaped by that owner, then repeats as descendants reparent to it.
+  Each cleanup pass is bounded by five seconds and reports survivors rather than claiming success.
+  Process-group membership grants no cleanup authority: another job can join the same group.
+- Foreground completion includes descendant cleanup; a background job retains its descendants until stop or session close, even after its leader exits.
+  Status and repeated stop preserve the observed exit code even when descendant cleanup fails.
+- Host command-session cleanup closes or kills only the launcher transport, never job pids.
+  EOF on the host channel triggers session cleanup; EOF on a private job channel triggers that job's cleanup if the session supervisor dies.
+  Host teardown does not kill the transport's process group, which also holds job subreapers.
+- Completion is a supervisor response persisted by Python, not a writable command file or a transport exit code.
+  Losing the channel before receiving completion leaves the command outcome unknown; a previously received exit code remains known.
+
+Cleanup is not a guarantee against uninterruptible kernel sleep, lost signal permission, or destruction of every owning supervisor outside a private PID namespace.
+`partial` and `none` do not stop same-user commands from signalling their supervisors; `none` also provides no filesystem or privilege boundary.
+A lost transport leaves cleanup unconfirmed even if the remaining subreaper succeeds.
+Under `full`, destruction of the namespace's init additionally makes the kernel kill its remaining processes.
+The one-shot and MCP transports keep their separate host-process cleanup; they do not interpret session job handles.
 
 **Verify**
 
@@ -679,8 +702,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `sandbox.isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` `sandbox.isolation` level.
-- `sandbox/jail_jobs.py`: detached jail commands and the plain background spawn under `sandbox.isolation = "none"`.
-- `sandbox/jail_session.py`: persistent jail launcher sessions and their teardown.
+- `sandbox/jail_session.py`: the serving launcher transport at every local isolation level; `sandbox/jail_jobs.py` persists its responses without spawning command processes.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
 - `providers/claude_code.py` and `providers/claude_code_session.py`: the `backend = "claude_code"` provider and its session lifecycle helpers run the Claude Code binary the operator connected with fixed argv from operator configuration, never model output (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
   Prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.

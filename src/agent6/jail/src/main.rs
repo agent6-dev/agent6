@@ -15,7 +15,7 @@
 //! Exits 0 if it successfully ran the child (regardless of child exit code).
 //! Exits non-zero only when sandbox SETUP failed — in that case stderr explains why.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
 use std::fs::{self, File};
 use std::io::{self, BufRead, Read, Write};
@@ -30,7 +30,7 @@ use std::time::Duration;
 
 use landlock::{
     Access, AccessFs, BitFlags, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreated,
-    RulesetCreatedAttr, RulesetStatus, Scope, ABI,
+    RulesetCreatedAttr, Scope, ABI,
 };
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{setns, unshare, CloneFlags};
@@ -40,6 +40,7 @@ use nix::unistd::{chdir, fork, getgid, getuid, pivot_root, ForkResult, Pid};
 use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, TargetArch};
 use serde::Deserialize;
 
+mod jobs;
 mod session;
 
 // deny_unknown_fields: a policy field this binary does not know (version skew
@@ -330,8 +331,13 @@ fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
             if let Err(e) = setup_rootfs(policy, real_uid) {
                 die(format!("rootfs setup failed: {e}"));
             }
-            if let Err(e) = apply_landlock_full(policy) {
-                die(format!("landlock failed: {e}"));
+            let ruleset = Some(
+                landlock_full(policy).unwrap_or_else(|e| die(format!("landlock failed: {e}"))),
+            );
+            if policy.network == "host" {
+                if let Err(e) = scope_abstract_sockets() {
+                    die(format!("landlock scope failed: {e}"));
+                }
             }
             if let Err(e) = apply_seccomp() {
                 die(format!("seccomp failed: {e}"));
@@ -340,14 +346,17 @@ fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
                 die(format!("PR_SET_DUMPABLE failed: {e}"));
             }
             if policy.mode == "serve" {
-                session::serve(&policy.cwd, true);
+                session::serve(&policy.cwd, ruleset, false);
+            }
+            if let Err(e) = jobs::restrict(&ruleset, false) {
+                die(format!("landlock failed: {e}"));
             }
             // A one-shot launcher never hands a command back (its spec sets
             // no check-in), so there is no pid to carry out of here.
             let outcome = if policy.mode == "exec" {
                 run_child_exec(&policy.child_spec(), &policy.cwd)
             } else {
-                run_child(&policy.child_spec(), &policy.cwd, None)
+                run_child(&policy.child_spec(), &policy.cwd, None, None)
                     .and_then(|answer| session::write_answer(&answer))
             };
             if let Err(e) = outcome {
@@ -384,14 +393,14 @@ fn run_unconfined(policy: &Policy) -> ! {
         die(format!("PR_SET_DUMPABLE failed: {e}"));
     }
     if policy.mode == "serve" {
-        session::serve(&policy.cwd, false);
+        session::serve(&policy.cwd, None, false);
     }
     // A one-shot launcher never hands a command back (its spec sets no
     // check-in), so there is no pid to carry out of here.
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd, None)
+        run_child(&policy.child_spec(), &policy.cwd, None, None)
             .and_then(|answer| session::write_answer(&answer))
     };
     if let Err(e) = outcome {
@@ -406,8 +415,10 @@ fn run_partial(policy: &Policy) -> ! {
     // and inherit the original /proc, /tmp, network namespace from the parent.
     // This is the isolation level that runs under default-seccomp Docker where
     // CLONE_NEWUSER is blocked.
-    if let Err(e) = apply_landlock_partial(policy) {
-        die(format!("landlock failed: {e}"));
+    let ruleset =
+        Some(landlock_partial(policy).unwrap_or_else(|e| die(format!("landlock failed: {e}"))));
+    if let Err(e) = scope_abstract_sockets() {
+        die(format!("landlock scope failed: {e}"));
     }
     if let Err(e) = apply_seccomp() {
         die(format!("seccomp failed: {e}"));
@@ -416,14 +427,17 @@ fn run_partial(policy: &Policy) -> ! {
         die(format!("PR_SET_DUMPABLE failed: {e}"));
     }
     if policy.mode == "serve" {
-        session::serve(&policy.cwd, false);
+        session::serve(&policy.cwd, ruleset, true);
+    }
+    if let Err(e) = jobs::restrict(&ruleset, true) {
+        die(format!("landlock failed: {e}"));
     }
     // A one-shot launcher never hands a command back (its spec sets no
     // check-in), so there is no pid to carry out of here.
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd, None)
+        run_child(&policy.child_spec(), &policy.cwd, None, None)
             .and_then(|answer| session::write_answer(&answer))
     };
     if let Err(e) = outcome {
@@ -1345,7 +1359,7 @@ fn landlock_sets() -> LandlockSets {
     }
 }
 
-fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
+fn landlock_full(policy: &Policy) -> io::Result<RulesetCreated> {
     // `full` runs in the pivoted rootfs, where the workspace and the private /tmp
     // are writable and the system dirs are read-only binds.
     // ABI::V3 (not V1/V2): V2 added LANDLOCK_ACCESS_FS_REFER, without which
@@ -1369,18 +1383,6 @@ fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
     let ruleset = Ruleset::default()
         .handle_access(sets.handled)
         .map_err(|e| io::Error::other(format!("handle_access: {e}")))?;
-    // Abstract unix sockets belong to the network namespace. "session" and "none"
-    // give the jail its own, so a host daemon's abstract socket (an X server, a
-    // session D-Bus) is unreachable already; on the host network only the Landlock
-    // scope (ABI 6, Linux 6.12) keeps it out. Best-effort: an older kernel enforces
-    // no scope, and the Python side warns the operator of that reach.
-    let ruleset = if policy.network == "host" {
-        ruleset
-            .scope(Scope::AbstractUnixSocket)
-            .map_err(|e| io::Error::other(format!("scope abstract sockets: {e}")))?
-    } else {
-        ruleset
-    };
     let ruleset = ruleset
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
@@ -1495,17 +1497,7 @@ fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::other(format!("rule rw {}: {e}", rw.display())))?;
         }
     }
-    // Deliberately no NotEnforced check (contrast apply_landlock_partial):
-    // `full`'s boundary is namespaces + the pivoted rootfs with MS_RDONLY
-    // binds + seccomp; Landlock is defense-in-depth, and the isolation contract
-    // (docs/security.md) admits `full` on Landlock-less kernels. The gap is
-    // not silent: `warn_sandbox_gaps` says so once at run entry. Warning here
-    // instead would land on every spawn's stderr, inside model-visible tool
-    // output.
-    ruleset
-        .restrict_self()
-        .map_err(|e| io::Error::other(format!("restrict_self: {e}")))?;
-    Ok(())
+    Ok(ruleset)
 }
 
 /// Grant recursive RW under `dir` on everything EXCEPT the protect paths,
@@ -1587,17 +1579,17 @@ fn grant_rw_carved(
     Ok(ruleset)
 }
 
-fn apply_landlock_partial(policy: &Policy) -> io::Result<()> {
+fn landlock_partial(policy: &Policy) -> io::Result<RulesetCreated> {
     // `partial` runs in the real filesystem. We protect the host by
     // listing exactly the paths the child may read or write — its own cwd
     // (read+write), the extra_rw_paths, /tmp (write), and the system dirs
     // (read+execute only).
-    // V3 handled set (TRUNCATE included): see apply_landlock_full for why
+    // V3 handled set (TRUNCATE included): see landlock_full for why
     // handling truncate matters. It matters more here -- `partial` has no
     // mount-namespace RO binds to fall back on, so Landlock is the only thing
     // standing between a jailed child and truncating files outside its grants.
     // Device nodes: MakeChar/MakeBlock handled and granted nowhere, so Landlock
-    // denies their creation (see apply_landlock_full). It matters most HERE:
+    // denies their creation (see landlock_full). It matters most HERE:
     // `partial` has no user namespace, so under sudo the child is real root
     // with no MS_NODEV bind, and this, the seccomp mode rule below and
     // drop_capabilities are the locks left.
@@ -1608,8 +1600,6 @@ fn apply_landlock_partial(policy: &Policy) -> io::Result<()> {
     let ruleset = Ruleset::default()
         .handle_access(sets.handled)
         .map_err(|e| io::Error::other(format!("handle_access: {e}")))?
-        .scope(Scope::AbstractUnixSocket)
-        .map_err(|e| io::Error::other(format!("scope abstract sockets: {e}")))?
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
@@ -1752,7 +1742,7 @@ fn apply_landlock_partial(policy: &Policy) -> io::Result<()> {
                 .map_err(|e| io::Error::other(format!("rule {p}: {e}")))?;
         }
     }
-    // Same sink-device carve-out as apply_landlock_full; see comment there.
+    // Same sink-device carve-out as landlock_full; see comment there.
     for dev in ["null", "zero", "full"] {
         let p = format!("/dev/{dev}");
         if let Ok(fd) = PathFd::new(&p) {
@@ -1762,23 +1752,18 @@ fn apply_landlock_partial(policy: &Policy) -> io::Result<()> {
         }
     }
 
-    // Fail CLOSED. `partial` has no mount namespace, so Landlock is the ONLY
-    // filesystem boundary. The landlock crate defaults to BestEffort, so on a
-    // kernel without Landlock restrict_self() returns Ok(NotEnforced) rather
-    // than erroring — enforcing nothing. Refuse instead of running a child
-    // with zero confinement behind the "partial" label. (PartiallyEnforced on
-    // an older ABI is real, if reduced, confinement and is accepted.) The
-    // Python isolation resolution already refuses `partial` without Landlock; this
-    // is the launcher's own boundary check, not a substitute for it.
-    let status = ruleset
+    Ok(ruleset)
+}
+
+/// Keep all jobs in one abstract-socket scope, without access to host sockets.
+fn scope_abstract_sockets() -> io::Result<()> {
+    Ruleset::default()
+        .scope(Scope::AbstractUnixSocket)
+        .map_err(io_err)?
+        .create()
+        .map_err(io_err)?
         .restrict_self()
-        .map_err(|e| io::Error::other(format!("restrict_self: {e}")))?;
-    if status.ruleset == RulesetStatus::NotEnforced {
-        return Err(io::Error::other(
-            "partial isolation requires Landlock, but the kernel enforced no \
-             ruleset (Landlock unavailable); refusing to run unconfined",
-        ));
-    }
+        .map_err(io_err)?;
     Ok(())
 }
 
@@ -2074,12 +2059,8 @@ impl Policy {
 /// long-lived server are launched identically; a second spelling here is how
 /// one of them would quietly stop getting a hardening.
 ///
-/// `tie_to_parent` sets PR_SET_PDEATHSIG(SIGKILL) in the child before exec,
-/// so a jailed command cannot outlive a dead launcher.
-/// The one caller that passes false is `spawn_detached`: a backgrounded
-/// command is DESIGNED to outlive its request (the roster owns its lifetime,
-/// and the escapee sweep covers the crash case).
-fn build_command(spec: &ChildSpec<'_>, cwd: &Path, tie_to_parent: bool) -> Command {
+/// PR_SET_PDEATHSIG(SIGKILL) ties the direct child to its owning launcher.
+fn build_command(spec: &ChildSpec<'_>, cwd: &Path) -> Command {
     let mut cmd = Command::new(&spec.argv[0]);
     cmd.args(&spec.argv[1..]);
     cmd.env_clear();
@@ -2098,12 +2079,9 @@ fn build_command(spec: &ChildSpec<'_>, cwd: &Path, tie_to_parent: bool) -> Comma
         cmd.env("HOME", "/home");
     }
     cmd.current_dir(cwd);
-    // Put the child in its own process group (pgid == its pid) so we can kill
-    // the whole tree on timeout/exit. Otherwise a backgrounded grandchild that
-    // inherited our stdout/stderr write-end keeps the pipe open and the reader
-    // threads' read_to_string() never sees EOF — hanging the launcher.
+    // One-shot teardown and interactive terminal control use the child's process group.
     cmd.process_group(0);
-    if tie_to_parent {
+    {
         // Between our fork and the prctl the parent can die, leaving the child
         // re-parented and the signal never delivered: re-check the parent and
         // refuse to exec a command nobody owns. getppid/prctl are async-signal
@@ -2177,7 +2155,7 @@ fn run_child_exec(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<()> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
-    let mut cmd = build_command(spec, cwd, true);
+    let mut cmd = build_command(spec, cwd);
     apply_child_limits(&mut cmd, spec.memory_limit_mb);
     // Inherited, not piped: these three fds are the caller's pipe to the
     // server. fork/exec does not touch the fd table, so the JSON-RPC stream
@@ -2251,7 +2229,8 @@ fn take_terminal_foreground(cmd: &mut Command) {
 fn run_child(
     spec: &ChildSpec<'_>,
     cwd: &Path,
-    mut active: Option<&mut session::Active<'_>>,
+    mut active: Option<&mut dyn FnMut() -> session::Control>,
+    children: Option<&mut jobs::Children>,
 ) -> io::Result<serde_json::Value> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
@@ -2259,7 +2238,7 @@ fn run_child(
     let _ = CString::new(spec.argv[0].as_bytes());
     let _ = OsStr::new(""); // silence unused import on some targets
 
-    let mut cmd = build_command(spec, cwd, true);
+    let mut cmd = build_command(spec, cwd);
     apply_child_limits(&mut cmd, spec.memory_limit_mb);
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
@@ -2313,7 +2292,7 @@ fn run_child(
     while let Ok(WaitStatus::StillAlive) = waitid(Id::Pid(child_wait), wait_flags) {
         let control = active
             .as_mut()
-            .map(|a| a.poll())
+            .map(|a| a())
             .unwrap_or(session::Control::Continue);
         if control == session::Control::Closed || (control == session::Control::Cancel && !converts)
         {
@@ -2356,19 +2335,21 @@ fn run_child(
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    // Kill the whole process group BEFORE reaping — one path for both normal
-    // exit and timeout. The direct child is still an unreaped zombie (normal
-    // exit) or alive (timeout), so child_pid == pgid is unambiguously ours,
-    // with no pid-reuse hazard. This tears down any backgrounded grandchild
-    // that inherited the stdout/stderr write-end, so read_to_end() gets EOF
-    // and the reader joins finish; it also means a command's process group
-    // does not outlive the command at any isolation level.
+    // A session job signals only its held child; another job can join its process group.
+    // The one-shot transport keeps its process-group teardown.
     unsafe {
-        libc::killpg(child_pid, libc::SIGKILL);
+        if children.is_some() {
+            libc::kill(child_pid, libc::SIGKILL);
+        } else {
+            libc::killpg(child_pid, libc::SIGKILL);
+        }
     }
-    // Reap the direct child for its real exit code (the group SIGKILL above
-    // already terminated it on the timeout path).
+    // Reap the direct child before descendant cleanup so its exit code stays available.
     let status = child.wait()?;
+    let survivors = match children {
+        Some(children) => children.stop()?,
+        None => Vec::new(),
+    };
     let returncode: i32 = if timed_out {
         124
     } else {
@@ -2406,6 +2387,7 @@ fn run_child(
         "stdout": stdout,
         "stderr": stderr,
         "timed_out": timed_out,
+        "survivors": survivors,
     });
     Ok(result)
 }
@@ -2419,11 +2401,6 @@ fn converted_log_path(log_dir: &str, pid: i32) -> String {
     format!("{log_dir}/converted-{pid}.log")
 }
 
-/// Start a command and answer at once with its pid, leaving it running in this
-/// session's namespaces: no wait, and no process-group kill, so a server
-/// survives the request that started it. Under a PID namespace that namespace
-/// is the bound -- closing the session's stdin takes everything in it down;
-/// without one the pid is swept by `sweep_backgrounded` at EOF.
 /// Version 3 of the capset ABI: two 32-bit words per set.
 const LINUX_CAPABILITY_VERSION_3: u32 = 0x2008_0522;
 
@@ -2540,9 +2517,7 @@ fn status_result(pid: i32) -> serde_json::Value {
 /// Idempotent. Bounded: an unkillable process must not hold the run's only
 /// jail process.
 fn stop_result(pid: i32) -> serde_json::Value {
-    // A reaped pid may be recycled, so its group is signalled only while this
-    // launcher still holds it (a zombie keeps its pgid); what a reaped command
-    // left behind is the sweep's, here or in the agent.
+    // An unreaped child cannot recycle its pid before the signal.
     let held = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
     match waitid(Id::Pid(Pid::from_raw(pid)), held) {
         Ok(_) => {}
@@ -2553,9 +2528,8 @@ fn stop_result(pid: i32) -> serde_json::Value {
         }
         Err(e) => return serde_json::json!({"stopped": false, "error": e.to_string()}),
     }
-    // The group, not the pid: spawn_detached gives each one its own, so a
-    // server's children go down with it.
-    unsafe { libc::killpg(pid, libc::SIGKILL) };
+    // Descendants belong to the subreaper, not to a process group another job can join.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
@@ -2575,111 +2549,6 @@ fn stop_result(pid: i32) -> serde_json::Value {
     }
 }
 
-/// Every pid in this PID namespace, read off its private /proc.
-fn namespace_pids() -> HashSet<i32> {
-    let mut pids = HashSet::new();
-    if let Ok(entries) = fs::read_dir("/proc") {
-        for entry in entries.flatten() {
-            if let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() {
-                pids.insert(pid);
-            }
-        }
-    }
-    pids
-}
-
-/// The state, parent and process group of *pid*: the three fields of
-/// /proc/<pid>/stat after the parenthesised name (comm can hold spaces and
-/// parens, so they are taken after its closing one).
-struct ProcStat {
-    state: char,
-    ppid: i32,
-    pgid: i32,
-}
-
-fn stat_of(pid: i32) -> Option<ProcStat> {
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let mut fields = stat.rsplit_once(") ")?.1.split_whitespace();
-    Some(ProcStat {
-        state: fields.next()?.chars().next()?,
-        ppid: fields.next()?.parse().ok()?,
-        pgid: fields.next()?.parse().ok()?,
-    })
-}
-
-/// Kill what the stopped command *pid* left outside its process group and
-/// answer the pids still standing. The launcher is this namespace's init, so
-/// a `setsid` daemon reparents onto it, out of reach of the group kill in
-/// `stop_result`. The window is the one the agent applies outside a
-/// namespace: what appeared after the stopped command started and before the
-/// next still-running command did, whichever order the two stop in. A live
-/// command's own children stay under it and are left alone, and a group is
-/// signalled only through the escapee that leads it.
-fn sweep_escapees_of(pid: i32, backgrounded: &mut Vec<(i32, HashSet<i32>)>) -> Vec<i32> {
-    let Some(idx) = backgrounded.iter().position(|(p, _)| *p == pid) else {
-        return Vec::new();
-    };
-    let (_, before) = backgrounded.remove(idx);
-    let now = namespace_pids();
-    // /proc always lists this init, so an empty read is a failed one, and a
-    // sweep bounded by nothing would take every reparented process.
-    if before.is_empty() || now.is_empty() {
-        return Vec::new();
-    }
-    let mut spare = before;
-    let live = |p: i32| stat_of(p).is_some_and(|s| s.state != 'Z');
-    if let Some((_, next)) = backgrounded[idx..].iter().find(|(p, _)| live(*p)) {
-        spare.extend(now.difference(next));
-    }
-    // A command that exited and was reaped is gone from the window list too.
-    backgrounded.retain(|(p, _)| now.contains(p));
-    spare.insert(1);
-    // A pass kills what reparented onto this init and reaps it; a daemon's own
-    // `setsid` child reparents only once its parent is gone, so passes repeat
-    // until one finds nothing, or the deadline leaves the rest standing.
-    let deadline = std::time::Instant::now() + Duration::from_secs(1);
-    let mut standing: Vec<i32> = Vec::new();
-    loop {
-        let escapees: Vec<i32> = namespace_pids()
-            .difference(&spare)
-            .copied()
-            .filter(|p| !standing.contains(p) && stat_of(*p).is_some_and(|s| s.ppid == 1))
-            .collect();
-        if escapees.is_empty() {
-            return standing;
-        }
-        if std::time::Instant::now() >= deadline {
-            standing.extend(escapees);
-            return standing;
-        }
-        for p in &escapees {
-            unsafe {
-                if stat_of(*p).is_some_and(|s| s.pgid == *p) {
-                    libc::killpg(*p, libc::SIGKILL);
-                } else {
-                    libc::kill(*p, libc::SIGKILL);
-                }
-            }
-        }
-        // Reap what was just killed: an orphan would stand as a zombie,
-        // answering `kill -0` as if alive, until reaped.
-        let mut unreaped = escapees;
-        loop {
-            unreaped.retain(|p| {
-                matches!(
-                    waitpid(Pid::from_raw(*p), Some(WaitPidFlag::WNOHANG)),
-                    Ok(WaitStatus::StillAlive)
-                )
-            });
-            if unreaped.is_empty() || std::time::Instant::now() >= deadline {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(10));
-        }
-        standing.extend(unreaped);
-    }
-}
-
 fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
@@ -2688,7 +2557,7 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
     // process group, capability drop, memory limit): a backgrounded command
     // outlives the request, so it is the one with time to go looking for the
     // launcher's fds, and its rlimits must not depend on the transport.
-    let mut cmd = build_command(spec, cwd, false);
+    let mut cmd = build_command(spec, cwd);
     apply_child_limits(&mut cmd, spec.memory_limit_mb);
     // The caller redirects its own output (as the background tool does), so
     // nothing here holds a pipe open across requests.
@@ -2698,28 +2567,6 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
     let child = cmd.spawn()?;
     let pid = child.id() as i32;
     Ok(pid)
-}
-
-/// Kill the groups of commands still running when the request channel closed.
-///
-/// A PID namespace does this by construction: the launcher is its init, and
-/// tearing the namespace down takes everything in it. Without one (`partial`,
-/// or unconfined), a backgrounded command would outlive the run, so the pids
-/// are tracked and swept here.
-///
-/// `waitid` with WNOWAIT first: a pid that is no longer our child was already
-/// reaped, and the number may have been recycled onto an unrelated process by
-/// now. Only a live child of ours is signalled.
-fn sweep_backgrounded(pids: &[i32]) {
-    let flags = WaitPidFlag::WEXITED | WaitPidFlag::WNOHANG | WaitPidFlag::WNOWAIT;
-    for pid in pids {
-        if let Ok(WaitStatus::StillAlive) = waitid(Id::Pid(Pid::from_raw(*pid)), flags) {
-            unsafe {
-                libc::killpg(*pid, libc::SIGKILL);
-            }
-            let _ = waitpid(Pid::from_raw(*pid), Some(WaitPidFlag::WNOHANG));
-        }
-    }
 }
 
 fn io_err<E: std::fmt::Display>(e: E) -> io::Error {

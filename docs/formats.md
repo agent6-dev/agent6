@@ -116,7 +116,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | `str` | Prompt, task or background-job identifier. |
-| `pid` | `int` | Background process identifier. |
+| `handle` | `str` | Launcher-instance-scoped job handle. |
 | `seconds` | `float` | Elapsed command time in seconds at handback. |
 
 ### diff.updated

@@ -45,7 +45,6 @@ ALLOWED = {
     "providers/token_command.py",
     "sandbox/detect.py",
     "sandbox/jail.py",
-    "sandbox/jail_jobs.py",
     "sandbox/jail_session.py",
     "sessions/process.py",
     "ui/btw.py",

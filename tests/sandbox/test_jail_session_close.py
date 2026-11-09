@@ -16,6 +16,7 @@ import pytest
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_jobs, jail_session
+from agent6.tools import background
 
 
 class _FakeProc:
@@ -29,6 +30,7 @@ class _FakeProc:
         self._wait_raises = wait_raises
         self._alive_after = alive_after
         self.waited = False
+        self.killed = False
 
     def wait(self, timeout: float | None = None) -> int:
         self.waited = True
@@ -36,15 +38,16 @@ class _FakeProc:
             raise self._wait_raises
         return 0
 
+    def kill(self) -> None:
+        self.killed = True
+
     def poll(self) -> int | None:
         return None if self._alive_after else 0
 
 
-def _session(proc: Any, *, pid_namespaced: bool = True) -> jail_session.JailSession:
+def _session(proc: Any) -> jail_session.JailSession:
     return jail_session.JailSession(
         _proc=proc,
-        _binary=pathlib.Path("/nonexistent"),
-        _pid_namespaced=pid_namespaced,
         _memory_limit_mib=0,
     )
 
@@ -57,24 +60,14 @@ def test_close_tolerates_an_already_closed_stdin() -> None:
     assert proc.waited
 
 
-def test_close_kills_a_launcher_that_ignored_eof(monkeypatch: pytest.MonkeyPatch) -> None:
-    """close() SIGKILLs the group of a launcher left alive by a timed-out wait().
-
-    The kill reaches the pid, and close() does not raise when the killpg of an already-exited
-    process errors.
-    """
-    killed: list[int] = []
-
-    def _fake_killpg(pid: int, sig: int) -> None:
-        killed.append(pid)
-
-    monkeypatch.setattr("agent6.sandbox.jail.os.killpg", _fake_killpg)
+def test_close_kills_a_launcher_that_ignored_eof() -> None:
+    """A timed-out close kills the transport, not its job subreapers."""
     proc = _FakeProc(
         wait_raises=subprocess.TimeoutExpired(cmd="jail", timeout=10.0),
         alive_after=True,
     )
     _session(proc).close()  # must not raise
-    assert killed == [proc.pid]
+    assert proc.killed
 
 
 @pytest.mark.parametrize(
@@ -110,89 +103,61 @@ def test_close_drains_a_response_interrupted_before_it_was_read(
     assert not survivors
 
 
-def test_a_survivor_of_the_sweep_is_named_by_every_stop(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
-) -> None:
-    """A stop that could not kill an escapee says so on every path.
-
-    `JailedProcess.close`, `LocalJob.stop`, `BackgroundJob.stop` and `SessionJob.stop` report
-    the sweep's survivors, so the MCP-server path and `stop_background` under `none` and
-    `partial` never answer "stopped" over a process the sweep could not kill.
-    """
-
-    def sweep(exclude: frozenset[int]) -> frozenset[int]:
-        return frozenset({4321})
-
-    def no_children() -> dict[int, int]:
-        return {}
-
-    monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
-    monkeypatch.setattr("agent6.sandbox.jail.own_children", no_children)
-
-    def sleeper() -> subprocess.Popen[bytes]:
-        return subprocess.Popen(["sleep", "60"], start_new_session=True)
-
-    proc = sleeper()
-    assert "4321" in jail_jobs.LocalJob(proc, tmp_path / "local").stop() and proc.poll() is not None
-    proc = sleeper()
-    (tmp_path / "bg").mkdir()  # the outcome dir the shell registry creates
-    assert (
-        "4321" in jail_jobs.BackgroundJob(proc, tmp_path / "bg").stop() and proc.poll() is not None
-    )
-    # The launcher is gone, so its ending is recorded even though the sweep failed.
-    assert json.loads((tmp_path / "bg" / "result.json").read_text())["stopped"] is True
-    proc = sleeper()
-    assert jail.JailedProcess(proc).close() == frozenset({4321}) and proc.poll() is not None
-
-    def stopped(
-        self: jail_session.JailSession, request: dict[str, object], *, interrupted: object = None
-    ) -> dict[str, object]:
-        return {"stopped": True, "returncode": 0}
-
-    monkeypatch.setattr(jail_session.JailSession, "_request", stopped)
-    session = _session(_FakeProc(wait_raises=None, alive_after=False), pid_namespaced=False)
-    assert (
-        "4321"
-        in jail_jobs.SessionJob(
-            session, 7, tmp_path / "job", before=session.child_snapshot()
-        ).stop()
-    )
-    # A job the registry already settled (its command exited) still sweeps on stop.
-    settled = jail_jobs.SessionJob(
-        session, 8, tmp_path / "job-settled", before=session.child_snapshot()
-    )
-    settled._final = jail_session.BackgroundStatus(running=False, returncode=0, error="")  # pyright: ignore[reportPrivateUsage]
-    assert "4321" in settled.stop()
-    namespaced = _session(_FakeProc(wait_raises=None, alive_after=False))
-    job2 = jail_jobs.SessionJob(
-        namespaced, 7, tmp_path / "job2", before=namespaced.child_snapshot()
-    )
-    assert job2.stop() == ""  # the namespace bounds them
-
-
-def test_a_survivor_of_the_sweep_fails_the_command_and_comes_back_from_close(
+@pytest.mark.parametrize("status_first", [False, True])
+@pytest.mark.parametrize(
+    ("reply", "detail"),
+    [
+        ({"stopped": False, "returncode": 23, "survivors": [4321]}, "4321"),
+        (
+            {"stopped": False, "returncode": 23, "error": "job supervisor closed"},
+            "job supervisor closed",
+        ),
+    ],
+)
+def test_failed_stop_preserves_received_exit_and_cleanup_failure(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    status_first: bool,
+    reply: dict[str, object],
+    detail: str,
 ) -> None:
-    """The session path fails a command whose escapee the sweep could not kill, like `run_in_jail`.
-
-    `run` and `close` keep the sweep's answer, so no process outlives the run in silence.
-    """
-
-    def sweep(exclude: frozenset[int]) -> frozenset[int]:
-        return frozenset({4321})
-
-    def no_children() -> dict[int, int]:
-        return {}
+    """A stop's cleanup failure cannot discard the exit code in the same response."""
 
     def answered(
         self: jail_session.JailSession, request: dict[str, object], *, interrupted: object = None
     ) -> dict[str, object]:
-        return {"returncode": 0, "stdout": "", "stderr": ""}
+        if request["kind"] == "status":
+            return {"running": False, "returncode": 23}
+        assert request["kind"] == "stop"
+        return reply
 
-    monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
-    monkeypatch.setattr("agent6.sandbox.jail.own_children", no_children)
     monkeypatch.setattr(jail_session.JailSession, "_request", answered)
-    session = _session(_FakeProc(wait_raises=None, alive_after=False), pid_namespaced=False)
+    session = _session(_FakeProc(wait_raises=None, alive_after=False))
+    outcome = tmp_path / "shells" / "bg1"
+    outcome.mkdir(parents=True)
+    (outcome / "meta.json").write_text('{"command":"exit 23"}')
+    job = jail_jobs.SessionJob(session, "instance:7", outcome)
+    if status_first:
+        assert job.status().returncode == 23
+    for _ in range(2):
+        assert detail in job.stop()
+        assert job.status().returncode == 23
+        record = json.loads((outcome / "result.json").read_text())
+        assert record["returncode"] == 23
+        assert detail in record["error"]
+        rendered = background.roster_from_dir(outcome.parent)[0]
+        assert "exited 23" in rendered and detail in rendered
+
+
+def test_supervisor_survivors_fail_a_foreground_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def answered(
+        self: jail_session.JailSession, request: dict[str, object], *, interrupted: object = None
+    ) -> dict[str, object]:
+        return {"returncode": 0, "stdout": "", "stderr": "", "survivors": [4321]}
+
+    monkeypatch.setattr(jail_session.JailSession, "_request", answered)
+    session = _session(_FakeProc(wait_raises=None, alive_after=False))
     with pytest.raises(jail.JailUnavailableError, match="4321"):
         session.run(("true",))
-    assert session.close() == frozenset({4321})

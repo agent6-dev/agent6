@@ -488,10 +488,10 @@ class ToolDispatcher:
             self._shells.stop_all()
         with self._session_lock:
             if self._session is not None:
-                survivors = self._session.close()
+                error = self._session.close()
                 self._session = None
-                if survivors:
-                    self._emit("jail.degraded", detail=jail.survivors_message(survivors))
+                if error:
+                    self._emit("jail.degraded", detail=error)
         if self._own_session_net is not None:  # never the run's; that is its own to close
             self._own_session_net.close()
             self._own_session_net = None
