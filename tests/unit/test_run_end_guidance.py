@@ -265,7 +265,11 @@ def test_cli_records_unverified_work_and_prints_its_guidance(
     monkeypatch.setenv("PROBE_KEY", "test-key")
     monkeypatch.chdir(repo)
     provider = _Scripted(path)
-    monkeypatch.setattr(role_providers, "build_role_provider", lambda *_args, **_kwargs: provider)
+
+    def provider_factory(*_args: Any, **_kwargs: Any) -> _Scripted:
+        return provider
+
+    monkeypatch.setattr(role_providers, "build_role_provider", provider_factory)
     assert cli_main(["run", "--session-id", "guidance", "write work"]) == (
         5 if policy == "failed_commit" else 0
     )
