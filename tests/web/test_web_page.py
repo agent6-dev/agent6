@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "e6c443b1cce2417cb9862c19d3b482053efdd5703237c5a4d0b2144b755fcdcd"
+PAGE_SHA256 = "e477adad52a28a62daaaef23ff583208532fc6d195d01ba86e0c8316d1644e6f"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -217,12 +217,16 @@ def test_the_pickers_sit_in_a_row_above_each_composer() -> None:
 
 
 def test_the_policy_line_breaks_only_between_its_settings() -> None:
-    """The run card wrapped `run_commands` on one line and `ask` on the next at 300 px."""
+    """The run card wrapped `run_commands` on one line and `ask` on the next at 300 px.
+
+    Later a seat's model line, wider than the card, was clipped: a setting is one inline block
+    with its separator, so it wraps inside itself when it alone exceeds the card.
+    """
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
-    assert "s.policy.split(' · ')" in run
-    assert "pol.appendChild(el('span', 'nowrap', part));" in run
+    assert "const parts = s.policy.split(' · ');" in run
+    assert "el('span', 'setting', part + (i < parts.length - 1 ? ' · ' : ''))" in run
     css = resources.files("agent6.ui.web").joinpath("styles.css").read_text(encoding="utf-8")
-    assert ".nowrap { white-space: nowrap; }" in css
+    assert ".setting { display: inline-block; max-width: 100%; }" in css
 
 
 def test_the_commit_step_row_is_a_picker_row() -> None:

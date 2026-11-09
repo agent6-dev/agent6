@@ -504,14 +504,13 @@ function paintRun(cards, s) {
   if (s.comparison && s.comparison.rationale) {
     cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.comparison.rationale));
   }
-  // The same one-line fold the CLI banner and the TUI composer read; a setting and its value
-  // stay on one line, so a narrow card breaks the line only between settings.
+  // The same one-line fold the CLI banner and the TUI composer read; each setting carries its
+  // separator as one inline block, so a narrow card breaks the line between settings, and a
+  // setting wider than the card wraps inside itself instead of clipping.
   if (s.policy) {
     const pol = el('div', 'sub muted');
-    s.policy.split(' · ').forEach((part, i) => {
-      if (i) pol.appendChild(document.createTextNode(' · '));
-      pol.appendChild(el('span', 'nowrap', part));
-    });
+    const parts = s.policy.split(' · ');
+    parts.forEach((part, i) => pol.appendChild(el('span', 'setting', part + (i < parts.length - 1 ? ' · ' : ''))));
     cards.head.appendChild(pol);
   }
   if (s.last_role) {

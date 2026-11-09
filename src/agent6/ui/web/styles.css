@@ -134,7 +134,7 @@ main { padding: 0; }
 .item .grow { flex: 1; min-width: 0; }
 .item .title, .item .continued { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item .sub { font-size: 12px; color: var(--muted); }
-.nowrap { white-space: nowrap; }
+.setting { display: inline-block; max-width: 100%; }
 .lanes-toggle {
   display: block; margin-top: 4px; padding: 0; background: none; border: 0;
   font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; text-align: left;
