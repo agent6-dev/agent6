@@ -385,6 +385,8 @@ The capture remains readable after stop and disappears when the session closes.
 `sandbox/jail_jobs.py` copies a size snapshot into the host log through its retained descriptor, advancing the offset only for successfully written bytes.
 A failed host write can retry without skipping or duplicating bytes.
 `tools/background.py` retains these host descriptors, renders scrubbed tails with explicit truncation, and stops jobs and copies their final bytes before closing their sessions.
+Dispatcher teardown retains capture owners, host log descriptors, temporary storage and owned networks when host persistence fails.
+A later successful close releases them.
 The host log directory is not a command grant.
 Terminal outcomes and channel-loss reasons are host records, separate from output; replay never infers completion from log text or a command-writable status file.
 An unavailable capture leaves already copied bytes intact and reports incomplete output.

@@ -510,25 +510,33 @@ class ToolDispatcher:
             self._shells.settle()
 
     def close(self) -> None:
-        """Stop owned jobs and record settlement separately from environment lifecycle."""
+        """Stop owned jobs and record settlement separately from environment lifecycle.
+
+        A persistence failure retains capture and resources for a later close attempt.
+
+        Raises:
+            BackgroundError: Background output could not be persisted; close can retry it.
+            OSError: Resource cleanup failed.
+        """
         if self._closed:
             return
         error = "job settlement not confirmed"
         try:
-            try:
-                if self._shells is not None:
-                    self._shells.stop_all()
-            finally:
-                detail = self._command_access.close() if self._command_access is not None else ""
-            error = detail
-            self._closed = True
-        finally:
+            if self._shells is not None:
+                self._shells.stop_all()
+            detail = self._command_access.close() if self._command_access is not None else ""
             if self._own_session_net is not None:
                 self._own_session_net.close()
                 self._own_session_net = None
             if self._command_tmp is not None:
                 self._command_tmp.cleanup()
                 self._command_tmp = None
+            error = detail
+            self._closed = True
+        except (background.BackgroundError, OSError) as exc:
+            error = f"job settlement not confirmed: {exc}"
+            raise
+        finally:
             if error:
                 self._emit("jail.degraded", detail=error)
             if self.target_id is not None:

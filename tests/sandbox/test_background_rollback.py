@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import pathlib
 import tempfile
@@ -10,7 +11,7 @@ import pytest
 
 from agent6 import config, kinds, paths
 from agent6.app import session_runtime
-from agent6.sessions import layout
+from agent6.sessions import event_log, layout
 from agent6.tools import background, dispatch
 
 
@@ -107,14 +108,28 @@ def test_registration_rollback_retains_private_job_until_persistence_succeeds(
 def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
     monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
 ) -> None:
-    """Dispatcher close retains capture and retry handles after a partial host write."""
+    """Failed close keeps prepared capture alive and records unknown settlement until retry."""
+    _assert_dispatcher_close_retries(monkeypatch, isolation, shared=True)
+
+
+@pytest.mark.parametrize("isolation", ["none", "partial", "full"])
+def test_dispatcher_close_retains_private_resources_until_copy_succeeds(
+    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel
+) -> None:
+    """Failed close keeps dispatcher-owned temp and network resources for private capture."""
+    _assert_dispatcher_close_retries(monkeypatch, isolation, shared=False)
+
+
+def _assert_dispatcher_close_retries(
+    monkeypatch: pytest.MonkeyPatch, isolation: kinds.IsolationLevel, *, shared: bool
+) -> None:
     repo = pathlib.Path(__file__).resolve().parents[2]
     with tempfile.TemporaryDirectory(dir=repo, prefix=".rollback-records-") as scratch:
         root = pathlib.Path(scratch)
         work = root / "work"
         work.mkdir()
         monkeypatch.setenv("XDG_STATE_HOME", str(root / "state"))
-        session_dir = layout.SessionLayout(paths.state_dir(work), "s1").session_dir
+        saved = layout.SessionLayout(paths.state_dir(work), "s1")
         cfg = config.Config.model_validate(
             {
                 "sandbox": {
@@ -128,8 +143,11 @@ def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
             root=work,
             config=cfg,
             isolation=isolation,
-            session_dir=session_dir,
-            command_access=session_runtime.prepare_local_execution(cfg, work, isolation),
+            session_dir=saved.session_dir,
+            events=event_log.EventSink(saved.logs_path),
+            command_access=session_runtime.prepare_local_execution(cfg, work, isolation)
+            if shared
+            else None,
         )
         real_write = os.pwrite
         writes = 0
@@ -148,28 +166,39 @@ def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
                     "argv": [
                         "/bin/sh",
                         "-c",
-                        "printf 'before\\n'; while [ ! -f release ]; do sleep 0.01; done; "
+                        "printf 'before\\n'; touch ready; "
+                        "while [ ! -f release ]; do sleep 0.01; done; "
                         "printf 'after\\n'; touch emitted; sleep 30",
-                    ]
+                    ],
+                    "background": not shared,
                 },
             ).to_wire()
             assert started["background_id"] == "bg1" and started["still_running"]
             shells = tools._shells  # pyright: ignore[reportPrivateUsage]
             access = tools._command_access  # pyright: ignore[reportPrivateUsage]
-            assert access is not None
-            owner = access.session
-            assert shells is not None and owner is not None
+            assert shells is not None
             shell = shells._get("bg1")  # pyright: ignore[reportPrivateUsage]
-            assert not shell.job._owns_session  # pyright: ignore[reportPrivateUsage]
+            owner = shell.job._session  # pyright: ignore[reportPrivateUsage]
+            handle = shell.job._handle  # pyright: ignore[reportPrivateUsage]
+            assert shell.job._owns_session is not shared  # pyright: ignore[reportPrivateUsage]
+            if shared:
+                assert access is not None and access.session is owner
+                temp, net = access.temp, access.network
+            else:
+                assert access is None
+                temp = tools._command_tmp  # pyright: ignore[reportPrivateUsage]
+                net = tools._own_session_net  # pyright: ignore[reportPrivateUsage]
+                deadline = time.monotonic() + 5
+                while not (work / "ready").exists():
+                    assert time.monotonic() < deadline, "command never emitted its output"
+                    time.sleep(0.01)
+                tools.dispatch("read_background", {"id": "bg1", "wait_s": 0})
             fd = shell.log_fd
             assert os.pread(fd, 100, 0) == b"before\n"
-            temp = access.temp  # pyright: ignore[reportPrivateUsage]
-            net = access.network  # pyright: ignore[reportPrivateUsage]
             holder = net._holder if net is not None else None  # pyright: ignore[reportPrivateUsage]
-            if isolation == "full":
-                assert holder is not None and holder.poll() is None
-            else:
-                assert temp is not None
+            assert isolation != "full" or holder is not None
+            assert isolation == "full" or temp is not None
+            assert holder is None or holder.poll() is None
             (work / "release").touch()
             deadline = time.monotonic() + 5
             while not (work / "emitted").exists():
@@ -179,34 +208,69 @@ def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
             # No read or settle after release: close must persist the late bytes.
             with monkeypatch.context() as patch:
                 patch.setattr(os, "pwrite", partial)
-                with pytest.raises(background.BackgroundError, match="copy full"):
-                    tools.close()
-                assert access.session is owner  # pyright: ignore[reportPrivateUsage]
-                assert owner._proc.poll() is None  # pyright: ignore[reportPrivateUsage]
-                assert shells._get("bg1") is shell  # pyright: ignore[reportPrivateUsage]
-                assert shell.log_fd == fd and os.pread(fd, 100, 0) == b"before\naf"
-                assert access.temp is temp  # pyright: ignore[reportPrivateUsage]
-                assert access.network is net  # pyright: ignore[reportPrivateUsage]
-                if holder is not None:
-                    assert holder.poll() is None
-                if temp is not None:
-                    assert pathlib.Path(temp.name).is_dir()
+                for attempt in range(1, 3):
+                    with pytest.raises(background.BackgroundError, match="copy full") as raised:
+                        tools.close()
+                    assert owner._proc.poll() is None  # pyright: ignore[reportPrivateUsage]
+                    assert shells._get("bg1") is shell  # pyright: ignore[reportPrivateUsage]
+                    assert shell.log_fd == fd and os.pread(fd, 100, 0) == b"before\naf"
+                    assert not tools._closed  # pyright: ignore[reportPrivateUsage]
+                    if access is not None:
+                        assert access.session is owner
+                        assert access.temp is temp and access.network is net
+                    else:
+                        assert tools._command_tmp is temp  # pyright: ignore[reportPrivateUsage]
+                        assert tools._own_session_net is net  # pyright: ignore[reportPrivateUsage]
+                    assert holder is None or holder.poll() is None
+                    assert temp is None or pathlib.Path(temp.name).is_dir()
+                    status = owner.status_background(handle)
+                    assert not status.running and status.returncode is not None
+                    assert not status.error
+                    assert owner.read_background(handle, offset=0, limit=100).data == (
+                        b"before\nafter\n"
+                    )
+                    rows = [json.loads(line) for line in saved.logs_path.read_text().splitlines()]
+                    jobs = [row for row in rows if row["type"] == "execution.jobs"]
+                    assert len(jobs) == attempt
+                    assert jobs[-1]["outcome"] == "unknown"
+                    assert str(raised.value) in jobs[-1]["reason"]
+                    degraded = [row for row in rows if row["type"] == "jail.degraded"]
+                    assert str(raised.value) in degraded[-1]["detail"]
 
             tools.close()
-            assert owner._close_error is not None  # pyright: ignore[reportPrivateUsage]
+            assert tools._closed  # pyright: ignore[reportPrivateUsage]
+            assert owner._close_error == ""  # pyright: ignore[reportPrivateUsage]
             assert owner._proc.poll() == 0  # pyright: ignore[reportPrivateUsage]
+            assert shell.log_fd == -1
             with pytest.raises(OSError):
                 os.fstat(fd)
             assert (shells.log_root / "bg1/out.log").read_bytes() == b"before\nafter\n"
-            assert access.temp is None or not pathlib.Path(access.temp.name).exists()  # pyright: ignore[reportPrivateUsage]
-            if holder is not None:
-                assert holder.poll() is not None
-            if temp is not None:
-                assert not pathlib.Path(temp.name).exists()
+            result = json.loads((shell.dir / "result.json").read_text())
+            assert result["running"] is False and result["returncode"] is not None
+            assert not result["error"] and not result["capture_error"]
+            assert holder is None or holder.poll() is not None
+            assert temp is None or not pathlib.Path(temp.name).exists()
+            assert tools._command_tmp is None  # pyright: ignore[reportPrivateUsage]
+            assert tools._own_session_net is None  # pyright: ignore[reportPrivateUsage]
+            journal = saved.logs_path.read_bytes()
+            rows = [json.loads(line) for line in journal.splitlines()]
+            (target,) = [row for row in rows if row["type"] == "execution.target"]
+            jobs = [row for row in rows if row["type"] == "execution.jobs"]
+            assert [row["outcome"] for row in jobs] == [
+                "unknown",
+                "unknown",
+                "settled" if shared else "unknown",
+            ]
+            if shared:
+                assert jobs[-1]["reason"] == ""
+            else:
+                assert "No session-wide settlement observation" in jobs[-1]["reason"]
+            environments = [row for row in rows if row["type"] == "execution.environment"]
+            assert [row["outcome"] for row in environments] == ["not_applicable"] * 3
+            for row in (*jobs, *environments):
+                assert row["execution_id"] == target["execution_id"] == tools.execution_id
+                assert row["target_id"] == target["target_id"] == tools.target_id
             tools.close()
+            assert saved.logs_path.read_bytes() == journal
         finally:
             tools.close()
-            if tools._command_access is not None:  # pyright: ignore[reportPrivateUsage]
-                net = tools._command_access.network  # pyright: ignore[reportPrivateUsage]
-                if net is not None:
-                    net.close()
