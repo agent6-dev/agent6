@@ -1709,6 +1709,15 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     session.stop_background.return_value = jail_session.Stopped(
         returncode=-15, survivors=frozenset()
     )
+
+    def read_capture(handle: str, *, offset: int, limit: int) -> jail_session.BackgroundRead:
+        data = b"starting\nwarning\n"
+        chunk = data[offset : offset + limit]
+        return jail_session.BackgroundRead(
+            data=chunk, next_offset=offset + len(chunk), size=len(data)
+        )
+
+    session.read_background.side_effect = read_capture
     stopped = reason in ("stop now", "abort")
     duration = 8.0 if stopped else 10.0
 
@@ -1718,12 +1727,9 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
         env: tuple[tuple[str, str], ...],
         timeout_s: float,
         checkin_s: float,
-        log_dir: str,
         interrupted: Callable[[], bool],
     ) -> kinds.BackgroundHandoff:
         assert argv == ("sleep", "40") and timeout_s == 0.0 and checkin_s == 10.0
-        log = pathlib.Path(log_dir) / "foreground.log"
-        log.write_text("starting\nwarning\n", encoding="utf-8")
         if reason == "abort":
             ipc.submit_steer(session_dir, "abort", now=True)
         elif reason == "stop now":
@@ -1734,7 +1740,6 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
         return kinds.BackgroundHandoff(
             argv=argv,
             handle="42",
-            log=str(log),
             stdout="starting\n",
             stderr="warning\n",
             duration_s=duration,
@@ -1794,13 +1799,10 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     ipc.request_stop(session_dir, now=True)
-    log = session_dir / "shells" / "logs" / "foreground.log"
-    log.write_text("starting\n", encoding="utf-8")
     session = mock.Mock(spec=jail_session.JailSession)
     session.run.return_value = kinds.BackgroundHandoff(
         argv=("sleep", "40"),
         handle="42",
-        log=str(log),
         stdout="starting\n",
         stderr="",
         duration_s=8.0,
@@ -1808,6 +1810,15 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
     session.status_background.return_value = jail_session.BackgroundStatus(
         running=True, returncode=None, error=""
     )
+
+    def read_capture(handle: str, *, offset: int, limit: int) -> jail_session.BackgroundRead:
+        data = b"starting\n"
+        chunk = data[offset : offset + limit]
+        return jail_session.BackgroundRead(
+            data=chunk, next_offset=offset + len(chunk), size=len(data)
+        )
+
+    session.read_background.side_effect = read_capture
     session.stop_background.side_effect = [
         jail_session.Stopped(returncode=-15, survivors=frozenset({777})),
         jail_session.Stopped(returncode=-15, survivors=frozenset()),

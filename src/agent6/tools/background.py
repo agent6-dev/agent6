@@ -5,10 +5,8 @@
 A background command outlives the tool call that started it but never the run:
 `stop_all` at dispatcher close takes down whatever is still alive.
 
-Every state a caller can see is derived from the live process and the files on
-disk, never from a cached guess, so a command that dies on its own reads as
-dead the next time anyone looks. Nothing blocks unasked: `read` waits only
-when the caller passes `wait_s`, and nothing else waits at all.
+The launcher owns capture and completion. The host copies bytes into its own logs
+and records observed outcomes for surfaces that replay the session.
 """
 
 from __future__ import annotations
@@ -26,20 +24,14 @@ from agent6 import kinds, paths, terminal
 from agent6.sandbox import jail, jail_jobs, jail_session
 from agent6.sessions import process
 
-# Every log lives under one root the run's jail session grants read-write when it opens, so a
-# run's background commands can write each other's logs; the launcher's result and each
-# command's identity stay outside it, so a command cannot rewrite its own exit code or name.
-# The grant includes MakeSym, so the agent never resolves a log path again: it reads through the
-# descriptor it opened before the jail existed (a command could symlink `out.log` at a secret).
+# Host records are not granted to commands. Reads and writes retain the opened descriptor.
 _LOG_ROOT = "logs"
 _LOG_NAME = "out.log"
-# Only the tail is ever returned, so only the tail is read.
+# Tail rendering reads at most 1 MiB from the host copy.
 _TAIL_BYTES = 1 << 20
 # Written at start so `/shells` and a dashboard read the roster off disk without the dispatcher.
 SHELLS_DIR = "shells"  # under the session dir
 _META_NAME = "meta.json"
-# argv values ride as positional parameters, never as shell text.
-_REDIRECT = f'exec >"$0/{_LOG_NAME}" 2>&1; exec "$@"'
 
 
 # (argv, extra read-write paths) -> the sandbox policy; the dispatcher owns policy construction.
@@ -61,7 +53,7 @@ class ShellView:
         command: The command as shell text.
         state: "running", "exited", "stopped", "died" or "stop failed".
         returncode: The exit code, when known.
-        detail: Why the fate is unknown or the stop failed, else "".
+        detail: Why the fate is unknown, cleanup failed or output is incomplete, else "".
     """
 
     id: str
@@ -83,11 +75,12 @@ class _Shell:
     command: str
     dir: pathlib.Path
     job: jail_jobs.SessionJob
-    # Opened before the command could exist: the one handle no jailed process can redirect.
+    # The host record's descriptor is never selected again by path.
     log_fd: int
     stopped: bool = False
     # Why a stop could not be confirmed, "" when the command is gone.
     stop_error: str = ""
+    output_error: str = ""
 
 
 def _seq_of(name: str) -> int:
@@ -129,7 +122,7 @@ class BackgroundShells:
         self._seq = _highest_shell_seq(root)
         # The ids an earlier execution issued: its end stopped every one of them.
         self._earlier = self._seq
-        # The run's jail session grants this path when it opens, so it must exist by then.
+        # Copied logs live on the host, outside the command's grants.
         self.log_root = root / _LOG_ROOT
         paths.mkdir_for_real_user(self.log_root)
 
@@ -145,7 +138,7 @@ class BackgroundShells:
 
         Args:
             argv: The command.
-            policy_for: Builds the sandbox policy for the wrapped argv and the log dir.
+            policy_for: Builds the sandbox policy for the original argv.
             session: The run's jail session; the command runs inside it, sharing its netns so
                 a later command can reach it. None gives it a launcher of its own.
             net_for: The network a launcher of its own joins for the built policy; None joins
@@ -160,26 +153,17 @@ class BackgroundShells:
         self._seq += 1
         shell_id = f"bg{self._seq}"
         shell_dir = self._root / shell_id
-        log_dir = self.log_root / shell_id
         paths.mkdir_for_real_user(shell_dir)
         log_fd = self._open_log(shell_id)
-        wrapped = ("/bin/sh", "-c", _REDIRECT, str(log_dir), *argv)
         job: jail_jobs.SessionJob
         try:
-            policy = policy_for(wrapped, (log_dir,))
-            if session is None:
-                job = jail_jobs.start_in_jail(
-                    policy,
-                    outcome_dir=shell_dir,
-                    session_net=None if net_for is None else net_for(policy),
-                )
-            else:
-                # The session is already confined; only the env comes from the policy.
-                job = jail_jobs.SessionJob(
-                    session,
-                    session.start_background(wrapped, env=policy.env),
-                    shell_dir,
-                )
+            policy = policy_for(argv, ())
+            job = jail_jobs.start_in_jail(
+                policy,
+                outcome_dir=shell_dir,
+                session=session,
+                session_net=None if net_for is None else net_for(policy),
+            )
         except (jail.JailUnavailableError, OSError) as exc:
             os.close(log_fd)
             raise BackgroundError(f"could not start a background command: {exc}") from exc
@@ -210,23 +194,21 @@ class BackgroundShells:
         paths.mkdir_for_real_user(shell_dir)
         job = jail_jobs.SessionJob(session, handoff.handle, shell_dir)
         command = shlex.join(handoff.argv)
-        # The launcher created the log with O_EXCL|O_NOFOLLOW; this side never resolves it again.
+        # Only the host record is opened; the handle selects the launcher-owned capture.
         try:
-            log_fd = os.open(handoff.log, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
-        except OSError as exc:
-            # A registration that refuses a running command stops it, or nothing can reach it again.
-            stop_error = job.stop()
-            if stop_error:
-                self._shells[shell_id] = _Shell(
+            log_fd = self._open_log(shell_id)
+        except (OSError, BackgroundError) as exc:
+            rollback_error = self._rollback(
+                _Shell(
                     id=shell_id,
                     command=command,
                     dir=shell_dir,
                     job=job,
                     log_fd=-1,
                     stopped=True,
-                    stop_error=stop_error,
                 )
-            detail = f"; stopping it failed: {stop_error}" if stop_error else ""
+            )
+            detail = f"; cleanup failed: {rollback_error}" if rollback_error else ""
             raise BackgroundError(
                 f"could not open the handed-back command's log: {exc}{detail}"
             ) from exc
@@ -257,36 +239,52 @@ class BackgroundShells:
                 encoding="utf-8",
             )
         except OSError as exc:
-            stop_error = shell.job.stop()
-            if stop_error:
-                # A command whose stop was not confirmed stays reachable for the teardown sweep.
-                shell.stop_error = stop_error
-                self._shells[shell.id] = shell
-            else:
-                os.close(shell.log_fd)
+            rollback_error = self._rollback(shell)
             with contextlib.suppress(OSError):
                 meta.unlink()
-            detail = f"; stopping it failed: {stop_error}" if stop_error else ""
+            detail = f"; cleanup failed: {rollback_error}" if rollback_error else ""
             raise BackgroundError(
                 f"could not record background command {shell.id}: {exc}{detail}"
             ) from exc
         self._shells[shell.id] = shell
         return self._view(shell)
 
-    def _open_log(self, shell_id: str) -> int:
-        """Create the command's log directory and log, and return the one read descriptor.
+    def _rollback(self, shell: _Shell) -> str:
+        """Retain ownership until failed registration has stopped, copied and closed.
 
-        Every step is relative to a descriptor on the log root, never by path: the root is
-        granted read-write to every command in the run, so one can plant `<log_root>/bg<N>` as
-        a symlink, and a `mkdir(exist_ok=True)` would follow it into a directory a command
-        named. O_EXCL makes the log a regular file this process owns; O_CLOEXEC keeps the handle
-        from every child. The command's own `exec >` lands on the same inode.
+        Args:
+            shell: The command whose registration failed.
+
+        Returns:
+            An empty string after cleanup, otherwise the failure kept for teardown to retry.
+        """
+        self._shells[shell.id] = shell
+        try:
+            shell.stop_error = shell.job.stop()
+            if shell.stop_error:
+                return shell.stop_error
+            if shell.log_fd >= 0:
+                shell.output_error = shell.job.copy_output(shell.log_fd)
+            shell.stop_error = shell.job.close()
+            if shell.stop_error:
+                return shell.stop_error
+            log_fd, shell.log_fd = shell.log_fd, -1
+            if log_fd >= 0:
+                os.close(log_fd)
+        except OSError as exc:
+            shell.stop_error = f"rollback persistence or closure failed: {exc}"
+            return shell.stop_error
+        del self._shells[shell.id]
+        return ""
+
+    def _open_log(self, shell_id: str) -> int:
+        """Create a private host log without following a replaced path.
 
         Args:
             shell_id: The command's `bg<N>` id.
 
         Returns:
-            The read descriptor every later read goes through.
+            The read-write descriptor retained for all copies and tail reads.
 
         Raises:
             BackgroundError: The log directory already exists.
@@ -310,7 +308,7 @@ class BackgroundShells:
             try:
                 return os.open(
                     _LOG_NAME,
-                    os.O_RDONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
+                    os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
                     0o600,
                     dir_fd=dir_fd,
                 )
@@ -331,7 +329,7 @@ class BackgroundShells:
         turn boundary.
         """
         for shell in self._shells.values():
-            shell.job.status()
+            self._view(shell)
 
     def read(
         self,
@@ -367,6 +365,7 @@ class BackgroundShells:
                     break
                 time.sleep(min(pause, max(0.0, deadline - time.monotonic())))
                 pause = min(pause * 1.5, 2.0)
+        view = self._view(shell)
         try:
             size = os.lseek(shell.log_fd, 0, os.SEEK_END)
             start = max(size - _TAIL_BYTES, 0)
@@ -378,7 +377,7 @@ class BackgroundShells:
         lines = text.splitlines()
         if cut_mid_line:
             lines = lines[1:]  # the cap cut a line: its remainder is not a line
-        notes: list[str] = []
+        notes: list[str] = [shell.output_error] if shell.output_error else []
         if start > 0:
             notes.append(
                 f"earlier output cut at the {_TAIL_BYTES} byte tail cap ({size} bytes total)"
@@ -388,7 +387,7 @@ class BackgroundShells:
             lines = lines[-tail_lines:]
         if notes:
             lines = [f"... {'; '.join(notes)} ...", *lines]
-        return self._view(shell), "\n".join(lines)
+        return view, "\n".join(lines)
 
     def stop(self, shell_id: str) -> ShellView:
         """Kill one command and sweep what it left behind.
@@ -414,17 +413,27 @@ class BackgroundShells:
 
         Returns:
             The commands that were still running.
+
+        Raises:
+            BackgroundError: A host record could not be persisted; teardown can retry it.
         """
         stopped: list[ShellView] = []
-        try:
-            for shell in self._shells.values():
+        failures: list[str] = []
+        for shell in self._shells.values():
+            try:
                 if self._stop(shell):
                     stopped.append(self._view(shell))
-        finally:
-            for shell in self._shells.values():
-                log_fd, shell.log_fd = shell.log_fd, -1
-                with contextlib.suppress(OSError):
-                    os.close(log_fd)
+            except OSError as exc:
+                failures.append(f"{shell.id}: {exc}")
+        if failures:
+            raise BackgroundError("could not persist background output: " + "; ".join(failures))
+        for shell in self._shells.values():
+            error = shell.job.close()
+            if error:
+                shell.stop_error = error
+            log_fd, shell.log_fd = shell.log_fd, -1
+            if log_fd >= 0:
+                os.close(log_fd)
         return stopped
 
     def _stop(self, shell: _Shell) -> bool:
@@ -436,8 +445,13 @@ class BackgroundShells:
         Returns:
             Whether it was still running; a command that had exited keeps its own ending.
         """
-        was_running = shell.job.status().running
-        shell.stop_error = shell.job.stop()
+        try:
+            was_running = shell.job.status().running
+        finally:
+            # Host persistence failure must not leave the job's descendants running.
+            shell.stop_error = shell.job.stop()
+        if shell.log_fd >= 0:
+            shell.output_error = shell.job.copy_output(shell.log_fd)
         shell.stopped = shell.stopped or was_running
         return was_running
 
@@ -453,20 +467,23 @@ class BackgroundShells:
         return shell
 
     def _view(self, shell: _Shell) -> ShellView:
+        if shell.log_fd >= 0:
+            shell.output_error = shell.job.copy_output(shell.log_fd)
         status = shell.job.status()
+        detail = "; ".join(
+            dict.fromkeys(filter(None, (shell.stop_error, status.error, status.capture_error)))
+        )
         # A stop that could not be confirmed outranks every other word: the command may be running.
         if shell.stop_error:
-            return ShellView(
-                shell.id, shell.command, "stop failed", status.returncode, shell.stop_error
-            )
+            return ShellView(shell.id, shell.command, "stop failed", status.returncode, detail)
         if status.running:
-            return ShellView(shell.id, shell.command, "running", None, "")
+            return ShellView(shell.id, shell.command, "running", None, detail)
         if shell.stopped:
-            return ShellView(shell.id, shell.command, "stopped", status.returncode, "")
+            return ShellView(shell.id, shell.command, "stopped", status.returncode, detail)
         # No exit code from the launcher means the fate is unknown, not a clean exit.
         if status.returncode is None:
-            return ShellView(shell.id, shell.command, "died", None, status.error)
-        return ShellView(shell.id, shell.command, "exited", status.returncode, "")
+            return ShellView(shell.id, shell.command, "died", None, detail)
+        return ShellView(shell.id, shell.command, "exited", status.returncode, detail)
 
 
 def shells_text(session_dir: pathlib.Path) -> str:
@@ -550,18 +567,17 @@ def roster_from_dir(root: pathlib.Path) -> list[str]:
         if not isinstance(record, dict):
             lines.append(f"[{d.name}] ended without a result: {command}")
             continue
+        errors = "; ".join(
+            dict.fromkeys(str(record[key]) for key in ("error", "capture_error") if record.get(key))
+        )
         code = record.get("returncode")
         if isinstance(code, int):
-            detail = f" -- {record['error']}" if record.get("error") else ""
+            detail = f" -- {errors}" if errors else ""
             lines.append(f"[{d.name}] exited {code}: {command}{detail}")
         elif record.get("stopped"):
             # Historical records can carry a stop without an observed exit code.
             lines.append(f"[{d.name}] stopped: {command}")
         else:
-            ending = (
-                f"outcome unknown ({record['error']})"
-                if record.get("error")
-                else "ended without a result"
-            )
+            ending = f"outcome unknown ({errors})" if errors else "ended without a result"
             lines.append(f"[{d.name}] {ending}: {command}")
     return lines

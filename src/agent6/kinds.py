@@ -265,7 +265,6 @@ class BackgroundHandoff:
     Attributes:
         argv: The command.
         handle: Its launcher-instance-scoped job handle.
-        log: Where its output goes.
         stdout: What it printed before the hand-off.
         stderr: What it printed to stderr before the hand-off.
         duration_s: How long it had run at the hand-off.
@@ -273,7 +272,6 @@ class BackgroundHandoff:
 
     argv: tuple[str, ...]
     handle: str
-    log: str
     stdout: str
     stderr: str
     duration_s: float

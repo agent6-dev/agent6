@@ -27,6 +27,12 @@ class _Job:
             running=self.running, returncode=None if self.running else -9, error=""
         )
 
+    def copy_output(self, log_fd: int) -> str:
+        return ""
+
+    def close(self) -> str:
+        return ""
+
     def stop(self) -> str:
         self.stopped = True
         if not self.stop_error:
@@ -41,6 +47,11 @@ class _Session:
 
     def status_background(self, _handle: str) -> jail_session.BackgroundStatus:
         return jail_session.BackgroundStatus(running=True, returncode=None, error="")
+
+    def read_background(
+        self, handle: str, *, offset: int, limit: int
+    ) -> jail_session.BackgroundRead:
+        return jail_session.BackgroundRead(data=b"", next_offset=offset, size=offset)
 
     def stop_background(self, handle: str) -> jail_session.Stopped:
         self.stopped.append(handle)
@@ -91,7 +102,7 @@ def test_a_command_is_still_reachable_when_registration_and_its_stop_fail(
     _fail_metadata(monkeypatch)
     shells = background.BackgroundShells(tmp_path / "shells")
 
-    with pytest.raises(background.BackgroundError, match="stopping it failed"):
+    with pytest.raises(background.BackgroundError, match="cleanup failed"):
         shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
 
     assert [view.state for view in shells.roster()] == ["stop failed"]
@@ -219,15 +230,12 @@ def test_adopt_stops_a_command_when_its_metadata_cannot_be_recorded(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A handed-back command is live before its roster write, like a fresh start."""
-    log = tmp_path / "handoff.log"
-    log.write_text("", encoding="utf-8")
     session = _Session()
     _fail_metadata(monkeypatch)
     shells = background.BackgroundShells(tmp_path / "shells")
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
         handle="42",
-        log=str(log),
         stdout="",
         stderr="",
         duration_s=900.0,
@@ -240,20 +248,20 @@ def test_adopt_stops_a_command_when_its_metadata_cannot_be_recorded(
     assert shells.roster() == []
 
 
-def test_adopt_retains_a_command_when_its_log_and_cleanup_fail(tmp_path: pathlib.Path) -> None:
+def test_adopt_retains_a_command_when_its_host_log_and_cleanup_fail(tmp_path: pathlib.Path) -> None:
     """A failed cleanup remains reachable for a later stop and teardown retry."""
     session = _Session(frozenset({777}))
     shells = background.BackgroundShells(tmp_path / "shells")
+    (shells.log_root / "bg1").mkdir()
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
         handle="42",
-        log=str(tmp_path / "missing.log"),
         stdout="",
         stderr="",
         duration_s=900.0,
     )
 
-    with pytest.raises(background.BackgroundError, match="stopping it failed"):
+    with pytest.raises(background.BackgroundError, match="cleanup failed"):
         shells.adopt(handoff, session=cast(Any, session))
 
     assert [view.state for view in shells.roster()] == ["stop failed"]

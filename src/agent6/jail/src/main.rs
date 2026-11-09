@@ -15,17 +15,14 @@
 //! Exits 0 if it successfully ran the child (regardless of child exit code).
 //! Exits non-zero only when sandbox SETUP failed — in that case stderr explains why.
 
-use std::collections::VecDeque;
 use std::ffi::{CString, OsStr};
 use std::fs::{self, File};
 use std::io::{self, BufRead, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
-use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+use std::os::unix::fs::FileTypeExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use landlock::{
@@ -40,6 +37,7 @@ use nix::unistd::{chdir, fork, getgid, getuid, pivot_root, ForkResult, Pid};
 use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, TargetArch};
 use serde::Deserialize;
 
+mod capture;
 mod jobs;
 mod session;
 
@@ -356,8 +354,15 @@ fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
             let outcome = if policy.mode == "exec" {
                 run_child_exec(&policy.child_spec(), &policy.cwd)
             } else {
-                run_child(&policy.child_spec(), &policy.cwd, None, None)
-                    .and_then(|answer| session::write_answer(&answer))
+                run_child(
+                    &policy.child_spec(),
+                    &policy.cwd,
+                    None,
+                    None,
+                    &capture::Capture::new(None),
+                    false,
+                )
+                .and_then(|answer| session::write_answer(&answer))
             };
             if let Err(e) = outcome {
                 die(format!("child execution failed: {e}"));
@@ -400,8 +405,15 @@ fn run_unconfined(policy: &Policy) -> ! {
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd, None, None)
-            .and_then(|answer| session::write_answer(&answer))
+        run_child(
+            &policy.child_spec(),
+            &policy.cwd,
+            None,
+            None,
+            &capture::Capture::new(None),
+            false,
+        )
+        .and_then(|answer| session::write_answer(&answer))
     };
     if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
@@ -437,8 +449,15 @@ fn run_partial(policy: &Policy) -> ! {
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd, None, None)
-            .and_then(|answer| session::write_answer(&answer))
+        run_child(
+            &policy.child_spec(),
+            &policy.cwd,
+            None,
+            None,
+            &capture::Capture::new(None),
+            false,
+        )
+        .and_then(|answer| session::write_answer(&answer))
     };
     if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
@@ -2022,12 +2041,8 @@ struct ChildSpec<'a> {
     /// the operator stopping it, not by a number that cannot know whether a
     /// 20-minute build is stuck or working.
     timeout_s: f64,
-    /// Hand the command back after this long instead of waiting on it. <= 0, or
-    /// an empty `log_dir`, means wait (a one-shot launcher has nobody to hand
-    /// it back TO).
+    /// Hand the command back after this long; <= 0 disables hand-back.
     checkin_s: f64,
-    /// Where a handed-back command's output continues, as a log.
-    log_dir: &'a str,
 }
 
 impl Policy {
@@ -2049,7 +2064,6 @@ impl Policy {
             // A one-shot launcher exits with its command, so there would be
             // nobody left to poll a handed-back one.
             checkin_s: 0.0,
-            log_dir: "",
         }
     }
 }
@@ -2231,6 +2245,8 @@ fn run_child(
     cwd: &Path,
     mut active: Option<&mut dyn FnMut() -> session::Control>,
     children: Option<&mut jobs::Children>,
+    captured: &capture::Capture,
+    background: bool,
 ) -> io::Result<serde_json::Value> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
@@ -2248,30 +2264,20 @@ fn run_child(
     let child_pid = child.id() as i32; // == pgid, since process_group(0)
     let timeout = Duration::from_secs_f64(spec.timeout_s.max(0.0));
     let checkin = Duration::from_secs_f64(spec.checkin_s.max(0.0));
-    let converts = spec.checkin_s > 0.0 && !spec.log_dir.is_empty();
+    let converts = spec.checkin_s > 0.0;
     let start = std::time::Instant::now();
 
-    // Drain stdout/stderr on background threads so a child that writes more
-    // than the pipe buffer (~64KB) before exiting cannot deadlock us. The
-    // earlier implementation only read pipes AFTER try_wait() returned Some,
-    // which would deadlock the child on its write() while we were stuck
-    // polling try_wait() forever.
-    let stdout_pipe = child.stdout.take().expect("stdout piped");
-    let stderr_pipe = child.stderr.take().expect("stderr piped");
-    // ONE capture for both pipes: the arrival order is what a merged log needs,
-    // and it cannot be recovered from two separate buffers later.
-    let captured = Arc::new(Mutex::new(Capture::default()));
-    let drained = Arc::new(AtomicUsize::new(0));
-    for (pipe, tag) in [
-        (Box::new(stdout_pipe) as Box<dyn Read + Send>, Stream::Out),
-        (Box::new(stderr_pipe), Stream::Err),
-    ] {
-        let done = Arc::clone(&drained);
-        let sink = Arc::clone(&captured);
-        std::thread::spawn(move || {
-            read_capped_into(pipe, tag, &sink);
-            done.fetch_add(1, Ordering::SeqCst);
-        });
+    captured.drain(
+        child.stdout.take().expect("stdout piped"),
+        capture::Stream::Out,
+    );
+    captured.drain(
+        child.stderr.take().expect("stderr piped"),
+        capture::Stream::Err,
+    );
+    if background {
+        captured.detach();
+        return Ok(serde_json::json!({"pid": child_pid}));
     }
 
     // Poll the direct child WITHOUT reaping it (WNOWAIT leaves the zombie), so
@@ -2303,34 +2309,13 @@ fn run_child(
             break;
         }
         if converts && (start.elapsed() > checkin || control == session::Control::Cancel) {
-            // Hand the command back rather than kill it: whether a long command
-            // is stuck or working is a judgement, so it goes to whoever can
-            // make one. A cancellation frame asks for the same hand-back early.
-            // Render BEFORE spilling -- the answer carries the output so far,
-            // and spilling clears the retained capture.
-            let (out, err) = {
-                let buf = captured.lock().unwrap_or_else(|e| e.into_inner());
-                (buf.render(Some(Stream::Out)), buf.render(Some(Stream::Err)))
-            };
-            let log = converted_log_path(spec.log_dir, child_pid);
-            let file = File::options()
-                .write(true)
-                .create_new(true)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(&log)?;
-            captured
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .spill_to(file)?;
             let answer = serde_json::json!({
                 "backgrounded": true,
                 "pid": child_pid,
-                "log": log,
-                "stdout": out,
-                "stderr": err,
+                "stdout": captured.render(capture::Stream::Out),
+                "stderr": captured.render(capture::Stream::Err),
             });
-            // No killpg, no reap: the drain threads keep appending to the log
-            // and the caller polls the pid through `status`/`stop`.
+            captured.detach();
             return Ok(answer);
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -2357,26 +2342,12 @@ fn run_child(
             .code()
             .unwrap_or_else(|| status.signal().map(|s| 128 + s).unwrap_or(-1))
     };
-    // Take what the readers have, never wait on them: a grandchild that left
-    // the process group (`setsid`, and every double-fork daemonize) survives
-    // the killpg above and holds the write end, so the pipe never reaches EOF.
-    // Joining here hung the launcher, and with it every later command in the
-    // run -- one tool call, no error, no diagnostic. The threads keep draining
-    // into the buffers; the process exit closes their fds.
-    let drain_deadline = std::time::Instant::now() + Duration::from_millis(CAPTURE_DRAIN_MS);
-    while drained.load(Ordering::SeqCst) < 2 && std::time::Instant::now() < drain_deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let held_open = drained.load(Ordering::SeqCst) < 2;
-    let (stdout, mut stderr) = {
-        let buf = captured.lock().unwrap_or_else(|e| e.into_inner());
-        (buf.render(Some(Stream::Out)), buf.render(Some(Stream::Err)))
-    };
-    if held_open {
-        stderr.push_str(concat!(
-            "\n[agent6-jail] output capture ended early: a process outside the",
-            " command's group still holds its pipe",
-        ));
+    captured.finish();
+    let stdout = captured.render(capture::Stream::Out);
+    let mut stderr = captured.render(capture::Stream::Err);
+    let capture_error = captured.error();
+    if !capture_error.is_empty() {
+        stderr.push_str(&format!("\n[agent6-jail] {capture_error}"));
     }
     if timed_out {
         stderr.push_str("\n[agent6-jail] timeout");
@@ -2390,15 +2361,6 @@ fn run_child(
         "survivors": survivors,
     });
     Ok(result)
-}
-
-/// Where a handed-back command's output continues.
-///
-/// Named for the pid, which no command can predict, and created with O_EXCL |
-/// O_NOFOLLOW below: the log root is granted read-write to every command in the
-/// run, so a predictable name could be pre-planted as a symlink.
-fn converted_log_path(log_dir: &str, pid: i32) -> String {
-    format!("{log_dir}/converted-{pid}.log")
 }
 
 /// Version 3 of the capset ABI: two 32-bit words per set.
@@ -2549,189 +2511,13 @@ fn stop_result(pid: i32) -> serde_json::Value {
     }
 }
 
-fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
-    if spec.argv.is_empty() {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
-    }
-    // The same child setup as the capture and exec transports (env, cwd,
-    // process group, capability drop, memory limit): a backgrounded command
-    // outlives the request, so it is the one with time to go looking for the
-    // launcher's fds, and its rlimits must not depend on the transport.
-    let mut cmd = build_command(spec, cwd);
-    apply_child_limits(&mut cmd, spec.memory_limit_mb);
-    // The caller redirects its own output (as the background tool does), so
-    // nothing here holds a pipe open across requests.
-    cmd.stdin(Stdio::null());
-    cmd.stdout(Stdio::null());
-    cmd.stderr(Stdio::null());
-    let child = cmd.spawn()?;
-    let pid = child.id() as i32;
-    Ok(pid)
-}
-
 fn io_err<E: std::fmt::Display>(e: E) -> io::Error {
     io::Error::other(format!("{e}"))
-}
-
-// Retained-output cap per stream: head + tail, middle dropped with a marker.
-// The child's memory_limit_mb binds the CHILD; nothing bound the launcher's
-// buffers, so an endless writer grew them until the HOST ran out of memory
-// before the timeout. 4 MiB + 4 MiB keeps real build/test logs (whose tail
-// carries the verdict) intact while bounding the launcher and the JSON result
-// line the Python side buffers in turn.
-/// How long a command's teardown waits for its output readers before
-/// answering anyway. Only an escapee holding the pipe reaches it.
-const CAPTURE_DRAIN_MS: u64 = 2000;
-const STREAM_RETAIN_HEAD: usize = 4 * 1024 * 1024;
-const STREAM_RETAIN_TAIL: usize = 4 * 1024 * 1024;
-
-/// Drain `stream` to EOF, retaining at most head+tail bytes, decoded lossily.
-/// Bytes (not read_to_string): a strict decode returned Err and dropped the
-/// whole stream to "" on the first non-UTF-8 byte (a grep over a binary, a
-/// latin-1 file), misleading every consumer while the real rc was reported.
-/// Which stream a captured chunk arrived on.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Stream {
-    Out,
-    Err,
-}
-
-/// A command's output as it arrived: chunks tagged by stream, in arrival order,
-/// under one head+tail cap.
-///
-/// Three views come off the one capture. A synchronous result reports stdout
-/// and stderr SEPARATELY, so each renders alone; a log wants chronology, so it
-/// renders merged. Recording the order once is what lets a command that starts
-/// synchronous and is later handed back as a background job keep both -- the
-/// order cannot be reconstructed from two separate buffers afterwards.
-///
-/// Ordering is as accurate as any capture without a pty: a process block-buffers
-/// stdout into a pipe while stderr is unbuffered, so the writer's own flushing
-/// dominates, exactly as it does for a shared `2>&1` fd.
-#[derive(Default)]
-struct Capture {
-    head: Vec<(Stream, Vec<u8>)>,
-    head_bytes: usize,
-    tail: VecDeque<(Stream, Vec<u8>)>,
-    tail_bytes: usize,
-    // Per stream, so a flood on stdout does not stamp the cap marker onto a
-    // stderr result that lost nothing.
-    dropped_out: u64,
-    dropped_err: u64,
-    /// Once the command is handed back, its output stops being a result and
-    /// becomes a log: chunks go straight to the file, merged.
-    spill: Option<File>,
-}
-
-impl Capture {
-    fn push(&mut self, stream: Stream, bytes: &[u8]) {
-        if let Some(file) = self.spill.as_mut() {
-            let _ = file.write_all(bytes);
-            let _ = file.flush();
-            return;
-        }
-        if self.head_bytes < STREAM_RETAIN_HEAD {
-            self.head_bytes += bytes.len();
-            self.head.push((stream, bytes.to_vec()));
-            return;
-        }
-        self.tail_bytes += bytes.len();
-        self.tail.push_back((stream, bytes.to_vec()));
-        // Whole chunks: they are one read each (<=64 KiB), so the cap is coarse
-        // by at most one chunk and the tagging stays intact.
-        while self.tail_bytes > STREAM_RETAIN_TAIL {
-            match self.tail.pop_front() {
-                Some((stream, dropped)) => {
-                    self.tail_bytes -= dropped.len();
-                    match stream {
-                        Stream::Out => self.dropped_out += dropped.len() as u64,
-                        Stream::Err => self.dropped_err += dropped.len() as u64,
-                    }
-                }
-                None => break,
-            }
-        }
-    }
-
-    /// One stream's bytes, or the merged stream when *only* is None.
-    fn render(&self, only: Option<Stream>) -> String {
-        let keep = |s: &Stream| only.is_none_or(|want| want == *s);
-        let mut out: Vec<u8> = Vec::new();
-        for (stream, bytes) in &self.head {
-            if keep(stream) {
-                out.extend_from_slice(bytes);
-            }
-        }
-        let dropped = match only {
-            Some(Stream::Out) => self.dropped_out,
-            Some(Stream::Err) => self.dropped_err,
-            None => self.dropped_out + self.dropped_err,
-        };
-        if dropped > 0 {
-            out.extend_from_slice(
-                format!(
-                    "\n[agent6-jail] output over the retained cap; {} bytes omitted here\n",
-                    dropped
-                )
-                .as_bytes(),
-            );
-        }
-        for (stream, bytes) in &self.tail {
-            if keep(stream) {
-                out.extend_from_slice(bytes);
-            }
-        }
-        String::from_utf8_lossy(&out).into_owned()
-    }
-
-    /// Hand the capture over to a log: write what arrived so far, merged and in
-    /// order, then append there instead of retaining. No seam to stitch -- the
-    /// merged view already exists, because the order was recorded as it arrived.
-    fn spill_to(&mut self, mut file: File) -> io::Result<()> {
-        file.write_all(self.render(None).as_bytes())?;
-        file.flush()?;
-        self.head.clear();
-        self.tail.clear();
-        self.head_bytes = 0;
-        self.tail_bytes = 0;
-        self.dropped_out = 0;
-        self.dropped_err = 0;
-        self.spill = Some(file);
-        Ok(())
-    }
-}
-
-/// Drain *stream* into *sink* until EOF. Runs on its own thread, which may
-/// outlive the command: a grandchild outside its process group keeps the write
-/// end open, and nothing can make that read return.
-fn read_capped_into(mut stream: impl Read, tag: Stream, sink: &Mutex<Capture>) {
-    let mut chunk = [0u8; 64 * 1024];
-    loop {
-        match stream.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => sink
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(tag, &chunk[..n]),
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Drain to EOF and render, the shape these retention tests pin. The
-    /// launcher itself never waits for EOF (see the teardown in run_child).
-    fn read_capped(stream: impl Read) -> String {
-        let sink = Mutex::new(Capture::default());
-        read_capped_into(stream, Stream::Out, &sink);
-        let rendered = sink
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .render(Some(Stream::Out));
-        rendered
-    }
 
     #[test]
     fn landlock_sets_handle_everything_and_the_writable_set_cannot_make_devices() {
@@ -2754,32 +2540,6 @@ mod tests {
         assert!(sets.read.contains(AccessFs::Execute));
         assert!(!sets.read_noexec.contains(AccessFs::Execute));
         assert_eq!(sets.read_noexec | AccessFs::Execute, sets.read);
-    }
-
-    #[test]
-    fn read_capped_passes_small_output_through_verbatim() {
-        let data = b"hello \xe9 world\n"; // non-UTF-8 byte survives lossily
-        let out = read_capped(&data[..]);
-        assert_eq!(out, String::from_utf8_lossy(data));
-        assert!(!out.contains("omitted"));
-    }
-
-    #[test]
-    fn read_capped_keeps_head_and_tail_and_marks_the_drop() {
-        // 3x the total cap: the head keeps the start, the tail keeps the end,
-        // and the marker names how many bytes fell in between.
-        let total = 3 * (STREAM_RETAIN_HEAD + STREAM_RETAIN_TAIL);
-        let mut data = vec![b'x'; total];
-        data[..5].copy_from_slice(b"START");
-        let end = data.len();
-        data[end - 3..].copy_from_slice(b"END");
-        let out = read_capped(&data[..]);
-        assert!(out.starts_with("START"));
-        assert!(out.ends_with("END"));
-        let dropped = total - STREAM_RETAIN_HEAD - STREAM_RETAIN_TAIL;
-        assert!(out.contains(&format!("{dropped} bytes omitted")));
-        // Bounded: retained payload + marker, nowhere near `total`.
-        assert!(out.len() < STREAM_RETAIN_HEAD + STREAM_RETAIN_TAIL + 200);
     }
 
     #[test]

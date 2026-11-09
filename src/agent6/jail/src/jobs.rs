@@ -5,6 +5,7 @@
 use std::fs::File;
 use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, RawFd};
+use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -14,7 +15,7 @@ use nix::sys::wait::{waitid, waitpid, Id, WaitPidFlag, WaitStatus};
 use nix::unistd::{fork, ForkResult, Pid};
 use serde_json::{json, Value};
 
-use crate::{session, ChildSpec};
+use crate::{capture, session, ChildSpec};
 
 pub struct Children(File);
 
@@ -98,6 +99,8 @@ pub struct Job {
     process: Option<Process>,
     stopped: Option<Value>,
     observed: Option<i32>,
+    capture_error: String,
+    log: File,
 }
 
 impl Job {
@@ -122,6 +125,13 @@ impl Job {
         required: bool,
         sibling_fds: &[RawFd],
     ) -> io::Result<Self> {
+        // Anonymous and CLOEXEC: no command-writable path ever selects the capture inode.
+        let log = File::options()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_TMPFILE | libc::O_CLOEXEC)
+            .mode(0o600)
+            .open("/tmp")?;
         let (parent, child) = UnixStream::pair()?;
         match unsafe { fork() }.map_err(crate::io_err)? {
             ForkResult::Parent { child: pid } => {
@@ -134,6 +144,8 @@ impl Job {
                     }),
                     stopped: None,
                     observed: None,
+                    capture_error: String::new(),
+                    log,
                 })
             }
             ForkResult::Child => {
@@ -149,7 +161,7 @@ impl Job {
                     }
                     libc::close(null);
                 }
-                let result = worker(child, spec, cwd, background, ruleset, required);
+                let result = worker(child, spec, cwd, background, ruleset, required, log);
                 if let Err(e) = result {
                     eprintln!("agent6-jail: job supervisor: {e}");
                 }
@@ -172,6 +184,11 @@ impl Job {
         let answer: Value = serde_json::from_slice(&line)?;
         if let Some(code) = answer.get("returncode").and_then(Value::as_i64) {
             self.observed = Some(code as i32);
+        }
+        if let Some(error) = answer.get("capture_error").and_then(Value::as_str) {
+            if !error.is_empty() {
+                self.capture_error = error.to_owned();
+            }
         }
         Ok(answer)
     }
@@ -202,7 +219,7 @@ impl Job {
 
     pub fn status(&mut self) -> Value {
         if let Some(stopped) = &self.stopped {
-            return json!({"running": false, "returncode": stopped["returncode"], "error": stopped["error"].as_str().unwrap_or("")});
+            return json!({"running": false, "returncode": stopped["returncode"], "error": stopped["error"].as_str().unwrap_or(""), "capture_error": stopped["capture_error"].as_str().unwrap_or("")});
         }
         self.exchange(b"p").unwrap_or_else(|e| self.lost(e))
     }
@@ -217,13 +234,41 @@ impl Job {
         answer
     }
 
+    pub fn read(&mut self, offset: u64, limit: usize) -> io::Result<Value> {
+        if limit == 0 || limit > 65536 {
+            return Err(io::Error::other(
+                "read limit must be between 1 and 65536 bytes",
+            ));
+        }
+        let status = self.status();
+        let capture_error = ["capture_error", "error"]
+            .iter()
+            .filter_map(|key| status[*key].as_str())
+            .filter(|error| !error.is_empty())
+            .collect::<Vec<_>>()
+            .join("; ");
+        let size = self.log.metadata()?.len();
+        if offset > size {
+            return Err(io::Error::other("read offset exceeds capture size"));
+        }
+        let mut data = vec![0; limit.min((size - offset) as usize)];
+        let count = self.log.read_at(&mut data, offset)?;
+        data.truncate(count);
+        Ok(
+            json!({"offset": offset, "next_offset": offset + count as u64, "size": size, "data": data,
+                "capture_error": capture_error}),
+        )
+    }
+
     fn exchange(&mut self, command: &[u8]) -> io::Result<Value> {
         self.channel()?.get_mut().write_all(command)?;
         self.receive()
     }
 
     fn lost(&self, error: io::Error) -> Value {
-        json!({"running": false, "stopped": false, "returncode": self.observed, "error": format!("job outcome or cleanup unknown: {error}")})
+        json!({"running": false, "stopped": false, "returncode": self.observed,
+            "error": format!("job outcome or cleanup unknown: {error}"),
+            "capture_error": self.capture_error})
     }
 }
 
@@ -266,16 +311,16 @@ fn worker(
     background: bool,
     ruleset: &Option<RulesetCreated>,
     required: bool,
+    log: File,
 ) -> io::Result<()> {
     let mut children = Children::own()?;
     let result = (|| {
         restrict(ruleset, required)?;
         channel.set_nonblocking(true)?;
-        let mut answer = if background {
-            crate::spawn_detached(spec, cwd).map(|pid| json!({"pid": pid}))
-        } else {
-            crate::run_child(spec, cwd, Some(&mut || control(&mut channel)), Some(&mut children))
-        }.unwrap_or_else(|e| json!({"returncode": 127, "stdout": "", "stderr": format!("child execution failed: {e}"), "exec_failed": true}));
+        let captured = capture::Capture::new(Some(log));
+        let mut answer = crate::run_child(spec, cwd, Some(&mut || control(&mut channel)),
+            Some(&mut children), &captured, background)
+            .unwrap_or_else(|e| json!({"returncode": 127, "stdout": "", "stderr": format!("child execution failed: {e}"), "exec_failed": true}));
         channel.set_nonblocking(false)?;
         let Some(pid) = answer.get("pid").and_then(Value::as_i64) else {
             answer["survivors"] = children.stop()?.into();
@@ -302,18 +347,18 @@ fn worker(
             if command[0] == b's' {
                 let status = final_status.unwrap_or_else(|| crate::stop_result(pid as i32));
                 let survivors = children.stop()?;
+                captured.finish();
                 send(
                     &mut channel,
-                    &json!({"stopped": survivors.is_empty(), "returncode": status["returncode"], "survivors": survivors}),
+                    &json!({"stopped": survivors.is_empty(), "returncode": status["returncode"], "survivors": survivors, "capture_error": captured.error()}),
                 )?;
                 return Ok(());
             }
-            send(
-                &mut channel,
-                &final_status
-                    .clone()
-                    .unwrap_or_else(|| json!({"running": true, "returncode": null})),
-            )?;
+            let mut status = final_status
+                .clone()
+                .unwrap_or_else(|| json!({"running": true, "returncode": null}));
+            status["capture_error"] = captured.error().into();
+            send(&mut channel, &status)?;
         }
     })();
     let cleanup = children.stop();

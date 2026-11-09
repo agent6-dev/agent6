@@ -440,7 +440,6 @@ def test_command_channel_cancel_precedes_the_checkin(
                 "argv": ["sleep", "30"],
                 "timeout_s": 20,
                 "checkin_s": 900 if handback else 0,
-                "log_dir": str(tmp_path),
             },
         )
         started = time.monotonic()

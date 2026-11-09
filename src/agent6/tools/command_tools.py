@@ -139,7 +139,6 @@ def run_model_command(
             env=policy.env,
             timeout_s=0.0,  # the check-in replaces the kill
             checkin_s=checkin,
-            log_dir=str(shells.log_root),
             # An immediate stop asks for the hand-back now; a stop after the step waits.
             interrupted=interrupted,
         )

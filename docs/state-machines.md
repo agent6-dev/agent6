@@ -736,8 +736,13 @@ Moving the directory preserves its journal and recorded bundle, but does not rem
 ## Command-session jobs
 
 Command-session jobs retain observed exit codes across status and stop.
-An exit code and a descendant cleanup failure can coexist; the host records and displays both.
+An exit code and a descendant cleanup or capture failure can coexist; the host records and displays both.
 A lost supervisor channel without a completion response leaves the command outcome unknown, not successful or stopped; an earlier observed exit remains known.
+The host persists this lost outcome and the first transport failure, so replay cannot turn it into a running or successful command.
+Live output and replay keep any earlier capture failure alongside the loss reason, including when no exit was observed.
+Copied log bytes remain available; output not copied before channel loss is unavailable, not evidence of completion.
+A read failure after confirmed stop is persisted as a capture error alongside the known exit code and any earlier capture failure.
+A host copy failure retries from the last written byte while the capture remains available.
 These [job states](architecture.md#jail-job-ownership) are separate from the workflow's terminal states.
 
 ## CLI surface

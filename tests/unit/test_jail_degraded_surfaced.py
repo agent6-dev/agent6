@@ -14,8 +14,9 @@ import pathlib
 import pytest
 
 from agent6.config import Config
+from agent6.sandbox import jail, jail_session
 from agent6.sessions import event_log
-from agent6.tools import dispatch
+from agent6.tools import dispatch, tool_errors
 
 
 class _StubSession:
@@ -128,3 +129,41 @@ def test_concurrent_callers_open_exactly_one_session(
 
     assert len(opened) == 1, f"opened {len(opened)} sessions; {len(opened) - 1} leaked"
     assert seen == [opened[0]] * 4
+
+
+@pytest.mark.parametrize("background", [False, True])
+def test_failed_session_open_never_falls_back(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, background: bool
+) -> None:
+    """A session preparation failure refuses every attempt instead of changing transport."""
+    attempts = 0
+    one_shots = 0
+
+    def refuse(*args: object, **kwargs: object) -> jail_session.JailSession:
+        nonlocal attempts
+        attempts += 1
+        raise jail.JailUnavailableError("preparation refused")
+
+    def one_shot(*args: object, **kwargs: object) -> None:
+        nonlocal one_shots
+        one_shots += 1
+        raise AssertionError("failed preparation invoked a one-shot runner")
+
+    monkeypatch.setattr(jail_session.JailSession, "open", refuse)
+    d = dispatch.ToolDispatcher(
+        root=tmp_path,
+        config=Config.model_validate(
+            {"sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"}}
+        ),
+        isolation="none",
+        session_dir=tmp_path / "session",
+        use_jail_session=True,
+    )
+    monkeypatch.setattr(jail, "run_in_jail", one_shot)
+    try:
+        for _ in range(2):
+            with pytest.raises(tool_errors.ToolError, match="preparation refused"):
+                d.dispatch("run_command", {"argv": ["true"], "background": background})
+        assert attempts == 1 and one_shots == 0
+    finally:
+        d.close()

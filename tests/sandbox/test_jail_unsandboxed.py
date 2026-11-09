@@ -66,6 +66,7 @@ def test_the_detached_none_path_applies_the_memory_cap(
     assert not status.running
     assert (status.returncode != 0) is bool(cap_mib)
     assert job.stop() == ""
+    assert job.close() == ""
 
 
 @pytest.mark.parametrize("cap_mib", [64, 0])

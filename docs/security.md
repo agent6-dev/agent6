@@ -20,7 +20,6 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - No writes outside the workspace
     - `sandbox.extra_write_paths` widens it, visible in `agent6 config show`
     - the per-repo memory dir (file tools only) and the jail's persistent `HOME` (below) widen it, visible in `agent6 check sandbox`
-    - the run's background-command log dir, in its session dir under the per-repo state dir, widens it for jailed commands
     - where `sandbox.isolation = "auto"` resolves to `partial` on Landlock ABI 1-2, truncation outside write grants is unconfined (warned)
 - No reads outside the workspace and a read-only system set for installed toolchains
     - `full` `sandbox.isolation`: `/usr`, `/bin`, `/sbin`, `/lib`, `/lib64` and `/etc/alternatives` bound read-only into an otherwise empty rootfs, plus a curated `/dev`: the nodes `null`, `zero`, `urandom`, `random` and `full`, a private `/dev/shm`, and a private devpts (`/dev/pts`, `/dev/ptmx`) so a command can allocate a pseudo-terminal that reaches no host terminal
@@ -193,7 +192,6 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
     - a hidden path inside the tree a symlinked grant resolves to is masked under the grant's spelled name too, where the jail shows that tree
     - a hidden directory reads as an empty directory and a hidden file as an empty file; a write to either fails with `Read-only file system`
-    - a grant agent6 makes beneath a masked dir (the run's background-command log dir) is bound again through the mask and keeps its access
     - a grant at or inside a private dir is refused at config load
     - `partial` `sandbox.isolation` cannot mask: a grant containing a private dir warns, an unmaskable `hide_paths` entry refuses
     - a `sandbox.extra_read_paths` or `extra_write_paths` entry inside a `hide_paths` entry refuses at every jailed level: the launcher binds a grant through the mask above it
@@ -229,15 +227,30 @@ Each `--security-opt` flag on this page turns off a protection of the container 
 - One launcher per run at every isolation level; under `full` `sandbox.isolation` its commands share that netns, PID namespace, and private `/tmp`, and under `partial` the host's network and `/tmp`
     - EOF on the run's command channel stops the foreground job without waiting for its deadline or handing it back.
       The supervisor stops its owned jobs and descendants at every isolation level, without scanning the shared PID namespace
-    - a launcher that cannot start leaves each command its own
+    - a launcher that cannot start refuses execution with its preparation error; it never falls back to another runner
 - The policy arrives as JSON on a pipe from agent6, validated against a strict schema; unknown fields are refused.
 - The [supervisor protocol](architecture.md#jail-supervisor-protocol) uses stdin for requests and request-correlated cancellation, stdout for responses, and stderr for launcher diagnostics.
   One nonblocking reader owns stdin even while a foreground command runs, and only the serve loop writes responses.
-    - captured commands receive `/dev/null` on stdin and separate stdout/stderr pipes; detached commands receive `/dev/null` on all three streams
+    - foreground and background commands receive `/dev/null` on stdin and separate stdout/stderr pipes
     - commands do not inherit the protocol streams or private job channels; dumpable 0 on both supervisor layers and the child's capability drop prevent unprivileged same-user children from reopening their descriptors through `/proc/<pid>/fd`
     - protocol version, request IDs and frame-size checks reject incompatible or malformed peers; they do not authenticate a launcher the operator selected or provide confinement under `none`
     - malformed input stops the active job before closing the session; stale cancellation IDs cannot stop another request
     - Python drains launcher stderr independently with bounded retention, so diagnostics cannot fill that pipe while it waits for a response
+
+### Captured output
+
+The launcher opens each capture with `O_TMPFILE | O_CLOEXEC` in its `/tmp`, before applying the job's Landlock ruleset.
+Commands inherit only their output pipes, not the capture descriptor; there is no log pathname to replace or symlink.
+The supervisor reads only its owned capture by handle and bounds each response to 64 KiB of raw bytes.
+Host persistence uses descriptors opened with exclusive creation and no symlink following, outside command grants.
+A replaced host log path never selects bytes to read or a destination to write.
+These protections do not provide filesystem confinement under `none`.
+
+Output is untrusted data, never a completion signal.
+Raw bytes are preserved on the host; tool output scrubs terminal escapes and labels tail truncation.
+Background completion comes from supervisor status and stop responses; losing the channel records an unknown outcome unless an exit code was already received.
+Copied bytes survive channel loss, but unread target bytes may be lost.
+The per-response bound does not limit total log storage; capture and host persistence failures are reported rather than treated as command success.
 
 ### Owned-process cleanup
 

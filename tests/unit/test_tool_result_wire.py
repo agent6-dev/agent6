@@ -353,18 +353,24 @@ def test_metric_pattern_reads_raw_output_before_the_scrub_and_clip(tmp_path: pat
 
 def test_a_handed_back_command_is_scrubbed(tmp_path: pathlib.Path) -> None:
     """A check-in hand-back scrubs both streams and retains a readable background handle."""
-    log = tmp_path / "handoff.log"
-    log.write_text("\x1b[32mout\x1b[0m\n", encoding="utf-8")
+    data = b"\x1b[32mout\x1b[0m\n"
     handoff = kinds.BackgroundHandoff(
         argv=("sleep", "60"),
         handle="42",
-        log=str(log),
         stdout="\x1b[32mout\x1b[0m\n",
         stderr="\x1b[31merr\x1b[0m\n",
         duration_s=900.0,
     )
     session = mock.Mock(spec=jail_session.JailSession)
     session.run.return_value = handoff
+
+    def read_capture(handle: str, *, offset: int, limit: int) -> jail_session.BackgroundRead:
+        chunk = data[offset : offset + limit]
+        return jail_session.BackgroundRead(
+            data=chunk, next_offset=offset + len(chunk), size=len(data)
+        )
+
+    session.read_background.side_effect = read_capture
     session.status_background.return_value = jail_session.BackgroundStatus(
         running=True, returncode=None, error=""
     )

@@ -316,13 +316,13 @@ The bound store's security rules are in [Security](security.md#8-secrets-and-con
 
 `sandbox/jail_session.py` owns one serving launcher per run at every local isolation level.
 `jail/src/session.rs` owns its newline-delimited JSON protocol on stdin and stdout.
-The initial policy selects `mode = "serve"`; after confinement setup, the launcher sends `{"ready":true,"protocol":2}`.
+The initial policy selects `mode = "serve"`; after confinement setup, the launcher sends `{"ready":true,"protocol":3}`.
 Python refuses malformed readiness or a different protocol version before sending any command.
 
-- Each `run`, `background`, `status` or `stop` request carries a positive, increasing `id`; its single response carries the same `id`.
+- Each `run`, `background`, `status`, `read` or `stop` request carries a positive, increasing `id`; its single response carries the same `id`.
 - Only one request may be active; Python is the command-channel writer, and the Rust serve loop is the response writer.
 - `{"kind":"cancel","id":N}` has no response of its own and applies only to the active request with that ID.
-  Cancellation requests early hand-back when `checkin_s > 0` and `log_dir` is set; otherwise it stops the active job and returns its exit result.
+  Cancellation requests early hand-back when `checkin_s > 0`; otherwise it stops the active job and returns its exit result.
 - Cancellation for any other ID is ignored, including one that races a completed request.
 - One nonblocking stdin reader belongs to the serve loop and is polled while it waits for the job supervisor.
   It forwards cancellation and EOF over the private job channel without waiting for the command deadline; a partial frame never blocks command polling.
@@ -342,7 +342,7 @@ Python waits up to 10 seconds for launcher exit before killing and reaping it.
 ## Jail job ownership
 
 `jail/src/session.rs` resolves opaque handles in its own job table; handles combine a random launcher-instance identifier with the starting request's ID.
-Neither `status` nor `stop` accepts a command pid.
+Neither `status`, `read` nor `stop` accepts a command pid.
 `jail/src/jobs.rs` owns each job's private subreaper, control channel and retained stop response.
 The kernel reparents detached descendants to that job owner, so jobs and launchers sharing a PID namespace cannot claim each other's children.
 The [cleanup boundary and failure limits](security.md#owned-process-cleanup) apply under `full`, `partial` and `none`.
@@ -353,12 +353,30 @@ No completion response means an unknown outcome, even if the transport exits suc
 Closing a session discards unread command responses and reports unconfirmed cleanup if the supervisor does not exit cleanly.
 Host process snapshots are not part of the command-session lifecycle.
 
+## Command capture and host records
+
+`jail/src/capture.rs` drains stdout and stderr into an anonymous launcher-owned file, retaining bounded foreground excerpts separately.
+Explicit background starts run the original argv without a redirection wrapper; hand-backs carry a handle and excerpts, never a target path.
+A `read` request names that handle, a byte `offset` and a `limit` from 1 to 65536.
+The response carries raw bytes as a JSON integer array, the next offset, the size observed before reading and any retained `capture_error`.
+The capture remains readable after stop and disappears when the session closes.
+
+`sandbox/jail_jobs.py` copies a size snapshot into the host log through its retained descriptor, advancing the offset only for successfully written bytes.
+A failed host write can retry without skipping or duplicating bytes.
+`tools/background.py` retains these host descriptors, renders scrubbed tails with explicit truncation, and stops jobs and copies their final bytes before closing their sessions.
+The host log directory is not a command grant.
+Terminal outcomes and channel-loss reasons are host records, separate from output; replay never infers completion from log text or a command-writable status file.
+An unavailable capture leaves already copied bytes intact and reports incomplete output.
+Read, status and stop responses carry capture failures separately from the exit code and cleanup outcome; the host persists and displays both.
+
 ## Tool dispatch
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.
 Commands and verify run jailed; file tools resolve through the workspace boundary.
 `tools/command_tools.py` holds jailed execution, command check-ins, and background read and stop handlers.
 `tools/dispatch.py` owns routing, approvals, verify and metric events, and the jail-session lifecycle.
+Session preparation failures are retained and propagated; they never select a one-shot fallback.
+Explicit local one-shot callers remain separate.
 Under `partial` and `none` it gives commands a shared `TMPDIR` in a private `agent6-<session>-*` (the id's first 12 characters) directory in the system temp dir, falling back to `/tmp` when that root exceeds 32 bytes to leave room for Unix socket names.
 Under `full` the jail's own tmpfs `/tmp` is the run's.
 The start gate, verify tool, foreground commands and background commands use this directory; the dispatcher removes it after stopping commands at teardown.

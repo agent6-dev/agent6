@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 use crate::{default_memory_limit_mb, default_timeout, ChildSpec};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const FRAME_LIMIT: usize = 1024 * 1024;
 // Two 8 MiB captures, each byte escaped to at most six JSON bytes, plus metadata.
 pub const ANSWER_LIMIT: usize = 128 * 1024 * 1024;
@@ -37,8 +37,6 @@ struct ChildRequest {
     memory_limit_mb: u64,
     #[serde(default)]
     checkin_s: f64,
-    #[serde(default)]
-    log_dir: String,
 }
 
 impl ChildRequest {
@@ -49,7 +47,6 @@ impl ChildRequest {
             memory_limit_mb: self.memory_limit_mb,
             timeout_s: self.timeout_s,
             checkin_s: self.checkin_s,
-            log_dir: &self.log_dir,
         }
     }
 }
@@ -65,6 +62,13 @@ enum Request {
     /// Report whether a backgrounded command is still running, reaping it and
     /// answering with its exit code once it is not.
     Status { id: NonZeroU64, handle: String },
+    /// Read bounded bytes from the owned capture, never from a command path.
+    Read {
+        id: NonZeroU64,
+        handle: String,
+        offset: u64,
+        limit: usize,
+    },
     /// Stop the job and its owned descendants, retaining the result.
     Stop { id: NonZeroU64, handle: String },
     /// End the wait for this request; it has no separate answer.
@@ -75,7 +79,10 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Run(child) | Self::Background(child) => child.id.get(),
-            Self::Status { id, .. } | Self::Stop { id, .. } | Self::Cancel { id } => id.get(),
+            Self::Read { id, .. }
+            | Self::Status { id, .. }
+            | Self::Stop { id, .. }
+            | Self::Cancel { id } => id.get(),
         }
     }
 }
@@ -288,6 +295,17 @@ fn serve_requests(
                 None => {
                     serde_json::json!({"running": false, "returncode": null, "error": "unknown job handle"})
                 }
+            },
+            Request::Read {
+                handle,
+                offset,
+                limit,
+                ..
+            } => match jobs.get_mut(&handle) {
+                Some(job) => job
+                    .read(offset, limit)
+                    .unwrap_or_else(|e| serde_json::json!({"error": e.to_string()})),
+                None => serde_json::json!({"error": "unknown job handle"}),
             },
             Request::Stop { handle, .. } => match jobs.get_mut(&handle) {
                 Some(job) => job.stop(),

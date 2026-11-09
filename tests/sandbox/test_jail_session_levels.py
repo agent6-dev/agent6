@@ -14,6 +14,7 @@ import pathlib
 import signal
 import subprocess
 import time
+from typing import cast
 
 import pytest
 
@@ -413,7 +414,7 @@ def _serve_raw(cwd: pathlib.Path) -> subprocess.Popen[bytes]:
     spec = {"cwd": str(cwd), "argv": ["true"], "isolation": "none", "mode": "serve"}
     proc.stdin.write((json.dumps(spec) + "\n").encode())
     proc.stdin.flush()
-    assert json.loads(proc.stdout.readline()) == {"ready": True, "protocol": 2}
+    assert json.loads(proc.stdout.readline()) == {"ready": True, "protocol": 3}
     return proc
 
 
@@ -436,8 +437,6 @@ def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: pat
     guaranteed (the same limit a shared `2>&1` fd has); output produced a second later lands
     after both, which is the property the log is for.
     """
-    logs = tmp_path / "logs"
-    logs.mkdir()
     go = tmp_path / "go"
     proc = _serve_raw(tmp_path)
     try:
@@ -456,7 +455,6 @@ def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: pat
                 ],
                 "timeout_s": 0,
                 "checkin_s": 1.0,
-                "log_dir": str(logs),
             },
         )
         assert answer["backgrounded"] is True
@@ -466,14 +464,14 @@ def test_a_command_outliving_the_checkin_is_handed_back_not_killed(tmp_path: pat
         handle = answer["handle"]
         assert isinstance(handle, str)
         assert _ask(proc, {"kind": "status", "handle": handle})["running"]
-        log = pathlib.Path(str(answer["log"]))
-        assert log.name.startswith("converted-")
+        assert "log" not in answer
 
         go.touch()
         deadline = time.monotonic() + 10.0
         lines: list[str] = []
         while time.monotonic() < deadline:
-            lines = log.read_text(encoding="utf-8").split()
+            capture = _ask(proc, {"kind": "read", "handle": handle, "offset": 0, "limit": 65536})
+            lines = bytes(cast(list[int], capture["data"])).decode().split()
             if "out2" in lines:
                 break
             time.sleep(0.05)

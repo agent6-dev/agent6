@@ -470,6 +470,9 @@ def test_a_stop_that_did_not_stop_says_so(tmp_path: pathlib.Path) -> None:
         def status(self) -> jail_session.BackgroundStatus:
             return jail_session.BackgroundStatus(running=True, returncode=None, error="")
 
+        def copy_output(self, log_fd: int) -> str:
+            return ""
+
         def stop(self) -> str:
             return "pid 7 did not exit within 5s of SIGKILL"
 
@@ -675,7 +678,7 @@ class _HostSession:
         return jail_session.Stopped(returncode=-9, survivors=frozenset())
 
 
-def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: pathlib.Path) -> None:
+def test_adopt_stops_the_command_whose_host_log_it_cannot_create(tmp_path: pathlib.Path) -> None:
     """A hand-back `adopt` refuses is stopped, not left running.
 
     The launcher already started the command and this run owns it; a registration that
@@ -684,10 +687,10 @@ def test_adopt_stops_the_command_whose_log_it_cannot_open(tmp_path: pathlib.Path
     proc = subprocess.Popen(["sleep", "60"])
     try:
         shells = background.BackgroundShells(tmp_path / "shells")
+        (shells.log_root / "bg1").mkdir()
         handoff = kinds.BackgroundHandoff(
             argv=("sleep", "60"),
             handle=str(proc.pid),
-            log=str(tmp_path / "logs" / "gone.log"),
             stdout="",
             stderr="",
             duration_s=900.0,

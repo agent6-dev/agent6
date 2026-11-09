@@ -22,7 +22,8 @@ from agent6.sandbox import jail
 
 # The answer wait's poll interval: an operator Stop reads as immediate at this cost.
 _ANSWER_POLL_S = 0.2
-_PROTOCOL_VERSION = 2
+_PROTOCOL_VERSION = 3
+READ_LIMIT = 65536
 _REQUEST_LIMIT = 1024 * 1024
 _READY_LIMIT = 4096
 _ANSWER_LIMIT = 128 * 1024 * 1024
@@ -37,6 +38,26 @@ class _Ready(pydantic.BaseModel):
 class _Answer(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow", strict=True)
     id: int = pydantic.Field(gt=0)
+
+
+class _ReadAnswer(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid", strict=True)
+    id: int
+    offset: int = pydantic.Field(ge=0)
+    next_offset: int = pydantic.Field(ge=0)
+    size: int = pydantic.Field(ge=0)
+    data: list[int] = pydantic.Field(max_length=READ_LIMIT)
+    capture_error: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class BackgroundRead:
+    """Raw captured bytes and the next byte offset in one size snapshot."""
+
+    data: bytes
+    next_offset: int
+    size: int
+    capture_error: str = ""
 
 
 @dataclasses.dataclass(slots=True)
@@ -155,11 +176,13 @@ class BackgroundStatus:
         running: The process is alive; never an inference from output or age.
         returncode: The exit code once observed.
         error: Why the outcome or descendant cleanup is unconfirmed.
+        capture_error: Why output is incomplete, independently of the command's exit.
     """
 
     running: bool
     returncode: int | None
     error: str
+    capture_error: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -170,11 +193,13 @@ class Stopped:
         returncode: The observed exit code, retained across status and stop.
         survivors: Owned descendants the supervisor could not kill.
         error: Why the supervisor could not confirm cleanup.
+        capture_error: Why output is incomplete, independently of cleanup.
     """
 
     returncode: int | None
     survivors: frozenset[int]
     error: str = ""
+    capture_error: str = ""
 
 
 def _abandon_launcher(proc: subprocess.Popen[bytes], stderr: _Stderr | None) -> None:
@@ -289,7 +314,6 @@ class JailSession:
         env: tuple[tuple[str, str], ...] = (),
         timeout_s: float = 600.0,
         checkin_s: float = 0.0,
-        log_dir: str = "",
         interrupted: Callable[[], bool] | None = None,
     ) -> kinds.CommandResult | kinds.BackgroundHandoff:
         """Run one command to completion in this session's namespaces.
@@ -299,9 +323,8 @@ class JailSession:
             env: Its environment entries.
             timeout_s: The command's deadline.
             checkin_s: When the launcher hands a still-running command back.
-            log_dir: Where a handed-back command's output goes.
             interrupted: Polled while waiting; true requests early hand-back when a
-                check-in and log directory allow it, otherwise stops the command.
+                check-in allows it, otherwise stops the command.
 
         Returns:
             The result, or the handoff of a command still running.
@@ -318,7 +341,6 @@ class JailSession:
                 "env": [list(p) for p in env],
                 "timeout_s": timeout_s,
                 "checkin_s": checkin_s,
-                "log_dir": log_dir,
                 # The launcher's wire key keeps the old suffix.
                 "memory_limit_mb": self._memory_limit_mib,
             },
@@ -335,7 +357,6 @@ class JailSession:
             return kinds.BackgroundHandoff(
                 argv=argv,
                 handle=handle,
-                log=str(answer.get("log", "")),
                 stdout=str(answer.get("stdout", "")),
                 stderr=str(answer.get("stderr", "")),
                 duration_s=elapsed,
@@ -389,6 +410,53 @@ class JailSession:
             running=bool(answer.get("running")),
             returncode=code if isinstance(code, int) else None,
             error=str(answer.get("error", "")),
+            capture_error=str(answer.get("capture_error", "")),
+        )
+
+    def read_background(
+        self, handle: str, *, offset: int, limit: int = READ_LIMIT
+    ) -> BackgroundRead:
+        """Read at most 64 KiB of an owned job's capture, including after stop.
+
+        Args:
+            handle: The command's launcher-instance-scoped handle.
+            offset: The first byte to copy.
+            limit: Maximum bytes returned, from 1 to 65536.
+
+        Returns:
+            Raw bytes, the next offset and the size observed before reading.
+
+        Raises:
+            jail.JailUnavailableError: The handle, bounds or response is invalid.
+        """
+        if offset < 0 or not 1 <= limit <= READ_LIMIT:
+            raise jail.JailUnavailableError("invalid background read bounds")
+        answer = self._request(
+            {"kind": "read", "handle": handle, "offset": offset, "limit": limit},
+            answer_limit=READ_LIMIT * 6 + 4096,
+        )
+        if answer.get("error"):
+            raise jail.JailUnavailableError(f"background read failed: {answer['error']}")
+        try:
+            read = _ReadAnswer.model_validate(answer)
+            data = bytes(read.data)
+        except ValueError as exc:
+            _abandon_launcher(self._proc, self._stderr)
+            raise jail.JailUnavailableError(f"invalid background read response: {exc}") from exc
+        if (
+            read.offset != offset
+            or read.next_offset != offset + len(data)
+            or read.next_offset > read.size
+            or len(data) > limit
+            or (not data and offset < read.size)
+        ):
+            _abandon_launcher(self._proc, self._stderr)
+            raise jail.JailUnavailableError("invalid background read offsets or size")
+        return BackgroundRead(
+            data=data,
+            next_offset=read.next_offset,
+            size=read.size,
+            capture_error=read.capture_error,
         )
 
     def stop_background(self, handle: str) -> Stopped:
@@ -412,13 +480,18 @@ class JailSession:
         return Stopped(
             returncode=code if isinstance(code, int) else None,
             survivors=frozenset(p for p in survivors if isinstance(p, int)),
-            error=""
+            error=str(answer.get("error", ""))
             if answer.get("stopped")
             else f"jail session could not stop {handle}: {answer}",
+            capture_error=str(answer.get("capture_error", "")),
         )
 
     def _request(
-        self, request: dict[str, object], *, interrupted: Callable[[], bool] | None = None
+        self,
+        request: dict[str, object],
+        *,
+        interrupted: Callable[[], bool] | None = None,
+        answer_limit: int = _ANSWER_LIMIT,
     ) -> dict[str, object]:
         """Send one request and read its one answer line.
 
@@ -428,6 +501,7 @@ class JailSession:
         Args:
             request: The request object.
             interrupted: Polled while waiting for the answer.
+            answer_limit: The maximum response frame size.
 
         Returns:
             The answer object.
@@ -443,7 +517,7 @@ class JailSession:
             self._proc.stdin.write(data)
             self._proc.stdin.flush()
             line = _read_frame(
-                self._proc, _ANSWER_LIMIT, request_id=self._request_id, interrupted=interrupted
+                self._proc, answer_limit, request_id=self._request_id, interrupted=interrupted
             )
             try:
                 answer = _Answer.model_validate_json(line)

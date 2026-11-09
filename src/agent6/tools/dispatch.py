@@ -176,7 +176,7 @@ class ToolDispatcher:
         self._session_net = session_net
         self._own_session_net: jail.SessionNetwork | None = None
         self._session: jail_session.JailSession | None = None
-        self._session_failed = False
+        self._session_error: jail.JailUnavailableError | None = None
         # Two threads racing the lazy open would leak a jail process and its namespaces.
         self._session_lock = threading.Lock()
         self._temp_lock = threading.Lock()
@@ -1091,28 +1091,29 @@ class ToolDispatcher:
         return self._net() if policy.network == "session" else None
 
     def _run_session(self) -> jail_session.JailSession | None:
-        """Return the run's jail process, or None to give each command its own.
-
-        Every isolation level uses it, `none` included: the launcher owns output capture and the
-        background lifecycle. Its confinement is fixed when it opens, so the policy is the run's,
-        not the first command's, and the background log root is granted before any command asks
-        for it.
+        """Return the prepared command session, or an explicitly selected one-shot path.
 
         Returns:
-            The session; None when `use_jail_session` is off or once it has failed to start.
+            The session; None only when `use_jail_session` is off.
+
+        Raises:
+            jail.JailUnavailableError: Preparation failed; no other transport is attempted.
         """
         if not self._use_session:
             return None
         with self._session_lock:
-            if self._session is None and not self._session_failed:
-                rw = () if self._shells is None else (self._shells.log_root,)
+            if self._session_error is not None:
+                raise self._session_error
+            if self._session is None:
                 try:
-                    policy = self._jail_policy(("true",), extra_rw_paths=rw)
+                    policy = self._jail_policy(("true",))
                     net = self._net_for(policy)
                     self._session = jail_session.JailSession.open(policy, session_net=net)
                     if self._session.startup_stderr:
-                        # A degraded jail (rootless podman refusing /proc) is said once, here.
                         self._emit("jail.degraded", detail=self._session.startup_stderr)
-                except (jail.JailUnavailableError, OSError):
-                    self._session_failed = True
+                except (jail.JailUnavailableError, OSError) as exc:
+                    self._session_error = jail.JailUnavailableError(
+                        f"command session preparation failed: {exc}"
+                    )
+                    raise self._session_error from exc
             return self._session
