@@ -1797,6 +1797,39 @@ def test_tree_diff_paths_names_what_changed_between_two_worktree_trees(
     assert staged.returncode == 0  # nothing reached the shared index
 
 
+def test_worktree_tree_retries_an_add_over_a_file_that_vanished(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A file a background command removes between git's listing and its stat fails one pass."""
+    _init_repo(tmp_path)
+    (tmp_path / "scratch.txt").write_text("x\n", encoding="utf-8")
+    real_run = git_command.run
+    adds: list[int] = []
+
+    def flaky_run(cwd: pathlib.Path, *args: str, **kwargs: object) -> kinds.CommandResult:
+        if args[:2] == ("add", "-A"):
+            adds.append(1)
+            if len(adds) == 1:
+                (tmp_path / "scratch.txt").unlink()
+                raise errors.GitError("git add -A failed: fatal: unable to stat 'scratch'")
+        return real_run(cwd, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(git_command, "run", flaky_run)
+    tree = git_read.worktree_tree(tmp_path, "HEAD", ())
+    assert len(adds) == 2
+    settled = git_read.worktree_tree(tmp_path, "HEAD", ())
+    assert git_read.tree_diff_paths(tmp_path, settled, tree) == []
+
+    def always_failing(cwd: pathlib.Path, *args: str, **kwargs: object) -> kinds.CommandResult:
+        if args[:2] == ("add", "-A"):
+            raise errors.GitError("git add -A failed: fatal: unable to stat 'gone'")
+        return real_run(cwd, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    monkeypatch.setattr(git_command, "run", always_failing)
+    with pytest.raises(errors.GitError, match="unable to stat"):
+        git_read.worktree_tree(tmp_path, "HEAD", ())
+
+
 def test_tree_diff_paths_reads_every_name_as_git_stores_it(tmp_path: pathlib.Path) -> None:
     """A non-ASCII letter, a quote, a backslash or a control character made git quote a name.
 

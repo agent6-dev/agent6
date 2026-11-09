@@ -636,6 +636,10 @@ def commit_is_reachable(path: pathlib.Path, sha: str) -> bool:
     return res.ok and bool(res.stdout.strip())
 
 
+# Passes of the staging add over a tree other processes may change under it.
+_ADD_ATTEMPTS = 3
+
+
 def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]) -> str:
     """Return the tree sha of the worktree's content, staged into a temp index.
 
@@ -652,6 +656,9 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
 
     Returns:
         The tree sha.
+
+    Raises:
+        GitError: git could not stage or write the tree after its passes.
     """
     tmp = pathlib.Path(tempfile.mkdtemp(prefix="agent6-chain-"))
     env = {"GIT_INDEX_FILE": str(tmp / "index")}
@@ -661,21 +668,22 @@ def worktree_tree(path: pathlib.Path, seed: str | None, exclude: Collection[str]
         # git refuses a pathspec naming an ignored path, exclude or not, and `add -A` never
         # takes one: an excluded path the ignore rules cover by now needs no exclude.
         exclude = unignored(path, tuple(sorted(exclude)))
+        add = ["add", "-A"]
         if exclude:
             spec = tmp / "pathspec"
             spec.write_bytes(
                 b"\0".join([b":/", *(f":(top,exclude,literal){rel}".encode() for rel in exclude)])
             )
-            git_command.run(
-                path,
-                "add",
-                "-A",
-                f"--pathspec-from-file={spec}",
-                "--pathspec-file-nul",
-                env_extra=env,
-            )
-        else:
-            git_command.run(path, "add", "-A", env_extra=env)
+            add += [f"--pathspec-from-file={spec}", "--pathspec-file-nul"]
+        # A file a background command removes between git's listing and its stat fails the
+        # whole add; the next pass sees the tree without it.
+        for attempt in range(_ADD_ATTEMPTS):
+            try:
+                git_command.run(path, *add, env_extra=env)
+                break
+            except errors.GitError as exc:
+                if attempt == _ADD_ATTEMPTS - 1 or "unable to stat" not in str(exc):
+                    raise
         return git_command.run(path, "write-tree", env_extra=env).stdout.strip()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
