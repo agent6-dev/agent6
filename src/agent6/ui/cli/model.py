@@ -11,7 +11,7 @@ import pathlib
 import sys
 from typing import cast
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import session_setup
 from agent6.config import (
     ClaudeCodeProviderEntry,
@@ -100,8 +100,8 @@ def _show_assignments(config_paths: tuple[pathlib.Path, ...]) -> int:
         The exit code, 0.
     """
     eff = layer.load_effective(pathlib.Path.cwd(), config_paths)
-    print("Role assignments (planner/reviewer fall back to worker when unset):\n")
-    show_roles: tuple[RoleName, ...] = ("planner", "worker", "reviewer")
+    print("Role assignments (unset fields inherit models.default):\n")
+    show_roles: tuple[RoleName, ...] = kinds.MODEL_ROLES
     for r in show_roles:
         rm = eff.config.models.resolve(r)
         source = eff.config.models.source_role(r)
@@ -110,12 +110,12 @@ def _show_assignments(config_paths: tuple[pathlib.Path, ...]) -> int:
             print(f"  {r:<9} (unset)")
         else:
             effort = rm.effort or "-"
-            origin = src if source == r else f"worker's, {src}"
+            origin = src if source == r else f"default's, {src}"
             print(f"  {r:<9} {rm.provider}/{rm.model}  effort={effort}  [{origin}]")
     for provider in sorted({rm.provider for rm in eff.config.models.configured().values()}):
         _warn_unusable_provider(config_paths, provider)
     print(
-        "\nSet one with: agent6 model worker provider/model"
+        "\nSet one with: agent6 model default provider/model"
         " [--effort low|medium|high|xhigh|max]  (prompted if omitted on a terminal)"
     )
     return 0
@@ -217,7 +217,7 @@ def _read_route(
         if not model:
             raise ConfigError(f"{route!r}: no model id after the slash.")
         return provider, model
-    route_role = cast("RoleName", "worker" if role == "all" else role)
+    route_role = cast("RoleName", "default" if role == "all" else role)
     if "/" not in route and cfg.models.resolve(route_role) is None:
         known = ", ".join(sorted(cfg.providers)) or "(none)"
         raise ConfigError(
@@ -240,7 +240,7 @@ def _cmd_model(
 
     Args:
         config_paths: The `--config` files in command-line order, if any.
-        role: `planner`, `worker`, `reviewer` or `all`; None shows the assignments.
+        role: The default, a role or `all`; None shows the assignments.
         route: The `[PROVIDER/]MODEL` value; "" prompts or lists.
         effort: The reasoning effort to set.
         to_repo: Write to the repo config instead of the global one.
@@ -273,9 +273,7 @@ def _cmd_model(
     fields: dict[str, io.ConfigLeafValue] = {"model": f"{provider}/{model}"}
     if effort:
         fields["effort"] = effort
-    roles: tuple[RoleName, ...] = (
-        ("planner", "worker", "reviewer") if role == "all" else (cast("RoleName", role),)
-    )
+    roles: tuple[RoleName, ...] = kinds.MODEL_ROLES if role == "all" else (cast("RoleName", role),)
     # The shared edit path re-validates and rolls back, so a bad route never breaks config.toml.
     for r in roles:
         err = write.set_config_leaves(pathlib.Path.cwd(), f"models.{r}", fields, to_repo=to_repo)

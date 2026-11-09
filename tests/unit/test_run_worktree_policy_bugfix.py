@@ -62,7 +62,7 @@ def _runnable_cfg(git_cfg: GitConfig) -> Config:
                 base_url="https://openrouter.ai/api/v1",
             )
         },
-        models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
+        models=ModelsConfig(default=RoleModel(provider="openrouter", model="kimi")),
         git=git_cfg,
         # Answerable, so the worktree policy under test is what decides: the
         # `ask` default has nobody to answer it here and is refused first.

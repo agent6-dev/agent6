@@ -251,12 +251,13 @@ def _add_model_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) 
     model_p.add_argument(
         "role",
         nargs="?",
-        choices=("planner", "worker", "reviewer", "all"),
+        choices=("default", "helper", "planner", "reviewer", "worker", "all"),
         default=None,
         metavar="role",
         help=(
-            "Assignment to change: planner, worker, reviewer, or all. Choose all to update every"
-            " assignment. Default: show the current assignments."
+            "Assignment to change: default, helper, planner, reviewer, worker, or all. "
+            "All writes the default and every role at the target layer. "
+            "Default: show the current assignments."
         ),
     )
     model_route = model_p.add_argument(

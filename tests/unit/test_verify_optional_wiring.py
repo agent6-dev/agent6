@@ -270,7 +270,7 @@ def _role_cfg(extra: dict[str, object]) -> Config:
         {
             "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "K"}},
             "models": {
-                "worker": {"model": "anthropic/m"},
+                "default": {"model": "anthropic/m"},
                 "reviewer": {"model": "anthropic/m"},
             },
             **extra,

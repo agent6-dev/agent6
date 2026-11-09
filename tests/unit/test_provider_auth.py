@@ -70,7 +70,7 @@ def _route(
             oauth_settings["exchange"] = {"endpoint": "https://exchange.example/token"}
         entry["oauth"] = oauth_settings
     cfg = config.Config.model_validate(
-        {"providers": {"work": entry}, "models": {"worker": {"model": "work/m"}}}
+        {"providers": {"work": entry}, "models": {"default": {"model": "work/m"}}}
     )
     bound_entry = cfg.providers["work"]
     assert not isinstance(bound_entry, config.ClaudeCodeProviderEntry)
@@ -96,7 +96,7 @@ def _route(
             cfg, transcript_sink=sink, budget=tracker, events=events if observed else None
         )[0].provider
     else:
-        wrapped = role_providers.reviewer_seat_provider(
+        wrapped = role_providers.helper_seat_provider(
             cfg,
             "summariser",
             transcript_sink=sink,

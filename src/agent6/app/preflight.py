@@ -623,7 +623,7 @@ def infer_verify_if_unset(
     """Infer a verify command for a run or plan whose config sets none.
 
     The inferred command lives in memory only; runs never mutate config. Inference
-    is layered cheapest first (AGENTS.md, repo signals, then a reviewer-role call
+    is layered cheapest first (AGENTS.md, repo signals, then a helper-role call
     over the manifests), see `agent6.tools.verify_infer`; nothing inferred means gateless.
     `drop_gate_if_unrunnable` runs after this and has the last word.
 
@@ -655,9 +655,14 @@ def infer_verify_if_unset(
 
     def _llm_call(context: str) -> str:
         inner = role_providers.build_role_provider(
-            cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, events=events
+            cfg,
+            "helper",
+            transcript_sink=transcript_sink,
+            budget=budget,
+            seat="verify_inferer",
+            events=events,
         )
-        rm = cfg.models.resolve("reviewer")
+        rm = cfg.models.resolve("helper")
         provider = role_providers.InstrumentedProvider(
             inner=inner,
             role="verify_inferer",

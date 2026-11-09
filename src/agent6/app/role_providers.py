@@ -149,7 +149,7 @@ def build_role_provider(
 ) -> Provider:
     """Construct the configured provider for a role.
 
-    The caller validates the route with `cfg.require_runnable(role)` first.
+    Every provider requires `models.default`, even when the role pins its own route.
 
     Args:
         cfg: The run's config.
@@ -166,6 +166,7 @@ def build_role_provider(
     Raises:
         ProviderError: The role has no model or its provider entry is missing.
     """
+    cfg.require_runnable(role)
     rm = cfg.models.resolve(role)
     if rm is None:  # pragma: no cover - blocked by require_runnable
         raise ProviderError(f"no model configured for role {role!r}")
@@ -588,7 +589,7 @@ def budget_update_fields(budget: agent6_budget.BudgetTracker) -> dict[str, Any]:
     )
 
 
-def reviewer_seat_provider(
+def helper_seat_provider(
     cfg: Config,
     seat: str,
     *,
@@ -597,11 +598,11 @@ def reviewer_seat_provider(
     events: event_log.EventSink | None,
     conversations: conversation_state.Conversations | None = None,
 ) -> Provider:
-    """Build the reviewer route under a seat's label, instrumented.
+    """Build the helper route under a seat's label, instrumented.
 
     Args:
         cfg: The run's config.
-        seat: The seat stamp: a panel seat, the prompt reviser or the summariser.
+        seat: The seat stamp: the prompt reviser or the summariser.
         transcript_sink: The recorder the provider's round-trips go to.
         budget: The tracker the provider bills.
         events: The sink the role and budget events go to.
@@ -611,10 +612,10 @@ def reviewer_seat_provider(
         The instrumented provider.
     """
     inner = build_role_provider(
-        cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat=seat, events=events
+        cfg, "helper", transcript_sink=transcript_sink, budget=budget, seat=seat, events=events
     )
-    rm = cfg.models.resolve("reviewer")
-    assert rm is not None  # "reviewer" resolves to the reviewer or worker model
+    rm = cfg.models.resolve("helper")
+    assert rm is not None
     return InstrumentedProvider(
         inner=inner,
         role=seat,
@@ -653,6 +654,7 @@ def build_review_seats(
     Raises:
         ProviderError: An entry has no resolved route or names a missing provider.
     """
+    cfg.require_runnable("reviewer")
     roster = cfg.review.reviewers or (ReviewerConfig(focus="security"),)
     reviewer = cfg.models.resolve("reviewer")
     resolved = [(entry.focus, entry.resolve(reviewer)) for entry in roster]
@@ -710,7 +712,7 @@ def build_prompt_reviser_provider(
     events: event_log.EventSink,
     conversations: conversation_state.Conversations | None = None,
 ) -> Provider | None:
-    """Route the reviewer role as a one-shot prompt reviser.
+    """Route the helper role as a one-shot prompt reviser.
 
     Args:
         cfg: The run's config.
@@ -724,7 +726,7 @@ def build_prompt_reviser_provider(
     """
     if cfg.prompt.revise_prompt == "off":
         return None
-    return reviewer_seat_provider(
+    return helper_seat_provider(
         cfg,
         "prompt_reviser",
         transcript_sink=transcript_sink,

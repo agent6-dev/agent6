@@ -30,7 +30,7 @@ from agent6.config import (
 from agent6.models import cache as models_cache
 from agent6.models import registry
 
-ROLES: tuple[RoleName, ...] = ("worker", "reviewer", "planner")
+ROLES: tuple[RoleName, ...] = kinds.MODEL_ROLES
 
 __all__ = [
     "ModelValidation",

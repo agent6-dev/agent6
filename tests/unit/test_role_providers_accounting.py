@@ -32,7 +32,7 @@ def test_shared_model_id_keeps_each_routes_price(
                 "cheap": {"backend": "openai", "auth_style": "none"},
             },
             "models": {
-                "worker": {"model": "expensive/shared"},
+                "default": {"model": "expensive/shared"},
                 "reviewer": {"model": "cheap/shared"},
             },
         }

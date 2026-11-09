@@ -702,7 +702,7 @@ def _state_in_a_clone(
         root=clone,
         overlay={
             "sandbox": {"isolation": "none", "run_commands": "allow"},
-            "models": {"worker": {"model": "p/m"}},
+            "models": {"default": {"model": "p/m"}},
             "providers": {
                 "p": {
                     "backend": "openai",

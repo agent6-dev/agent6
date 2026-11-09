@@ -1113,7 +1113,7 @@ config_version = 1
 [providers.anthropic]
 backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
-[models.worker]
+[models.default]
 model = "anthropic/x"
 """,
         encoding="utf-8",
@@ -1175,7 +1175,7 @@ def test_fresh_instance_refuses_unmerged_visible_branch(
                 "[providers.anthropic]",
                 'backend = "anthropic"',
                 'api_key_env = "ANTHROPIC_API_KEY"',
-                "[models.worker]",
+                "[models.default]",
                 'model = "anthropic/x"',
             )
         ),
@@ -1218,7 +1218,7 @@ def test_fresh_instance_refuses_unmerged_visible_branch(
     assert process.read_worker_pid(root) is None
 
 
-def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
+def test_a_state_default_supplies_the_required_baseline(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A state whose `config` table pins a model route runs without a worker default."""
@@ -1229,7 +1229,7 @@ def test_a_fully_pinned_agent_state_needs_no_default_worker_model(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
     machine = tmp_path / "pinned.asm.toml"
     machine.write_text(
-        AGENT_MACHINE_HARD + '\n[states.judge.config.models.worker]\nmodel = "p/m"\n',
+        AGENT_MACHINE_HARD + '\n[states.judge.config.models.default]\nmodel = "p/m"\n',
         encoding="utf-8",
     )
     cfg = tmp_path / "config.toml"
@@ -1322,7 +1322,7 @@ def test_machine_preflight_judges_the_states_routes(
         '[sandbox]\nisolation = "none"\n'
         '[providers.plan]\nbackend = "chatgpt"\n'
         '[providers.paid]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9"\n'
-        '[models.worker]\nmodel = "plan/plan-model"\n'
+        '[models.default]\nmodel = "plan/plan-model"\n'
         f"[budget]\nmax_plan_points = {percent}\n"
         + (f'[models.{role}]\nmodel = "plan/plan-model"\n' if role else ""),
         encoding="utf-8",
@@ -1330,7 +1330,7 @@ def test_machine_preflight_judges_the_states_routes(
     machine = tmp_path / "pinned.asm.toml"
     machine.write_text(
         AGENT_MACHINE_HARD
-        + ('\n[states.judge.config.models.worker]\nmodel = "paid/priced-model"\n' if pin else ""),
+        + ('\n[states.judge.config.models.default]\nmodel = "paid/priced-model"\n' if pin else ""),
         encoding="utf-8",
     )
 
@@ -1353,7 +1353,7 @@ def test_machine_run_end_line_carries_spend_and_tokens(
     config.write_text(
         '[sandbox]\nisolation = "none"\n'
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9"\n'
-        '[models.worker]\nmodel = "p/m"\n',
+        '[models.default]\nmodel = "p/m"\n',
         encoding="utf-8",
     )
     machine = tmp_path / "spend.asm.toml"
@@ -1538,7 +1538,7 @@ backend = "openai"
 base_url = "http://127.0.0.1:9"
 api_key_env = "AGENT6_TEST_KEY"
 
-[models.worker]
+[models.default]
 model = "p/m"
 """,
         encoding="utf-8",
@@ -1629,7 +1629,7 @@ backend = "openai"
 base_url = "http://127.0.0.1:9"
 api_key_env = "AGENT6_TEST_KEY"
 
-[models.worker]
+[models.default]
 model = "p/m"
 """,
         encoding="utf-8",

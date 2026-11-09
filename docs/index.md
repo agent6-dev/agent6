@@ -58,7 +58,7 @@ Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [p
 ```sh
 uv tool install agent6      # or pipx install agent6
 agent6 connect              # configure a provider
-agent6 model worker         # choose a model
+agent6 model default        # choose the required default model
 ```
 
 Use Anthropic or any OpenAI-compatible endpoint, including OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, and LM Studio.

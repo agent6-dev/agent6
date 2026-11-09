@@ -54,8 +54,8 @@ Only its modules import the runner, `git_command.py`.
   `paths.project_root` refuses any pack until `unpack` imports it or the operator deletes it.
 - every config edit goes through [config/write.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/config/write.py): one lock-held validate + revalidate + rollback cycle, or "kept as written" when the fail-open lock was not held
 
-Three model roles route independently: `worker` drives `run` and `resume`, `planner` drives `plan`, `reviewer` drives `sessions review`, the in-loop panel and the loop's side calls (the context summariser and gister, the prompt reviser).
-Unset roles fall back to `worker`.
+Every model call requires `models.default`.
+The four optional roles inherit each unset field directly from it; their jobs are listed in [Usage](usage.md#connect-a-provider).
 
 ## Units of work
 
@@ -633,7 +633,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 
 | Concern | File or directory |
 | --- | --- |
-| Config schema | [config/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config) (`model.py` holds `Config`, `[agent6]` and the model roles; the other sections live in `sandbox_config.py`, `harness_config.py`, `git_config.py`, `surface_config.py`, `provider_config.py`) |
+| Config schema | [config/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/config) (`model.py` holds `Config` and `[agent6]`; `model_roles.py` owns role inheritance; the other sections live in `sandbox_config.py`, `harness_config.py`, `git_config.py`, `surface_config.py`, `provider_config.py`) |
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |

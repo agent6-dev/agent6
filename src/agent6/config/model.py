@@ -21,6 +21,7 @@ from agent6.config import (
     git_config,
     harness_config,
     io,
+    model_roles,
     provider_config,
     sandbox_config,
     surface_config,
@@ -43,120 +44,6 @@ def preset_name(name: str) -> str:
     if not name:
         raise validation.ConfigError('preset must not be empty; use "none" to select no preset.')
     return name
-
-
-class ModelsConfig(pydantic.BaseModel):
-    """The `[models]` table: a qualified model route per role.
-
-    Every role is optional at load; `Config.require_runnable` requires the one a command
-    uses. `planner` and `reviewer` fall back to `worker`.
-    """
-
-    model_config = validation.MODEL_CONFIG
-
-    worker: harness_config.RoleModel | None = pydantic.Field(
-        default=None,
-        description=(
-            "model for `agent6 run`, `ask`, run resumes, machine agent states and the "
-            "model-written squash message"
-        ),
-    )
-    reviewer: harness_config.RoleModel | None = pydantic.Field(
-        default=None,
-        description=(
-            "model for `sessions review`, the `sessions compare` and "
-            "`--parallel` judge, verify-command inference, the in-loop review panel, context "
-            "summariser and gister, and prompt reviser; fallback to `models.worker` when unset"
-        ),
-    )
-    planner: harness_config.RoleModel | None = pydantic.Field(
-        default=None,
-        description=(
-            "model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset"
-        ),
-    )
-
-    @pydantic.field_validator("worker", "reviewer", "planner", mode="before")
-    @classmethod
-    def _parse_route(cls, data: Any, info: pydantic.ValidationInfo) -> Any:
-        """Resolve a role's scalar route while accepting resolved objects internally.
-
-        Args:
-            data: The settings table or resolved role.
-            info: The role's field name.
-
-        Returns:
-            The resolved role fields, or the object unchanged.
-
-        Raises:
-            ValueError: A split route.
-            pydantic.ValidationError: An unqualified route.
-        """
-        validation.refuse_split_model(data, f"models.{info.field_name}")
-        if data == {}:
-            return None
-        if isinstance(data, dict) and isinstance(data.get("model"), str):
-            try:
-                route = validation.model_route(data["model"])
-            except ValueError as exc:
-                # Writers validate the leaf even when a higher layer masks it.
-                error = pydantic.ValidationError.from_exception_data(
-                    cls.__name__,
-                    [
-                        {
-                            "type": "value_error",
-                            "loc": ("model",),
-                            "input": data["model"],
-                            "ctx": {"error": exc},
-                        }
-                    ],
-                )
-                raise error from exc
-            return {**data, "provider": route.provider, "model": route.model}
-        return data
-
-    def configured(self) -> dict[str, harness_config.RoleModel]:
-        """Return the roles explicitly set.
-
-        Returns:
-            The set roles by name.
-        """
-        out: dict[str, harness_config.RoleModel] = {}
-        if self.worker is not None:
-            out["worker"] = self.worker
-        if self.reviewer is not None:
-            out["reviewer"] = self.reviewer
-        if self.planner is not None:
-            out["planner"] = self.planner
-        return out
-
-    def resolve(self, role: kinds.RoleName) -> harness_config.RoleModel | None:
-        """Return the effective model for a role, with the worker fallback.
-
-        Args:
-            role: The role.
-
-        Returns:
-            The role's entry, the worker's for an unset planner or reviewer, or None.
-        """
-        if role == "worker":
-            return self.worker
-        if role == "planner":
-            return self.planner or self.worker
-        if role == "reviewer":
-            return self.reviewer or self.worker
-        return None
-
-    def source_role(self, role: kinds.RoleName) -> kinds.RoleName:
-        """Return the configured role `resolve` reads, so an error names the key written.
-
-        Args:
-            role: The role.
-
-        Returns:
-            The role itself when set, else `worker`.
-        """
-        return role if role in self.configured() else "worker"
 
 
 class Agent6Section(pydantic.BaseModel):
@@ -190,7 +77,7 @@ class Config(pydantic.BaseModel):
             "connect`"
         ),
     )
-    models: ModelsConfig = pydantic.Field(default_factory=ModelsConfig)
+    models: model_roles.ModelsConfig = pydantic.Field(default_factory=model_roles.ModelsConfig)
     sandbox: sandbox_config.SandboxConfig = pydantic.Field(
         default_factory=sandbox_config.SandboxConfig
     )
@@ -496,8 +383,8 @@ class Config(pydantic.BaseModel):
         Returns:
             The config with the role rerouted.
         """
-        base = self.models.resolve(role)
-        entry = base.model_dump(mode="python") if base is not None else {}
+        base = getattr(self.models, role)
+        entry = base.model_dump(mode="python", exclude_unset=True) if base is not None else {}
         entry["model"] = f"{route.provider}/{route.model}"
         data = self.model_dump(mode="python")
         data.setdefault("models", {})[role] = entry
@@ -694,6 +581,17 @@ class Config(pydantic.BaseModel):
             ConfigError: No provider, no model for the role, or the model's provider is
                 unknown.
         """
+        if self.models.default is None or not self.models.default.model:
+            legacy = (
+                " [models.worker] is an optional override, not the default;"
+                " rename [models.worker] to [models.default] to keep it as the baseline."
+                if self.models.worker is not None
+                else ""
+            )
+            raise validation.ConfigError(
+                "No models.default.model configured. Run `agent6 model default PROVIDER/MODEL`"
+                ' or add a [models.default] block with model = "PROVIDER/MODEL".' + legacy
+            )
         if not self.providers:
             raise validation.ConfigError(
                 "No providers configured. Run `agent6 connect` to add one"
@@ -701,11 +599,7 @@ class Config(pydantic.BaseModel):
                 " block to the per-repo config."
             )
         rm = self.models.resolve(role)
-        if rm is None:
-            raise validation.ConfigError(
-                f"No model configured for the {role!r} role. Run `agent6 model`"
-                " to set it, or add a [models.worker] block to your config."
-            )
+        assert rm is not None  # default supplies every role's route
         if rm.provider not in self.providers:
             known = ", ".join(sorted(self.providers)) or "(none)"
             raise validation.ConfigError(

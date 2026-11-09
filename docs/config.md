@@ -197,7 +197,7 @@ A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#co
 backend = "responses"
 base_url = "https://models.example/v1"
 
-[models.worker]
+[models.default]
 model = "work/reasoning-model"
 ```
 
@@ -214,7 +214,7 @@ Calls outside a conversation omit both.
 
 ```bash
 agent6 connect chatgpt      # browser sign-in (device code, then paste, when headless)
-agent6 model worker chatgpt/gpt-5.6-sol
+agent6 model default chatgpt/gpt-5.6-sol
 ```
 
 - `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
@@ -232,12 +232,12 @@ agent6 model worker chatgpt/gpt-5.6-sol
 
 ### Claude Code subscription (`backend = "claude_code"`)
 
-Runs the worker inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
+Runs model calls inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
 
 ```bash
 claude auth login                        # once, in Claude Code itself
 agent6 connect claude                    # writes [providers.claude], checks the sign-in
-agent6 model worker claude/claude-sonnet-4-5
+agent6 model default claude/claude-sonnet-4-5
 ```
 
 - agent6's own loop, tools, jail, verify gate, and approvals drive the run; the binary supplies the model.
@@ -248,7 +248,7 @@ agent6 model worker claude/claude-sonnet-4-5
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
-- Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude/claude-haiku-4-5`).
+- Optional roles inherit the default; override one with `agent6 model helper claude/claude-haiku-4-5`.
   Each side call without tools is one short-lived `claude` process.
 - One `claude` process serves a worker execution.
   It restarts, replaying the conversation as one user message with retained attachments, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
@@ -295,20 +295,27 @@ Role routing:
 
 | Field | Default | Meaning |
 |---|---|---|
-| `worker` | none | model for `agent6 run`, `ask`, run resumes, machine agent states and the model-written squash message |
-| `reviewer` | none | model for `sessions review`, the `sessions compare` and `--parallel` judge, verify-command inference, the in-loop review panel, context summariser and gister, and prompt reviser; fallback to `models.worker` when unset |
-| `planner` | none | model for `agent6 plan` and plan resumes; fallback to `models.worker` when unset |
+| `default` | none | required route for every model call; set with `agent6 model default PROVIDER/MODEL`; the only fallback for each role's unset model, effort and temperature |
+| `helper` | none | model for the context summariser, gister (`compaction.elision_gists`), verify-command inference and prompt reviser; unset fields take `models.default` |
+| `worker` | none | model for `agent6 run`, `agent6 ask`, their resumes, machine agent states and the model-written squash message; unset fields take `models.default` |
+| `reviewer` | none | model for in-loop review panel seats without a route, the `sessions compare` and `--parallel` judge, and `sessions review`; unset fields take `models.default` |
+| `planner` | none | model for `agent6 plan` and plan resumes; unset fields take `models.default` |
 
-<!-- the three roles are the same shape, so the table is rendered once -->
+Every model call requires a `models.default.model` route.
+Unset fields in `worker`, `planner`, `reviewer` and `helper` inherit directly from `models.default`.
+A role never inherits from another role.
+For example, `[models.planner]` with only `effort = "max"` keeps the default route and temperature.
+`agent6 config show` attributes inherited leaves to the layer that supplied the default.
+A worker-only config refuses with a remedy; rename `[models.worker]` to `[models.default]` to migrate.
 A persisted `model` is fully qualified: `model = "openrouter/openai/gpt-4.1-mini"`.
 The first segment names a `[providers.*]` entry; everything after the first slash is the model id verbatim.
 `effort` and `temperature` are sibling keys.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `model` | *(required)* | Fully qualified provider/model route (`agent6 model` lists them); the first segment names a `[providers.<name>]` entry, the rest is the model id verbatim. |
-| `temperature` | `0.0` | sampling temperature, `temperature = 0.0` to `2.0`, sent where the wire accepts one (not with Anthropic thinking or on `chatgpt` or `claude_code`, dropped for the run after a 400 naming it); `extra_body.temperature` wins; TOML omission: `temperature = 0.0` |
-| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` (the model's default), as printed by `agent6 config show` |
+| `model` | `""` | Fully qualified provider/model route (`agent6 model` lists them); the first segment names a `[providers.<name>]` entry, the rest is the model id verbatim; required in `models.default` for a model call, inherited from it in other roles. |
+| `temperature` | `0.0` | sampling temperature, `temperature = 0.0` to `2.0`, sent where the wire accepts one (not with Anthropic thinking or on `chatgpt` or `claude_code`, dropped for the run after a 400 naming it); `extra_body.temperature` wins; TOML omission: inherits `models.default.temperature` in a role, `temperature = 0.0` in the default |
+| `effort` | none | reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; top tiers where offered by the model, collapsed to Anthropic's highest; unset in a role: inherits `models.default.effort`; unset in the default: `effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` (the model's default), as printed by `agent6 config show` |
 
 ## `[sandbox]`
 
@@ -505,7 +512,7 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 | Field | Default | Meaning |
 |---|---|---|
 | `system_prompt_file` | `""` | file path replacing run mode's built-in base system prompt; dynamic blocks still appended; tool contracts supplied by the operator; startup warning for missing core tool names; empty: built-in base; assembled prompt, tool definitions and first message shown by `agent6 prompt show` |
-| `revise_prompt` | `"off"` | one task rewrite by the reviewer model before the loop; `prompt.revise_prompt = "off"`: no rewrite; `prompt.revise_prompt = "auto"`: revision used as written; `prompt.revise_prompt = "interactive"`: accept, keep original, edit or quit (stop the run), terminal required, skipped under TUI, ACP or a spawned lane; same pass for `/task` queued into a live run, handled as `prompt.revise_prompt = "auto"` |
+| `revise_prompt` | `"off"` | one task rewrite by the helper model before the loop; `prompt.revise_prompt = "off"`: no rewrite; `prompt.revise_prompt = "auto"`: revision used as written; `prompt.revise_prompt = "interactive"`: accept, keep original, edit or quit (stop the run), terminal required, skipped under TUI, ACP or a spawned lane; same pass for `/task` queued into a live run, handled as `prompt.revise_prompt = "auto"` |
 | `decompose` | `"auto"` | task decomposition before editing in run mode, ordered DAG subtasks worked one at a time; `prompt.decompose = "on"`: help for small models under-finishing multi-part tasks (measured on mistral-small), 2-4x overhead for capable models; `prompt.decompose = "off"`: disabled; `prompt.decompose = "auto"`: per-worker-model capability registry, resolved value in `config show`; forced for one run by `--decompose` |
 
 ## `[skills]`

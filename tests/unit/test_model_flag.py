@@ -23,6 +23,9 @@ backend = "anthropic"
 backend = "openai"
 base_url = "https://x/v1"
 
+[models.default]
+model = "anthropic/claude-x"
+
 [models.worker]
 model = "anthropic/claude-x"
 
@@ -77,11 +80,11 @@ def test_route_choices_are_the_cached_listings_plus_the_configured_routes(
     ]
 
 
-def test_route_for_applies_the_worker_fallback() -> None:
+def test_route_for_applies_the_default_fallback() -> None:
     cfg = Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"model": "o/m"}},
+            "models": {"default": {"model": "o/m"}},
         }
     )
     assert choices.route_for(cfg, "plan") == "o/m"

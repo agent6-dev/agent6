@@ -163,7 +163,7 @@ OPERATOR = """
 backend = "openai"
 base_url = "http://127.0.0.1:9"
 
-[models.worker]
+[models.default]
 model = "local/test-model"
 
 [sandbox]
@@ -867,7 +867,7 @@ def test_the_flags_reach_the_agent_subprocess_config_and_not_the_supervisors_env
 
     monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _prov)
-    monkeypatch.setattr(role_providers, "reviewer_seat_provider", _prov)
+    monkeypatch.setattr(role_providers, "helper_seat_provider", _prov)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _disp)
     req = agent.MachineAgentRequest(
         cwd=tmp_path,

@@ -43,7 +43,10 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
 
 
 def test_connect_stores_key_and_provider_and_never_execs(
-    iso: pathlib.Path, monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+    iso: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: pathlib.Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO("sk-ant-FAKE\n"))
     # Security: connect must NEVER run a subprocess (no remote-supplied command).
@@ -65,6 +68,10 @@ def test_connect_stores_key_and_provider_and_never_execs(
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[providers.anthropic]" in gc
     assert calls == []
+    assert "agent6 model default anthropic/<model>" in capsys.readouterr().out
+    assert main(["model", "default", "anthropic/claude-x"]) == 0
+    configured = tomllib.loads(paths.global_config_path().read_text())
+    assert configured["models"] == {"default": {"model": "anthropic/claude-x"}}
 
 
 def test_connect_preserves_hand_edited_provider_keys(
@@ -540,14 +547,14 @@ def test_model_change_preserves_the_target_layers_other_fields(
 def test_model_all_sets_every_role(
     iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # "all" is a pseudo-role: one command writes planner/worker/reviewer alike.
+    # The target layer receives the default and every role.
     rc = main(["model", "all", "anthropic/claude-x"])
     assert rc == 0
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
     assert "[models.planner]" in gc
     assert "[models.worker]" in gc
     assert "[models.reviewer]" in gc
-    assert gc.count("claude-x") == 3
+    assert gc.count("claude-x") == 5
     assert "all roles" in capsys.readouterr().out
 
 
@@ -834,9 +841,9 @@ def test_model_all_interactive_prompts_once(
     assert rc == 0
     assert calls["n"] == 2  # one provider prompt + one model prompt, total
     gc = (tmp_path / "g" / "agent6" / "config.toml").read_text(encoding="utf-8")
-    for role in ("planner", "worker", "reviewer"):
+    for role in ("default", "helper", "planner", "worker", "reviewer"):
         assert f"[models.{role}]" in gc
-    assert gc.count("claude-b") == 3
+    assert gc.count("claude-b") == 5
 
 
 def test_model_repo_scope_writes_repo(iso: pathlib.Path, tmp_path: pathlib.Path) -> None:
@@ -1502,29 +1509,29 @@ def test_connect_eof_at_the_backend_prompt_says_why(
     assert "no input." in capsys.readouterr().err
 
 
-_WORKER_ONLY = """\
+_DEFAULT_ONLY = """\
 [providers.anthropic]
 backend = "anthropic"
 
-[models.worker]
+[models.default]
 model = "anthropic/claude-sonnet-4-5"
 """
 
 
-def test_a_role_that_falls_back_to_the_worker_says_so(
+def test_a_role_that_inherits_the_default_says_so(
     iso: pathlib.Path, tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unset planner or reviewer shows the worker's model with an origin naming the fallback."""
+    """An unset role shows the default model with an origin naming the fallback."""
     gpath = tmp_path / "g" / "agent6" / "config.toml"
     gpath.parent.mkdir(parents=True, exist_ok=True)
-    gpath.write_text(_WORKER_ONLY, encoding="utf-8")
+    gpath.write_text(_DEFAULT_ONLY, encoding="utf-8")
 
     assert main(["model"]) == 0
     lines = capsys.readouterr().out.splitlines()
     worker = next(line for line in lines if line.strip().startswith("worker"))
     planner = next(line for line in lines if line.strip().startswith("planner"))
-    assert "anthropic/claude-sonnet-4-5" in worker and worker.endswith("[global]")
-    assert "anthropic/claude-sonnet-4-5" in planner and planner.endswith("[worker's, global]")
+    assert "anthropic/claude-sonnet-4-5" in worker and worker.endswith("[default's, global]")
+    assert "anthropic/claude-sonnet-4-5" in planner and planner.endswith("[default's, global]")
 
 
 def test_a_number_outside_the_model_list_is_refused(

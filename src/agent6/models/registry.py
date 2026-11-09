@@ -203,7 +203,7 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
         by leaf; empty when nothing resolves.
     """
     out: dict[str, object] = {}
-    for role in ("worker", "reviewer", "planner"):
+    for role in kinds.MODEL_ROLES:
         role_model = cfg.models.resolve(role)
         if role_model is None or role_model.effort is not None:
             continue

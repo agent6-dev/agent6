@@ -149,8 +149,8 @@ def _print_next_steps(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...])
     print("Next:")
     if cfg is None or not cfg.providers:
         print("  agent6 connect                 # add a provider + API key (global)")
-    if cfg is None or cfg.models.resolve("worker") is None:
-        print("  agent6 model worker <provider>/<model>   # pick your worker model")
+    if cfg is None or cfg.models.resolve("default") is None:
+        print("  agent6 model default <provider>/<model>  # set the required default")
     print("  agent6 config show             # audit the effective config")
     gated = cfg is not None and bool(cfg.harness.verify_command)
     print('  agent6 run "<task>"' + ("" if gated else "            # verify is inferred per run"))

@@ -5,7 +5,7 @@ import pathlib
 import pydantic
 import pytest
 
-from agent6.config import git_config, harness_config, model, provider_config
+from agent6.config import git_config, harness_config, model, model_roles, provider_config
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -65,21 +65,26 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
             ("`GIT_COMMITTER_NAME`, then the repo's own `git config` identity, when unset",),
         ),
         (
-            model.ModelsConfig,
+            model_roles.ModelsConfig,
             "worker",
-            ("`ask`", "run resumes", "machine agent states", "model-written squash message"),
+            (
+                "`agent6 ask`",
+                "their resumes",
+                "machine agent states",
+                "model-written squash message",
+            ),
         ),
         (
-            model.ModelsConfig,
+            model_roles.ModelsConfig,
             "reviewer",
             (
                 "`sessions review`",
                 "`sessions compare`",
                 "`--parallel` judge",
-                "verify-command inference",
+                "in-loop review panel seats without a route",
             ),
         ),
-        (model.ModelsConfig, "planner", ("plan resumes",)),
+        (model_roles.ModelsConfig, "planner", ("plan resumes",)),
         (
             model.Config,
             "preset",

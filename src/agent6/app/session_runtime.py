@@ -246,7 +246,7 @@ def build_session_providers(
         stream_text=stream_text,
         conversations=conversations,
     )
-    summariser_provider = role_providers.reviewer_seat_provider(
+    summariser_provider = role_providers.helper_seat_provider(
         cfg,
         "summariser",
         transcript_sink=transcript_sink,

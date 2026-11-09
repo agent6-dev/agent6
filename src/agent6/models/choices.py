@@ -78,7 +78,7 @@ def route_for(cfg: Config, mode: str) -> str:
 
     Args:
         cfg: The effective config.
-        mode: The session mode; its role resolves with the worker fallback.
+        mode: The session mode; its role resolves with the default fallback.
 
     Returns:
         The route, or "".

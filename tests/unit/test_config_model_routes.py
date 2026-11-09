@@ -53,7 +53,6 @@ def test_scalar_route_round_trip_and_reviewer_inheritance() -> None:
     assert dumped["models"]["worker"] == {
         "model": "p/vendor/id",
         "effort": "high",
-        "temperature": 0.0,
     }
     assert model.Config.model_validate(dumped) == cfg
     assert "models.worker.provider" not in layer_data.config_leaves(cfg)

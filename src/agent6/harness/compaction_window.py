@@ -143,7 +143,7 @@ class CompactionSettings:
             assistant messages (N >= 1); -1 keeps all.
         elision_gists: A large read decays through a model-written gist first.
         summary_max_tokens: The summariser's output cap.
-        summariser: The reviewer role's provider; the worker's when None.
+        summariser: The helper role's provider; the worker's when None.
     """
 
     drop_at_chars: int = DROP_BLOCKS_AT_CHARS

@@ -540,7 +540,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             revision=prompt_revision.RevisionSettings(
                 reviser=prompt_reviser_provider,
                 mode=effective_revise_prompt,
-                temperature=role_providers.role_temperature(cfg, "reviewer"),
+                temperature=role_providers.role_temperature(cfg, "helper"),
                 selector=(
                     frontend.select_revised_prompt
                     if effective_revise_prompt == "interactive"

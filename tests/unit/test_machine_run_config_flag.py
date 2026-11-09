@@ -100,7 +100,7 @@ def test_explicit_config_reaches_each_agent_state(
 backend = "openai"
 base_url = "http://127.0.0.1:9"
 
-[models.worker]
+[models.default]
 model = "local/test-model"
 
 [harness]
@@ -150,7 +150,7 @@ def test_a_states_own_budget_is_judged_before_it_runs(
 backend = "openai"
 base_url = "http://127.0.0.1:9"
 
-[models.worker]
+[models.default]
 model = "local/test-model"
 
 [budget]

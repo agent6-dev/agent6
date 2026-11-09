@@ -353,7 +353,7 @@ def _build_agent_providers(
         budget=budget,
         stream_text=True,
     )
-    summariser_provider = role_providers.reviewer_seat_provider(
+    summariser_provider = role_providers.helper_seat_provider(
         cfg, "summariser", transcript_sink=transcript_sink, budget=budget, events=events_sink
     )
     return provider, summariser_provider, events_sink

@@ -68,7 +68,7 @@ backend = "openai"
 base_url = "https://openrouter.ai/api/v1"
 api_key_env = "OPENROUTER_API_KEY"
 
-[models.worker]
+[models.default]
 model = "openrouter/moonshotai/kimi-k2.6"
 
 [models.reviewer]

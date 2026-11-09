@@ -66,7 +66,7 @@ def test_preflight_and_runtime_preserve_every_spend_cap(
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_text(
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:9"\n'
-        '[models.worker]\nmodel = "p/unpriced-test-model"\n'
+        '[models.default]\nmodel = "p/unpriced-test-model"\n'
         + (f"[budget]\nmax_usd = {config_cap}\n" if source == "operator" else ""),
         encoding="utf-8",
     )

@@ -28,15 +28,18 @@ class RoleModel(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     provider: str = pydantic.Field(
+        default="",
         min_length=1,
         exclude=True,
         description="A `[providers.<name>]` entry, by name.",
     )
     model: str = pydantic.Field(
+        default="",
         min_length=1,
         description=(
             "Fully qualified provider/model route (`agent6 model` lists them); the first "
-            "segment names a `[providers.<name>]` entry, the rest is the model id verbatim."
+            "segment names a `[providers.<name>]` entry, the rest is the model id verbatim; "
+            "required in `models.default` for a model call, inherited from it in other roles."
         ),
     )
     temperature: float | None = pydantic.Field(
@@ -47,7 +50,7 @@ class RoleModel(pydantic.BaseModel):
             "sampling temperature, `temperature = 0.0` to `2.0`, sent where the wire accepts "
             "one (not with Anthropic thinking or on `chatgpt` or `claude_code`, dropped for "
             "the run after a 400 naming it); `extra_body.temperature` wins; TOML omission: "
-            "`temperature = 0.0`"
+            "inherits `models.default.temperature` in a role, `temperature = 0.0` in the default"
         ),
     )
     # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
@@ -56,7 +59,8 @@ class RoleModel(pydantic.BaseModel):
         default=None,
         description=(
             "reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; "
-            "top tiers where offered by the model, collapsed to Anthropic's highest; unset: "
+            "top tiers where offered by the model, collapsed to Anthropic's highest; unset in a "
+            "role: inherits `models.default.effort`; unset in the default: "
             '`effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, '
             'none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` '
             "(the model's default), as printed by `agent6 config show`"
@@ -66,7 +70,7 @@ class RoleModel(pydantic.BaseModel):
     @pydantic.field_serializer("model")
     def _serialize_route(self, model: str) -> str:
         """Return the qualified settings leaf."""
-        return f"{self.provider}/{model}"
+        return f"{self.provider}/{model}" if model else ""
 
 
 class ReviewerConfig(pydantic.BaseModel):
@@ -422,7 +426,7 @@ class CompactionConfig(pydantic.BaseModel):
             "accepted by the chatgpt backend"
         ),
     )
-    # One batched reviewer-model call per drop event.
+    # One batched helper-model call per drop event.
     # Measured on the longhorizon bench: bare elision halves a retention score under a small window.
     elision_gists: bool = pydantic.Field(
         default=True,
@@ -505,7 +509,7 @@ class PromptConfig(pydantic.BaseModel):
     revise_prompt: Literal["off", "auto", "interactive"] = pydantic.Field(
         default="off",
         description=(
-            "one task rewrite by the reviewer model before the loop; `prompt.revise_prompt = "
+            "one task rewrite by the helper model before the loop; `prompt.revise_prompt = "
             '"off"`: no rewrite; `prompt.revise_prompt = "auto"`: revision used as written; '
             '`prompt.revise_prompt = "interactive"`: accept, keep original, edit or quit (stop '
             "the run), terminal required, skipped under TUI, ACP or a spawned lane; same pass "

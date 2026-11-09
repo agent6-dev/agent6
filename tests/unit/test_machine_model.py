@@ -827,10 +827,10 @@ def test_an_agent_state_takes_its_model_from_its_config_table(tmp_path: pathlib.
 @pytest.mark.parametrize(
     ("line", "leaf"),
     [
-        ('model = "claude-sonnet-4-5"', "models.worker.model"),
-        ('provider = "anthropic"', "models.worker.model"),
-        ('effort = "high"', "models.worker.effort"),
-        ("temperature = 0.2", "models.worker.temperature"),
+        ('model = "claude-sonnet-4-5"', "models.default.model"),
+        ('provider = "anthropic"', "models.default.model"),
+        ('effort = "high"', "models.default.effort"),
+        ("temperature = 0.2", "models.default.temperature"),
         ("max_tokens_fallback = 100000", "budget.max_tokens_fallback"),
     ],
 )

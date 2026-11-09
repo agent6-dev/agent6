@@ -38,7 +38,7 @@ Install with [uv](https://docs.astral.sh/uv/getting-started/installation/) or [p
 ```sh
 uv tool install agent6      # or pipx install agent6
 agent6 connect              # configure a provider
-agent6 model worker         # choose a model
+agent6 model default        # choose the required default model
 ```
 
 Use Anthropic or any OpenAI-compatible endpoint, including OpenAI, OpenRouter, Ollama, vLLM, llama.cpp, and LM Studio.
@@ -97,7 +97,7 @@ Changes are global unless you add `--repo` for a repository override, for exampl
 agent6 config set --repo harness.verify_command '["uv", "run", "pytest"]'
 ```
 
-The worker, planner, and reviewer can use different models and reasoning effort; unset planner and reviewer roles use the worker.
+The worker, planner, reviewer, and helper inherit each unset model, effort, and temperature from the required `models.default`.
 [Budgets][budgets] limit spending, tokens for unpriced calls, and supported subscription usage.
 
 ## [Security][security]

@@ -20,7 +20,12 @@ from agent6.config import (
     load_config,
 )
 
-_VALID_TOML = """
+_VALID_TOML = (
+    """
+[models.default]
+model = "anthropic/claude-x"
+"""
+    + """
 [agent6]
 config_version = 1
 
@@ -49,6 +54,7 @@ verify_command = ["true"]
 [budget]
 max_tokens_fallback = 100000
 """
+)
 
 
 def _write(tmp_path: pathlib.Path, body: str) -> pathlib.Path:

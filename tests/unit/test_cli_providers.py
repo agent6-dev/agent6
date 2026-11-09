@@ -49,7 +49,8 @@ def test_chatgpt_binding_refuses_before_provider_construction(
             "work", dataclasses.replace(grant, binding="other", account_id="acct")
         )
     cfg = Config(
-        providers={"work": entry}, models=ModelsConfig(worker=RoleModel(provider="work", model="m"))
+        providers={"work": entry},
+        models=ModelsConfig(default=RoleModel(provider="work", model="m")),
     )
     message = (
         "No ChatGPT sign-in stored for provider 'work'"
@@ -79,7 +80,8 @@ def test_chatgpt_construction_reads_account_through_shared_holder(
 
     monkeypatch.setattr(oauth.OAuthCredential, "account_id", account)
     cfg = Config(
-        providers={"work": entry}, models=ModelsConfig(worker=RoleModel(provider="work", model="m"))
+        providers={"work": entry},
+        models=ModelsConfig(default=RoleModel(provider="work", model="m")),
     )
     provider = role_providers.build_role_provider(
         cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
@@ -100,7 +102,7 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
                 extra_body={"provider": {"sort": "throughput"}},
             )
         },
-        models=ModelsConfig(worker=RoleModel(provider="openrouter", model="kimi")),
+        models=ModelsConfig(default=RoleModel(provider="openrouter", model="kimi")),
     )
     prov = role_providers.build_role_provider(
         cfg, "worker", transcript_sink=mock.MagicMock(), budget=mock.MagicMock()
@@ -110,17 +112,17 @@ def test_build_role_provider_forwards_extra_body_and_headers() -> None:
     assert ("x-title", "agent6") in prov.extra_headers.literal
 
 
-def test_reviewer_family_builders_stamp_their_own_seats() -> None:
+def test_side_call_and_review_builders_stamp_their_own_seats() -> None:
     """The reviser, summariser and a bare-focus seat stamp their own seats.
 
-    They share the reviewer route; a transcript still tells which actor made a call.
+    A transcript tells which actor made a call, even when routes are shared.
     """
     from agent6.config import PromptConfig, ReviewConfig, ReviewerConfig
 
     cfg = Config(
         providers={"o": OpenAIProviderEntry(backend="openai", base_url="https://x/v1")},
         models=ModelsConfig(
-            worker=RoleModel(provider="o", model="m"),
+            default=RoleModel(provider="o", model="m"),
             reviewer=RoleModel(provider="o", model="m"),
         ),
         review=ReviewConfig(
@@ -136,7 +138,7 @@ def test_reviewer_family_builders_stamp_their_own_seats() -> None:
     assert sink.for_seat.call_args == mock.call("prompt_reviser")
 
     sink = mock.MagicMock()
-    role_providers.reviewer_seat_provider(
+    role_providers.helper_seat_provider(
         cfg, "summariser", transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
     )
     assert sink.for_seat.call_args == mock.call("summariser")

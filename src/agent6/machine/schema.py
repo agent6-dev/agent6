@@ -308,7 +308,7 @@ class AgentState(pydantic.BaseModel):
         max_usd: The slice's spend cap, or None to inherit the config's; the config cap and
             the machine's remaining budget also bind.
         config: The state's own config layer, above the machine's `[config]`: the model
-            (`models.worker`) and every other knob of the state.
+            (`models.default` and the role overrides) and every other knob of the state.
     """
 
     model_config = _MODEL_CONFIG

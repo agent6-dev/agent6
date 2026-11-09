@@ -598,6 +598,6 @@ def infer_verify_command(
         except Exception:  # never fails the run
             raw = ""
         argv = parse_llm_verify(raw)
-        if argv is not None and runnable(argv, "the reviewer model"):
+        if argv is not None and runnable(argv, "the helper model"):
             return InferredVerify(argv, "llm", tuple(passed))
     return InferredVerify((), "none", tuple(passed))

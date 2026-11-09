@@ -56,7 +56,7 @@ def test_cmd_init_reports_invalid_config_cleanly(
     # Invalid per-repo config: worker references a provider that does not exist.
     cfgp = paths.repo_config_path(repo)
     cfgp.parent.mkdir(parents=True, exist_ok=True)
-    cfgp.write_text('[models.worker]\nmodel = "typoprovider/x/y"\n', encoding="utf-8")
+    cfgp.write_text('[models.default]\nmodel = "typoprovider/x/y"\n', encoding="utf-8")
 
     monkeypatch.chdir(repo)
     monkeypatch.delenv("AGENT6_DEBUG", raising=False)
@@ -268,21 +268,21 @@ def test_init_next_steps_name_only_what_is_still_missing(
     monkeypatch.chdir(repo)
     assert main(["init", "--yes"]) == 0
     out = capsys.readouterr().out
-    assert "agent6 connect" in out and "agent6 model worker" in out
+    assert "agent6 connect" in out and "agent6 model default" in out
     assert "verify is inferred per run" in out
     global_cfg = tmp_path / "cfg" / "agent6" / "config.toml"
     global_cfg.parent.mkdir(parents=True, exist_ok=True)
     global_cfg.write_text(
         '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
-        '[models.worker]\nmodel = "openrouter/m"\n'
+        '[models.default]\nmodel = "openrouter/m"\n'
         "[harness]\nverify_command = ['true']\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")
     assert main(["init", "--yes"]) == 0
     out = capsys.readouterr().out
-    assert "agent6 connect" not in out and "agent6 model worker" not in out
+    assert "agent6 connect" not in out and "agent6 model default" not in out
     assert "verify is inferred" not in out and 'agent6 run "<task>"' in out
 
 

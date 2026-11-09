@@ -57,7 +57,7 @@ def _cfg(model: str = "kimi-k2") -> Config:
     return Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"model": "o/" + model}},
+            "models": {"default": {"model": "o/" + model}},
         }
     )
 
@@ -175,7 +175,7 @@ def _two_provider_cfg() -> Config:
                 "w": {"backend": "openai", "base_url": "https://w.example/v1"},
                 "s": {"backend": "openai", "base_url": "https://s.example/v1"},
             },
-            "models": {"worker": {"model": "w/w/base-model"}},
+            "models": {"default": {"model": "w/w/base-model"}},
         }
     )
 
@@ -239,20 +239,20 @@ def test_configured_model_typo_refuses_with_suggestion(
     assert "checked live" in msg and "agent6 model" not in msg
 
 
-def test_refusal_names_the_entry_the_user_wrote_on_worker_fallback(
+def test_refusal_names_the_entry_the_user_wrote_on_default_fallback(
     cache_home: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # `plan` validates the planner role, but with no [models.planner] the model
-    # comes from the worker entry; the refusal must point at models.worker.model
+    # comes from the default entry; the refusal must point at models.default.model
     # (the key that exists in the user's config), not a phantom models.planner.
     _write_cache(cache_home, "o", ["moonshotai/kimi-k2.6"])
     _fresh(monkeypatch, ["moonshotai/kimi-k2.6"])
     cfg = _cfg("moonshotai/kimi-k2.7")
-    assert cfg.models.source_role("planner") == "worker"
+    assert cfg.models.source_role("planner") == "default"
     v = validate.validate_configured_model(cfg, "planner")
     assert v.refused
     msg = validate.configured_model_refusal(v, cfg.models.source_role("planner"))
-    assert "models.worker.model" in msg
+    assert "models.default.model" in msg
     assert "models.planner" not in msg
 
 

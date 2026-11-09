@@ -26,10 +26,10 @@ from agent6.config.header_config import HeaderTemplate  # noqa: ICN003  # re-exp
 from agent6.config.model import (  # noqa: ICN003  # re-export
     Agent6Section,
     Config,
-    ModelsConfig,
     load_config,
     validate_config,
 )
+from agent6.config.model_roles import ModelsConfig  # re-export
 from agent6.config.oauth_config import OAuthConfig, OAuthExchangeConfig  # noqa: ICN003  # re-export
 from agent6.config.provider_config import (  # noqa: ICN003  # re-export
     AnthropicProviderEntry,

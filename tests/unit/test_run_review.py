@@ -390,7 +390,7 @@ def _reviewer_config() -> Config:
     return Config.model_validate(
         {
             "providers": {"local": {"backend": "openai", "base_url": "https://example.test/v1"}},
-            "models": {"reviewer": {"model": "local/reviewer"}},
+            "models": {"default": {"model": "local/base"}, "reviewer": {"model": "local/reviewer"}},
         }
     )
 

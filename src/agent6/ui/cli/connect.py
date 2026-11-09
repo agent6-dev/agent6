@@ -669,7 +669,7 @@ def _cmd_connect(
         rc = _credential_step(name, backend, flow or "auto", verify is not False)
     if rc == 0:
         print(
-            "Next: `agent6 model worker "
-            f"{name} <model>` to route a role here, then `agent6 config show`."
+            "Next: `agent6 model default "
+            f"{name}/<model>` to set the required default, then `agent6 config show`."
         )
     return rc

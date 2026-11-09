@@ -17,7 +17,8 @@ TernaryMode = Literal["deny", "ask", "allow"]
 # `none` runs commands as plain subprocesses: a host with no confinement, or an operator opt-out.
 IsolationLevel = Literal["full", "partial", "none"]
 NetworkMode = Literal["host", "session", "none"]
-RoleName = Literal["worker", "reviewer", "planner"]
+RoleName = Literal["default", "helper", "planner", "reviewer", "worker"]
+MODEL_ROLES: tuple[RoleName, ...] = ("default", "helper", "planner", "reviewer", "worker")
 # The modes `agent6 resume` accepts; `session_kind` answers the wider "is this a known mode".
 ResumableMode = Literal["run", "plan", "ask"]
 # What the REPL's after-commit hook tells the loop to do next; `exit` stops with no prompt.

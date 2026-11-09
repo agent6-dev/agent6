@@ -64,10 +64,10 @@ def load_machine(path: pathlib.Path) -> schema.MachineSpec:
 
 # Keys an agent state does not take, each with the `config` table and key that set the same thing.
 _CONFIG_ONLY_AGENT_KEYS: dict[str, tuple[str, str]] = {
-    "model": ("models.worker", "model"),
-    "provider": ("models.worker", "model"),
-    "effort": ("models.worker", "effort"),
-    "temperature": ("models.worker", "temperature"),
+    "model": ("models.default", "model"),
+    "provider": ("models.default", "model"),
+    "effort": ("models.default", "effort"),
+    "temperature": ("models.default", "temperature"),
     "max_tokens_fallback": ("budget", "max_tokens_fallback"),
 }
 

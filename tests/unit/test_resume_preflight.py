@@ -245,11 +245,14 @@ config_version = 1
 backend = "anthropic"
 api_key_env = "ANTHROPIC_API_KEY"
 
+[models.default]
+model = "anthropic/planner-model"
+
 [models.reviewer]
 model = "anthropic/planner-model"
 """
 
-_PLANNER_ONLY = (
+_PLANNER_CONFIG = (
     _PROVIDER_TOML
     + """
 [models.planner]
@@ -258,7 +261,7 @@ model = "anthropic/planner-model"
 )
 
 _PLANNER_AND_WORKER = (
-    _PLANNER_ONLY
+    _PLANNER_CONFIG
     + """
 [models.worker]
 model = "anthropic/worker-model"
@@ -287,23 +290,17 @@ def _stub_load_effective(
 def test_plan_resume_requires_the_planner_role(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A plan run resumes under the planner role.
-
-    Resume hard-coded "worker" at its readiness gate, so a planner-only config could START a plan
-    (fresh preflight passes require_runnable("planner")) but never resume it.
-    """
+    """A plan resumes under the planner role with the required default configured."""
     repo = tmp_path / "repo"
     repo.mkdir()
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-AAAA11")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
 
     def _stop(*_a: object, **_k: object) -> object:
         raise _Stop()
 
-    # Reaching probed_environment means the readiness gate accepted the planner-only
-    # config; the old hard-coded require_runnable("worker") returned 2 first.
     monkeypatch.setattr(detect, "probed_environment", _stop)
     monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)  # no key in a unit test
     with pytest.raises(_Stop):
@@ -326,7 +323,7 @@ def test_resume_preset_flag_is_recorded_for_later_executions(
     monkeypatch.chdir(repo)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     _plan_session_dir(repo, "plan-PRESET1")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-PRESET1"
 
     monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)  # no key in a unit test
@@ -361,7 +358,7 @@ def test_resume_writes_its_worker_pid_only_after_the_preflight_passed(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-PIDORDER")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # run_commands="ask" with no tty refuses
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-PIDORDER"
     order: list[str] = []
@@ -418,7 +415,7 @@ def test_a_late_resume_refusal_does_not_record_unrun_preset_or_model_picks(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-PICKREFUSE")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
     monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)
 
     def _refuse(*_a: object, **_k: object) -> str:
@@ -456,7 +453,7 @@ def test_a_resume_after_a_death_mid_turn_asks_nothing_and_keeps_the_record_for_t
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-CRASHMARK")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
     marker = (
         paths.state_dir(repo)
         / "sessions"
@@ -581,7 +578,7 @@ def test_a_frontend_teardown_failure_still_clears_the_worker_pid_on_resume(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-TEARDOWN")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-TEARDOWN"
 
@@ -616,7 +613,7 @@ def test_a_misspelled_away_mode_refuses_a_resume(
     _git_repo(repo)
     monkeypatch.chdir(repo)
     _plan_session_dir(repo, "plan-TYPO")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "denny")
     monkeypatch.setattr(session_runtime, "select_isolation", _unconfined)
     monkeypatch.setattr(session_setup, "check_provider_keys", _nothing)
@@ -1342,7 +1339,7 @@ def test_resume_model_flag_is_recorded_and_replayed(
     monkeypatch.chdir(repo)
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
     _plan_session_dir(repo, "plan-MODEL1")
-    _stub_load_effective(monkeypatch, _PLANNER_ONLY, tmp_path)
+    _stub_load_effective(monkeypatch, _PLANNER_CONFIG, tmp_path)
     session_dir = paths.state_dir(repo) / "sessions" / "runs" / "plan-MODEL1"
     routes: list[tuple[str, str]] = []
 
@@ -1397,7 +1394,7 @@ def test_a_parked_resume_hands_run_task_the_config_path(
     config_path = tmp_path / "custom.toml"
     config_path.write_text(
         '[providers.local]\nbackend = "openai"\nbase_url = "https://example.test/v1"\n'
-        '[models.worker]\nmodel = "local/m"\n',
+        '[models.default]\nmodel = "local/m"\n',
         encoding="utf-8",
     )
 

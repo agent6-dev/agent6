@@ -65,7 +65,7 @@ def iso(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> pathlib.Path
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\nbackend = "anthropic"\n'
-        '[models.worker]\nmodel = "anthropic/claude-x"\n',
+        '[models.default]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -98,13 +98,13 @@ def test_run_one_returns_finish_payload(
 
     monkeypatch.setattr(harness_loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _fake)
-    monkeypatch.setattr(role_providers, "reviewer_seat_provider", _fake)
+    monkeypatch.setattr(role_providers, "helper_seat_provider", _fake)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _fake)
 
     req = agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
-        overlay={"models": {"worker": {"model": "anthropic/claude-x"}}},
+        overlay={"models": {"default": {"model": "anthropic/claude-x"}}},
         isolation="none",  # no real sandbox: landlock is a no-op
         transcript_dir=tmp_path / "t",
         request=AgentRequest(prompt="go", timeout_s=5.0),
@@ -149,7 +149,7 @@ def _stub_loop(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(harness_loop, "Harness", _CapturingWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _prov)
-    monkeypatch.setattr(role_providers, "reviewer_seat_provider", _prov)
+    monkeypatch.setattr(role_providers, "helper_seat_provider", _prov)
     monkeypatch.setattr(dispatch, "ToolDispatcher", _disp)
     return captured
 
@@ -165,7 +165,7 @@ def test_run_one_drops_out_of_cwd_protect_paths(
     req = agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
-        overlay={"models": {"worker": {"model": "anthropic/claude-x"}}},
+        overlay={"models": {"default": {"model": "anthropic/claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
         protect_paths=(inside, outside),
@@ -194,7 +194,7 @@ def test_run_one_hands_the_commit_identity_to_the_chain_and_the_jail_not_the_pro
     req = agent.MachineAgentRequest(
         cwd=iso,
         root=iso,
-        overlay={"models": {"worker": {"model": "anthropic/claude-x"}}},
+        overlay={"models": {"default": {"model": "anthropic/claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
         commit_identity=git_read.CommitIdentity(name="Machine Bot", email="bot@example.com"),

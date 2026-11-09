@@ -30,19 +30,31 @@ Rebound grants are removed locally only; the provider configuration stays.
 
 `agent6 check config` reports local credential refusals and exits 1; a passing local check does not verify remote authentication.
 
-Each role stores `model = "provider/model"`; the CLI also accepts a bare id on its current provider.
-agent6 routes three model roles; `reviewer` and `planner` fall back to `worker` when unset.
+Every model call requires `[models.default]` with `model = "provider/model"`.
+The CLI also accepts a bare id on the current provider.
+Each optional role inherits its unset `model`, `effort` and `temperature` directly from `models.default`, never from another role.
+For example, `models.planner.effort = "max"` changes only the planner's effort.
 
-| Role       | Set with            | Used by                                                                                              |
-| ---------- | ------------------- | ---------------------------------------------------------------------------------------------------- |
-| `worker`   | `[models.worker]`   | `agent6 run`, `agent6 ask`, their resumes, and machine agent states without a pinned model |
-| `reviewer` | `[models.reviewer]` | the in-loop review panel, the context summariser, the gister and the prompt reviser |
-| `planner`  | `[models.planner]`  | `agent6 plan`                                                                                        |
+| Role | Set with | Used by |
+| --- | --- | --- |
+| `default` | `[models.default]` | required baseline and the only fallback for every role |
+| `worker` | `[models.worker]` | `agent6 run`, `agent6 ask`, their resumes, machine agent states, and model-written squash messages |
+| `planner` | `[models.planner]` | `agent6 plan` and plan resumes |
+| `reviewer` | `[models.reviewer]` | in-loop review panel seats without a route, the `sessions compare` and `--parallel` judge, and `sessions review` |
+| `helper` | `[models.helper]` | context summarising, gisting (`compaction.elision_gists`), verify-command inference, and prompt revision |
 
 ```sh
-agent6 model worker anthropic/claude-sonnet-5
-agent6 model all openrouter/moonshotai/kimi-k2.6   # set every role at once
+agent6 model default anthropic/claude-sonnet-5
+agent6 model helper anthropic/claude-haiku-4-5
+agent6 model all openrouter/moonshotai/kimi-k2.6   # write the default and every role
 ```
+
+`agent6 model` writes to the global config; `--repo` selects the repository layer.
+`all` writes five tables at that layer.
+`--model` on run or ask overrides the worker role above every config layer; on plan it overrides the planner role.
+It does not replace the required default.
+`agent6 config show` shows each inherited leaf with the default's origin.
+An old worker-only config refuses without migration: rename `[models.worker]` to `[models.default]`.
 
 ## Carry your state with the workspace
 

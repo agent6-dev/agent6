@@ -566,7 +566,7 @@ depends_on = ["agent6.errors", "agent6.tools", "agent6.vcs.git_command"]
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config.git_config", "agent6.config.harness_config", "agent6.config.header_config", "agent6.config.model", "agent6.config.oauth_config", "agent6.config.provider_config", "agent6.config.sandbox_config", "agent6.config.surface_config", "agent6.config.validation", "agent6.kinds"]
+depends_on = ["agent6.config.git_config", "agent6.config.harness_config", "agent6.config.header_config", "agent6.config.model", "agent6.config.model_roles", "agent6.config.oauth_config", "agent6.config.provider_config", "agent6.config.sandbox_config", "agent6.config.surface_config", "agent6.config.validation", "agent6.kinds"]
 
 [[modules]]
 # The config models share validation policy and the operator-facing error.
@@ -616,6 +616,7 @@ depends_on = [
   "agent6.config.git_config",
   "agent6.config.harness_config",
   "agent6.config.io",
+  "agent6.config.model_roles",
   "agent6.config.provider_config",
   "agent6.config.sandbox_config",
   "agent6.config.surface_config",
@@ -913,7 +914,7 @@ depends_on = ["agent6.machine.contracts", "agent6.machine.journal", "agent6.mach
 
 [[modules]]
 path = "agent6.config.layer_data"
-depends_on = ["agent6.config.io", "agent6.config.model", "agent6.config.validation", "agent6.paths"]
+depends_on = ["agent6.config.io", "agent6.config.model", "agent6.config.validation", "agent6.kinds", "agent6.paths"]
 
 [[modules]]
 path = "agent6.config.layer_presets"
@@ -942,3 +943,7 @@ depends_on = ["agent6.portable"]
 [[modules]]
 path = "agent6.sessions.retention"
 depends_on = []
+
+[[modules]]
+path = "agent6.config.model_roles"
+depends_on = ["agent6.config.harness_config", "agent6.config.validation", "agent6.kinds"]

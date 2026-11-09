@@ -57,7 +57,7 @@ email = "demo@agent6.dev"
 [providers.openrouter]
 backend = "openai"
 base_url = "http://127.0.0.1:${PORT}/api/v1"
-[models.worker]
+[models.default]
 model = "openrouter/moonshotai/kimi-k2.6"
 [models.planner]
 model = "openrouter/moonshotai/kimi-k2.6"

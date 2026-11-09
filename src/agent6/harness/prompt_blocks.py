@@ -198,8 +198,8 @@ def _plan_budget_line(config: Config) -> str:
     Returns:
         The sentence, or "" when no meter binds.
     """
-    roles = (config.models.worker, config.models.reviewer, config.models.planner)
-    if not any(plan_metered(config.providers.get(rm.provider)) for rm in roles if rm is not None):
+    roles = config.models.configured().values()
+    if not any(plan_metered(config.providers.get(rm.provider)) for rm in roles):
         return ""
     cap = (
         "uncapped per run"

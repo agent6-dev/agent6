@@ -154,7 +154,7 @@ A key (`agent6 connect <name>`), a `token_command` or a configured [`oauth`](#co
 backend = "responses"
 base_url = "https://models.example/v1"
 
-[models.worker]
+[models.default]
 model = "work/reasoning-model"
 ```
 
@@ -171,7 +171,7 @@ Calls outside a conversation omit both.
 
 ```bash
 agent6 connect chatgpt      # browser sign-in (device code, then paste, when headless)
-agent6 model worker chatgpt/gpt-5.6-sol
+agent6 model default chatgpt/gpt-5.6-sol
 ```
 
 - `agent6 connect chatgpt` runs a PKCE OAuth sign-in against OpenAI's fixed OAuth authority (`https://auth.openai.com`) and stores the tokens in `secrets.toml` (0600); they refresh automatically.
@@ -189,12 +189,12 @@ agent6 model worker chatgpt/gpt-5.6-sol
 
 ### Claude Code subscription (`backend = "claude_code"`)
 
-Runs the worker inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
+Runs model calls inside the installed, signed-in Claude Code binary: a Claude subscription (Pro/Max) instead of an API key.
 
 ```bash
 claude auth login                        # once, in Claude Code itself
 agent6 connect claude                    # writes [providers.claude], checks the sign-in
-agent6 model worker claude/claude-sonnet-4-5
+agent6 model default claude/claude-sonnet-4-5
 ```
 
 - agent6's own loop, tools, jail, verify gate, and approvals drive the run; the binary supplies the model.
@@ -205,7 +205,7 @@ agent6 model worker claude/claude-sonnet-4-5
   Dollar figures stay an authoritative $0; the binary's own list-price estimate is not recorded.
 - Ignored: `[models.<role>].temperature` and the loop's per-call output-token cap (the binary owns sampling).
   Refused: `effort = "off"` (`claude --effort` has no off value; use `low`).
-- Side roles keep their own providers; route one here explicitly (`agent6 model reviewer claude/claude-haiku-4-5`).
+- Optional roles inherit the default; override one with `agent6 model helper claude/claude-haiku-4-5`.
   Each side call without tools is one short-lived `claude` process.
 - One `claude` process serves a worker execution.
   It restarts, replaying the conversation as one user message with retained attachments, on resume, fork, `/undo`, a steer or stop mid-turn, a tier-2 context restart, and when the live context nears the window.
@@ -252,12 +252,17 @@ Role routing:
 
 <!-- config-table: models -->
 
-<!-- the three roles are the same shape, so the table is rendered once -->
+Every model call requires a `models.default.model` route.
+Unset fields in `worker`, `planner`, `reviewer` and `helper` inherit directly from `models.default`.
+A role never inherits from another role.
+For example, `[models.planner]` with only `effort = "max"` keeps the default route and temperature.
+`agent6 config show` attributes inherited leaves to the layer that supplied the default.
+A worker-only config refuses with a remedy; rename `[models.worker]` to `[models.default]` to migrate.
 A persisted `model` is fully qualified: `model = "openrouter/openai/gpt-4.1-mini"`.
 The first segment names a `[providers.*]` entry; everything after the first slash is the model id verbatim.
 `effort` and `temperature` are sibling keys.
 
-<!-- config-table: models.worker -->
+<!-- config-table: models.default -->
 
 ## `[sandbox]`
 

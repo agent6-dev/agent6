@@ -154,7 +154,7 @@ def test_machine_agent_wires_the_summariser_seat(
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
         '[providers.anthropic]\nbackend = "anthropic"\n'
-        '[models.worker]\nmodel = "anthropic/claude-x"\n',
+        '[models.default]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -184,7 +184,7 @@ def test_machine_agent_wires_the_summariser_seat(
 
     monkeypatch.setattr(loop, "Harness", _FakeWf)
     monkeypatch.setattr(role_providers, "build_role_provider", _fake_role)
-    monkeypatch.setattr(role_providers, "reviewer_seat_provider", _fake_summariser)
+    monkeypatch.setattr(role_providers, "helper_seat_provider", _fake_summariser)
 
     def _fake_dispatcher(**_k: Any) -> object:
         return object()
@@ -194,7 +194,7 @@ def test_machine_agent_wires_the_summariser_seat(
     req = agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,
-        overlay={"models": {"worker": {"model": "anthropic/claude-x"}}},
+        overlay={"models": {"default": {"model": "anthropic/claude-x"}}},
         isolation="none",
         transcript_dir=tmp_path / "t",
         request=contracts.AgentRequest(prompt="go", timeout_s=5.0),
@@ -267,7 +267,7 @@ def test_the_agent_seat_journals_under_a_driving_role(
         return mock.MagicMock()
 
     monkeypatch.setattr(role_providers, "build_role_provider", stub_provider)
-    monkeypatch.setattr(role_providers, "reviewer_seat_provider", stub_provider)
+    monkeypatch.setattr(role_providers, "helper_seat_provider", stub_provider)
     req = agent.MachineAgentRequest(
         cwd=tmp_path,
         root=tmp_path,

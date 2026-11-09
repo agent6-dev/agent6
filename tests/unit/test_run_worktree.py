@@ -59,6 +59,9 @@ _CONFIG = """
 isolation = "none"
 run_commands = "deny"
 
+[models.default]
+model = "p/m"
+
 [models.worker]
 model = "p/m"
 

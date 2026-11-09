@@ -109,7 +109,7 @@ on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt
 # mode = "read_only"                   # "read_only" (default, read-only) | "run"
 # max_usd = 1.5                    # this agent slice's metered-spend cap
 
-# [states.classify.config.models.worker]   # this state's model; unset: your worker model
+# [states.classify.config.models.default]  # this state's baseline for all roles
 # model = "anthropic/claude-haiku-4-5"
 # effort = "high"                  # off | low | medium | high | xhigh | max
 # temperature = 0.2
@@ -172,7 +172,11 @@ Where a run state's work lands:
 
 The state's `config` table tunes how that loop runs.
 
-- `[states.<name>.config.models.worker]` selects and tunes the model (`model = "provider/model"`, `effort`, `temperature`); `[states.<name>.config.budget]` sets `max_tokens_fallback`; most other config keys work the same way
+- `[states.<name>.config.models.default]` supplies the required baseline (`model = "provider/model"`, `effort`, `temperature`).
+- `[states.<name>.config.models.<role>]` overrides any of `worker`, `planner`, `reviewer` or `helper`, field by field.
+  Agent states run the worker role; compaction uses the helper.
+- Legacy state-level `model`, `effort` and `temperature` keys refuse with a remedy pointing to `config.models.default`.
+- `[states.<name>.config.budget]` sets `max_tokens_fallback`; most other config keys work the same way.
 - a key the table leaves out falls back through the effective config ([Machine config overlay](#47-machine-config-overlay-config))
 - `max_usd` bounds this agent slice; omit it to inherit the resolved config cap.
   The config cap, state cap and machine remainder all bind.
@@ -623,7 +627,7 @@ Moving the directory preserves its journal and recorded bundle, but does not rem
 Run instance commands from the repo where the instance was started.
 
 `machine run` prints cumulative dollars and input/output tokens when it ends, waits or stops, as `machine status` does.
-Its budget preflight judges the agent states' resolved model routes, including inherited roles, not an unused operator worker.
+Its budget preflight judges the agent states' resolved model routes, including inherited roles, not an unused operator default.
 
 `machine create` prints dollars, plan points and input/output tokens summed across all drafting attempts; `--max-usd` and `--max-plan-points` cap those sums, each attempt getting what is left, and `--max-tokens-fallback` caps each attempt as it caps a run.
 A leading `~` marks dollar totals that omit unpriced usage; the `run` and `status` summaries do not report subscription-plan usage.

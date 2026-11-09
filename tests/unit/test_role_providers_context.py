@@ -33,7 +33,7 @@ def _session(
                     },
                 }
             },
-            "models": {"worker": {"model": "work/shared"}},
+            "models": {"default": {"model": "work/shared"}},
             "review": {
                 "trigger": "before_finish",
                 "scope": scope,

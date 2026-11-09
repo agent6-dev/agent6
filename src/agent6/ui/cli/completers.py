@@ -352,7 +352,7 @@ def _complete_model_verb_values(
         The config's provider names, then its routes, each starting with prefix.
     """
     role = getattr(parsed_args, "role", None)
-    if role not in ("planner", "worker", "reviewer", "all"):
+    if role not in ("default", "helper", "planner", "reviewer", "worker", "all"):
         return []
     from agent6.ui.cli import model  # noqa: PLC0415
 

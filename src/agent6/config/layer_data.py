@@ -12,7 +12,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.config import io, validation
 from agent6.config import model as config_model
 
@@ -295,6 +295,11 @@ def config_leaves(config: config_model.Config) -> dict[str, Any]:
                 out[path] = serialized[name]
 
     walk(config, ())
+    for role in kinds.MODEL_ROLES:
+        if (resolved := config.models.resolve(role)) is not None:
+            prefix = f"models.{role}"
+            out.pop(prefix, None)
+            out.update(flatten_leaves(resolved.model_dump(), ("models", role)))
     return out
 
 
@@ -358,6 +363,13 @@ def effective_from_layers(
     layer_order = [layer.source for layer in layers]
 
     def source_for(leaf: str) -> str:
+        parts = leaf.split(".")
+        if len(parts) == 3 and parts[0] == "models":
+            for role in kinds.MODEL_ROLES:
+                if parts[1] == role:
+                    source_role = config.models.source_role(role, parts[2])
+                    leaf = f"models.{source_role}.{parts[2]}"
+                    break
         contributors = {
             source
             for path, source in source_of_leaf.items()

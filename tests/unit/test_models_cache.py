@@ -491,7 +491,7 @@ def test_review_seats_resolve_their_own_modality_facts(
     cfg = Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "https://models.example/v1"}},
-            "models": {"worker": {"model": "p/text"}},
+            "models": {"default": {"model": "p/text"}},
             "review": {"reviewers": [{"focus": "ui", "model": "p/vision"}]},
         }
     )
