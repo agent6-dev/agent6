@@ -16,6 +16,7 @@ tests/unit/test_config_doc.py.
 
 from __future__ import annotations
 
+import html
 import json
 import pathlib
 import re
@@ -72,7 +73,20 @@ def leaves() -> dict[str, tuple[str, str]]:
             path = f"{prefix}{name}"
             nested = _sections_of(field.annotation)
             if field.description or not nested:
-                out[path] = (_default_cell(path, field), field.description or "")
+                description = field.description or ""
+                extra = field.json_schema_extra
+                meanings = extra.get("choice_meanings", {}) if isinstance(extra, dict) else {}
+                if isinstance(meanings, dict) and meanings:
+                    description += (
+                        "<ul>"
+                        + "".join(
+                            f"<li><code>{html.escape(str(value))}</code>: "
+                            f"{html.escape(str(meaning))}</li>"
+                            for value, meaning in meanings.items()
+                        )
+                        + "</ul>"
+                    )
+                out[path] = (_default_cell(path, field), description)
             origin = typing.get_origin(field.annotation)
             suffix = (
                 ".<name>." if origin is dict else ".<entry>." if origin in (list, tuple) else "."

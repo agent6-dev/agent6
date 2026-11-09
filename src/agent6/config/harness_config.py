@@ -14,6 +14,15 @@ import pydantic
 
 from agent6.config import validation
 
+_EFFORT_MEANINGS: dict[str, pydantic.JsonValue] = {
+    "off": "Disable reasoning effort",
+    "low": "Use low reasoning effort",
+    "medium": "Use medium reasoning effort",
+    "high": "Use high reasoning effort",
+    "xhigh": "Use extra-high reasoning effort where supported",
+    "max": "Use maximum reasoning effort where supported",
+}
+
 EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 
 
@@ -56,14 +65,14 @@ class RoleModel(pydantic.BaseModel):
     # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
     # budget on Anthropic ones.
     effort: EffortLevel | None = pydantic.Field(
+        json_schema_extra={"choice_meanings": _EFFORT_MEANINGS},
         default=None,
         description=(
-            "reasoning effort via `effort`: `off`, `low`, `medium`, `high`, `xhigh` or `max`; "
-            "top tiers where offered by the model, collapsed to Anthropic's highest; unset in a "
-            "role: inherits `models.default.effort`; unset in the default: "
-            '`effort = "low"` on openai-compatible reasoning models, no thinking on Anthropic, '
-            'none sent with `backend = "chatgpt"`, `"responses"` or `"claude_code"` '
-            "(the model's default), as printed by `agent6 config show`"
+            "Reasoning effort; top tiers where offered by the model, collapsed to "
+            "Anthropic's highest; unset in a role: inherits `models.default.effort`; unset "
+            'in the default: `effort = "low"` on openai-compatible reasoning models, no '
+            'thinking on Anthropic, none sent with `backend = "chatgpt"`, `"responses"` or '
+            '`"claude_code"` (the model\'s default), as printed by `agent6 config show`'
         ),
     )
 
@@ -94,6 +103,7 @@ class ReviewerConfig(pydantic.BaseModel):
         ),
     )
     effort: EffortLevel | None = pydantic.Field(
+        json_schema_extra={"choice_meanings": _EFFORT_MEANINGS},
         default=None,
         description=(
             'reasoning effort; route\'s value when unset; `effort = "off"` an explicit override'
@@ -171,10 +181,15 @@ class MetricConfig(pydantic.BaseModel):
         ),
     )
     goal: Literal["minimize", "maximize"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "minimize": "Smaller scores are better",
+                "maximize": "Larger scores are better",
+            }
+        },
         description=(
-            'score direction; `harness.metric.goal = "minimize"`: smaller wins; '
-            '`harness.metric.goal = "maximize"`: larger wins; trajectory reported; finish '
-            "allowed once a verified edit only ties the best"
+            "Score direction; trajectory is reported; finish is allowed once a verified edit "
+            "only ties the best."
         ),
     )
 
@@ -332,15 +347,19 @@ class HarnessConfig(pydantic.BaseModel):
         ),
     )
     verify_when: Literal["finish", "turn", "never"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "finish": "Verify uncovered final tree at finish",
+                "turn": "Also verify after each editing turn",
+                "never": "Verify only when model calls tool",
+            }
+        },
         default="never",
         description=(
-            "when the harness runs `harness.verify_command` itself; `harness.verify_when = "
-            '"never"`: only the model\'s own `run_verify_command` calls, and the end reads '
-            "`unverified` when no run of the gate covers the final tree; `harness.verify_when = "
-            '"finish"`: `finish_session` over a tree no verdict covers, a red result returned '
-            'to the model `harness.verify_retries` times; `harness.verify_when = "turn"`: also '
-            "after each editing turn; the tool is available in every mode; no gate without a "
-            "verify command"
+            "When the harness runs `harness.verify_command` itself; the tool remains available "
+            "in every mode; no gate runs without a command; an uncovered final tree reads "
+            "unverified; finish-time failures return to the model up to "
+            "`harness.verify_retries` times."
         ),
     )
     verify_at_start: bool = pydantic.Field(
@@ -508,25 +527,35 @@ class PromptConfig(pydantic.BaseModel):
     )
     # The revision call takes no tools and counts against the budget like any provider call.
     revise_prompt: Literal["off", "auto", "interactive"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "off": "Keep the original task",
+                "auto": "Use helper revision without confirmation",
+                "interactive": "Ask to accept, edit, keep or quit",
+            }
+        },
         default="off",
         description=(
-            "one task rewrite by the helper model before the loop; `prompt.revise_prompt = "
-            '"off"`: no rewrite; `prompt.revise_prompt = "auto"`: revision used as written; '
-            '`prompt.revise_prompt = "interactive"`: accept, keep original, edit or quit (stop '
-            "the run), terminal required, skipped under TUI, ACP or a spawned lane; same pass "
-            'for `/task` queued into a live run, handled as `prompt.revise_prompt = "auto"`'
+            "One task rewrite by the helper model before the loop; interactive revision "
+            "requires a terminal and is skipped under TUI, ACP or a spawned lane; a queued "
+            "`/task` uses the same pass automatically."
         ),
     )
     # `auto` resolves per model in models.registry.decompose_default; the engine reads only `on`.
     decompose: Literal["auto", "on", "off"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "auto": "Choose from worker model capability registry",
+                "on": "Require ordered task decomposition before editing",
+                "off": "Do not require task decomposition",
+            }
+        },
         default="auto",
         description=(
-            "task decomposition before editing in run mode, ordered DAG subtasks worked one at "
-            'a time; `prompt.decompose = "on"`: help for small models under-finishing '
-            "multi-part tasks (measured on mistral-small), 2-4x overhead for capable models; "
-            '`prompt.decompose = "off"`: disabled; `prompt.decompose = "auto"`: '
-            "per-worker-model capability registry, resolved value in `config show`; forced for "
-            "one run by `--decompose`"
+            "Ordered DAG subtasks worked one at a time before editing in run mode; required "
+            "decomposition helps small models under-finishing multi-part tasks (measured on "
+            "mistral-small), with 2-4x overhead for capable models; `config show` prints the "
+            "resolved value; `--decompose` forces it for one run."
         ),
     )
 
@@ -554,14 +583,20 @@ class ReviewConfig(pydantic.BaseModel):
 
     # The findings reach the model as a user message on its next turn.
     trigger: Literal["off", "on_verify_fail", "before_finish", "periodic"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "off": "Do not run in-loop review",
+                "on_verify_fail": "Review after each failed verification",
+                "before_finish": "Review when model requests finish",
+                "periodic": "Review every configured interval of turns",
+            }
+        },
         default="off",
         description=(
-            "in-loop panel over the diff so far, findings sent to the model as a message; "
-            '`review.trigger = "off"`: never; `review.trigger = "on_verify_fail"`: after each '
-            'failed verify; `review.trigger = "before_finish"`: on `finish_session`, finish '
-            'rejectable by a gating `review.block_on`; `review.trigger = "periodic"`: every '
-            "`review.interval_turns` turns; no `review.reviewers`: one seat on "
-            "`[models.reviewer]`"
+            "In-loop panel over the diff so far, with findings sent to the model; only "
+            "finish-time review can gate finish; periodic review uses "
+            "`review.interval_turns`; without `review.reviewers`, one seat uses "
+            "`[models.reviewer]`."
         ),
     )
     interval_turns: int = pydantic.Field(
@@ -570,14 +605,19 @@ class ReviewConfig(pydantic.BaseModel):
         description='Turns between panels when `trigger = "periodic"`.',
     )
     block_on: Literal["none", "any", "model_quorum", "all"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "none": "Treat blocking verdicts as guidance",
+                "any": "One blocking seat rejects finish",
+                "model_quorum": "Require configured number of distinct blocking model routes",
+                "all": "Require every seat to block",
+            }
+        },
         default="none",
         description=(
-            'effect of panel `block` verdicts; `review.block_on = "none"`: guidance only; '
-            '`review.block_on = "any"`: finish rejected by one blocking seat; `review.block_on '
-            '= "model_quorum"`: `review.min_blocking_models` distinct provider/model routes '
-            'required to block; `review.block_on = "all"`: every seat required to block, '
-            "abstentions counted as no block; gating only with `review.trigger = "
-            '"before_finish"`, other triggers advisory'
+            "Effect of panel blocking verdicts; quorum uses `review.min_blocking_models` "
+            "distinct provider/model routes; abstentions do not block; gating applies only to "
+            "finish-time review; other triggers are advisory."
         ),
     )
     min_blocking_models: int = pydantic.Field(
@@ -627,12 +667,16 @@ class ReviewConfig(pydantic.BaseModel):
         ),
     )
     scope: ReviewScope = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "diff": "One review call over diff, task and verification",
+                "repo": "Read-only tool review of surrounding repository",
+            }
+        },
         default="diff",
         description=(
-            "How much a seat reads: `diff` (one call over the diff, the task, and the verify "
-            "result) or `repo` (a read-only tool-using reviewer that also reads the repo around "
-            "the diff to catch cross-file impact; several calls per seat, and it reads the "
-            "checkout, so the reviewed head must be checked out with a clean tree)."
+            "How much a review seat reads; repository review uses several calls and reads the "
+            "checkout, so the reviewed head must be checked out with a clean tree."
         ),
     )
     repo_max_turns: int = pydantic.Field(

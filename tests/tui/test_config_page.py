@@ -189,8 +189,11 @@ def test_config_page_edit_persists(repo: pathlib.Path) -> None:
             await pilot.pause()
             modal = app.screen
             assert isinstance(modal, config_forms.EditModal)
-            # run_commands is an enum -> a [x]/[ ] chooser, focused, current "allow".
+            # Fixed choices have meanings and no free-text row.
             field = modal.query_one("#edit-value", forms.ChoiceField)
+            assert field._custom_row == -1  # pyright: ignore[reportPrivateUsage]
+            assert "Allow command tools and verification" in field.render().plain
+            assert not modal.query(widgets.Input)
             assert field.value == "allow"
             await pilot.press("down")  # highlight "deny" (selection unchanged)
             await pilot.pause()
@@ -278,8 +281,8 @@ def test_edit_unset_reverts_to_default(repo: pathlib.Path) -> None:
     asyncio.run(scenario())
 
 
-def test_edit_custom_value_inline(repo: pathlib.Path) -> None:
-    """A choice setting's last chooser row is an inline custom field, typed right there."""
+def test_fixed_choice_has_no_custom_entry(repo: pathlib.Path) -> None:
+    """Typing past the last finite option cannot create an unsupported value."""
 
     async def scenario() -> None:
         from agent6.ui.tui import forms
@@ -301,15 +304,15 @@ def test_edit_custom_value_inline(repo: pathlib.Path) -> None:
             modal = app.screen
             assert isinstance(modal, config_forms.EditModal)
             field = modal.query_one("#edit-value", forms.ChoiceField)
-            # Highlight down to the custom row, then type in place: typing selects it.
+            # The bottom row stays a choice rather than accepting custom text.
             for _ in range(3):
                 await pilot.press("down")
                 await pilot.pause()
             for ch in ("z", "z", "z"):
                 await pilot.press(ch)
             await pilot.pause()
-            assert field.value == "zzz"
-            assert modal._new_value() == "zzz"  # pyright: ignore[reportPrivateUsage]
+            assert field.value == "allow"
+            assert modal._new_value() == "allow"  # pyright: ignore[reportPrivateUsage]
 
     asyncio.run(scenario())
 
@@ -415,7 +418,11 @@ def test_model_field_is_a_typeahead_picker(
             field = modal.query_one("#model-name", forms.TypeaheadField)
             assert field.value == "anthropic/claude-sonnet-4-5"  # the current model
             field.focus()
-            # First keystroke replaces + narrows; arrow highlights a match.
+            # An incomplete catalog must not prevent an unlisted model id.
+            await pilot.press("z", "z", "z")
+            assert field.value == "zzz"
+            await pilot.press("backspace", "backspace", "backspace")
+            # Typing narrows; an arrow highlights a match.
             await pilot.press("h")
             await pilot.pause()
             await pilot.press("down")

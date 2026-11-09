@@ -19,6 +19,19 @@ from agent6.ui.web import model
 from agent6.viewmodel import config_view
 
 
+def test_descriptions_render_the_shared_choice_meanings(tmp_path: pathlib.Path) -> None:
+    """CLI text and JSON expose the same value meanings as the config view."""
+    effective = layer.load_effective(tmp_path)
+    settings = config_view.build_config_view(effective).settings
+    output = config_view.render_show(effective, descriptions=True)
+    data = json.loads(config_view.render_show(effective, as_json=True))
+    for setting in settings:
+        assert data[setting.key]["choice_meanings"] == setting.choice_meanings
+        for value in setting.choices or ():
+            if meaning := setting.choice_meanings.get(value):
+                assert f"      {value}: {meaning}\n" in output
+
+
 def test_config_show_uses_compaction_keys(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

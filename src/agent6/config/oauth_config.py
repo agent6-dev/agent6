@@ -108,10 +108,21 @@ class OAuthExchangeConfig(pydantic.BaseModel):
         description="the exact URL the issuer's bearer is sent to for the model endpoint's token",
     )
     method: Literal["GET", "POST"] = pydantic.Field(
-        default="POST", description="the request method; `GET` sends `parameters` as the query"
+        json_schema_extra={
+            "choice_meanings": {"GET": "Send HTTP GET request", "POST": "Send HTTP POST request"}
+        },
+        default="POST",
+        description="the request method; `GET` sends `parameters` as the query",
     )
     request_encoding: Literal["form", "json"] = pydantic.Field(
-        default="form", description="how a `POST` body is encoded"
+        json_schema_extra={
+            "choice_meanings": {
+                "form": "Encode request as form data",
+                "json": "Encode request as JSON",
+            }
+        },
+        default="form",
+        description="how a `POST` body is encoded",
     )
     parameters: dict[str, str] = pydantic.Field(
         default_factory=dict,
@@ -128,6 +139,12 @@ class OAuthExchangeConfig(pydantic.BaseModel):
         description="the top-level JSON field holding that token's expiry; required in the answer",
     )
     expires_format: Literal["relative_seconds", "unix_seconds"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "relative_seconds": "Seconds until token expires",
+                "unix_seconds": "Absolute Unix expiry timestamp",
+            }
+        },
         default="relative_seconds",
         description="whether `expires_field` is a lifetime in seconds or a Unix time",
     )
@@ -204,7 +221,14 @@ class OAuthConfig(pydantic.BaseModel):
         ),
     )
     request_encoding: Literal["form", "json"] = pydantic.Field(
-        default="form", description="how the device and token requests are encoded"
+        json_schema_extra={
+            "choice_meanings": {
+                "form": "Encode request as form data",
+                "json": "Encode request as JSON",
+            }
+        },
+        default="form",
+        description="how the device and token requests are encoded",
     )
     refresh_skew_s: float = pydantic.Field(
         default=60.0,

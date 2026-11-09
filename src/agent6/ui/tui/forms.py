@@ -117,12 +117,14 @@ class ChoiceField(Widget, can_focus=True):
         current: str,
         *,
         allow_custom: bool = False,
+        meanings: dict[str, str] | None = None,
         id: str | None = None,
         classes: str | None = None,
     ) -> None:
         """Create the chooser with its options and the current value selected."""
         super().__init__(id=id, classes=classes)
         self._options = list(options)
+        self._meanings = meanings or {}
         self._allow_custom = allow_custom
         in_list = current in self._options
         self._custom_text = "" if (in_list or not allow_custom) else current
@@ -198,6 +200,8 @@ class ChoiceField(Widget, can_focus=True):
             is_option = i < len(self._options)
             mark = "[x]" if i == self._sel else "[ ]"
             label = self._options[i] if is_option else (self._custom_text or "custom…")
+            if is_option and (meaning := self._meanings.get(label)):
+                label = f"{label}: {meaning}"
             if (not is_option) and focused and i == self._cursor:
                 pos = self._pos if self._custom_text else len(label)
                 shown, col = _window(label, pos, width - len(mark) - 1)

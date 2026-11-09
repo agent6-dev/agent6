@@ -2028,6 +2028,7 @@ Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent
 | `type` | `JSON` | The config editor's type name. |
 | `choices` | `JSON` | Allowed enum values, or null for open input. |
 | `description` | `JSON` | The config model's field meaning. |
+| `choice_meanings` | `JSON` | Short meanings keyed by fixed choice value. |
 | `display` | `JSON` | The rendered effective value. |
 | `default_display` | `JSON` | The rendered default value. |
 

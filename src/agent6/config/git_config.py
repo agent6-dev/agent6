@@ -22,12 +22,18 @@ class GitCommitCheckpointConfig(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     message: Literal["agent6", "conventional", "model"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "agent6": "Generate turn number and summary message",
+                "conventional": "Derive conventional subject from diff without model",
+                "model": "Ask model to write commit message",
+            }
+        },
         default="agent6",
         description=(
-            "The message of each per-turn commit: `agent6` (`agent6 turn N: <summary>`), "
-            "`conventional` (a `type(scope): subject` derived from the diff, no model call), or "
-            "`model` (the model writes it from the git facts, falling back to `agent6` with a "
-            "warning on any failure)."
+            "Per-turn commit message style; generated messages use `agent6 turn N: <summary>` "
+            "or `type(scope): subject`; model messages use git facts and fall back to the "
+            "generated agent6 message with a warning on failure"
         ),
     )
 
@@ -38,19 +44,23 @@ class GitCommitSquashConfig(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     message: Literal["agent6", "conventional", "combine", "model"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "agent6": "Generate message from task and run summary",
+                "conventional": "Derive conventional subject from diff without model",
+                "combine": "Concatenate the git commit log",
+                "model": "Ask model to write commit message",
+            }
+        },
         default="agent6",
         description=(
-            "The message of the one commit a squash merge produces: `agent6` (the task's first "
-            "clause as the subject, then `continued: <steer>` for a run resumed with `--steer`, "
-            "then the finish "
-            "summary as the body, else the commit subjects as bullets), "
-            "`conventional` (the same body under a `type(scope): subject` derived from the diff, "
-            "no model call), `combine` (git's own squash message: the commit log concatenated), "
-            "or "
-            "`model` (model-written from up to 64 KiB of the base-to-tip diff, marked when "
-            "truncated, with the task, its continuation and execution finish "
-            "summaries as context and commit conventions from AGENTS.md; falls back to `agent6` "
-            "with a warning on any failure)."
+            "Squash commit message style; generated messages use the task's first clause, "
+            "then `continued: <steer>` for a run resumed with `--steer`, with the finish "
+            "summary as body or commit subjects as bullets; conventional subjects use "
+            "`type(scope): subject` with the same body; model messages use up to 64 KiB of "
+            "base-to-tip diff (marked if truncated), the task, continuation and execution "
+            "finish summaries, and AGENTS.md commit conventions; failure warns and falls "
+            "back to the generated agent6 message"
         ),
     )
 
@@ -134,20 +144,23 @@ class GitConfig(pydantic.BaseModel):
 
     # A run records the untracked files present at its start and never commits them.
     dirty_tree: Literal["ask", "stash", "include"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "ask": "Ask whether to stash, include or cancel",
+                "stash": "Stash tracked changes for the run",
+                "include": "Include tracked changes in first commit",
+            }
+        },
         default="ask",
         description=(
-            "handling of tracked files' uncommitted changes at run start; `git.dirty_tree = "
-            '"ask"`: an `ask_user` choice of stash for the run, include in its commits, or '
-            "cancel (park for later resume), startup refused without someone to answer; "
-            '`git.dirty_tree = "stash"`: stash without asking, restored at the end per '
-            "`git.auto_stash_pop`, otherwise a printed restore command naming the stash by sha; "
-            "worktree restore command: its directory, no branch switch; `git.dirty_tree = "
-            '"include"`: start without asking, changes in the first commit, an unmerged run '
-            "marked merged on landing if its work matches those changes exactly; untracked "
-            "files never counted or committed; `--parallel` allowed with `git.dirty_tree = "
-            '"stash"` or `"include"`, refused with `"ask"`; same policy on resume for files '
-            "changed since the last execution, stash refused if the run also changed one of "
-            "them"
+            "Tracked files' uncommitted changes at run start; asking requires someone to "
+            "answer, with cancellation parking the run for resume; stashes are restored per "
+            "`git.auto_stash_pop`, otherwise a printed restore command names the stash by "
+            "sha and the worktree directory without switching branches; included changes "
+            "mark an unmerged run merged on landing if its work matches exactly; untracked "
+            "files are never counted or committed; `--parallel` refuses asking; resume "
+            "applies the same policy to changes since the last execution, refusing stash if "
+            "the run also changed a file"
         ),
     )
     auto_stash_pop: bool = pydantic.Field(
@@ -162,13 +175,17 @@ class GitConfig(pydantic.BaseModel):
     )
     # The chain is refs/agent6/<session>/head, parented on HEAD at run start.
     control: Literal["agent6", "model"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "agent6": "Harness owns per-turn commits and run branch",
+                "model": "Model owns commits and branches",
+            }
+        },
         default="agent6",
         description=(
-            'git ownership during a run; `git.control = "agent6"`: each editing turn on the '
-            'run\'s own commit chain and branch, HEAD untouched; `git.control = "model"`: '
-            "model-managed commits and branches, no per-turn chain or run branch, `sessions "
-            "diff`/`merge`, `/undo` and `fork` refused; with model control: "
-            '`sandbox.protect_git = "auto"` disabled, `sandbox.protect_git = "on"` refused'
+            "Git ownership during a run; harness control leaves HEAD untouched; model control "
+            "has no per-turn chain or run branch and refuses `sessions diff`/`merge`, `/undo` "
+            "and `fork`; automatic git protection is disabled and explicit protection refused."
         ),
     )
     branch_per_run: bool = pydantic.Field(
@@ -192,16 +209,21 @@ class GitConfig(pydantic.BaseModel):
         ),
     )
     merge_method: Literal["tasks", "squash", "merge", "ff_only"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "tasks": "Squash consecutive checkpoints by task",
+                "squash": "Land as one commit",
+                "merge": "Merge while preserving per-turn history",
+                "ff_only": "Require a fast-forward merge",
+            }
+        },
         default="tasks",
         description=(
-            "method for `agent6 sessions merge` to land a run on its base; `git.merge_method = "
-            '"tasks"`: one commit per task, each consecutive range of checkpoints that worked '
-            "on one task graph subtask squashed under that subtask's title (checkpoints outside "
-            "any subtask take the `[git.commit.squash]` message, so a run that never decomposed "
-            'lands as one commit); `git.merge_method = "squash"`: one commit; `git.merge_method '
-            '= "merge"`: a merge commit keeping per-turn history; `git.merge_method = '
-            '"ff_only"`: fast-forward only; consolidation only, per-turn commits always on the '
-            "run's chain; `sessions merge -m` lands one commit with that message"
+            "Method for `agent6 sessions merge` to land a run on its base; task commits use "
+            "the subtask title, while checkpoints outside subtasks use "
+            "`[git.commit.squash]`, so a run that never decomposed lands as one commit; "
+            "consolidation only, per-turn commits stay on the run's chain; `sessions merge "
+            "-m` lands one commit with that message"
         ),
     )
     # With auto_stash_pop the merge lands first, then the stash goes back on top.

@@ -45,13 +45,17 @@ class SkillsConfig(pydantic.BaseModel):
     )
     # One value per skill, so contradictory states are unrepresentable.
     state: dict[str, Literal["enabled", "disabled", "always"]] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "enabled": "Index skill and load on request",
+                "disabled": "Exclude skill from the run",
+                "always": "Include full skill in system prompt",
+            },
+            "display_safe": True,
+        },
         default_factory=dict,
-        # agent6.viewmodel.config_view reads this opt-in when rendering mapping values.
-        json_schema_extra={"display_safe": True},
         description=(
-            'per-skill state by name; `skills.state.<name> = "enabled"`: indexed, loaded on '
-            '`use_skill`; `skills.state.<name> = "disabled"`: dropped; `skills.state.<name> = '
-            '"always"`: full text in the system prompt; layers merged key by key; written by '
+            "per-skill state by name; layers merged key by key; written by "
             "`agent6 skills enable [--repo]` or `agent6 skills disable [--repo]`"
         ),
     )
@@ -179,6 +183,12 @@ class WebConfig(pydantic.BaseModel):
     )
 
     metrics_route: Literal["off", "on"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "off": "Disable the web metrics route",
+                "on": "Permit authenticated Prometheus metrics scraping",
+            }
+        },
         default="off",
         description=(
             'Serve `/metrics` when `telemetry.metrics = "prometheus"`; requires the web secret '
@@ -231,22 +241,39 @@ class TelemetryConfig(pydantic.BaseModel):
     model_config = validation.MODEL_CONFIG
 
     traces: Literal["none", "otlp"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "none": "Do not export traces",
+                "otlp": "Post traces to telemetry endpoint",
+            }
+        },
         default="none",
-        description="Where spans go: `otlp` posts them to `endpoint`.",
+        description="Trace export destination.",
     )
     metrics: Literal["none", "otlp", "prometheus"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "none": "Do not export metrics",
+                "otlp": "Post metrics to telemetry endpoint",
+                "prometheus": "Write textfile metrics and permit authenticated web scraping",
+            }
+        },
         default="none",
         description=(
-            "Where metrics go: `otlp` posts them to `endpoint`; `prometheus` writes "
-            "`prometheus_file` for node_exporter's textfile collector and permits the web "
-            "scrape route when `web.metrics_route` is `on`."
+            "Metrics export destination; prometheus writes `prometheus_file` for "
+            "node_exporter's textfile collector; web scraping also requires "
+            "`web.metrics_route` enabled."
         ),
     )
     logs: Literal["none", "otlp"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "none": "Do not export log records",
+                "otlp": "Post log records to telemetry endpoint",
+            }
+        },
         default="none",
-        description=(
-            "Where the significant events go as log records: `otlp` posts them to `endpoint`."
-        ),
+        description=("Export destination for significant events as log records."),
     )
     endpoint: str = pydantic.Field(
         default="",
@@ -264,11 +291,16 @@ class TelemetryConfig(pydantic.BaseModel):
         ),
     )
     capture: Literal["metadata", "content"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "metadata": "Export outcomes, counts, timings and identifiers",
+                "content": "Also export capped content excerpts",
+            }
+        },
         default="metadata",
         description=(
-            "`metadata` exports outcomes, counts, timings and ids; `content` adds capped "
-            "excerpts of the task, steers, tool arguments, the gate command, model errors, "
-            "finding titles and degradation details."
+            "Export detail; content excerpts cover the task, steers, tool arguments, gate "
+            "command, model errors, finding titles and degradation details."
         ),
     )
     prometheus_file: str = pydantic.Field(

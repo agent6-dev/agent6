@@ -13,6 +13,14 @@ import pydantic
 
 from agent6.config import header_config, oauth_config, sandbox_config, validation
 
+_BACKEND_MEANINGS: dict[str, pydantic.JsonValue] = {
+    "anthropic": "Use Anthropic Messages API",
+    "openai": "Use OpenAI Chat Completions API",
+    "chatgpt": "Use ChatGPT subscription API",
+    "responses": "Use OpenAI Responses API",
+    "claude_code": "Use installed signed-in Claude Code binary",
+}
+
 Backend = Literal["anthropic", "openai", "chatgpt", "responses", "claude_code"]
 Deployment = Literal["direct", "vertex", "azure"]
 AuthStyle = Literal["x_api_key", "bearer", "api_key_header", "none"]
@@ -110,11 +118,10 @@ def _default_auth_style(backend: str, deployment: str) -> str:
 
 
 _BACKEND_DESCRIPTION = (
-    "The backend: `anthropic` (the Messages API), `openai` (Chat Completions: OpenAI, "
-    "OpenRouter, Ollama, vLLM, LM Studio, llama.cpp, Gemini's OpenAI endpoint), `chatgpt` "
-    "(the ChatGPT-subscription Codex backend, Responses API), `responses` (the Responses API on "
-    "a configured endpoint, `base_url` required), or `claude_code` (the installed, signed-in "
-    "Claude Code binary on a Claude subscription; no HTTP endpoint, no key)."
+    "Provider backend; Chat Completions supports OpenAI, OpenRouter, Ollama, vLLM, LM Studio, "
+    "llama.cpp and Gemini's OpenAI endpoint; ChatGPT subscriptions use the Codex Responses "
+    "backend; configured Responses endpoints require `base_url`; Claude Code uses a Claude "
+    "subscription without an HTTP endpoint or key"
 )
 
 
@@ -159,10 +166,17 @@ class _ProviderBase(pydantic.BaseModel):
     # Declared here so backend leads every subclass's model_fields; each subclass narrows it.
     backend: Backend
     deployment: Deployment = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "direct": "Connect directly to provider",
+                "vertex": "Route through Google Vertex AI",
+                "azure": "Route through Microsoft Azure",
+            }
+        },
         default="direct",
         description=(
-            "`direct`, `vertex` (Google Vertex AI), or `azure` (Azure OpenAI; `openai` format "
-            "only): the URL shape and where the model name and API version go."
+            "Provider URL shape and placement of model name and API version; Azure supports "
+            "only the OpenAI format"
         ),
     )
     # Never empty after validation; the host also feeds the egress allow-list.
@@ -176,11 +190,18 @@ class _ProviderBase(pydantic.BaseModel):
         ),
     )
     auth_style: AuthStyle = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "x_api_key": "Send x-api-key authentication header",
+                "bearer": "Send Authorization Bearer header",
+                "api_key_header": "Send api-key authentication header",
+                "none": "Send no authentication header",
+            }
+        },
         default="bearer",
         description=(
-            "How the key is sent: `x_api_key` (Anthropic), `bearer` (`Authorization: Bearer`, the "
-            "OpenAI style), `api_key_header` (Azure), or `none` (an unauthenticated local "
-            "endpoint)."
+            "Authentication header style; resolved per format and deployment when omitted; "
+            "Anthropic uses x-api-key, compatible APIs use bearer, and Azure uses api-key"
         ),
     )
     # Secrets live here and in token_command, never in base_url, extra_headers or extra_query.
@@ -401,7 +422,10 @@ class AnthropicProviderEntry(_ProviderBase):
 
     # The narrowing override is sound: the model is frozen, so nothing writes the wider type.
     backend: Literal["anthropic"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_BACKEND_DESCRIPTION)
+        pydantic.Field(
+            json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
+            description=_BACKEND_DESCRIPTION,
+        )
     )
     prompt_caching: bool = pydantic.Field(
         default=True,
@@ -421,7 +445,10 @@ class OpenAIProviderEntry(_ProviderBase):
     """
 
     backend: Literal["openai"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_BACKEND_DESCRIPTION)
+        pydantic.Field(
+            json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
+            description=_BACKEND_DESCRIPTION,
+        )
     )
 
 
@@ -434,7 +461,10 @@ class ChatGPTProviderEntry(_ProviderBase):
     """
 
     backend: Literal["chatgpt"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_BACKEND_DESCRIPTION)
+        pydantic.Field(
+            json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
+            description=_BACKEND_DESCRIPTION,
+        )
     )
 
     @pydantic.field_validator("base_url")
@@ -520,7 +550,10 @@ class ResponsesProviderEntry(_ProviderBase):
     """
 
     backend: Literal["responses"] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        pydantic.Field(description=_BACKEND_DESCRIPTION)
+        pydantic.Field(
+            json_schema_extra={"choice_meanings": _BACKEND_MEANINGS},
+            description=_BACKEND_DESCRIPTION,
+        )
     )
 
 
@@ -534,7 +567,9 @@ class ClaudeCodeProviderEntry(pydantic.BaseModel):
 
     model_config = validation.MODEL_CONFIG
 
-    backend: Literal["claude_code"] = pydantic.Field(description=_BACKEND_DESCRIPTION)
+    backend: Literal["claude_code"] = pydantic.Field(
+        json_schema_extra={"choice_meanings": _BACKEND_MEANINGS}, description=_BACKEND_DESCRIPTION
+    )
     binary: str = pydantic.Field(
         default="claude",
         min_length=1,

@@ -140,17 +140,32 @@ class HeaderTemplate(pydantic.BaseModel):
         ),
     )
     targets: tuple[HeaderTarget, ...] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "exchange": "Configured second token exchange",
+                "inference": "Model inference requests",
+                "models": "Model catalog listing requests",
+                "oauth": "Device, token and revocation requests",
+                "usage": "Subscription plan usage requests",
+            }
+        },
         default=("inference",),
         min_length=1,
         strict=False,  # the list-to-tuple conversion, as `validation.StrTuple`
         description=(
-            "the request classes the header reaches: `inference` (model calls), `models` (the"
-            " listing), `usage` (the plan reading), `oauth` (device, token and revocation"
-            " requests), `exchange` (the configured second exchange); `oauth` and `exchange` need"
-            " an `oauth` setting on the entry"
+            "Request classes the header reaches; OAuth and exchange targets require an `oauth` "
+            "setting on the entry"
         ),
     )
     when: BooleanFact | None = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "has_images": "Request includes image content",
+                "has_tool_results": "Request includes tool results",
+                "is_first_turn": "Request starts the first turn",
+                "is_subagent": "Request comes from a subagent",
+            }
+        },
         default=None,
         description="a Boolean fact; the header is sent only while it is true (model calls only)",
     )

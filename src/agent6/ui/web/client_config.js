@@ -310,7 +310,11 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
     combo.load('/api/config/suggest/' + section + '.model');
   } else if (choices) {
     field = el('select', 'field');
-    for (const c of choices) { const o = el('option', null, c); o.value = c; field.appendChild(o); }
+    for (const c of choices) {
+      const meaning = s.choice_meanings?.[c];
+      const option = el('option', null, meaning ? `${c}: ${meaning}` : c);
+      option.value = c; field.appendChild(option);
+    }
     field.value = cur || String(s.default ?? '');
   } else {
     field = el('input', 'field');

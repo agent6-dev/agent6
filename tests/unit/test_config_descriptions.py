@@ -140,5 +140,10 @@ def test_timeout_description_keeps_model_scoping_independent_of_gate_policy() ->
 def test_finish_description_uses_any_verdict_not_only_a_green_one() -> None:
     description = harness_config.HarnessConfig.model_fields["verify_when"].description or ""
     assert harness_config.HarnessConfig().verify_when == "never"
-    assert '"finish"`: `finish_session` over a tree no verdict covers' in description
+    assert "uncovered final tree" in description
+    extra = harness_config.HarnessConfig.model_fields["verify_when"].json_schema_extra
+    assert isinstance(extra, dict)
+    meanings = extra["choice_meanings"]
+    assert isinstance(meanings, dict)
+    assert meanings["finish"] == "Verify uncovered final tree at finish"
     assert "last green" not in description

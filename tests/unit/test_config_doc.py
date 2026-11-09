@@ -41,6 +41,21 @@ def test_config_page_is_not_stale() -> None:
     )
 
 
+@pytest.mark.parametrize("key", ["sandbox.isolation", "git.control", "review.block_on"])
+def test_choices_render_as_a_list_below_the_description(key: str) -> None:
+    """The generated page keeps each short meaning in its own list item."""
+    from agent6.config import model
+    from agent6.viewmodel import config_view
+
+    schema = config_view.field_schema(model.Config, key.split("."))
+    assert schema is not None
+    description = _load_generator().leaves()[key][1]
+    assert description.startswith(schema.description + "<ul>")
+    for value in schema.choices or ():
+        assert f"<li><code>{value}</code>: {schema.choice_meanings[value]}</li>" in description
+    assert description.endswith("</ul>")
+
+
 def test_every_leaf_has_a_description() -> None:
     """Every leaf has a description; an empty Meaning cell looks complete and says nothing."""
     gen = _load_generator()

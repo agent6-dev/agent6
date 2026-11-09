@@ -172,6 +172,11 @@ async function run() {
   }
   assert.ok(row('skills.state.beta'));
   row('sandbox.network').onclick();
+  const network = all(overlay()).find(e => e.tag === 'select');
+  assert.deepEqual(network.children.map(e => e.value), ['auto', 'session', 'host']);
+  assert.equal(network.children[1].textContent,
+    'session: Run-private network without outside access');
+  assert.ok(!all(overlay()).some(e => e.tag === 'input' && e.type !== 'checkbox'));
   assert.ok(!all(overlay()).some(e => e.tag === 'button' && e.textContent.startsWith('Remove ')));
   await button('Cancel', overlay()).onclick();
   await button('Add provider…').onclick();

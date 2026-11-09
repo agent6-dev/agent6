@@ -118,7 +118,8 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
                 yield forms.ChoiceField(
                     tuple(s.choices),
                     current,
-                    allow_custom=True,
+                    allow_custom=not bool(s.choice_meanings),
+                    meanings=s.choice_meanings,
                     id="edit-value",
                     classes="edit-gap",
                 )

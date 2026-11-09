@@ -36,6 +36,7 @@ class ConfigSetting:
         is_adaptive: `effective_value` was resolved away from the raw value.
         py_type: str, int, bool, float, choice, list or table.
         choices: The enum options for a picker, else None.
+        choice_meanings: Short meanings keyed by fixed choice value.
         display_safe: The model permits displaying mapping values.
         mask_value: Hide the whole value of an entry in a mapping that is not display-safe.
         description: The leaf's operator-facing meaning, the docs table cell.
@@ -54,6 +55,7 @@ class ConfigSetting:
     description: str
     display_safe: bool = False
     mask_value: bool = False
+    choice_meanings: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -66,6 +68,7 @@ class FieldSchema:
     description: str = ""
     display_safe: bool = False
     mask_value: bool = False
+    choice_meanings: dict[str, str] = dataclasses.field(default_factory=dict)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -162,6 +165,7 @@ def _merge_field_schema(
     return FieldSchema(
         py_type="choice" if merged else results[0].py_type,
         choices=merged,
+        choice_meanings={k: v for r in results for k, v in r.choice_meanings.items()},
         default=next((r.default for r in results if r.default is not None), results[0].default),
         description=next((r.description for r in results if r.description), ""),
         display_safe=all(r.display_safe for r in results),
@@ -203,13 +207,22 @@ def field_schema(model_cls: type[pydantic.BaseModel], parts: list[str]) -> Field
         return None
     ann = fi.annotation
     extra = fi.json_schema_extra
+    meanings = extra.get("choice_meanings", {}) if isinstance(extra, dict) else {}
+    choice_meanings = (
+        {str(k): str(v) for k, v in meanings.items()} if isinstance(meanings, dict) else {}
+    )
     safe = isinstance(extra, dict) and extra.get("display_safe") is True
     if len(parts) == 1:
         default = fi.default
         if default is pydantic_core.PydanticUndefined:
             default = fi.default_factory() if fi.default_factory is not None else None
         return FieldSchema(
-            _type_label(ann), _literal_choices(ann), default, fi.description or "", safe
+            _type_label(ann),
+            _literal_choices(ann),
+            default,
+            fi.description or "",
+            safe,
+            choice_meanings=choice_meanings,
         )
     nested = _nested_model(ann)
     if nested is not None:
@@ -225,6 +238,7 @@ def field_schema(model_cls: type[pydantic.BaseModel], parts: list[str]) -> Field
             description=fi.description or "",
             display_safe=safe,
             mask_value=not safe,
+            choice_meanings=choice_meanings,
         )
     return None
 
@@ -298,6 +312,7 @@ def build_config_view(
                     py_type=py_type,
                     choices=choices,
                     description=schema.description,
+                    choice_meanings=schema.choice_meanings,
                     display_safe=schema.display_safe,
                     mask_value=schema.mask_value,
                 )
@@ -390,6 +405,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         adaptive: Whether the effective value was resolved from an automatic setting.
         type: The config editor's type name.
         choices: Allowed enum values, or null for open input.
+        choice_meanings: Short meanings keyed by fixed choice value.
         description: The config model's field meaning.
         display: The rendered effective value.
         default_display: The rendered default value.
@@ -413,6 +429,7 @@ def _leaf_json(s: ConfigSetting) -> dict[str, Any]:
         "type": s.py_type,
         "choices": list(s.choices) if s.choices is not None else None,
         "description": s.description,
+        "choice_meanings": s.choice_meanings,
         "display": display_value(s),
         "default_display": format_value(s.default, display_safe=s.display_safe),
     }
@@ -463,6 +480,9 @@ def render_key_detail(
         lines.append(f"    source:  {s.source}")
         if s.choices:
             lines.append(f"    choices: {', '.join(str(c) for c in s.choices)}")
+        for value in s.choices or ():
+            if meaning := s.choice_meanings.get(value):
+                lines.append(f"      {value}: {meaning}")
         if s.description:
             wrapped = _description_lines(s.description, "             ")
             wrapped[0] = "    meaning: " + wrapped[0].lstrip()
@@ -514,6 +534,11 @@ def render_show(
         if descriptions and s.description:
             for line in _description_lines(s.description, "      "):
                 lines.append(f"\x1b[2m{line}\x1b[0m" if color else line)
+
+        if descriptions:
+            for value in s.choices or ():
+                if meaning := s.choice_meanings.get(value):
+                    lines.append(f"      {value}: {meaning}")
 
     # Top-level scalars first and headerless, as TOML requires, so the output pastes back.
     scalars = [s for s in view.settings if "." not in s.key]
