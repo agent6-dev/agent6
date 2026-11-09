@@ -401,7 +401,9 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 - A live worker applies actions at its steer boundary.
   An action still waiting after five seconds reports `action queued`; an approval or question wait must end before the boundary is reached.
 - `steer submitted` means a live instruction entered the steer bridge.
-  Neither a launch nor a submission resolves the finding; Resolve records that decision.
+- `Fix: submitted` means the fix instruction was submitted, not that the fix completed or was verified.
+  Run completion, commits, passing verification, and later clean panels do not resolve findings.
+  Resolve records that conclusion with a reason.
 - Fix retries read the journal, not the launch confirmation from the initiating response.
   Without a recorded submission or failure, a retry reports `delivery unknown` and never launches or sends the instruction again.
 

@@ -103,6 +103,8 @@ def test_confirmed_resume_returns_shared_receipt(
 ) -> None:
     saved = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
     fd: int | None = None
+    events = event_log.EventSink(saved.logs_path)
+    steers: list[str] = []
 
     def resume(cwd: pathlib.Path, session_id: str, *, steer: str, **kwargs: object) -> str:
         nonlocal fd
@@ -111,10 +113,19 @@ def test_confirmed_resume_returns_shared_receipt(
         fd = lock.acquire_single_writer(saved.session_dir)
         assert fd is not None
         process.write_worker_pid(saved.session_dir, os.getpid())
+        steers.append(steer)
+        events.emit(
+            "session.resume",
+            session_id=session_id,
+            user_task="Repair parser",
+            steer=steer,
+            mode="run",
+            turn=2,
+            messages=4,
+            execution_id="resumed",
+        )
         if acknowledge_before_return:
-            review_actions.drain(
-                event_log.EventSink(saved.logs_path), execution_id="resumed", resume_steer=steer
-            )
+            review_actions.drain(events, execution_id="resumed", resume_steer=steer)
         return ""
 
     monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
@@ -136,9 +147,31 @@ def test_confirmed_resume_returns_shared_receipt(
         assert view.findings[0].status == "open"
         assert len(view.findings[0].actions) == (2 if acknowledge_before_return else 1)
         assert view.findings[0].actions[0].source == "web"
+        review_actions.drain(events, execution_id="resumed", resume_steer=steers[0])
+        events.emit(
+            "session.stop",
+            execution_id="resumed",
+            reason="finish_session",
+            turns=2,
+            verification="not_applicable",
+        )
     finally:
         process.clear_worker_pid(saved.session_dir)
         lock.release_single_writer(fd)
+    code, completed = _request(api)
+    assert code == 200 and completed["version"] == 3
+    finding = completed["findings"][0]
+    assert finding["status"] == "open" and finding["fix_state"] == "submitted"
+    assert finding["resolution"] is None
+    assert [a["type"] for a in finding["actions"]] == [
+        "loop.review.fix.requested",
+        "loop.review.fix.submitted",
+    ]
+    assert finding["actions"][-1]["execution_id"] == "resumed"
+    assert [(p["panel_id"], p["execution_id"]) for p in completed["panels"]] == [
+        ("panel", "execution")
+    ]
+    assert completed["merge_guard"]["open_block_ids"] == ["f1", "f2"]
 
 
 def test_findings_routes_distinguish_missing_invalid_and_conflicting(api: int) -> None:

@@ -8,7 +8,9 @@ from typing import Any
 import pytest
 
 from agent6 import review_records
+from agent6.sessions import event_log
 from agent6.viewmodel import review, session_log, state, state_view
+from tests import review_helpers
 
 
 def _target(**changes: Any) -> review_records.ReviewTarget:
@@ -52,12 +54,17 @@ def _panel(
 
 
 def _action(
-    kind: str, *, request_id: str = "request", version: int = 2, **fields: Any
+    kind: str,
+    *,
+    finding_id: str = "f1",
+    request_id: str = "request",
+    version: int = 2,
+    **fields: Any,
 ) -> dict[str, Any]:
     return dict(
         type=f"loop.review.{kind}",
         event_id=kind + request_id,
-        finding_id="f1",
+        finding_id=finding_id,
         request_id=request_id,
         version=version,
         source="cli",
@@ -180,6 +187,144 @@ def test_fix_delivery_is_unknown_until_submission_and_never_resolves() -> None:
     assert (
         state.fold_session([_panel(), requested, failed]).review.findings[0].fix_state == "failed"
     )
+
+
+def test_submitted_fixes_survive_completed_resume(tmp_path: pathlib.Path) -> None:
+    """Run-level verification, a commit and completion cannot dispose of submitted findings."""
+    saved = review_helpers.reviewed_session(tmp_path)
+    panel = json.loads(saved.logs_path.read_text())
+    saved.logs_path.unlink()
+    live = state.initial_state()
+    sink = event_log.EventSink(saved.logs_path)
+
+    def consume(row: dict[str, Any]) -> None:
+        nonlocal live
+        live = state.apply_event(live, row)
+
+    sink.subscribe(consume)
+    sink.emit(
+        "session.start",
+        session_id=saved.session_id,
+        user_task="Repair parser",
+        mode="run",
+        execution_id="execution",
+    )
+    sink.emit(panel["type"], **event_log.payload(panel))
+    original_panels = live.review.panels
+    sink.emit("session.stop", execution_id="execution", reason="finish_session", turns=1)
+    delivery: list[dict[str, Any]] = [
+        _action(
+            "fix.requested",
+            request_id="resume-f1",
+            target=dataclasses.asdict(_target()),
+            action="resume",
+        ),
+        dict(
+            type="session.resume",
+            session_id=saved.session_id,
+            user_task="Repair parser",
+            steer="Fix Defect f1",
+            mode="run",
+            turn=2,
+            messages=4,
+            execution_id="resumed",
+        ),
+        _action("fix.submitted", request_id="resume-f1", version=3, execution_id="resumed"),
+        _action(
+            "fix.requested",
+            finding_id="f2",
+            request_id="live-f2",
+            version=4,
+            target=dataclasses.asdict(_target()),
+            action="live-steer",
+        ),
+        _action(
+            "fix.submitted",
+            finding_id="f2",
+            request_id="live-f2",
+            version=5,
+            execution_id="resumed",
+        ),
+    ]
+    for row in delivery:
+        sink.emit(row["type"], **event_log.payload(row))
+    submitted = live.review
+    assert submitted.version == 5 and submitted.read_failure is None
+    verify = dict(
+        verify_id="verify-fix",
+        execution_id="resumed",
+        cmd=["pytest", "-q"],
+        tree_before="fixed-tree",
+        scoped=False,
+        selected_paths=[],
+        timeout_s=60.0,
+    )
+    sink.emit("verify.start", **verify)
+    sink.emit(
+        "verify.end",
+        **verify,
+        tree_after="fixed-tree",
+        outcome="passed",
+        exit_code=0,
+        duration_s=1.0,
+        stdout_tail="2 passed",
+        stderr_tail="",
+        baseline=False,
+        reason="",
+    )
+    sink.emit("loop.auto_commit", turn=2, sha="a" * 40, subject="fix: handle empty input")
+    sink.emit(
+        "session.stop",
+        execution_id="resumed",
+        reason="finish_session",
+        turns=2,
+        verification="passed",
+        final_verify_id="verify-fix",
+        tree="fixed-tree",
+    )
+
+    persisted = session_log.scan_session_log(saved.logs_path)
+    assert live.finished and persisted.finished
+    assert live.verification == persisted.verification == "passed"
+    assert (
+        live.last_verify is not None and live.last_verify.exit_code == persisted.last_verify_rc == 0
+    )
+    assert len(live.commits) == 1 and live.commits[0].sha == "a" * 40
+    assert persisted.execution_id == "resumed" and persisted.executions == 2
+    assert len(persisted.verifications) == 1 and persisted.final_verify_id == "verify-fix"
+    assert [(f.finding_id, f.status, f.fix_state, f.resolution) for f in live.review.findings] == [
+        ("f1", "open", "submitted", None),
+        ("f2", "open", "submitted", None),
+    ]
+    assert live.review == persisted.review == submitted
+    assert live.review.panels == original_panels
+    assert [(p.panel_id, p.execution_id) for p in live.review.panels] == [("panel", "execution")]
+    assert live.review.open_counts.block == 2
+    assert live.review.merge_guard.open_block_ids == ("f1", "f2")
+    assert all(a.resolution is None for f in live.review.findings for a in f.actions)
+
+    resolved = _action(
+        "finding.resolved",
+        request_id="resolve-f1",
+        version=6,
+        resolution=dict(disposition="fixed", reason="Corrected empty-input handling"),
+    )
+    invalid = {**resolved, "resolution": dict(disposition="fixed", reason=" ")}
+    refused = state.apply_event(live, invalid).review
+    assert refused.read_failure and refused.findings == submitted.findings
+    sink.emit(resolved["type"], **event_log.payload(resolved))
+    assert live.review == session_log.scan_session_log(saved.logs_path).review
+    first, second = live.review.findings
+    assert first.status == "resolved" and first.fix_state == "submitted"
+    assert first.resolution is not None
+    assert first.resolution == review_records.FindingResolution(
+        disposition="fixed", reason="Corrected empty-input handling"
+    )
+    assert first.resolution.commit is None and first.resolution.verify_id is None
+    assert first.actions[:-1] == submitted.findings[0].actions
+    assert second == submitted.findings[1]
+    assert live.review.panels == original_panels
+    assert live.review.merge_guard.open_block_ids == ("f2",)
 
 
 def test_freshness_compares_both_trees_and_coverage() -> None:

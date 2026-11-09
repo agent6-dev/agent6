@@ -15,13 +15,14 @@ from agent6.app import review_actions, role_providers
 from agent6.sessions import event_log, ipc, lock, process
 from agent6.ui import spawn
 from agent6.ui.cli import main
+from agent6.viewmodel import session_log
 from tests import review_helpers
 
 
 def test_live_fix_crosses_the_real_execution_steer_boundary(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Deliver stored evidence to the next model call through the production app wiring."""
+    """A completed resume keeps submitted delivery visible through the production app wiring."""
     monkeypatch.chdir(tmp_path)
     subprocess.run(["git", "init", "-q"], check=True)
     (tmp_path / "seed.txt").write_text("seed\n")
@@ -41,6 +42,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
 
     def call(**kwargs: Any) -> provider_api.ProviderResponse:
         calls.append(kwargs)
+        assert len(calls) <= 3, "the resumed execution did not finish"
         if len(calls) == 1:
             saved = review_helpers.reviewed_session(tmp_path)
             result = review_actions.act(
@@ -52,7 +54,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
             )
             assert result.status == "queued"
             delivered.append(str(saved.session_dir))
-        else:
+        elif len(calls) == 2:
             ipc.request_stop(pathlib.Path(delivered[0]))
         tool = {
             "type": "tool_use",
@@ -60,6 +62,13 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
             "name": "read_file",
             "input": {"path": "seed.txt"},
         }
+        if len(calls) == 3:
+            tool = {
+                "type": "tool_use",
+                "id": "finish",
+                "name": "finish_session",
+                "input": {"summary": "Corrected empty-input handling"},
+            }
         return provider_api.ProviderResponse(
             text="",
             tool_uses=(tool,),
@@ -91,7 +100,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     )
 
     def resume(text: str) -> str:
-        assert main(["--config", str(config), "resume", "review-run", "--steer", text]) == 130
+        assert main(["--config", str(config), "resume", "review-run", "--steer", text]) == 0
         return ""
 
     result = review_actions.act(
@@ -102,7 +111,47 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     assert "Review finding f2" in json.dumps(calls[2], default=str)
     view = review_actions.read_review(pathlib.Path(delivered[0]))
     assert view.findings[1].actions[-1].execution_id != submitted["execution_id"]
-    assert view.findings[1].status == "open"
+    assert [(f.status, f.fix_state, f.resolution) for f in view.findings] == [
+        ("open", "submitted", None),
+        ("open", "submitted", None),
+    ]
+    scan = session_log.scan_session_log(pathlib.Path(delivered[0]) / "logs.jsonl")
+    assert scan.finished and scan.stop_reason == "finish_session"
+    assert scan.review == view and len(view.panels) == 1
+    before = (pathlib.Path(delivered[0]) / "logs.jsonl").read_bytes()
+    assert (
+        review_actions.act(pathlib.Path(delivered[0]), "f2", request, source="cli", resume=resume)
+        == result
+    )
+    assert (pathlib.Path(delivered[0]) / "logs.jsonl").read_bytes() == before
+    assert len(calls) == 3
+
+    capsys.readouterr()
+    assert main(["sessions", "findings", "review-run"]) == 0
+    text = capsys.readouterr().out
+    assert text.count("Fix: submitted") == 2
+    assert "f1  open  block" in text and "f2  open  block" in text
+    assert main(["sessions", "findings", "review-run", "--json"]) == 0
+    wire = json.loads(capsys.readouterr().out)
+    assert [(f["status"], f["fix_state"], f["resolution"]) for f in wire["findings"]] == [
+        ("open", "submitted", None),
+        ("open", "submitted", None),
+    ]
+    assert wire["merge_guard"]["open_block_ids"] == ["f1", "f2"]
+
+    resolve = ["sessions", "resolve", "review-run", "f2", "--as", "fixed", "--reason"]
+    assert main([*resolve, " "]) == 2
+    assert capsys.readouterr().err
+    assert (pathlib.Path(delivered[0]) / "logs.jsonl").read_bytes() == before
+    assert main([*resolve, "Corrected empty-input handling"]) == 0
+    resolved = review_actions.read_review(pathlib.Path(delivered[0]))
+    assert resolved.findings[0] == view.findings[0]
+    finding = resolved.findings[1]
+    assert finding.status == "resolved" and finding.fix_state == "submitted"
+    assert finding.actions[:-1] == view.findings[1].actions
+    assert finding.resolution is not None
+    assert finding.resolution.commit is None and finding.resolution.verify_id is None
+    assert resolved.panels == view.panels
 
 
 def test_cli_finding_resume_failure_keeps_diagnostic_and_exit_code(
