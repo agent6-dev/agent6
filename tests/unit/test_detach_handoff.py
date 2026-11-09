@@ -197,6 +197,7 @@ def _stub_execution_internals(
 ) -> None:
     class _Workflow:
         turns_reached = 3
+        execution_id = "exec-test"
         chain = types.SimpleNamespace(tree_sha=lambda: "")
 
         def __init__(self, **kw: Any) -> None:

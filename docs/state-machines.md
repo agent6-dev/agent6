@@ -103,6 +103,28 @@ status = "failed"
 reason = "could not make the check pass within the attempt budget"
 ```
 
+Its graph, as `agent6 machine graph` draws it:
+
+```mermaid
+stateDiagram-v2
+    [*] --> attempt
+    attempt --> verify: ok
+    attempt --> verify: failed
+    attempt --> giveup: budget_exhausted
+    attempt --> verify: timeout
+    verify --> route: ok
+    verify --> route: nonzero
+    verify --> giveup: timeout
+    route --> success: passed
+    route --> giveup: attempts >= max_attempts
+    route --> bump: else
+    bump --> attempt: ok
+    bump --> giveup: nonzero
+    bump --> giveup: timeout
+    success --> [*]
+    giveup --> [*]
+```
+
 ```sh
 agent6 machine check code-fixer.asm.toml    # the format, the names and the schemas
 agent6 machine graph code-fixer.asm.toml    # the states and transitions as a diagram

@@ -55,7 +55,7 @@ def test_hub_and_session_tour(tour_page: Page, tmp_path: pathlib.Path) -> None:
     model = page.locator(".composer select").nth(1)
     expect(model).to_be_visible()
     expect(model.locator("option:checked")).to_have_text(
-        "openrouter/moonshotai/kimi-k2.6 (config default)"
+        "openrouter/openai/gpt-4.1-mini (as recorded)"
     )
     model.focus()
     _stop(page, tmp_path, "05-resume-model")
@@ -143,11 +143,6 @@ def test_review_queue_and_findings_tour(tour_page: Page, tmp_path: pathlib.Path)
     _stop(page, tmp_path, "04-receipt")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="Resume options omit the recorded model when it is absent from config and cache",
-)
 def test_resume_offers_recorded_model(tour_page: Page) -> None:
     """A recorded model remains selectable even when the config default has changed."""
     from playwright.sync_api import expect

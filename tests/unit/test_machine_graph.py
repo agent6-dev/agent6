@@ -48,7 +48,7 @@ def test_documented_graph_is_the_rendered_one(tmp_path: pathlib.Path) -> None:
     diagram = re.search(r"```mermaid\n(.*?)```", text, re.S)
     assert diagram, "no mermaid block on the page"
     blocks = re.findall(r"```toml\n(.*?)```", text[: diagram.start()], re.S)
-    example = [b for b in blocks if 'machine = "item-classifier"' in b][-1]
-    path = tmp_path / "item-classifier.asm.toml"
+    example = [b for b in blocks if 'machine = "code-fixer"' in b][-1]
+    path = tmp_path / "code-fixer.asm.toml"
     path.write_text(example, encoding="utf-8")
     assert graph.render_mermaid(semantics.load_machine(path)) == diagram.group(1)
