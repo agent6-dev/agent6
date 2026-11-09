@@ -90,7 +90,8 @@
 - Prose that names code is a claim to verify: every symbol, default and behaviour matches the source; when the two disagree, decide which side is wrong.
   Prose someone acts on (a tool description, help text, an error, a refusal) is an interface: it states what is accepted and returned, and names the resolved fact ("default: detected zsh").
 - One idea per sentence, one topic per paragraph; short bullets over prose when listing facts.
-  Simple sentences (ASD-STE100) take the active voice and give a long ", which" clause its own sentence.
+  Simple sentences (ASD-STE100) take the active voice.
+  An overstuffed sentence loses a half or goes; it is never split in two.
   A qualifier comes before the list it governs: "By default, it switches off the repository's hooks, fsmonitor and filter drivers".
 - Comments and docs state the current state: a constraint, an invariant, a measured number, a link to a decision.
   The story of a change belongs to its commit ("now", "no longer", "previously" and "used to" go).

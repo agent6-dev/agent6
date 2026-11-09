@@ -1,14 +1,119 @@
-# Agent state machines
+# Workflows
 
-An agent state machine is a declarative program whose building blocks are agent6 runs, sandboxed tool calls, timed waits, and branches.
+A workflow is a TOML state machine that combines agent runs, sandboxed commands, timed waits, and branches.
+The `agent6 machine` subcommands run it: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#cli-surface)).
+It changes neither the security model nor the tool surface [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) binds; [Security considerations](#security-considerations) records how each invariant holds.
 
-This document specifies the format and its runtime.
-The `agent6 machine` subcommands drive it: `list`, `create`, `check`, `test`, `graph`, `run`, `status`, `poke`, `stop`, and `replay` ([CLI surface](#7-cli-surface)).
-It changes neither the security model nor the tool surface [AGENTS.md](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md) binds; [Security considerations](#9-security-considerations) records how each invariant holds.
+## A first workflow
+
+`code-fixer.asm.toml` is the loop the [Terminal UI guide](terminal.md#watching-a-state-machine) records: an agent state edits the repository until a failing check passes, a tool state re-runs the check, and a branch routes on the result until it is green or the attempt budget is spent.
+
+```toml
+machine = "code-fixer"
+version = 1
+initial = "attempt"
+
+# A real coding loop as a state machine, for the docs demo: an `agent` state
+# (mode="run") edits the repo to make a failing check pass, a `tool` state
+# verifies with a stdlib-only checker, and a `branch` loops until green or the
+# attempt budget is spent. The agent does the work inside one state; the operator
+# owns the control flow. The agent state inherits the operator's worker model, so
+# in the demo it runs against the record/replay proxy (no key) like the CLI run.
+
+[budget]
+max_transitions = 40
+max_usd = 4.0
+
+[vars.operator]
+max_attempts = { type = "int", value = 4 }
+
+[vars.code]
+attempts = { type = "int", default = 0 }       # bumped by scripts/bump.py
+passed   = { type = "bool", default = false }   # set by scripts/verify.py
+summary  = { type = "str", default = "" }       # last verifier message
+
+[vars.agent]
+report = { type = "fix_report", default = {} }  # the agent's finish_session payload
+
+[schemas.verify_result]
+passed  = "bool"
+summary = "str"
+
+[schemas.bump_result]
+attempts = "int"
+
+[schemas.fix_report]
+changed   = { type = "bool" }
+rationale = { type = "str", optional = true }
+
+[states.attempt]
+kind = "agent"
+mode = "run"                    # edit + verify + commit tools (not the default read-only)
+prompt = """
+A test in this repository is failing. Run the check to see the failure:
+    python3 scripts/verify.py
+It prints a JSON line with "passed" and "summary". The bug is in the SOURCE
+module under the repo root (do not edit anything under scripts/ or the test
+harness). Fix the source so the check passes, then re-run scripts/verify.py to
+confirm. When the check reports passed=true, call finish_session with
+{changed: true, rationale: "<one line on what you fixed>"}.
+"""
+output_schema = "fix_report"
+capture = { finish_json = "report" }
+timeout_s = 600
+on = { ok = "verify", failed = "verify", budget_exhausted = "giveup", timeout = "verify" }
+
+[states.attempt.config.budget]
+max_tokens_fallback = 200000
+
+[states.verify]
+kind = "tool"
+# Runs in the machine's own tree (a fresh clone at the chain tip), so it sees
+# the run state's committed fix; the operator's checkout is never touched.
+command = ["python3", "scripts/verify.py"]
+output_schema = "verify_result"
+capture = { set = { passed = "{{ result.passed }}", summary = "{{ result.summary }}" } }
+timeout_s = 120
+on = { ok = "route", nonzero = "route", timeout = "giveup" }
+
+[states.route]
+kind = "branch"
+when = [
+  { if = "passed",                   goto = "success" },
+  { if = "attempts >= max_attempts", goto = "giveup"  },
+  { else = true,                     goto = "bump"    },
+]
+
+[states.bump]
+kind = "tool"
+command = ["python3", "scripts/bump.py", "{{ attempts }}"]
+output_schema = "bump_result"
+capture = { set = { attempts = "{{ result.attempts }}" } }
+timeout_s = 30
+on = { ok = "attempt", nonzero = "giveup", timeout = "giveup" }
+
+[states.success]
+kind   = "terminal"
+status = "ok"
+reason = "check passes"
+
+[states.giveup]
+kind   = "terminal"
+status = "failed"
+reason = "could not make the check pass within the attempt budget"
+```
+
+```sh
+agent6 machine check code-fixer.asm.toml    # the format, the names and the schemas
+agent6 machine graph code-fixer.asm.toml    # the states and transitions as a diagram
+agent6 machine run code-fixer.asm.toml      # start an instance; status, poke and stop follow it
+```
+
+The rest of this page is the reference.
 
 ---
 
-## 2. Non-goals
+## Non-goals
 
 - Not a general programming language
     - the branch/predicate grammar is non-Turing-complete: no loops inside a predicate, no arbitrary code
@@ -23,13 +128,13 @@ It changes neither the security model nor the tool surface [AGENTS.md](https://g
 
 ---
 
-## 4. The format
+## The format
 
 A machine is a single TOML file, suffix `.asm.toml` ("agent6 state machine").
 
 > **Naming.** `load_machine` accepts any path; shell completion globs `*.asm.toml`.
 
-### 4.1 Top-level shape
+### Top-level shape
 
 ```toml
 machine = "item-classifier"                # stable id; names the instance dir
@@ -58,7 +163,7 @@ verdict = { type = "classification", default = {} }  # a [schemas.*] record type
 ...
 ```
 
-### 4.2 The blackboard: three owners
+### Variables and write permissions
 
 The key/value store is split into three subtables, named by who may write each variable.
 
@@ -68,7 +173,7 @@ The key/value store is split into three subtables, named by who may write each v
 | `[vars.code]`     | a `tool` state's `capture`                         | mutable (deterministic) | `default` | `pending`, `cursor` |
 | `[vars.agent]`    | an `agent` state's validated `finish_session` payload | mutable (LLM)     | `default`     | `verdict` (a `[schemas.*]` record) |
 
-Allowed types (all three subtables): `str`, `int`, `float` (finite: `nan` and `inf` refuse), `bool`, `list[<scalar>]`, `json`, and any **named record type** declared in `[schemas.*]` (see [Record schemas](#46-record-schemas-schemas)).
+Allowed types (all three subtables): `str`, `int`, `float` (finite: `nan` and `inf` refuse), `bool`, `list[<scalar>]`, `json`, and any **named record type** declared in `[schemas.*]` (see [Record schemas](#record-schemas-schemas)).
 The two structured types differ on one axis, **navigability**:
 
 - `json` is an **opaque** blob: read or written wholesale only
@@ -77,7 +182,7 @@ The two structured types differ on one axis, **navigability**:
 - a **record type** (e.g. `classification`) is **navigable**
     - every `.field` read in a predicate or template checks against the schema at `machine check` time
 
-### 4.3 State kinds
+### State kinds
 
 Every state has a `kind`.
 
@@ -167,7 +272,7 @@ Where a run state's work lands:
 - a machine spawned from the web or TUI hub parks each approval and question for the front-end (the spawn carries the detached `wait` away-mode)
 - grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to allow; a configured `deny` stays deny), or set `sandbox.run_commands = "allow"` in the repo config
 - `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool
-- an overlay cannot grant it: a `sandbox` key is never wider than your own config ([Machine config overlay](#47-machine-config-overlay-config))
+- an overlay cannot grant it: a `sandbox` key is never wider than your own config ([Machine config overlay](#machine-config-overlay-config))
 - edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
 
 The state's `config` table tunes how that loop runs.
@@ -177,7 +282,7 @@ The state's `config` table tunes how that loop runs.
   Agent states run the worker role; compaction uses the helper.
 - Legacy state-level `model`, `effort` and `temperature` keys refuse with a remedy pointing to `config.models.default`.
 - `[states.<name>.config.budget]` sets `max_tokens_fallback`; most other config keys work the same way.
-- a key the table leaves out falls back through the effective config ([Machine config overlay](#47-machine-config-overlay-config))
+- a key the table leaves out falls back through the effective config ([Machine config overlay](#machine-config-overlay-config))
 - `max_usd` bounds this agent slice; omit it to inherit the resolved config cap.
   The config cap, state cap and machine remainder all bind.
   The smallest nonnegative cap wins; zero refuses metered calls and `-1` is unlimited.
@@ -199,7 +304,7 @@ on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
 A single command, argv-style (never a shell string), through the existing `run_in_jail`.
 
 - `nonzero` is any non-zero exit
-- with a `capture`, stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#45-names-references-and-namespaces))
+- with a `capture`, stdout parses as JSON, bound to the capture-scope name `result` ([Names, references, and namespaces](#names-references-and-namespaces))
 - `output_schema` without `capture` is a load error
 - a capture binds only on `ok`: `nonzero` and `timeout` leave the blackboard as it was
 - capture has two modes; a state uses at most one:
@@ -208,12 +313,12 @@ A single command, argv-style (never a shell string), through the existing `run_i
     - **Typed field-capture**: `output_schema = "<record>"` types `result`; pull fields with `set = { <var> = "{{ result.<field> }}" }`
         - every `result.<field>` is statically checked, mirroring how an `agent` state validates `finish_session`
 
-- a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element, and an empty list contributes no argument at all ([Templating and list-splicing](#44-templating-and-list-splicing))
+- a `list`-typed variable spliced as a bare argv element (`"{{ pending }}"`) expands to one argument per element, and an empty list contributes no argument at all ([Templating and list-splicing](#templating-and-list-splicing))
 - `scan-inbox` is an illustrative stand-in: a `tool` state runs whatever audited command the operator names
 
 **Network.**
 
-- a state's network is `sandbox.network` in its own `config` table ([Machine config overlay](#47-machine-config-overlay-config)), for a `tool` and an `agent` state alike
+- a state's network is `sandbox.network` in its own `config` table ([Machine config overlay](#machine-config-overlay-config)), for a `tool` and an `agent` state alike
     - `host`: the host network, refused unless your own `sandbox.network` resolves to it
     - `session`: a network of its own, refused below `full` `sandbox.isolation`
     - `auto` (default): its own where the host can give one, the host's with a warning where it cannot
@@ -302,7 +407,7 @@ when = [
 ```
 
 - `when` is ordered; the first matching `if` wins; a final `else = true` is required (total function, no stuck state)
-- the predicate grammar is restricted and non-Turing-complete ([Execution semantics](#5-execution-semantics)): comparisons, `and`/`or`/`not`, membership, `len()`, `has()`, literals, blackboard references
+- the predicate grammar is restricted and non-Turing-complete ([Execution semantics](#execution-semantics)): comparisons, `and`/`or`/`not`, membership, `len()`, `has()`, literals, blackboard references
 - comparisons between two known scalar types require the same type; `int` versus `str`, `bool` or `float` fails at load
   JSON and unknown operand types keep their runtime checks.
 - `has()` tests presence: the guard an `optional` record field needs before a read (`has(out.score) and out.score > 0` is safe; `and` short-circuits)
@@ -351,7 +456,7 @@ Two channels render it; agent6 owns no push infrastructure:
 - device-present front-ends (`agent6 web`, the TUI watch screen, `agent6 attach`): an ephemeral notification
 - out-of-band: `[machine.notify].on_event` ([config.md](config.md#machinenotify-optional)), an operator argv on the host, outside the jail, on every `machine.notify` and `machine.end` (fan out to ntfy/Pushover/email/Telegram)
 
-### 4.4 Templating and list-splicing
+### Templating and list-splicing
 
 Strings may contain `{{ ... }}` interpolations.
 The templated fields are an agent's `prompt`, each element of a tool's `command`, a `capture.set` value, a wait's `delay_s` and `until`, any state's `notify` message, and a terminal's `reason`; every other string is literal.
@@ -377,7 +482,7 @@ There are two filters, both zero-argument:
 - each element stays a distinct argument, never shell-re-parsed
 - filter and reference grammar are validated at `machine check`
 
-### 4.5 Names, references, and namespaces
+### Names, references, and namespaces
 
 The rules for naming, writing, and reading variables.
 `agent6 machine check` enforces each one, `machine run` re-checks them, and a violation is a load-time error.
@@ -404,7 +509,7 @@ key  := an identifier (a declared field of a record type)
 ```
 
 - the first segment is a declared variable; the validator checks it exists
-- a `.key` is legal only into a record type ([Record schemas](#46-record-schemas-schemas)); each segment checks against the schema at load (a misspelled field is a load error)
+- a `.key` is legal only into a record type ([Record schemas](#record-schemas-schemas)); each segment checks against the schema at load (a misspelled field is a load error)
 
 **Capture scope and `result`.**
 
@@ -419,7 +524,7 @@ A `capture` has two forms of target:
 For both forms:
 
 - what a capture may write is the ownership wall: `tool` -> `[vars.code]` only, `agent` -> `[vars.agent]` only; a `[vars.operator]` or undeclared target is a load error
-- the captured value's runtime type must match the target's declared type ([Idempotency and crash recovery](#54-idempotency-and-crash-recovery))
+- the captured value's runtime type must match the target's declared type ([Idempotency and crash recovery](#idempotency-and-crash-recovery))
 - an `output_schema` mismatch halts a `tool` state but refuses an `agent` state's `finish_session` in-run
 - a capture template that cannot render halts the machine for either state kind
 
@@ -428,7 +533,7 @@ For both forms:
 - state names are a separate namespace from variables: referenced only by `initial`, `goto`, and `on`, never in predicates or templates (a state and a variable may share a name)
 - every `goto`/`on` target names a declared state; every declared state is reachable from `initial` (each a load error otherwise)
 
-### 4.6 Record schemas (`[schemas.*]`)
+### Record schemas (`[schemas.*]`)
 
 A **record type** is a named, field-typed structure declared once under `[schemas.<name>]`.
 
@@ -446,11 +551,11 @@ Rules:
 
 | Rule | Behavior |
 |---|---|
-| **Field types** | `str`, `int`, `float`, `bool`, `list[<scalar>]`, another **schema name** (recursive; cycles are a load error), or `json` (opaque escape hatch; itself not dottable, [The blackboard](#42-the-blackboard-three-owners)) |
+| **Field types** | `str`, `int`, `float`, `bool`, `list[<scalar>]`, another **schema name** (recursive; cycles are a load error), or `json` (opaque escape hatch; itself not dottable, [The blackboard](#variables-and-write-permissions)) |
 | **Required by default** | every field must be present in a validated payload unless `optional = true`; unknown fields are rejected. An absent optional field is absent, not null: reading it unguarded is a runtime halt, `has()` is its predicate guard, and `machine test` exercises absence (dry-run synthesizes required fields only) |
 | **`enum`** | string fields only; constrains a `str` to a fixed literal list, checked at the `finish_session`/capture boundary |
 
-### 4.7 Machine config overlay (`[config]`)
+### Machine config overlay (`[config]`)
 
 A machine file may carry a top-level `[config]` table, and each `agent` or `tool` state a `config` table of its own: agent6 config fragments layered on the effective config.
 
@@ -515,9 +620,9 @@ extra_read_paths = ["/srv/inbox"]
 
 ---
 
-## 5. Execution semantics
+## Execution semantics
 
-### 5.1 The engine as a pure reducer
+### The engine as a pure reducer
 
 ```
 load(file) -> Machine            # pydantic, extra=forbid, frozen
@@ -534,7 +639,7 @@ loop:
 
 - `execute` is the only place the world is touched (run an agent, run a tool, read the clock)
 
-### 5.2 Determinism guarantees and the predicate evaluator
+### Determinism guarantees and the predicate evaluator
 
 - Branch edges are pure functions of the blackboard; the blackboard is a pure function of journaled events; no branch depends on un-logged state
 - The predicate evaluator is a hand-written recursive walk over a small AST
@@ -545,7 +650,7 @@ loop:
 - Wall-clock, randomness, and external reads are captured as facts
     - `agent6 machine replay <machine-id>` feeds the recorded facts instead of touching the world: a completed run replays to the identical path offline
 
-### 5.3 Persistence layout
+### Persistence layout
 
 Mirrors the per-run layout under the per-repo state dir, out of the workspace:
 
@@ -592,7 +697,7 @@ Sizing for long-running machines:
 Keep archives outside `machines/`; renaming an instance inside it still lists the renamed directory.
 Moving the directory preserves its journal and recorded bundle, but does not remove a run-mode machine's git chain; a fresh run names any chain work that must be merged or discarded.
 
-### 5.4 Idempotency and crash recovery
+### Idempotency and crash recovery
 
 - a state runs, then one fsync'd `StepEvent` records its outcome and captured fact: the commit point
 - the capture validates before the StepEvent writes, so the journal never holds a fact a later `reduce` could not replay
@@ -606,11 +711,11 @@ Moving the directory preserves its journal and recorded bundle, but does not rem
 
 ---
 
-## 7. CLI surface
+## CLI surface
 
 | command                                   | effect                                            |
 |-------------------------------------------|---------------------------------------------------|
-| `agent6 machine create <task> [-o <file>] [--max-attempts N] [--max-usd USD] [--max-plan-points POINTS] [--max-tokens-fallback N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam); output: a draft for operator review + commit ([`machine create`](#71-machine-create)) |
+| `agent6 machine create <task> [-o <file>] [--max-attempts N] [--max-usd USD] [--max-plan-points POINTS] [--max-tokens-fallback N]`| LLM-drafted bundle: `.asm.toml` + every `scripts/...` file + a mock test per script (external seam); output: a draft for operator review + commit ([`machine create`](#machine-create)) |
 | `agent6 machine check <file>`             | validate: the `[config]` overlay and every state's `config` against the config schema, their refusals and the sandbox bound; parse; type-check vars; every edge target exists; every state reachable; every `branch` total; names unique across owners, each owned by a subtable; every reference declared; every `capture` inside the ownership wall; `len()` args and `wait` timings well-typed; the script bundle contained; script health (ruff with its own config discovery, the nearest `.ruff.toml`, `ruff.toml` or `pyproject.toml` `[tool.ruff]` above the bundle; ty on a private temp copy with no config); no execution, no network |
 | `agent6 machine test <file> [--blackboard FIXTURE.toml]` | everything `check` validates; the bundle's `scripts/**/*_test.py` mock tests in a no-network jail (`full` `sandbox.isolation` only: elsewhere they count as not run on the verdict line); a pure dry-run (no provider, no clock): per state, synthesize the success fact, push through the real `reduce`, confirm capture binds and the label routes; per `branch`, evaluate each `when` against defaults + `--blackboard`, print the winning `goto`; the full offline simulation, every seam mocked |
 | `agent6 machine graph <file> [--format mermaid\|dot]` | machine diagram; `--format mermaid` (default): `stateDiagram-v2`; `--format dot`: Graphviz DOT for `dot -Tsvg`/`dot -Tpng` and the Graphviz/`xdot` ecosystem; both pure renders of the same validated graph, reachability computed at load |
@@ -640,7 +745,7 @@ It runs mock tests at the machine's resolved isolation level.
 Plain assertions can run at top level; a file using `unittest.TestCase` must call `unittest.main()` after all test definitions, usually under `if __name__ == "__main__":`.
 The verdict counts script files that ran and files skipped, not individual test cases.
 
-### 7.1 `machine create`
+### `machine create`
 
 Describe a loop in plain language and get a first-cut bundle back.
 It is an ordinary agent6 run handed this document's grammar, writing the `.asm.toml` and every `scripts/...` file with `apply_edit` in a drafting workspace of its own.
@@ -664,7 +769,7 @@ It is an ordinary agent6 run handed this document's grammar, writing the `.asm.t
 
 ---
 
-## 8. Module boundaries
+## Module boundaries
 
 The layering is `ui → app → harness → tools → sandbox`, with `agent6.machine` a top-level package beside them.
 
@@ -691,11 +796,11 @@ Files:
 
 ---
 
-## 9. Security considerations
+## Security considerations
 
 - **No new LLM tool surface**
     - the fixed set in `tools/schema.py` is unchanged; machines orchestrate existing capabilities
-    - [`machine create`](#71-machine-create) is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own
+    - [`machine create`](#machine-create) is no exception: the drafting agent has the same edit tools any run has, pointed at a drafting workspace of its own
 - **No arbitrary code execution from a file**
     - predicates and templates are parsed-then-walked against an allow-list; never `eval`/`exec`, never `getattr`
     - dotted references are agent6-interpreted data navigation
@@ -703,7 +808,7 @@ Files:
     - `tool` states go through `run_in_jail`; each `agent` state is an ordinary run in its own subprocess, commands jailed like any run's
     - `mode = "run"` machines never touch the operator's checkout: fresh clones per state, commits on `agent6/machine-<id>`, tool-state tree writes discarded with the clone
     - per-state network and refusals: [security.md, Network](security.md#5-network)
-    - an overlay never widens the sandbox: [Machine config overlay](#47-machine-config-overlay-config)
+    - an overlay never widens the sandbox: [Machine config overlay](#machine-config-overlay-config)
 - **Spend bounds**
     - `[budget].max_transitions` is required and always binds
     - `max_usd` (optional) caps cumulative metered spend; an unpriced model is bounded per state by the agent6 config's `[budget].max_tokens_fallback` (`0` refuses unmetered models outright)
@@ -715,110 +820,3 @@ Files:
     - a live instance runs the logic it recorded; an edit takes effect on a new instance
 
 ---
-
-## 10. Worked example
-
-```toml
-# item-classifier.asm.toml (illustrative). scan-inbox/archive-item are
-# stand-in audited tools, not part of agent6; they only show the *shape*.
-machine = "item-classifier"
-version = 1
-initial = "poll"
-
-[budget]
-max_usd         = 25.0
-max_transitions = 100000
-
-[vars.operator]                   # operator inputs, fixed for the machine's life
-inbox_dir = { type = "str", value = "/srv/inbox" }
-poll_secs = { type = "int", value = 300 }
-
-[vars.code]                       # set deterministically by a tool capture
-pending = { type = "list[str]", default = [] }  # set by the scan tool
-cursor  = { type = "str",       default = "" }  # set by the scan tool
-
-[vars.agent]                      # set by an agent state's finish_session
-verdict = { type = "classification", default = {} }  # set by classify
-
-[schemas.classification]          # validates the agent's finish_session payload
-label      = { type = "str", enum = ["urgent", "normal", "spam"] }
-confidence = "float"
-
-[schemas.scan_result]             # types the scan tool's stdout
-pending = "list[str]"
-cursor  = "str"
-
-[states.poll]
-kind = "wait"
-delay_s = "{{ poll_secs }}"    # at most one of delay_s | until
-on = { tick = "scan", signal = "scan" }
-
-[states.scan]
-kind = "tool"
-command = ["scan-inbox", "--dir", "{{ inbox_dir }}", "--since", "{{ cursor }}"]
-output_schema = "scan_result"
-capture = { set = { pending = "{{ result.pending }}", cursor = "{{ result.cursor }}" } }
-timeout_s = 60
-on = { ok = "have_items", nonzero = "poll", timeout = "poll" }
-
-[states.have_items]
-kind = "branch"
-when = [
-  { if = "len(pending) == 0", goto = "poll" },
-  { else = true,              goto = "classify" },
-]
-
-[states.classify]
-kind   = "agent"
-prompt = """
-Classify these pending items: {{ pending | json }}
-Call finish_session with JSON {label:"urgent"|"normal"|"spam", confidence:0..1}.
-"""
-output_schema = "classification"
-capture = { finish_json = "verdict" }
-timeout_s = 600
-on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
-
-[states.route]
-kind = "branch"
-when = [
-  { if = "verdict.label == 'urgent' and verdict.confidence >= 0.7", goto = "record" },
-  { else = true, goto = "poll" },
-]
-
-[states.record]
-kind = "tool"
-# `{{ pending }}` is a lone list reference -> spliced to one argv element per item
-command = ["archive-item", "--label", "{{ verdict.label }}", "{{ pending }}"]
-timeout_s = 30
-on = { ok = "poll", nonzero = "poll", timeout = "poll" }
-
-[states.halt]
-kind   = "terminal"
-status = "failed"
-reason = "machine budget exhausted"
-```
-
-`agent6 machine graph` prints the control flow, one edge per transition, labelled with the state's `on` key or branch predicate as written, whitespace collapsed:
-
-```mermaid
-stateDiagram-v2
-    [*] --> poll
-    poll --> scan: tick
-    poll --> scan: signal
-    scan --> have_items: ok
-    scan --> poll: nonzero
-    scan --> poll: timeout
-    have_items --> poll: len(pending) == 0
-    have_items --> classify: else
-    classify --> route: ok
-    classify --> poll: failed
-    classify --> poll: timeout
-    classify --> halt: budget_exhausted
-    route --> record: verdict.label == 'urgent' and verdict.confidence >= 0.7
-    route --> poll: else
-    record --> poll: ok
-    record --> poll: nonzero
-    record --> poll: timeout
-    halt --> [*]
-```

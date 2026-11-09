@@ -12,8 +12,8 @@ hide:
 
 <div class="a6-cta" markdown>
 
+[Installation](installation.md){ .md-button .md-button--primary }
 [:material-github: GitHub](https://github.com/agent6-dev/agent6){ .md-button }
-[:simple-pypi: PyPI](https://pypi.org/project/agent6/){ .md-button }
 
 </div>
 
@@ -89,22 +89,7 @@ agent6 sessions diff        # recorded changes
 agent6 sessions merge       # merge into the run's starting branch
 ```
 
-Other commands:
-
-| Command | Purpose |
-| --- | --- |
-| `agent6 plan "task"` | plan a change; `agent6 run --from <plan-id>` carries it out |
-| `agent6 ask "question"` | ask about the repository |
-| `agent6 attach <id>` | follow a live session |
-| `agent6 steer <id> "instruction"` | direct the next steps |
-| `agent6 sessions findings <id>` | list a session's review findings |
-| `agent6 sessions receipt <id>` | print the recorded tests, review outcome and how to revert |
-| `agent6 stop <id> --after-turn` | stop after the current turn |
-| `agent6 resume <id>` | continue an interrupted run |
-| `agent6 fork <id> --at-turn 7` | fork a coding run from an earlier turn into a separate worktree |
-| `agent6 telemetry export` | export session journals as OpenTelemetry signals or a Prometheus textfile |
-| `agent6 pack` | copy your config, secrets, sessions and memory into the workspace before a sync |
-| `agent6 unpack` | move the packed files into the new home |
+The other commands (`plan`, `ask`, `attach`, `steer`, `resume`, `fork`, the `sessions` verbs, `pack` and `unpack`) are in [Usage](usage.md).
 
 To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 
@@ -126,7 +111,7 @@ Inside it, commands cannot read your provider keys.
 
 ### Verification and review
 
-Verifies work with a configured or inferred command and reports whether the result passed, failed, or remains unverified.
+The model can run a configured or inferred verification command; agent6 reports the result or marks the final tree unverified.
 Reviews the diff with a panel of models you configure and keeps each finding open until you resolve it.
 [Session findings](usage.md#session-findings)
 

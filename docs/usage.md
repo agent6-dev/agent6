@@ -2,11 +2,13 @@
 
 Assumes agent6 is installed (see [installation](installation.md)).
 
+New to agent6? `agent6 tui` and `agent6 web` show the whole workflow on screen ([Terminal UI](terminal.md), [Web UI](web.md)); this page is the command reference.
+
 ## Connect a provider
 
 ```sh
 agent6 connect                       # pick a provider, paste an API key
-agent6 check                         # every key a role or review seat uses resolves; model listings refresh
+agent6 check                         # check the configuration and the provider credentials
 agent6 model                         # the role assignments
 ```
 
@@ -56,68 +58,6 @@ It does not replace the required default.
 `agent6 config show` shows each inherited leaf with the default's origin.
 An old worker-only config refuses without migration: rename `[models.worker]` to `[models.default]`.
 
-## Carry your state with the workspace
-
-Run `agent6 pack` before syncing a checkout to a devcontainer, remote-ssh host or new location.
-It copies this home's state into `<project root>/.agent6/` and adds `.agent6/` to the project's `.gitignore` if that line is missing.
-Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not or if any `.agent6` path is tracked.
-Home keeps its copies.
-Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
-It deletes `.agent6/` after a successful import.
-A repeated `pack` replaces a snapshot from the same host and home; a pack from another origin requires `unpack` first.
-
-File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `0700` directory.
-Symlinks and special files refuse rather than following a path outside the snapshot.
-**The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
-A command already running in this checkout's sandbox can read the pack.
-`agent6 pack` refuses while a run, an `agent6 exec` or a machine of this checkout is live, and a run refuses to start while `pack` writes: a pack made under a live sandbox would put the secrets within its commands' reach.
-
-<details markdown="1">
-<summary>Pack contents and conflict rules</summary>
-
-The pack contains:
-
-- `pack.json`: version 1, UTC pack time, origin host, home, repo id and workspace, and each file's SHA256, UTC mtime and last shared hash.
-- `config/`: global `config.toml`, `ui.toml` and `secrets.toml`.
-- `skills/`: installed skills from the data directory.
-- `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/` and `pack-base.json`.
-
-The cache, jail homes, parallel workspaces and completions do not travel.
-
-`unpack` uses a three-way rule per file: P is the pack's current hash, B is its recorded base hash (possibly null), and H is the home's hash (possibly absent).
-
-- H absent: move in.
-- H equals P: identical, keep home's and drop the pack copy.
-- B present and H equals B: home unchanged since the last sync, take the pack's.
-- B present and P equals B: the pack is unchanged, keep home's and drop the pack copy.
-- Otherwise: a conflict.
-
-</details>
-
-Any conflict refuses the entire import with exit 2 before moving files.
-`unpack` holds the writer locks for the packed config and secrets files across preflight and import.
-Hand-merge the files or delete the side to replace, then rerun `agent6 unpack`.
-Pack files edited by hand are hashed again; deleting a pack file leaves the home's copy untouched.
-Files at home that the pack does not carry stay untouched.
-The imported hashes are saved in `<state-dir>/pack-base.json` for the trip back.
-
-Commands that resolve the project root refuse with exit 2 if `.agent6/pack.json` is present, even for a pack this home made.
-`pack` and `unpack` are exempt.
-
-For a devcontainer or remote-ssh round trip:
-
-1. Run `agent6 pack` here.
-2. Sync the workspace, including the hidden, gitignored `.agent6/` directory.
-3. After the sync, run `agent6 unpack` here as well, which removes your own pack.
-4. Run `agent6 unpack` there and work.
-5. Run `agent6 pack` there and sync the workspace back, then run `agent6 unpack` there to remove its own pack.
-6. Run `agent6 unpack` here.
-
-Recorded absolute paths in journals and session manifests remain history.
-Ordinary sessions resolve against the current checkout.
-A session's cached linked worktree does not travel; `resume` names the missing worktree and recommends `agent6 fork ID` to continue from its commits in a new worktree.
-The synced checkout must carry those git objects and refs.
-
 ## Your first run
 
 ```sh
@@ -125,47 +65,18 @@ cd your-repo
 agent6 run "your task here"
 ```
 
-agent6 edits your working tree and commits each step to the run's own chain (an `agent6/<id>` branch by default).
+agent6 edits your working tree and commits each editing turn to the run's own chain (an `agent6/<id>` branch by default).
 Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#git) lands the work; `sessions merge` lands it by hand.
 
 - commands ask for approval by default (`sandbox.run_commands = "ask"`): allow one call or the whole session
-- without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it, or an away-mode decides it; a run whose commands are unsettled refuses to start and names the choices (`--auto-approve`, `--no-commands`, `AGENT6_DETACHED_AWAY`), see [approvals](security.md#6-approvals)
-- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`; `--after-turn` lets the turn finish) or a ceiling (budget, turns) stops it
+- without a terminal (CI, cron, a hub-spawned run) a prompt parks the run until a front-end answers it or an away-mode decides it ([approvals](security.md#6-approvals))
+- the run ends when the model declares it finished, the operator stops it (`agent6 stop ID`) or a ceiling (budget, turns) stops it
 - at a terminal it then asks for the next input: type to continue, `/exit` to finish
-- `agent6 resume <id> --steer "<what to do next>"` continues a run ended by `finish_session` with the gate green or no gate set; the steer is this execution's task, and a bare resume of that run is refused
+- `agent6 resume <id> --steer "<what to do next>"` continues a run that ended by `finish_session`
     - an answer saved for one of its questions (`agent6 answer`) is new work, so a bare resume delivers it
-
-The verify command is the success gate.
-
-- Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
-- By default the model can run it (`run_verify_command`) and the harness never does: an end that no run of the gate covers reads `unverified` and exits 0, since the harness judged nothing.
-  `harness.verify_when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
-- With `harness.verify_at_start = true` and `harness.verify_when` set to `"finish"` or `"turn"`, a fresh run runs the gate once before its first turn, so a gate that was red before the run's edits is known as that: the model is told, and a red finish over a red base reads `finished · gate red at base`, which says red at the start and red at the finish, the failures not compared.
-- Under `finish` or `turn`, a red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
-- The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, a red base says the gate was red there too, and a gate that changed on resume says that nothing is known about this gate at the base.
-- A fork starts its own log without the parent's baseline; its base is the commit it forked from.
-- [`[harness]`](config.md#harness) has the inference order and `verify_when`.
-- An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
 
 `agent6 run` streams in your terminal; `--tui` opens the full-screen view ([terminal UI](terminal.md)) and `-i` pauses for input after each automatic commit.
 `--tui` without a terminal continues in CLI mode; `-i` requires a foreground terminal and cannot be combined with `--tui`.
-
-### Go build cache
-
-Go's build cache lives under the jail's HOME, not your own.
-Under `full` `sandbox.isolation`, the default `sandbox.home = "auto"` discards that HOME with the run, so a new run starts with a cold cache.
-To reuse compiled packages across runs in this repository:
-
-```sh
-agent6 config set --repo sandbox.home cache
-agent6 exec --new -- go test ./...
-```
-
-The first build fills the private cache; later runs reuse it.
-Dependencies must already be available offline, or the operator must populate the cache with a network policy that permits fetching them.
-`go test -count=1 ./...` reruns tests while still reusing compiled packages.
-Under `partial` or `none` `sandbox.isolation`, `auto` already uses the persistent HOME.
-Persistence also lets a poisoned cache or tool configuration reach later runs in this repository; see the [sandbox boundaries](security.md#threat-model).
 
 ## Tools
 
@@ -519,6 +430,20 @@ Git commands in a receipt are explanations only.
 You can also copy the recorded landing facts into a steer request to prepare the reversal.
 The reversal needs its own checks; the original receipt does not certify a merge against a moved target or the later reversal.
 
+## Verification
+
+The verify command is the success gate.
+
+- Pin one with `harness.verify_command` or `agent6 init`; unset, each run infers one and prints it, or runs gateless when nothing is inferable.
+- By default the model can run it (`run_verify_command`) and the harness never does: an end that no run of the gate covers reads `unverified` and exits 0.
+  `harness.verify_when = "finish"` makes the harness run it when `finish_session` arrives over an unverified tree, and `"turn"` after every editing turn.
+- With `harness.verify_at_start = true` and `harness.verify_when` set to `"finish"` or `"turn"`, a fresh run runs the gate once before its first turn, so a gate red at the base is known as that.
+- Under `finish` or `turn`, a red gate at finish returns to the model `harness.verify_retries` times, then the run ends red.
+- The red-gate end block reads the session's first recorded baseline, including earlier executions before a resume: a green base attributes the red gate to this run's edits, a red base says the gate was red there too.
+- A fork starts its own log without the parent's baseline; its base is the commit it forked from.
+- [`[harness]`](config.md#harness) has the inference order and `verify_when`.
+- An inferred `cargo test --quiet` still needs a toolchain and dependencies inside the jail; see [Rust toolchains](security.md#rust-toolchains).
+
 ## Run options
 
 - `--preset <name>`: a strategy preset (`no_review`, `review`, `deep_review`, or your own; `none` selects no preset), fixed for the execution; `resume --preset` switches ([presets](config.md#presets))
@@ -534,6 +459,23 @@ The reversal needs its own checks; the original receipt does not certify a merge
 - `--decompose`: a task graph up front; `--skill NAME`: a skill in the prompt (a skill whose text waits on a person stalls an unattended run in `ask_user`; `agent6 skills disable NAME` keeps it out)
 - `--session-id ID`: name the session yourself
 - `agent6 prompt show [--mode run|plan|ask|read_only] [--json]`: preview the system prompt, built-in tools and first message with a task placeholder; MCP tools are discovered at run start and are not included
+
+### Go build cache
+
+Go's build cache lives under the jail's HOME, not your own.
+Under `full` `sandbox.isolation`, the default `sandbox.home = "auto"` discards that HOME with the run, so a new run starts with a cold cache.
+To reuse compiled packages across runs in this repository:
+
+```sh
+agent6 config set --repo sandbox.home cache
+agent6 exec --new -- go test ./...
+```
+
+The first build fills the private cache; later runs reuse it.
+Dependencies must already be available offline, or the operator must populate the cache with a network policy that permits fetching them.
+`go test -count=1 ./...` reruns tests while still reusing compiled packages.
+Under `partial` or `none` `sandbox.isolation`, `auto` already uses the persistent HOME.
+Persistence also lets a poisoned cache or tool configuration reach later runs in this repository; see the [sandbox boundaries](security.md#threat-model).
 
 ## Isolated workspaces
 
@@ -557,6 +499,68 @@ The reversal needs its own checks; the original receipt does not certify a merge
 - The files it leaves untracked stay out of the run's commits.
 - The verify gate is settled in your checkout and carried into the workspace: a gate inferred as `.venv/bin/python -m pytest -q` stays that.
 - A gate whose first word is a path git does not track, with no setup command, refuses `run --worktree`, `fork` and `run --parallel` before anything is created; the refusal names the path, the config line and the AGENTS.md block.
+
+## Carry your state with the workspace
+
+Run `agent6 pack` before syncing a checkout to a devcontainer, remote-ssh host or new location.
+It copies this home's state into `<project root>/.agent6/` and adds `.agent6/` to the project's `.gitignore` if that line is missing.
+Before copying, it asks git whether `.agent6/pack.json` is ignored and refuses if it is not or if any `.agent6` path is tracked.
+Home keeps its copies.
+Run `agent6 unpack` in the destination checkout to move the pack into that home's global directories and the state directory keyed to the new project root.
+It deletes `.agent6/` after a successful import.
+A repeated `pack` replaces a snapshot from the same host and home; a pack from another origin requires `unpack` first.
+
+File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `0700` directory.
+Symlinks and special files refuse rather than following a path outside the snapshot.
+**The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
+A command already running in this checkout's sandbox can read the pack.
+`agent6 pack` refuses while a run, an `agent6 exec` or a machine of this checkout is live, and a run refuses to start while `pack` writes: a pack made under a live sandbox would put the secrets within its commands' reach.
+
+<details markdown="1">
+<summary>Pack contents and conflict rules</summary>
+
+The pack contains:
+
+- `pack.json`: version 1, UTC pack time, origin host, home, repo id and workspace, and each file's SHA256, UTC mtime and last shared hash.
+- `config/`: global `config.toml`, `ui.toml` and `secrets.toml`.
+- `skills/`: installed skills from the data directory.
+- `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/` and `pack-base.json`.
+
+The cache, jail homes, parallel workspaces and completions do not travel.
+
+`unpack` uses a three-way rule per file: P is the pack's current hash, B is its recorded base hash (possibly null), and H is the home's hash (possibly absent).
+
+- H absent: move in.
+- H equals P: identical, keep home's and drop the pack copy.
+- B present and H equals B: home unchanged since the last sync, take the pack's.
+- B present and P equals B: the pack is unchanged, keep home's and drop the pack copy.
+- Otherwise: a conflict.
+
+</details>
+
+Any conflict refuses the entire import with exit 2 before moving files.
+`unpack` holds the writer locks for the packed config and secrets files across preflight and import.
+Hand-merge the files or delete the side to replace, then rerun `agent6 unpack`.
+Pack files edited by hand are hashed again; deleting a pack file leaves the home's copy untouched.
+Files at home that the pack does not carry stay untouched.
+The imported hashes are saved in `<state-dir>/pack-base.json` for the trip back.
+
+Commands that resolve the project root refuse with exit 2 if `.agent6/pack.json` is present, even for a pack this home made.
+`pack` and `unpack` are exempt.
+
+For a devcontainer or remote-ssh round trip:
+
+1. Run `agent6 pack` here.
+2. Sync the workspace, including the hidden, gitignored `.agent6/` directory.
+3. After the sync, run `agent6 unpack` here as well, which removes your own pack.
+4. Run `agent6 unpack` there and work.
+5. Run `agent6 pack` there and sync the workspace back, then run `agent6 unpack` there to remove its own pack.
+6. Run `agent6 unpack` here.
+
+Recorded absolute paths in journals and session manifests remain history.
+Ordinary sessions resolve against the current checkout.
+A session's cached linked worktree does not travel; `resume` names the missing worktree and recommends `agent6 fork ID` to continue from its commits in a new worktree.
+The synced checkout must carry those git objects and refs.
 
 ## Telemetry export
 

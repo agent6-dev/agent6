@@ -1,5 +1,5 @@
 site_name: agent6
-site_description: A coding agent that jails model commands and uses editable state machines for long-running tasks.
+site_description: A coding agent with sandboxed commands, resumable sessions, and editable workflows.
 site_url: https://agent6.dev
 site_author: Eric Lesiuta
 copyright: Apache-2.0
@@ -139,6 +139,6 @@ nav:
   - Configuration: config.md
   - Formats: formats.md
   - Security: security.md
+  - Workflows: state-machines.md
   - Architecture: architecture.md
   - Data contracts: data-contracts.md
-  - Agent state machines: state-machines.md

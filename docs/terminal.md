@@ -1,6 +1,7 @@
 # Terminal UI
 
-The full-screen TUI screen by screen, then the plain CLI.
+`agent6 tui` opens the full-screen interface on this repository; `agent6 tui <id>` opens one session.
+This page shows it screen by screen, then the plain CLI.
 Every image is from a recorded run; click to enlarge.
 
 <video controls muted loop playsinline preload="metadata" class="no-lightbox"
