@@ -195,6 +195,20 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         at = self._commit_state[1]
         return at, f" · as of turn {at.commits[-1].turn}"
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Use the run's policy for the shared Fork menu.
+
+        Args:
+            action: The menu or binding action.
+            parameters: Arguments passed to the action.
+
+        Returns:
+            None to disable a model-controlled fork, otherwise the default availability.
+        """
+        if action == "fork":
+            return cast("tui_app.Agent6TUI", self.app).check_action(action, parameters)
+        return super().check_action(action, parameters)
+
     def __init__(
         self,
         *,

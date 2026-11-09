@@ -14,6 +14,7 @@ import tempfile
 from collections.abc import Callable
 from typing import cast
 
+import pytest
 from rich import text
 from textual import app as textual_app
 
@@ -211,5 +212,44 @@ def test_a_menu_item_the_footer_greys_out_is_not_clickable_either() -> None:
             assert dd.get_option_at_index(idx).disabled, (
                 "the menu offers a merge the footer's key refuses"
             )
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("control", ["model", "agent6"])
+def test_model_git_disables_fork_and_merge(tmp_path: pathlib.Path, control: str) -> None:
+    """Both session views refuse Fork; the home menu refuses Merge, not Delete."""
+    run = tmp_path / "state" / "sessions" / "runs" / "model-run"
+    run.mkdir(parents=True)
+    (run / "manifest.json").write_text(json.dumps({"version": 3, "git_control": control}))
+    (run / "logs.jsonl").write_text(
+        json.dumps({"type": "session.start", "mode": "run"})
+        + "\n"
+        + json.dumps({"type": "session.end", "reason": "finish_session"})
+        + "\n"
+    )
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(run)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            for dashboard_view in (False, True):
+                if dashboard_view:
+                    await pilot.press("ctrl+d")
+                    await pilot.pause()
+                app.screen.query_one(menubar.MenuBar).open("r")
+                await pilot.pause()
+                dd = next(iter(app.screen.query(menubar._Dropdown)))
+                assert dd.get_option("fork").disabled == (control == "model")
+                await pilot.press("escape")
+        hub = home.Agent6HomeApp(tmp_path / "state", tmp_path)
+        async with hub.run_test() as pilot:
+            await pilot.pause()
+            mb = hub.screen.query_one(menubar.MenuBar)
+            mb.open("f")
+            await pilot.pause()
+            dd = next(iter(hub.screen.query(menubar._Dropdown)))
+            assert dd.get_option("merge_selected").disabled == (control == "model")
+            assert not dd.get_option("delete_selected").disabled
 
     asyncio.run(scenario())

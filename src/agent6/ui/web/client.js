@@ -1054,7 +1054,9 @@ function makeComposer(id) {
   // instruction or is refused; every other ending resumes bare.
   let needsWork = false;
   let busy = false;
-  const suggest = attachCommandSuggest(ta, root, () => finished === false);
+  let modelGit = false;
+  const offeredCommands = STEER_COMMANDS.map(([command]) => command);
+  const suggest = attachCommandSuggest(ta, root, () => finished === false, offeredCommands);
   const models = attachParallelSuggest(ta, root); // the spec before `--`
   const apply = () => {
     ta.disabled = busy;
@@ -1157,6 +1159,7 @@ function makeComposer(id) {
       return;
     }
     if (text === '/undo') {
+      if (modelGit) { toast('the model owns git in this run: no agent6 commit chain', true); return; }
       // Fork at the state before the last message; follow the fork with the
       // undone text back in the composer to edit and resend. A live run does
       // it at its next boundary (the steer channel); the SSE paint follows
@@ -1193,6 +1196,8 @@ function makeComposer(id) {
   // carries no boolean `live`.
   root.setState = (s) => {
     if (busy) return;
+    modelGit = s.git_control === 'model';
+    offeredCommands.splice(0, offeredCommands.length, ...STEER_COMMANDS.map(([command]) => command).filter(command => !modelGit || command !== '/undo'));
     needsWork = s.needs_new_work === true; // the server's predicate, never re-derived here
     if (typeof s.live === 'boolean') { finished = !s.live; apply(); }
     else { finished = notLive(s); apply(); } // resume-style composer for any non-live run (parked/stale/ended)

@@ -95,6 +95,7 @@ async function renderRun(id, opts, gen) {
     // the TUI's Run > Fork): the new session's composer takes the instruction
     // that starts it, the way /undo hands over its fork.
     const forkBtn = el('button', null, 'Fork');
+    cards._fork_btn = forkBtn;
     forkBtn.onclick = async () => {
       try {
         const d = await postJSON(base + '/fork', {});
@@ -405,6 +406,11 @@ function paintRun(cards, s) {
   // view's: the server refuses the POST, so live-looking Allow/Deny beside
   // a "stale" header could only manufacture a red toast.
   const isDead = notLive(s);
+  const gitRefusal = s.git_control === 'model' ? 'the model owns git in this run: no agent6 commit chain' : '';
+  if (cards._fork_btn) {
+    cards._fork_btn.disabled = !!gitRefusal;
+    cards._fork_btn.title = gitRefusal;
+  }
   // A dead run's approvals are gone with its execution; its questions stay answerable.
   if (!cards._readOnly) paintPrompts(cards, isDead ? { questions: s.questions, finished: true } : s);
   if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
@@ -424,8 +430,8 @@ function paintRun(cards, s) {
   }
   if (cards._merge_btn) {
     const reviewRefusal = reviewMergeReason(s.review);
-    cards._merge_btn.disabled = !notLive(s) || !s.commits_ref || !!s.merged_into || !!reviewRefusal;
-    cards._merge_btn.title = reviewRefusal || (!notLive(s) ? 'the session is still live; stop or let it finish first'
+    cards._merge_btn.disabled = !!gitRefusal || !notLive(s) || !s.commits_ref || !!s.merged_into || !!reviewRefusal;
+    cards._merge_btn.title = gitRefusal || reviewRefusal || (!notLive(s) ? 'the session is still live; stop or let it finish first'
       : s.merged_into ? 'already merged into ' + s.merged_into
       : s.commits_ref ? 'merge ' + s.commits_ref + (s.base_branch ? ' into ' + s.base_branch : '')
       : 'this session recorded no commits to merge');

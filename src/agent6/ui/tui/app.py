@@ -759,6 +759,22 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
             self.notify, f"run started: {new_dir.name} (follow it: agent6 attach {new_dir.name})"
         )
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Disable chain actions when the manifest records model-owned git.
+
+        Args:
+            action: The menu or binding action.
+            parameters: Arguments passed to the action.
+
+        Returns:
+            None to disable a model-controlled fork, otherwise the default availability.
+        """
+        if action == "fork":
+            with contextlib.suppress(sessions_manifest.ManifestError):
+                if sessions_manifest.read_manifest(self.session_dir).git_control == "model":
+                    return None
+        return super().check_action(action, parameters)
+
     def action_fork(self) -> None:
         """Fork this run at its latest checkpoint, unstarted.
 

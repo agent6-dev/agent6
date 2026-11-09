@@ -58,3 +58,53 @@ def test_commit_picker_requests_the_selected_commit(
     picker.select_option("")
     expect(page.locator(".card-budget")).not_to_contain_text("as of turn")
     assert errors == [], errors
+
+
+@pytest.mark.parametrize("control", ["model", "agent6"])
+@pytest.mark.parametrize("live", [True, False])
+def test_git_control_gates_session_actions(
+    git_port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+    control: str,
+    live: bool,
+) -> None:
+    """Fork and Merge do not offer an agent6 chain for a model-controlled run."""
+    import os
+
+    from playwright.sync_api import expect
+
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "git-control"
+    session.mkdir(parents=True)
+    (session / "manifest.json").write_text(
+        json.dumps({"version": 3, "mode": "run", "git_control": control, "run_branch": "main"})
+    )
+    events = [{"type": "session.start", "mode": "run", "user_task": "Own git"}]
+    if live:
+        (session / "worker.pid").write_text(str(os.getpid()))
+    else:
+        events.append({"type": "session.end", "reason": "finish_session"})
+    (session / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events))
+    page, errors = open_page(git_port)
+    page.goto(f"http://127.0.0.1:{git_port}/#/session/git-control")
+    fork = page.get_by_role("button", name="Fork", exact=True)
+    merge = page.get_by_role("button", name="Merge", exact=True)
+    if control == "model":
+        for button in (fork, merge):
+            expect(button).to_be_disabled()
+            expect(button).to_have_attribute(
+                "title", "the model owns git in this run: no agent6 commit chain"
+            )
+    else:
+        expect(fork).to_be_enabled()
+        if live:
+            expect(merge).to_be_disabled()
+        else:
+            expect(merge).to_be_enabled()
+    composer = page.locator(".composer textarea")
+    composer.fill("/u")
+    if control == "model":
+        expect(page.locator(".ac-pop .ac-item")).to_have_count(0)
+    else:
+        expect(page.locator(".ac-pop .ac-item")).to_contain_text(["/undo"])
+    assert errors == []

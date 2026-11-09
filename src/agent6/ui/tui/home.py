@@ -9,6 +9,7 @@ every other verb shells out to the CLI the same way.
 
 from __future__ import annotations
 
+import contextlib
 import pathlib
 from collections.abc import Callable, Iterable
 from typing import Any, ClassVar
@@ -29,7 +30,7 @@ except ImportError as e:  # pragma: no cover
 from agent6 import errors
 from agent6.config import ConfigError, layer
 from agent6.models import choices
-from agent6.sessions import layout
+from agent6.sessions import layout, manifest
 from agent6.ui import keymap, spawn
 from agent6.ui.tui import (
     config_page,
@@ -407,10 +408,11 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Grey Merge and Delete out on a live session, and hide Lanes without a fan-out.
+        """Grey unavailable actions and hide Lanes without a fan-out.
 
         None greys a key where False would hide it, and a missing key reads as a
-        capability the hub lacks. The CLI makes the other refusals (no commits, already merged).
+        capability the hub lacks. Model-controlled runs cannot merge.
+        The CLI makes the other refusals (no commits, already merged).
         The summary's `unmerged` mark is branch-derived and
         reads False for a session whose commits live only on its chain ref.
 
@@ -428,6 +430,10 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             rd = self._selected_dir()
             if rd is None:
                 return None
+            if action == "merge_selected":
+                with contextlib.suppress(manifest.ManifestError):
+                    if manifest.read_manifest(rd).git_control == "model":
+                        return None
             s = self._summaries.get(rd.name)
             return None if s is not None and s.status in LIVE_STATUS_WORDS else True
         return True
