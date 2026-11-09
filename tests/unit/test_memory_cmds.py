@@ -196,7 +196,13 @@ def test_list_json_command(env: pathlib.Path, capsys: pytest.CaptureFixture[str]
     memory.record_use(state, session="editor", wrote=("fact",), read={}, when=86400)
     memory.record_use(state, session="reader", wrote=(), read={"fact": 3}, when=172800)
     assert entry.cli_main(["memory", "list", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == [
+    records = json.loads(capsys.readouterr().out)
+    for record in records:
+        assert entry.cli_main(["memory", "show", record["name"], "--json"]) == 0
+        assert json.loads(capsys.readouterr().out) == record
+    assert entry.cli_main(["memory", "show", "fact"]) == 0
+    assert capsys.readouterr().out == "\nFirst line.\nDetail.\n"
+    assert records == [
         dict(
             name="fact",
             first_line="First line.",

@@ -539,6 +539,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     mem_list = common._sub(mem_sub, "list", help="Print the rendered memory index.")
     mem_list.add_argument("--json", action="store_true", help="Print facts as a JSON array.")
     mem_show = common._sub(mem_sub, "show", help="Print one memory file.")
+    mem_show.add_argument("--json", action="store_true", help="Print the fact as a JSON object.")
     mem_show.add_argument("name", help="Memory name.")
     mem_remove = common._sub(
         mem_sub,

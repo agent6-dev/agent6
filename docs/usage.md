@@ -620,6 +620,7 @@ agent6 check [section]                               # sandbox (isolation, bound
 agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
 agent6 memory add|list|show|remove                   # the index renders each fact's first non-empty line
 agent6 memory list --json                           # prints a JSON array with name, first_line, written_by, written_at, edited_by, edited_at, reads and last_read_by (unknown provenance is null).
+agent6 memory show NAME --json                      # prints that fact’s object from memory list --json.
 agent6 memory decisions                              # the operator rulings the harness recorded
 agent6 skills install|update|list                    # skills from a repo, a directory or a SKILL.md URL
 agent6 skills enable NAME [--always]                 # a skill the model may use, or one it always gets; disable, remove

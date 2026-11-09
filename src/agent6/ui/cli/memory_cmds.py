@@ -61,24 +61,9 @@ def _cmd_memory_list(*, as_json: bool = False) -> int:
     entries = memory.index_entries(state)
     use = memory.read_use(state)
     if as_json:
-        records: list[dict[str, str | int | None]] = []
-        for name, first in entries:
-            record = use.get(name, memory.MemoryUse())
-            created, edited = record.created, record.updated
-            if edited == created:
-                edited = None
-            records.append(
-                {
-                    "name": name,
-                    "first_line": first,
-                    "written_by": created.session if created else None,
-                    "written_at": created.at if created else None,
-                    "edited_by": edited.session if edited else None,
-                    "edited_at": edited.at if edited else None,
-                    "reads": record.reads,
-                    "last_read_by": record.last_read.session if record.last_read else None,
-                }
-            )
+        records = [
+            _json_record(name, first, use.get(name, memory.MemoryUse())) for name, first in entries
+        ]
         print(json.dumps(records))
         return 0
     if not entries:
@@ -89,6 +74,23 @@ def _cmd_memory_list(*, as_json: bool = False) -> int:
     if ignored := memory.ignored_names(state):
         print(f"ignored (not a fact file): {', '.join(ignored)}")
     return 0
+
+
+def _json_record(name: str, first: str, use: memory.MemoryUse) -> dict[str, str | int | None]:
+    """Return the fact fields shared by list and show."""
+    created, edited = use.created, use.updated
+    if edited == created:
+        edited = None
+    return {
+        "name": name,
+        "first_line": first,
+        "written_by": created.session if created else None,
+        "written_at": created.at if created else None,
+        "edited_by": edited.session if edited else None,
+        "edited_at": edited.at if edited else None,
+        "reads": use.reads,
+        "last_read_by": use.last_read.session if use.last_read else None,
+    }
 
 
 def format_use(use: memory.MemoryUse) -> str:
@@ -122,16 +124,24 @@ def _when_by(touch: memory.Touch) -> str:
     return f"{touch.at[:10]} by {touch.session}"
 
 
-def _cmd_memory_show(name: str) -> int:
+def _cmd_memory_show(name: str, *, as_json: bool = False) -> int:
     """Print a memory's body.
 
     Args:
         name: The memory.
+        as_json: Print the fact record as a JSON object.
 
     Returns:
         The exit code, 0.
     """
-    print(memory.show(_state(), name), end="")
+    state = _state()
+    text = memory.show(state, name)
+    if as_json:
+        first = next((line.strip() for line in text.splitlines() if line.strip()), "(empty)")
+        use = memory.read_use(state).get(name, memory.MemoryUse())
+        print(json.dumps(_json_record(name, first.lstrip("#").lstrip(" "), use)))
+    else:
+        print(text, end="")
     return 0
 
 
