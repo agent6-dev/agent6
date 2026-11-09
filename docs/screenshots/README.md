@@ -48,6 +48,23 @@ Supporting files:
 Run a headless TUI snapshot with `uv run python docs/screenshots/tui_snapshot.py <session_dir> <out.(svg|png)> [screen]`.
 Browser recordings need a Playwright-capable Python with Chromium installed; set `$WEB_DEMO_PY` as described in `web_demo.sh`.
 
+## Web assertion tours
+
+`tests/web/test_seeded_tours.py` drives the hub and a session, Git and Files, and the review queue and findings through the real `agent6 web` CLI.
+Each test clones `seed/stats-demo.bundle`, installs the sessions with `seed.py`, and signs in to a loopback server with isolated config and state.
+The server inherits no provider keys, and the browser refuses non-GET requests after sign-in.
+No tour starts or resumes a model run.
+
+```sh
+uv run pytest -q -n 2 tests/web/test_seeded_tours.py -m browser -rA
+```
+
+Each stop saves a PNG and page text under the test's `tmp_path`; `-rA` prints the captured screenshot paths.
+`server.log` stays beside them.
+If `HOME` differs from the browser installation's home, set `PLAYWRIGHT_BROWSERS_PATH` to the installed `ms-playwright` directory.
+The diff tour asserts added and deleted line highlighting; syntax-token tests require cached tree-sitter grammars.
+A separate expected-failure test pins the resume picker's missing recorded model when it is absent from the current config and model cache.
+
 ## Demo videos (record/replay)
 
 The cassette-backed demos run the real agent6 loop, tools, verification and commits against their seed repos.

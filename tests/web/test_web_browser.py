@@ -1092,6 +1092,7 @@ def test_files_marks_worktree_states_and_sums_folders(
     assert errors == [], errors
 
 
+@pytest.mark.needs_grammar(language="python")
 def test_the_files_tab_opens_a_file_highlighted(
     open_page: Callable[[int], tuple[Page, list[str]]], files_port: int
 ) -> None:
