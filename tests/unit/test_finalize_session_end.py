@@ -1445,3 +1445,23 @@ def test_the_left_out_list_prints_names_on_one_line(
     finalize._print_left_out(layout, cwd=repo, ref="", reporter=reporter.STDIO_REPORTER)
     out = capsys.readouterr().out
     assert '"a\\nb.txt" (untracked before the run)' in out and "\na" not in out
+
+
+def test_end_banner_of_a_model_controlled_run_counts_its_uncommitted_files(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Under model git control the footer counts a dirty tree: the harness commits nothing."""
+    repo = _seeded_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    manifest: dict[str, object] = {
+        "session_id": "modelgit",
+        "run_branch": None,
+        "base_branch": "main",
+        "git_control": "model",
+    }
+    out = _end_footer(tmp_path, repo, "modelgit", manifest, capsys)
+    assert "git was model-controlled" in out
+    assert "uncommitted" not in out
+    (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
+    out = _end_footer(tmp_path, repo, "modelgit2", {**manifest, "session_id": "modelgit2"}, capsys)
+    assert "tracked files with uncommitted changes: 1" in out

@@ -457,14 +457,18 @@ def _print_run_branch_footer(
         # The model managed git: there is no agent6 branch to merge or diff.
         current = ""
         head = ""
+        modified = 0
         with contextlib.suppress(errors.GitError):
             st = git_read.status(cwd)
             current = st.branch
             head = st.head_sha[:12]
+            modified = st.modified_count
         where = current or head or "the current checkout"
         reporter.out(
             f'\ngit was model-controlled ([git].control = "model"); its work is on {where}'
         )
+        if modified:
+            reporter.out(f"  tracked files with uncommitted changes: {modified}")
         reporter.out("  inspect it with plain git (log/diff); sessions merge does not apply")
     elif result.completed and merged_into:
         # auto_merge landed it, and auto_prune may have deleted the branch.
