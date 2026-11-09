@@ -115,11 +115,13 @@ def test_a_grant_that_links_through_the_workspace_is_dropped(tmp_path: pathlib.P
 
 def test_dropped_tmp_grant_names_command_reach_and_file_tool_refusal(
     tmp_path: pathlib.Path,
+    host_tmp_path: pathlib.Path,
 ) -> None:
     """The dropped-grant notice does not promise /tmp access through the file tools."""
-    repo, held = tmp_path / "repo", tmp_path / "held"
+    repo, held = tmp_path / "repo", host_tmp_path / "held"
     repo.mkdir()
     held.mkdir()
+    assert not held.is_relative_to(repo.resolve())
     note = held / "notes.txt"
     note.write_text("hi", encoding="utf-8")
     cfg = Config.model_validate(
@@ -133,7 +135,11 @@ def test_dropped_tmp_grant_names_command_reach_and_file_tool_refusal(
     ):
         workspace.resolve_read(str(note))
     (dropped,) = grants.dropped
-    assert "Jailed commands still reach it through /tmp; file tools do not." in dropped.line()
+    host_tmp = pathlib.Path("/tmp").resolve()
+    assert (dropped.path, dropped.region) == (held, host_tmp)
+    assert (
+        f"Jailed commands still reach it through {host_tmp}; file tools do not." in dropped.line()
+    )
 
 
 def test_a_grant_that_links_through_tmp_is_dropped(tmp_path: pathlib.Path) -> None:

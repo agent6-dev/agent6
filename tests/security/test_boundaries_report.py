@@ -392,10 +392,8 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
 ) -> None:
     """Inside a fork's worktree, the report lists the repository git dir a jailed command reaches.
 
-    That is the fork manifest's recorded `worktree_git_dir` (under the repository's state
-    dir), granted through the execution's own policy builder; a report that read no manifest
-    would omit the one path beyond the workspace. In the repository itself no such line
-    appears.
+    The manifest under repository state records `worktree_git_dir`, the repository metadata
+    path. The execution's policy builder grants it to commands in the linked worktree.
     """
     import json
     import subprocess
@@ -431,30 +429,32 @@ def test_boundaries_report_lists_a_fork_worktrees_git_dir_grant(
         encoding="utf-8",
     )
     _force(monkeypatch, isolation)
-    grant = (
-        f"ro        {git_dir}  (sandbox.protect_git: configured auto, read-only:"
-        " repository metadata grant for this linked worktree)"
-        if isolation == "full"
-        else f"rw        {git_dir}  ! (sandbox.protect_git: configured auto, writable:"
+    writable = (
+        f"    rw        {git_dir}  ! (sandbox.protect_git: configured auto, writable:"
         " protection requires full isolation)"
+    )
+    grant = (
+        writable
+        if isolation == "partial" and git_dir.is_relative_to(pathlib.Path("/tmp").resolve())
+        else f"    ro        {git_dir}  (sandbox.protect_git: configured auto, read-only:"
+        " repository metadata grant for this linked worktree)"
     )
 
     monkeypatch.chdir(worktree)
     checks = check_sandbox.check_sandbox_section(Config())
     assert _verdicts(checks) == []
-    assert grant in capsys.readouterr().out
+    assert grant in capsys.readouterr().out.splitlines()
 
     monkeypatch.chdir(repo)
     check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
-    if isolation == "full":
-        assert grant not in out
-        assert (
-            f"    ro        {git_dir}  (sandbox.protect_git: configured auto, read-only under full)"
-            in out
-        )
-    else:
-        assert grant in out
+    main_row = (
+        f"    ro        {git_dir}  (sandbox.protect_git: configured auto, read-only under full)"
+        if isolation == "full"
+        else writable
+    )
+    assert main_row in out.splitlines()
+    assert "repository metadata grant for this linked worktree" not in out
 
 
 def test_partial_metadata_row_requires_its_explicit_grant(

@@ -233,6 +233,13 @@ def _isolate_state(  # pyright: ignore[reportUnusedFunction]
 
 
 @pytest.fixture
+def host_tmp_path() -> Iterator[pathlib.Path]:
+    """Provide private storage under the host's /tmp, independent of basetemp and TMPDIR."""
+    with tempfile.TemporaryDirectory(prefix="agent6-host-tmp-", dir="/tmp") as directory:
+        yield pathlib.Path(directory).resolve()
+
+
+@pytest.fixture
 def short_repo() -> Iterator[pathlib.Path]:
     """Provide a repository path short enough for a reversible repository ID."""
     with tempfile.TemporaryDirectory(prefix="repo-") as directory:

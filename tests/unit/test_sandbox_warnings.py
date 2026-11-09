@@ -422,7 +422,10 @@ def test_unscoped_abstract_sockets_are_warned_where_the_host_network_is_shared(
 
 
 def test_partial_warns_when_private_state_sits_in_a_granted_region(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    host_tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`partial` warns when private state sits in a granted region.
 
@@ -430,17 +433,30 @@ def test_partial_warns_when_private_state_sits_in_a_granted_region(
     under it are readable by every command; a preflight that sees only cwd and the extra
     grants misses them.
     """
-    for var in ("CONFIG", "STATE", "DATA", "CACHE"):
-        monkeypatch.setenv(f"AGENT6_{var}_HOME", str(tmp_path / var.lower()))
+    config_home = host_tmp_path / "config"
+    state_home = host_tmp_path / "state"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
     ws = tmp_path / "ws"
     ws.mkdir()
     monkeypatch.chdir(ws)
+    config_dir = paths.global_config_dir().resolve()
+    state_dir = paths.state_base().resolve()
+    assert config_dir == config_home / "agent6"
+    assert state_dir == state_home / "agent6"
+    for private in (config_dir, state_dir):
+        private.mkdir(parents=True)
+        assert private.is_relative_to(pathlib.Path("/tmp").resolve())
+        assert not private.is_relative_to(ws.resolve())
     monkeypatch.setattr("agent6.sandbox.tool_paths.tool_mount_notes", tool_paths.ToolMountNotes)
     cfg = Config(sandbox=SandboxConfig(network="host", protect_git="off"))
-    confine.warn_sandbox_gaps("partial", _env(4), cfg, root=tmp_path)
+    confine.warn_sandbox_gaps("partial", _env(4), cfg, root=ws)
     err = capsys.readouterr().err
-    assert str(tmp_path).startswith("/tmp"), "the fixture premise: pytest tmp lives under /tmp"
-    assert "jailed commands can read" in err and "/tmp" in err
+    for private in (config_dir, state_dir):
+        assert (
+            f"jailed commands can read {private}, because it sits inside /tmp"
+            " (the host's shared /tmp)."
+        ) in err
 
 
 def test_partial_names_the_workspace_when_it_sits_inside_a_private_dir(

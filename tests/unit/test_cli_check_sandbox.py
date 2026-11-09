@@ -342,7 +342,8 @@ def test_sibling_install_roots_each_have_a_row(
 
     out = capsys.readouterr().out
     rows = [line for line in _commands_block(out) if f" {base}/venvs/" in line]
-    mode = "ro" if isolation == "full" else "rw"
+    in_host_tmp = base.resolve().is_relative_to(pathlib.Path("/tmp").resolve())
+    mode = "rw" if isolation == "partial" and in_host_tmp else "ro"
     assert rows == [
         f"    {mode}  tool  {base}/venvs/bakabakabaka  "
         f"({base}/bin/baka links into {base}/venvs/bakabakabaka)",
@@ -795,8 +796,10 @@ def test_report_colours_and_plain_modes_carry_the_same_words(
     assert "\x1b[33m!\x1b[0m" in coloured
     assert "    ro  \x1b[2msys " in coloured
     plain = re.sub(r"\x1b\[[0-9;]*m", "", coloured)
+    in_host_tmp = linked_install_roots.resolve().is_relative_to(pathlib.Path("/tmp").resolve())
+    mode = "rw" if in_host_tmp else "ro"
     assert (
-        f"    rw  tool  {linked_install_roots}/venvs/uv  "
+        f"    {mode}  tool  {linked_install_roots}/venvs/uv  "
         f"({linked_install_roots}/bin/uv links into {linked_install_roots}/venvs/uv, 1 more)"
     ) in _commands_block(plain)
     for legend in (

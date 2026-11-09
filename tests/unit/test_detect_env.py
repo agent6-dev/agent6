@@ -230,17 +230,27 @@ def test_a_disabled_sandbox_never_launches_the_probe(monkeypatch: pytest.MonkeyP
 
 
 def test_grants_follow_the_launchers_verdict_on_namespaces(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: pathlib.Path, host_tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`unshare` says `full`, the launcher says `partial`: a grant under the host's /tmp drops."""
     monkeypatch.delenv("AGENT6_DISABLE_SANDBOX", raising=False)
     monkeypatch.setattr(detect, "environment", lambda: _env(True))
     monkeypatch.setattr(jail, "locate_jail_binary", lambda: pathlib.Path("/usr/bin/true"))
     monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(False, "trial failed"))
-    assert tmp_path.is_relative_to(policy.HOST_TMP)
     root = tmp_path / "repo"
     root.mkdir()
-    grant = tmp_path / "grant"
+    grant = host_tmp_path / "grant"
     grant.mkdir()
+    assert not grant.is_relative_to(root.resolve())
     cfg = Config.model_validate({"sandbox": {"extra_write_paths": [str(grant)]}})
-    assert [d.path for d in policy.resolve_grants(cfg, root).dropped] == [grant]
+    grants = policy.resolve_grants(cfg, root)
+    assert grants.write == ()
+    (dropped,) = grants.dropped
+    host_tmp = pathlib.Path("/tmp").resolve()
+    assert (dropped.path, dropped.real, dropped.region) == (grant, grant, host_tmp)
+    assert f"it sits inside {host_tmp}, which this run's commands write" in dropped.line()
+
+    monkeypatch.setattr(jail, "namespaces_work", lambda: jail.NamespaceProbe(True))
+    kept = policy.resolve_grants(cfg, root)
+    assert kept.write == ((grant, grant),)
+    assert not kept.dropped
