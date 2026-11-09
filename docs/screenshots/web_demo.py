@@ -179,7 +179,7 @@ def scroll_card(page: Page, selector: str, y: int, *, wait: int = 1500) -> None:
 
 
 def drive_repo(page: Page, mode: str) -> None:
-    """The Git page (graph, a commit, a diff) and the Files page (a file with blame)."""
+    """The Git page (graph, a commit, a diff) and the Files page (a Markdown file, its source, blame)."""
     rail = "nav.tabs a[data-tab='%s']" if mode == "phone" else "aside.rail a[data-tab='%s']"
     click(page, rail % "git", label="Git: the commit graph, every branch and tag", settle=1200)
     page.wait_for_selector(".gc-row:not(.gc-wt)")
@@ -193,7 +193,14 @@ def drive_repo(page: Page, mode: str) -> None:
     # The Files page: the tree at a revision, one file with blame.
     click(page, rail % "files", label="Files: any revision, read-only", settle=1200)
     page.wait_for_selector(".gtree")
-    click(page, ".gtree [data-path='README.md']", label="A file, highlighted", settle=1400)
+    click(page, ".gtree [data-path='README.md']", label="A Markdown file, rendered", settle=1400)
+    page.wait_for_selector(".md-view")
+    click(
+        page,
+        ".files-md-mode button:text-is('source')",
+        label="Its source, highlighted",
+        settle=1200,
+    )
     page.wait_for_selector("pre.src")
     click(page, "button.files-blame", label="blame: each line's last commit", settle=1600)
     page.wait_for_selector(".blame-cell")
