@@ -14,15 +14,16 @@ from __future__ import annotations
 import pathlib
 from typing import get_args
 
+from agent6 import kinds
 from agent6.app import finalize
 from agent6.harness import loop_snapshot
 from agent6.viewmodel import format, session_status
 
 _USAGE = pathlib.Path(__file__).resolve().parents[2] / "docs" / "usage.md"
 
-# A gate state an end can stand over: its name, then `all_passed`, `gate_red`, `gate_timed_out`,
-# the `verified` word the loop writes for it, and whether the harness runs the gate itself.
-_Gate = tuple[str, bool | None, bool, bool, loop_snapshot.Verification, bool]
+# A gate state an end can stand over: its name, then `verification`, `gate_red`, `gate_timed_out`,
+# the `verification` word the loop writes for it, and whether the harness runs the gate itself.
+_Gate = tuple[str, bool | None, bool, bool, kinds.Verification, bool]
 _GREEN: _Gate = ("gate green", True, False, False, "passed", True)
 _NO_GATE: _Gate = ("no gate", None, False, False, "not_applicable", False)
 _RED: _Gate = ("gate red", False, True, False, "failed", True)
@@ -63,7 +64,7 @@ _OTHER_EXITS: dict[str, dict[int, list[str]]] = {
     "no_lane_passed": {finalize.EXIT_VERIFY_FAILED: []},
     "interrupted": {130: [], 141: ["closed output pipe"]},
 }
-# Ends that write no session.end, so no surface shows a headline for them.
+# Ends that write no session.stop, so no surface shows a headline for them.
 _NO_HEADLINE = frozenset({"detached", "ask_repl_empty"})
 
 
@@ -72,11 +73,11 @@ def _row(reason: loop_snapshot.SessionEndReason) -> str:
     gates = _COMPLETED.get(reason, (_UNVERIFIED,))
     labels: list[str] = []
     exits: dict[int, list[str]] = {}
-    for name, all_passed, gate_red, gate_timed_out, verified, harness_gate in gates:
+    for name, _legacy_verdict, gate_red, gate_timed_out, verification, harness_gate in gates:
         word, detail = session_status.status_word(
             finished=True,
-            all_passed=all_passed,
-            end_reason=reason,
+            verification=verification,
+            stop_reason=reason,
             gate_red=gate_red,
             gate_timed_out=gate_timed_out,
         )
@@ -89,7 +90,7 @@ def _row(reason: loop_snapshot.SessionEndReason) -> str:
             summary="",
             turns=1,
             tool_calls=0,
-            verified=verified,
+            verification=verification,
         )
         code = finalize.session_exit_code(result, harness_gate=harness_gate)
         exits.setdefault(code, []).append(name)

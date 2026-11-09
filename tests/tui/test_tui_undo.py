@@ -33,7 +33,7 @@ def _undone_run(d: pathlib.Path) -> None:
             "new_session_id": "fork-child-AAAAAA",
             "undone_text": "name it better",
         },
-        {"type": "session.end", "reason": "undone", "all_passed": False},
+        {"type": "session.stop", "reason": "undone", "verification": "unverified"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -125,7 +125,7 @@ def test_undo_of_a_finished_run_fills_the_composer_and_routes_to_the_child(
     run.mkdir()
     evs = [
         {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -186,7 +186,7 @@ def test_fork_of_a_finished_run_hands_the_composer_to_the_unstarted_fork(
     run.mkdir()
     evs = [
         {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -267,7 +267,7 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
     run.mkdir()
     evs = [
         {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     notes: list[str] = []
@@ -294,7 +294,11 @@ def test_resume_of_a_finished_run_refuses_here_and_points_at_the_composer(
                     json.dumps(e) + "\n"
                     for e in (
                         evs[0],
-                        {"type": "session.end", "reason": "steer_abort", "all_passed": False},
+                        {
+                            "type": "session.stop",
+                            "reason": "steer_abort",
+                            "verification": "unverified",
+                        },
                     )
                 ),
                 encoding="utf-8",
@@ -331,7 +335,7 @@ def test_resume_of_a_fan_out_refuses_here(tmp_path: pathlib.Path, monkeypatch: A
     )
     evs = [
         {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "lanes_ranked", "all_passed": True},
+        {"type": "session.stop", "reason": "lanes_ranked", "verification": "passed"},
     ]
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     notes: list[str] = []
@@ -506,7 +510,7 @@ def test_a_typed_instruction_on_a_coordinator_is_refused_before_any_spawn(
     )
     evs = [
         {"type": "session.start", "session_id": run.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "lanes_ranked", "all_passed": True},
+        {"type": "session.stop", "reason": "lanes_ranked", "verification": "passed"},
     ]
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     notices: list[str] = []

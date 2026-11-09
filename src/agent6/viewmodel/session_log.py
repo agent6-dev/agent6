@@ -27,10 +27,10 @@ class LogScan:
         saw_start: A session.start or session.resume was seen; neither means unstarted.
         mode: The session's mode, "?" until a start event names it.
         task_label: The first task and the latest resume steer from the journal.
-        finished: A session.end was seen and no later execution began.
-        all_passed: The verify tri-state; None when no verify command gated the end.
+        finished: A session.stop was seen and no later execution began.
+        verification: The final verification word, or None when unknown.
         verify_scoped: The judging gate ran scoped.
-        end_reason: The session.end reason word.
+        stop_reason: The session.stop reason word.
         stranded: The latest execution finished with its edits uncommitted and no commit landed.
         setup_output: The workspace's setup command and retained output, or its failure diagnostic.
         end_summary: The journaled end sentence, "" while an execution runs or none was recorded.
@@ -38,9 +38,6 @@ class LogScan:
             another gate's verdict.
         baseline_ok: The start gate's verdict on the tree before the run's first turn; None
             when none was recorded.
-        verified: The gate's word for the final tree, as the last session.end carried it:
-            `passed`, `failed`, `unverified` or `not_applicable`; "" while a later execution
-            runs, and for an end that carried none.
         end_tree: The worktree's tree id that end recorded; "" when it recorded none or a
             later execution began.
         undone_to: The fork `/undo` continues the session as; "" when it was never undone.
@@ -91,15 +88,14 @@ class LogScan:
         default_factory=session_status.TaskLabel
     )
     finished: bool = False
-    all_passed: bool | None = False
+    verification: kinds.Verification | None = None
     verify_scoped: bool = False
-    end_reason: str = ""
+    stop_reason: str = ""
     stranded: bool = False
     setup_output: str = ""
     end_summary: str = ""
     baseline_ok: bool | None = None
     gate_swapped: bool = False
-    verified: str = ""
     end_tree: str = ""
     undone_to: str = ""
     provider_error: str = ""
@@ -139,31 +135,17 @@ class LogScan:
     end_ep: float | None = None
     evidence_notes: tuple[str, ...] = ()
 
-    def verify_verdict(self) -> bool | None:
-        """Return the gate verdict for judging candidates.
-
-        The status word cannot answer it: a finish over a red gate folds to "finished".
-
-        Returns:
-            True when the run ended all-passed, False when this execution's last verify
-            failed, None when nothing observed the final tree (gateless, no verify this
-            execution, a green made stale by later edits, or a mode other than run).
-        """
-        if self.mode != "run":
-            return None
-        if self.finished and self.all_passed:
-            return True
-        if self.last_verify_rc is not None and self.last_verify_rc != 0:
-            return False
-        return None
-
     def gate_word(self) -> str:
-        """Return `verified`, with `timed_out` for a red that is the gate running out its limit.
+        """Return `verification`, with `timed_out` for a red that is the gate running out its limit.
 
         Returns:
             The gate's word for the final tree.
         """
-        return "timed_out" if self.verified == "failed" and self.verify_timeout_s else self.verified
+        return (
+            "timed_out"
+            if self.verification == "failed" and self.verify_timeout_s
+            else self.verification or ""
+        )
 
     @property
     def cost_cell(self) -> str:
@@ -188,11 +170,11 @@ class LogScan:
         return session_status.StatusFacts(
             started=self.saw_start,
             finished=self.finished,
-            all_passed=self.all_passed,
+            verification=self.verification,
             verify_scoped=self.verify_scoped,
             gate_red=self.last_verify_rc is not None and self.last_verify_rc != 0,
             gate_timed_out=self.verify_timeout_s > 0,
-            end_reason=self.end_reason,
+            stop_reason=self.stop_reason,
             operator_blocked=self.operator_blocked,
             blocked_kind=self.blocked_kind,
             blocked_since_ep=self.blocked_since_ep,
@@ -270,7 +252,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         The scan; an empty one when the file cannot be read.
     """
     mode, task = "?", session_status.TaskLabel("")
-    finished, end_reason, end_summary, verified = False, "", "", ""
+    finished, stop_reason, end_summary = False, "", ""
     stranded = False
     end_tree = ""
     baseline_ok: bool | None = None
@@ -278,7 +260,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
     undone_to = ""
     setup_output = ""
     provider_error = ""
-    all_passed: bool | None = False
+    verification: kinds.Verification | None = None
     verify_scoped = False
     saw_start = False
     usd_execution = 0.0
@@ -374,7 +356,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                 if etype == "session.start":
                     task = task.start(str(ev.get("user_task", "")))
                     saw_start = True
-                    finished, stranded, verified = False, False, ""
+                    finished, stranded, verification = False, False, None
                     end_ep = None
                     end_summary = ""
                     end_tree = ""
@@ -386,19 +368,16 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                     verify_timeout_s = 0.0
                     if start_ep is None:
                         start_ep = ep
-                elif etype == "session.end":
+                elif etype == "session.stop":
                     finished = True
                     if isinstance(end_turns := ev.get("turns", ev.get("iterations")), int):
                         turn = end_turns
-                    # An explicit null is the ungated tri-state; an absent key folds False.
-                    raw_ap = ev.get("all_passed", False)
-                    all_passed = None if raw_ap is None else bool(raw_ap)
                     verify_scoped = bool(ev.get("scoped", False))
-                    end_reason = str(ev.get("reason", ""))
+                    stop_reason = str(ev.get("reason", ""))
                     end_summary = str(ev.get("summary", ""))
-                    if end_reason == "setup_command_failed" and ev.get("summary"):
+                    if stop_reason == "setup_command_failed" and ev.get("summary"):
                         setup_output = terminal.scrub_terminal_controls(str(ev["summary"]))
-                    verified = str(ev.get("verified") or "")
+                    verification = events.verification_word(ev.get("verification"))
                     end_tree = str(ev.get("tree") or "")
                     final_verify_id = ev.get("final_verify_id")
                     end_ep = ep
@@ -419,7 +398,7 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
                         executions += 1
                     saw_start = True
                     mode = str(ev.get("mode", mode))
-                    finished, stranded, verified = False, False, ""
+                    finished, stranded, verification = False, False, None
                     end_ep = None
                     end_summary = ""
                     end_tree = ""
@@ -513,14 +492,13 @@ def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR
         mode=mode,
         task_label=task,
         finished=finished,
-        all_passed=all_passed,
+        verification=verification,
         verify_scoped=verify_scoped,
-        end_reason=end_reason,
+        stop_reason=stop_reason,
         stranded=stranded,
         end_summary=end_summary,
         baseline_ok=baseline_ok,
         gate_swapped=gate_swapped,
-        verified=verified,
         setup_output=setup_output,
         end_tree=end_tree,
         undone_to=undone_to,

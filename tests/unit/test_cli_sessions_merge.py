@@ -1012,7 +1012,7 @@ def test_merge_squash_default_style_writes_the_run_message(
     assert "add a" in head and "add b" in head
 
 
-def _write_finish_log(tmp_path: pathlib.Path, session_id: str, *, end_reason: str) -> str:
+def _write_finish_log(tmp_path: pathlib.Path, session_id: str, *, stop_reason: str) -> str:
     """Write a log holding one `finish_session` call and the given end; return its summary."""
     summary = "Added a.txt with one line.\n\nThe unit tests pass."
     layout = sessions_layout.SessionLayout(
@@ -1021,7 +1021,7 @@ def _write_finish_log(tmp_path: pathlib.Path, session_id: str, *, end_reason: st
     events = [
         {"type": "session.start", "mode": "run"},
         {"type": "tool.call", "name": "finish_session", "args": {"summary": summary}},
-        {"type": "session.end", "reason": end_reason, "all_passed": True},
+        {"type": "session.stop", "reason": stop_reason, "verification": "passed"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return summary
@@ -1033,7 +1033,7 @@ def test_merge_squash_body_is_the_finish_summary(
     """The final summary supplies the squash body, regardless of the commit subjects."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FIN111", commits=[("a.txt", "a\n", "agent6 turn 6: checkpoint")])
-    summary = _write_finish_log(tmp_path, "run-FIN111", end_reason="finish_session")
+    summary = _write_finish_log(tmp_path, "run-FIN111", stop_reason="finish_session")
     assert main(["sessions", "merge", "run-FIN111", "--method", "squash"]) == 0
     assert _head_message(tmp_path) == f"implement the thing\n\n{summary}"
 
@@ -1044,7 +1044,7 @@ def test_merge_squash_ignores_a_finish_the_run_did_not_end_on(
     """A finish call the run did not end on supplies no body: the commit subjects do."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FIN222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
-    summary = _write_finish_log(tmp_path, "run-FIN222", end_reason="steer_abort")
+    summary = _write_finish_log(tmp_path, "run-FIN222", stop_reason="steer_abort")
     assert main(["sessions", "merge", "run-FIN222", "--method", "squash"]) == 0
     head = _head_message(tmp_path)
     assert "- add a" in head and summary not in head
@@ -1233,7 +1233,7 @@ def test_model_squash_uses_the_whole_run(
             [
                 {"type": event_type, "user_task": task},
                 {"type": "tool.call", "name": "finish_session", "args": {"summary": summary}},
-                {"type": "session.end", "reason": reason, "all_passed": True},
+                {"type": "session.stop", "reason": reason, "verification": "passed"},
             ]
         )
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
@@ -1435,7 +1435,10 @@ def test_merge_adopts_an_orphaned_fanout_lane(
         encoding="utf-8",
     )
     (lane_state / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": False}) + "\n",
+        json.dumps(
+            {"type": "session.stop", "reason": "finish_session", "verification": "unverified"}
+        )
+        + "\n",
         encoding="utf-8",
     )
     origin_runs = paths.state_dir(tmp_path) / "sessions" / "runs"
@@ -1546,7 +1549,7 @@ def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
 
 
 @pytest.mark.parametrize(
-    ("verified", "warning"),
+    ("verification", "warning"),
     [
         ("unverified", "nothing verified this run's final tree"),
         ("failed", "the verify gate was red on this run's final tree"),
@@ -1556,7 +1559,7 @@ def test_diff_reads_the_chain_ref_when_the_branch_is_gone(
     ],
 )
 def test_merge_warns_before_landing_a_tree_the_gate_did_not_certify(
-    verified: str | None,
+    verification: str | None,
     warning: str,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1571,9 +1574,13 @@ def test_merge_warns_before_landing_a_tree_the_gate_did_not_certify(
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-VVVV11"
     )
-    end: dict[str, object] = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
-    if verified is not None:
-        end["verified"] = verified
+    end: dict[str, object] = {
+        "type": "session.stop",
+        "reason": "steer_abort",
+        "verification": verification,
+    }
+    if verification is not None:
+        end["verification"] = verification
     events = [{"type": "session.start", "mode": "run", "user_task": "t"}, end]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     assert main(["sessions", "merge", "run-VVVV11"]) == 0
@@ -1596,12 +1603,7 @@ def test_merge_says_a_timed_out_gate_timed_out(
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "exit_code": 124, "outcome": "timed_out", "timeout_s": 300.0},
-        {
-            "type": "session.end",
-            "reason": "finish_session",
-            "all_passed": False,
-            "verified": "failed",
-        },
+        {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     assert main(["sessions", "merge", "run-TTTT11"]) == 0
@@ -1623,7 +1625,7 @@ def test_runs_merge_refuses_a_run_undo_took_back(
     events = [
         {"type": "session.start", "session_id": "run-UNDO11", "mode": "run", "user_task": "t"},
         {"type": "session.undone", "new_session_id": "fork-UNDO22", "undone_text": "again"},
-        {"type": "session.end", "reason": "undone", "turns": 2, "all_passed": False},
+        {"type": "session.stop", "reason": "undone", "turns": 2, "verification": "unverified"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 

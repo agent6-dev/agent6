@@ -18,18 +18,20 @@ from agent6.viewmodel import tail as viewmodel_tail
 def test_tail_yields_existing_lines_in_non_follow_mode(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
     p.write_text(
-        json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.end"}) + "\n",
+        json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.stop"}) + "\n",
         encoding="utf-8",
     )
     out = list(viewmodel_tail.tail_events(p, follow=False))
-    assert [e["type"] for e in out] == ["session.start", "session.end"]
+    assert [e["type"] for e in out] == ["session.start", "session.stop"]
 
 
 def test_tail_yields_final_line_without_trailing_newline(tmp_path: pathlib.Path) -> None:
     p = tmp_path / "logs.jsonl"
-    p.write_text(json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.end"}))
+    p.write_text(
+        json.dumps({"type": "session.start"}) + "\n" + json.dumps({"type": "session.stop"})
+    )
     out = list(viewmodel_tail.tail_events(p, follow=False))
-    assert [e["type"] for e in out] == ["session.start", "session.end"]
+    assert [e["type"] for e in out] == ["session.start", "session.stop"]
 
 
 def test_tail_skips_malformed_lines(tmp_path: pathlib.Path) -> None:
@@ -55,14 +57,14 @@ def test_tail_returns_when_file_missing_and_not_follow(tmp_path: pathlib.Path) -
 
 
 def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: pathlib.Path) -> None:
-    # A resume appends events AFTER session.end (no second end yet while it runs).
+    # A resume appends events AFTER session.stop (no second end yet while it runs).
     # A watcher opening the log mid-resume must stream past the stale end, not
     # close on it and show the run as finished while it is live again.
     p = tmp_path / "logs.jsonl"
     p.write_text(
         json.dumps({"type": "session.start"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "steer_abort"})
+        + json.dumps({"type": "session.stop", "reason": "steer_abort"})
         + "\n"
         + json.dumps({"type": "session.resume"})
         + "\n"
@@ -73,7 +75,7 @@ def test_tail_does_not_stop_at_a_run_end_a_resume_superseded(tmp_path: pathlib.P
     out = list(viewmodel_tail.tail_events(p, follow=False, stop_when_finished=True))
     assert [e["type"] for e in out] == [
         "session.start",
-        "session.end",
+        "session.stop",
         "session.resume",
         "role.call",
     ]
@@ -108,14 +110,14 @@ def test_tail_completes_torn_utf8_line_across_polls(tmp_path: pathlib.Path) -> N
         time.sleep(0.3)
         with p.open("ab") as fh:
             fh.write(rest + b"\n")
-            fh.write(json.dumps({"type": "session.end"}).encode() + b"\n")
+            fh.write(json.dumps({"type": "session.stop"}).encode() + b"\n")
             fh.flush()
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
     out = list(viewmodel_tail.tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
-    assert [e["type"] for e in out] == ["first", "role.text_delta", "session.end"]
+    assert [e["type"] for e in out] == ["first", "role.text_delta", "session.stop"]
     assert out[1]["text"] == "café"
 
 
@@ -151,7 +153,7 @@ def test_should_stop_still_hands_over_what_was_appended(tmp_path: pathlib.Path) 
         if polls["n"] == 2:  # between polls: the worker's last events land, then it exits
             with p.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"type": "done"}) + "\n")
-                fh.write(json.dumps({"type": "session.end"}) + "\n")
+                fh.write(json.dumps({"type": "session.stop"}) + "\n")
             return True
         return polls["n"] > 2
 
@@ -161,7 +163,7 @@ def test_should_stop_still_hands_over_what_was_appended(tmp_path: pathlib.Path) 
             p, follow=True, poll_s=0.01, should_stop=_dead_after_writing_the_end
         )
     ]
-    assert got == ["first", "done", "session.end"]
+    assert got == ["first", "done", "session.stop"]
 
 
 def test_tail_follows_appended_lines(tmp_path: pathlib.Path) -> None:
@@ -175,14 +177,14 @@ def test_tail_follows_appended_lines(tmp_path: pathlib.Path) -> None:
             fh.flush()
         time.sleep(0.2)
         with p.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"type": "session.end"}) + "\n")
+            fh.write(json.dumps({"type": "session.stop"}) + "\n")
             fh.flush()
 
     t = threading.Thread(target=writer, daemon=True)
     t.start()
     out = list(viewmodel_tail.tail_events(p, follow=True, poll_s=0.05, stop_when_finished=True))
     t.join(timeout=2)
-    assert [e["type"] for e in out] == ["first", "second", "session.end"]
+    assert [e["type"] for e in out] == ["first", "second", "session.stop"]
 
 
 def test_logtail_reads_only_new_events_incrementally(tmp_path: pathlib.Path) -> None:
@@ -220,10 +222,16 @@ def test_logtail_rereads_a_healed_fragment_without_replaying_complete_lines(
 
     resumed = event_log.EventSink(path)
     resumed.emit("loop.note", text="new")
-    resumed.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+    resumed.emit(
+        "session.stop",
+        execution_id="execution",
+        reason="finish_session",
+        turns=1,
+        verification="passed",
+    )
 
     events = reader.read()
-    assert [event["type"] for event in events] == ["loop.note", "session.end"]
+    assert [event["type"] for event in events] == ["loop.note", "session.stop"]
     assert events[0]["text"] == "new"
     assert not reader.rewound
     assert reader.read() == []
@@ -249,11 +257,17 @@ def test_follow_rereads_a_healed_fragment_from_the_last_complete_line(
     resumed = event_log.EventSink(path)
     resumed.emit("loop.note", text="new")
     second_end = path.stat().st_size
-    resumed.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+    resumed.emit(
+        "session.stop",
+        execution_id="execution",
+        reason="finish_session",
+        turns=1,
+        verification="passed",
+    )
     stop.set()
 
     events = list(reader)
-    assert [event["type"] for event in events] == ["loop.note", "session.end"]
+    assert [event["type"] for event in events] == ["loop.note", "session.stop"]
     assert events[0]["text"] == "new"
     assert positions == [first_end, second_end, path.stat().st_size]
 
@@ -267,27 +281,27 @@ def test_stop_when_finished_stops_at_a_lone_run_end(tmp_path: pathlib.Path) -> N
     p.write_text(
         '{"type": "session.start"}\n'
         '{"type": "tool.call", "name": "x"}\n'
-        '{"type": "session.end", "reason": "finish_session"}\n',
+        '{"type": "session.stop", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
     out = list(viewmodel_tail.tail_events(p, follow=True, stop_when_finished=True))
-    assert [e["type"] for e in out] == ["session.start", "tool.call", "session.end"]
+    assert [e["type"] for e in out] == ["session.start", "tool.call", "session.stop"]
 
 
 def test_stop_when_finished_follows_through_a_resumed_run(tmp_path: pathlib.Path) -> None:
-    # A stop then resume shares one log: two session.end events. stop_when_finished must
+    # A stop then resume shares one log: two session.stop events. stop_when_finished must
     # follow past the intermediate one (steer_abort) to the final one, not halt at
     # the stop -- else a watcher of a resumed run wrongly shows "stopped".
     p = tmp_path / "logs.jsonl"
     p.write_text(
         '{"type": "session.start"}\n'
-        '{"type": "session.end", "reason": "steer_abort"}\n'
+        '{"type": "session.stop", "reason": "steer_abort"}\n'
         '{"type": "role.call"}\n'
-        '{"type": "session.end", "reason": "finish_session"}\n',
+        '{"type": "session.stop", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
     out = list(viewmodel_tail.tail_events(p, follow=True, stop_when_finished=True))
-    assert [e.get("reason") for e in out if e["type"] == "session.end"] == [
+    assert [e.get("reason") for e in out if e["type"] == "session.stop"] == [
         "steer_abort",
         "finish_session",
     ]
@@ -314,10 +328,10 @@ def test_start_at_yields_a_line_appended_before_the_tail_attached(tmp_path: path
 
 
 def test_start_at_skips_the_lines_before_the_offset(tmp_path: pathlib.Path) -> None:
-    """start_at yields only what follows the offset, past a prior execution's session.end."""
+    """start_at yields only what follows the offset, past a prior execution's session.stop."""
     path = tmp_path / "logs.jsonl"
     path.write_text(
-        '{"type": "old"}\n{"type": "session.end"}\n',
+        '{"type": "old"}\n{"type": "session.stop"}\n',
         encoding="utf-8",
     )
     stop = {"n": 0}
@@ -326,7 +340,7 @@ def test_start_at_skips_the_lines_before_the_offset(tmp_path: pathlib.Path) -> N
         stop["n"] += 1
         if stop["n"] == 2:  # first poll found nothing new; append the new execution
             with path.open("a", encoding="utf-8") as fh:
-                fh.write('{"type": "fresh"}\n{"type": "session.end"}\n')
+                fh.write('{"type": "fresh"}\n{"type": "session.stop"}\n')
         return stop["n"] > 10
 
     got = list(
@@ -338,7 +352,7 @@ def test_start_at_skips_the_lines_before_the_offset(tmp_path: pathlib.Path) -> N
             start_at=viewmodel_tail.journal_size(path),
         )
     )
-    assert [e["type"] for e in got] == ["fresh", "session.end"]
+    assert [e["type"] for e in got] == ["fresh", "session.stop"]
 
 
 def test_tail_reports_an_events_offset_before_yielding_it(tmp_path: pathlib.Path) -> None:
@@ -366,9 +380,9 @@ def test_follow_starts_over_when_the_file_shrinks(tmp_path: pathlib.Path) -> Non
     reader = viewmodel_tail.tail_events(path, poll_s=0, should_stop=stop.is_set)
     assert next(reader)["type"] == "old"
 
-    path.write_text('{"type":"session.end"}\n', encoding="utf-8")
+    path.write_text('{"type":"session.stop"}\n', encoding="utf-8")
     stop.set()
-    assert [event["type"] for event in reader] == ["session.end"]
+    assert [event["type"] for event in reader] == ["session.stop"]
 
 
 def test_log_tail_starts_over_when_the_file_shrinks(tmp_path: pathlib.Path) -> None:

@@ -1313,4 +1313,4 @@
 {"ts": "2026-06-23T09:29:58.262622+00:00", "type": "loop.tool.call", "name": "run_command", "turn": 200}
 {"ts": "2026-06-23T09:29:58.265802+00:00", "type": "tool.call", "name": "run_command", "args": {"argv": ["ls", "-la", "/usr/bin/echo"]}}
 {"ts": "2026-06-23T09:29:58.276270+00:00", "type": "tool.result", "name": "run_command", "ok": true, "summary": "exit=127 in 0.0s", "stdout_tail": "", "stderr_tail": "ls: command not found or not executable (agent6-jail: child execution failed: No such file or directory (os error 2))"}
-{"ts": "2026-06-23T09:29:58.279003+00:00", "type": "session.end", "reason": "max_turns", "turns": 200, "all_passed": false}
+{"ts": "2026-06-23T09:29:58.279003+00:00", "type": "session.stop", "reason": "max_turns", "turns": 200, "verification": "unverified", "execution_id": "execution"}

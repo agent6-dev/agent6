@@ -196,3 +196,15 @@ def test_missing_meaning_refuses_generation(tmp_path: pathlib.Path) -> None:
     source.write_text('def payload():\n    return {"undocumented": 1}\n', encoding="utf-8")
     with pytest.raises(generator.FormatError, match="undocumented"):
         generator.dictionary_fields(source, "payload")
+
+
+def test_public_row_types_are_not_json_placeholders() -> None:
+    """Listing and status fields publish their declared types."""
+    generator = _generator()
+    for module, symbol in (
+        ("viewmodel.listing", "summary_row"),
+        ("ui.cli.sessions_show", "_cmd_status"),
+    ):
+        fields = generator.dictionary_fields(generator.module_path(module), symbol)
+        assert fields
+        assert all(f.kind != "JSON" for f in fields)

@@ -16,6 +16,7 @@ import dataclasses
 import functools
 import pathlib
 import sys
+import uuid
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -196,7 +197,12 @@ def _escape_reason(exc: BaseException) -> loop_snapshot.SessionEndReason:
 
 
 def _journal_escape(
-    events: event_log.EventSink, exc: BaseException, *, turns: int, tree: str = ""
+    events: event_log.EventSink,
+    exc: BaseException,
+    *,
+    execution_id: str,
+    turns: int,
+    tree: str = "",
 ) -> loop_snapshot.SessionEndReason:
     """Journal the end an escape leaves.
 
@@ -206,6 +212,7 @@ def _journal_escape(
     Args:
         events: The run's event sink.
         exc: The escaping exception.
+        execution_id: The execution that stopped.
         turns: The turns reached.
         tree: The tree the run leaves, so the next resume tells its files from the operator's.
 
@@ -215,7 +222,14 @@ def _journal_escape(
     reason = _escape_reason(exc)
     left = {"tree": tree} if tree else {}
     with contextlib.suppress(event_log.EventWriteError):
-        events.emit("session.end", reason=reason, turns=turns, all_passed=False, **left)
+        events.emit(
+            "session.stop",
+            execution_id=execution_id,
+            reason=reason,
+            turns=turns,
+            verification=None,
+            **left,
+        )
     return reason
 
 
@@ -299,6 +313,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         KeyboardInterrupt: An interrupt before the loop, journaled and re-raised.
         Exception: A crash before or after the loop, journaled and re-raised.
     """
+    execution_id = uuid.uuid4().hex
     session_runtime.note_state_disk_space(state_dir, reporter=reporter)
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
@@ -355,12 +370,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             ),
         )
     except (KeyboardInterrupt, Exception) as exc:
-        # A parked run whose start crashes here never ran: it stays parked with no session.end.
+        # A parked run whose start crashes here never ran: it stays parked with no session.stop.
         if stamps.parked_stamp(layout.session_dir) is not None:
             reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         else:
             tree = _tree_left_before_the_loop(cwd, inputs, hidden)
-            reason = _journal_escape(events, exc, turns=0, tree=tree)
+            reason = _journal_escape(events, exc, execution_id=execution_id, turns=0, tree=tree)
             reporter.err(f"\n[agent6] {label} {reason}")
         with contextlib.ExitStack() as cleanup:
             if prompt_reviser_provider is not None:
@@ -569,11 +584,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                         # any turn, as an unexecutable gate's is.
                         loop_log(f"[agent6] LOOP: aborting -- {unready.splitlines()[0]}")
                         events.emit(
-                            "session.end",
+                            "session.stop",
+                            execution_id=wf.execution_id,
                             reason="setup_command_failed",
                             summary=unready,
                             turns=0,
-                            all_passed=False,
+                            verification=None,
                         )
                         result = loop_snapshot.SessionResult(
                             completed=False,
@@ -597,7 +613,11 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     escape_handled = True
                     if result is None:
                         _journal_escape(
-                            events, exc, turns=wf.turns_reached, tree=_tree_left(wf, mode)
+                            events,
+                            exc,
+                            execution_id=wf.execution_id,
+                            turns=wf.turns_reached,
+                            tree=_tree_left(wf, mode),
                         )
                     raise
         except loop_snapshot.ResumeError as exc:
@@ -618,7 +638,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             and result is None
             and stamps.parked_stamp(layout.session_dir) is None
         ):
-            _journal_escape(events, exc, turns=wf.turns_reached if wf else 0)
+            _journal_escape(
+                events,
+                exc,
+                execution_id=wf.execution_id if wf else execution_id,
+                turns=wf.turns_reached if wf else 0,
+            )
         reporter.err(f"\n[agent6] {label} {_escape_reason(exc)}")
         raise
     finally:
@@ -662,7 +687,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     reason = (
                         f"the run ended on {result.reason}, not finish_session"
                         if result.reason != "finish_session"
-                        else f"the gate on the final tree is {result.verified}"
+                        else f"the gate on the final tree is {result.verification}"
                     )
                     reporter.note(f"auto_merge skipped: {reason}")
         finally:
@@ -717,7 +742,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         session_dir=layout.session_dir,
         ok=result.completed,
         reason=result.reason,
-        verified=result.verified,
+        verification=result.verification,
         reporter=reporter,
     )
     return ExecutionEnd(

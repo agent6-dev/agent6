@@ -220,8 +220,8 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
     m: dict[str, Any] = {
         "run_found": bool(logs),
         "iterations": None,
-        "end_reason": None,
-        "all_passed": None,
+        "stop_reason": None,
+        "verification": None,
         "usd": None,
         "tokens_in": None,
         "tokens_out": None,
@@ -260,11 +260,11 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
             last_budget = e
         elif t == "graph.update":
             last_graph = e
-        elif t == "session.end":
-            m["end_reason"] = e.get("reason")
+        elif t == "session.stop":
+            m["stop_reason"] = e.get("reason")
             # Recorded benchmark rows keep their schema; live events use turns.
             m["iterations"] = e.get("turns")
-            m["all_passed"] = e.get("all_passed")
+            m["verification"] = e.get("verification")
         elif t == "loop.compact.summarise.done":
             m["compactions"] += 1
             compacted = True
@@ -509,7 +509,7 @@ def main() -> None:
                     f" r{rec.get('rep')} score={rec.get('score')}"
                     f" subtasks={rec.get('n_subtasks')} comp={rec.get('compactions')}"
                     f" turns={rec.get('iterations')} ${rec.get('usd')} {rec.get('wall_s')}s"
-                    f" reason={rec.get('end_reason')}"
+                    f" reason={rec.get('stop_reason')}"
                 )
     print(f"[coreagent] done -> {out_path}")
 

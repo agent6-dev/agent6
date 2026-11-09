@@ -242,4 +242,4 @@
 {"ts": "2026-06-17T21:55:26.289798+00:00", "type": "loop.tool.call", "name": "finish_session", "turn": 26}
 {"ts": "2026-06-17T21:55:26.291670+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "I have successfully restored the `format_filename` function in `src/click/utils.py`. The implementation now correctly handles all the required cases:\n\n1. For bytes input like `b\"foo.txt\"`, it decodes … (1075 chars)"}}
 {"ts": "2026-06-17T21:55:26.293680+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
-{"ts": "2026-06-17T21:55:26.308202+00:00", "type": "session.end", "reason": "finish_session", "turns": 26, "all_passed": true}
+{"ts": "2026-06-17T21:55:26.308202+00:00", "type": "session.stop", "reason": "finish_session", "turns": 26, "verification": "passed", "execution_id": "execution"}

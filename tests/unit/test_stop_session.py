@@ -27,7 +27,7 @@ from pathlib import Path
 d = Path(sys.argv[1])
 while not (d / "steer.answer").exists():
     time.sleep(0.05)
-end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
+end = {"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}
 with (d / "logs.jsonl").open("a") as fh:
     fh.write(json.dumps(end) + "\\n")
 """
@@ -353,7 +353,9 @@ def test_a_session_that_is_not_live_is_refused_with_its_state(tmp_path: pathlib.
     d = _live_run(tmp_path, "done-run-AAAAAA")
     with (d / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(
-            json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+            json.dumps(
+                {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+            )
             + "\n"
         )
     out = stop.stop_session(d)

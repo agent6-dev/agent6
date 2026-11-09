@@ -198,7 +198,7 @@ def draft_dir_paths(cwd: pathlib.Path) -> list[pathlib.Path]:
 # --- hub listing -------------------------------------------------------------
 
 
-def _list_sessions(cwd: pathlib.Path, sort: listing.Sort) -> list[dict[str, Any]]:
+def _list_sessions(cwd: pathlib.Path, sort: listing.Sort) -> list[listing.SummaryRow]:
     """Return every session the hub lists in the given order, a fan-out's lanes under its row."""
     rows, winners = listing.rows_for(cwd, sort=sort)
     return [listing.row_json(r, winners=winners) for r in rows]
@@ -245,7 +245,7 @@ def _list_machines(cwd: pathlib.Path) -> list[dict[str, Any]]:
     return [_machine_row(summarize_machine_dir(d)) for d in dirs]
 
 
-def _list_drafts(cwd: pathlib.Path) -> list[dict[str, Any]]:
+def _list_drafts(cwd: pathlib.Path) -> list[listing.SummaryRow]:
     """Return the `machine create` drafts as listing rows, newest first."""
     rows, winners = listing.rows_for(cwd, buckets=("machines",))
     return [listing.row_json(r, winners=winners) for r in rows]

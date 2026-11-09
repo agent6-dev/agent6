@@ -160,7 +160,7 @@ def test_plan_points_come_from_the_session_record(
         (137, "", "timeout after 3600s"),
     ],
 )
-def test_end_reason_separates_unscored_runs_from_agent_failures(
+def test_stop_reason_separates_unscored_runs_from_agent_failures(
     bench_repo: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     exit_code: int,
@@ -180,7 +180,7 @@ def test_end_reason_separates_unscored_runs_from_agent_failures(
         assert "Total: 0/1 verify pass, 0 unscored" in result.markdown
         assert "| FAIL |" in result.markdown
     assert result.row["unscored"] == unscored
-    assert result.row["end_reason"] == reason
+    assert result.row["stop_reason"] == reason
     if exit_code == 2:
         calls = [
             json.loads(line)["argv"]

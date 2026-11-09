@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import pathlib
 import shutil
+import uuid
 
 from agent6 import budget, errors, kinds, paths, portable
 from agent6.app import preflight, session_runtime, session_setup, workdirs
@@ -200,11 +201,14 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     scratch.mkdir(mode=0o700)
     (scratch / "prompt.txt").write_text(task, encoding="utf-8")
     # The draft's watchable log: this process owns session.start, the attempt markers and
-    # session.end; each attempt's subprocess appends its own events to the same file.
+    # session.stop; each attempt's subprocess appends its own events to the same file.
     events_log = scratch / layout.LOGS_NAME
+    execution_id = uuid.uuid4().hex
     events = event_log.EventSink(events_log)
-    # A terminal draft has its own session.end, which the status reads first: no clearing.
-    process.emit_session_start(events, scratch, "session.start", user_task=task, mode="machine")
+    # A terminal draft has its own session.stop, which the status reads first: no clearing.
+    process.emit_session_start(
+        events, scratch, "session.start", execution_id=execution_id, user_task=task, mode="machine"
+    )
     reporter.err(
         f"machine create: drafting as {scratch.name} (follow live: agent6 attach {scratch.name})"
     )
@@ -215,7 +219,13 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         git_ops.init_repo(workspace)
     except (OSError, errors.GitError) as exc:
         reporter.error(f"could not prepare the drafting workspace {workspace}: {exc}")
-        events.emit("session.end", reason="workspace_failed", turns=0, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id=execution_id,
+            reason="workspace_failed",
+            turns=0,
+            verification="unverified",
+        )
         return 1
     # The complete effective config as the overlay: omitting values equal to built-in defaults
     # loses an explicit repo reset when the workspace reloads the operator's global layer.
@@ -235,7 +245,13 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         )
     except errors.GitError as exc:
         reporter.error(str(exc))
-        events.emit("session.end", reason="no_git_identity", turns=0, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id=execution_id,
+            reason="no_git_identity",
+            turns=0,
+            verification="unverified",
+        )
         return 2
     runner = agent.build_machine_agent_runner(
         # The authoring agent is no state: its requests carry the empty name.
@@ -371,9 +387,15 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         output_total=total_out,
         plan_consumed=total_plan,
     )
-    # session.end reasons are tokens: the listing prints one beside "failed". turns = attempts.
+    # session.stop reasons are tokens: the listing prints one beside "failed". turns = attempts.
     if spec is None or valid_path is None:
-        events.emit("session.end", reason="no_valid_machine", turns=attempt, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id=execution_id,
+            reason="no_valid_machine",
+            turns=attempt,
+            verification="unverified",
+        )
         reporter.err(f"FAILED: no valid machine after {attempt} attempt(s).")
         if diagnostics:
             reporter.err("Last diagnostics:")
@@ -392,7 +414,13 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     ]
     # The default path clobbers nothing, scripts included; `-o` replaces existing targets.
     if output is None and existing:
-        events.emit("session.end", reason="output_collision", turns=attempt, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id=execution_id,
+            reason="output_collision",
+            turns=attempt,
+            verification="unverified",
+        )
         reporter.err("REFUSING to overwrite existing file(s):")
         for clash in existing:
             reporter.err(f"  {clash}")
@@ -405,7 +433,13 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
         _write_scripts(target.parent, valid_scripts)
         portable.atomic_write(target, payload)
     except OSError as exc:
-        events.emit("session.end", reason="write_failed", turns=attempt, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id=execution_id,
+            reason="write_failed",
+            turns=attempt,
+            verification="unverified",
+        )
         reporter.err(f"FAILED: could not write the bundle to {target.parent}: {exc}")
         reporter.err(f"The validated bundle is in {workspace}; it is also on stdout.")
         reporter.out(payload.removesuffix("\n"))
@@ -413,12 +447,24 @@ def create_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the create loop'
     # A pre-existing symlink under scripts/ can make the published bundle differ: check it.
     out_problems = bundle.validate_bundle(spec, target)
     if out_problems:
-        events.emit("session.end", reason="bundle_invalid", turns=attempt, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id=execution_id,
+            reason="bundle_invalid",
+            turns=attempt,
+            verification="unverified",
+        )
         reporter.err(f"FAILED: the bundle written to {target.parent} does not validate:")
         for problem in out_problems:
             reporter.err(f"  - {problem}")
         return 1
-    events.emit("session.end", reason="machine_created", turns=attempt, all_passed=True)
+    events.emit(
+        "session.stop",
+        execution_id=execution_id,
+        reason="machine_created",
+        turns=attempt,
+        verification="passed",
+    )
     scripts_note = f" + {len(valid_scripts)} script(s)" if valid_scripts else ""
     replaced_note = (
         f"; replaced {', '.join(repr(str(path)) for path in existing)}" if existing else ""

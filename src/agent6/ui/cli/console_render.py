@@ -100,7 +100,7 @@ class ConsoleView:
         self._last_output_at = time.monotonic()
         # The fed event's own ts anchors the idle timer, so a replay measures from the run's time.
         self._event_ep: float | None = None
-        self._active = False  # between session.start and session.end
+        self._active = False  # between session.start and session.stop
         self._status_active = False  # a transient spinner line is on screen
         self._paused = False  # an interactive /dev/tty prompt owns the line
         self._spin = 0
@@ -120,7 +120,7 @@ class ConsoleView:
             self._btw.append(block)
 
     def settle_dead(self, reason: str) -> None:
-        """Render the open tool calls as never returned, since no session.end will settle them."""
+        """Render the open tool calls as never returned, since no session.stop will settle them."""
         with self._lock:
             for item in self._fold.settle_open_calls(reason):
                 self._render(item)
@@ -146,7 +146,7 @@ class ConsoleView:
             # Active through a jailed command too, which runs between role.result and role.call.
             if etype in ("session.start", "role.call", "tool.call"):
                 self._active = True
-            elif etype in ("session.end", "session.steer_requested"):
+            elif etype in ("session.stop", "session.steer_requested"):
                 self._active = False
                 # The run ending is a clean break for a btw that landed after the last turn.
                 self._end_block()

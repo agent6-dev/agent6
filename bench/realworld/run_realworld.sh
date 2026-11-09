@@ -370,7 +370,7 @@ PY
     ( cd "$dir" && "$AGENT6_BIN" --config agent6.toml sessions show "$sid" --json ) \
       > "$logdir/session.json" 2>/dev/null || true
   fi
-  end_reason=$(session_field "$logdir/session.json" reason)
+  stop_reason=$(session_field "$logdir/session.json" reason)
   plan_points=$(session_field "$logdir/session.json" plan_consumed)
   [[ "$plan_points" =~ ^[0-9]+(\.[0-9]+)?$ ]] || plan_points=0
   model_ran=$(session_field "$logdir/session.json" model)
@@ -381,7 +381,7 @@ PY
   unscored=""
   case "$ag_exit" in
     0|3|4|5) ;;
-    1) case "$end_reason" in
+    1) case "$stop_reason" in
          provider_error) unscored="provider error" ;;
          verify_command_unexecutable) unscored="verify command cannot run in the jail" ;;
          "") unscored="agent6 exit 1, end reason unread" ;;
@@ -403,7 +403,7 @@ PY
   "agent_exit": $ag_exit,
   "session_id": "$sid",
   "model": "$model_ran",
-  "end_reason": "$end_reason",
+  "stop_reason": "$stop_reason",
   "unscored": $unscored_json,
   "wall_seconds": $wall_s,
   "verify_pass": $([ $ver_exit -eq 0 ] && echo true || echo false),

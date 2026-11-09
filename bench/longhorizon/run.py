@@ -345,8 +345,8 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
     m: dict[str, Any] = {
         "run_found": False,
         "iterations": None,
-        "end_reason": None,
-        "all_passed": None,
+        "stop_reason": None,
+        "verification": None,
         "usd": None,
         "tokens_in": None,
         "tokens_out": None,
@@ -398,11 +398,11 @@ def _extract_metrics(state_home: Path, session_id: str, traps: tuple[str, ...]) 
             last_budget = e
         elif t == "graph.update":
             last_graph = e
-        elif t == "session.end":
-            m["end_reason"] = e.get("reason")
+        elif t == "session.stop":
+            m["stop_reason"] = e.get("reason")
             # Recorded benchmark rows keep their schema; live events use turns.
             m["iterations"] = e.get("turns")
-            m["all_passed"] = e.get("all_passed")
+            m["verification"] = e.get("verification")
         elif t == "loop.compact.summarise.done":
             m["compactions"] += 1
             compacted = True
@@ -789,7 +789,7 @@ def main() -> None:
                         f" nudges={rec.get('memory_flip_nudges')}"
                         f" deps={rec.get('deps_added')} turns={rec.get('iterations')}"
                         f" ${rec.get('usd')} {rec.get('wall_s')}s"
-                        f" reason={rec.get('end_reason')}"
+                        f" reason={rec.get('stop_reason')}"
                     )
     print(f"[longhorizon] done -> {out_path}")
 

@@ -470,16 +470,17 @@ def _journal_undone(undone: sessions_layout.SessionLayout, child: str, undone_te
         child: The fork's id.
         undone_text: The message taken back.
     """
-    turns = session_log.scan_session_log(undone.logs_path).turn or 0
+    scan = session_log.scan_session_log(undone.logs_path)
     events = event_log.EventSink(undone.logs_path)
     with contextlib.suppress(event_log.EventWriteError):
         events.emit("session.undone", new_session_id=child, undone_text=undone_text)
         events.emit(
-            "session.end",
+            "session.stop",
+            execution_id=scan.execution_id or "",
             reason="undone",
             summary=f"operator undid the last message; forked to {child}",
-            turns=turns,
-            all_passed=False,
+            turns=scan.turn or 0,
+            verification=None,
         )
 
 

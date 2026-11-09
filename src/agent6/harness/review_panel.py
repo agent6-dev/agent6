@@ -13,7 +13,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
-from agent6 import review_records
+from agent6 import kinds, review_records
 from agent6.vcs import review
 
 ReviewBlockOn = Literal["none", "any", "model_quorum", "all"]
@@ -39,7 +39,7 @@ class ReviewContext:
         task: The run's task.
         rules: The complete base-tree rules and their sources.
         diff: The immutable delta from the run base to the chain commit.
-        verify_ok: The gate's result; None when none ran.
+        verification: The gate's result; None when none ran.
         verify_output: The gate's output.
         focus: The seat's focus text.
         prior_findings: Findings already injected, for dedup; they never re-count.
@@ -50,7 +50,7 @@ class ReviewContext:
         default_factory=review_records.ReviewRules
     )
     diff: str = ""
-    verify_ok: bool | None = None
+    verification: kinds.Verification | None = None
     verify_output: str = ""
     focus: str = ""
     prior_findings: tuple[review_records.Finding, ...] = ()
@@ -161,7 +161,7 @@ def _ground_severity(f: review_records.Finding, ctx: ReviewContext) -> review_re
     """
     if f.severity != "block":
         return f.severity
-    coherent = f.category != "verify-uncovered-correctness" or ctx.verify_ok is True
+    coherent = f.category != "verify-uncovered-correctness" or ctx.verification == "passed"
     if f.category in ALLOWED_BLOCK_CATEGORIES and coherent:
         return "block"
     return "warn"

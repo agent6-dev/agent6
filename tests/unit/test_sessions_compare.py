@@ -100,9 +100,13 @@ def _setup_run(
         },
     ]
     if status == "passed":
-        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        events.append(
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+        )
     elif status == "failed":
-        events.append({"type": "session.end", "reason": "provider_error", "all_passed": False})
+        events.append(
+            {"type": "session.stop", "reason": "provider_error", "verification": "unverified"}
+        )
     layout.logs_path.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
 
 
@@ -309,7 +313,7 @@ def test_compare_rows_and_total_format_cost_the_same_way(
 def test_compare_excludes_a_run_that_never_finished(
     repo: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run that died before session.end is dropped from a hand-picked comparison, and said so.
+    """A run that died before session.stop is dropped from a hand-picked comparison, and said so.
 
     Its truncated spend is the lowest, so mechanical ranking floated it to first place with a
     merge suggestion; the fan-out already excludes such lanes.
@@ -328,7 +332,7 @@ def test_compare_excludes_a_run_that_never_finished(
         "run-FFFF66",
         base_sha=base,
         commits=[("f.txt", "f\n", "add f")],
-        status="crashed",  # no session.end
+        status="crashed",  # no session.stop
         cost=0.01,
     )
     # A recorded-but-dead worker pid is what makes an unfinished run read "stale".
@@ -367,7 +371,7 @@ def test_compare_excludes_a_run_that_is_still_live(
         "run-HHHH88",
         base_sha=base,
         commits=[("h.txt", "h\n", "add h")],
-        status="crashed",  # no session.end...
+        status="crashed",  # no session.stop...
         cost=0.01,
     )
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-HHHH88")
@@ -759,10 +763,10 @@ def _reviewer_cfg() -> Config:
 def _two_candidates() -> list[harness_judge.CandidateBrief]:
     return [
         harness_judge.CandidateBrief(
-            session_id="run-AAAA11", task="t", diff="", verify_ok=True, cost_usd=0.1
+            session_id="run-AAAA11", task="t", diff="", verification="passed", cost_usd=0.1
         ),
         harness_judge.CandidateBrief(
-            session_id="run-BBBB22", task="t", diff="", verify_ok=True, cost_usd=0.2
+            session_id="run-BBBB22", task="t", diff="", verification="passed", cost_usd=0.2
         ),
     ]
 

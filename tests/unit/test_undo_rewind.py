@@ -218,7 +218,7 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "turns": 2, "verification": "passed"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
@@ -227,13 +227,13 @@ def test_undo_of_a_finished_run_journals_its_undone_end(
     assert result is not None
     child, _text = result
     tail = [json.loads(line) for line in layout.logs_path.read_text(encoding="utf-8").splitlines()]
-    assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.end"]
+    assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.stop"]
     assert tail[-2]["new_session_id"] == child and tail[-2]["undone_text"] == "steer 1"
     assert tail[-1]["reason"] == "undone" and tail[-1]["turns"] == 2
     scan = session_log.scan_session_log(layout.logs_path)
     assert scan.undone_to == child
     word, _detail = session_status.status_word(
-        finished=scan.finished, all_passed=scan.all_passed, end_reason=scan.end_reason
+        finished=scan.finished, verification=scan.verification, stop_reason=scan.stop_reason
     )
     assert word == "undone"
 
@@ -252,7 +252,12 @@ def test_undo_puts_back_only_the_paths_the_run_changed(
     tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "verification": "passed",
+            "tree": tree,
+        },
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     (repo / "same.txt").write_text("same\noperator note\n", encoding="utf-8")
@@ -283,7 +288,12 @@ def test_an_undo_that_leaves_every_path_says_it_put_nothing_back(
     tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "verification": "passed",
+            "tree": tree,
+        },
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     for name in ("a.txt", "gen.txt", "more.txt"):
@@ -312,7 +322,12 @@ def test_undo_puts_back_a_path_git_quotes_or_reads_as_a_glob_and_only_it(
     tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "verification": "passed",
+            "tree": tree,
+        },
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     (repo / "page1.txt").write_text("mine\n", encoding="utf-8")
@@ -338,7 +353,12 @@ def test_undo_puts_back_a_name_git_quotes_and_prints_it_on_one_line(
     tree = git_read.worktree_tree(repo, c2, {"notes.md"})
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True, "tree": tree},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "verification": "passed",
+            "tree": tree,
+        },
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     said: list[str] = []
@@ -695,7 +715,7 @@ def test_a_failed_rewind_still_journals_the_undone_end(
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="run-AAAA11")
     events = [
         {"type": "session.start", "session_id": "run-AAAA11", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "turns": 2, "verification": "passed"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
 
@@ -710,5 +730,5 @@ def test_a_failed_rewind_still_journals_the_undone_end(
     child, _text = result
     assert "was not put back" in capsys.readouterr().out
     tail = [json.loads(line) for line in layout.logs_path.read_text(encoding="utf-8").splitlines()]
-    assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.end"]
+    assert [e["type"] for e in tail[-2:]] == ["session.undone", "session.stop"]
     assert tail[-2]["new_session_id"] == child and tail[-1]["reason"] == "undone"

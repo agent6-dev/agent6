@@ -26,7 +26,7 @@ ACP carries a tool call as two messages.
 - `tool_call` (`in_progress`) when the run dispatches it, `tool_call_update` (`completed` or `failed`, with the output) when its result lands
 - a call names its tool (`name`) beside the call's title; built-in calls carry their ACP kind, and an edit result carries each journaled path as an absolute follow-along location
 - a call waiting on an approval or an `ask_user` answer is updated to `pending` while its prompt is open, and back to `in_progress` once answered
-- a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.end` is written, or when the tail ends without one (a worker killed mid-call)
+- a long verify shows as in progress while it runs; a call the run never returned from settles as `failed` when the run's `session.stop` is written, or when the tail ends without one (a worker killed mid-call)
 - `toolCallId` is `<run id>:<execution>:<call>`, unique for the life of the session; each prompt's execution numbers its calls from 1
 
 Worker text and thinking arrive as they stream; side-role output stays out of the conversation.

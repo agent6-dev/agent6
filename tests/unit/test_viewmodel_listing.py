@@ -41,9 +41,9 @@ def test_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
     )
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "original task"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         {"type": "session.resume", "steer": "do more"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     summary = listing.summarize_session_dir(tmp_path)
@@ -378,7 +378,7 @@ def test_manifest_branches_names_a_branch_only_once_it_exists(tmp_path: pathlib.
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "steer_abort"})
+        + json.dumps({"type": "session.stop", "reason": "steer_abort"})
         + "\n"
     )
     assert existing_run_branch(sessions_manifest.read_manifest(d), repo) == ""
@@ -424,11 +424,11 @@ def test_summary_reads_mode_task_and_passed(tmp_path: pathlib.Path) -> None:
             {"type": "session.start", "mode": "run", "user_task": "fix [the] bug"},
             {"type": "tool.call", "name": "read_file"},
             {"type": "budget.update", "usd_total": 0.12},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.mode, s.task_label.task, s.status, s.reason) == ("run", "fix [the] bug", "passed", "")
+    assert (s.mode, s.task_label.task, s.status, s.detail) == ("run", "fix [the] bug", "passed", "")
     assert s.cost_usd == 0.12
 
 
@@ -441,31 +441,40 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
     red_finish: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
-        {"type": "session.end", "all_passed": False, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "failed", "reason": "finish_session"},
     ]
     rd = _write_run(tmp_path, "runs", "r-red", red_finish)
-    assert summarize_session_dir(rd).verify_ok is False, "a red gate read as no-verify"
+    assert summarize_session_dir(rd).verification == "failed", "a red gate read as no-verify"
 
     green: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0},
-        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
-    assert summarize_session_dir(_write_run(tmp_path, "runs", "r-green", green)).verify_ok is True
+    assert (
+        summarize_session_dir(_write_run(tmp_path, "runs", "r-green", green)).verification
+        == "passed"
+    )
 
     gateless: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "all_passed": False, "reason": "settled"},
+        {"type": "session.stop", "verification": "not_applicable", "reason": "settled"},
     ]
-    assert summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless)).verify_ok is None
+    assert (
+        summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless)).verification
+        == "not_applicable"
+    )
 
     # A plan never runs its (inferred) gate: no verdict to claim.
     plan: list[dict[str, object]] = [
         {"type": "session.start", "mode": "plan", "user_task": "t"},
-        {"type": "session.end", "all_passed": True, "reason": "finish_planning"},
+        {"type": "session.stop", "verification": "not_applicable", "reason": "finish_planning"},
     ]
-    assert summarize_session_dir(_write_run(tmp_path, "plans", "p1", plan)).verify_ok is None
+    assert (
+        summarize_session_dir(_write_run(tmp_path, "plans", "p1", plan)).verification
+        == "not_applicable"
+    )
 
     # A prior execution's red is not this execution's: the observation is execution-scoped, like
     # the token counters (the resumed execution may never run the gate at all).
@@ -473,10 +482,10 @@ def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathl
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
         {"type": "session.resume"},
-        {"type": "session.end", "all_passed": False, "reason": "finish_session"},
+        {"type": "session.stop", "verification": None, "reason": "finish_session"},
     ]
     rd = _write_run(tmp_path, "runs", "r-executions", resumed)
-    assert summarize_session_dir(rd).verify_ok is None
+    assert summarize_session_dir(rd).verification is None
 
 
 def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: pathlib.Path) -> None:
@@ -488,17 +497,17 @@ def test_a_finish_over_a_red_gate_resumes_plainly(tmp_path: pathlib.Path) -> Non
     red: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
-        {"type": "session.end", "all_passed": False, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "unverified", "reason": "finish_session"},
     ]
     assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-red", red)) is False
     green: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
     assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-green", green)) is True
     gateless: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "all_passed": None, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "not_applicable", "reason": "finish_session"},
     ]
     assert listing.finished_needs_new_work(_write_run(tmp_path, "runs", "r-none", gateless)) is True
 
@@ -508,7 +517,7 @@ def test_a_saved_answer_is_new_work_for_a_finished_run(tmp_path: pathlib.Path) -
     green: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "a?"}]},
-        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
     rd = _write_run(tmp_path, "runs", "r-answered", green)
     assert listing.finished_needs_new_work(rd) is True
@@ -516,7 +525,7 @@ def test_a_saved_answer_is_new_work_for_a_finished_run(tmp_path: pathlib.Path) -
     assert listing.finished_needs_new_work(rd) is False
     assert (
         listing.needs_new_work(
-            finished=True, end_reason="finish_session", all_passed=True, saved_answers=1
+            finished=True, stop_reason="finish_session", verification="passed", saved_answers=1
         )
         is False
     )
@@ -525,21 +534,22 @@ def test_a_saved_answer_is_new_work_for_a_finished_run(tmp_path: pathlib.Path) -
 def test_needs_new_work_is_one_predicate_for_every_surface() -> None:
     """One predicate decides "needs new work"; resume's refusal and the wire both call it.
 
-    The web composer re-derived it without the all_passed clause.
+    The web composer re-derived it without the verification clause.
     """
     fin = "finish_session"
-    assert listing.needs_new_work(finished=True, end_reason=fin, all_passed=True) is True
+    assert listing.needs_new_work(finished=True, stop_reason=fin, verification="passed") is True
     assert (
-        listing.needs_new_work(finished=True, end_reason=fin, all_passed=None) is True
+        listing.needs_new_work(finished=True, stop_reason=fin, verification="not_applicable")
+        is True
     )  # gateless
     assert (
-        listing.needs_new_work(finished=True, end_reason=fin, all_passed=False) is False
+        listing.needs_new_work(finished=True, stop_reason=fin, verification="unverified") is False
     )  # red gate
     assert (
-        listing.needs_new_work(finished=True, end_reason="budget_exhausted", all_passed=True)
+        listing.needs_new_work(finished=True, stop_reason="budget_exhausted", verification="passed")
         is False
     )
-    assert listing.needs_new_work(finished=False, end_reason=fin, all_passed=True) is False
+    assert listing.needs_new_work(finished=False, stop_reason=fin, verification="passed") is False
 
 
 def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) -> None:
@@ -547,16 +557,16 @@ def test_a_finish_over_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) -> None
     red: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
-        {"type": "session.end", "all_passed": False, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "failed", "reason": "finish_session"},
     ]
     s = summarize_session_dir(_write_run(tmp_path, "runs", "r-red", red))
-    assert (s.status, s.reason) == ("finished", "gate red")
+    assert (s.status, s.detail) == ("finished", "gate red")
     gateless: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "all_passed": None, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "not_applicable", "reason": "finish_session"},
     ]
     s = summarize_session_dir(_write_run(tmp_path, "runs", "r-none", gateless))
-    assert (s.status, s.reason) == ("finished", "")
+    assert (s.status, s.detail) == ("finished", "")
 
 
 @pytest.mark.parametrize(
@@ -573,10 +583,14 @@ def test_implicit_clean_ends_do_not_read_as_failures(
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "verify.end", "cmd": ["pytest"], "exit_code": verify_exit},
-        {"type": "session.end", "all_passed": False, "reason": reason},
+        {
+            "type": "session.stop",
+            "verification": "failed" if verify_exit else "unverified",
+            "reason": reason,
+        },
     ]
     s = summarize_session_dir(_write_run(tmp_path, "runs", reason, events))
-    assert (s.status, s.reason) == ("finished", detail)
+    assert (s.status, s.detail) == ("finished", detail)
 
 
 def test_summary_ask_reads_answered_not_passed(tmp_path: pathlib.Path) -> None:
@@ -588,11 +602,11 @@ def test_summary_ask_reads_answered_not_passed(tmp_path: pathlib.Path) -> None:
         "a1",
         [
             {"type": "session.start", "mode": "ask", "user_task": "what does x do?"},
-            {"type": "session.end", "all_passed": True, "reason": "answered"},
+            {"type": "session.stop", "verification": "passed", "reason": "answered"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.mode, s.status, s.reason) == ("ask", "answered", "")
+    assert (s.mode, s.status, s.detail) == ("ask", "answered", "")
 
 
 def test_summary_failure_carries_its_reason(tmp_path: pathlib.Path) -> None:
@@ -603,11 +617,11 @@ def test_summary_failure_carries_its_reason(tmp_path: pathlib.Path) -> None:
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": False, "reason": "provider_error"},
+            {"type": "session.stop", "verification": "unverified", "reason": "provider_error"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.status, s.reason) == ("failed", "provider_error")
+    assert (s.status, s.detail) == ("failed", "provider_error")
 
 
 def test_summary_stop_is_not_a_failure(tmp_path: pathlib.Path) -> None:
@@ -617,7 +631,7 @@ def test_summary_stop_is_not_a_failure(tmp_path: pathlib.Path) -> None:
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": False, "reason": "steer_abort"},
+            {"type": "session.stop", "verification": "unverified", "reason": "steer_abort"},
         ],
     )
     assert summarize_session_dir(rd).status == "stopped"
@@ -632,7 +646,7 @@ def test_summary_interrupt_reads_as_stopped(tmp_path: pathlib.Path) -> None:
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": False, "reason": "interrupted"},
+            {"type": "session.stop", "verification": "unverified", "reason": "interrupted"},
         ],
     )
     assert summarize_session_dir(rd).status == "stopped"
@@ -646,7 +660,7 @@ def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: pathlib.Path) 
         "r-undone",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "reason": "undone", "all_passed": False},
+            {"type": "session.stop", "reason": "undone", "verification": "unverified"},
         ],
     )
     (rd / "manifest.json").write_text(
@@ -656,8 +670,8 @@ def test_summary_undone_reads_undone_and_never_unmerged(tmp_path: pathlib.Path) 
         encoding="utf-8",
     )
     s = summarize_session_dir(rd, branch_tips={"agent6/r": "c" * 40})
-    assert (s.status, s.reason, s.unmerged) == ("undone", "", False)
-    assert format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged) == "undone"
+    assert (s.status, s.detail, s.unmerged) == ("undone", "", False)
+    assert format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged) == "undone"
 
 
 def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> None:
@@ -679,7 +693,7 @@ def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> 
                 "mode": "run",
                 "user_task": task_text.operator_task_text(composed)[: task_text.TASK_DISPLAY_CHARS],
             },
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     stamps.write_session_manifest(
@@ -701,14 +715,14 @@ def test_summary_task_is_the_journals_operator_words(tmp_path: pathlib.Path) -> 
 
 
 def test_summary_resume_unfinishes(tmp_path: pathlib.Path) -> None:
-    """A detached resume appending past the first session.end reads running again."""
+    """A detached resume appending past the first session.stop reads running again."""
     rd = _write_run(
         tmp_path,
         "runs",
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": False, "reason": "steer_abort"},
+            {"type": "session.stop", "verification": "unverified", "reason": "steer_abort"},
             {"type": "session.resume", "turn": 2},
         ],
     )
@@ -737,7 +751,7 @@ def test_summary_unanswered_approval_reads_waiting(tmp_path: pathlib.Path) -> No
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.status, s.reason) == ("waiting", "needs answer")
+    assert (s.status, s.detail) == ("waiting", "needs answer")
     # Once answered, the run is running again (the approver appends the answer).
     with (rd / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "approval.answer", "id": "a1", "approved": true}\n')
@@ -745,7 +759,7 @@ def test_summary_unanswered_approval_reads_waiting(tmp_path: pathlib.Path) -> No
 
 
 def test_summary_dead_worker_reads_stale_at_once(tmp_path: pathlib.Path) -> None:
-    # A killed run (worker.pid points at a dead process, no session.end) must not
+    # A killed run (worker.pid points at a dead process, no session.stop) must not
     # read "running" for the whole silence window; the pid probe settles it now.
     rd = _write_run(tmp_path, "runs", "r3", [{"type": "session.start", "mode": "run"}])
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # beyond pid_max: never alive
@@ -771,7 +785,7 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123, "usd_partial": True},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     assert summarize_session_dir(rd).usd_partial is True
@@ -782,7 +796,7 @@ def test_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> None
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     assert summarize_session_dir(clean).usd_partial is False
@@ -800,7 +814,7 @@ def test_run_is_live_finished_run_with_lingering_pid_is_not_live(tmp_path: pathl
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     (rd / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -850,7 +864,7 @@ def test_summary_ask_task_comes_from_journal(tmp_path: pathlib.Path) -> None:
         "a1",
         [
             {"type": "session.start", "mode": "ask", "user_task": "what is the default port?"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     (rd / "transcript.md").write_text(
@@ -872,7 +886,7 @@ def test_summary_ask_task_is_the_question_behind_a_prior_run_block(tmp_path: pat
                 "mode": "ask",
                 "user_task": "in one line, what does __all__ do?",
             },
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     (rd / "transcript.md").write_text(
@@ -903,7 +917,7 @@ def test_summary_ask_task_is_the_question_even_when_it_starts_with_a_hash(
                 "mode": "ask",
                 "user_task": "#include <stdio.h> fails to compile, why?",
             },
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     (rd / "transcript.md").write_text(
@@ -938,31 +952,31 @@ def test_summary_torn_manifest_reads_unreadable_not_created(tmp_path: pathlib.Pa
     (rd / "manifest.json").write_text('{"mode": 5}', encoding="utf-8")
     s = summarize_session_dir(rd)
     assert s.status == "unreadable"
-    assert "\n" not in s.reason and 0 < len(s.reason) <= 60
+    assert "\n" not in s.detail and 0 < len(s.detail) <= 60
 
 
 def test_summary_plan_reads_planned_not_passed(tmp_path: pathlib.Path) -> None:
     # A plan pass ends via finish_planning (its only clean exit) with
-    # all_passed=True; it gates nothing, so it must read "planned", not "passed".
+    # verification="passed"; it gates nothing, so it must read "planned", not "passed".
     rd = _write_run(
         tmp_path,
         "runs",
         "p1",
         [
             {"type": "session.start", "mode": "plan", "user_task": "plan the refactor"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_planning"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_planning"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.mode, s.status, s.reason) == ("plan", "planned", "")
-    # A real run still reads "passed" (finish_session + all_passed) -- unchanged.
+    assert (s.mode, s.status, s.detail) == ("plan", "planned", "")
+    # A real run still reads "passed" (finish_session + verification) -- unchanged.
     rd2 = _write_run(
         tmp_path,
         "runs",
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     assert summarize_session_dir(rd2).status == "passed"
@@ -1006,7 +1020,7 @@ def test_summary_pre_start_dead_worker_says_it_died_launching(tmp_path: pathlib.
     )
     (rd / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
     s = summarize_session_dir(rd)
-    assert (s.status, s.reason) == ("stale", "died launching")
+    assert (s.status, s.detail) == ("stale", "died launching")
 
     never_launched = _write_run(tmp_path, "runs", "husk", [])
     (never_launched / "worker.pid").unlink(missing_ok=True)
@@ -1026,7 +1040,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
         [
             {"type": "session.resume", "turn": 1},
             {"type": "budget.update", "usd_total": 0.05},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     scan = session_log.scan_session_log(rd / "logs.jsonl")
@@ -1053,7 +1067,7 @@ def test_a_forks_single_execution_is_one_execution(tmp_path: pathlib.Path) -> No
 def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: pathlib.Path) -> None:
     """The scan reads `mode` off session.resume as off session.start.
 
-    A passed fork listed `verify_ok: null`, ranked below any `true` by `sessions compare`.
+    A passed fork listed `verification: null`, ranked below any `true` by `sessions compare`.
     """
     import json
 
@@ -1064,7 +1078,7 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: path
         [
             {"type": "session.resume", "mode": "run", "turn": 1},
             {"type": "verify.end", "cmd": ["pytest"], "exit_code": 0, "duration_s": 1.0},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     (rd / "manifest.json").write_text(
@@ -1073,8 +1087,8 @@ def test_a_forks_log_carries_its_mode_so_its_gate_verdict_is_read(tmp_path: path
     )
     scan = session_log.scan_session_log(rd / "logs.jsonl")
     assert scan.mode == "run"
-    assert scan.verify_verdict() is True
-    assert listing.summary_row(summarize_session_dir(rd))["verify_ok"] is True
+    assert scan.verification == "passed"
+    assert listing.summary_row(summarize_session_dir(rd))["verification"] == "passed"
 
 
 def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> None:
@@ -1088,11 +1102,11 @@ def test_summary_cost_sums_across_resume_executions(tmp_path: pathlib.Path) -> N
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.01},
             {"type": "budget.update", "usd_total": 0.02},  # execution 1 ends at $0.02
-            {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"},
+            {"type": "session.stop", "verification": "unverified", "reason": "budget_exhausted"},
             {"type": "session.resume", "turn": 3},
             {"type": "budget.update", "usd_total": 0.003},
             {"type": "budget.update", "usd_total": 0.007},  # execution 2 ends at $0.007
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     s = summarize_session_dir(rd)
@@ -1116,7 +1130,7 @@ def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path
                 "plan_consumed": 1.0,
                 "plan_cap": 2.0,
             },
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
             {"type": "session.resume", "turn": 3},
             {
                 "type": "budget.update",
@@ -1124,7 +1138,7 @@ def test_summary_plan_points_sum_across_resume_executions(tmp_path: pathlib.Path
                 "plan_consumed": 0.0,
                 "plan_cap": 2.0,
             },
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     s = summarize_session_dir(rd)
@@ -1151,7 +1165,7 @@ def test_cost_cell_keeps_points_between_a_resume_and_its_first_budget_update(
                 "plan_consumed": 1.0,
                 "plan_cap": 2.0,
             },
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
             {"type": "session.resume", "turn": 3},
         ],
     )
@@ -1196,7 +1210,7 @@ def test_summary_survives_a_valid_json_non_object_line(tmp_path: pathlib.Path) -
         + "\n"
         + "[1, 2, 3]\n"  # valid JSON, not a dict
         + '"a bare string"\n'
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -1225,7 +1239,7 @@ def test_summary_survives_a_malformed_usd_total(tmp_path: pathlib.Path) -> None:
         + "\n"
         + json.dumps({"type": "budget.update", "usd_total": False})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -1245,11 +1259,11 @@ def test_summary_gateless_settle_reads_finished_unverified(tmp_path: pathlib.Pat
         "g1",
         [
             {"type": "session.start", "mode": "run", "user_task": "build it"},
-            {"type": "session.end", "all_passed": False, "reason": "settled"},
+            {"type": "session.stop", "verification": "unverified", "reason": "settled"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.status, s.reason) == ("finished", "unverified")
+    assert (s.status, s.detail) == ("finished", "unverified")
 
 
 def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) -> None:
@@ -1261,11 +1275,11 @@ def test_summary_settle_after_a_red_gate_reads_gate_red(tmp_path: pathlib.Path) 
         [
             {"type": "session.start", "mode": "run", "user_task": "fix it"},
             {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
-            {"type": "session.end", "all_passed": False, "reason": "settled"},
+            {"type": "session.stop", "verification": "failed", "reason": "settled"},
         ],
     )
     s = summarize_session_dir(rd)
-    assert (s.status, s.reason, s.verify_ok) == ("finished", "gate red", False)
+    assert (s.status, s.detail, s.verification) == ("finished", "gate red", "failed")
 
 
 def test_summary_second_run_start_reads_running(tmp_path: pathlib.Path) -> None:
@@ -1276,7 +1290,7 @@ def test_summary_second_run_start_reads_running(tmp_path: pathlib.Path) -> None:
         "ask-repl",
         [
             {"type": "session.start", "mode": "ask", "user_task": "q"},
-            {"type": "session.end", "all_passed": True, "reason": "answered"},
+            {"type": "session.stop", "verification": "passed", "reason": "answered"},
             {"type": "session.start", "mode": "ask", "user_task": "q2"},
             {"type": "role.call", "role": "worker", "model": "m"},
         ],
@@ -1343,7 +1357,7 @@ def test_scan_counts_a_non_string_prompt_id_as_blocking(tmp_path: pathlib.Path) 
 
 
 def test_a_crashed_run_reads_dead_at_once(tmp_path: pathlib.Path) -> None:
-    """A loop that escaped with a fault records session.end reason=crashed, so every surface agrees.
+    """A loop that escaped records session.stop reason=crashed, so every surface agrees.
 
     Without it the dying process cleared worker.pid and every surface showed a dead run as
     "running" for ten minutes; a SIGKILLed run leaves its pid file and reads stale at once.
@@ -1353,19 +1367,19 @@ def test_a_crashed_run_reads_dead_at_once(tmp_path: pathlib.Path) -> None:
     (session_dir / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "crashed", "all_passed": False})
+        + json.dumps({"type": "session.stop", "reason": "crashed", "verification": "unverified"})
         + "\n",
         encoding="utf-8",
     )
     summary = summarize_session_dir(session_dir)
-    assert (summary.status, summary.reason) == ("failed", "crashed")
+    assert (summary.status, summary.detail) == ("failed", "crashed")
     assert session_is_live(session_dir) is False
 
 
 def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A gateless silent end names the missing finish call; an absent all_passed stays False.
+    """A gateless silent end names the missing finish call; an absent verification stays False.
 
     A gateless silent finish listed as "passed" for a tree nothing verified.
     """
@@ -1375,10 +1389,10 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
         "r-ungated",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "reason": "silent_finish", "all_passed": None},
+            {"type": "session.stop", "reason": "silent_finish", "verification": "not_applicable"},
         ],
     )
-    assert (summarize_session_dir(ungated).status, summarize_session_dir(ungated).reason) == (
+    assert (summarize_session_dir(ungated).status, summarize_session_dir(ungated).detail) == (
         "finished",
         "no finish call",
     )
@@ -1388,7 +1402,7 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
         "r-legacy",
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "reason": "went_quiet"},
+            {"type": "session.stop", "reason": "went_quiet"},
         ],
     )
     assert summarize_session_dir(legacy).status == "failed"
@@ -1400,10 +1414,10 @@ def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int 
         mode="run",
         task_label=session_status.TaskLabel("t"),
         status="passed",
-        reason="",
+        detail="",
         cost_usd=0.0,
         usd_partial=False,
-        mtime=mtime,
+        last_activity=mtime,
         coordinator=coordinator,
         lane=lane,
     )
@@ -1436,9 +1450,9 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
         ("gone-l1", []),
         ("fan", [("fan-l1", [("fan-l1-p1-l1", [])]), ("fan-l2", [])]),
     ]
-    assert [r.mtime for r in rows] == [50.0, 40.0, 35.0]
+    assert [r.group_last_activity for r in rows] == [50.0, 40.0, 35.0]
     fan = listing.row_json(rows[2], winners={"fan-l2"})
-    assert fan["mtime"] == 35.0  # the group's latest activity, as the row sorts
+    assert fan.get("group_last_activity") == 35.0  # the group's latest activity, as the row sorts
     lanes: Any = fan["lanes"]
     assert [ln["session_id"] for ln in lanes] == ["fan-l1", "fan-l2"]
     assert lanes[1]["winner"] is True and lanes[1]["lane"] == 2
@@ -1529,14 +1543,14 @@ def test_summary_names_the_questions_nobody_answered(tmp_path: pathlib.Path) -> 
                 "source": "frontend",
                 "unseen": False,
             },
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
 
     (rd / "worker.pid").unlink()
     assert session_log.scan_session_log(rd / "logs.jsonl").unattended_questions == 1
     s = summarize_session_dir(rd)
-    assert (s.status, s.reason) == ("passed", "1 question unanswered")
+    assert (s.status, s.detail) == ("passed", "1 question unanswered")
 
 
 def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> None:
@@ -1559,15 +1573,15 @@ def test_a_resume_starts_the_unanswered_count_again(tmp_path: pathlib.Path) -> N
                 "source": "headless-default",
                 "unseen": True,
             },
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {"type": "session.resume", "turn": 3},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     (rd / "worker.pid").unlink()
     assert session_log.scan_session_log(rd / "logs.jsonl").unattended_questions == 0
     s = summarize_session_dir(rd)
-    assert (s.status, s.reason) == ("passed", "")
+    assert (s.status, s.detail) == ("passed", "")
 
 
 def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: pathlib.Path) -> None:
@@ -1595,23 +1609,29 @@ def test_summary_keeps_the_unanswered_count_beside_another_reason(tmp_path: path
             tmp_path,
             "runs",
             reason,
-            [*asked, {"type": "session.end", "reason": reason, "all_passed": False}],
+            [*asked, {"type": "session.stop", "reason": reason, "verification": "unverified"}],
         )
         (rd / "worker.pid").unlink()
         s = summarize_session_dir(rd)
-        assert (s.status, s.reason) == expected
+        assert (s.status, s.detail) == expected
 
 
 def test_a_timed_out_gate_reads_gate_timed_out_beside_gate_red_and_unverified() -> None:
     """A finish over a gate that ran out its timeout read "finished · gate red"."""
     for reason in ("finish_session", "silent_finish", "settled"):
         assert session_status.status_word(
-            finished=True, all_passed=False, end_reason=reason, gate_red=True, gate_timed_out=True
+            finished=True,
+            verification="failed",
+            stop_reason=reason,
+            gate_red=True,
+            gate_timed_out=True,
         ) == ("finished", "gate timed out")
         assert session_status.status_word(
-            finished=True, all_passed=False, end_reason=reason, gate_red=True
+            finished=True, verification="failed", stop_reason=reason, gate_red=True
         ) == ("finished", "gate red")
-        assert session_status.status_word(finished=True, all_passed=False, end_reason=reason) == (
+        assert session_status.status_word(
+            finished=True, verification="unverified", stop_reason=reason
+        ) == (
             "finished",
             "unverified",
         )
@@ -1621,25 +1641,25 @@ def test_the_three_finishes_over_a_red_gate_share_a_word() -> None:
     """A finish_session over a red gate is "finished" whatever the worker said about the gate."""
     for reason in ("finish_session", "gate_red_at_base", "gate_stale"):
         word, _detail = session_status.status_word(
-            finished=True, all_passed=False, gate_red=True, end_reason=reason
+            finished=True, verification="unverified", gate_red=True, stop_reason=reason
         )
         assert word == "finished", reason
 
 
 def test_the_scan_reads_the_gates_word_and_tolerates_its_absence(tmp_path: pathlib.Path) -> None:
-    """The scan folds `session.end.verified`; a log written without it folds ""."""
+    """The scan preserves the final word and clears it when another execution starts."""
     log = tmp_path / "logs.jsonl"
     start = {"type": "session.start", "mode": "run", "user_task": "t"}
-    end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
+    end = {"type": "session.stop", "reason": "steer_abort"}
     log.write_text(json.dumps(start) + "\n" + json.dumps(end) + "\n", encoding="utf-8")
-    assert session_log.scan_session_log(log).verified == ""
-    worded = {**end, "verified": "unverified"}
+    assert session_log.scan_session_log(log).verification is None
+    worded = {**end, "verification": "unverified"}
     log.write_text(json.dumps(start) + "\n" + json.dumps(worded) + "\n", encoding="utf-8")
-    assert session_log.scan_session_log(log).verified == "unverified"
+    assert session_log.scan_session_log(log).verification == "unverified"
     # A later execution has not ended, so it has no word yet.
     resumed = [start, worded, {"type": "session.resume", "mode": "run"}]
     log.write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
-    assert session_log.scan_session_log(log).verified == ""
+    assert session_log.scan_session_log(log).verification is None
 
 
 def test_the_scan_names_the_fork_an_undo_continues_as(tmp_path: pathlib.Path) -> None:
@@ -1648,11 +1668,11 @@ def test_the_scan_names_the_fork_an_undo_continues_as(tmp_path: pathlib.Path) ->
     events = [
         {"type": "session.start", "session_id": "src-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.undone", "new_session_id": "child-BBBB22", "undone_text": "again"},
-        {"type": "session.end", "reason": "undone", "turns": 3, "all_passed": False},
+        {"type": "session.stop", "reason": "undone", "turns": 3, "verification": "unverified"},
     ]
     log.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     scan = session_log.scan_session_log(log)
-    assert (scan.end_reason, scan.undone_to) == ("undone", "child-BBBB22")
+    assert (scan.stop_reason, scan.undone_to) == ("undone", "child-BBBB22")
     assert listing.undone_refusal("src-AAAA11", scan.undone_to) == (
         "run 'src-AAAA11' was taken back by /undo; its continuation is child-BBBB22:\n"
         '    agent6 resume child-BBBB22 --steer "<the message, edited>"'
@@ -1673,22 +1693,24 @@ def test_branch_facts_name_a_forks_worktree(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("end_reason", "detail"),
+    ("stop_reason", "detail"),
     [
         ("verify_settled", "settled · not committed"),
         ("silent_finish", "no finish call · not committed"),
         ("metric_plateau", "metric plateau · not committed"),
     ],
 )
-def test_a_stranded_harness_end_says_not_committed(end_reason: str, detail: str) -> None:
+def test_a_stranded_harness_end_says_not_committed(stop_reason: str, detail: str) -> None:
     """These ends exit 5 when no commit holds the edits; the label said nothing of it."""
     assert session_status.status_word(
-        finished=True, all_passed=True, end_reason=end_reason, stranded=True
+        finished=True, verification="passed", stop_reason=stop_reason, stranded=True
     ) == (
         "finished",
         detail,
     )
-    assert session_status.status_word(finished=True, all_passed=True, end_reason=end_reason) == (
+    assert session_status.status_word(
+        finished=True, verification="passed", stop_reason=stop_reason
+    ) == (
         "finished",
         detail.removesuffix(" · not committed"),
     )
@@ -1710,7 +1732,7 @@ def test_unsteered_resume_keeps_one_task_line(tmp_path: pathlib.Path, task: str)
     )
     journal = [
         {"type": "session.start", "mode": "run", "user_task": task[: task_text.TASK_DISPLAY_CHARS]},
-        {"type": "session.end"},
+        {"type": "session.stop"},
         {"type": "session.resume"},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
@@ -1774,9 +1796,9 @@ def test_ask_repl_questions_are_not_continuations(tmp_path: pathlib.Path) -> Non
 
     journal = [
         {"type": "session.start", "mode": "ask", "user_task": "first question"},
-        {"type": "session.end", "all_passed": True},
+        {"type": "session.stop", "verification": "passed"},
         {"type": "session.start", "mode": "ask", "user_task": "second question"},
-        {"type": "session.end", "all_passed": True},
+        {"type": "session.stop", "verification": "passed"},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     (tmp_path / "manifest.json").write_text(
@@ -1816,9 +1838,9 @@ def test_unsteered_resume_clears_previous_continuation(tmp_path: pathlib.Path) -
 
     journal = [
         {"type": "session.start", "user_task": "original"},
-        {"type": "session.end", "all_passed": True},
+        {"type": "session.stop", "verification": "passed"},
         {"type": "session.resume", "user_task": "original", "steer": "follow up"},
-        {"type": "session.end", "all_passed": True},
+        {"type": "session.stop", "verification": "passed"},
         {"type": "session.resume", "user_task": "follow up", "steer": ""},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
@@ -1863,13 +1885,18 @@ def test_a_plan_reading_carries_its_own_time(tmp_path: pathlib.Path) -> None:
 def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
     tmp_path: pathlib.Path,
 ) -> None:
-    """A `session.end` stamped `iterations`, and events stamped `iteration`, still give the turn."""
+    """A stop stamped `iterations`, and events stamped `iteration`, still give the turn."""
     from agent6.viewmodel import session_log
 
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "loop.tool.call", "name": "read_file", "iteration": 4},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True, "iterations": 7},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "verification": "passed",
+            "iterations": 7,
+        },
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     assert session_log.scan_session_log(tmp_path / "logs.jsonl").turn == 7

@@ -255,7 +255,7 @@ def test_resumed_execution_reuses_prompt_ids_and_is_still_answered(
         {"type": "approval.answer", "id": "approval-1", "approved": True},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "q?"}]},
         {"type": "question.answer", "id": "question-1", "answers": ["x"]},
-        {"type": "session.end", "reason": "steer_abort"},
+        {"type": "session.stop", "reason": "steer_abort"},
     ]
     _write_log(log, leg1)
     fe = plan_watch._CliFrontEnd(tmp_path, _view())  # pyright: ignore[reportPrivateUsage]
@@ -475,7 +475,7 @@ def test_a_prompt_whose_execution_ended_takes_no_answer(
     log = tmp_path / "logs.jsonl"
 
     def _late_yes(_prompt: str, *, standing: bool = True, until: object = None) -> str:
-        _append_log(log, {"type": "session.end", "reason": "steer_abort"})
+        _append_log(log, {"type": "session.stop", "reason": "steer_abort"})
         _append_log(log, {"type": "session.resume", "turn": 2})
         _append_log(log, {"type": "approval.prompt", "id": "approval-1", "prompt": "rm -rf x"})
         return "yes"
@@ -509,7 +509,7 @@ def test_an_older_executions_answer_does_not_close_the_new_prompt(
             {"type": "session.start"},
             {"type": "approval.prompt", "id": "approval-1", "prompt": "execution 1 ok?"},
             {"type": "approval.answer", "id": "approval-1", "approved": False, "source": "stdin"},
-            {"type": "session.end", "reason": "steer_abort"},
+            {"type": "session.stop", "reason": "steer_abort"},
             {"type": "session.resume", "turn": 2},
             {"type": "approval.prompt", "id": "approval-1", "prompt": "execution 2 ok?"},
         ],
@@ -600,7 +600,7 @@ def test_attach_follows_on_after_a_prompt_answered_elsewhere(tmp_path: pathlib.P
                     json.dumps(event) + "\n"
                     for event in (
                         {**_OPEN_APPROVAL, "type": "approval.answer", "source": "frontend"},
-                        {"type": "session.end", "reason": "steer_abort"},
+                        {"type": "session.stop", "reason": "steer_abort"},
                         {"type": "session.resume", "turn": 2},
                         {**_OPEN_APPROVAL, "prompt": "Allow run_command: second"},
                     )
@@ -616,7 +616,9 @@ def test_attach_follows_on_after_a_prompt_answered_elsewhere(tmp_path: pathlib.P
             time.sleep(0.05)
         assert slot.exists(), "the resumed execution's prompt was dropped as answered"
         assert slot.read_text(encoding="utf-8") == "yes"
-        _append_log(log, {"type": "session.end", "reason": "finish_session", "all_passed": True})
+        _append_log(
+            log, {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+        )
         _read_pty(master, b"\x00", seconds=5.0)  # drain to the child's exit
         assert _reap(pid) == 0
     finally:

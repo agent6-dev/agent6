@@ -70,7 +70,9 @@ def session_exit_code(
     if result.reason in session_status.OPERATOR_STOPS:
         return EXIT_OPERATOR_STOP
     if result.completed:
-        if result.verified == "failed" or (result.verified == "unverified" and harness_gate):
+        if result.verification == "failed" or (
+            result.verification == "unverified" and harness_gate
+        ):
             return EXIT_VERIFY_FAILED
         return EXIT_NO_COMMIT_LANDED if stranded else 0
     if result.reason == "budget_exhausted":
@@ -133,7 +135,7 @@ def auto_merge_eligible(result: loop_snapshot.SessionResult) -> bool:
     return (
         result.completed
         and result.reason == "finish_session"
-        and result.verified in ("passed", "not_applicable")
+        and result.verification in ("passed", "not_applicable")
     )
 
 
@@ -207,7 +209,7 @@ def _print_red_gate(
         layout: The session's layout.
         reporter: Receives the lines.
     """
-    if result.verified != "failed" or result.reason == "gate_red_at_base":
+    if result.verification != "failed" or result.reason == "gate_red_at_base":
         return
     scan = scan_session_log(layout.logs_path)
     if limit := scan.verify_timeout_s:
@@ -271,7 +273,7 @@ def _print_unverified(
         cwd: The checkout.
         reporter: Receives the lines.
     """
-    if result.verified != "unverified":
+    if result.verification != "unverified":
         return
     chain = git_read.chain_ref_for(layout.session_id)
     if not result.completed and git_read.chain_tip(cwd, chain) is None:
@@ -299,7 +301,7 @@ def _print_stale_gate(
         result: The session's result.
         reporter: Receives the lines.
     """
-    if not result.stale_gate or result.verified not in ("failed", "unverified"):
+    if not result.stale_gate or result.verification not in ("failed", "unverified"):
         return
     reporter.out("\nthe worker says this run's verify gate no longer matches the task:")
     note = " ".join(result.stale_gate.split())
@@ -375,7 +377,7 @@ def print_session_end(
     """
     # The outcome comes from the fold `agent6 sessions` reads, so the two cannot diverge.
     summary = summarize_session_dir(layout.session_dir)
-    word, reason = summary.status, summary.reason
+    word, reason = summary.status, summary.detail
     if not console_stream:
         # Headless: this block is the only end output.
         headline = format.status_label(word, reason)
@@ -962,7 +964,7 @@ def fire_notify_hook(
     session_dir: pathlib.Path,
     ok: bool,
     reason: str,
-    verified: str,
+    verification: str,
     reporter: app_reporter.Reporter,
 ) -> None:
     """Run the `[notify].on_complete` hook, when one is configured.
@@ -973,7 +975,7 @@ def fire_notify_hook(
         session_dir: The session's directory.
         ok: Whether the agent stopped deliberately.
         reason: The end reason.
-        verified: What the gate said: passed, failed or not_applicable.
+        verification: What the gate said: passed, failed or not_applicable.
         reporter: Receives a failure note.
     """
     if not notify.on_complete:
@@ -982,7 +984,7 @@ def fire_notify_hook(
         AGENT6_SESSION_ID=session_id,
         # A hook that wants "green" reads VERIFIED: OK is true over a red verify too.
         AGENT6_SESSION_OK="1" if ok else "0",
-        AGENT6_SESSION_VERIFIED=verified,
+        AGENT6_SESSION_VERIFIED=verification,
         AGENT6_SESSION_REASON=reason,
         AGENT6_SESSION_DIR=str(session_dir),
     )

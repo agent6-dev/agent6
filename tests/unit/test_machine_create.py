@@ -457,11 +457,11 @@ def test_create_writes_watchable_event_log(
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
     assert events[0]["type"] == "session.start"
     assert events[0]["user_task"] == "Greet the user"  # the dashboard header
-    end = next(e for e in events if e["type"] == "session.end")
-    # session.end carries reason, turns (authoring attempts) and all_passed.
-    assert {"reason", "turns", "all_passed"} <= end.keys()
+    end = next(e for e in events if e["type"] == "session.stop")
+    # session.stop carries reason, turns (authoring attempts) and verification.
+    assert {"reason", "turns", "verification"} <= end.keys()
     assert end["turns"] == 1
-    assert end["all_passed"] is True
+    assert end["verification"] == "passed"
 
 
 def test_create_logs_the_cumulative_spend_across_attempts(
@@ -664,8 +664,8 @@ def test_create_collision_refusal_ends_the_watchable_log_as_failed(
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
-    end = next(e for e in events if e["type"] == "session.end")
-    assert end["all_passed"] is False
+    end = next(e for e in events if e["type"] == "session.stop")
+    assert end["verification"] == "unverified"
     assert end["reason"] == "output_collision"
 
 
@@ -697,8 +697,8 @@ def test_create_write_failure_ends_the_watchable_log_as_failed(
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     assert len(logs) == 1
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
-    end = next(e for e in events if e["type"] == "session.end")
-    assert end["all_passed"] is False
+    end = next(e for e in events if e["type"] == "session.stop")
+    assert end["verification"] == "unverified"
     assert end["reason"] == "write_failed"
 
 
@@ -1022,7 +1022,7 @@ def test_create_attempts_share_one_budget_ledger(
     assert "no valid machine after 2 attempt(s)" in err
     logs = next((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     events = [json.loads(line) for line in logs.read_text(encoding="utf-8").splitlines()]
-    end = next(e for e in events if e["type"] == "session.end")
+    end = next(e for e in events if e["type"] == "session.stop")
     assert end["turns"] == 2
 
 
@@ -1271,7 +1271,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     assert (res.input_tokens, res.output_tokens) == (66084, 838)
 
 
-def test_create_failure_end_reason_names_the_failure(
+def test_create_failure_stop_reason_names_the_failure(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A create that never produced a valid machine folds to ("failed", reason)."""
@@ -1286,13 +1286,13 @@ def test_create_failure_end_reason_names_the_failure(
 
     logs = list((tmp_path / "state").glob("**/sessions/machines/*/logs.jsonl"))
     events = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
-    end = next(e for e in events if e["type"] == "session.end")
-    assert end["all_passed"] is False
+    end = next(e for e in events if e["type"] == "session.stop")
+    assert end["verification"] == "unverified"
     word, detail = session_status.status_word(
-        finished=True, all_passed=False, end_reason=end["reason"]
+        finished=True, verification="unverified", stop_reason=end["reason"]
     )
     assert word == "failed"
-    assert " " not in detail  # a token, like every other session.end reason
+    assert " " not in detail  # a token, like every other session.stop reason
     assert "finished" not in detail  # never success prose under a failed status
 
 

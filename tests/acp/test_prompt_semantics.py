@@ -93,7 +93,7 @@ def test_prompt_follows_an_undo_continuation(
     child = test_session_lifecycle._record(cwd, "run-BBBBBB", "task", mtime=2)
     with (parent / "logs.jsonl").open("a") as log:
         log.write(json.dumps({"type": "session.undone", "new_session_id": child.name}) + "\n")
-        log.write(json.dumps({"type": "session.end", "reason": "undone"}) + "\n")
+        log.write(json.dumps({"type": "session.stop", "reason": "undone"}) + "\n")
     current = session.Session(acp_id=parent.name, cwd=cwd, session_id=parent.name)
     resumed: list[str] = []
 

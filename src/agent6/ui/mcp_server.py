@@ -475,10 +475,8 @@ class MCPServer:
 
         def entry(row: listing.ListingRow) -> dict[str, Any]:
             # The row every hub shows, plus the manifest for the lineage fields it omits.
-            out: dict[str, Any] = listing.summary_row(
-                row.summary, lanes=[entry(lane) for lane in row.lanes]
-            )
-            out["mtime"] = row.mtime
+            out: dict[str, Any] = dict(listing.row_json(row, winners=set()))
+            out["lanes"] = [entry(lane) for lane in row.lanes]
             with contextlib.suppress(manifest.ManifestError):
                 out["manifest"] = manifest.read_manifest(dirs[row.summary.session_id]).model_dump(
                     mode="json"

@@ -25,7 +25,9 @@ def _answered_ask(root: pathlib.Path, name: str, answer: str) -> pathlib.Path:
             [
                 json.dumps({"type": "session.start", "user_task": "q"}),
                 json.dumps({"type": "role.result", "text": answer}),
-                json.dumps({"type": "session.end", "reason": "answered", "all_passed": True}),
+                json.dumps(
+                    {"type": "session.stop", "reason": "answered", "verification": "passed"}
+                ),
             ]
         )
         + "\n",

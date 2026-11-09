@@ -419,7 +419,7 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
         state = self._host.state
         if self._approval is not None:
             aid = self._approval[0]
-            answered = next((a for a in state.pending_approvals if a.id == aid), None)
+            answered = next((a for a in state.approvals if a.id == aid), None)
             if answered is not None and answered.answered:
                 self._note_answered("allowed" if answered.approved else "denied")
         return self.open_approval(state)

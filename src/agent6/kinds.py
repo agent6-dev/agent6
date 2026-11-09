@@ -13,6 +13,9 @@ import hashlib
 import pathlib
 from typing import Literal
 
+# The gate's word at the end: `failed` is an observed red, `unverified` a tree no verdict covers.
+Verification = Literal["passed", "failed", "unverified", "not_applicable"]
+
 TernaryMode = Literal["deny", "ask", "allow"]
 # `none` runs commands as plain subprocesses: a host with no confinement, or an operator opt-out.
 IsolationLevel = Literal["full", "partial", "none"]

@@ -247,7 +247,7 @@ function paintPrompts(cards, s) {
   const build = {};
   // One box: the approval the run will take an answer to (the server's
   // open_approval_of; an answer to any other is refused as no longer open).
-  for (const ap of (s.pending_approvals || [])) {
+  for (const ap of (s.approvals || [])) {
     if (ap.answered || ap.id !== s.open_approval) continue;
     build[pfx + 'ap:' + ap.id] = () => {
       const box = el('div', 'prompt-box');
@@ -278,7 +278,7 @@ function paintPrompts(cards, s) {
       return box;
     };
   }
-  for (const q of (s.pending_questions || [])) {
+  for (const q of (s.questions || [])) {
     if (q.answered) continue;
     build[pfx + 'q:' + q.id] = () => {
       // One or more related questions answered together; option buttons fill that
@@ -406,7 +406,7 @@ function paintRun(cards, s) {
   // a "stale" header could only manufacture a red toast.
   const isDead = notLive(s);
   // A dead run's approvals are gone with its execution; its questions stay answerable.
-  if (!cards._readOnly) paintPrompts(cards, isDead ? { pending_questions: s.pending_questions, finished: true } : s);
+  if (!cards._readOnly) paintPrompts(cards, isDead ? { questions: s.questions, finished: true } : s);
   if (cards._live_btns) for (const b of cards._live_btns) b.disabled = isDead;
   if (cards._rm_btn) {
     cards._rm_btn.disabled = !isDead;
@@ -450,7 +450,7 @@ function paintRun(cards, s) {
   // The harness's end sentence (a stop, a failure, a guard); an end the model wrote
   // itself is the conversation's last line, beside this panel.
   const modelEnds = ['answered', 'finish_planning', 'finish_session', 'silent_finish'];
-  if (s.finished && s.end_summary && !modelEnds.includes(s.end_reason)) add('ended', s.end_summary);
+  if (s.finished && s.end_summary && !modelEnds.includes(s.stop_reason)) add('ended', s.end_summary);
   // Where the run's work lives and where Merge lands: consecutive spawns chain
   // branches, which is invisible without this line.
   if (s.forked_from) add('forked from', s.forked_from);

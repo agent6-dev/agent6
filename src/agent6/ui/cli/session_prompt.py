@@ -49,7 +49,7 @@ def follow_up_on_offer(session_dir: pathlib.Path) -> bool:
         operator closed); each printed its own line.
     """
     scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
-    return scan.finished and scan.end_reason not in ("undone", "steer_exit")
+    return scan.finished and scan.stop_reason not in ("undone", "steer_exit")
 
 
 def end_of_session_prompt(

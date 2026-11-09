@@ -337,7 +337,7 @@ def test_answer_reaches_a_detached_resumes_start_gate(
     layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")

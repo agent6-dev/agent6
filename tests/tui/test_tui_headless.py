@@ -568,9 +568,9 @@ def test_a_submit_on_a_question_answered_elsewhere_writes_nothing(tmp_path: path
     )
     question = QuestionPrompt(id="question-1", questions=(Question("Which?"),))
     fold = state.initial_state()
-    dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(question,)))
+    dispatcher.dispatch(tmp_path, dataclasses.replace(fold, questions=(question,)))
     closed = dataclasses.replace(question, answered=True)
-    dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(closed,)))
+    dispatcher.dispatch(tmp_path, dataclasses.replace(fold, questions=(closed,)))
 
     callbacks[0](("late",))
 
@@ -595,13 +595,13 @@ def test_a_covered_modal_whose_question_closed_elsewhere_goes_when_uncovered(
             dispatcher = prompts.PromptDispatcher(app, answerable=lambda: True, lost="lost")
             question = QuestionPrompt(id="question-1", questions=(Question("Which?"),))
             fold = state.initial_state()
-            dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(question,)))
+            dispatcher.dispatch(tmp_path, dataclasses.replace(fold, questions=(question,)))
             await pilot.pause()
             assert isinstance(app.screen, modals.QuestionModal)
             app.push_screen(textual_screen.Screen())
             await pilot.pause()
             closed = dataclasses.replace(question, answered=True)
-            dispatcher.dispatch(tmp_path, dataclasses.replace(fold, pending_questions=(closed,)))
+            dispatcher.dispatch(tmp_path, dataclasses.replace(fold, questions=(closed,)))
             await pilot.pause()
             assert not isinstance(app.screen, modals.QuestionModal)  # the cover stays on top
             app.pop_screen()
@@ -919,7 +919,7 @@ def test_finished_run_bar_resumes_with_the_instruction(
             json.dumps(e) + "\n"
             for e in (
                 _ev(type="session.start", user_task="x", mode="run"),
-                _ev(type="session.end", reason="completed", all_passed=True),
+                _ev(type="session.stop", reason="completed", verification="passed"),
             )
         ),
         encoding="utf-8",
@@ -934,7 +934,7 @@ def test_finished_run_bar_resumes_with_the_instruction(
                     break
             await pilot.pause()
             bar = app._conv.query_one("#conv-input", composer.SteerInput)
-            assert bar.display  # the primary view keeps the bar after session.end
+            assert bar.display  # the primary view keeps the bar after session.stop
             assert bar.border_title == "continue this session"  # relabelled for resume
             bar.post_message(composer.SteerInput.Submitted("also add tests"))
             await pilot.pause()
@@ -950,7 +950,7 @@ def test_end_hold_follows_the_resumed_execution(tmp_path: pathlib.Path, monkeypa
     """Continuing from the foreground run's end hold keeps the same view live."""
     events = (
         _ev(type="session.start", user_task="finish the parser", mode="run"),
-        _ev(type="session.end", reason="finish_session", all_passed=True),
+        _ev(type="session.stop", reason="finish_session", verification="passed"),
     )
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(event) + "\n" for event in events), encoding="utf-8"
@@ -1112,7 +1112,7 @@ def test_a_typed_stop_is_the_one_stop(
 
     async def finished() -> None:
         (tmp_path / "logs.jsonl").write_text(
-            json.dumps(_ev(type="session.end", reason="finish_session")) + "\n",
+            json.dumps(_ev(type="session.stop", reason="finish_session")) + "\n",
             encoding="utf-8",
         )
         app = tui_app.Agent6TUI(tmp_path)
@@ -1322,7 +1322,7 @@ def test_compact_now_drops_the_marker_for_a_live_run(tmp_path: pathlib.Path) -> 
             assert ipc.read_compact_request(tmp_path) is not None  # marker dropped for the run
             # A finished run: the action refuses instead of dropping a marker.
             (tmp_path / "compact.request").unlink()
-            app._handle_event(_ev(type="session.end", reason="completed", all_passed=True))
+            app._handle_event(_ev(type="session.stop", reason="completed", verification="passed"))
             app.action_compact()
             await pilot.pause()
             assert ipc.read_compact_request(tmp_path) is None
@@ -1572,7 +1572,7 @@ def test_conversation_is_the_primary_view(tmp_path: pathlib.Path) -> None:
 def test_dashboard_detects_a_dead_worker_and_tells_the_truth(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
-    """A worker killed without a session.end reads stale, and the composer routes to resume.
+    """A worker killed without a session.stop reads stale, and the composer routes to resume.
 
     The heartbeat probe flips the dir status; without it the dashboard spun "working…" forever,
     accepted steer with a toast and refused resume, the one correct action.
@@ -1950,7 +1950,9 @@ def test_the_dashboard_header_leads_with_the_status_and_never_wraps(tmp_path: pa
             model = "moonshotai/kimi-k2.7-code-20260612-with-a-very-long-suffix"
             app._handle_event(_ev(type="session.start", user_task="t " * 80, mode="run"))
             app._handle_event(_ev(type="role.call", role="worker", model=model, provider="p"))
-            app._handle_event(_ev(type="session.end", all_passed=False, reason="max_turns"))
+            app._handle_event(
+                _ev(type="session.stop", verification="unverified", reason="max_turns")
+            )
             app._tick()
             await pilot.pause()
             await pilot.pause()
@@ -2011,7 +2013,7 @@ def test_the_compact_summary_counts_the_runs_tool_calls_not_the_window(
     events += [
         _ev(type="tool.call", name="finish_session", args={"summary": "Read it all."}),
         _ev(type="tool.result", name="finish_session", ok=True, summary="finish_session"),
-        _ev(type="session.end", all_passed=True, reason="finish_session"),
+        _ev(type="session.stop", verification="passed", reason="finish_session"),
     ]
     (tmp_path / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"

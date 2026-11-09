@@ -64,7 +64,7 @@ class _MergePlan:
 def _not_mergeable_now(layout: sessions_layout.SessionLayout, session_id: str) -> str:
     """Return why the run's work is not for merging: a live worker, or an `/undo` took it back.
 
-    The raw pid, not session_is_live: after session.end the finalizer may still be at work.
+    The raw pid, not session_is_live: after session.stop the finalizer may still be at work.
 
     Args:
         layout: The run.
@@ -81,7 +81,7 @@ def _not_mergeable_now(layout: sessions_layout.SessionLayout, session_id: str) -
             f"    agent6 stop {session_id}"
         )
     scan = scan_session_log(layout.logs_path)
-    if scan.finished and scan.end_reason == "undone":
+    if scan.finished and scan.stop_reason == "undone":
         return listing.undone_refusal(session_id, scan.undone_to)
     return ""
 

@@ -133,7 +133,7 @@ def _verification(scan: session_log.LogScan, mode: str) -> tuple[str, bool]:
     if mode != "run":
         return "not_applicable", False
     word = scan.gate_word() or "unverified"
-    if scan.verified != "passed":
+    if scan.verification != "passed":
         return word, False
     final = next(
         (v for v in scan.verifications if v.verify_id and v.verify_id == scan.final_verify_id),
@@ -231,7 +231,7 @@ def _classify(
         )
     if ended_run and not facts.fanout and not full_pass:
         reason = f"gate {gate}"
-        if scan.end_reason == "gate_red_at_base":
+        if scan.stop_reason == "gate_red_at_base":
             reason = "gate red at base"
         elif gate == "not_applicable":
             reason = "gate not configured"

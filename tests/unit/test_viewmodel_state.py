@@ -51,17 +51,17 @@ def test_the_wire_carries_needs_new_work_from_the_one_predicate() -> None:
     """
     start = {"type": "session.start", "user_task": "t"}
 
-    def ended(all_passed: bool | None) -> dict[str, object]:
-        end = {"type": "session.end", "reason": "finish_session", "all_passed": all_passed}
+    def ended(verification: str | None) -> dict[str, object]:
+        end = {"type": "session.stop", "reason": "finish_session", "verification": verification}
         return session_state_as_dict(
             viewmodel_state.apply_event(
                 viewmodel_state.apply_event(viewmodel_state.initial_state(), start), end
             )
         )
 
-    assert ended(False)["needs_new_work"] is False
-    assert ended(True)["needs_new_work"] is True
-    assert ended(None)["needs_new_work"] is True
+    assert ended("failed")["needs_new_work"] is False
+    assert ended("passed")["needs_new_work"] is True
+    assert ended("not_applicable")["needs_new_work"] is True
     assert (
         session_state_as_dict(viewmodel_state.apply_event(viewmodel_state.initial_state(), start))[
             "needs_new_work"
@@ -76,7 +76,7 @@ def test_end_summary_reaches_the_wire_and_clears_on_resume() -> None:
     s = viewmodel_state.fold_session(
         [
             {"type": "session.start", "mode": "run"},
-            {"type": "session.end", "reason": "steer_abort", "summary": summary},
+            {"type": "session.stop", "reason": "steer_abort", "summary": summary},
         ]
     )
     assert session_state_as_dict(s)["end_summary"] == summary
@@ -424,7 +424,7 @@ def test_budget_usd_cumulative_across_resume_executions() -> None:
 
     s = viewmodel_state.apply_event(viewmodel_state.initial_state(), _update(0.02, partial=True))
     s = viewmodel_state.apply_event(
-        s, {"type": "session.end", "reason": "finish_session", "all_passed": True}
+        s, {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     # Banked, and the header keeps the old total until the new execution reports.
@@ -466,13 +466,13 @@ def test_approval_prompt_then_answer() -> None:
         viewmodel_state.initial_state(),
         {"type": "approval.prompt", "id": "a001", "prompt": "Allow run_command?"},
     )
-    assert len(s.pending_approvals) == 1
-    assert s.pending_approvals[0] == ApprovalPrompt(id="a001", prompt="Allow run_command?")
-    assert s.pending_approvals[0].head == "Allow run_command?"
-    assert s.pending_approvals[0].payload == ""
+    assert len(s.approvals) == 1
+    assert s.approvals[0] == ApprovalPrompt(id="a001", prompt="Allow run_command?")
+    assert s.approvals[0].head == "Allow run_command?"
+    assert s.approvals[0].payload == ""
     s = viewmodel_state.apply_event(s, {"type": "approval.answer", "id": "a001", "approved": True})
-    assert s.pending_approvals[0].answered is True
-    assert s.pending_approvals[0].approved is True
+    assert s.approvals[0].answered is True
+    assert s.approvals[0].approved is True
 
 
 def test_diff_updated_stores_latest_patch() -> None:
@@ -488,10 +488,10 @@ def test_diff_updated_stores_latest_patch() -> None:
 
 def test_run_end_marks_finished() -> None:
     s = viewmodel_state.apply_event(
-        viewmodel_state.initial_state(), {"type": "session.end", "all_passed": True}
+        viewmodel_state.initial_state(), {"type": "session.stop", "verification": "passed"}
     )
     assert s.finished is True
-    assert s.all_passed is True
+    assert s.verification == "passed"
 
 
 def test_unknown_event_type_still_appends_to_log() -> None:
@@ -532,13 +532,13 @@ def test_full_run_trace_replay() -> None:
             "output_cap": 1000,
         },
         {"type": "diff.updated", "sha": "abc", "patch": "+ added"},
-        {"type": "session.end", "all_passed": False},
+        {"type": "session.stop", "verification": "unverified"},
     ]
     s = viewmodel_state.initial_state()
     for e in events:
         s = viewmodel_state.apply_event(s, e)
     assert s.finished is True
-    assert s.all_passed is False
+    assert s.verification == "unverified"
     assert s.tasks[0].status == "passed"
     assert s.tasks[1].status == "failed"
     assert s.cursor_task_id == "two"
@@ -565,11 +565,11 @@ def test_fold_run_reduces_events_to_a_snapshot() -> None:
             {"type": "session.start", "user_task": "do it"},
             {"type": "role.call", "role": "worker", "model": "m"},
             {"type": "role.text_delta", "text": "hi"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ]
     )
     assert state.task_label.task == "do it"
-    assert state.finished and state.all_passed
+    assert state.finished and state.verification
     assert state.last_role is not None and state.last_role.streamed_text == "hi"
 
 
@@ -635,7 +635,7 @@ def test_run_state_as_dict_flags_operator_blocked() -> None:
 def test_run_status_label_distinguishes_stop_finish_error() -> None:
     # All of these set finished=True; the reason is what a user needs to tell them
     # apart. A stopped run must never read as a bare "finished" (looks completed).
-    def end(reason: str, all_passed: bool, *, verify_rc: int | None = None) -> SessionState:
+    def end(reason: str, verification: str, *, verify_rc: int | None = None) -> SessionState:
         s = viewmodel_state.apply_event(
             viewmodel_state.initial_state(), {"type": "session.start", "user_task": "t"}
         )
@@ -645,49 +645,54 @@ def test_run_status_label_distinguishes_stop_finish_error() -> None:
                 s, {"type": "verify.end", "stdout_tail": "", "stderr_tail": "", **verify}
             )
         return viewmodel_state.apply_event(
-            s, {"type": "session.end", "reason": reason, "all_passed": all_passed}
+            s, {"type": "session.stop", "reason": reason, "verification": verification}
         )
 
     assert session_state_as_dict(viewmodel_state.initial_state())["status_label"] == "running"
-    assert session_state_as_dict(end("steer_abort", False))["status_label"] == "stopped"
-    assert session_state_as_dict(end("finish_session", True))["status_label"] == "passed"
-    # all_passed False is "not certified green": an observed red names the gate,
+    assert session_state_as_dict(end("steer_abort", "unverified"))["status_label"] == "stopped"
+    assert session_state_as_dict(end("finish_session", "passed"))["status_label"] == "passed"
+    # verification False is "not certified green": an observed red names the gate,
     # a stale green or a gate nothing ran reads unverified.
-    assert session_state_as_dict(end("finish_session", False, verify_rc=1))["status_label"] == (
+    assert session_state_as_dict(end("finish_session", "failed", verify_rc=1))["status_label"] == (
         "finished · gate red"
     )
-    assert session_state_as_dict(end("finish_session", False))["status_label"] == (
+    assert session_state_as_dict(end("finish_session", "unverified"))["status_label"] == (
         "finished · unverified"
     )
-    assert session_state_as_dict(end("finish_session", False, verify_rc=0))["status_label"] == (
-        "finished · unverified"
-    )
+    assert session_state_as_dict(end("finish_session", "unverified", verify_rc=0))[
+        "status_label"
+    ] == ("finished · unverified")
     assert (
-        session_state_as_dict(end("provider_error", False))["status_label"]
+        session_state_as_dict(end("provider_error", "unverified"))["status_label"]
         == "failed · provider error"
     )
     scoped = viewmodel_state.apply_event(
-        end("finish_session", True),
-        {"type": "session.end", "reason": "finish_session", "all_passed": True, "scoped": True},
+        end("finish_session", "passed"),
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "verification": "passed",
+            "scoped": True,
+        },
     )
     assert session_state_as_dict(scoped)["status_label"] == "passed · scoped gate"
     # the raw status WORD rides along too, so a client can branch on it (the web
     # heartbeat goes quiet on "waiting" instead of painting "working" over a run
     # blocked on the operator).
     assert session_state_as_dict(viewmodel_state.initial_state())["status"] == "running"
-    assert session_state_as_dict(end("steer_abort", False))["status"] == "stopped"
-    assert session_state_as_dict(end("finish_session", True))["status"] == "passed"
+    assert session_state_as_dict(end("steer_abort", "unverified"))["status"] == "stopped"
+    assert session_state_as_dict(end("finish_session", "passed"))["status"] == "passed"
 
 
 def test_resume_start_unfinishes_the_run() -> None:
     # A resume restarts a finished/stopped run in place; the header must show it
     # running again (else steer/stop stay disabled on a live run).
     s = viewmodel_state.apply_event(
-        viewmodel_state.initial_state(), {"type": "session.end", "reason": "steer_abort"}
+        viewmodel_state.initial_state(), {"type": "session.stop", "reason": "steer_abort"}
     )
-    assert s.finished and s.end_reason == "steer_abort"
+    assert s.finished and s.stop_reason == "steer_abort"
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
-    assert not s.finished and s.end_reason == ""
+    assert not s.finished and s.stop_reason == ""
     assert session_state_as_dict(s)["status_label"] == "running"
 
 
@@ -734,12 +739,12 @@ def test_run_start_after_run_end_unfinishes_without_banking() -> None:
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "q"})
     s = viewmodel_state.apply_event(s, {"type": "budget.update", "usd_total": 0.02})
     s = viewmodel_state.apply_event(
-        s, {"type": "session.end", "all_passed": False, "reason": "answered"}
+        s, {"type": "session.stop", "verification": "unverified", "reason": "answered"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.start", "user_task": "follow-up"})
     s = viewmodel_state.apply_event(s, {"type": "role.call", "role": "worker", "model": "m"})
     assert s.finished is False
-    assert s.end_reason == ""
+    assert s.stop_reason == ""
     assert session_state_as_dict(s)["status_label"] == "running"
     s = viewmodel_state.apply_event(s, {"type": "budget.update", "usd_total": 0.03})
     assert s.budget.usd_total == pytest.approx(0.03)
@@ -767,7 +772,7 @@ def test_resume_resets_the_execution_token_counters() -> None:
         },
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"}
+        s, {"type": "session.stop", "verification": "unverified", "reason": "budget_exhausted"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert s.budget.input_total == 0
@@ -794,7 +799,7 @@ def test_resume_resets_the_execution_plan_counters() -> None:
         },
     )
     s = viewmodel_state.apply_event(
-        s, {"type": "session.end", "all_passed": False, "reason": "budget_exhausted"}
+        s, {"type": "session.stop", "verification": "unverified", "reason": "budget_exhausted"}
     )
     s = viewmodel_state.apply_event(s, {"type": "session.resume"})
     assert s.budget.plan_used_percent == 0.0
@@ -1001,7 +1006,7 @@ def test_fold_is_total_for_wrong_shaped_containers(bad: dict[str, Any]) -> None:
         [
             {"type": "session.start", "user_task": "t"},
             bad,
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ]
     )
     assert state.finished  # the fold survived the bad line and kept folding
@@ -1014,17 +1019,17 @@ def test_a_question_asked_while_no_model_runs_is_the_harness_s() -> None:
     """
     q = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
     before = viewmodel_state.fold_session([q])
-    assert before.pending_questions[0].from_harness is True
+    assert before.questions[0].from_harness is True
     during = viewmodel_state.fold_session([{"type": "session.start", "user_task": "t"}, q])
-    assert during.pending_questions[0].from_harness is False
+    assert during.questions[0].from_harness is False
     after = viewmodel_state.fold_session(
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {**q, "id": "question-2"},
         ]
     )
-    assert after.pending_questions[-1].from_harness is True
+    assert after.questions[-1].from_harness is True
 
 
 def test_run_state_as_dict_carries_what_the_run_serves(tmp_path: pathlib.Path) -> None:
@@ -1163,7 +1168,7 @@ def test_the_end_takes_the_cursor_off_the_task_in_progress() -> None:
     )
     assert s.tasks[1].is_cursor and s.tasks[1].glyph == "▸"
     s = viewmodel_state.apply_event(
-        s, {"type": "session.end", "reason": "finish_session", "all_passed": True}
+        s, {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
     )
     assert not s.tasks[1].is_cursor and s.tasks[1].glyph == "✓"
 
@@ -1208,7 +1213,7 @@ def test_task_identity_survives_missing_or_invalid_manifest(
     folded = viewmodel_state.fold_session(
         [
             {"type": "session.start", "user_task": "original task"},
-            {"type": "session.end"},
+            {"type": "session.stop"},
             {"type": "session.resume"},
         ]
     )
@@ -1265,7 +1270,7 @@ def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> Non
         {"type": "session.resume", "user_task": "t", "steer": ""},
     ]
     state = viewmodel_state.fold_session(rows)
-    (first,) = state.pending_questions
+    (first,) = state.questions
     assert first.id == "question-1" and not first.answered and first.wait is False
     assert state_view.status_facts(state).operator_blocked is False
     facts = state_view.status_facts(viewmodel_state.fold_session([*rows, waiting]))
@@ -1278,7 +1283,7 @@ def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> Non
         "unseen": False,
     }
     state = viewmodel_state.fold_session([*rows, waiting, late])
-    assert [(q.id, q.answered, q.source) for q in state.pending_questions] == [
+    assert [(q.id, q.answered, q.source) for q in state.questions] == [
         ("question-1", True, "late"),
         ("question-2", False, ""),
     ]
@@ -1298,16 +1303,16 @@ def test_a_questions_kind_is_one_word_on_every_surface() -> None:
         },
     ]
     before = viewmodel_state.fold_session(rows)
-    assert [q.kind() for q in before.pending_questions] == ["waiting", "queued"]
+    assert [q.kind() for q in before.questions] == ["waiting", "queued"]
     after = viewmodel_state.fold_session([*rows, {"type": "session.resume", "user_task": "t"}])
-    assert [q.kind() for q in after.pending_questions] == [
+    assert [q.kind() for q in after.questions] == [
         "asked by an earlier execution",
         "queued",
     ]
     answered = viewmodel_state.fold_session(
         [*rows, {"type": "question.answer", "id": "question-2", "answers": ["x"], "source": "late"}]
     )
-    assert answered.pending_questions[1].kind() == "answered"
+    assert answered.questions[1].kind() == "answered"
 
 
 def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pathlib.Path) -> None:
@@ -1322,7 +1327,7 @@ def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pa
     log = tmp_path / "logs.jsonl"
     log.write_text(json.dumps(gate) + "\n", encoding="utf-8")
     state = viewmodel_state.fold_session([gate])
-    assert state.pending_questions[0].from_harness
+    assert state.questions[0].from_harness
     assert state_view.status_facts(state).pending_questions == 0
     assert session_log.scan_session_log(log).pending_questions == 0
     assert viewmodel_state.pending_questions(tmp_path) == ()
@@ -1346,9 +1351,7 @@ def test_a_reused_question_id_names_the_latest_question(tmp_path: pathlib.Path) 
     log = tmp_path / "logs.jsonl"
     log.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
     state = viewmodel_state.fold_session(rows)
-    assert [(q.id, q.questions[0].question) for q in state.pending_questions] == [
-        ("question-1", "new?")
-    ]
+    assert [(q.id, q.questions[0].question) for q in state.questions] == [("question-1", "new?")]
     carried = resume_questions.carried_questions(log)
     assert [(q.id, q.questions[0].question) for q in carried.pending] == [("question-1", "new?")]
     assert carried.next_number == 2

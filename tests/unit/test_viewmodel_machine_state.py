@@ -583,7 +583,7 @@ def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: path
         assert fold.execution() == machine_logs.AgentExecution(open=True, blocked_in="")
         # A rewritten (shorter) log: the fold starts over rather than folding
         # the new bytes onto the old state.
-        newer.write_text('{"type":"session.end","reason":"finish_session"}\n', encoding="utf-8")
+        newer.write_text('{"type":"session.stop","reason":"finish_session"}\n', encoding="utf-8")
         fold.refresh(d)
         assert fold.execution() == machine_logs.AgentExecution(open=False, blocked_in="")
     finally:

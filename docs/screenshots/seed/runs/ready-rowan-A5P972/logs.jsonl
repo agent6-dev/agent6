@@ -227,4 +227,4 @@
 {"ts": "2026-06-23T09:08:11.278204+00:00", "type": "tool.call", "name": "finish_session", "args": {"summary": "Restored `parse_csv_row` in `mylib/csv_parse.py` to parse a single CSV row per RFC 4180. The implementation strips a trailing CR/LF or LF, then delegates to Python's `csv.reader` (which already handle… (396 chars)"}}
 {"ts": "2026-06-23T09:08:11.279982+00:00", "type": "tool.result", "name": "finish_session", "ok": true, "summary": "finish_session"}
 {"ts": "2026-06-23T09:08:11.296205+00:00", "type": "graph.update", "nodes": {"01KVSVA6FAP70KDFGXBA36AZQC": {"title": "# Implement `parse_csv_row` per RFC 4180", "status": "passed", "parent_id": null, "children": []}}, "cursor": null}
-{"ts": "2026-06-23T09:08:11.297921+00:00", "type": "session.end", "reason": "finish_session", "turns": 22, "all_passed": true}
+{"ts": "2026-06-23T09:08:11.297921+00:00", "type": "session.stop", "reason": "finish_session", "turns": 22, "verification": "passed", "execution_id": "execution"}

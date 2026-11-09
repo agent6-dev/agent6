@@ -89,11 +89,10 @@ _START: dict[str, Any] = {
     "user_task": "t",
 }
 _END: dict[str, Any] = {
-    "type": "session.end",
+    "type": "session.stop",
     "ts": "2026-10-25T11:00:00+00:00",
     "reason": "finish_session",
-    "all_passed": True,
-    "verified": "passed",
+    "verification": "passed",
     "tree": "ht",
     "final_verify_id": "v",
 }
@@ -150,7 +149,7 @@ CASES = [
     ),
     (
         "gate never ran",
-        [_START, {**_END, "all_passed": None, "verified": "unverified", "final_verify_id": None}],
+        [_START, {**_END, "verification": "unverified", "final_verify_id": None}],
         _facts("finished"),
         "unverified",
         "gate never ran",
@@ -159,7 +158,7 @@ CASES = [
     ),
     (
         "gate not configured",
-        [_START, {**_END, "all_passed": None, "verified": "not_applicable"}],
+        [_START, {**_END, "verification": "not_applicable"}],
         _facts("finished"),
         "unverified",
         "gate not configured",
@@ -171,7 +170,7 @@ CASES = [
         [
             _START,
             *_verify_rows(exit_code=1),
-            {**_END, "all_passed": False, "verified": "failed", "reason": "gate_red_at_base"},
+            {**_END, "verification": "failed", "reason": "gate_red_at_base"},
         ],
         _facts("finished"),
         "unverified",
@@ -181,7 +180,7 @@ CASES = [
     ),
     (
         "failed gate",
-        [_START, *_verify_rows(exit_code=1), {**_END, "all_passed": False, "verified": "failed"}],
+        [_START, *_verify_rows(exit_code=1), {**_END, "verification": "failed"}],
         _facts("finished"),
         "unverified",
         "gate failed",
@@ -190,7 +189,7 @@ CASES = [
     ),
     (
         "timed out gate",
-        [_START, *_verify_rows(exit_code=124), {**_END, "all_passed": False, "verified": "failed"}],
+        [_START, *_verify_rows(exit_code=124), {**_END, "verification": "failed"}],
         _facts("finished"),
         "unverified",
         "gate timed_out",
@@ -221,7 +220,7 @@ CASES = [
             _START,
             *_verify_rows(tree="older"),
             *_panel_rows(),
-            {**_END, "all_passed": False, "verified": "unverified", "reason": "settled"},
+            {**_END, "verification": "unverified", "reason": "settled"},
         ],
         _facts("finished"),
         "unverified",
@@ -308,8 +307,7 @@ CASES = [
             {
                 **_END,
                 "reason": "lanes_ranked",
-                "all_passed": None,
-                "verified": "unverified",
+                "verification": "unverified",
                 "final_verify_id": None,
             },
         ],
@@ -357,7 +355,7 @@ CASES = [
     ),
     (
         "ask session",
-        [{**_START, "mode": "ask"}, {"type": "session.end", "reason": "answered"}],
+        [{**_START, "mode": "ask"}, {"type": "session.stop", "reason": "answered"}],
         _facts("answered", mode="ask", unmerged=False),
         "other",
         "ask",
@@ -424,7 +422,7 @@ def test_lifecycle_status_stays_apart_from_the_queue(tmp_path: pathlib.Path) -> 
     rows = [
         _START,
         *_verify_rows(exit_code=1),
-        {**_END, "reason": "no_progress", "all_passed": False, "verified": "failed"},
+        {**_END, "reason": "no_progress", "verification": "failed"},
     ]
     entry = review_queue.classify(_scan(rows, tmp_path), _facts("failed"))
     assert entry.group == "unverified" and entry.reason == "gate failed"
@@ -444,10 +442,10 @@ def _summary(
         mode="run",
         task_label=session_status.TaskLabel(session_id),
         status="finished",
-        reason="",
+        detail="",
         cost_usd=0.0,
         usd_partial=False,
-        mtime=mtime,
+        last_activity=mtime,
         coordinator=coordinator,
         lane=lane,
         review_queue=review_queue.ReviewQueueEntry(group=group, oldest_open_at=pending),
@@ -486,7 +484,10 @@ def test_a_coordinator_takes_its_lanes_place_and_keeps_its_own_verification() ->
     assert listing.row_group(fan) == "blocked" and fan.summary.review_queue.group == "other"
     assert listing.pending_since(fan) == 120.0
     row = listing.row_json(fan, winners=set())
-    assert row["queue_group"] == "blocked" and row["lane_groups"] == {"blocked": 1, "unverified": 1}
+    assert row.get("queue_group") == "blocked" and row.get("lane_groups") == {
+        "blocked": 1,
+        "unverified": 1,
+    }
     entry = row["review_queue"]
     assert isinstance(entry, dict) and entry["verification_state"] == "not_applicable"
 
@@ -518,7 +519,7 @@ def test_a_pending_question_leads_the_queue(tmp_path: pathlib.Path) -> None:
         row("question.prompt", 1, id="question-1", questions=[{"question": "a?"}], wait=False),
         row("question.prompt", 2, id="question-2", questions=[{"question": "b?"}], wait=False),
         row("question.answer", 3, id="question-1", answers=["x"], source="late"),
-        row("session.end", 4, reason="finish_session", all_passed=True),
+        row("session.stop", 4, reason="finish_session", verification="passed"),
     ]
     entry = review_queue.classify(_scan(rows, tmp_path), _facts())
     assert review_queue.GROUPS[0] == "needs_answer"
@@ -544,7 +545,7 @@ def test_a_saved_answer_leaves_the_needs_answer_group(tmp_path: pathlib.Path) ->
             "questions": [{"question": "b?"}],
             "wait": False,
         },
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     scan = _scan(rows, tmp_path)
     one = review_queue.classify(scan, _facts(saved_answers=1))

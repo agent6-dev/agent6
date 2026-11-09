@@ -133,10 +133,10 @@ def test_non_gating_category_block_is_downgraded() -> None:
 def test_verify_uncovered_requires_verify_passed() -> None:
     f = _block("verify-uncovered-correctness", _location("foo.py", 11))
     # verify failed (or unknown) -> the claim is incoherent -> downgraded.
-    assert _agg([_seat("m1", f)], ctx=_ctx(verify_ok=False)).blocked is False
-    assert _agg([_seat("m1", f)], ctx=_ctx(verify_ok=None)).blocked is False
+    assert _agg([_seat("m1", f)], ctx=_ctx(verification="unverified")).blocked is False
+    assert _agg([_seat("m1", f)], ctx=_ctx(verification=None)).blocked is False
     # verify passed -> a grounded uncovered-correctness block may gate.
-    assert _agg([_seat("m1", f)], ctx=_ctx(verify_ok=True)).blocked is True
+    assert _agg([_seat("m1", f)], ctx=_ctx(verification="passed")).blocked is True
 
 
 # --- block_on policies --------------------------------------------------------

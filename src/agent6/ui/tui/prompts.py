@@ -57,7 +57,7 @@ class PromptDispatcher:
             session_dir: The session the answers are written to.
             state: That session's fold.
         """
-        for qp in state.pending_questions:
+        for qp in state.questions:
             key = f"{session_dir}|{qp.id}"
             if qp.answered:
                 # The journal holds an answer this modal did not write: it takes none now.
@@ -86,7 +86,7 @@ class PromptDispatcher:
             Whether a modal opened; False when no queued question is pending.
         """
         live = self._answerable()
-        for qp in state.pending_questions:
+        for qp in state.questions:
             key = f"{session_dir}|{qp.id}"
             if qp.answered or (qp.blocking and live) or key in self._open:
                 continue

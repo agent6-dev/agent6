@@ -26,7 +26,7 @@ SEED = Path(__file__).resolve().parent / "seed" / "runs"
 # stable regardless of copy order). The featured run sits on top.
 ORDER = [
     # The featured run: passed, with a full dashboard to show. The stale one
-    # (no session.end, "worker exited") stays in the list a row down, where it
+    # (no session.stop, "worker exited") stays in the list a row down, where it
     # documents the state without being the site's first impression.
     "ready-rowan-A5P972",
     # Two runs with current-code evidence: open review findings, and a merged receipt.

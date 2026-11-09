@@ -30,9 +30,9 @@ _START: dict[str, Any] = {
 }
 _END_PASSED: dict[str, Any] = {
     "ts": "2026-07-14T10:01:00+00:00",
-    "type": "session.end",
+    "type": "session.stop",
     "reason": "finish_session",
-    "all_passed": True,
+    "verification": "passed",
 }
 _SHAPES: dict[str, list[dict[str, Any]]] = {
     "started": [_START],
@@ -50,9 +50,9 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
         },
         {
             "ts": "2026-07-14T10:01:00+00:00",
-            "type": "session.end",
+            "type": "session.stop",
             "reason": "provider_error",
-            "all_passed": False,
+            "verification": "failed",
         },
     ],
     "usd_then_tokens_only": [
@@ -92,12 +92,12 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
         },
         {
             "ts": "2026-07-14T10:01:00+00:00",
-            "type": "session.end",
+            "type": "session.stop",
             "reason": "budget_exhausted",
-            "all_passed": False,
+            "verification": "failed",
         },
     ],
-    "ungated": [_START, {**_END_PASSED, "all_passed": None}],
+    "ungated": [_START, {**_END_PASSED, "verification": "not_applicable"}],
     "resumed": [
         _START,
         {
@@ -125,9 +125,9 @@ _SHAPES: dict[str, list[dict[str, Any]]] = {
             "cmd": ["pytest"],
             "exit_code": 1,
         },
-        {**_END_PASSED, "all_passed": False},
+        {**_END_PASSED, "verification": "failed"},
         {"ts": "2026-07-14T10:02:00+00:00", "type": "session.resume", "turn": 3},
-        {**_END_PASSED, "ts": "2026-07-14T10:03:00+00:00", "all_passed": False},
+        {**_END_PASSED, "ts": "2026-07-14T10:03:00+00:00", "verification": "failed"},
     ],
     "blocked": [
         _START,
@@ -180,8 +180,8 @@ def _shared_facts(
     listing: dict[str, Any] = {
         "task": scan.task_label.task,
         "finished": scan.finished,
-        "end_reason": scan.end_reason if scan.finished else "",
-        "all_passed": scan.all_passed if scan.finished else None,
+        "stop_reason": scan.stop_reason if scan.finished else "",
+        "verification": scan.verification if scan.finished else None,
         "verify_scoped": scan.verify_scoped,
         "gate_red": scan.status_facts().gate_red,
         "gate_timed_out": scan.status_facts().gate_timed_out,
@@ -201,8 +201,8 @@ def _shared_facts(
     viewer: dict[str, Any] = {
         "task": state.task_label.task,
         "finished": state.finished,
-        "end_reason": state.end_reason if state.finished else "",
-        "all_passed": state.all_passed if state.finished else None,
+        "stop_reason": state.stop_reason if state.finished else "",
+        "verification": state.verification if state.finished else None,
         "verify_scoped": state.verify_scoped,
         "gate_red": status_facts(state).gate_red,
         "gate_timed_out": status_facts(state).gate_timed_out,
@@ -220,9 +220,7 @@ def _shared_facts(
             state.budget.plan_cap,
         ),
         "pins": state.pins,
-        "blocked": any(
-            not p.answered for p in (*state.pending_approvals, *state.pending_questions)
-        ),
+        "blocked": any(not p.answered for p in (*state.approvals, *state.questions)),
         "unattended": state.unattended_questions,
     }
     return listing, viewer
@@ -262,9 +260,9 @@ def _verify_end(exit_code: int, **fields: Any) -> dict[str, Any]:
 
 _END_RED: dict[str, Any] = {
     "ts": "2026-07-14T10:01:00+00:00",
-    "type": "session.end",
+    "type": "session.stop",
     "reason": "finish_session",
-    "all_passed": False,
+    "verification": "failed",
 }
 
 

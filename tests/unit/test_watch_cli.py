@@ -148,7 +148,7 @@ def test_attach_since_zero_still_needs_raw(
         "done-run",
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
 
@@ -166,7 +166,7 @@ def test_attach_refuses_a_negative_since_count(
         "done-run",
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
 
@@ -308,7 +308,7 @@ def test_attach_to_a_launching_run_says_starting_not_resume(
 def test_attach_to_a_run_whose_pid_file_is_gone_does_not_follow_forever(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A worker that cleared worker.pid without a session.end reads stale to attach as to the list.
+    """A worker that cleared worker.pid without a session.stop reads stale to attach as to the list.
 
     attach's own liveness rule, "no pid is not dead", followed a log nothing would append to.
     """
@@ -380,7 +380,7 @@ def test_attach_to_a_finished_run_reports_its_outcome_not_a_crash(
         "done-run",
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     monkeypatch.chdir(tmp_path)
@@ -404,7 +404,7 @@ def test_attach_prints_the_runs_policy_line_like_the_run_did(
         "done-run",
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "done-run"
@@ -471,7 +471,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
 ) -> None:
     """The watch reads finished off the listing fold, not the journal's last line.
 
-    A side answer journaled after session.end made the replay follow a finished run forever.
+    A side answer journaled after session.stop made the replay follow a finished run forever.
     """
     import os
     import threading
@@ -481,7 +481,7 @@ def test_attach_replay_reads_finished_from_the_fold_not_the_last_line(
         "done-run",
         [
             {"type": "session.start", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {"type": "btw.answered", "question": "q", "block": "a"},
         ],
     )

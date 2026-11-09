@@ -735,5 +735,5 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
         turn = loop_state.TurnState(number=6, resp=_resp("Done."), assistant=mock.MagicMock())
         ended = wf._handle_silent_finish("Done.", conv, state, turn, ctx)  # pyright: ignore[reportPrivateUsage]
     assert ended is not None and ended.reason == "silent_finish"
-    assert ended.verified == "failed"
+    assert ended.verification == "failed"
     assert panel.calls == 1

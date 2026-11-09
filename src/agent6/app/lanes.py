@@ -369,7 +369,7 @@ def run_lane_to_completion(
             session_dir=dest,
             branch=res.branch,
             ok=False,
-            error=f"no result ({format.status_label(summary.status, summary.reason)});"
+            error=f"no result ({format.status_label(summary.status, summary.detail)});"
             f" {parallel_results.imported_branch_note(origin, res.branch)}",
         )
     return subrun.LaneResult(spec=spec, session_dir=dest, branch=res.branch, ok=True, error="")

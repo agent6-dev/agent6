@@ -40,7 +40,7 @@ def test_review_completion_is_available_before_and_during_a_session(
     if mode == "live":
         process.write_worker_pid(session, os.getpid())
     else:
-        rows.append({"type": "session.end", "reason": "finish_session"})
+        rows.append({"type": "session.stop", "reason": "finish_session"})
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     page, errors = open_page(port)
     route = "/" if mode == "new" else f"/session/{session.name}"
@@ -73,7 +73,7 @@ def test_review_refusal_renders_in_the_conversation(
     rows = [
         {"type": "session.start", "mode": "ask", "user_task": "inspect"},
         {"type": "loop.steer.feedback", "text": feedback},
-        {"type": "session.end", "reason": "silent_finish"},
+        {"type": "session.stop", "reason": "silent_finish"},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     page, errors = open_page(port)

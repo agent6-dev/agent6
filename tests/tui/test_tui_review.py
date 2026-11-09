@@ -28,7 +28,9 @@ def _run_dir(tmp_path: pathlib.Path, name: str, *, ended: bool) -> pathlib.Path:
         {"type": "session.start", "session_id": name, "mode": "run", "user_task": "t"}
     ]
     if ended:
-        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        events.append(
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+        )
     (run / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     return run
 

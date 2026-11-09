@@ -68,7 +68,7 @@ def _cmd_fork(
             # The child has no saved answer of its own, so one on the source is no new work here.
             scan = session_log.scan_session_log(source.logs_path)
             source_finished = listing.needs_new_work(
-                finished=scan.finished, end_reason=scan.end_reason, all_passed=scan.all_passed
+                finished=scan.finished, stop_reason=scan.stop_reason, verification=scan.verification
             )
         if source is not None and source_finished and not no_run and not steer.strip():
             common.error(

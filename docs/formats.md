@@ -1231,23 +1231,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `role` | `str` | The calling model role. |
 | `text` | `str` | The event's text. |
 
-### session.end
-
-**Support: public.** Emitted at the end of every execution, with its reason.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `reason` | `str` | The reason for the outcome. |
-| `turns` | `int` | Number of execution turns, or turns spent on one task. |
-| `all_passed` | `bool, optional` | Final gate result; null when no verify command gated the run. |
-| `summary` | `str, optional` | The result or outcome in words. |
-| `verified` | `str, optional` | Final verification state: passed, failed, unverified or not_applicable. |
-| `scoped` | `bool, optional` | Whether verification ran only the selected nearby tests. |
-| `final_verify_id` | `str, optional` | The final verification attempt identifier. |
-| `tree` | `str, optional` | The final working-tree content identifier. |
-| `tool` | `str, optional` | The repeated tool's name. |
-| `streak` | `int, optional` | Number of consecutive matching turns or calls. |
-
 ### session.resume
 
 **Support: public.** Emitted at the start of every resumed execution.
@@ -1280,6 +1263,23 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `source` | `str` | Where the request or result came from. |
+
+### session.stop
+
+**Support: public.** The execution stopped, with its reason; the session stays resumable.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `execution_id` | `str` | Execution identifier; empty when unknown. |
+| `reason` | `str` | The reason for the outcome. |
+| `turns` | `int` | Number of execution turns, or turns spent on one task. |
+| `summary` | `str, optional` | The result or outcome in words. |
+| `verification` | `str, optional` | Final verification state: passed, failed, unverified or not_applicable. |
+| `scoped` | `bool, optional` | Whether verification ran only the selected nearby tests. |
+| `final_verify_id` | `str, optional` | The final verification attempt identifier. |
+| `tree` | `str, optional` | The final working-tree content identifier. |
+| `tool` | `str, optional` | The repeated tool's name. |
+| `streak` | `int, optional` | Number of consecutive matching turns or calls. |
 
 ### session.stranded
 
@@ -1453,34 +1453,34 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `session_id` | `JSON` | The session identifier. |
-| `mode` | `JSON` | The session mode. |
-| `task` | `JSON` | The operator's words, whole. |
-| `task_line` | `JSON` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |
-| `continued_task` | `JSON` | The latest resume steer, whole; empty without a continuation. |
-| `status` | `JSON` | The lifecycle status word. |
-| `reason` | `JSON` | The detail explaining the status. |
-| `end_reason` | `JSON` | The last journaled end reason, or an empty string while running. |
-| `label` | `JSON` | The rendered status with mode and unmerged marks. |
-| `level` | `JSON` | The status presentation level. |
-| `mtime` | `JSON` | The last activity time in epoch seconds. |
-| `when` | `JSON` | The rendered last activity time. |
-| `cost_usd` | `JSON` | Cumulative spend in USD across executions. |
-| `usd_partial` | `JSON` | Whether unpriced usage makes spend a lower bound. |
-| `plan_consumed` | `JSON` | Subscription points consumed across executions. |
-| `plan_cap` | `JSON` | The subscription points cap. |
-| `cost` | `JSON` | The rendered cost cell. |
-| `model` | `JSON` | The resolved provider/model route. |
-| `model_from_flag` | `JSON` | Whether a model flag selected the route. |
-| `id_cell` | `JSON` | The session identifier with winner and worktree marks. |
-| `unmerged` | `JSON` | Whether the run holds unmerged work. |
-| `verify_ok` | `JSON` | The gate verdict, or null without a verdict. |
-| `winner` | `JSON` | Whether this lane won its comparison. |
-| `lane` | `JSON` | The lane number, or null outside a fan-out. |
-| `coordinator` | `JSON` | The session that dispatched this lane. |
-| `worktree` | `JSON` | The linked worktree path, or null in the operator's checkout. |
-| `review_queue` | `JSON` | The ReviewQueueEntry for this session. |
-| `lanes` | `JSON` | Nested listing rows for this coordinator's lanes. |
+| `session_id` | `str` | The session identifier. |
+| `mode` | `str` | The session mode. |
+| `task` | `str` | The operator's words, whole. |
+| `task_line` | `str` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |
+| `continued_task` | `str` | The latest resume steer, whole; empty without a continuation. |
+| `status` | `str` | The lifecycle status word. |
+| `detail` | `str` | The detail explaining the status. |
+| `stop_reason` | `str` | The last journaled end reason, or an empty string while running. |
+| `label` | `str` | The rendered status with mode and unmerged marks. |
+| `level` | `str` | The status presentation level. |
+| `last_activity` | `float` | The last activity time in epoch seconds. |
+| `when` | `str` | The rendered last activity time. |
+| `cost_usd` | `float` | Cumulative spend in USD across executions. |
+| `usd_partial` | `bool` | Whether unpriced usage makes spend a lower bound. |
+| `plan_consumed` | `float` | Subscription points consumed across executions. |
+| `plan_cap` | `float` | The subscription points cap. |
+| `cost` | `str` | The rendered cost cell. |
+| `model` | `str` | The resolved provider/model route. |
+| `model_from_flag` | `bool` | Whether a model flag selected the route. |
+| `id_cell` | `str` | The session identifier with winner and worktree marks. |
+| `unmerged` | `bool` | Whether the run holds unmerged work. |
+| `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The gate verdict, or null without a verdict. |
+| `winner` | `bool` | Whether this lane won its comparison. |
+| `lane` | `int \| None` | The lane number, or null outside a fan-out. |
+| `coordinator` | `str` | The session that dispatched this lane. |
+| `worktree` | `str \| None` | The linked worktree path, or null in the operator's checkout. |
+| `review_queue` | `dict[str, Any]` | The ReviewQueueEntry for this session. |
+| `lanes` | `list[SummaryRow]` | Nested listing rows for this coordinator's lanes. |
 
 ### `sessions list --json` group fields
 
@@ -1490,10 +1490,10 @@ Source: [`viewmodel.listing.row_json`](https://github.com/agent6-dev/agent6/blob
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `mtime` | `JSON` | The group's latest activity time in epoch seconds. |
-| `when` | `JSON` | The rendered group activity time. |
-| `queue_group` | `JSON` | The group's review-queue placement. |
-| `lane_groups` | `JSON` | The number of lanes in each review-queue group. |
+| `when` | `str` | The rendered group activity time. |
+| `queue_group` | `str` | The group's review-queue placement. |
+| `lane_groups` | `dict[str, int]` | The number of lanes in each review-queue group. |
+| `group_last_activity` | `float` | The group's latest activity time in epoch seconds. |
 
 ### `sessions show --json`
 
@@ -1503,52 +1503,52 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `session_id` | `JSON` | The session identifier. |
-| `mode` | `JSON` | The session mode. |
-| `task` | `JSON` | The operator's words, whole. |
-| `continued_task` | `JSON` | The latest resume steer, whole; empty without a continuation. |
-| `task_line` | `JSON` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |
-| `model` | `JSON` | The resolved provider/model route, or ? when unknown. |
-| `model_from_flag` | `JSON` | Whether a model flag selected the route. |
-| `preset` | `JSON` | The launch preset, or null when absent. |
-| `status` | `JSON` | The lifecycle status word shared with listings. |
-| `label` | `JSON` | The rendered status with mode and unmerged marks. |
-| `detail` | `JSON` | The diagnostic or next action explaining the status. |
-| `end_summary` | `JSON` | The journaled closing sentence, or null when absent. |
-| `alive` | `JSON` | Whether the recorded worker identity is alive. |
-| `pid` | `JSON` | The recorded worker process identifier, or null when unreadable. |
-| `turn` | `JSON` | The latest turn number, or null before a turn. |
-| `last_event` | `JSON` | The latest event name, or null without a log. |
-| `last_event_age_s` | `JSON` | Seconds since the latest event, or null when unknown. |
-| `elapsed_s` | `JSON` | Seconds from the first start to the last event or current time. |
-| `end_reason` | `JSON` | The journaled end reason, or null while unfinished. |
-| `baseline_ok` | `JSON` | Whether baseline verification passed, or null when unrecorded. |
-| `verified` | `JSON` | The final gate word, or null when unrecorded. |
-| `input_tokens` | `JSON` | Recorded input tokens. |
-| `output_tokens` | `JSON` | Recorded output tokens. |
-| `cache_read_tokens` | `JSON` | Recorded cached input tokens. |
-| `cache_creation_tokens` | `JSON` | Recorded cache-creation tokens. |
-| `cost_usd` | `JSON` | Cumulative spend in USD, or null when unknown. |
-| `plan_consumed` | `JSON` | Subscription points consumed across executions. |
-| `plan_prior_executions` | `JSON` | Subscription points banked by earlier executions. |
-| `plan_cap` | `JSON` | The subscription points cap. |
-| `unattended_questions` | `JSON` | Questions answered empty because nobody was attached. |
-| `setup_output` | `JSON` | Retained setup output, or null when absent. |
-| `usd_partial` | `JSON` | Whether unpriced usage makes spend a lower bound, or null without a cost. |
-| `source_session_id` | `JSON` | The source session used by run --from, or null. |
-| `parent_session_id` | `JSON` | The fork parent, or null. |
-| `forked_from_turn` | `JSON` | The fork's source turn, or null. |
-| `forked_from_sha` | `JSON` | The fork's source commit, or null. |
-| `worktree` | `JSON` | The linked worktree path, or null. |
-| `compare` | `JSON` | The lane placement and group id, or null outside a compared lane. |
-| `comparison` | `JSON` | The group record on its coordinator, or null for other sessions. |
-| `parallel` | `JSON` | The ParallelLineage, or null outside a lane. |
-| `fanout` | `JSON` | The FanoutStamp, or null outside a coordinator. |
-| `lanes` | `JSON` | The coordinator's summary_row objects. |
-| `run_branch` | `JSON` | The existing run branch, or null. |
-| `base_branch` | `JSON` | The base branch, or null when unknown. |
-| `merged_into` | `JSON` | The merge destination, or null when not merged. |
-| `pins` | `JSON` | The operator's active pinned instructions. |
+| `session_id` | `str` | The session identifier. |
+| `mode` | `str \| None` | The session mode. |
+| `task` | `str` | The operator's words, whole. |
+| `continued_task` | `str` | The latest resume steer, whole; empty without a continuation. |
+| `task_line` | `str` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |
+| `model` | `str` | The resolved provider/model route, or ? when unknown. |
+| `model_from_flag` | `bool` | Whether a model flag selected the route. |
+| `preset` | `str \| None` | The launch preset, or null when absent. |
+| `status` | `str` | The lifecycle status word shared with listings. |
+| `label` | `str` | The rendered status with mode and unmerged marks. |
+| `detail` | `str` | The diagnostic or next action explaining the status. |
+| `end_summary` | `str \| None` | The journaled closing sentence, or null when absent. |
+| `alive` | `bool` | Whether the recorded worker identity is alive. |
+| `pid` | `int \| None` | The recorded worker process identifier, or null when unreadable. |
+| `turn` | `int \| None` | The latest turn number, or null before a turn. |
+| `last_event` | `str \| None` | The latest event name, or null without a log. |
+| `last_event_age_s` | `float \| None` | Seconds since the latest event, or null when unknown. |
+| `elapsed_s` | `float \| None` | Seconds from the first start to the last event or current time. |
+| `stop_reason` | `str \| None` | The journaled end reason, or null while unfinished. |
+| `baseline_ok` | `bool \| None` | Whether baseline verification passed, or null when unrecorded. |
+| `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The final gate word, or null when unrecorded. |
+| `input_tokens` | `int \| None` | Recorded input tokens. |
+| `output_tokens` | `int \| None` | Recorded output tokens. |
+| `cache_read_tokens` | `int \| None` | Recorded cached input tokens. |
+| `cache_creation_tokens` | `int \| None` | Recorded cache-creation tokens. |
+| `cost_usd` | `float \| None` | Cumulative spend in USD, or null when unknown. |
+| `plan_consumed` | `float` | Subscription points consumed across executions. |
+| `plan_prior_executions` | `float` | Subscription points banked by earlier executions. |
+| `plan_cap` | `float` | The subscription points cap. |
+| `unattended_questions` | `int` | Questions answered empty because nobody was attached. |
+| `setup_output` | `str \| None` | Retained setup output, or null when absent. |
+| `usd_partial` | `bool \| None` | Whether unpriced usage makes spend a lower bound, or null without a cost. |
+| `source_session_id` | `str \| None` | The source session used by run --from, or null. |
+| `parent_session_id` | `str \| None` | The fork parent, or null. |
+| `forked_from_turn` | `int \| None` | The fork's source turn, or null. |
+| `forked_from_sha` | `str \| None` | The fork's source commit, or null. |
+| `worktree` | `str \| None` | The linked worktree path, or null. |
+| `compare` | `dict[str, Any] \| None` | The lane placement and group id, or null outside a compared lane. |
+| `comparison` | `dict[str, Any] \| None` | The group record on its coordinator, or null for other sessions. |
+| `parallel` | `dict[str, Any] \| None` | The ParallelLineage, or null outside a lane. |
+| `fanout` | `dict[str, Any] \| None` | The FanoutStamp, or null outside a coordinator. |
+| `lanes` | `list[SummaryRow]` | The coordinator's summary_row objects. |
+| `run_branch` | `str \| None` | The existing run branch, or null. |
+| `base_branch` | `str \| None` | The base branch, or null when unknown. |
+| `merged_into` | `str \| None` | The merge destination, or null when not merged. |
+| `pins` | `list[str]` | The operator's active pinned instructions. |
 
 ## CLI text
 
@@ -1592,17 +1592,17 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `last_verify` | `VerifyView \| None` | The last verify gate run. |
 | `review` | `JSON` | The shared review evidence with computed merge facts. |
 | `budget` | `BudgetView` | The spend. |
-| `pending_approvals` | `tuple[ApprovalPrompt, ...]` | Every approval asked this execution, answered or not. |
-| `pending_questions` | `tuple[QuestionPrompt, ...]` | Every question prompt asked this execution, answered or not. |
+| `approvals` | `tuple[ApprovalPrompt, ...]` | Every approval asked this execution, answered or not. |
+| `questions` | `tuple[QuestionPrompt, ...]` | Every question prompt asked this execution, answered or not. |
 | `log_tail` | `JSON` | The retained log lines as plain strings rather than LogLine records. |
 | `log_count` | `int` | The monotonic count of log lines ever; a live viewer diffs on it, since `len(log_tail)` freezes once the window saturates. |
 | `tool_count` | `int` | The calls this execution dispatched, a finish tool apart, as the conversation's end line counts them; `len(tool_calls)` is a bounded window. |
 | `recent_diffs` | `tuple[DiffView, ...]` | The bounded auto-commit diffs, for task filtering. |
 | `started` | `bool` | An execution has begun; a parked or created run has none. |
-| `finished` | `bool` | A session.end was folded and no later execution began. |
-| `all_passed` | `bool \| None` | The verify tri-state; None when no verify command gated the end. |
+| `finished` | `bool` | A session.stop was folded and no later execution began. |
+| `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The final verification word, or None when unknown. |
 | `verify_scoped` | `bool` | The judging gate ran scoped. |
-| `end_reason` | `str` | The session.end reason word. |
+| `stop_reason` | `str` | The session.stop reason word. |
 | `stranded` | `bool` | This execution finished with its edits uncommitted and no commit landed. |
 | `end_summary` | `str` | The end sentence the journal carries, "" when it carries none. |
 | `unattended_questions` | `int` | Questions the harness answered empty because nobody was attached, in the current execution. |

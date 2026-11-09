@@ -60,7 +60,7 @@ def _ended_unmerged_run(repo: pathlib.Path) -> sessions_layout.SessionLayout:
     )
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run"}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
         encoding="utf-8",
     )
     return layout

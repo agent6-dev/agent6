@@ -143,7 +143,7 @@ def test_end_hold_title_uses_the_listing_label(
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "work"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
         + "\n",
         encoding="utf-8",
     )
@@ -213,7 +213,7 @@ def test_a_finished_plans_deliverable_is_in_the_stream_pane(tmp_path: pathlib.Pa
         {"type": "session.start", "session_id": d.name, "mode": "plan", "user_task": "lay it out"},
         {"type": "tool.call", "name": "finish_planning", "args": {"summary": "Plan seeded."}},
         {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
-        {"type": "session.end", "reason": "finish_planning", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_planning", "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     (d / "plan.md").write_text(
@@ -255,7 +255,7 @@ def test_a_failed_finish_attempt_is_not_the_runs_end_story(tmp_path: pathlib.Pat
             "ok": False,
             "summary": "the verify gate failed",
         },
-        {"type": "session.end", "reason": "provider_error", "all_passed": False},
+        {"type": "session.stop", "reason": "provider_error", "verification": "unverified"},
     ]
     (d / "logs.jsonl").write_text(
         "".join(json.dumps(event) + "\n" for event in events), encoding="utf-8"
@@ -629,7 +629,7 @@ def test_crash_then_resume_recovers_liveness(tmp_path: pathlib.Path) -> None:
 def test_conversation_bar_tells_the_truth_about_a_dead_worker(tmp_path: pathlib.Path) -> None:
     """The conversation view keys its composer on the host's liveness, not its own events.
 
-    A worker killed without a session.end relabels the bar to resume.
+    A worker killed without a session.stop relabels the bar to resume.
     """
     d = tmp_path / "convdead1"
     _mk_crashed(d)
@@ -744,9 +744,7 @@ def test_dead_run_pops_no_approval_modal(tmp_path: pathlib.Path) -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "the conversation screen")
-            await waits.wait_for(
-                pilot, lambda: bool(app.state.pending_approvals), "the prompt to fold"
-            )
+            await waits.wait_for(pilot, lambda: bool(app.state.approvals), "the prompt to fold")
             app._heartbeat_at = 0.0
             app._tick()
             await pilot.pause()
@@ -846,7 +844,7 @@ def test_end_hold_header_keeps_the_shared_status_reason(tmp_path: pathlib.Path) 
 
 
 def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: pathlib.Path) -> None:
-    """The dashboard holds on session.end, so the payoff stays on screen.
+    """The dashboard holds on session.stop, so the payoff stays on screen.
 
     The header says how to leave, and the composer routes a typed follow-up to resume.
     """
@@ -854,7 +852,7 @@ def test_finished_run_holds_the_dashboard_until_the_user_leaves(tmp_path: pathli
     d.mkdir(parents=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "turns": 2, "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -905,7 +903,7 @@ def test_a_finished_log_is_folded_before_the_first_paint(
         {"type": "role.result", "role": "worker", "ok": True, "text": "done"},
         {"type": "tool.call", "name": "finish_session", "args": {"summary": "All done."}},
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
-        {"type": "session.end", "reason": "finish_session", "turns": 1, "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "turns": 1, "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -970,7 +968,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             "args": {"summary": "First execution done."},
         },
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "ok"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     logs.write_text(
         "".join(json.dumps(event) + "\n" for event in first_execution), encoding="utf-8"
@@ -1003,7 +1001,7 @@ def test_a_resumed_execution_drops_the_prior_executions_role_and_finish_story(
             append(
                 {"type": "role.call", "role": "worker", "model": "new-model", "provider": "p"},
                 {"type": "role.result", "role": "worker", "ok": True, "text": "stopping"},
-                {"type": "session.end", "reason": "steer_abort", "all_passed": None},
+                {"type": "session.stop", "reason": "steer_abort", "verification": "not_applicable"},
             )
             await waits.wait_for(pilot, lambda: app.state.finished, "the resumed execution's end")
             app._tick()
@@ -1041,7 +1039,7 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
 ) -> None:
     """A live worker is not proof that a model call is running.
 
-    Before its first call and after its last result, both views stay still; session.end, not
+    Before its first call and after its last result, both views stay still; session.stop, not
     role.result, changes both composers from steer to resume.
     """
     d = tmp_path / "call-edges"
@@ -1116,10 +1114,10 @@ def test_spinners_run_only_during_a_model_call_and_the_composer_follows_liveness
 
             append(
                 {
-                    "type": "session.end",
+                    "type": "session.stop",
                     "reason": "finish_session",
                     "turns": 1,
-                    "all_passed": True,
+                    "verification": "passed",
                 }
             )
             await waits.wait_for(pilot, lambda: app.state.finished, "the session end")
@@ -1206,7 +1204,7 @@ def test_dashboard_header_says_where_the_changes_are(
     d.mkdir()
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     manifest: dict[str, Any] = {
@@ -1364,7 +1362,12 @@ def test_a_session_that_never_commits_shows_no_commit_pane(tmp_path: pathlib.Pat
         )
         evs = [
             {"type": "session.start", "session_id": d.name, "mode": mode, "user_task": "t"},
-            {"type": "session.end", "reason": "answered", "turns": 1, "all_passed": None},
+            {
+                "type": "session.stop",
+                "reason": "answered",
+                "turns": 1,
+                "verification": "not_applicable",
+            },
         ]
         (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
 
@@ -1392,9 +1395,9 @@ def test_header_continuation_keeps_original_task(
     d.mkdir()
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "original task"},
-        {"type": "session.end", "all_passed": True},
+        {"type": "session.stop", "verification": "passed"},
         {"type": "session.resume", "steer": "do more"},
-        {"type": "session.end", "all_passed": True},
+        {"type": "session.stop", "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     (d / "manifest.json").write_text(

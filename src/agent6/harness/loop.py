@@ -126,7 +126,7 @@ class Harness:
             and writes `plan_markdown` to `plan_output_path` on finish_planning.
         plan_output_path: Where a plan is written; required when `mode="plan"`.
         turns_reached: The turn being driven, 0 before the loop starts; the app's
-            interrupt fallbacks read it for a truthful `session.end`.
+            interrupt fallbacks read it for a truthful `session.stop`.
     """
 
     chain: run_chain.RunChain
@@ -231,13 +231,20 @@ class Harness:
             )
         except prompt_revision.PromptRevisionError as exc:
             declined = isinstance(exc, prompt_revision.PromptRevisionDeclined)
-            end_reason: loop_snapshot.SessionEndReason = (
+            stop_reason: loop_snapshot.SessionEndReason = (
                 "steer_abort" if declined else "prompt_revision_failed"
             )
             self.log(f"LOOP: prompt revision {'declined' if declined else 'failed'}: {exc}")
-            self.emit("session.end", reason=end_reason, summary=str(exc), turns=0, all_passed=False)
+            self.emit(
+                "session.stop",
+                execution_id=self.execution_id,
+                reason=stop_reason,
+                summary=str(exc),
+                turns=0,
+                verification=None,
+            )
             return loop_snapshot.SessionResult(
-                completed=False, reason=end_reason, summary=str(exc), turns=0, tool_calls=0
+                completed=False, reason=stop_reason, summary=str(exc), turns=0, tool_calls=0
             )
 
         # The root task is what `add_task` with `parent_id=None` attaches under.
@@ -1725,10 +1732,7 @@ class Harness:
     ) -> loop_snapshot.SessionResult:
         """Record the end and return the execution's result.
 
-        A grounded end reads `all_passed` off the final tree: True when it is observed
-        green, False when red or stale, None when nothing gated it. Every end carries
-        `verified`, the gate's word for that tree, which an operator stop's `all_passed`
-        cannot say.
+        Every stop carries the gate's word for the final tree.
 
         Args:
             state: The execution's state.
@@ -1748,39 +1752,28 @@ class Harness:
         roots = end.roots if end.roots is not None else end.verdict != "failed"
         if roots:
             self._pass_pending_root_tasks()
-        verified = self.gate.verification(state.verify)
-        if end.reason == "settled" and verified == "passed":
-            verified = "unverified"
+        verification = self.gate.verification(state.verify)
+        if end.reason == "settled" and verification == "passed":
+            verification = "unverified"
         # The tree a run leaves: at its next start, what differs from it changed outside the run.
         tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""
         left = {"final_verify_id": state.verify.final_verify_id, **({"tree": tree} if tree else {})}
-        if end.event and end.verdict == "failed":
+        if end.event:
             self.emit(
-                "session.end",
+                "session.stop",
+                execution_id=self.execution_id,
                 reason=end.reason,
                 summary=end.summary,
                 turns=turn,
-                all_passed=False,
-                verified=verified,
+                verification=verification,
+                scoped=state.verify.scoped if end.verdict == "grounded" else end.scoped,
                 **left,
                 **end.fields,
-            )
-        elif end.event:
-            grounded = end.verdict == "grounded"
-            self.emit(
-                "session.end",
-                reason=end.reason,
-                summary=end.summary,
-                turns=turn,
-                all_passed=self.gate.tree_green(state.verify) if grounded else True,
-                scoped=state.verify.scoped if grounded else end.scoped,
-                verified=verified,
-                **left,
             )
         self._record_memory_use(state)
         return loop_snapshot.SessionResult(
             completed=end.completed,
-            verified=verified,
+            verification=verification,
             reason=end.reason,
             summary=end.summary,
             turns=turn,

@@ -469,16 +469,16 @@ def test_runs_remove_deletes_history_but_refuses_a_live_run(
     # this test process is genuinely alive
     process.write_worker_pid(live, os.getpid())
     with (dead / "logs.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
+        fh.write('{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n')
 
     assert main(["sessions", "remove", "live-run"]) == 2
     err = capsys.readouterr().err
     assert "still live" in err and "agent6 stop live-run-AAAA11" in err
     assert live.is_dir()
 
-    # session.end precedes the worker's finalizer; the pid remains the deletion gate until then.
+    # session.stop precedes the worker's finalizer; the pid remains the deletion gate until then.
     with (live / "logs.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write('{"type": "session.end", "reason": "finish_session", "all_passed": true}\n')
+        fh.write('{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n')
     assert main(["sessions", "remove", "live-run"]) == 2
     err = capsys.readouterr().err
     assert "still live" in err and "agent6 stop live-run-AAAA11" in err
@@ -526,7 +526,7 @@ def test_runs_remove_names_the_kept_branch(
     d.mkdir(parents=True)
     (d / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "run"}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
         encoding="utf-8",
     )
 
@@ -567,7 +567,7 @@ def test_remove_names_the_sha_when_the_chain_was_the_only_anchor(
     layout.ensure()
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run"}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
         encoding="utf-8",
     )
 
@@ -797,7 +797,7 @@ def test_remove_reports_a_deletion_failure_instead_of_success(
     target.mkdir(parents=True)
     (target / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "run"}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
         encoding="utf-8",
     )
     runs.chmod(0o500)  # the parent refuses the unlink
@@ -869,7 +869,7 @@ def test_prune_preserves_a_created_fork_at_an_already_reachable_commit(
     )
     source.logs_path.write_text(
         '{"type": "session.start", "mode": "run"}\n'
-        '{"type": "session.end", "reason": "finish_session"}\n',
+        '{"type": "session.stop", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
     source.checkpoint_path(4).write_text(

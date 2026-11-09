@@ -60,9 +60,9 @@ def test_an_edit_a_verify_another_mode_or_a_zero_knob_keeps_it_quiet() -> None:
     edited = _state()
     edited.ever_edited = True
     assert guards.stagnation(_turn(), edited, _ctx()) is None
-    verified = _state()
-    verified.verify.note_fail("sig")
-    assert guards.stagnation(_turn(), verified, _ctx()) is None
+    verification = _state()
+    verification.verify.note_fail("sig")
+    assert guards.stagnation(_turn(), verification, _ctx()) is None
     assert guards.stagnation(_turn(), _state(), _ctx(mode="plan")) is None
     assert guards.stagnation(_turn(), _state(), turn_context()) is None  # the default knob, 300 s
     assert guards.stagnation(_turn(), _state(), turn_context(stagnation_notice_after_s=0)) is None

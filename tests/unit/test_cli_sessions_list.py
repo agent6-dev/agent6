@@ -25,7 +25,7 @@ def _run(runs: pathlib.Path, session_id: str, *, winner: bool | None = None) -> 
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": session_id})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -110,18 +110,18 @@ def test_runs_list_json_carries_the_row_facts(
     row = rows[0]
     assert row["winner"] is True
     assert (row["mode"], row["status"], row["task"]) == ("run", "passed", "fan-l2")
-    assert row["end_reason"] == "finish_session"
+    assert row["stop_reason"] == "finish_session"
     # The one listing row shape, shared with `/api/hub` (viewmodel.summary_row).
     assert set(row) == {
         "session_id",
         "mode",
         "status",
-        "reason",
-        "end_reason",
+        "detail",
+        "stop_reason",
         "label",
         "level",
         "unmerged",
-        "verify_ok",
+        "verification",
         "cost_usd",
         "cost",
         "id_cell",
@@ -130,7 +130,7 @@ def test_runs_list_json_carries_the_row_facts(
         "plan_cap",
         "model",
         "model_from_flag",
-        "mtime",
+        "last_activity",
         "when",
         "winner",
         "task",
@@ -242,7 +242,7 @@ def test_runs_list_marks_a_partial_cost(
         + "\n"
         + json.dumps({"type": "budget.update", "usd_total": 0.0123, "usd_partial": True})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -279,7 +279,7 @@ def test_runs_list_columns_stay_aligned_with_a_machine_draft(
     (draft / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "machine", "user_task": "draft it"})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -371,7 +371,9 @@ def test_runs_list_marks_an_unmerged_run_and_drops_the_mark_after_merge(
         (d / "logs.jsonl").write_text(
             json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
             + "\n"
-            + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+            + json.dumps(
+                {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+            )
             + "\n",
             encoding="utf-8",
         )
@@ -692,7 +694,7 @@ def test_a_folded_fan_out_shows_its_groups_latest_activity(
     assert sessions_cmds._cmd_list(as_json=True) == 0
     rows = json.loads(capsys.readouterr().out)
     assert [r["session_id"] for r in rows] == ["fan", "solo"]
-    assert rows[0]["mtime"] == new
+    assert rows[0]["group_last_activity"] == new
     assert sessions_cmds._cmd_list() == 0
     lines = capsys.readouterr().out.splitlines()
     from agent6.viewmodel import format
@@ -758,7 +760,7 @@ def test_continued_run_keeps_its_label(
     )
     with (d / "logs.jsonl").open("a") as f:
         f.write(json.dumps({"type": "session.resume", "steer": "do more"}) + "\n")
-        f.write(json.dumps({"type": "session.end", "all_passed": True}) + "\n")
+        f.write(json.dumps({"type": "session.stop", "verification": "passed"}) + "\n")
     assert (sessions_show._cmd_status(d.name) if show else sessions_cmds._cmd_list()) == 0
     out = capsys.readouterr().out
     assert "continued: do more" in out

@@ -18,14 +18,23 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import json
-from typing import Any
+from typing import Any, cast
 
-from agent6 import evidence
+from agent6 import evidence, kinds
 
 # A fresh run emits session.start; a resumed execution emits only session.resume.
 SESSION_START_EVENTS = frozenset({"session.resume", "session.start"})
 # The calls that end a session rather than work on it; literals, so no tools import.
 FINISH_TOOLS = frozenset({"finish_session", "finish_planning"})
+
+
+def verification_word(value: object) -> kinds.Verification | None:
+    """Return a recorded final verification word, or None when unknown."""
+    match value:
+        case "passed" | "failed" | "unverified" | "not_applicable":
+            return cast(kinds.Verification, value)
+        case _:
+            return None
 
 
 def event_epoch(value: object) -> float | None:
@@ -446,18 +455,17 @@ class SessionStranded:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class SessionEnd:
-    """session.end: the execution ended.
+    """session.stop: the execution ended.
 
     Attributes:
-        all_passed: True when the final tree was observed verify-green, False when not
-            (red, stale or error), None when no verify command gated it.
+        verification: The final verification word, or None when unknown.
         reason: The end reason word.
         summary: The end sentence; "" for a journal that carries none.
         scoped: The gate ran scoped to the tests nearest the run's diff because the
             full command overran `verify_timeout_s`, so a pass is qualified.
     """
 
-    all_passed: bool | None
+    verification: kinds.Verification | None
     reason: str
     summary: str = ""
     scoped: bool = False
@@ -716,11 +724,9 @@ def _parse_known(raw: dict[str, Any]) -> Event:  # noqa: C901, PLR0911, PLR0912 
             )
         case "session.stranded":
             return SessionStranded()
-        case "session.end":
-            # An explicit null is the ungated tri-state; an absent key folds False.
-            raw_ap = raw.get("all_passed", False)
+        case "session.stop":
             return SessionEnd(
-                all_passed=None if raw_ap is None else bool(raw_ap),
+                verification=verification_word(raw.get("verification")),
                 reason=str(raw.get("reason", "") or ""),
                 summary=str(raw.get("summary", "") or ""),
                 scoped=bool(raw.get("scoped", False)),

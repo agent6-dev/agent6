@@ -145,10 +145,10 @@ class Sessions:
                 if listing.resume_blocker(saved.session_dir):
                     continue  # a coordinator, a lane, a run without a checkpoint: not reopened
                 when = (
-                    datetime.datetime.fromtimestamp(row.mtime, tz=datetime.UTC).isoformat(
-                        timespec="seconds"
-                    )
-                    if row.mtime
+                    datetime.datetime.fromtimestamp(
+                        row.group_last_activity, tz=datetime.UTC
+                    ).isoformat(timespec="seconds")
+                    if row.group_last_activity
                     else None
                 )
                 sessions.append(

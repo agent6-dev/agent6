@@ -244,7 +244,7 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 Exit `0` also covers harness-declared and gateless ends, including a run that changed nothing.
 [`git.auto_merge`](config.md#git) lands a run only when the model ended it with `finish_session`; an exit `0` from any other end stays on its branch.
 
-Every end has one reason (`end_reason` in `agent6 sessions show --json` and `sessions list --json`), and each reason one row:
+Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `sessions list --json`), and each reason one row:
 
 | End reason | Headline | Exit code |
 |---|---|---|

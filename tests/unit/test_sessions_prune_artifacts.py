@@ -27,10 +27,10 @@ def _session(
             "mode": "run",
         },
         {
-            "type": "session.end",
+            "type": "session.stop",
             "ts": end.isoformat(),
             "reason": "finish_session",
-            "all_passed": True,
+            "verification": "passed",
         },
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events))
@@ -134,7 +134,7 @@ def test_prune_uses_last_execution_end_across_buckets_and_respects_writer_lock(
     with resumed.logs_path.open("a") as log:
         log.write(
             json.dumps(
-                {"type": "session.end", "ts": datetime.datetime.now(datetime.UTC).isoformat()}
+                {"type": "session.stop", "ts": datetime.datetime.now(datetime.UTC).isoformat()}
             )
             + "\n"
         )

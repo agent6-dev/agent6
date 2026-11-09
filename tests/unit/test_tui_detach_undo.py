@@ -20,7 +20,7 @@ def _session_dir(tmp_path: pathlib.Path) -> pathlib.Path:
     d.mkdir()
     events = [
         {"type": "session.start", "user_task": "t", "ts": 1.0},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True, "ts": 2.0},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed", "ts": 2.0},
     ]
     (d / layout.LOGS_NAME).write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"

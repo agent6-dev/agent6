@@ -1076,7 +1076,7 @@ def test_resume_of_an_undone_run_points_at_its_fork(
     events = [
         {"type": "session.start", "session_id": "undone-AAAA11", "mode": "run", "user_task": "t"},
         {"type": "session.undone", "new_session_id": "fork-BBBB22", "undone_text": "again"},
-        {"type": "session.end", "reason": "undone", "turns": 1, "all_passed": False},
+        {"type": "session.stop", "reason": "undone", "turns": 1, "verification": "unverified"},
     ]
     src.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     for steer in ("", "once more"):
@@ -1148,7 +1148,7 @@ def test_forking_a_finished_run_with_no_new_work_is_refused(
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
         + "\n",
         encoding="utf-8",
     )
@@ -1882,7 +1882,7 @@ def test_a_no_run_fork_of_a_finished_run_hints_at_the_steer(
     source.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "do the thing"})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )

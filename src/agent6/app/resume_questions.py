@@ -41,7 +41,7 @@ def carried_questions(logs_path: pathlib.Path) -> CarriedQuestions:
         The carried questions.
     """
     state = viewmodel_state.fold_session(tail.tail_events(logs_path, follow=False))
-    asked = [q for q in state.pending_questions if not q.from_harness]
+    asked = [q for q in state.questions if not q.from_harness]
     numbers = [
         int(match.group(1)) for q in asked if (match := re.fullmatch(r"question-(\d+)", q.id))
     ]

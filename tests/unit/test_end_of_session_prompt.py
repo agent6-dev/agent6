@@ -27,7 +27,7 @@ def _seed_session(
     layout.session_dir.mkdir(parents=True, exist_ok=True)
     (layout.session_dir / "logs.jsonl").write_text(
         '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
         encoding="utf-8",
     )
     return layout
@@ -323,7 +323,7 @@ def test_a_execution_that_undoes_or_detaches_ends_the_asking(
     def fake_resume(_cfg: pathlib.Path | None, _sid: str, **kw: object) -> int:
         # The execution forks back and ends the run as undone.
         (layout.session_dir / "logs.jsonl").write_text(
-            '{"type": "session.start"}\n{"type": "session.end", "reason": "undone"}\n',
+            '{"type": "session.start"}\n{"type": "session.stop", "reason": "undone"}\n',
             encoding="utf-8",
         )
         return 0
@@ -400,7 +400,7 @@ def test_an_undone_run_is_not_followed_by_the_prompt(
     layout = _seed_session(tmp_path, monkeypatch, session_id="undone-run-AAAAAA")
     with (layout.session_dir / "logs.jsonl").open("a", encoding="utf-8") as fh:
         fh.write('{"type": "session.undone", "new_session_id": "fork-BBBBBB"}\n')
-        fh.write('{"type": "session.end", "reason": "undone", "all_passed": false}\n')
+        fh.write('{"type": "session.stop", "reason": "undone", "verification": "unverified"}\n')
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("agent6.ui.cli.session_prompt.prompting_is_possible", lambda: True)
     asked: list[str] = []
@@ -482,7 +482,7 @@ def _plan_harness(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> li
         layout.session_dir.mkdir(parents=True, exist_ok=True)
         (layout.session_dir / "logs.jsonl").write_text(
             '{"type": "session.start", "ts": "2026-01-01T00:00:00Z"}\n'
-            '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+            '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
             encoding="utf-8",
         )
         return 0

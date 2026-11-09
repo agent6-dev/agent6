@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """An execution that dies before the loop starts journals its end before the TUI scope closes.
 
-That scope's exit is `proc.wait()` on a dashboard that leaves only on a session.end.
+That scope's exit is `proc.wait()` on a dashboard that leaves only on a session.stop.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import execution, finalize, reporter, role_providers, session_runtime, session_setup
 from agent6.app import frontend as app_frontend
 from agent6.config import Config
@@ -111,7 +111,7 @@ def test_provider_setup_failure_journals_session_end(
         )
 
     ended = json.loads(layout.logs_path.read_text(encoding="utf-8").splitlines()[-1])
-    assert ended["type"] == "session.end"
+    assert ended["type"] == "session.stop"
     assert ended["reason"] == "crashed"
     assert ended["turns"] == 0
     assert any("run crashed" in line for line in said)
@@ -250,7 +250,7 @@ def test_mcp_setup_failure_journals_session_end(
         )
 
     ended = json.loads(layout.logs_path.read_text(encoding="utf-8").splitlines()[-1])
-    assert ended["type"] == "session.end"
+    assert ended["type"] == "session.stop"
     assert ended["reason"] == "crashed"
     assert ended["turns"] == 0
 
@@ -301,7 +301,13 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         def run(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+            events.emit(
+                "session.stop",
+                execution_id="execution",
+                reason="finish_session",
+                turns=1,
+                verification="passed",
+            )
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
@@ -382,7 +388,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
 def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A ResumeError journals a session.end before the TUI scope waits on the dashboard.
+    """A ResumeError journals a session.stop before the TUI scope waits on the dashboard.
 
     `resume --tui` on a torn snapshot otherwise hangs on its own TUI.
     """
@@ -490,7 +496,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
     )
     assert end.rc == 1
     assert seen_at_exit, "the tui_session scope never closed"
-    assert "session.end" in seen_at_exit[0], seen_at_exit[0]
+    assert "session.stop" in seen_at_exit[0], seen_at_exit[0]
     assert any("resume crashed" in line for line in said)
 
 
@@ -578,7 +584,7 @@ def _finishing_workflow(turns: int) -> type:
                 summary="done",
                 turns=turns,
                 tool_calls=0,
-                verified="not_applicable",
+                verification="not_applicable",
             )
 
     return _Workflow
@@ -626,7 +632,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
 
 
 @pytest.mark.parametrize(
-    ("reason", "verified", "auto_merge", "merged"),
+    ("reason", "verification", "auto_merge", "merged"),
     [
         ("verify_settled", "passed", True, False),
         ("settled", "not_applicable", True, False),
@@ -646,7 +652,7 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     reason: loop_snapshot.SessionEndReason,
-    verified: loop_snapshot.Verification,
+    verification: kinds.Verification,
     auto_merge: bool,
     merged: bool,
 ) -> None:
@@ -703,14 +709,20 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
         def run(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
-            events.emit("session.end", reason=reason, turns=1, verified=verified)
+            events.emit(
+                "session.stop",
+                execution_id="execution",
+                reason=reason,
+                turns=1,
+                verification=verification,
+            )
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason=reason,
                 summary="done",
                 turns=1,
                 tool_calls=0,
-                verified=verified,
+                verification=verification,
             )
 
     cfg = Config.model_validate({"git": {"auto_merge": auto_merge}})
@@ -767,7 +779,7 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
         if reason != "finish_session":
             assert reason in skipped[0] and "not finish_session" in skipped[0]
         else:
-            assert verified in skipped[0]
+            assert verification in skipped[0]
     else:
         assert not skipped
 
@@ -820,14 +832,20 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
         def run(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+            events.emit(
+                "session.stop",
+                execution_id="execution",
+                reason="finish_session",
+                turns=1,
+                verification="passed",
+            )
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
                 turns=1,
                 tool_calls=0,
-                verified="passed",
+                verification="passed",
             )
 
     cfg = Config()
@@ -864,9 +882,9 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
 
     assert end.rc == finalize.EXIT_NO_COMMIT_LANDED
     journal = [json.loads(line) for line in layout.logs_path.read_text().splitlines()]
-    assert [e["type"] for e in journal][-2:] == ["session.end", "session.stranded"]
+    assert [e["type"] for e in journal][-2:] == ["session.stop", "session.stranded"]
     row = listing.summarize_session_dir(layout.session_dir)
-    assert (row.status, row.reason) == ("passed", "not committed")
+    assert (row.status, row.detail) == ("passed", "not committed")
     assert any("no commit on" in line for line in said), "\n".join(said)
 
 
@@ -901,14 +919,20 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
         def run(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", turns=3, all_passed=True)
+            events.emit(
+                "session.stop",
+                execution_id="execution",
+                reason="finish_session",
+                turns=3,
+                verification="passed",
+            )
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
                 turns=3,
                 tool_calls=0,
-                verified="not_applicable",
+                verification="not_applicable",
             )
 
     frontend = _wired_frontend(
@@ -948,7 +972,7 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
     ends = [
         json.loads(line)
         for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
-        if '"session.end"' in line
+        if '"session.stop"' in line
     ]
     assert [e["reason"] for e in ends] == ["finish_session"]
 
@@ -956,7 +980,7 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
 def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A Ctrl-C during the background settle journals no second `session.end`.
+    """A Ctrl-C during the background settle journals no second `session.stop`.
 
     A second end (interrupted) would be taken as the run's by every fold, with a resume hint for a
     run that had finished.
@@ -976,14 +1000,20 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         def run(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
-            events.emit("session.end", reason="finish_session", turns=3, all_passed=True)
+            events.emit(
+                "session.stop",
+                execution_id="execution",
+                reason="finish_session",
+                turns=3,
+                verification="passed",
+            )
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_session",
                 summary="done",
                 turns=3,
                 tool_calls=0,
-                verified="passed",
+                verification="passed",
             )
 
     frontend = _wired_frontend(monkeypatch, order, harness=_Workflow, cfg=Config())
@@ -1030,9 +1060,9 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
     ends = [
         json.loads(line)
         for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
-        if '"session.end"' in line
+        if '"session.stop"' in line
     ]
-    assert [(e["reason"], e["all_passed"]) for e in ends] == [("finish_session", True)]
+    assert [(e["reason"], e["verification"]) for e in ends] == [("finish_session", "passed")]
     assert end.rc == 0
     assert "\n[agent6] run had ended; its result stands" in said
     assert not [line for line in said if "resume with:" in line]
@@ -1050,11 +1080,13 @@ def test_a_closed_output_pipe_ends_the_run_as_a_stop_not_a_crash(tmp_path: pathl
     layout.ensure()
     events = event_log.EventSink(layout.logs_path)
 
-    reason = execution._journal_escape(events, BrokenPipeError(32, "Broken pipe"), turns=2)
+    reason = execution._journal_escape(
+        events, BrokenPipeError(32, "Broken pipe"), execution_id="execution", turns=2
+    )
 
     ended = [json.loads(line) for line in layout.logs_path.read_text().splitlines()][-1]
     assert reason == "interrupted"
-    assert ended["type"] == "session.end" and ended["reason"] == "interrupted"
+    assert ended["type"] == "session.stop" and ended["reason"] == "interrupted"
 
 
 def test_an_interrupted_end_records_the_tree_the_run_left(
@@ -1073,6 +1105,7 @@ def test_an_interrupted_end_records_the_tree_the_run_left(
 
     class _Workflow:
         turns_reached = 2
+        execution_id = "execution"
         chain = types.SimpleNamespace(tree_sha=lambda: "tree-at-the-signal")
 
         def __init__(self, **_kwargs: object) -> None:
@@ -1116,7 +1149,7 @@ def test_an_interrupted_end_records_the_tree_the_run_left(
     ends = [
         json.loads(line)
         for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
-        if '"session.end"' in line
+        if '"session.stop"' in line
     ]
     assert [(e["reason"], e["turns"], e.get("tree")) for e in ends] == [
         ("interrupted", 2, "tree-at-the-signal")
@@ -1144,6 +1177,7 @@ def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
 
     class _Workflow:
         turns_reached = 2
+        execution_id = "execution"
         chain = types.SimpleNamespace(tree_sha=_interrupted)
 
         def __init__(self, **_kwargs: object) -> None:
@@ -1187,7 +1221,7 @@ def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
     ends = [
         json.loads(line)
         for line in layout.logs_path.read_text(encoding="utf-8").splitlines()
-        if '"session.end"' in line
+        if '"session.stop"' in line
     ]
     assert [(e["reason"], e["turns"], e.get("tree")) for e in ends] == [("interrupted", 2, None)]
     assert end.rc == finalize.EXIT_OPERATOR_STOP
@@ -1290,14 +1324,14 @@ def test_a_plan_under_auto_merge_prints_no_skipped_note(
         def run(
             self, _task: str, *, operator_task: str | None = None
         ) -> loop_snapshot.SessionResult:
-            events.emit("session.end", reason="finish_planning", turns=1)
+            events.emit("session.stop", execution_id="execution", reason="finish_planning", turns=1)
             return loop_snapshot.SessionResult(
                 completed=True,
                 reason="finish_planning",
                 summary="planned",
                 turns=1,
                 tool_calls=0,
-                verified="not_applicable",
+                verification="not_applicable",
             )
 
     cfg = Config.model_validate({"git": {"auto_merge": True}})

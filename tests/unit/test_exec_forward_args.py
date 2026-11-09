@@ -281,7 +281,7 @@ def test_forward_names_a_finished_run_instead_of_blaming_the_config(tmp_path: pa
     (run / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
         + "\n",
         encoding="utf-8",
     )
@@ -325,7 +325,7 @@ def test_exec_refuses_a_run_that_is_over(
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
         + "\n",
         encoding="utf-8",
     )

@@ -54,7 +54,7 @@ def test_run_view_announces_a_dead_workers_question(
         app = _App(saved)
         async with app.run_test(size=(140, 40)) as pilot:
             await waits.wait_for(pilot, lambda: app.worker_lost, "dead worker")
-            await waits.wait_for(pilot, lambda: bool(app.state.pending_questions), "question fold")
+            await waits.wait_for(pilot, lambda: bool(app.state.questions), "question fold")
             for _ in range(3):
                 app._tick()  # pyright: ignore[reportPrivateUsage]
                 await pilot.pause()
@@ -77,7 +77,7 @@ def test_question_header_and_saved_notice_name_when_the_answer_is_read(
     async def scenario() -> None:
         app = _App(saved)
         async with app.run_test(size=(140, 40)) as pilot:
-            await waits.wait_for(pilot, lambda: bool(app.state.pending_questions), "question fold")
+            await waits.wait_for(pilot, lambda: bool(app.state.questions), "question fold")
             if not alive:
                 await waits.wait_for(pilot, lambda: app.worker_lost, "dead worker")
             app.action_answer_question()

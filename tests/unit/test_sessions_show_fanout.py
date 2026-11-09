@@ -24,7 +24,7 @@ def _session(repo: pathlib.Path, session_id: str, manifest: dict[str, object]) -
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -182,9 +182,9 @@ def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
         {"type": "session.start", "mode": "run"},
         {"type": "workspace.setup", "cmd": ["uv", "sync", "--offline"], "exit_code": 1},
         {
-            "type": "session.end",
+            "type": "session.stop",
             "reason": "setup_command_failed",
-            "all_passed": False,
+            "verification": "unverified",
             "summary": problem,
         },
     ]
@@ -405,7 +405,7 @@ def test_show_drops_the_questions_line_after_a_resume(
     ]
     resumed = [
         {"type": "session.resume", "turn": 3},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     layout.logs_path.write_text(
         "\n".join([lines[0], *(json.dumps(e) for e in asked), *lines[1:]])
@@ -443,7 +443,7 @@ def test_show_names_a_failed_end_once_beside_the_unanswered_count(
             "source": "headless-default",
             "unseen": True,
         },
-        {"type": "session.end", "all_passed": False, "reason": "max_turns"},
+        {"type": "session.stop", "verification": "unverified", "reason": "max_turns"},
     ]
     layout.logs_path.write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     assert main(["sessions", "show", "capped"]) == 0
@@ -469,7 +469,9 @@ def test_show_offers_plan_show_only_once_the_plan_is_written(
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "plan", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": False, "reason": "steer_abort"})
+        + json.dumps(
+            {"type": "session.stop", "verification": "unverified", "reason": "steer_abort"}
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -493,7 +495,7 @@ def _stopped_short(repo: pathlib.Path, session_id: str, reason: str) -> None:
         session_id,
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": False, "reason": reason},
+            {"type": "session.stop", "verification": "unverified", "reason": reason},
         ],
     )
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
@@ -530,17 +532,17 @@ def test_show_offers_fork_for_a_lane_that_stopped_short(
     assert 'fan-l1 --steer "..."` continues it in a worktree of its own' in out
 
 
-def test_show_json_and_the_listing_name_the_end_reason_alike(
+def test_show_json_and_the_listing_name_the_stop_reason_alike(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Both JSON forms carry `end_reason`; the listing's `reason` stays the label's detail."""
+    """Both JSON forms carry `stop_reason`; the listing's `reason` stays the label's detail."""
     assert main(["sessions", "show", "fan-l1", "--json"]) == 0
     shown = json.loads(capsys.readouterr().out)
-    assert shown["end_reason"] == "finish_session" and "reason" not in shown
+    assert shown["stop_reason"] == "finish_session" and "reason" not in shown
 
     assert main(["sessions", "list", "--json"]) == 0
     lanes = {r["session_id"]: r for r in json.loads(capsys.readouterr().out)[0]["lanes"]}
-    assert (lanes["fan-l1"]["end_reason"], lanes["fan-l1"]["reason"]) == ("finish_session", "")
+    assert (lanes["fan-l1"]["stop_reason"], lanes["fan-l1"]["detail"]) == ("finish_session", "")
 
 
 def test_show_nests_attempts_directly_under_the_verify_field(
@@ -555,12 +557,7 @@ def test_show_nests_attempts_directly_under_the_verify_field(
             {"type": "verify.end", "exit_code": 1, "duration_s": 2.5},
             {"type": "verify.end", "exit_code": 0, "duration_s": 1.2},
             {"type": "loop.pin.added", "text": "Keep the regression checks"},
-            {
-                "type": "session.end",
-                "all_passed": True,
-                "reason": "finish_session",
-                "verified": "passed",
-            },
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     assert main(["sessions", "show", "fan-l1"]) == 0
@@ -584,12 +581,7 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "loop.baseline", "ok": False, "turn": 0},
-            {
-                "type": "session.end",
-                "all_passed": True,
-                "reason": "finish_session",
-                "verified": "passed",
-            },
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
 

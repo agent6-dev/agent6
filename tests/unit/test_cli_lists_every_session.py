@@ -76,14 +76,14 @@ def test_an_undone_run_lists_as_undone_and_never_unmerged(
     (session / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "a task"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "undone", "all_passed": False})
+        + json.dumps({"type": "session.stop", "reason": "undone", "verification": "unverified"})
         + "\n",
         encoding="utf-8",
     )
 
     assert main(["sessions", "list", "--json"]) == 0
     [row] = json.loads(capsys.readouterr().out)
-    assert (row["status"], row["reason"], row["unmerged"]) == ("undone", "", False)
+    assert (row["status"], row["detail"], row["unmerged"]) == ("undone", "", False)
     assert main(["sessions", "list"]) == 0
     out = capsys.readouterr().out
     assert "undone" in out and "stopped" not in out and "unmerged" not in out

@@ -22,6 +22,51 @@ from agent6.tools import background
 from agent6.viewmodel import events, format, listing, policy, review, session_status, state_types
 from agent6.viewmodel import state as session_fold
 
+PUBLIC_STATE_FIELDS = (
+    "session_id",
+    "mode",
+    "tasks",
+    "cursor_task_id",
+    "last_role",
+    "tool_calls",
+    "last_verify",
+    "review",
+    "budget",
+    "approvals",
+    "questions",
+    "log_tail",
+    "log_count",
+    "tool_count",
+    "recent_diffs",
+    "started",
+    "finished",
+    "verification",
+    "verify_scoped",
+    "stop_reason",
+    "stranded",
+    "end_summary",
+    "unattended_questions",
+    "undone_to",
+    "undone_text",
+    "finish_summary",
+    "latest_diff",
+    "commits",
+    "steer_requests",
+    "compact_elided",
+    "compact_gists_live",
+    "pins",
+    "last_event_ep",
+)
+
+
+def _wire_value(value: Any) -> Any:
+    """Return a declared state field in wire form."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        return dataclasses.asdict(value)
+    if isinstance(value, tuple):
+        return tuple(_wire_value(item) for item in value)
+    return value
+
 
 def status_facts(state: state_types.SessionState) -> session_status.StatusFacts:
     """Return the fold's answers to the status questions.
@@ -35,26 +80,24 @@ def status_facts(state: state_types.SessionState) -> session_status.StatusFacts:
         The facts `status_for_session_dir` reads.
     """
     pending: list[tuple[str, float | None]] = [
-        ("approval", a.asked_ep) for a in state.pending_approvals if not a.answered
-    ] + [("question", q.asked_ep) for q in state.pending_questions if not q.answered and q.blocking]
+        ("approval", a.asked_ep) for a in state.approvals if not a.answered
+    ] + [("question", q.asked_ep) for q in state.questions if not q.answered and q.blocking]
     oldest = min(pending, key=lambda p: p[1] if p[1] is not None else float("inf"), default=None)
     gate = state.last_verify
     return session_status.StatusFacts(
         started=state.started,
         finished=state.finished,
-        all_passed=state.all_passed,
+        verification=state.verification,
         verify_scoped=state.verify_scoped,
         gate_red=gate is not None and gate.exit_code is not None and gate.exit_code != 0,
         gate_timed_out=gate is not None
         and events.verify_limit_hit(gate.outcome, gate.timeout_s) > 0,
-        end_reason=state.end_reason,
+        stop_reason=state.stop_reason,
         operator_blocked=bool(pending),
         blocked_kind=oldest[0] if oldest else "",
         blocked_since_ep=oldest[1] if oldest else None,
         unattended_questions=state.unattended_questions,
-        pending_questions=sum(
-            1 for q in state.pending_questions if not q.answered and not q.from_harness
-        ),
+        pending_questions=sum(1 for q in state.questions if not q.answered and not q.from_harness),
         stranded=state.stranded,
     )
 
@@ -137,14 +180,14 @@ def session_state_as_dict(
         commit labels, and `log_tail` as plain strings.
         Spend is `budget.cost_usd`; journal event fields keep their stored names.
     """
-    d = dataclasses.asdict(state)
+    d = {name: _wire_value(getattr(state, name)) for name in PUBLIC_STATE_FIELDS}
     d["budget"]["cost_usd"] = d["budget"].pop("usd_total")
     d["review"] = review.as_dict(state.review)
     d["context_pct"] = context_fill(state)
     d["needs_new_work"] = listing.needs_new_work(
         finished=state.finished,
-        end_reason=state.end_reason,
-        all_passed=state.all_passed,
+        stop_reason=state.stop_reason,
+        verification=state.verification,
         saved_answers=len(ipc.saved_question_answers(session_dir)) if session_dir else 0,
     )
     d["budget"]["usd_text"] = format.budget_usd_text(
@@ -159,7 +202,7 @@ def session_state_as_dict(
             plan_used_percent=state.budget.plan_used_percent,
         ),
     )
-    for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
+    for ap, row in zip(state.approvals, d["approvals"], strict=True):
         row["head"], row["payload"] = state_types.approval_parts(ap.prompt)
     for commit, row in zip(state.commits, d["commits"], strict=True):
         row["label"] = commit.label
@@ -192,8 +235,8 @@ def session_state_as_dict(
         facts = status_facts(state)
         word, reason = session_status.status_word(
             finished=state.finished,
-            all_passed=state.all_passed,
-            end_reason=state.end_reason,
+            verification=state.verification,
+            stop_reason=state.stop_reason,
             scoped=state.verify_scoped,
             gate_red=facts.gate_red,
             gate_timed_out=facts.gate_timed_out,
@@ -206,7 +249,6 @@ def session_state_as_dict(
         else format.status_label(word, reason)
     )
     label = state.task_label.fallback(fallback_task, fallback_continued)
-    d.pop("task_label")
     d["task"] = label.task
     d["continued_task"] = label.continued_task
     d["task_line"] = label.line()

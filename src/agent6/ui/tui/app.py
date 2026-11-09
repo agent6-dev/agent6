@@ -64,7 +64,7 @@ _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re
 # Events that recompute dir_status at once, not on the ~1s heartbeat: the chip and both
 # composer bars route off it, so serving the previous state for a heartbeat lies.
 _STATUS_NOW_EVENTS = events.SESSION_START_EVENTS | {
-    "session.end",
+    "session.stop",
     "approval.prompt",
     "approval.answer",
     "question.prompt",
@@ -347,7 +347,7 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
 
     @property
     def worker_lost(self) -> bool:
-        """The worker is gone without a session.end, and the fold has caught up to the log."""
+        """The worker is gone without a session.stop, and the fold has caught up to the log."""
         return self.dir_status[0] == "stale" and self.state.log_count >= self._seed_log_count
 
     def _refresh_dir_status(self) -> None:
@@ -847,8 +847,8 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         s = self.state
         return listing.needs_new_work(
             finished=s.finished,
-            end_reason=s.end_reason,
-            all_passed=s.all_passed,
+            stop_reason=s.stop_reason,
+            verification=s.verification,
             saved_answers=len(ipc.saved_question_answers(self.session_dir)),
         )
 

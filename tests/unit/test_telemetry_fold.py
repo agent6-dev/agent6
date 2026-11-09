@@ -96,12 +96,11 @@ def _journal() -> list[dict[str, Any]]:
             "plan_used_percent": 12,
         },
         {
-            "type": "session.end",
+            "type": "session.stop",
             "ts": _ts(60),
             "reason": "finish_session",
             "turns": 2,
-            "all_passed": False,
-            "verified": "failed",
+            "verification": "failed",
             "tree": "t",
         },
     ]
@@ -182,7 +181,7 @@ def test_a_journal_folds_into_a_deterministic_span_tree() -> None:
         "error",
         "error",
     )
-    assert execution.status == "error" and _attr(execution, "agent6.verified") == "failed"
+    assert execution.status == "error" and _attr(execution, "agent6.verification") == "failed"
     assert execution.start_ns == telemetry_records.event_ns(_ts(0))
     assert execution.end_ns == telemetry_records.event_ns(_ts(60))
     assert (
@@ -274,7 +273,9 @@ def test_the_metrics_count_what_the_journal_records() -> None:
     assert _counter(fold, "agent6_cost_usd_total") == 0.25
     assert _counter(fold, "agent6_plan_observed_points_total") == 3
     assert (
-        _counter(fold, "agent6_execution_ends_total", reason="finish_session", verified="failed")
+        _counter(
+            fold, "agent6_execution_ends_total", reason="finish_session", verification="failed"
+        )
         == 1
     )
     snapshot = fold.metrics()
@@ -305,7 +306,7 @@ def test_significant_events_become_log_records_on_their_spans() -> None:
 
 
 def test_what_follows_an_end_still_folds_against_it() -> None:
-    """The settled budget reading, the stranded notice and a disposition land after session.end."""
+    """The settled budget reading, the stranded notice and a disposition land after session.stop."""
     start, panel = queue_tests._panel_rows(block=1)  # pyright: ignore[reportPrivateUsage]
     rows = [
         *_journal(),
@@ -340,10 +341,10 @@ def test_the_ask_repls_repeated_starts_share_one_cumulative_tracker() -> None:
     rows = [
         {"type": "session.start", "ts": _ts(0), "mode": "ask", "execution_id": "q1"},
         {"type": "budget.update", "ts": _ts(1), "usd_total": 0.10},
-        {"type": "session.end", "ts": _ts(2), "reason": "answered"},
+        {"type": "session.stop", "ts": _ts(2), "reason": "answered"},
         {"type": "session.start", "ts": _ts(3), "mode": "ask", "execution_id": "q2"},
         {"type": "budget.update", "ts": _ts(4), "usd_total": 0.15},
-        {"type": "session.end", "ts": _ts(5), "reason": "answered"},
+        {"type": "session.stop", "ts": _ts(5), "reason": "answered"},
     ]
     fold, spans, _logs = _run(rows)
     assert _counter(fold, "agent6_cost_usd_total") == 0.15
@@ -356,7 +357,12 @@ def test_a_resume_opens_a_second_trace_and_restarts_the_spend_baseline() -> None
         *_journal(),
         {"type": "session.resume", "ts": _ts(100), "execution_id": "e2", "turn": 2},
         {"type": "budget.update", "ts": _ts(110), "usd_total": 0.10, "usd_partial": True},
-        {"type": "session.end", "ts": _ts(120), "reason": "finish_session", "verified": "passed"},
+        {
+            "type": "session.stop",
+            "ts": _ts(120),
+            "reason": "finish_session",
+            "verification": "passed",
+        },
     ]
     fold, spans, _logs = _run(rows)
     executions = [s for s in spans if s.name == telemetry_records.SPAN_EXECUTION]
@@ -400,7 +406,12 @@ def test_turn_zero_and_a_failed_tool_read_as_the_journal_means_them() -> None:
         {"type": "loop.verify_harness", "ts": _ts(1), "turn": 0},
         {"type": "tool.call", "ts": _ts(2), "name": "read_file", "call_id": 1, "turn": 1},
         {"type": "tool.result", "ts": _ts(3), "name": "read_file", "ok": False, "call_id": 1},
-        {"type": "session.end", "ts": _ts(4), "reason": "finish_session", "verified": "passed"},
+        {
+            "type": "session.stop",
+            "ts": _ts(4),
+            "reason": "finish_session",
+            "verification": "passed",
+        },
     ]
     fold, spans, _logs = _run(rows)
     assert [_attr(s, "agent6.turn") for s in spans if s.name == telemetry_records.SPAN_TURN] == [1]
@@ -428,7 +439,12 @@ def test_a_journal_without_pairing_ids_pairs_only_what_is_certain() -> None:
         {"type": "role.call", "ts": _ts(1), "role": "review:a", "model": "m", "provider": "p"},
         {"type": "role.call", "ts": _ts(1), "role": "review:b", "model": "m", "provider": "p"},
         {"type": "role.result", "ts": _ts(2), "role": "review:b", "ok": True, "tokens_in": 7},
-        {"type": "session.end", "ts": _ts(3), "reason": "finish_session", "verified": "passed"},
+        {
+            "type": "session.stop",
+            "ts": _ts(3),
+            "reason": "finish_session",
+            "verification": "passed",
+        },
     ]
     fold, spans, _logs = _run(concurrent)
     calls = [s for s in spans if s.name == telemetry_records.SPAN_MODEL_CALL]

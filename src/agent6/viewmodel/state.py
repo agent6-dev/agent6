@@ -109,14 +109,16 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 mode=str(event.get("mode", state.mode)),
                 started=True,
                 finished=False,
-                end_reason="",
+                verification=None,
+                verify_scoped=False,
+                stop_reason="",
                 stranded=False,
                 end_summary="",
                 last_role=None,
                 finish_summary="",
                 last_verify=None,
-                pending_approvals=_answered_only(state.pending_approvals),
-                pending_questions=_carried(state.pending_questions),
+                approvals=_answered_only(state.approvals),
+                questions=_carried(state.questions),
                 unattended_questions=0,
                 tool_count=0,
             )
@@ -129,14 +131,16 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 mode=str(event.get("mode", state.mode)),
                 started=True,
                 finished=False,
-                end_reason="",
+                verification=None,
+                verify_scoped=False,
+                stop_reason="",
                 stranded=False,
                 end_summary="",
                 last_role=None,
                 finish_summary="",
                 last_verify=None,
-                pending_approvals=_answered_only(state.pending_approvals),
-                pending_questions=_carried(state.pending_questions),
+                approvals=_answered_only(state.approvals),
+                questions=_carried(state.questions),
                 unattended_questions=0,
                 tool_count=0,
                 budget=dataclasses.replace(
@@ -341,14 +345,14 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             ap = state_types.ApprovalPrompt(
                 id=aid, prompt=prompt, standing=standing, asked_ep=asked_ep
             )
-            return dataclasses.replace(state, pending_approvals=(*state.pending_approvals, ap))
+            return dataclasses.replace(state, approvals=(*state.approvals, ap))
 
         case events.ApprovalAnswer(id=wanted_id, approved=approved):
             new = tuple(
                 dataclasses.replace(a, answered=True, approved=approved) if a.id == wanted_id else a
-                for a in state.pending_approvals
+                for a in state.approvals
             )
-            return dataclasses.replace(state, pending_approvals=new)
+            return dataclasses.replace(state, approvals=new)
 
         case events.QuestionPrompt(id=qid, questions=qs, asked_ep=asked_ep, wait=wait):
             questions = tuple(
@@ -363,20 +367,20 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
                 blocking=wait,
             )
             # A journal from before ids ran across executions reuses one: the latest is the one.
-            kept = tuple(q for q in state.pending_questions if q.id != qid)
-            return dataclasses.replace(state, pending_questions=(*kept, qp))
+            kept = tuple(q for q in state.questions if q.id != qid)
+            return dataclasses.replace(state, questions=(*kept, qp))
 
         case events.QuestionAnswer(id=wanted, answers=answers, unseen=unseen, source=source):
             new_q = tuple(
                 dataclasses.replace(q, answered=True, answers=answers, source=source)
                 if q.id == wanted
                 else q
-                for q in state.pending_questions
+                for q in state.questions
             )
             # Counted per event: prompt ids restart on every execution.
             return dataclasses.replace(
                 state,
-                pending_questions=new_q,
+                questions=new_q,
                 unattended_questions=state.unattended_questions + (1 if unseen else 0),
             )
 
@@ -403,13 +407,13 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
             return dataclasses.replace(state, steer_requests=state.steer_requests + 1)
 
         case events.SessionEnd(
-            all_passed=all_passed, reason=reason, summary=summary, scoped=scoped
+            verification=verification, reason=reason, summary=summary, scoped=scoped
         ):
             return dataclasses.replace(
                 state,
                 finished=True,
-                all_passed=all_passed,
-                end_reason=reason,
+                verification=verification,
+                stop_reason=reason,
                 end_summary=session_status.end_text(reason, summary, state.finish_summary),
                 verify_scoped=scoped,
                 # The worker is on no task after the end: each draws its own status.
@@ -525,9 +529,7 @@ def open_approval_of(
     Returns:
         The oldest unanswered approval not yet taken, or None.
     """
-    return next(
-        (ap for ap in state.pending_approvals if not ap.answered and not taken(ap.id)), None
-    )
+    return next((ap for ap in state.approvals if not ap.answered and not taken(ap.id)), None)
 
 
 def open_approval(session_dir: pathlib.Path) -> state_types.ApprovalPrompt | None:
@@ -557,9 +559,7 @@ def pending_questions(session_dir: pathlib.Path) -> tuple[state_types.QuestionPr
 
     state = fold_session(tail.tail_events(session_dir / layout.LOGS_NAME, follow=False))
     alive = process.worker_is_alive(session_dir)
-    return tuple(
-        q for q in state.pending_questions if not q.answered and (alive or not q.from_harness)
-    )
+    return tuple(q for q in state.questions if not q.answered and (alive or not q.from_harness))
 
 
 def fold_until_commit(

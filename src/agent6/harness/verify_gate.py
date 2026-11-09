@@ -15,10 +15,9 @@ import dataclasses
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Literal
 
-from agent6 import errors, terminal
+from agent6 import errors, kinds, terminal
 from agent6.harness import (
     loop_conversation,
-    loop_snapshot,
     nudges,
     run_chain,
     verify_scope,
@@ -633,7 +632,7 @@ class VerifyGate:
             verdict.note_edit()
         return verdict.green_and_untouched
 
-    def verification(self, verdict: verify_verdict.VerifyVerdict) -> loop_snapshot.Verification:
+    def verification(self, verdict: verify_verdict.VerifyVerdict) -> kinds.Verification:
         """Return the gate's word for the session result.
 
         Only a run is gated. `failed` claims an observed red, so an execution where no verify

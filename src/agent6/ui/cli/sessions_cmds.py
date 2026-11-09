@@ -76,12 +76,12 @@ def _cmd_list(
         s = row.summary
         styled, plain = common.styled_status(
             s.status,
-            s.reason,
+            s.detail,
             color=color,
-            label=format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
+            label=format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged),
         )
         return (
-            format.format_when(row.mtime),
+            format.format_when(row.group_last_activity),
             styled,
             plain,
             _review_cell(row) if sort == "review" else "",
@@ -593,7 +593,7 @@ def _remove_preview(cwd: pathlib.Path, layout: sessions_layout.SessionLayout) ->
     lines = [
         f"sessions remove will delete {layout.session_id}",
         f"  task:    {task}",
-        f"  state:   {format.status_label(summary.status, summary.reason)}",
+        f"  state:   {format.status_label(summary.status, summary.detail)}",
     ]
     if summary.unmerged:
         branch = git_read.run_branch_for(layout.session_id)

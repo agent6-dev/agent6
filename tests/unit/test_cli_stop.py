@@ -30,7 +30,7 @@ from pathlib import Path
 d = Path(sys.argv[1])
 while not (d / "steer.answer").exists():
     time.sleep(0.05)
-end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
+end = {"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}
 with (d / "logs.jsonl").open("a") as fh:
     fh.write(json.dumps(end) + "\\n")
 """
@@ -54,7 +54,9 @@ def _run(repo: pathlib.Path, name: str, *, finished: bool = False) -> pathlib.Pa
         {"type": "session.start", "session_id": name, "mode": "run", "user_task": "t"}
     ]
     if finished:
-        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        events.append(
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+        )
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
     (d / "manifest.json").write_text(
         json.dumps({"version": 3, "session_id": name, "mode": "run", "user_task": "t"}),
@@ -314,7 +316,7 @@ d, lane = Path(sys.argv[1]), Path(sys.argv[2])
 (d / "draining").write_text("1")  # the caller waits for this before stopping
 while session_is_live(lane):
     time.sleep(0.05)
-end = {"type": "session.end", "reason": "steer_abort", "all_passed": False}
+end = {"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}
 with (d / "logs.jsonl").open("a") as fh:
     fh.write(json.dumps(end) + "\\n")
 """
@@ -435,13 +437,13 @@ def test_a_finished_run_with_a_lingering_pid_is_already_over(
 ) -> None:
     """A finished run with a lingering pid is already over: the gate owns liveness, not the pid.
 
-    session.end lands before teardown clears worker.pid.
+    session.stop lands before teardown clears worker.pid.
     """
     monkeypatch.chdir(tmp_path)
     rd = _session_dir(tmp_path, "done-run-CCC333")
     (rd / "logs.jsonl").write_text(
         '{"type": "session.start", "mode": "run"}\n'
-        '{"type": "session.end", "all_passed": true, "reason": "finish_session"}\n',
+        '{"type": "session.stop", "verification": "passed", "reason": "finish_session"}\n',
         encoding="utf-8",
     )
     # teardown not finished yet

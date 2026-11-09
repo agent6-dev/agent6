@@ -155,12 +155,12 @@ def option_kind(text: str, standing: bool | None) -> str:
     return _STANDING_KINDS.get(text, "allow_once")
 
 
-def stop_reason(code: int, *, end_reason: str = "") -> acp_session.StopReason:
+def stop_reason(code: int, *, stop_reason: str = "") -> acp_session.StopReason:
     """Return ACP's stop reason for the lifecycle's exit code.
 
     Args:
         code: The exit code.
-        end_reason: The journal's end reason for this execution, or "".
+        stop_reason: The journal's end reason for this execution, or "".
 
     Returns:
         `cancelled` for an operator stop (exit 130) and `max_turn_requests` for a run that
@@ -170,7 +170,7 @@ def stop_reason(code: int, *, end_reason: str = "") -> acp_session.StopReason:
     """
     if code == 130:
         return "cancelled"
-    if end_reason == "max_turns":
+    if stop_reason == "max_turns":
         return "max_turn_requests"
     return (
         "end_turn"
@@ -393,7 +393,7 @@ class RunBridge:
             seen.add(session.session_id)
             layout = session.layout(agent6_paths.state_dir(session.cwd))
             scan = session_log.scan_session_log(layout.logs_path)
-            if not (scan.finished and scan.end_reason == "undone" and scan.undone_to):
+            if not (scan.finished and scan.stop_reason == "undone" and scan.undone_to):
                 resuming = (layout.session_dir / "loop_state.json").is_file()
                 if len(seen) > 1 and not resuming:
                     raise errors.OperatorError(
@@ -600,8 +600,8 @@ class RunBridge:
         # Only a journal that grew and ended in this execution carries its end reason.
         grown = viewmodel_tail.journal_size(layout.logs_path) > journal_before
         scan = session_log.scan_session_log(layout.logs_path)
-        end_reason = scan.end_reason if grown and scan.finished else ""
-        return stop_reason(code, end_reason=end_reason)
+        reason = scan.stop_reason if grown and scan.finished else ""
+        return stop_reason(code, stop_reason=reason)
 
     def _stream(  # noqa: PLR0912
         self,

@@ -38,7 +38,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: pathlib.Path) -> None:
         [
             {"type": "session.start", "mode": "run", "user_task": "the task"},
             {"type": "budget.update", "usd_total": 0.0123},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     (s,) = model.hub_payload(tmp_path)["sessions"]
@@ -57,9 +57,9 @@ def test_run_summary_captures_cost_and_status(tmp_path: pathlib.Path) -> None:
         ("metric_plateau", "finished · metric plateau"),
     ],
 )
-@pytest.mark.parametrize("all_passed", [True, None])
+@pytest.mark.parametrize("verification", ["passed", None])
 def test_harness_ends_keep_their_labels_in_the_hub_and_run_view(
-    tmp_path: pathlib.Path, reason: str, label: str, all_passed: bool | None
+    tmp_path: pathlib.Path, reason: str, label: str, verification: str | None
 ) -> None:
     """The hub and run page must not flatten a harness-declared end to passed or finished."""
     d = _run(
@@ -67,7 +67,7 @@ def test_harness_ends_keep_their_labels_in_the_hub_and_run_view(
         reason,
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "reason": reason, "all_passed": all_passed},
+            {"type": "session.stop", "reason": reason, "verification": verification},
         ],
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
@@ -90,7 +90,7 @@ def test_run_summary_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib.P
                 "plan_consumed": 2.5,
                 "plan_cap": 6.0,
             },
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
@@ -105,7 +105,7 @@ def test_run_summary_carries_the_partial_cost_marker(tmp_path: pathlib.Path) -> 
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.0123, "usd_partial": True},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     (s,) = model.hub_payload(tmp_path)["sessions"]
@@ -745,7 +745,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
 
 
 def test_run_snapshot_labels_a_dead_worker_stale(tmp_path: pathlib.Path) -> None:
-    """A run whose recorded worker is gone and that never logged session.end folds to "running".
+    """A run whose recorded worker is gone and that never logged session.stop folds to "running".
 
     The hub calls it stale off the same pid probe; the one-shot payload the page first paints from
     has to say so too, not only the SSE frame.
@@ -791,10 +791,10 @@ def test_run_snapshot_leaves_a_finished_run_alone(tmp_path: pathlib.Path) -> Non
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "finish_session",
                 "turns": 1,
-                "all_passed": True,
+                "verification": "passed",
             },
         ],
     )
@@ -834,10 +834,10 @@ def test_run_snapshot_marks_a_parked_run_not_live(tmp_path: pathlib.Path) -> Non
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
             {
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "finish_session",
                 "turns": 1,
-                "all_passed": True,
+                "verification": "passed",
             },
         ],
     )
@@ -912,7 +912,7 @@ def test_the_hub_row_and_the_cli_json_row_are_one_shape(
         "r1",
         [
             {"type": "session.start", "mode": "run", "user_task": task},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
 
@@ -1033,7 +1033,7 @@ reason = "routed"
 def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: pathlib.Path) -> None:
     """The hub's session rows nest a fan-out's lanes under it, as `sessions list --json` prints."""
     start: dict[str, object] = {"type": "session.start", "mode": "run", "user_task": "t"}
-    end: dict[str, object] = {"type": "session.end", "all_passed": True}
+    end: dict[str, object] = {"type": "session.stop", "verification": "passed"}
     fan = _run(tmp_path, "fan", [start, end])
     (fan / "manifest.json").write_text(
         json.dumps({"mode": "run", "fanout": {"lanes": 1, "spec": "1"}}), encoding="utf-8"
@@ -1066,9 +1066,9 @@ def test_hub_continuation_keeps_original_task(tmp_path: pathlib.Path) -> None:
         "continued-run",
         [
             {"type": "session.start", "mode": "run", "user_task": "original task"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
             {"type": "session.resume", "steer": "do more"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     (d / "manifest.json").write_text(

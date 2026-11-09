@@ -121,7 +121,7 @@ def test_raw_watch_preserves_a_partial_replay_line(
             pytest.fail("raw watch failed to consume the appended session end")
         appended = True
         with events.open("ab") as fh:
-            fh.write(b'call","role":"worker"}\n{"type":"session.end"}\n')
+            fh.write(b'call","role":"worker"}\n{"type":"session.stop"}\n')
 
     def _worker_is_alive(_target: pathlib.Path) -> bool:
         return True

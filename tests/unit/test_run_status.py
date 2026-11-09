@@ -113,10 +113,10 @@ def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
             {"type": "session.resume", "ts": "2026-01-01T00:00:00+00:00", "turn": 2},
             {"type": "tool.call", "ts": "2026-01-01T00:00:10+00:00", "turn": 2},
             {
-                "type": "session.end",
+                "type": "session.stop",
                 "ts": "2026-01-01T00:00:30+00:00",
                 "reason": "finish_session",
-                "all_passed": True,
+                "verification": "passed",
             },
         ],
     )
@@ -129,7 +129,7 @@ def test_status_elapsed_of_a_fork_execution_runs_from_its_first_event(
 def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A worker can remain alive during teardown after `session.end` is written.
+    """A worker can remain alive during teardown after `session.stop` is written.
 
     The finished receipt fixes the run's elapsed time at its end event; worker
     teardown must not make that completed duration keep growing.
@@ -140,11 +140,11 @@ def test_a_finished_runs_elapsed_time_stops_at_its_receipt(
         [
             {"type": "session.start", "ts": "2026-01-01T00:00:00+00:00"},
             {
-                "type": "session.end",
+                "type": "session.stop",
                 "ts": "2026-01-01T00:00:10+00:00",
                 "reason": "finish_session",
                 "turns": 1,
-                "all_passed": True,
+                "verification": "passed",
             },
         ],
     )
@@ -216,7 +216,7 @@ def test_status_names_what_a_long_step_waits_on(
 def test_status_crashed_when_pid_dead_and_no_run_end(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A dead worker without a session.end leads with the hub's word "stale".
+    """A dead worker without a session.stop leads with the hub's word "stale".
 
     This surface adds its diagnostic detail after it. "stopped" is the hub's word for an operator
     stop, so leading with it reads a crash as deliberate.
@@ -269,7 +269,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
 ) -> None:
     """The `sessions show --json` status is exactly the hub row's word for the same dir.
 
-    For every state without a session.end: "created", "starting", "waiting", "stale". One decision,
+    For every state without a session.stop: "created", "starting", "waiting", "stale". One decision,
     `status_for_session_dir`, so the two cannot drift.
     """
     from agent6.viewmodel import listing
@@ -308,7 +308,7 @@ def test_status_words_lead_with_the_listing_word_in_every_state(
 def test_status_prints_the_final_turn_count_from_the_receipt(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The terminal receipt's `session.end.turns` is the final count.
+    """The terminal receipt's `session.stop.turns` is the final count.
 
     A run that ended before another turn-stamped event printed `-`, even
     though its journal recorded the figure the command promises to show.
@@ -320,10 +320,10 @@ def test_status_prints_the_final_turn_count_from_the_receipt(
             {"ts": _ts(40), "type": "session.start"},
             {
                 "ts": _ts(1),
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "finish_session",
                 "turns": 7,
-                "all_passed": True,
+                "verification": "passed",
             },
         ],
     )
@@ -348,7 +348,12 @@ def test_show_words_the_end_instead_of_the_reason_token(
         monkeypatch,
         [
             {"type": "session.start", "mode": "run"},
-            {"type": "session.end", "reason": reason, "summary": summary, "all_passed": True},
+            {
+                "type": "session.stop",
+                "reason": reason,
+                "summary": summary,
+                "verification": "passed",
+            },
         ],
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
@@ -356,7 +361,7 @@ def test_show_words_the_end_instead_of_the_reason_token(
     assert f"ended:      {summary}\n" in text and reason not in text
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert obj["end_summary"] == summary and obj["end_reason"] == reason
+    assert obj["end_summary"] == summary and obj["stop_reason"] == reason
 
 
 @pytest.mark.parametrize("with_output", [True, False])
@@ -381,9 +386,9 @@ def test_show_prints_a_setup_failure_once(
             {"type": "session.start", "mode": "run"},
             {"type": "workspace.setup", "cmd": ["uv", "sync", "--offline"], "exit_code": 1},
             {
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "setup_command_failed",
-                "all_passed": False,
+                "verification": "unverified",
                 "summary": problem,
             },
         ],
@@ -408,7 +413,7 @@ def test_show_prints_a_setup_failure_once(
 def test_status_leads_with_the_listing_word_then_the_raw_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # `sessions show` must agree with `sessions list`: a finish_session+all_passed run reads
+    # `sessions show` must agree with `sessions list`: a finish_session+verification run reads
     # "passed", not the opposite "finished" the raw reason alone used to print.
     # The raw reason stays in parens as the diagnostic.
     _make_run(
@@ -416,7 +421,12 @@ def test_status_leads_with_the_listing_word_then_the_raw_reason(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(1), "type": "session.end", "reason": "finish_session", "all_passed": True},
+            {
+                "ts": _ts(1),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
         ],
     )
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
@@ -437,9 +447,9 @@ def test_status_of_a_scoped_green_names_the_scoped_gate(
             {"ts": _ts(40), "type": "session.start"},
             {
                 "ts": _ts(1),
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "finish_session",
-                "all_passed": True,
+                "verification": "passed",
                 "scoped": True,
             },
         ],
@@ -477,7 +487,7 @@ def test_sessions_and_show_name_a_harness_end_over_a_green_gate(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start", "mode": "run"},
-            {"ts": _ts(1), "type": "session.end", "reason": reason, "all_passed": True},
+            {"ts": _ts(1), "type": "session.stop", "reason": reason, "verification": "passed"},
         ],
     )
     assert sessions_cmds._cmd_list(as_json=False) == 0
@@ -495,7 +505,12 @@ def test_status_finish_without_all_passed_reads_finished(
         [
             {"ts": _ts(40), "type": "session.start"},
             {"ts": _ts(2), "type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
-            {"ts": _ts(1), "type": "session.end", "reason": "finish_session", "all_passed": False},
+            {
+                "ts": _ts(1),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "failed",
+            },
         ],
     )
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
@@ -510,7 +525,12 @@ def test_status_error_reason_reads_failed(
         monkeypatch,
         [
             {"ts": _ts(40), "type": "session.start"},
-            {"ts": _ts(1), "type": "session.end", "reason": "provider_error", "all_passed": False},
+            {
+                "ts": _ts(1),
+                "type": "session.stop",
+                "reason": "provider_error",
+                "verification": "unverified",
+            },
         ],
     )
     # The label already carries the reason; the parenthetical is not repeated.
@@ -541,10 +561,10 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
             {"ts": _ts(2), "type": "role.result", "role": "reviewer", "ok": False, "error": "x"},
             {
                 "ts": _ts(1),
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "provider_error",
                 "turns": 1,
-                "all_passed": False,
+                "verification": "unverified",
             },
         ],
     )
@@ -684,7 +704,7 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
 ) -> None:
     # A resume execution restarts the budget from 0 and un-finishes the run; `runs
     # show` banks executions (same rule as `sessions list` and the run view) and must
-    # not report execution 1's session.end for a run that is live again. A valid-JSON
+    # not report execution 1's session.stop for a run that is live again. A valid-JSON
     # non-object line is skipped, not a crash.
     d = _make_run(
         tmp_path,
@@ -701,7 +721,12 @@ def test_status_cost_cumulative_and_unfinished_across_resume(
                 "usd_total": 0.02,
                 "usd_partial": True,
             },
-            {"ts": _ts(40), "type": "session.end", "reason": "finish_session", "all_passed": True},
+            {
+                "ts": _ts(40),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
             {"ts": _ts(30), "type": "session.resume", "turn": 4},
             {
                 "ts": _ts(5),
@@ -757,10 +782,20 @@ def test_status_text_labels_plan_points_on_a_resumed_run(
         [
             {"ts": _ts(90), "type": "session.start", "mode": "run", "user_task": "t"},
             {"ts": _ts(80), "type": "budget.update", **plan, "plan_consumed": 1.0},
-            {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
+            {
+                "ts": _ts(70),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
             {"ts": _ts(60), "type": "session.resume", "turn": 4},
             {"ts": _ts(10), "type": "budget.update", **plan, "plan_consumed": 0.0},
-            {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
+            {
+                "ts": _ts(5),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
         ],
     )
     process.write_worker_pid(d, 999999999)
@@ -788,7 +823,12 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
                 "output_total": 500,
                 "usd_total": 0.02,
             },
-            {"ts": _ts(70), "type": "session.end", "reason": "finish_session", "all_passed": True},
+            {
+                "ts": _ts(70),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
             {"ts": _ts(60), "type": "session.resume", "turn": 4},
             {
                 "ts": _ts(10),
@@ -797,7 +837,12 @@ def test_status_text_labels_execution_scoped_figures_on_a_resumed_run(
                 "output_total": 50,
                 "usd_total": 0.005,
             },
-            {"ts": _ts(5), "type": "session.end", "reason": "finish_session", "all_passed": True},
+            {
+                "ts": _ts(5),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
         ],
     )
     process.write_worker_pid(d, 999999999)
@@ -979,7 +1024,7 @@ def test_a_started_session_with_no_pid_file_is_not_running(
 
     A worker writes its pid before session.start, so a missing pid file means the worker cleared it
     on the way out, whatever the log says. Reachable by `agent6 run ... | head`: SIGPIPE unwinds
-    through the finally, which clears the pid but writes no session.end. Treating the absence as
+    through the finally, which clears the pid but writes no session.stop. Treating the absence as
     weaker evidence than a dead pid inverts the two: `kill -9` leaves the pid file and reads "stale"
     at once, while the tidier death reads "running" for the whole 600s silence window.
     """
@@ -1147,7 +1192,12 @@ def test_status_of_an_undone_run_does_not_offer_a_merge(
         monkeypatch,
         [
             {"ts": _ts(5), "type": "session.start", "mode": "run"},
-            {"ts": _ts(1), "type": "session.end", "reason": "undone", "all_passed": False},
+            {
+                "ts": _ts(1),
+                "type": "session.stop",
+                "reason": "undone",
+                "verification": "unverified",
+            },
         ],
     )
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=pathlib.Path.cwd(), check=True)
@@ -1187,7 +1237,12 @@ def test_status_of_an_ask_does_not_repeat_its_word(
         monkeypatch,
         [
             {"ts": _ts(9), "type": "session.start", "mode": "ask"},
-            {"ts": _ts(5), "type": "session.end", "reason": "answered", "all_passed": False},
+            {
+                "ts": _ts(5),
+                "type": "session.stop",
+                "reason": "answered",
+                "verification": "unverified",
+            },
         ],
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
@@ -1213,7 +1268,7 @@ def test_show_json_label_matches_the_listing_cell(
     obj = json.loads(capsys.readouterr().out)
     s = listing.summarize_session_dir(d)
     assert obj["label"] == format.listing_status_label(
-        s.mode, s.status, s.reason, unmerged=s.unmerged
+        s.mode, s.status, s.detail, unmerged=s.unmerged
     )
     assert obj["label"] == "plan · running", "the mode is folded in, as the listing folds it"
 
@@ -1244,7 +1299,7 @@ def test_status_prints_the_task_and_names_a_plans_page(
 
 
 @pytest.mark.parametrize(
-    ("verified", "line"),
+    ("verification", "line"),
     [
         ("passed", "verify:     green on the final tree"),
         ("failed", "verify:     red on the final tree"),
@@ -1254,7 +1309,7 @@ def test_status_prints_the_task_and_names_a_plans_page(
     ],
 )
 def test_show_says_whether_the_final_tree_was_verified(
-    verified: str | None,
+    verification: str | None,
     line: str | None,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1263,18 +1318,17 @@ def test_show_says_whether_the_final_tree_was_verified(
     """`sessions show` had no verify line, so a stopped run said nothing about its tree."""
     end: dict[str, object] = {
         "ts": _ts(3),
-        "type": "session.end",
+        "type": "session.stop",
         "reason": "steer_abort",
-        "all_passed": False,
     }
-    if verified is not None:
-        end["verified"] = verified
+    if verification is not None:
+        end["verification"] = verification
     _make_run(tmp_path, monkeypatch, [{"ts": _ts(40), "type": "session.start", "mode": "run"}, end])
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     out = capsys.readouterr().out
     assert [ln for ln in out.splitlines() if ln.startswith("verify:")] == ([line] if line else [])
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-    assert json.loads(capsys.readouterr().out)["verified"] == verified
+    assert json.loads(capsys.readouterr().out)["verification"] == verification
 
 
 def test_show_says_a_timed_out_gate_timed_out(
@@ -1295,10 +1349,9 @@ def test_show_says_a_timed_out_gate_timed_out(
             },
             {
                 "ts": _ts(3),
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "finish_session",
-                "all_passed": False,
-                "verified": "failed",
+                "verification": "failed",
             },
         ],
     )
@@ -1307,7 +1360,7 @@ def test_show_says_a_timed_out_gate_timed_out(
     assert "status:     finished · gate timed out" in out
     assert "verify:     timed out on the final tree" in out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
-    assert json.loads(capsys.readouterr().out)["verified"] == "failed"
+    assert json.loads(capsys.readouterr().out)["verification"] == "failed"
 
 
 def test_show_says_why_a_stale_run_with_no_snapshot_cannot_be_resumed(
@@ -1348,7 +1401,12 @@ def test_show_json_carries_the_points_earlier_executions_banked(
                 "plan_cap": 10.0,
                 "plan_used_percent": 5.0,
             },
-            {"ts": _ts(30), "type": "session.end", "reason": "steer_abort", "all_passed": False},
+            {
+                "ts": _ts(30),
+                "type": "session.stop",
+                "reason": "steer_abort",
+                "verification": "unverified",
+            },
             {"ts": _ts(20), "type": "session.resume", "mode": "run"},
             {
                 "ts": _ts(10),

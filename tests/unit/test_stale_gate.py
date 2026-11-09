@@ -34,18 +34,22 @@ def test_a_stale_gate_finish_reads_finished_with_its_cause() -> None:
     the run its word. A stale gate is a detail, not a new status word: `died_without_end`,
     the compare gates and the TUI colours key off the existing set.
     """
-    assert session_status.status_word(finished=True, all_passed=False, end_reason="gate_stale") == (
+    assert session_status.status_word(
+        finished=True, verification="unverified", stop_reason="gate_stale"
+    ) == (
         "finished",
         "gate_stale",
     )
 
 
 def test_a_green_tree_is_still_what_passes() -> None:
-    """The word mapping is grounded on all_passed; the worker records a proposal, never a verdict.
+    """The word mapping is grounded on verification; the worker records a proposal, never a verdict.
 
     `gate_stale` never reaches a green run (see finish_reason).
     """
-    assert session_status.status_word(finished=True, all_passed=True, end_reason="gate_stale") == (
+    assert session_status.status_word(
+        finished=True, verification="passed", stop_reason="gate_stale"
+    ) == (
         "passed",
         "",
     )
@@ -82,7 +86,7 @@ def test_the_proposal_is_printed_for_the_operator_to_set() -> None:
                 turns=1,
                 tool_calls=1,
                 stale_gate="uv run pytest tests/unit",
-                verified="failed",
+                verification="failed",
             ),
             reporter=reporter.STDIO_REPORTER,
         )
@@ -113,7 +117,7 @@ def test_a_long_proposal_is_clipped() -> None:
                 turns=1,
                 tool_calls=1,
                 stale_gate=prose,
-                verified="failed",
+                verification="failed",
             ),
             reporter=reporter.STDIO_REPORTER,
         )
@@ -141,7 +145,7 @@ def test_a_short_prose_proposal_is_printed_whole_with_no_clip_mark() -> None:
                 turns=1,
                 tool_calls=1,
                 stale_gate=note,
-                verified="failed",
+                verification="failed",
             ),
             reporter=reporter.STDIO_REPORTER,
         )
@@ -162,7 +166,7 @@ def _stale_report(proposal: str) -> str:
                 turns=1,
                 tool_calls=1,
                 stale_gate=proposal,
-                verified="failed",
+                verification="failed",
             ),
             reporter=reporter.STDIO_REPORTER,
         )
@@ -189,7 +193,7 @@ def test_a_proposal_over_a_green_gate_is_not_printed() -> None:
                 turns=1,
                 tool_calls=1,
                 stale_gate="uv run pytest tests/unit",
-                verified="passed",
+                verification="passed",
             ),
             reporter=reporter.STDIO_REPORTER,
         )
@@ -308,7 +312,7 @@ def test_a_proposal_on_a_returned_finish_reaches_the_end_report(
     result = wf._turn_stop_checks(state, stands, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.stale_gate == "pytest tests/unit"
     # The end is named by its own call, which made no claim.
-    assert (result.reason, result.verified) == ("finish_session", "failed")
+    assert (result.reason, result.verification) == ("finish_session", "failed")
     finalize._print_stale_gate(result, reporter=reporter.STDIO_REPORTER)
     assert "  it says: pytest tests/unit" in capsys.readouterr().out
 

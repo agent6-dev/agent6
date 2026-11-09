@@ -329,7 +329,7 @@ def steer_outcome(
             return None
         new_id, undone_text = forked
         harness.emit("session.undone", new_session_id=new_id, undone_text=undone_text)
-        # An undo is the operator's own end; without a session.end the run reads stale.
+        # An undo is the operator's own end; without a session.stop the run reads stale.
         return harness.finish(
             state,
             loop_snapshot.End(
@@ -340,7 +340,7 @@ def steer_outcome(
             turn=turn,
         )
     if steer_result == "detach":
-        # No session.end: the caller respawns a detached `resume` that appends to this log.
+        # No session.stop: the caller respawns a detached `resume` that appends to this log.
         return harness.finish(
             state,
             loop_snapshot.End(

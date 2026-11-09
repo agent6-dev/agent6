@@ -741,18 +741,18 @@ def test_home_open_run_returns_its_dir(tmp_path: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("reason", "all_passed", "label"),
+    ("reason", "verification", "label"),
     [
-        ("provider_error", False, "failed · provider error"),
-        ("silent_finish", True, "finished · no finish call"),
-        ("metric_plateau", True, "finished · metric plateau"),
+        ("provider_error", "unverified", "failed · provider error"),
+        ("silent_finish", "passed", "finished · no finish call"),
+        ("metric_plateau", "passed", "finished · metric plateau"),
     ],
 )
 def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     reason: str,
-    all_passed: bool,
+    verification: str,
     label: str,
 ) -> None:
     """The TUI hub must keep a harness end's label, matching the CLI and web hubs."""
@@ -774,7 +774,7 @@ def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
         reason,
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "all_passed": all_passed, "reason": reason},
+            {"type": "session.stop", "verification": verification, "reason": reason},
         ],
     )
     cli_row = listing.summary_row(listing.summarize_session_dir(rd))
@@ -885,7 +885,7 @@ def test_hub_cost_cell_uses_plan_points_for_a_plan_metered_run(tmp_path: pathlib
                 "plan_consumed": 2.5,
                 "plan_cap": 6.0,
             },
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
 
@@ -1459,7 +1459,7 @@ def test_the_hub_gives_the_task_room_on_a_narrow_terminal(tmp_path: pathlib.Path
     a6 = tmp_path / ".agent6"
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "implement the parser " * 10},
-        {"type": "session.end", "all_passed": False, "reason": "max_turns"},
+        {"type": "session.stop", "verification": "unverified", "reason": "max_turns"},
     ]
     _write_run(a6, "runs", "friendly-crane-1X3ER0", events)
 
@@ -1499,7 +1499,7 @@ def test_home_continuation_has_two_visible_lines(tmp_path: pathlib.Path) -> None
         "continued",
         [
             {"type": "session.start", "mode": "run", "user_task": "original task"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
             {"type": "session.resume", "steer": "write docs"},
         ],
     )

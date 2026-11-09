@@ -16,6 +16,7 @@ import pydantic
 
 from agent6.providers import provider_types
 from agent6.sessions import event_schema, retention
+from agent6.viewmodel import state_view
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src/agent6"
@@ -208,6 +209,19 @@ def dictionary_fields(
             and any(isinstance(v, ast.Constant) and v.value == branch for v in ast.walk(n.test))
         )
         body = ast.Module(body=body.body, type_ignores=[])
+    if path.is_relative_to(_SRC):
+        module = importlib.import_module(
+            "agent6." + str(path.relative_to(_SRC)).removesuffix(".py").replace("/", ".")
+        )
+        for candidate in ast.walk(node):
+            if isinstance(candidate, ast.FunctionDef) and isinstance(candidate.returns, ast.Name):
+                annotation = vars(module).get(candidate.returns.id)
+                if typing.is_typeddict(annotation):
+                    hints = typing.get_type_hints(annotation)
+                    names = dict.fromkeys(_keys(body, variable))
+                    return tuple(
+                        Field(n, _type_text(hints[n]), _meaning(docs, n, str(path))) for n in names
+                    )
     names = dict.fromkeys(_keys(body, variable))
     return tuple(Field(n, "JSON", _meaning(docs, n, f"{path}:{symbol}")) for n in names)
 
@@ -215,6 +229,8 @@ def dictionary_fields(
 def composed_fields(cls: type[Any], producers: tuple[Producer, ...]) -> tuple[Field, ...]:
     """Return a serialized model with the builder's additions and removals applied."""
     fields = {f.name: f for f in model_fields(cls)}
+    if cls.__name__ == "SessionState":
+        fields = {name: fields[name] for name in state_view.PUBLIC_STATE_FIELDS}
     for producer in producers:
         fields.update(
             (f.name, f)
@@ -255,6 +271,8 @@ def model_fields(cls: type[Any]) -> tuple[Field, ...]:
             if info.description:
                 docs[name] = info.description
         names = list(fields)
+    elif typing.is_typeddict(cls):
+        names = list(hints)
     else:
         names = [f.name for f in dataclasses.fields(cls)]
     return tuple(

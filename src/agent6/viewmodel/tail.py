@@ -34,7 +34,7 @@ def tail_events(
         path: The journal file; waited for while it does not exist and `follow` is set.
         poll_s: Seconds between polls.
         follow: Keep polling for new lines after the existing ones; false returns after them.
-        stop_when_finished: Return after a `session.end` that nothing follows in its batch.
+        stop_when_finished: Return after a `session.stop` that nothing follows in its batch.
         should_stop: Polled each round; once true, the lines already appended are
             yielded and the tail returns.
         start_at: A byte offset to start from, skipping the prior executions a viewer
@@ -73,11 +73,11 @@ def tail_events(
 
         parsed, pending = _complete_lines(chunk, pos)
         pos += len(chunk) - len(pending)
-        # A resume appends past a session.end; only the batch's last one is the real end.
+        # A resume appends past a session.stop; only the batch's last one is the real end.
         for i, (end, evt) in enumerate(parsed):
             heard(end)
             yield evt
-            if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.end":
+            if stop_when_finished and i == len(parsed) - 1 and evt.get("type") == "session.stop":
                 return
 
         if not follow or final_drain:

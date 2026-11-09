@@ -200,7 +200,7 @@ def _end_footer(
     events: list[dict[str, object]] = [
         {"type": "session.start", "session_id": session_id, "user_task": "t"},
         {"type": "loop.edit.left_out", "turn": 1, **left_out},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"

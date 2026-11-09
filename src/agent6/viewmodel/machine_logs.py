@@ -41,7 +41,7 @@ def execution_of(state: state_types.SessionState, log: pathlib.Path) -> AgentExe
     Returns:
         The execution facts.
     """
-    open_prompts = [*state.pending_approvals, *state.pending_questions]
+    open_prompts = [*state.approvals, *state.questions]
     return AgentExecution(
         open=state.started and not state.finished,
         blocked_in=log.parent.name if any(not p.answered for p in open_prompts) else "",

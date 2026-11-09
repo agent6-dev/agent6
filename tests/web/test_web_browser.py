@@ -163,7 +163,7 @@ def test_hub_headings_only_separate_distinct_groups(
         mode = "run" if mixed and index else "ask"
         rows = [
             {"type": "session.start", "mode": mode, "user_task": f"group task {index}"},
-            {"type": "session.end", "reason": "finish_session", "verified": "unverified"},
+            {"type": "session.stop", "reason": "finish_session", "verification": "unverified"},
         ]
         (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     page, errors = open_page(port)
@@ -223,7 +223,7 @@ def test_session_details_label_the_lifecycle_status(
     session.mkdir(parents=True)
     rows = [
         {"type": "session.start", "mode": "run", "user_task": "Show the status"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     page, errors = open_page(port)
@@ -302,7 +302,7 @@ def test_expanded_task_keeps_the_full_operator_words(
     rows = [
         {"type": "session.start", "mode": "run", "user_task": words},
         {"type": "loop.steer.injected", "text": steer},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     page, errors = open_page(port)
@@ -380,7 +380,7 @@ def test_every_tool_expands_to_whole_arguments(
         {"type": "tool.result", "name": "run_command", "ok": True, "summary": "exit 0"},
         {"type": "tool.call", "name": "run_verify_command", "args": {}},
         {"type": "tool.result", "name": "run_verify_command", "ok": True, "summary": "exit 0"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     page, errors = open_page(port)
@@ -425,7 +425,7 @@ def test_removal_controls_reach_the_cli(
     session.mkdir(parents=True)
     rows = [
         {"type": "session.start", "mode": mode, "user_task": "Remove this record"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (session / "logs.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
     page, errors = open_page(git_port)

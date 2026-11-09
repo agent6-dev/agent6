@@ -53,7 +53,7 @@ def _make_run(tmp_path: pathlib.Path) -> str:
                 json.dumps({"type": "session.start", "user_task": "make x equal 2"}),
                 json.dumps({"type": "tool.call", "name": "apply_edit", "args": "m.py"}),
                 json.dumps({"type": "verify.end", "exit_code": 0}),
-                json.dumps({"type": "session.end", "reason": "finish_session", "turns": 3}),
+                json.dumps({"type": "session.stop", "reason": "finish_session", "turns": 3}),
             ]
         )
         + "\n",
@@ -474,7 +474,8 @@ def _session(
         encoding="utf-8",
     )
     (d / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
+        json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
+        + "\n",
         encoding="utf-8",
     )
 

@@ -277,7 +277,7 @@ def _cfg_with_verify() -> Any:
 
 
 def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
-    """A silent finish over a red or stale verify ends all_passed=False, like finish_session."""
+    """A silent finish preserves the final verification word."""
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
@@ -290,8 +290,8 @@ def test_run_silent_finish_over_red_verify_is_not_passed() -> None:
         _ctx(wf, _state()),
     )
     assert result is not None and result.reason == "silent_finish"
-    ends = [e for e in ev.events if e["type"] == "session.end"]
-    assert ends and ends[-1]["all_passed"] is False
+    ends = [e for e in ev.events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["verification"] == "failed"
 
 
 def test_run_silent_finish_over_green_verify_stays_passed() -> None:
@@ -308,12 +308,12 @@ def test_run_silent_finish_over_green_verify_stays_passed() -> None:
         _turn(number=5),
         _ctx(wf, _state()),
     )
-    ends = [e for e in ev.events if e["type"] == "session.end"]
-    assert ends and ends[-1]["all_passed"] is True
+    ends = [e for e in ev.events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["verification"] == "passed"
 
 
 def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
-    """A gateless run's silent finish ends with all_passed=None and reads "finished"."""
+    """A gateless run's silent finish ends with verification=None and reads "finished"."""
     ev = _EventCapture()
     wf = _wf(mode="run", events=ev)  # _wf's default config has no verify_command
     result = wf._handle_silent_finish(  # pyright: ignore[reportPrivateUsage]
@@ -324,10 +324,10 @@ def test_run_silent_finish_gateless_is_ungated_not_passed() -> None:
         _ctx(wf, _state()),
     )
     assert result is not None and result.reason == "silent_finish"
-    ends = [e for e in ev.events if e["type"] == "session.end"]
-    assert ends and ends[-1]["all_passed"] is None
+    ends = [e for e in ev.events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["verification"] == "not_applicable"
     assert session_status.status_word(
-        finished=True, all_passed=None, end_reason="silent_finish"
+        finished=True, verification=None, stop_reason="silent_finish"
     ) == (
         "finished",
         "no finish call",
@@ -1046,7 +1046,7 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
 def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
     """The loop records the absolute turn it is driving on the Harness.
 
-    The app-level KeyboardInterrupt fallbacks then emit a session.end with a truthful count; a
+    The app-level KeyboardInterrupt fallbacks then emit a session.stop with a truthful count; a
     resumed start_turn proves it is not a zero-based counter.
     """
 
@@ -1177,7 +1177,7 @@ def test_abnormal_end_keeps_an_observed_red_verdict(
     )
 
     assert result.reason == expected_reason
-    assert result.verified == "failed"
+    assert result.verification == "failed"
 
 
 def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Path) -> None:
@@ -2616,12 +2616,12 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
         )
     assert result.reason == "settled"
     assert "never re-verified" in result.summary
-    ends = [e for e in events if e["type"] == "session.end"]
-    assert ends and ends[-1]["all_passed"] is False
+    ends = [e for e in events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["verification"] == "unverified"
 
 
-def test_session_end_journals_its_summary() -> None:
-    """The harness journals the same end sentence it returns, for stops and clean finishes."""
+def test_session_stop_journals_its_summary_and_execution_id() -> None:
+    """A stop identifies the execution and keeps its reason and summary."""
     for end in (
         loop_snapshot.End("steer_abort", "operator stopped the run after turn 4", checkpoint=False),
         loop_snapshot.End(
@@ -2631,12 +2631,14 @@ def test_session_end_journals_its_summary() -> None:
         ev = _EventCapture()
         wf = _wf(mode="run", events=ev)
         result = wf.finish(_state(), end, turn=4)
-        (recorded,) = [e for e in ev.events if e["type"] == "session.end"]
+        (recorded,) = [e for e in ev.events if e["type"] == "session.stop"]
+        assert recorded["execution_id"] == wf.execution_id
+        assert recorded["reason"] == end.reason
         assert recorded.get("summary") == result.summary == end.summary
 
 
 def test_session_end_carries_the_gates_word_for_the_final_tree() -> None:
-    """`session.end` carried `all_passed` alone, which an operator stop always writes false.
+    """`session.stop` carried `verification` alone, which an operator stop always writes false.
 
     A later command could not tell a stop on a green tree from one on a tree nothing verified.
     """
@@ -2652,14 +2654,14 @@ def test_session_end_carries_the_gates_word_for_the_final_tree() -> None:
         ev = _EventCapture()
         wf = _wf(mode="run", config=_cfg_with_verify(), events=ev)
         result = wf.finish(_state(verify=verdict), stop, turn=4)
-        (end,) = [e for e in ev.events if e["type"] == "session.end"]
-        assert (end["all_passed"], end["verified"], result.verified) == (False, word, word)
+        (end,) = [e for e in ev.events if e["type"] == "session.stop"]
+        assert end["verification"] == result.verification == word
     ev = _EventCapture()
     gateless = _wf(mode="run", events=ev)
     done = loop_snapshot.End("finish_session", "done", completed=True, verdict="grounded")
     gateless.finish(_state(), done, turn=2)
-    (end,) = [e for e in ev.events if e["type"] == "session.end"]
-    assert (end["all_passed"], end["verified"]) == (None, "not_applicable")
+    (end,) = [e for e in ev.events if e["type"] == "session.stop"]
+    assert end["verification"] == "not_applicable"
 
 
 def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
@@ -2671,7 +2673,7 @@ def test_settle_after_a_failed_reverify_reports_the_red_gate() -> None:
         result = wf.finish(state, guards.settled_end(state, _ctx(wf, state)), turn=8)
 
     assert result is not None and result.reason == "settled"
-    assert result.verified == "failed"
+    assert result.verification == "failed"
     assert "verify gate is still red" in result.summary
 
 
@@ -3839,7 +3841,7 @@ def test_a_settled_end_over_open_subtasks_after_the_cap_keeps_its_verdict() -> N
 def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
     """A verify_settled end carries `scoped` like the grounded ends do."""
     ev = _EventCapture()
-    wf = _wf(events=ev)
+    wf = _wf(events=ev, config=_cfg_with_verify())
     state = _state(
         verify=verify_verdict.VerifyVerdict(ever_passed=True, last_ok=True, scoped=True),
         settled=guards.SettledGuard(tree="tree", idle=11),
@@ -3849,8 +3851,8 @@ def test_a_settled_end_from_the_scoped_gate_reads_scoped() -> None:
         assert _settle(wf, state, turn) is None
         result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "verify_settled"
-    ends = [e for e in ev.events if e["type"] == "session.end"]
-    assert ends[-1]["all_passed"] is True and ends[-1]["scoped"] is True
+    ends = [e for e in ev.events if e["type"] == "session.stop"]
+    assert ends[-1]["verification"] == "passed" and ends[-1]["scoped"] is True
 
 
 def test_task_finish_gate_allows_finish_without_open_subtasks() -> None:
@@ -6641,7 +6643,7 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
 
 
 def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib.Path) -> None:
-    """A gateless run that commits and goes idle settles with all_passed=False, said plainly."""
+    """A gateless run that goes idle never claims a verified pass."""
 
     class ProviderStub:
         def __init__(self) -> None:
@@ -6715,12 +6717,12 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
     assert result.reason == "settled"
     assert "no verify" in result.summary
     assert "verify passed" not in result.summary
-    ends = [e for e in events if e["type"] == "session.end"]
-    assert ends and ends[-1]["reason"] == "settled" and ends[-1]["all_passed"] is False
+    ends = [e for e in events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["reason"] == "settled" and ends[-1]["verification"] == "not_applicable"
 
 
 def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -> None:
-    """The REPL hook's "stop" ends the run `interactive_stop` with all_passed=False."""
+    """The REPL hook's "stop" ends the run `interactive_stop` with verification="unverified"."""
 
     class ProviderStub:
         def call(self, **kwargs: Any) -> ProviderResponse:
@@ -6788,13 +6790,13 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
         )
     assert result.completed is True
     assert result.reason == "interactive_stop"
-    ends = [e for e in events if e["type"] == "session.end"]
+    ends = [e for e in events if e["type"] == "session.stop"]
     assert ends and ends[-1]["reason"] == "interactive_stop"
-    assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"
+    assert ends[-1]["verification"] == "not_applicable"  # a stop is deliberate, never "passed"
 
 
 def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> None:
-    """`/exit` from the REPL ends the run `steer_exit`: stopped, all_passed=False, no "next:"."""
+    """`/exit` ends the REPL as stopped, without a next command."""
 
     class ProviderStub:
         def call(self, **kwargs: Any) -> ProviderResponse:
@@ -6862,9 +6864,9 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
         )
     assert result.completed is False  # an operator exit is a stop, not a completion
     assert result.reason == "steer_exit"
-    ends = [e for e in events if e["type"] == "session.end"]
+    ends = [e for e in events if e["type"] == "session.stop"]
     assert ends and ends[-1]["reason"] == "steer_exit"
-    assert ends[-1]["all_passed"] is False  # a stop is deliberate, never "passed"
+    assert ends[-1]["verification"] == "not_applicable"  # a stop is deliberate, never "passed"
 
 
 def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) -> None:
@@ -6940,9 +6942,9 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
     assert "forked-child-ID" in result.summary
     undone = [e for e in events if e["type"] == "session.undone"]
     assert undone and undone[-1]["new_session_id"] == "forked-child-ID"
-    # An undo journals a session.end (undone -> "stopped"), so the run never reads "stale".
-    ends = [e for e in events if e["type"] == "session.end"]
-    assert ends and ends[-1]["reason"] == "undone" and ends[-1]["all_passed"] is False
+    # An undo journals a session.stop (undone -> "stopped"), so the run never reads "stale".
+    ends = [e for e in events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["reason"] == "undone" and ends[-1]["verification"] == "not_applicable"
 
 
 def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
@@ -7023,7 +7025,7 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     # The settled end runs the adopted verify the worker never ran, so the run ends verified.
     assert dispatcher.gate_runs == 1
     assert result.reason == "verify_settled"
-    assert result.verified == "passed"
+    assert result.verification == "passed"
 
 
 def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
@@ -7381,7 +7383,7 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
 
 
 def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
-    """The plateau stop grounds all_passed on the final tree, like its sibling clean ends."""
+    """The plateau stop grounds verification on the final tree, like its sibling clean ends."""
     ev = _EventCapture()
     wf = _wf(mode="run", config=_cfg_with_verify(), events=ev, root=pathlib.Path("/tmp"))
     turn = loop_state.TurnState(
@@ -7401,8 +7403,8 @@ def test_metric_plateau_over_a_stale_verify_is_not_passed() -> None:
     with mock.patch.object(run_chain.RunChain, "dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
-    ends = [e for e in ev.events if e["type"] == "session.end"]
-    assert ends and ends[-1]["all_passed"] is False
+    ends = [e for e in ev.events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["verification"] == "unverified"
 
 
 def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
@@ -7425,8 +7427,8 @@ def test_metric_plateau_over_a_green_tree_stays_passed() -> None:
     with mock.patch.object(run_chain.RunChain, "dirty", return_value=False):
         result = wf._turn_stop_checks(state, turn, loop_conversation.Conversation())  # pyright: ignore[reportPrivateUsage]
     assert result is not None and result.reason == "metric_plateau"
-    ends = [e for e in ev.events if e["type"] == "session.end"]
-    assert ends and ends[-1]["all_passed"] is True
+    ends = [e for e in ev.events if e["type"] == "session.stop"]
+    assert ends and ends[-1]["verification"] == "passed"
 
 
 def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
@@ -7470,7 +7472,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
         ),
     )
     state = _state()
-    state.verify.last_ok = False  # red tree: all_passed must stay False
+    state.verify.last_ok = False  # red tree: verification must stay False
     state.verify.edited_since = True
     events: list[dict[str, Any]] = []
     wf.emit = lambda event_type, **fields: events.append({"type": event_type, **fields})
@@ -7483,8 +7485,8 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
         turn=3,
     )
 
-    (end,) = [e for e in events if e["type"] == "session.end"]
-    assert end["all_passed"] is False  # the verify truth is unchanged...
+    (end,) = [e for e in events if e["type"] == "session.stop"]
+    assert end["verification"] == "failed"  # the verify truth is unchanged...
     assert fake.passed == ["root1"]  # ...and the work item is no longer pending
 
 
@@ -8289,9 +8291,11 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
     assert result == "exit"
     out = loop_steer.steer_outcome(wf, "exit", 3, _state())
     assert out is not None and out.reason == "steer_exit" and out.completed is False
-    ends = [e for e in ev.events if e["type"] == "session.end"]
+    ends = [e for e in ev.events if e["type"] == "session.stop"]
     assert ends and ends[-1]["reason"] == "steer_exit"
-    assert session_status.status_word(finished=True, all_passed=False, end_reason="steer_exit") == (
+    assert session_status.status_word(
+        finished=True, verification="unverified", stop_reason="steer_exit"
+    ) == (
         "stopped",
         "",
     )
@@ -8304,7 +8308,9 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
         (d / "logs.jsonl").write_text(
             json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
             + "\n"
-            + json.dumps({"type": "session.end", "reason": "steer_exit", "all_passed": False})
+            + json.dumps(
+                {"type": "session.stop", "reason": "steer_exit", "verification": "unverified"}
+            )
             + "\n",
             encoding="utf-8",
         )
@@ -8312,7 +8318,9 @@ def test_steer_exit_ends_steer_exit_and_suppresses_the_follow_up() -> None:
         (d / "logs.jsonl").write_text(
             json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
             + "\n"
-            + json.dumps({"type": "session.end", "reason": "steer_abort", "all_passed": False})
+            + json.dumps(
+                {"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}
+            )
             + "\n",
             encoding="utf-8",
         )
@@ -9377,7 +9385,7 @@ def test_finish_delivers_an_answer_that_lands_during_its_turn(
         assert not ipc.question_answers_written(saved.session_dir, "question-1")
     else:
         assert result.summary == "done" and delivered == []
-    assert len([row for row in rows if row["type"] == "session.end"]) == 1
+    assert len([row for row in rows if row["type"] == "session.stop"]) == 1
 
 
 def test_the_presence_notice_fires_once_and_on_change(tmp_path: pathlib.Path) -> None:

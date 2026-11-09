@@ -156,7 +156,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
             [
                 {"type": "loop.start"},
                 {"type": "verify.end", "exit_code": 124, "outcome": "timed_out", "timeout_s": 30},
-                {"type": "session.end", "verified": "failed"},
+                {"type": "session.stop", "verification": "failed"},
                 {"type": "session.resume"},
             ]
         )
@@ -164,7 +164,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
         [
             {"type": "verify.start"},
             {"type": "verify.end", "exit_code": 1},
-            {"type": "session.end", "reason": "finish_session", "all_passed": False},
+            {"type": "session.stop", "reason": "finish_session", "verification": "unverified"},
         ]
     )
     (rd / "logs.jsonl").write_text(
@@ -190,7 +190,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
             summary="s",
             turns=1,
             tool_calls=1,
-            verified="failed",
+            verification="failed",
         ),
         layout=sessions_layout.SessionLayout(state_dir=tmp_path, session_id="r1"),
         cwd=tmp_path,
@@ -222,12 +222,12 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
     records = [
         {"type": "loop.start"},
         {"type": "loop.baseline", "ok": True, "turn": 0},
-        {"type": "session.end", "reason": "finish_session", "verified": "passed"},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         {"type": "session.resume"},
         {"type": "loop.verify_swapped", "was": ["pytest"], "now": ["make", "test"]},
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 1},
-        {"type": "session.end", "reason": "finish_session", "verified": "failed"},
+        {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
     ]
     layout.logs_path.write_text(
         "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
@@ -245,7 +245,7 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
             summary="s",
             turns=1,
             tool_calls=1,
-            verified="failed",
+            verification="failed",
         ),
         layout=layout,
         cwd=tmp_path,
@@ -275,12 +275,12 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 0 if baseline_ok else 1},
         {"type": "loop.baseline", "ok": baseline_ok, "turn": 0},
-        {"type": "session.end", "reason": "finish_session", "verified": "passed"},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         {"type": "session.resume"},
         {"type": "loop.baseline", "ok": not baseline_ok, "turn": 0},
         {"type": "verify.start"},
         {"type": "verify.end", "exit_code": 1},
-        {"type": "session.end", "reason": "finish_session", "verified": "failed"},
+        {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
     ]
     layout.logs_path.write_text(
         "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
@@ -298,7 +298,7 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
             summary="s",
             turns=1,
             tool_calls=1,
-            verified="failed",
+            verification="failed",
         ),
         layout=layout,
         cwd=tmp_path,

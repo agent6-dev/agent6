@@ -107,7 +107,7 @@ def _screen_candidates(
                 session_id=layout.session_id,
                 task=compare.manifest_task(layout.session_dir, fallback=layout.session_id),
                 diff=diff,
-                verify_ok=summary.verify_ok,
+                verification=summary.verification,
                 cost_usd=summary.cost_usd,
             )
         )

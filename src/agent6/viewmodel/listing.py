@@ -12,9 +12,9 @@ import contextlib
 import dataclasses
 import pathlib
 from collections.abc import Container, Iterable, Mapping, Sequence
-from typing import Literal
+from typing import Any, Literal, NotRequired, TypedDict
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
@@ -112,16 +112,16 @@ class SessionSummary:
         task_label: The original task and latest continuation, before display clipping.
         status: The status word (created, starting, running, waiting, stale, passed,
             answered, planned, finished, stopped, undone, failed).
-        reason: The detail beside the word: the end reason when failed, what it waits
+        detail: The detail beside the word: the end reason when failed, what it waits
             on when waiting, or a pending stop after the step.
-        end_reason: The last `session.end` reason word; "" while the session runs.
+        stop_reason: The last `session.stop` reason word; "" while the session runs.
         cost_usd: The cumulative spend across executions.
         usd_partial: `cost_usd` is a lower bound: some execution had unpriced spend.
-        mtime: The last-activity time as epoch seconds.
+        last_activity: The last-activity time as epoch seconds.
         unmerged: The run's chain or branch holds commits its base does not, per the
             merge stamp and the caller's branch-tips snapshot; False without a
             snapshot, and for an undone run (its /undo child carries the mark).
-        verify_ok: The gate verdict from the gate facts, not the status word: the
+        verification: The gate verdict from the gate facts, not the status word: the
             compare table and the judge read it.
         coordinator: The session that dispatched this lane, the row it nests under.
         lane: The lane number within its fan-out.
@@ -138,13 +138,13 @@ class SessionSummary:
     mode: str
     task_label: session_status.TaskLabel
     status: str
-    reason: str
+    detail: str
     cost_usd: float
     usd_partial: bool
-    mtime: float
-    end_reason: str = ""
+    last_activity: float
+    stop_reason: str = ""
     unmerged: bool = False
-    verify_ok: bool | None = None
+    verification: kinds.Verification | None = None
     coordinator: str = ""
     lane: int | None = None
     plan_consumed: float = 0.0
@@ -181,9 +181,9 @@ class ListingRow:
     lanes: tuple[ListingRow, ...] = ()
 
     @property
-    def mtime(self) -> float:
+    def group_last_activity(self) -> float:
         """The row's last activity: its own or a lane's, whichever is later."""
-        return max((self.summary.mtime, *(lane.mtime for lane in self.lanes)))
+        return max((self.summary.last_activity, *(lane.group_last_activity for lane in self.lanes)))
 
 
 # A listing's order: last activity, or the review queue (pending review work first).
@@ -221,7 +221,7 @@ def nested_rows(
     rows = [row(s) for s in roots]
     # A coordinator chain that loops reaches no root: its sessions are rows.
     rows.extend(row(s) for s in items if s.session_id not in placed)
-    rows.sort(key=lambda r: r.mtime, reverse=True)
+    rows.sort(key=lambda r: r.group_last_activity, reverse=True)
     if sort == "review":
         rows.sort(key=review_sort_key)
     return rows
@@ -321,11 +321,47 @@ def lanes_of(
     return sorted(lanes, key=_lane_order)
 
 
-def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
+class SummaryRow(TypedDict):
+    """The listing payload, with meanings on its builders."""
+
+    session_id: str
+    mode: str
+    task: str
+    task_line: str
+    continued_task: str
+    status: str
+    detail: str
+    stop_reason: str
+    label: str
+    level: str
+    last_activity: float
+    when: str
+    cost_usd: float
+    usd_partial: bool
+    plan_consumed: float
+    plan_cap: float
+    cost: str
+    model: str
+    model_from_flag: bool
+    id_cell: str
+    unmerged: bool
+    verification: kinds.Verification | None
+    winner: bool
+    lane: int | None
+    coordinator: str
+    worktree: str | None
+    review_queue: dict[str, Any]
+    lanes: list[SummaryRow]
+    group_last_activity: NotRequired[float]
+    queue_group: NotRequired[str]
+    lane_groups: NotRequired[dict[str, int]]
+
+
+def row_json(row: ListingRow, *, winners: Container[str]) -> SummaryRow:
     """Return a listing row and its nested lanes as JSON.
 
     Attributes:
-        mtime: The group's latest activity time in epoch seconds.
+        group_last_activity: The group's latest activity time in epoch seconds.
         when: The rendered group activity time.
         queue_group: The group's review-queue placement.
         lane_groups: The number of lanes in each review-queue group.
@@ -335,7 +371,7 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
         winners: The ids of the fan-out compare winners.
 
     Returns:
-        The `summary_row` dict with `mtime` and `when` set to the group's latest activity,
+        The `summary_row` dict with group activity and a rendered `when`,
         `queue_group` the row's place in the review queue and `lane_groups` its lanes' places.
     """
     out = summary_row(
@@ -343,8 +379,9 @@ def row_json(row: ListingRow, *, winners: Container[str]) -> dict[str, object]:
         winner=row.summary.session_id in winners,
         lanes=[row_json(ln, winners=winners) for ln in row.lanes],
     )
-    out["mtime"] = row.mtime
-    out["when"] = format.format_when(row.mtime) if row.mtime else ""
+    if row.lanes:
+        out["group_last_activity"] = row.group_last_activity
+    out["when"] = format.format_when(row.group_last_activity) if row.group_last_activity else ""
     out["queue_group"] = row_group(row)
     out["lane_groups"] = lane_groups(row)
     return out
@@ -354,8 +391,8 @@ def summary_row(
     s: SessionSummary,
     *,
     winner: bool = False,
-    lanes: Sequence[dict[str, object]] = (),
-) -> dict[str, object]:
+    lanes: Sequence[SummaryRow] = (),
+) -> SummaryRow:
     """Return one listing row as JSON, the shape `sessions list --json` and `/api/hub` share.
 
     Attributes:
@@ -366,11 +403,11 @@ def summary_row(
             clipped the same way, when a resume steer exists.
         continued_task: The latest resume steer, whole; empty without a continuation.
         status: The lifecycle status word.
-        reason: The detail explaining the status.
-        end_reason: The last journaled end reason, or an empty string while running.
+        detail: The detail explaining the status.
+        stop_reason: The last journaled end reason, or an empty string while running.
         label: The rendered status with mode and unmerged marks.
         level: The status presentation level.
-        mtime: The last activity time in epoch seconds.
+        last_activity: The last activity time in epoch seconds.
         when: The rendered last activity time.
         cost_usd: Cumulative spend in USD across executions.
         usd_partial: Whether unpriced usage makes spend a lower bound.
@@ -381,7 +418,7 @@ def summary_row(
         model_from_flag: Whether a model flag selected the route.
         id_cell: The session identifier with winner and worktree marks.
         unmerged: Whether the run holds unmerged work.
-        verify_ok: The gate verdict, or null without a verdict.
+        verification: The gate verdict, or null without a verdict.
         lane: The lane number, or null outside a fan-out.
         coordinator: The session that dispatched this lane.
         worktree: The linked worktree path, or null in the operator's checkout.
@@ -406,12 +443,12 @@ def summary_row(
         "task_line": s.task_label.line(),
         "continued_task": s.task_label.continued_task,
         "status": s.status,
-        "reason": s.reason,
-        "end_reason": s.end_reason,
-        "label": format.listing_status_label(s.mode, s.status, s.reason, unmerged=s.unmerged),
+        "detail": s.detail,
+        "stop_reason": s.stop_reason,
+        "label": format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged),
         "level": format.status_level(s.status),
-        "mtime": s.mtime,
-        "when": format.format_when(s.mtime) if s.mtime else "",
+        "last_activity": s.last_activity,
+        "when": format.format_when(s.last_activity) if s.last_activity else "",
         "cost_usd": s.cost_usd,
         "usd_partial": s.usd_partial,
         "plan_consumed": s.plan_consumed,
@@ -421,7 +458,7 @@ def summary_row(
         "model_from_flag": s.model_from_flag,
         "id_cell": s.id_cell(winner=winner),
         "unmerged": s.unmerged,
-        "verify_ok": s.verify_ok,
+        "verification": s.verification,
         "winner": winner,
         "lane": s.lane,
         "coordinator": s.coordinator,
@@ -455,7 +492,11 @@ def session_is_live(session_dir: pathlib.Path) -> bool:
 
 
 def needs_new_work(
-    *, finished: bool, end_reason: str, all_passed: bool | None, saved_answers: int = 0
+    *,
+    finished: bool,
+    stop_reason: str,
+    verification: kinds.Verification | None,
+    saved_answers: int = 0,
 ) -> bool:
     """Return whether a bare resume of a run in this state would have nothing to do.
 
@@ -464,9 +505,9 @@ def needs_new_work(
     prose, records a silent_finish and leaves a passed run reading as failed.
 
     Args:
-        finished: A session.end was seen.
-        end_reason: The session.end reason word.
-        all_passed: The verify tri-state.
+        finished: A session.stop was seen.
+        stop_reason: The session.stop reason word.
+        verification: The final verification word, or None when unknown.
         saved_answers: Answers saved on disk for the run's questions; the resume delivers them.
 
     Returns:
@@ -475,8 +516,8 @@ def needs_new_work(
     """
     return (
         finished
-        and end_reason == "finish_session"
-        and all_passed is not False
+        and stop_reason == "finish_session"
+        and verification in ("passed", "not_applicable")
         and not saved_answers
     )
 
@@ -486,8 +527,8 @@ def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
     scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
     return needs_new_work(
         finished=scan.finished,
-        end_reason=scan.end_reason,
-        all_passed=scan.all_passed,
+        stop_reason=scan.stop_reason,
+        verification=scan.verification,
         saved_answers=len(ipc.saved_question_answers(session_dir)),
     )
 
@@ -675,13 +716,13 @@ def summarize_session_dir(
         mode=mode,
         task_label=label,
         status=word,
-        reason=reason,
-        end_reason=scan.end_reason if scan.finished else "",
+        detail=reason,
+        stop_reason=scan.stop_reason if scan.finished else "",
         unmerged=has_unmerged,
         cost_usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
-        mtime=session_mtime(session_dir),
-        verify_ok=scan.verify_verdict(),
+        last_activity=session_mtime(session_dir),
+        verification=scan.verification,
         coordinator=lineage.coordinator if lineage is not None else "",
         lane=lineage.lane if lineage is not None else None,
         plan_consumed=scan.plan_consumed,

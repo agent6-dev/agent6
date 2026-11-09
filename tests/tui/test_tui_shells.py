@@ -18,7 +18,7 @@ def _mk(d: pathlib.Path) -> None:
     d.mkdir(parents=True)
     evs = [
         {"type": "session.start", "session_id": d.name, "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in evs), encoding="utf-8")
     shell = d / "shells" / "bg-1"

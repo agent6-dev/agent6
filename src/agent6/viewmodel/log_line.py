@@ -210,8 +210,8 @@ def format_log_line(event: dict[str, Any]) -> str:  # noqa: C901, PLR0912, PLR09
         case "question.answer":
             ans = _as_list(event.get("answers"))
             salient = f"id={event.get('id')} answers={len(ans)}"
-        case "session.end":
-            salient = f"{event.get('reason', '')} all_passed={event.get('all_passed')}"
+        case "session.stop":
+            salient = f"{event.get('reason', '')} verification={event.get('verification')}"
         case _:
             salient = ""
     line = f"{ts[11:23] if len(ts) > 23 else ts}  {etype:<18}"

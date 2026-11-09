@@ -79,7 +79,7 @@ post-session store snapshot (`memories_ids`/`memories_bytes`),
 `deps_added`/`deps_in_graph`, `trap_edits` (edit calls whose TARGET is one
 of orchard's generated feeds; matched on the `path` arg when present so a
 generator merely mentioning the feed in a docstring does not count),
-`iterations` (loop turns), `usd`, `tokens`, `wall_s`, `end_reason`, `tampered`.
+`iterations` (loop turns), `usd`, `tokens`, `wall_s`, `stop_reason`, `tampered`.
 
 Memory metrics read the real channel: the repo memory is files under the
 state home's `memory/` dir (plus the injected `MEMORY.md` index), so

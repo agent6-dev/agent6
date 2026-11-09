@@ -68,7 +68,7 @@ _EVENTS: list[dict[str, Any]] = [
     {"type": "role.result", "role": "reviewer", "text": "a side seat's answer"},
     {"type": "role.result", "role": "worker", "text": "Done: the lexer is untouched."},
     {"type": "budget.update", "usd_total": 0.25},
-    {"type": "session.end", "reason": "finish_session", "turns": 6, "all_passed": True},
+    {"type": "session.stop", "reason": "finish_session", "turns": 6, "verification": "passed"},
 ]
 
 
@@ -108,7 +108,7 @@ def test_the_digest_folds_what_the_reviewer_needs(repo: pathlib.Path) -> None:
     d = review_session.run_digest(layout)
 
     assert (d.session_id, d.mode, d.task) == ("run-AAAA11", "run", "fix the parser")
-    assert (d.end_reason, d.verify, d.turns) == ("finish_session", "passed", 6)
+    assert (d.stop_reason, d.verify, d.turns) == ("finish_session", "passed", 6)
     assert (d.tool_calls, d.tool_errors, d.cost_usd) == (2, 1, 0.25)
     assert d.steers == ("do not touch the lexer",)
     assert d.decisions == (("keep the old API?", "yes"),)
@@ -216,30 +216,36 @@ def test_a_red_gate_and_an_empty_journal_read_truthfully(repo: pathlib.Path) -> 
     red = [
         e
         for e in _EVENTS
-        if e["type"] != "session.end" and not (e["type"] == "verify.end" and e["exit_code"] == 0)
+        if e["type"] != "session.stop" and not (e["type"] == "verify.end" and e["exit_code"] == 0)
     ]
-    red.append({"type": "session.end", "reason": "no_progress", "turns": 9, "all_passed": False})
+    red.append(
+        {"type": "session.stop", "reason": "no_progress", "turns": 9, "verification": "failed"}
+    )
     layout = _write_session(repo, events=red)
     d = review_session.run_digest(layout)
-    assert (d.end_reason, d.verify) == ("no_progress", "failed")
+    assert (d.stop_reason, d.verify) == ("no_progress", "failed")
 
     empty = _write_session(repo, session_id="run-BBBB22", events=[])
     d = review_session.run_digest(empty)
-    # Nothing observed the tree: "unverified", never a word that claims a gate
-    # was absent or green.
-    assert (d.end_reason, d.verify, d.tool_calls, d.steers) == ("", "unverified", 0, ())
+    # No stop event records a final verification.
+    assert (d.stop_reason, d.verify, d.tool_calls, d.steers) == ("", "unverified", 0, ())
     assert "conversation (tail):" in d.render()
 
 
 def test_a_plan_or_an_ask_has_no_gate_to_pass(repo: pathlib.Path) -> None:
-    """A plan's or an ask's `all_passed: true` is not a verify pass.
+    """A plan's or an ask's `verification: true` is not a verify pass.
 
     Nothing gated them; a digest reading it as "verify passed" reviews a plan that ran no verify as
     green.
     """
     plan = [
         {"type": "session.start", "session_id": "plan-1", "mode": "plan", "user_task": "plan it"},
-        {"type": "session.end", "reason": "finish_planning", "turns": 3, "all_passed": True},
+        {
+            "type": "session.stop",
+            "reason": "finish_planning",
+            "turns": 3,
+            "verification": "not_applicable",
+        },
     ]
     layout = _write_session(repo, session_id="plan-1", events=plan)
     layout.manifest_path.write_text(
@@ -271,9 +277,9 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
     """Three shapes the digest got wrong against `sessions show`.
 
     A resumed run whose red verify was in execution 1 and whose execution 2 ran none reads
-    "unverified" (the scan resets at the resume); a gated run whose gate never ran (all_passed
+    "unverified" (the scan resets at the resume); a gated run whose gate never ran (verification
     false, no verify.end) reads "unverified", not "not gated"; a killed run (a green verify, no
-    session.end) reads "unverified".
+    session.stop) reads "unverified".
     """
     resumed = [
         {"type": "session.start", "session_id": "r", "mode": "run", "user_task": "t"},
@@ -285,18 +291,33 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
             "stdout_tail": "",
             "stderr_tail": "E boom",
         },
-        {"type": "session.end", "reason": "budget_exhausted", "turns": 4, "all_passed": False},
+        {
+            "type": "session.stop",
+            "reason": "budget_exhausted",
+            "turns": 4,
+            "verification": "unverified",
+        },
         {"type": "session.resume", "session_id": "r", "mode": "run"},
-        {"type": "session.end", "reason": "finish_session", "turns": 6, "all_passed": False},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "turns": 6,
+            "verification": "unverified",
+        },
     ]
     layout = _write_session(repo, session_id="run-resumed", events=resumed)
     d = review_session.run_digest(layout)
     assert d.verify == "unverified"
-    assert session_log.scan_session_log(layout.logs_path).verify_verdict() is None
+    assert session_log.scan_session_log(layout.logs_path).verification == "unverified"
 
     never_ran = [
         {"type": "session.start", "session_id": "n", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": False},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "turns": 2,
+            "verification": "unverified",
+        },
     ]
     layout = _write_session(repo, session_id="run-never", events=never_ran)
     assert review_session.run_digest(layout).verify == "unverified"
@@ -317,7 +338,12 @@ def test_the_gate_word_agrees_with_the_listing_scan(repo: pathlib.Path) -> None:
 
     gateless = [
         {"type": "session.start", "session_id": "g", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": "finish_session", "turns": 2, "all_passed": None},
+        {
+            "type": "session.stop",
+            "reason": "finish_session",
+            "turns": 2,
+            "verification": "not_applicable",
+        },
     ]
     layout = _write_session(repo, session_id="run-gateless", events=gateless)
     assert review_session.run_digest(layout).verify == "not gated"

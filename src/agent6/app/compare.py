@@ -16,6 +16,7 @@ from collections.abc import Callable, Mapping
 from typing import Literal
 
 from agent6 import budget as agent6_budget
+from agent6 import kinds
 from agent6.app import reporter as app_reporter
 from agent6.app import role_providers, session_setup
 from agent6.config import Config
@@ -126,9 +127,9 @@ def rank(
     return RankOutcome(harness_judge.mechanical_ranking(candidates), "", "mechanical")
 
 
-def verify_word(verify_ok: bool | None) -> str:
+def verify_word(verification: kinds.Verification | None) -> str:
     """Return a candidate's gate verdict as the report and the journal word it."""
-    return "passed" if verify_ok else "failed" if verify_ok is False else "no-verify"
+    return verification or "unknown"
 
 
 def print_ranked_candidates(
@@ -157,7 +158,7 @@ def print_ranked_candidates(
     if not outcome.ranking:
         return
     labels = {
-        rid: format.status_label(rows[rid].status, rows[rid].reason) for rid in outcome.ranking
+        rid: format.status_label(rows[rid].status, rows[rid].detail) for rid in outcome.ranking
     }
     width = max(len(label) for label in labels.values())
     reporter.out("ranked candidates (best first):")

@@ -60,7 +60,7 @@ def test_an_answer_that_lands_after_the_last_turn_is_not_lost() -> None:
     """The queue drains at turn boundaries, and the run's end is the last one."""
     view, out = _view()
     view.queue_btw("\n--- btw: late\nthe answer\n--- end btw\n")
-    view.feed({"type": "session.end", "reason": "finish_session", "all_passed": True})
+    view.feed({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
     assert "--- btw: late" in out.getvalue()
     assert "the answer" in out.getvalue()
 

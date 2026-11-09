@@ -335,7 +335,7 @@ class _PromptWatch:
                 source = event.get("source")
                 self.closed_by = ipc.ANSWERED_ELSEWHERE + (f" (source: {source})" if source else "")
                 return True
-            if etype == "session.end" or etype in events.SESSION_START_EVENTS:
+            if etype == "session.stop" or etype in events.SESSION_START_EVENTS:
                 self.closed_by = _RUN_ENDED
                 return True
         if not alive:
@@ -516,7 +516,7 @@ def _render_over_session(target: pathlib.Path, events_path: pathlib.Path, *, fin
         for event in tail_events(events_path, follow=False):
             view.feed(event)
         if not finished:
-            # No session.end settled the call the worker died on.
+            # No session.stop settled the call the worker died on.
             view.settle_dead("the run died")
     finally:
         view.close()
@@ -620,7 +620,7 @@ def _watch_transcript(target: pathlib.Path) -> int:
             # our claim only
             process.unregister_frontend(target, os.getpid())
     if not interrupted and not scan_session_log(events_path).finished:
-        # No session.end settled the call the worker died on.
+        # No session.stop settled the call the worker died on.
         view.settle_dead("the run died")
         _print_crashed_line(target)
         return 1
@@ -628,13 +628,13 @@ def _watch_transcript(target: pathlib.Path) -> int:
 
 
 def _line_is_session_end(raw: bytes | str) -> bool:
-    """Return whether a logs.jsonl line is a `session.end` event, so the follower stops there."""
+    """Return whether a logs.jsonl line is a `session.stop` event, so the follower stops there."""
     text = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else raw
     try:
         obj = json.loads(text)
     except (ValueError, TypeError):
         return False
-    return isinstance(obj, dict) and obj.get("type") == "session.end"
+    return isinstance(obj, dict) and obj.get("type") == "session.stop"
 
 
 def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per event kind the watch prints
@@ -647,7 +647,7 @@ def _cmd_watch_plain(target: pathlib.Path, *, since: int) -> int:  # noqa: C901,
         since: Replay this many lines first.
 
     Returns:
-        0 at `session.end` or on Ctrl-C, 1 when the worker or the log dies first.
+        0 at `session.stop` or on Ctrl-C, 1 when the worker or the log dies first.
     """
     events_path = target / sessions_layout.LOGS_NAME
     if not events_path.is_file():

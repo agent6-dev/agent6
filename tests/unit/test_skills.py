@@ -242,7 +242,7 @@ def test_unreadable_skill_warns_instead_of_crashing_every_run(tmp_path: pathlib.
     """A SKILL.md with a non-UTF-8 byte or an unreadable file degrades to a warning.
 
     Discovery runs at startup, so every `agent6 run` died with a bare UnicodeDecodeError naming
-    no file, between session.start and any session.end.
+    no file, between session.start and any session.stop.
     """
     bad = tmp_path / "broken"
     bad.mkdir()

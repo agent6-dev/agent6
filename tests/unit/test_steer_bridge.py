@@ -552,7 +552,7 @@ def test_sigterm_stops_the_run_outright(
 ) -> None:
     """`timeout`, CI and `agent6 stop`'s kill send SIGTERM: the run stops as a third Ctrl-C does.
 
-    The default action killed the process at exit 143 with no `session.end`, so every listing
+    The default action killed the process at exit 143 with no `session.stop`, so every listing
     read the run as stale; a run with no terminal, the unattended case, had no handler at all.
     """
     import signal

@@ -111,7 +111,7 @@ def _review_cell(row: viewmodel_listing.ListingRow) -> text.Text:
 
 def _status_cell(summary: SessionSummary, *, narrow: bool = False) -> text.Text:
     """Return the status cell in its colour; a narrow table drops the reason."""
-    reason = "" if narrow else summary.reason
+    reason = "" if narrow else summary.detail
     label = format.listing_status_label(
         summary.mode, summary.status, reason, unmerged=summary.unmerged
     )
@@ -265,7 +265,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             # The time is the row's: a fan-out's latest lane activity, as `sessions list` shows it.
             s = row.summary
             cells: dict[str, str | text.Text] = {
-                "updated": format.format_when(row.mtime, short=narrow),
+                "updated": format.format_when(row.group_last_activity, short=narrow),
                 "status": _status_cell(s, narrow=narrow),
                 "review": _review_cell(row),
                 "cost": s.cost_cell,

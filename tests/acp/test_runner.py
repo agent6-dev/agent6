@@ -294,7 +294,7 @@ def test_the_runs_journal_streams_out_as_session_update(
 def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fault between the journal's first line and its session.end is reported in words."""
+    """A fault between the journal's first line and its session.stop is reported in words."""
     from agent6 import paths
 
     monkeypatch.chdir(tmp_path)
@@ -326,12 +326,12 @@ def test_a_fault_after_the_journal_opened_still_reaches_the_editor(
     assert "RuntimeError: the provider client exploded" in capsys.readouterr().err
 
 
-def test_a_resumes_own_failure_does_not_borrow_a_stale_end_reason(
+def test_a_resumes_own_failure_does_not_borrow_a_stale_stop_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An execution's stop reason comes from its own `session.end`, never an earlier one's.
+    """An execution's stop reason comes from its own `session.stop`, never an earlier one's.
 
-    `session.start` and `session.resume` never clear `end_reason`, so an execution that appended
+    `session.start` and `session.resume` never clear `stop_reason`, so an execution that appended
     only a `session.resume` before dying inherited an earlier execution's reason.
     """
     from agent6 import paths
@@ -347,7 +347,7 @@ def test_a_resumes_own_failure_does_not_borrow_a_stale_end_reason(
             json.dumps(e)
             for e in [
                 {"type": "session.start", "mode": "run", "user_task": "t"},
-                {"type": "session.end", "reason": "max_turns", "all_passed": False},
+                {"type": "session.stop", "reason": "max_turns", "verification": "unverified"},
             ]
         )
         + "\n",
@@ -374,7 +374,7 @@ def test_a_resumes_own_failure_does_not_borrow_a_stale_end_reason(
 def test_a_fault_after_session_end_still_keeps_its_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A finalizer fault after session.end is reported, not hidden behind the journal's verdict."""
+    """A finalizer fault after session.stop is reported, not hidden behind the journal's verdict."""
     from agent6.sessions import event_log
 
     monkeypatch.chdir(tmp_path)
@@ -384,7 +384,13 @@ def test_a_fault_after_session_end_still_keeps_its_reason(
         layout.ensure()
         events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", mode="run", user_task="t", execution_id="execution")
-        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
         raise RuntimeError("the finalizer exploded")
 
     monkeypatch.setattr(run, "run_task", _dies_after_end)
@@ -572,7 +578,7 @@ def test_an_operator_stop_is_cancelled_not_a_refusal() -> None:
 
 def test_the_turn_cap_uses_acps_specific_stop_reason() -> None:
     """The turn cap is ACP's `max_turn_requests`, not a refusal."""
-    assert runner.stop_reason(1, end_reason="max_turns") == "max_turn_requests"
+    assert runner.stop_reason(1, stop_reason="max_turns") == "max_turn_requests"
 
 
 def test_a_deliberate_finish_over_a_red_gate_is_end_turn() -> None:
@@ -681,7 +687,7 @@ def test_a_refusal_that_never_reached_a_journal_still_says_why(
 ) -> None:
     """A lifecycle path that returns 2 with its reason on the reporter reaches the editor in words.
 
-    With no session.end the fold produces no ending.
+    With no session.stop the fold produces no ending.
     """
     monkeypatch.chdir(tmp_path)
 
@@ -805,7 +811,13 @@ def test_cancelled_permission_replies_are_ignored_over_stdio(
         events.emit("tool.call", name="run_command", args={"argv": ["true"]}, call_id=1)
         answers.append(prompts.approve("Allow true?", scope="command", call_id=1))
         events.emit("tool.result", name="run_command", ok=False, summary="denied", call_id=1)
-        events.emit("session.end", reason="operator_stop", turns=1, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="operator_stop",
+            turns=1,
+            verification="unverified",
+        )
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
@@ -1053,7 +1065,7 @@ def test_a_second_prompt_resumes_the_same_run(
 def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A resume refused before its own session.end does not report the first execution's end.
+    """A resume refused before its own session.stop does not report the first execution's end.
 
     A first execution that hit max_turns made a refused resume report max_turn_requests.
     """
@@ -1076,7 +1088,13 @@ def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
         layout.ensure()
         events = event_log.EventSink(layout.logs_path)
         events.emit("session.start", mode="run", user_task="t", execution_id="execution")
-        events.emit("session.end", reason="max_turns", turns=1, all_passed=False)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="max_turns",
+            turns=1,
+            verification="unverified",
+        )
         (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
         return 1
 
@@ -1095,7 +1113,7 @@ def test_a_refused_second_prompt_does_not_inherit_the_first_executions_reason(
 def test_a_fault_on_a_resume_still_reaches_the_editor(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The previous execution's session.end must not hide a fault in the resume's preflight."""
+    """The previous execution's session.stop must not hide a fault in the resume's preflight."""
     monkeypatch.chdir(tmp_path)
 
     def _state_dir(_cwd: pathlib.Path) -> pathlib.Path:
@@ -1110,7 +1128,9 @@ def test_a_fault_on_a_resume_still_reaches_the_editor(
         layout.logs_path.write_text(
             json.dumps({"type": "session.start", "mode": "run", "user_task": text})
             + "\n"
-            + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+            + json.dumps(
+                {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+            )
             + "\n",
             encoding="utf-8",
         )
@@ -1175,7 +1195,13 @@ def test_a_gated_call_reads_pending_on_the_wire(
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
-        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
@@ -1285,7 +1311,13 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
         )
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=False, summary="no", call_id=1)
-        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
         (layout.session_dir / "loop_state.json").write_text("{}", encoding="utf-8")
         return 0
 
@@ -1303,7 +1335,13 @@ def test_a_tool_call_id_is_unique_across_a_runs_executions(
         )
         events.emit("tool.call", name="run_command", args={"argv": ["ls"]}, call_id=1)
         events.emit("tool.result", name="run_command", ok=True, summary="ok", call_id=1)
-        events.emit("session.end", reason="finish_session", turns=2, all_passed=True)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=2,
+            verification="passed",
+        )
         return 0
 
     monkeypatch.setattr(run, "run_task", _run_task)
@@ -1485,7 +1523,13 @@ def test_the_runs_notices_reach_the_editor(
             user_task="t",
             execution_id="execution",
         )
-        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
         reporter = kw["reporter"]
         assert isinstance(reporter, app_reporter.Reporter)
         finalize.print_session_end(
@@ -1554,7 +1598,13 @@ def test_the_editor_gets_each_ending_fact_once(
             execution_id="execution",
         )
         events.emit("budget.update", usd_total=0.0028)
-        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
         reporter = kw["reporter"]
         assert isinstance(reporter, app_reporter.Reporter)
         reporter.cost("Token + cost summary:\n  TOTAL: in=839 out=253 cost=$0.0028 of $0.0500")
@@ -1675,7 +1725,13 @@ def test_a_request_names_the_call_it_gates_not_the_newest(
         approved = prompts.approve("Allow run_command: ls", scope="command", call_id=1)
         events.emit("tool.result", name="read_file", ok=True, summary="ok", call_id=2)
         events.emit("tool.result", name="run_command", ok=approved, summary="ok", call_id=1)
-        events.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+        events.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
         return 0
 
     monkeypatch.setattr(run, "run_task", _gated_run)
@@ -1943,7 +1999,13 @@ def test_an_edits_journaled_paths_reach_the_editor_as_locations(tmp_path: pathli
         summary="edited",
         paths=["src/x.py", "src/x.py"],
     )
-    sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+    sink.emit(
+        "session.stop",
+        execution_id="execution",
+        reason="finish_session",
+        turns=1,
+        verification="passed",
+    )
 
     bridge._stream(  # pyright: ignore[reportPrivateUsage]
         session, log, lambda: True, 0, runner.Announced(execution=1)
@@ -2118,11 +2180,11 @@ def test_a_streamed_final_answer_is_not_sent_again_as_the_end_summary(
         {"type": "tool.call", "name": "finish_session", "args": {"summary": "ok"}, "call_id": 1},
         {"type": "tool.result", "name": "finish_session", "ok": True, "call_id": 1},
         {
-            "type": "session.end",
+            "type": "session.stop",
             "reason": "finish_session",
             "summary": "Appended the line.\n\nDONE",
             "turns": 1,
-            "all_passed": True,
+            "verification": "passed",
         },
     ]
     sent: list[dict[str, Any]] = []

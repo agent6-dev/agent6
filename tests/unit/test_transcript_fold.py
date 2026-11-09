@@ -98,7 +98,7 @@ def test_done_line_says_why_a_stopped_run_ended() -> None:
         [
             {"type": "tool.call", "name": "finish_session", "args": {"summary": "not finished"}},
             {
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "steer_abort",
                 "summary": "operator stopped after turn 3",
             },
@@ -135,7 +135,7 @@ def test_finish_tool_becomes_the_verdict_not_a_step() -> None:
     events = [
         {"type": "tool.call", "name": "finish_session", "args": {"summary": "all green"}},
         {"type": "tool.result", "name": "finish_session", "ok": True, "summary": "finish_session"},
-        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
     items = fold_transcript(events)
     assert [i.kind for i in items] == ["done"]
@@ -152,7 +152,7 @@ def test_a_plans_finish_summary_pairs_with_its_done_line() -> None:
     events = [
         {"type": "tool.call", "name": "finish_planning", "args": {"summary": "Plan seeded."}},
         {"type": "tool.result", "name": "finish_planning", "ok": True, "summary": "ok"},
-        {"type": "session.end", "all_passed": True, "reason": "finish_planning"},
+        {"type": "session.stop", "verification": "passed", "reason": "finish_planning"},
     ]
     (done,) = fold_transcript(events)
     assert done.kind == "done" and done.ok is True and done.body == "Plan seeded."
@@ -354,22 +354,22 @@ def test_stopped_run_done_reads_as_stopped_not_failed() -> None:
     # A steer_abort run must render "stopped", not the raw "steer_abort" nor a
     # failure -- the CLI/TUI done line shows item.name for a not-ok run.
     (done,) = fold_transcript(
-        [{"type": "session.end", "reason": "steer_abort", "all_passed": False}]
+        [{"type": "session.stop", "reason": "steer_abort", "verification": "unverified"}]
     )
-    assert done.kind == "done" and done.ok is False and done.name == "stopped"
+    assert done.kind == "done" and done.ok is None and done.name == "stopped"
 
 
 def test_interrupted_run_is_in_the_reason_vocabulary_and_labeled() -> None:
-    """session.end reason="interrupted" is in SessionEndReason and reads as the operator's stop."""
+    """session.stop reason="interrupted" is in SessionEndReason and reads as the operator's stop."""
     from typing import get_args
 
     from agent6.harness import loop_snapshot
 
     assert "interrupted" in get_args(loop_snapshot.SessionEndReason)
     (done,) = fold_transcript(
-        [{"type": "session.end", "reason": "interrupted", "all_passed": False}]
+        [{"type": "session.stop", "reason": "interrupted", "verification": "unverified"}]
     )
-    assert done.kind == "done" and done.ok is False and done.name == "stopped"
+    assert done.kind == "done" and done.ok is None and done.name == "stopped"
 
 
 def test_operator_steer_text_becomes_an_operator_item() -> None:
@@ -526,10 +526,10 @@ def test_done_item_is_a_receipt_when_the_journal_carries_the_pieces() -> None:
         {"type": "diff.updated", "sha": "abc123", "patch": "+x\n-y\n"},
         {"type": "tool.call", "name": "finish_session", "args": {"summary": "Fixed."}},
         {
-            "type": "session.end",
+            "type": "session.stop",
             "ts": "2026-08-09T20:00:45+00:00",
             "reason": "finish_session",
-            "all_passed": True,
+            "verification": "passed",
         },
     ]
     done = next(it for it in fold_transcript(events) if it.kind == "done")
@@ -546,7 +546,7 @@ def test_the_receipt_spells_dollars_the_way_every_other_surface_does() -> None:
     events = [
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "user_task": "t"},
         {"type": "budget.update", "usd_total": 0.25, "usd_partial": True},
-        {"type": "session.end", "ts": "2026-08-09T20:01:00+00:00", "reason": "finish_session"},
+        {"type": "session.stop", "ts": "2026-08-09T20:01:00+00:00", "reason": "finish_session"},
     ]
     done = next(it for it in fold_transcript(events) if it.kind == "done")
     assert done.detail.startswith("~$0.25 · ")
@@ -556,7 +556,7 @@ def test_done_item_degrades_to_counts_on_a_journal_without_receipt_fields() -> N
     events = [
         {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     done = next(it for it in fold_transcript(events) if it.kind == "done")
     assert done.detail == "1 tool · 0 commits"
@@ -640,7 +640,7 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
         {"type": "session.start", "mode": "ask", "user_task": "why?"},
         {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
         {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
-        {"type": "session.end", "reason": "answered", "all_passed": False},
+        {"type": "session.stop", "reason": "answered", "verification": "unverified"},
     ]
     done = next(it for it in fold_transcript(ask) if it.kind == "done")
     assert done.detail == "1 tool"
@@ -652,7 +652,7 @@ def test_an_asks_receipt_carries_no_commit_count() -> None:
     # reads "0 commits".
     resumed_plan = [
         {"type": "session.resume", "mode": "plan", "turn": 3},
-        {"type": "session.end", "reason": "finish_planning", "all_passed": False},
+        {"type": "session.stop", "reason": "finish_planning", "verification": "unverified"},
     ]
     done = next(it for it in fold_transcript(resumed_plan) if it.kind == "done")
     assert done.detail == "0 tools"
@@ -693,7 +693,7 @@ _DONE_LABELS = {
 }
 
 
-def test_every_end_reason_has_a_done_line_label() -> None:
+def test_every_stop_reason_has_a_done_line_label() -> None:
     """The done marker's label for every end reason, with a new reason extending the table.
 
     Green harness ends keep their own label without a finish_session call.
@@ -704,11 +704,15 @@ def test_every_end_reason_has_a_done_line_label() -> None:
 
     assert set(_DONE_LABELS) == set(get_args(loop_snapshot.SessionEndReason))
     for reason, label in _DONE_LABELS.items():
-        all_passed = reason in ("silent_finish", "metric_plateau", "verify_settled")
+        verification = (
+            "passed"
+            if reason in ("silent_finish", "metric_plateau", "verify_settled")
+            else "unverified"
+        )
         done = next(
             it
             for it in fold_transcript(
-                [{"type": "session.end", "reason": reason, "all_passed": all_passed}]
+                [{"type": "session.stop", "reason": reason, "verification": verification}]
             )
             if it.kind == "done"
         )
@@ -727,15 +731,15 @@ def test_a_resumed_executions_receipt_is_its_own() -> None:
         {"type": "loop.auto_commit", "sha": "abc123", "subject": "first"},
         {"type": "diff.updated", "sha": "abc123", "patch": "+x\n"},
         {"type": "budget.update", "usd_total": 0.01},
-        {"type": "session.end", "ts": "2026-08-09T20:00:45+00:00", "reason": "stopped"},
+        {"type": "session.stop", "ts": "2026-08-09T20:00:45+00:00", "reason": "stopped"},
         {"type": "session.resume", "ts": "2026-08-09T20:10:00+00:00", "user_task": "t"},
         {"type": "budget.update", "usd_total": 0.002},
         {"type": "tool.call", "name": "finish_session", "args": {"summary": "Done."}},
         {
-            "type": "session.end",
+            "type": "session.stop",
             "ts": "2026-08-09T20:10:03+00:00",
             "reason": "finish_session",
-            "all_passed": True,
+            "verification": "passed",
         },
     ]
     dones = [it for it in fold_transcript(events) if it.kind == "done"]
@@ -752,17 +756,17 @@ def test_a_resumed_execution_that_stops_before_spending_has_no_stale_cost() -> N
         {"type": "session.start", "ts": "2026-08-09T20:00:00+00:00", "mode": "run"},
         {"type": "budget.update", "usd_total": 0.01},
         {
-            "type": "session.end",
+            "type": "session.stop",
             "ts": "2026-08-09T20:00:45+00:00",
             "reason": "steer_abort",
-            "all_passed": False,
+            "verification": "unverified",
         },
         {"type": "session.resume", "ts": "2026-08-09T20:10:00+00:00", "mode": "run"},
         {
-            "type": "session.end",
+            "type": "session.stop",
             "ts": "2026-08-09T20:10:01+00:00",
             "reason": "steer_abort",
-            "all_passed": False,
+            "verification": "unverified",
         },
     ]
     dones = [it for it in fold_transcript(events) if it.kind == "done"]
@@ -876,7 +880,7 @@ def test_a_question_prompt_marks_the_ask_user_call_as_awaiting() -> None:
 
 
 def test_a_dead_workers_open_call_settles_for_a_reader_that_knows() -> None:
-    """A worker killed without a session.end leaves its last call open; the prober settles it."""
+    """A worker killed without a session.stop leaves its last call open; the prober settles it."""
     events = [
         {"type": "session.start", "user_task": "x"},
         {"type": "tool.call", "name": "run_command", "args": {"argv": ["sleep", "60"]}},
@@ -905,9 +909,9 @@ def test_a_second_id_less_call_under_one_name_supersedes_the_first() -> None:
 
 
 def test_a_execution_boundary_settles_a_call_that_never_returned() -> None:
-    """A call still open at session.end or the next execution's start settles as not returned."""
+    """A call still open at session.stop or the next execution's start settles as not returned."""
     call = {"type": "tool.call", "name": "run_verify_command", "args": {}, "call_id": 3}
-    items = fold_transcript([call, {"type": "session.end", "reason": "crashed"}])
+    items = fold_transcript([call, {"type": "session.stop", "reason": "crashed"}])
     assert [i.kind for i in items] == ["tool", "done"]
     assert items[0].ok is False and items[0].call_id == "3" and "no result" in items[0].detail
     items = fold_transcript([call, {"type": "session.resume"}])
@@ -1032,7 +1036,7 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
                 "duration_s": 60.0,
             },
             {"type": "tool.result", "name": "run_verify_command", "ok": False, "call_id": 1},
-            {"type": "session.end", "reason": "finish_session", "all_passed": False},
+            {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
         ]
     )
     assert [i.name for i in items if i.kind == "done"] == ["finished · gate timed out"]
@@ -1040,7 +1044,7 @@ def test_the_end_label_reads_the_gate_the_model_ran_and_a_stranded_finish() -> N
     items = fold_transcript(
         [
             {"type": "session.start", "mode": "run", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {"type": "session.stranded"},
         ]
     )
@@ -1055,8 +1059,8 @@ def test_the_end_item_carries_its_reason() -> None:
     from agent6.viewmodel import transcript
 
     fold = transcript.TranscriptFold()
-    end = {"type": "session.end", "reason": "budget_exhausted", "summary": "budget exhausted"}
-    items = fold.feed({**end, "turns": 3, "all_passed": False})
+    end = {"type": "session.stop", "reason": "budget_exhausted", "summary": "budget exhausted"}
+    items = fold.feed({**end, "turns": 3, "verification": "unverified"})
     assert items[-1].kind == "done" and items[-1].arg == "budget_exhausted"
 
 

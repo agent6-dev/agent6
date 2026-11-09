@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The end-of-run console headline folds the same session.end `agent6 sessions` reads.
+"""The end-of-run console headline folds the same session.stop `agent6 sessions` reads.
 
-A finish_session over a red or stale verify is all_passed=false, so both read "finished".
+A finish_session over a red or stale verify is verification=false, so both read "finished".
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def test_the_settled_reading_reaches_the_journal_and_the_end_block(
         "r2",
         [
             {"type": "session.start", "session_id": "r2", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
@@ -74,7 +74,7 @@ def test_finish_session_over_red_verify_is_not_headlined_passed(
         "r1",
         [
             {"type": "session.start", "session_id": "r1", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": False},
+            {"type": "session.stop", "reason": "finish_session", "verification": "unverified"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -103,7 +103,7 @@ def test_all_green_finish_is_headlined_passed(tmp_path: pathlib.Path, capsys: ob
         "r2",
         [
             {"type": "session.start", "session_id": "r2", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -131,7 +131,7 @@ def test_a_budget_stop_prints_its_detail_once(
         "r-budget",
         [
             {"type": "session.start", "session_id": "r-budget", "user_task": "t"},
-            {"type": "session.end", "reason": "budget_exhausted", "all_passed": False},
+            {"type": "session.stop", "reason": "budget_exhausted", "verification": "unverified"},
         ],
     )
     tracker = budget.BudgetTracker(max_usd=-1, max_tokens_fallback=5, max_plan_points=-1)
@@ -171,7 +171,7 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
         "r-settled",
         [
             {"type": "session.start", "session_id": "r-settled", "user_task": "t"},
-            {"type": "session.end", "reason": "verify_settled", "all_passed": True},
+            {"type": "session.stop", "reason": "verify_settled", "verification": "passed"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -180,7 +180,7 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
         summary="verify passed and the worker stopped making changes",
         turns=9,
         tool_calls=12,
-        verified="passed",
+        verification="passed",
     )
     _finalize.print_session_end(
         result,
@@ -207,13 +207,13 @@ def test_a_settled_end_over_a_green_gate_says_the_worker_never_finished(
         ("metric_plateau", "finished · metric plateau"),
     ],
 )
-@pytest.mark.parametrize("all_passed", [True, None])
+@pytest.mark.parametrize("verification", ["passed", None])
 def test_silent_and_plateau_ends_are_not_headlined_passed(
     tmp_path: pathlib.Path,
     capsys: pytest.CaptureFixture[str],
     reason: loop_snapshot.SessionEndReason,
     headline: str,
-    all_passed: bool | None,
+    verification: str | None,
 ) -> None:
     """A silent or plateau end names its cause over a green or absent gate, never passed."""
     layout = _layout(
@@ -221,7 +221,7 @@ def test_silent_and_plateau_ends_are_not_headlined_passed(
         "r-harness",
         [
             {"type": "session.start", "session_id": "r-harness", "user_task": "t"},
-            {"type": "session.end", "reason": reason, "all_passed": all_passed},
+            {"type": "session.stop", "reason": reason, "verification": verification},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -254,7 +254,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
                 "outcome": "timed_out",
                 "timeout_s": 300.0,
             },
-            {"type": "session.end", "reason": "finish_session", "all_passed": False},
+            {"type": "session.stop", "reason": "finish_session", "verification": "failed"},
         ],
     )
     manifest = {
@@ -272,7 +272,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
         summary="",
         turns=1,
         tool_calls=1,
-        verified="failed",
+        verification="failed",
     )
     _finalize.print_session_end(
         result,
@@ -302,7 +302,7 @@ def _end_output(
         session_id,
         [
             {"type": "session.start", "session_id": session_id, "user_task": "t"},
-            {"type": "session.end", "reason": result.reason, "all_passed": False},
+            {"type": "session.stop", "reason": result.reason, "verification": "unverified"},
         ],
     )
     if manifest is not None:
@@ -339,7 +339,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         summary="",
         turns=1,
         tool_calls=1,
-        verified="failed",
+        verification="failed",
     )
     out = _end_output(tmp_path, "r-red", result, capsys, manifest)
     assert "the gate is red" in out
@@ -350,7 +350,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         summary="",
         turns=1,
         tool_calls=1,
-        verified="unverified",
+        verification="unverified",
     )
     out = _end_output(tmp_path, "r-unv", unverified, capsys, manifest)
     assert "the gate is red" not in out
@@ -368,7 +368,7 @@ def test_the_stale_gate_proposal_survives_an_unverified_verdict(
         turns=1,
         tool_calls=1,
         stale_gate="pytest -q tests/",
-        verified="unverified",
+        verification="unverified",
     )
     out = _end_output(tmp_path, "r-stale", result, capsys)
     assert "it says: pytest -q tests/" in out
@@ -403,7 +403,7 @@ def test_end_banner_does_not_claim_merged_from_a_prior_executions_stamp(
         "r-leg2",
         [
             {"type": "session.start", "session_id": "r-leg2", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     layout.manifest_path.write_text(
@@ -446,7 +446,7 @@ def test_end_banner_does_not_offer_merge_for_an_auto_merged_branch(
         "r-merged",
         [
             {"type": "session.start", "session_id": "r-merged", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     layout.manifest_path.write_text(
@@ -498,7 +498,7 @@ def test_end_banner_does_not_advertise_a_run_branch_that_never_got_a_commit(
         "miss",
         [
             {"type": "session.start", "session_id": "miss", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     layout.manifest_path.write_text(
@@ -549,7 +549,7 @@ def _end_footer(
         session_id,
         [
             {"type": "session.start", "session_id": session_id, "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     layout.manifest_path.write_text(json.dumps({"mode": "run", **manifest}), encoding="utf-8")
@@ -719,7 +719,7 @@ def test_provider_error_is_headlined_failed(tmp_path: pathlib.Path, capsys: obje
         "r3",
         [
             {"type": "session.start", "session_id": "r3", "user_task": "t"},
-            {"type": "session.end", "reason": "provider_error", "all_passed": False},
+            {"type": "session.stop", "reason": "provider_error", "verification": "unverified"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -756,7 +756,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
         summary="provider error at turn 1 (HTTP 401) Authentication failed",
         turns=1,
         tool_calls=0,
-        verified="unverified",
+        verification="unverified",
     )
     outs: dict[str, str] = {}
     for session_id in ("r-401", "r-401-committed"):
@@ -765,7 +765,7 @@ def test_a_run_that_stopped_with_nothing_committed_gets_no_verify_errand(
             session_id,
             [
                 {"type": "session.start", "session_id": session_id, "user_task": "t"},
-                {"type": "session.end", "reason": "provider_error", "all_passed": False},
+                {"type": "session.stop", "reason": "provider_error", "verification": "unverified"},
             ],
         )
         layout.manifest_path.write_text(
@@ -809,10 +809,10 @@ def test_end_banner_adds_the_run_total_across_resume_executions(
         [
             {"type": "session.start", "session_id": "r7", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.019},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {"type": "session.resume", "turn": 4},
             {"type": "budget.update", "usd_total": 0.0126},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -844,10 +844,10 @@ def test_end_banner_run_total_carries_plan_points(
         [
             {"type": "session.start", "session_id": "r9", "user_task": "t"},
             {**plan, "plan_consumed": 1.0},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {"type": "session.resume", "turn": 4},
             {**plan, "plan_consumed": 0.0},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -873,7 +873,7 @@ def test_end_banner_stays_quiet_on_a_single_execution_run(
         [
             {"type": "session.start", "session_id": "r8", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.01},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -1088,7 +1088,7 @@ def test_a_plan_that_crashed_before_finishing_gets_no_execute_hint(
         "plan-crash",
         [
             {"type": "session.start", "session_id": "plan-crash", "user_task": "t"},
-            {"type": "session.end", "reason": "provider_error", "all_passed": None},
+            {"type": "session.stop", "reason": "provider_error", "verification": "not_applicable"},
         ],
     )
     layout.manifest_path.write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
@@ -1120,7 +1120,7 @@ def test_a_plan_that_completed_without_finish_planning_gets_no_execute_hint(
         "plan-prose",
         [
             {"type": "session.start", "session_id": "plan-prose", "user_task": "t"},
-            {"type": "session.end", "reason": "silent_finish", "all_passed": None},
+            {"type": "session.stop", "reason": "silent_finish", "verification": "not_applicable"},
         ],
     )
     layout.manifest_path.write_text(json.dumps({"mode": "plan"}), encoding="utf-8")
@@ -1152,7 +1152,7 @@ def test_the_end_of_run_block_goes_through_the_reporter(
         "r9",
         [
             {"type": "session.start", "session_id": "r9", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     forged = 'done\n{"jsonrpc":"2.0","id":1,"method":"fs/write_text_file","params":{}}'
@@ -1191,7 +1191,7 @@ def test_end_banner_admits_an_unreadable_tree_instead_of_claiming(
         session_id,
         [
             {"type": "session.start", "session_id": session_id, "user_task": "t"},
-            {"type": "session.end", "reason": result.reason, "all_passed": False},
+            {"type": "session.stop", "reason": result.reason, "verification": "unverified"},
         ],
     )
     (layout.session_dir / "manifest.json").write_text(
@@ -1218,14 +1218,14 @@ def test_a_failed_run_keeps_its_reason_on_the_console_stream(
 ) -> None:
     """The live done line carries the finish summary only for a clean finish.
 
-    Session.end carries no message, so a provider error keeps its URL, errno and status.
+    Session.stop carries no message, so a provider error keeps its URL, errno and status.
     """
     layout = _layout(
         tmp_path,
         "r-fail",
         [
             {"type": "session.start", "session_id": "r-fail", "user_task": "t"},
-            {"type": "session.end", "reason": "provider_error", "all_passed": None},
+            {"type": "session.stop", "reason": "provider_error", "verification": "not_applicable"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -1257,7 +1257,7 @@ def test_a_clean_finish_does_not_repeat_the_summary_the_stream_showed(
         "r-ok",
         [
             {"type": "session.start", "session_id": "r-ok", "user_task": "t"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -1289,7 +1289,7 @@ def test_a_silent_finish_does_not_repeat_the_answer_the_stream_showed(
         "r-quiet",
         [
             {"type": "session.start", "session_id": "r-quiet", "user_task": "t"},
-            {"type": "session.end", "reason": "silent_finish", "all_passed": True},
+            {"type": "session.stop", "reason": "silent_finish", "verification": "passed"},
         ],
     )
 
@@ -1327,7 +1327,7 @@ def test_the_sandbox_warning_states_its_remedy_once(
                 {"type": "loop.sandbox_tool_unreachable", "binary": b}
                 for b in ("cargo", "node", "pyenv")
             ),
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     result = loop_snapshot.SessionResult(
@@ -1358,10 +1358,10 @@ def test_the_run_total_rides_the_receipt_channel(tmp_path: pathlib.Path) -> None
         [
             {"type": "session.start", "session_id": "r8", "user_task": "t"},
             {"type": "budget.update", "usd_total": 0.019},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             {"type": "session.resume", "turn": 4},
             {"type": "budget.update", "usd_total": 0.0126},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     out: list[str] = []
@@ -1408,7 +1408,7 @@ def test_a_plan_ends_without_the_no_commit_footer(
             f"end-{mode}",
             [
                 {"type": "session.start", "session_id": f"end-{mode}", "user_task": "t"},
-                {"type": "session.end", "reason": result.reason, "all_passed": True},
+                {"type": "session.stop", "reason": result.reason, "verification": "passed"},
             ],
         )
         layout.manifest_path.write_text(

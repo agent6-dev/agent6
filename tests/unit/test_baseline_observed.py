@@ -358,7 +358,7 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
         summary="s",
         turns=1,
         tool_calls=1,
-        verified="failed",
+        verification="failed",
     )
     assert finalize.session_exit_code(inherited, harness_gate=True) == 4
 
@@ -366,7 +366,7 @@ def test_a_red_tree_still_exits_red_whoever_caused_it() -> None:
 def test_the_listing_and_the_header_agree_on_the_word() -> None:
 
     assert session_status.status_word(
-        finished=True, all_passed=False, end_reason="gate_red_at_base"
+        finished=True, verification="unverified", stop_reason="gate_red_at_base"
     ) == (
         "finished",
         "gate red at base",

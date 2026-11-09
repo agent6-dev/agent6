@@ -96,7 +96,12 @@ def _resumed() -> list[dict[str, Any]]:
     return [
         *fold_tests._journal(),  # pyright: ignore[reportPrivateUsage]
         {"type": "session.resume", "ts": ts(100), "execution_id": "e2", "turn": 2},
-        {"type": "session.end", "ts": ts(120), "reason": "finish_session", "verified": "passed"},
+        {
+            "type": "session.stop",
+            "ts": ts(120),
+            "reason": "finish_session",
+            "verification": "passed",
+        },
     ]
 
 
@@ -236,7 +241,7 @@ def test_a_failed_last_batch_keeps_its_cursor_for_the_next_run(repo: pathlib.Pat
         rows.append(
             {"type": "tool.result", "ts": ts(i), "name": "read_file", "ok": True, "call_id": i}
         )
-    rows.append({"type": "session.end", "ts": ts(999), "reason": "finish_session"})
+    rows.append({"type": "session.stop", "ts": ts(999), "reason": "finish_session"})
     _write_session(repo, "run-a", rows)
     refused = _Collector(statuses=[200, 401])
     report = export.export(repo, _config(logs="none", metrics="none"), post=refused.post)
@@ -301,7 +306,7 @@ def test_follow_posts_as_the_journal_grows_and_drains_when_told_to_stop(
                 fh.flush()
                 if i == 0:
                     assert first_post.wait(timeout=5), "nothing was posted for the first pair"
-            end = {"type": "session.end", "ts": ts(9), "reason": "finish_session"}
+            end = {"type": "session.stop", "ts": ts(9), "reason": "finish_session"}
             fh.write(json.dumps(end) + "\n")
         stop.set()
 
@@ -385,10 +390,10 @@ def test_a_resumed_crash_delivers_each_span_once_per_endpoint(
         fh.write(
             json.dumps(
                 {
-                    "type": "session.end",
+                    "type": "session.stop",
                     "ts": ts(120),
                     "reason": "finish_session",
-                    "verified": "passed",
+                    "verification": "passed",
                 }
             )
             + "\n"

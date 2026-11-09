@@ -193,7 +193,7 @@ def test_live_only_verbs_do_not_offer_a_finished_run_in_its_teardown_window(
     (ended / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run"})
         + "\n"
-        + json.dumps({"type": "session.end", "all_passed": True, "reason": "finish_session"})
+        + json.dumps({"type": "session.stop", "verification": "passed", "reason": "finish_session"})
         + "\n",
         encoding="utf-8",
     )
@@ -576,7 +576,7 @@ def test_answer_offers_the_sessions_holding_a_pending_question(
             for e in (
                 {"type": "session.start", "mode": "run"},
                 {"type": "question.prompt", "id": "question-1", "questions": [], "wait": False},
-                {"type": "session.end", "reason": "finish_session", "all_passed": True},
+                {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
             )
         ),
         encoding="utf-8",

@@ -195,8 +195,8 @@ def finish_summaries(layout: sessions_layout.SessionLayout) -> tuple[str, ...]:
     for event in viewmodel.tail_events(layout.logs_path, follow=False):
         state = viewmodel.apply_event(state, event)
         if (
-            event.get("type") == "session.end"
-            and state.end_reason == "finish_session"
+            event.get("type") == "session.stop"
+            and state.stop_reason == "finish_session"
             and state.finish_summary
         ):
             summaries.append(state.finish_summary)

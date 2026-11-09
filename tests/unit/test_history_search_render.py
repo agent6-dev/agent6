@@ -37,7 +37,7 @@ def test_search_read_error_keeps_hits_and_reports_incomplete(
     saved = runs / "saved-record"
     saved.mkdir(parents=True)
     (saved / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "summary": "NEEDLE survived"}) + "\n",
+        json.dumps({"type": "session.stop", "summary": "NEEDLE survived"}) + "\n",
         encoding="utf-8",
     )
     vanished = runs / "vanished-record"

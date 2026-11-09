@@ -207,7 +207,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   // turns re-folded on a debounce. A live-but-silent state ticks the heartbeat.
   const r = data.reasoning || {};
   // Gate on the machine's own liveness (agentLive), not the reasoning fold's
-  // `finished`: an agent-state per-state log carries no session.end, so the dir-less
+  // `finished`: an agent-state per-state log carries no session.stop, so the dir-less
   // fold's `finished` is structurally always false, and a parked/ended/stopped
   // machine would otherwise show its last (finished) turn as live and tick
   // "agent working…" forever. Matches the TUI, which gates on worker liveness.

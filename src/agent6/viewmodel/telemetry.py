@@ -514,7 +514,7 @@ class TelemetryFold:
         if execution.ended:
             return
         reason = self.meter.label("reason", event.get("reason"))
-        verified = str(event.get("verified") or "unverified")
+        verification = str(event.get("verification") or "unverified")
         for span in execution.open_spans():
             if span is not execution.span and span is not execution.turn:
                 step.spans.append(execution.end(span, now, "unset", incomplete=True))
@@ -522,24 +522,24 @@ class TelemetryFold:
             step.spans.append(execution.end(execution.turn, now, "unset"))
         root = execution.span
         root.attributes["agent6.end.reason"] = reason
-        root.attributes["agent6.verified"] = verified
+        root.attributes["agent6.verification"] = verification
         if (turns := telemetry_records.as_int(event.get("turns"))) is not None:
             root.attributes["agent6.turns"] = turns
         if event.get("scoped") is True:
             root.attributes["agent6.verify.scoped"] = True
         status: telemetry_records.Status = "unset"
-        if verified == "passed":
+        if verification == "passed":
             status = "ok"
-        elif verified in ("failed", "timed_out"):
+        elif verification in ("failed", "timed_out"):
             status = "error"
-        self.meter.count("agent6_execution_ends_total", reason=reason, verified=verified)
+        self.meter.count("agent6_execution_ends_total", reason=reason, verification=verification)
         severity: telemetry_records.Severity = "WARN"
         if status == "ok":
             severity = "INFO"
         elif status == "error" or reason == "budget_exhausted":
             severity = "ERROR"
-        fields = {"agent6.end.reason": reason, "agent6.verified": verified}
-        body = f"execution ended: {reason}, gate {verified}"
+        fields = {"agent6.end.reason": reason, "agent6.verification": verification}
+        body = f"execution ended: {reason}, gate {verification}"
         step.logs.append(execution.log(now, severity, body, fields, root.span_id))
         step.spans.append(execution.end(root, now, status))
         execution.ended = True
@@ -566,6 +566,6 @@ class TelemetryFold:
         "question.answer": _answer,
         "budget.update": _budget_update,
         "jail.degraded": _jail_degraded,
-        "session.end": _session_end,
+        "session.stop": _session_end,
         "session.stranded": _stranded,
     }

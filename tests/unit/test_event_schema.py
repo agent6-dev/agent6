@@ -116,7 +116,7 @@ def test_session_lifecycle_names_keep_creation_resume_and_end_distinct() -> None
     from agent6.sessions import event_schema
     from agent6.viewmodel import events
 
-    for name in ("session.start", "session.resume", "session.end"):
+    for name in ("session.start", "session.resume", "session.stop"):
         assert event_schema.spec_for(name) is not None, name
     assert event_schema.spec_for("loop.resume.start") is None
     assert frozenset({"session.resume", "session.start"}) == events.SESSION_START_EVENTS
@@ -133,7 +133,11 @@ def test_session_lifecycle_names_keep_creation_resume_and_end_distinct() -> None
         ("loop.note", {"text": None}, "text.*str"),
         ("loop.compact.gist.call", {"files": True}, "files.*int"),
         ("budget.update", {"usd_total": True}, "usd_total.*float"),
-        ("session.end", {"reason": "done", "turns": 1, "all_passed": 1}, "all_passed.*bool"),
+        (
+            "session.stop",
+            {"execution_id": "execution", "reason": "done", "turns": 1, "verification": 1},
+            "verification.*str",
+        ),
         ("loop.pin.restored", {"pins": "bad", "count": 1}, "pins.*list"),
         ("graph.update", {"nodes": [], "cursor": None}, "nodes.*object"),
         (

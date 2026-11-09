@@ -176,7 +176,7 @@ def test_second_run_parks_with_the_verbatim_task(repo: pathlib.Path) -> None:
     from agent6.viewmodel import listing
 
     row = listing.summarize_session_dir(layout.session_dir)
-    assert (row.status, row.reason) == ("parked", "checkout busy")
+    assert (row.status, row.detail) == ("parked", "checkout busy")
 
 
 def test_the_parked_message_offers_a_run_in_its_own_worktree(
@@ -642,7 +642,7 @@ def test_resume_drops_a_stop_written_between_executions(
     )
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
-        '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        '{"type": "session.stop", "reason": "budget_exhausted", "verification": "unverified"}\n',
         encoding="utf-8",
     )
     execution_end = time.time() - 20
@@ -685,7 +685,7 @@ def test_a_reused_ask_dir_drops_the_previous_executions_markers_and_keeps_this_e
     layout.ensure()
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "ask", "user_task": "q"}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
         encoding="utf-8",
     )
     execution_end = time.time() - 20
@@ -751,7 +751,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
         '{"type": "tool.result", "name": "apply_edit", "ok": true, "paths": ["mine.txt"]}\n'
-        '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        '{"type": "session.stop", "reason": "budget_exhausted", "verification": "unverified"}\n',
         encoding="utf-8",
     )
     snapshot = loop_snapshot.SessionSnapshot(
@@ -796,7 +796,7 @@ def test_resume_treats_a_file_that_arrived_between_executions_as_the_operators(
     layout.logs_path.write_text(
         layout.logs_path.read_text(encoding="utf-8")
         + '{"type": "session.resume"}\n'
-        + '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        + '{"type": "session.stop", "reason": "budget_exhausted", "verification": "unverified"}\n',
         encoding="utf-8",
     )
 
@@ -848,7 +848,7 @@ def test_resume_after_a_death_mid_turn_takes_the_files_that_appeared_as_the_runs
         + "\n",
         encoding="utf-8",
     )
-    # No session.end: the worker was killed while the turn's command ran.
+    # No session.stop: the worker was killed while the turn's command ran.
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
         '{"type": "tool.call", "name": "run_command", "args": {"argv": ["sh", "gen.sh"]}}\n',
@@ -930,7 +930,7 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
     )
     layout.logs_path.write_text(
         '{"type": "session.start", "mode": "run", "user_task": "t"}\n'
-        '{"type": "session.end", "reason": "budget_exhausted", "all_passed": false}\n',
+        '{"type": "session.stop", "reason": "budget_exhausted", "verification": "unverified"}\n',
         encoding="utf-8",
     )
     snapshot = loop_snapshot.SessionSnapshot(

@@ -26,7 +26,7 @@ def test_notify_noop_when_unconfigured(tmp_path: pathlib.Path) -> None:
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
-        verified="passed",
+        verification="passed",
         reporter=reporter.STDIO_REPORTER,
     )
 
@@ -42,7 +42,7 @@ def test_notify_failure_does_not_raise(
         session_dir=tmp_path,
         ok=False,
         reason="budget_exhausted",
-        verified="passed",
+        verification="passed",
         reporter=reporter.STDIO_REPORTER,
     )
     captured = capsys.readouterr()
@@ -65,7 +65,7 @@ def test_both_hooks_run_the_same_way(
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
-        verified="passed",
+        verification="passed",
         reporter=reporter.STDIO_REPORTER,
     )
     cfg = Config.model_validate({"machine": {"notify": {"on_event": list(argv)}}})
@@ -94,7 +94,7 @@ def test_notify_ok_zero_when_failed(tmp_path: pathlib.Path) -> None:
         session_dir=tmp_path,
         ok=False,
         reason="provider_error",
-        verified="passed",
+        verification="passed",
         reporter=reporter.STDIO_REPORTER,
     )
     assert out.read_text(encoding="utf-8") == "0"
@@ -251,7 +251,7 @@ def test_notify_hook_env_carries_no_secrets(
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
-        verified="passed",
+        verification="passed",
         reporter=reporter.STDIO_REPORTER,
     )
     payload = json.loads(out.read_text(encoding="utf-8"))
@@ -301,7 +301,7 @@ def test_hook_env_separates_deliberate_from_verified(tmp_path: pathlib.Path) -> 
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
-        verified="failed",
+        verification="failed",
         reporter=reporter.STDIO_REPORTER,
     )
     assert out.read_text(encoding="utf-8").strip() == "1 failed"
@@ -328,7 +328,7 @@ def test_the_hook_env_names_the_session_not_the_run(tmp_path: pathlib.Path) -> N
         session_dir=tmp_path,
         ok=True,
         reason="finish_session",
-        verified="passed",
+        verification="passed",
         reporter=reporter.STDIO_REPORTER,
     )
     env = json.loads(out.read_text(encoding="utf-8"))

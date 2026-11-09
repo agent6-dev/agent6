@@ -1055,7 +1055,7 @@ def test_resuming_a_finished_run_without_a_steer_is_refused(
     (session_dir / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
         + "\n",
         encoding="utf-8",
     )
@@ -1093,7 +1093,8 @@ def test_a_finished_run_still_resumes_with_a_steer(
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
+        json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
+        + "\n",
         encoding="utf-8",
     )
     rc = cli_resume._cmd_resume((), "done-CCCC33", force=False, steer="do more")
@@ -1145,7 +1146,9 @@ def test_a_steer_that_resumes_a_run_is_its_continuation(
     )
     events: list[dict[str, object]] = [{"type": "session.start", "mode": "run", "user_task": "t"}]
     if ended:
-        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        events.append(
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+        )
     (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
@@ -1513,7 +1516,7 @@ def test_the_resume_reads_the_journals_questions(tmp_path: pathlib.Path) -> None
         },
         {"type": "question.prompt", "id": "question-3", "questions": [{"question": "c?"}]},
         {"type": "question.answer", "id": "question-3", "answers": ["now"], "source": "frontend"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         {"type": "question.answer", "id": "question-1", "answers": ["late one"], "source": "late"},
     ]
     log = tmp_path / "logs.jsonl"

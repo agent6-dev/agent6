@@ -34,8 +34,8 @@ def lane_terminal(
 ) -> bool:
     """Return whether an awaited lane is terminal: the fold left "running" and the worker is gone.
 
-    `session.end` lands before the teardown clears `worker.pid`, so status alone races it. A
-    lane that dies without a `session.end` cannot hang the gate: the fold reads it "stale".
+    `session.stop` lands before the teardown clears `worker.pid`, so status alone races it. A
+    lane that dies without a `session.stop` cannot hang the gate: the fold reads it "stale".
 
     Args:
         session_dir: The lane's run dir.

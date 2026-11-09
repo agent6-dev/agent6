@@ -129,7 +129,8 @@ def test_an_existing_finished_id_names_a_runnable_resume_command(
         encoding="utf-8",
     )
     (session / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
+        json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
+        + "\n",
         encoding="utf-8",
     )
     monkeypatch.setattr(session_runtime, "select_isolation", _full)

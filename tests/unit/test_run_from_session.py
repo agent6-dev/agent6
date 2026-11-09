@@ -120,10 +120,10 @@ def _seed_source(repo: pathlib.Path, bucket: str, session_id: str) -> None:
     (source / "logs.jsonl").write_text(
         json.dumps(
             {
-                "type": "session.end",
+                "type": "session.stop",
                 "reason": "finish_session",
                 "turns": 1,
-                "all_passed": True,
+                "verification": "passed",
             }
         )
         + "\n",
@@ -169,7 +169,7 @@ def test_a_seeded_runs_manifest_records_its_resolved_source(
     else:
         assert f"source {bucket.removesuffix('s')} task" in prompt
         assert "## Outcome / key events" in prompt
-        assert "session.end reason=finish_session" in prompt
+        assert "session.stop reason=finish_session" in prompt
         assert "## Diff" in prompt
         if bucket == "asks":
             assert "Use the indexed conversion table." in prompt

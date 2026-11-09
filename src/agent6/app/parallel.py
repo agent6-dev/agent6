@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import pathlib
+import uuid
 from collections.abc import Sequence
 
 from agent6 import errors, kinds
@@ -139,11 +140,13 @@ def run_parallel(
         cfg=cfg,
         fanout=sessions_manifest.FanoutStamp(lanes=len(lanes), spec=spec),
     )
+    execution_id = uuid.uuid4().hex
     events = event_log.EventSink(layout.logs_path)
     process.emit_session_start(
         events,
         layout.session_dir,
         "session.start",
+        execution_id=execution_id,
         session_id=fanout_id,
         user_task=operator_task,
         mode="run",
@@ -200,17 +203,30 @@ def run_parallel(
             fanout_id=fanout_id,
             base_sha=base_sha,
             events=events,
+            execution_id=execution_id,
             coordinator_dir=layout.session_dir,
             reporter=reporter,
         )
     except KeyboardInterrupt:
         # An interrupt past the await is journaled, so the record reads stopped, never stale.
         with contextlib.suppress(event_log.EventWriteError):
-            events.emit("session.end", reason="interrupted", turns=0, all_passed=False)
+            events.emit(
+                "session.stop",
+                execution_id=execution_id,
+                reason="interrupted",
+                turns=0,
+                verification=None,
+            )
         raise
     except Exception:
         with contextlib.suppress(event_log.EventWriteError):
-            events.emit("session.end", reason="crashed", turns=0, all_passed=False)
+            events.emit(
+                "session.stop",
+                execution_id=execution_id,
+                reason="crashed",
+                turns=0,
+                verification=None,
+            )
         raise
     finally:
         process.clear_worker_pid(layout.session_dir)
@@ -229,6 +245,7 @@ def _drive_fanout(
     fanout_id: str,
     base_sha: str,
     events: event_log.EventSink,
+    execution_id: str,
     coordinator_dir: pathlib.Path,
     reporter: app_reporter.Reporter,
 ) -> int:
@@ -246,6 +263,7 @@ def _drive_fanout(
         fanout_id: The fan-out's session id.
         base_sha: The origin's HEAD at the start.
         events: The fan-out's journal.
+        execution_id: The coordinator's execution identifier.
         coordinator_dir: The fan-out's session dir, where a stop request lands.
         reporter: Receives the notes and the report.
 
@@ -361,7 +379,7 @@ def _drive_fanout(
         ranking=[
             {
                 "session_id": rid,
-                "verify": app_compare.verify_word(by_id[rid].verify_ok),
+                "verify": app_compare.verify_word(by_id[rid].verification),
                 "cost_usd": by_id[rid].cost_usd,
                 # The listings' cell: plan points for a lane on a subscription plan.
                 "cost": batch.rows[rid].cost_cell if rid in batch.rows else "",
@@ -385,6 +403,8 @@ def _drive_fanout(
             batch.candidates, all_budget_exhausted=batch.all_budget_exhausted
         )
     )
-    reason, all_passed = parallel_results.fanout_end(rc, batch.candidates)
-    events.emit("session.end", reason=reason, turns=0, all_passed=all_passed)
+    reason, verification = parallel_results.fanout_end(rc, batch.candidates)
+    events.emit(
+        "session.stop", execution_id=execution_id, reason=reason, turns=0, verification=verification
+    )
     return rc

@@ -64,7 +64,7 @@ d = Path(sys.argv[1])
 while not (d / "steer.answer").exists():
     time.sleep(0.02)
 with (d / "logs.jsonl").open("a") as fh:
-    fh.write(json.dumps({"type": "session.end", "reason": "steer_abort"}) + "\\n")
+    fh.write(json.dumps({"type": "session.stop", "reason": "steer_abort"}) + "\\n")
 """
 
 
@@ -192,7 +192,7 @@ def test_hub_lists_runs(server: tuple[web_server.WebServer, int], tmp_path: path
         "run-b",
         [
             {"type": "session.start", "mode": "run", "user_task": "task b"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     status, body, _ = _get(port, "/api/hub")
@@ -219,7 +219,7 @@ def test_hub_orders_the_review_queue_and_remembers_activity(
     ]
     unverified: list[dict[str, object]] = [
         queue_tests._START,
-        {**queue_tests._END, "all_passed": None, "verified": "unverified", "final_verify_id": None},
+        {**queue_tests._END, "verification": "unverified", "final_verify_id": None},
     ]
     newest: list[dict[str, object]] = [
         {
@@ -303,7 +303,7 @@ def test_resume_spawns_a_detached_resume_with_the_follow_up(
 ) -> None:
 
     _srv, port = server
-    _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.end"}])
+    _make_run(tmp_path, "run-r", [{"type": "session.start"}, {"type": "session.stop"}])
     calls: list[tuple[pathlib.Path, str, str, str, str]] = []
 
     def fake_resume(
@@ -398,7 +398,7 @@ def test_stop_now_lands_both_bridges_and_reports_the_run_stopped(
 ) -> None:
     """The Stop now button posted a steer text; it is the one stop `agent6 stop` is.
 
-    A run that answers (session.end after the abort) reads "stopped".
+    A run that answers (session.stop after the abort) reads "stopped".
     """
     _srv, port = server
     _make_run(tmp_path, "run-n", [{"type": "session.start"}])
@@ -423,7 +423,7 @@ def test_stop_refused_on_a_dead_run(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _srv, port = server
-    _make_run(tmp_path, "run-d", [{"type": "session.start"}, {"type": "session.end"}])
+    _make_run(tmp_path, "run-d", [{"type": "session.start"}, {"type": "session.stop"}])
     status, data = _post(port, "/api/session/run-d/stop", {})
     assert status == 422
     assert "nothing to stop" in str(data["error"])
@@ -511,7 +511,7 @@ def test_run_conversation_endpoint(
             {"type": "session.start", "mode": "run", "user_task": "task c"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ],
     )
     status, body, _ = _get(port, "/api/session/run-c/conversation")
@@ -698,7 +698,7 @@ def test_steer_refused_on_a_dead_run(
     It folds as unfinished, so the composer offers steer for a marker nothing will read.
     """
     _srv, port = server
-    _make_run(tmp_path, "run-sd", [{"type": "session.start"}, {"type": "session.end"}])
+    _make_run(tmp_path, "run-sd", [{"type": "session.start"}, {"type": "session.stop"}])
     status, data = _post(port, "/api/session/run-sd/steer", {"text": "abort"})
     assert status == 422
     assert "not live" in str(data["error"])
@@ -973,7 +973,7 @@ def test_sse_run_streams_snapshot(
         "stream-run",
         [
             {"type": "session.start", "user_task": "streamed"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     conn = signin.SignedIn(port, timeout=10)
@@ -1038,7 +1038,7 @@ def test_an_action_on_a_session_that_is_not_live_names_resume(
     _make_run(
         tmp_path,
         "done-run",
-        [{"type": "session.start"}, {"type": "session.end", "reason": "finish_session"}],
+        [{"type": "session.start"}, {"type": "session.stop", "reason": "finish_session"}],
     )
     status, data = _post(port, "/api/session/done-run/steer", {"text": "more"})
     assert status == 422
@@ -1058,7 +1058,7 @@ def test_sse_run_stream_survives_a_finish_and_follows_the_resumed_execution(
         "resume-run",
         [
             {"type": "session.start", "user_task": "execution one"},
-            {"type": "session.end", "all_passed": True},
+            {"type": "session.stop", "verification": "passed"},
         ],
     )
     logs = paths.state_dir(tmp_path) / "sessions" / "runs" / "resume-run" / "logs.jsonl"
@@ -1091,8 +1091,14 @@ def test_sse_run_frame_carries_the_compare_outcome(
     Branch facts and compare share one manifest_header helper, so the two endpoints cannot drift.
     """
     _srv, port = server
-    _make_run(tmp_path, "cmp-run", [{"type": "session.start", "user_task": "x"},
-                                    {"type": "session.end", "all_passed": True}])  # fmt: skip
+    _make_run(
+        tmp_path,
+        "cmp-run",
+        [
+            {"type": "session.start", "user_task": "x"},
+            {"type": "session.stop", "verification": "passed"},
+        ],
+    )
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "cmp-run"
     (session_dir / "manifest.json").write_text(
         json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "group": "fan"}}),
@@ -1206,7 +1212,7 @@ def test_sse_run_catchup_folds_history_into_few_frames(
     for i in range(150):
         events.append({"type": "tool.call", "name": f"t{i}", "args": {}})
         events.append({"type": "tool.result", "name": f"t{i}", "ok": True, "summary": "ok"})
-    events.append({"type": "session.end", "all_passed": True})
+    events.append({"type": "session.stop", "verification": "passed"})
     _make_run(tmp_path, "big-run", events)
     conn = signin.SignedIn(port, timeout=10)
     try:
@@ -1258,7 +1264,7 @@ def test_sse_run_dead_worker_frame_is_terminal(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A run whose worker died without a session.end closes its stream with a terminal frame.
+    """A run whose worker died without a session.stop closes its stream with a terminal frame.
 
     The frame carries `stream_dead=True` and `status_label="stale"`; `finished` stays False, so
     the client closes on either signal and never reconnects forever over a dead run.
@@ -1346,7 +1352,7 @@ def test_sse_run_created_frame_is_terminal(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A `created` run that reached its end without a session.end closes its stream.
+    """A `created` run that reached its end without a session.stop closes its stream.
 
     The close asks died_without_end, and the terminal frame keeps the truthful label.
     """
@@ -1873,7 +1879,7 @@ def test_steer_btw_opens_a_side_ask(
         lines = [
             {"type": "session.start", "user_task": "q"},
             {"type": "role.result", "text": "no"},
-            {"type": "session.end", "reason": "answered", "all_passed": True},
+            {"type": "session.stop", "reason": "answered", "verification": "passed"},
         ]
         (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in lines))
         return ""
@@ -1936,7 +1942,7 @@ def test_session_api_hub_and_attach_give_one_label(
         sid,
         [
             {"type": "session.start", "mode": "run", "user_task": "work"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
@@ -2196,7 +2202,7 @@ def test_idle_session_frames_only_follow_changed_state(
     _make_run(
         tmp_path,
         sid,
-        [{"type": "session.end" if finished else "session.start", "ts": time.time()}],
+        [{"type": "session.stop" if finished else "session.start", "ts": time.time()}],
     )
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
     (d / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
@@ -2235,7 +2241,7 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Shell cleanup after session.end reaches the page without another log event."""
+    """Shell cleanup after session.stop reaches the page without another log event."""
     from agent6.tools import background
     from agent6.ui.web import sse
 
@@ -2247,7 +2253,7 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
         sid,
         [
             {"type": "session.start", "mode": "run", "user_task": "work"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     d = paths.state_dir(tmp_path) / "sessions" / "runs" / sid
@@ -2275,7 +2281,7 @@ def test_shell_cleanup_after_end_reaches_the_open_stream(
 
 
 def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path) -> None:
-    """The finished heartbeat pushes a refreshed header when a merge lands after session.end.
+    """The finished heartbeat pushes a refreshed header when a merge lands after session.stop.
 
     Read once per connection, the branch line and Merge button kept the pre-merge answer.
     """
@@ -2302,7 +2308,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
         + "\n",
         encoding="utf-8",
     )
@@ -2338,7 +2344,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
         sse.HEARTBEAT_S = orig
 
     assert any(f.get("merged_into") == "master" for f in frames), (
-        "a merge landing after session.end must reach the open stream"
+        "a merge landing after session.stop must reach the open stream"
     )
 
 
@@ -3041,7 +3047,7 @@ def test_review_answers_with_the_cli_review_of_a_finished_run(
         "run-r",
         [
             {"type": "session.start"},
-            {"type": "session.end", "reason": "finish_session", "all_passed": True},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
         ],
     )
     calls: list[tuple[list[str], pathlib.Path]] = []

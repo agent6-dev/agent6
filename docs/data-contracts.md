@@ -34,7 +34,7 @@ Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
 - **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, run, stop}, harness/review_session, ui/{mcp_server, spawn}, ui/acp/{review, session}, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_review, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home}, ui/web/{actions, review_routes, sse}, viewmodel/{__init__, state_view, wire}
-- **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (20 test files exercise it)
+- **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (21 test files exercise it)
 
 ## CLI session status
 
@@ -203,7 +203,7 @@ Hold a session's end and the snapshot a resume re-enters.
 | `base_sha` | `str` | `''` |
 
 - **Written by:** harness/loop
-- **Read by:** app/{execution, finalize, fork, frontend, resume, undo}, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules, verify_gate}, ui/acp/frontend, ui/cli/ask
+- **Read by:** app/{execution, finalize, fork, frontend, resume, undo}, harness/{advice, finish_gates, guards, loop_resume, loop_state, loop_steer, metric_rules}, ui/acp/frontend, ui/cli/ask
 - **Guarded by:** [golden_loop_wire.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_loop_wire.json) (31 test files exercise it)
 
 ## ToolResult family
@@ -312,4 +312,4 @@ Public fields: [Formats](formats.md#session-snapshots).
 
 - **Written by:** viewmodel/{machine_state, state_view}
 - **Read by:** ui/acp/updates, ui/cli/steer_menu, ui/tui/app, ui/web/{model, sse}, viewmodel/{__init__, wire}
-- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (10 test files exercise it)
+- **Guarded by:** [golden_session_state.json](https://github.com/agent6-dev/agent6/blob/master/tests/unit/data/golden_session_state.json), [test_viewmodel_state.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_viewmodel_state.py) (12 test files exercise it)

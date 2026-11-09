@@ -63,7 +63,7 @@ def test_the_session_view_paints_the_prompts_it_claims_to_answer() -> None:
     """
     start = page.CLIENT_JS.index("function paintRun(")
     body = page.CLIENT_JS[start : page.CLIENT_JS.index("function renderDiff(", start)]
-    dead = "isDead ? { pending_questions: s.pending_questions, finished: true } : s"
+    dead = "isDead ? { questions: s.questions, finished: true } : s"
     assert f"paintPrompts(cards, {dead})" in body
 
 

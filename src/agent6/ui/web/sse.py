@@ -95,7 +95,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
     def tail() -> None:
         src = session_dir / layout.LOGS_NAME
         try:
-            # A resumed run logs into this same file, so the stream outlives session.end.
+            # A resumed run logs into this same file, so the stream outlives session.stop.
             for ev in tail_events(
                 src, follow=True, stop_when_finished=False, should_stop=stop.is_set
             ):
@@ -170,7 +170,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
             except queue.Empty:
                 if not chan.ping():
                     return
-                # A run dead without session.end would pin this worker; parked is excluded.
+                # A run dead without session.stop would pin this worker; parked is excluded.
                 word = summarize_session_dir(session_dir).status
                 if word != "parked" and died_without_end(word):
                     send_frame(dead=True)
@@ -183,7 +183,7 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
                 continue
             # One frame per queued batch: a frame per replayed event is quadratic (13 MB at 502).
             last_type, ended = drain(ev)
-            if last_type == "session.end":
+            if last_type == "session.stop":
                 # The end is when the unmerged mark first applies; later merges ride the heartbeat.
                 header = manifest_header(session_dir, repo=repo)
             # A delta burst is one frame per window; the wait catches the burst's tail.

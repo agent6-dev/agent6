@@ -329,5 +329,5 @@ def test_a_green_harness_end_reads_finished_never_passed(reason: str, detail: st
     """A harness-declared end over a green gate must not read passed, even when scoped."""
     for scoped in (False, True):
         assert session_status.status_word(
-            finished=True, all_passed=True, end_reason=reason, scoped=scoped
+            finished=True, verification="passed", stop_reason=reason, scoped=scoped
         ) == ("finished", detail)

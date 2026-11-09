@@ -291,16 +291,16 @@ class TranscriptFold:
                 if task:
                     out.append(transcript_items.TranscriptItem("task", body=task))
             return out
-        if etype == "session.end":
+        if etype == "session.stop":
             out = self.settle_open_calls("the run ended")
             out.extend(self._flush_message())
             counts = self._receipt_detail()
             reason = str(event.get("reason", ""))
-            all_passed = event.get("all_passed")
+            verification = viewmodel_events.verification_word(event.get("verification"))
             word, detail = session_status.status_word(
                 finished=True,
-                all_passed=all_passed if isinstance(all_passed, bool) else None,
-                end_reason=reason,
+                verification=verification,
+                stop_reason=reason,
                 scoped=bool(event.get("scoped", False)),
                 gate_red=self._gate is not None and not self._gate[0],
                 gate_timed_out=self._gate is not None and self._gate[1],
@@ -313,7 +313,7 @@ class TranscriptFold:
                     "done",
                     body=body,
                     # The gate's tri-state: a stop or a gateless finish is neither pass nor fail.
-                    ok=all_passed if isinstance(all_passed, bool) else None,
+                    ok=(verification == "passed") if verification in ("passed", "failed") else None,
                     detail=counts,
                     name=format.status_label(word, detail),
                     arg=reason,

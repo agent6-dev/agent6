@@ -174,7 +174,7 @@ def test_receipt_binds_pass_to_observed_tree(
             "stdout_truncated": False,
             "stderr_truncated": False,
         },
-        {"type": "session.end", "tree": end, "final_verify_id": "v", "verified": "passed"},
+        {"type": "session.stop", "tree": end, "final_verify_id": "v", "verification": "passed"},
     ]
     (saved / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     view = receipt.read_receipt(saved, tmp_path)
@@ -273,10 +273,24 @@ def test_receipt_compares_recorded_panel_with_end_tree(tmp_path: pathlib.Path) -
 
     saved = review_helpers.reviewed_session(tmp_path)
     sink = event_log.EventSink(saved.logs_path)
-    sink.emit("session.end", tree="ht", reason="finish_session", turns=1, all_passed=True)
+    sink.emit(
+        "session.stop",
+        execution_id="execution",
+        tree="ht",
+        reason="finish_session",
+        turns=1,
+        verification="passed",
+    )
     view = receipt.read_receipt(saved.session_dir, tmp_path)
     assert view.review.freshness == "current"
-    sink.emit("session.end", tree="other", reason="finish_session", turns=1, all_passed=True)
+    sink.emit(
+        "session.stop",
+        execution_id="execution",
+        tree="other",
+        reason="finish_session",
+        turns=1,
+        verification="passed",
+    )
     assert receipt.read_receipt(saved.session_dir, tmp_path).review.freshness == "stale"
 
 
@@ -438,10 +452,11 @@ def test_torn_live_journal_keeps_evidence_but_cannot_certify(tmp_path: pathlib.P
         reason="",
     )
     sink.emit(
-        "session.end",
+        "session.stop",
+        execution_id="execution",
         reason="finish_session",
         turns=1,
-        all_passed=True,
+        verification="passed",
         final_verify_id="v",
         tree="tree",
     )

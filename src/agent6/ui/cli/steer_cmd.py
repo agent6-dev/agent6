@@ -65,15 +65,15 @@ def _cmd_steer(
         return 1
     print(f"{layout.session_id}: {said}.")
     summary = listing.summarize_session_dir(layout.session_dir)
-    if summary.status == "waiting" and summary.reason:
+    if summary.status == "waiting" and summary.detail:
         # Parked on an operator prompt, only the answer ends the wait; approvals need a front-end.
         how = (
             f"agent6 answer {layout.session_id}"
-            if summary.reason.startswith("question")
+            if summary.detail.startswith("question")
             else f"agent6 attach {layout.session_id}"
         )
         print(
-            f"note: the run is waiting ({summary.reason}); what you sent stays"
+            f"note: the run is waiting ({summary.detail}); what you sent stays"
             f" queued until that is answered: {how}"
         )
     return 0

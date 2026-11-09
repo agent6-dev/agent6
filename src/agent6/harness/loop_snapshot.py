@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 import pydantic
 
-from agent6 import media, portable
+from agent6 import kinds, media, portable
 from agent6.harness import loop_conversation
 from agent6.sessions import objects
 
@@ -55,10 +55,6 @@ SessionEndReason = Literal[
     "no_lane_result",
     "no_lane_passed",
 ]
-
-
-# The gate's word at the end: `failed` is an observed red, `unverified` a tree no verdict covers.
-Verification = Literal["passed", "failed", "unverified", "not_applicable"]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -111,7 +107,7 @@ class SessionResult:
         finish_payload: The finish tool's payload, when any.
         stale_gate: The replacement gate the worker last proposed in any finish_session call
             of the execution; recorded, never acted on.
-        verified: The gate's word for the final tree, which `session.end` carries as `verified`.
+        verification: The gate's word for the final tree, also carried by `session.stop`.
     """
 
     completed: bool
@@ -121,7 +117,7 @@ class SessionResult:
     tool_calls: int
     finish_payload: dict[str, Any] | None = None
     stale_gate: str = ""
-    verified: Verification = "not_applicable"
+    verification: kinds.Verification = "not_applicable"
     final_verify_id: str | None = None
 
 
@@ -129,14 +125,14 @@ class SessionResult:
 class End:
     """Record a decision to end the run, as `Harness.finish` applies it.
 
-    The finish checkpoints a dirty worktree first, writes the `session.end` event, then returns
+    The finish checkpoints a dirty worktree first, writes the `session.stop` event, then returns
     the result.
 
     Attributes:
         reason: The end reason.
         summary: The end's summary text.
         completed: Whether the model stopped deliberately.
-        verdict: What the event's `all_passed` carries: `failed`, `grounded` on the final tree's
+        verdict: How completion affects pending tasks: `failed`, `grounded` on the final tree's
             verify state, or `passed`.
         checkpoint: Whether to checkpoint a dirty worktree; an operator's stop keeps the choice.
         event: Whether to write the event; a detach writes none, the caller respawns the run.

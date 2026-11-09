@@ -95,7 +95,7 @@ def test_steer_refuses_a_finished_run_even_with_a_stale_live_pid(
     (d / "logs.jsonl").write_text(
         json.dumps({"type": "session.start", "user_task": "t"})
         + "\n"
-        + json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        + json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
         + "\n",
         encoding="utf-8",
     )

@@ -113,7 +113,7 @@ def btw_answer(session: BtwSession) -> str | None:
     summary = summarize_session_dir(session.dir)
     if summary.status in {"created", "running", "starting", "waiting"}:
         return None
-    label = format.status_label(summary.status, summary.reason)
+    label = format.status_label(summary.status, summary.detail)
     return _final_prose(session.dir) or f"(the btw ended without an answer: {label})"
 
 

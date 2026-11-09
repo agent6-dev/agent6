@@ -128,7 +128,7 @@ def test_the_answer_is_the_final_prose(tmp_path: pathlib.Path) -> None:
             {"type": "session.start"},
             {"type": "role.result", "text": "first thought"},
             {"type": "role.result", "text": "use ffmpeg -c:v libx265"},
-            {"type": "session.end", "reason": "answered", "all_passed": True},
+            {"type": "session.stop", "reason": "answered", "verification": "passed"},
         ],
     )
     assert (
@@ -142,7 +142,7 @@ def test_a_btw_that_died_says_so_rather_than_rendering_blank(tmp_path: pathlib.P
         "quiet-fox-AAAAAA",
         events=[
             {"type": "session.start"},
-            {"type": "session.end", "reason": "crashed", "all_passed": False},
+            {"type": "session.stop", "reason": "crashed", "verification": "unverified"},
         ],
     )
     answer = btw.btw_answer(btw.BtwSession(id=d.name, dir=d, question="q"))

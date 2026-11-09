@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Settle the edits made outside a run between its executions, at `agent6 resume`.
 
-Each end records the tree the run left (`session.end.tree`). At the next start, the paths
+Each end records the tree the run left (`session.stop.tree`). At the next start, the paths
 whose content differs from that tree changed outside the run: they are the operator's and
 follow `[git].dirty_tree`. "Differs from the chain tip" is not the test, because a run's own
 work can be uncommitted after a clean end: an operator stop skips the final checkpoint, and

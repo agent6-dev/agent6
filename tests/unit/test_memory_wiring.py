@@ -243,7 +243,7 @@ def test_a_memory_write_does_not_withdraw_a_green_verify(
 
     The predicate judges the model's input path: EditResult.path is store-relative, so an exclusion
     testing it for an absolute prefix never matches, the memory write after a green verify counts as
-    a tree edit, and the run ends gate_red_at_base with all_passed=false over the suite it just
+    a tree edit, and the run ends gate_red_at_base with verification=false over the suite it just
     fixed.
     """
     from unittest import mock

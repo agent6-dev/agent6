@@ -200,7 +200,7 @@ def test_an_in_flight_tool_is_one_running_line() -> None:
 
 
 def test_the_done_badge_keeps_the_gates_tri_state() -> None:
-    """`all_passed` is null for a run no gate judged and for the operator's own stop or undo.
+    """`verification` is null for a run no gate judged and for the operator's own stop or undo.
 
     Flattening it to a bool painted those in the failure colour and rendered a gateless finish
     byte-identically to a finish over a RED gate (which exits 4).

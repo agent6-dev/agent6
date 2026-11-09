@@ -13,8 +13,9 @@ import json
 import pathlib
 import time
 from collections.abc import Mapping
+from typing import Any, TypedDict
 
-from agent6 import terminal
+from agent6 import kinds, terminal
 from agent6.app import merge, resume
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
@@ -139,7 +140,7 @@ def _print_fanout(
         model = lane.model or "?"
         cost = lane.cost_cell
         label = format.listing_status_label(
-            lane.mode, lane.status, lane.reason, unmerged=lane.unmerged
+            lane.mode, lane.status, lane.detail, unmerged=lane.unmerged
         )
         print(
             f"  {place:<10} {idents[lane.session_id]:<{width}}  {model}  {label}  {cost}".rstrip()
@@ -164,18 +165,18 @@ def _status_state(
         detail is this surface's diagnostic: what to do, or why the word applies; "" when
         there is none.
     """
-    word, reason = row.status, row.reason
-    cell = format.listing_status_label(row.mode, row.status, row.reason, unmerged=row.unmerged)
+    word, reason = row.status, row.detail
+    cell = format.listing_status_label(row.mode, row.status, row.detail, unmerged=row.unmerged)
     if scan.finished:
         if scan.end_summary:
             # The `ended:` line carries the run's own sentence; the raw reason would repeat it.
             return word, cell, ""
-        if scan.end_reason == "provider_error":
+        if scan.stop_reason == "provider_error":
             # The label names the failure; the provider's own text, on one clean line, says why.
             error = terminal.scrub_terminal_controls(scan.provider_error)
             return word, cell, " ".join(error.split())
         # The raw end reason is the diagnostic, unless the label already carries it.
-        end = "" if scan.end_reason in (word, *reason.split(" · ")) else scan.end_reason
+        end = "" if scan.stop_reason in (word, *reason.split(" · ")) else scan.stop_reason
         return word, cell, end
     detail = {
         "waiting": "needs answer; attach to respond",
@@ -245,7 +246,7 @@ def _print_end_facts(
             needs no resume.
         attempts: The transcript's verification attempt lines.
     """
-    failed = scan.end_reason == "setup_command_failed"
+    failed = scan.stop_reason == "setup_command_failed"
     setup = scan.setup_output
     if scan.finished and scan.end_summary:
         ended = terminal.scrub_terminal_controls(scan.end_summary)
@@ -308,6 +309,57 @@ def _usage_line(scan: LogScan) -> str:
     return f"{tokens}{execution_s}{cost_s}"
 
 
+class StatusJSON(TypedDict):
+    """The status payload, with meanings on the command."""
+
+    session_id: str
+    mode: str | None
+    task: str
+    continued_task: str
+    task_line: str
+    model: str
+    model_from_flag: bool
+    preset: str | None
+    status: str
+    label: str
+    detail: str
+    end_summary: str | None
+    alive: bool
+    pid: int | None
+    turn: int | None
+    last_event: str | None
+    last_event_age_s: float | None
+    elapsed_s: float | None
+    stop_reason: str | None
+    baseline_ok: bool | None
+    verification: kinds.Verification | None
+    input_tokens: int | None
+    output_tokens: int | None
+    cache_read_tokens: int | None
+    cache_creation_tokens: int | None
+    cost_usd: float | None
+    plan_consumed: float
+    plan_prior_executions: float
+    plan_cap: float
+    unattended_questions: int
+    setup_output: str | None
+    usd_partial: bool | None
+    source_session_id: str | None
+    parent_session_id: str | None
+    forked_from_turn: int | None
+    forked_from_sha: str | None
+    worktree: str | None
+    compare: dict[str, Any] | None
+    comparison: dict[str, Any] | None
+    parallel: dict[str, Any] | None
+    fanout: dict[str, Any] | None
+    lanes: list[listing.SummaryRow]
+    run_branch: str | None
+    base_branch: str | None
+    merged_into: str | None
+    pins: list[str]
+
+
 def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     """Print a one-shot liveness and progress summary for a run.
 
@@ -334,9 +386,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         last_event: The latest event name, or null without a log.
         last_event_age_s: Seconds since the latest event, or null when unknown.
         elapsed_s: Seconds from the first start to the last event or current time.
-        end_reason: The journaled end reason, or null while unfinished.
+        stop_reason: The journaled end reason, or null while unfinished.
         baseline_ok: Whether baseline verification passed, or null when unrecorded.
-        verified: The final gate word, or null when unrecorded.
+        verification: The final gate word, or null when unrecorded.
         input_tokens: Recorded input tokens.
         output_tokens: Recorded output tokens.
         cache_read_tokens: Recorded cached input tokens.
@@ -399,7 +451,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     model = format.format_model_route(manifest.models.driver) or "?"
     model_from_flag = manifest.models.driver_from_flag
     compare_json = manifest.compare.model_dump(mode="json") if manifest.compare else None
-    changes = _changes(target.name, manifest, undone=scan.finished and scan.end_reason == "undone")
+    changes = _changes(target.name, manifest, undone=scan.finished and scan.stop_reason == "undone")
     tips = git_read.run_ref_tips(pathlib.Path.cwd())
     summary = summarize_session_dir(target, branch_tips=tips)
     lanes = _fanout_lanes(layout, manifest, tips)
@@ -411,67 +463,65 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     )
     state = f"{status_cell} ({status_detail})" if status_detail else status_cell
 
+    def status_json() -> StatusJSON:
+        """Return the public status payload."""
+        return {
+            "session_id": target.name,
+            "mode": mode_display,
+            "task": summary.task_label.task,
+            "continued_task": summary.task_label.continued_task,
+            "task_line": summary.task_label.line(),
+            "model": model,
+            "model_from_flag": model_from_flag,
+            "preset": manifest.harness.preset or None,
+            "status": status,
+            "label": status_cell,
+            "detail": status_detail,
+            "end_summary": scan.end_summary or None,
+            "alive": alive,
+            "pid": pid,
+            "turn": scan.turn,
+            "last_event": scan.last_type,
+            "last_event_age_s": round(last_age, 1) if last_age is not None else None,
+            "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
+            "stop_reason": scan.stop_reason if scan.finished else None,
+            "baseline_ok": scan.baseline_ok,
+            "verification": scan.verification or None,
+            "input_tokens": scan.input_tokens,
+            "output_tokens": scan.output_tokens,
+            "cache_read_tokens": scan.cache_read_tokens,
+            "cache_creation_tokens": scan.cache_creation_tokens,
+            "cost_usd": scan.cost_usd,
+            "plan_consumed": scan.plan_consumed,
+            "plan_prior_executions": scan.plan_prior_executions,
+            "plan_cap": scan.plan_cap,
+            "unattended_questions": scan.unattended_questions,
+            "setup_output": scan.setup_output or None,
+            # An under-estimate when some spend was unpriced; the text render marks it too.
+            "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
+            "source_session_id": manifest.source_session_id,
+            "parent_session_id": manifest.parent_session_id,
+            "forked_from_turn": manifest.forked_from_turn,
+            "forked_from_sha": manifest.forked_from_sha,
+            "worktree": str(manifest.worktree) if manifest.worktree else None,
+            "compare": compare_json,
+            "comparison": manifest.comparison.model_dump(mode="json")
+            if manifest.comparison
+            else None,
+            "parallel": manifest.parallel.model_dump(mode="json") if manifest.parallel else None,
+            "fanout": manifest.fanout.model_dump(mode="json") if manifest.fanout else None,
+            "lanes": [
+                listing.summary_row(ln, winner=_won(lane_manifests.get(ln.session_id)))
+                for ln in lanes
+            ],
+            "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
+            "base_branch": manifest.base_branch or None,
+            "merged_into": changes.merged_into or None,
+            "pins": list(scan.pins),
+        }
+
     if as_json:
-        print(
-            json.dumps(
-                {
-                    "session_id": target.name,
-                    "mode": mode_display,
-                    "task": summary.task_label.task,
-                    "continued_task": summary.task_label.continued_task,
-                    "task_line": summary.task_label.line(),
-                    "model": model,
-                    "model_from_flag": model_from_flag,
-                    "preset": manifest.harness.preset or None,
-                    "status": status,
-                    "label": status_cell,
-                    "detail": status_detail,
-                    "end_summary": scan.end_summary or None,
-                    "alive": alive,
-                    "pid": pid,
-                    "turn": scan.turn,
-                    "last_event": scan.last_type,
-                    "last_event_age_s": round(last_age, 1) if last_age is not None else None,
-                    "elapsed_s": round(elapsed, 1) if elapsed is not None else None,
-                    "end_reason": scan.end_reason if scan.finished else None,
-                    "baseline_ok": scan.baseline_ok,
-                    "verified": scan.verified or None,
-                    "input_tokens": scan.input_tokens,
-                    "output_tokens": scan.output_tokens,
-                    "cache_read_tokens": scan.cache_read_tokens,
-                    "cache_creation_tokens": scan.cache_creation_tokens,
-                    "cost_usd": scan.cost_usd,
-                    "plan_consumed": scan.plan_consumed,
-                    "plan_prior_executions": scan.plan_prior_executions,
-                    "plan_cap": scan.plan_cap,
-                    "unattended_questions": scan.unattended_questions,
-                    "setup_output": scan.setup_output or None,
-                    # An under-estimate when some spend was unpriced; the text render marks it too.
-                    "usd_partial": scan.usd_partial if scan.cost_usd is not None else None,
-                    "source_session_id": manifest.source_session_id,
-                    "parent_session_id": manifest.parent_session_id,
-                    "forked_from_turn": manifest.forked_from_turn,
-                    "forked_from_sha": manifest.forked_from_sha,
-                    "worktree": str(manifest.worktree) if manifest.worktree else None,
-                    "compare": compare_json,
-                    "comparison": manifest.comparison.model_dump(mode="json")
-                    if manifest.comparison
-                    else None,
-                    "parallel": manifest.parallel.model_dump(mode="json")
-                    if manifest.parallel
-                    else None,
-                    "fanout": manifest.fanout.model_dump(mode="json") if manifest.fanout else None,
-                    "lanes": [
-                        listing.summary_row(ln, winner=_won(lane_manifests.get(ln.session_id)))
-                        for ln in lanes
-                    ],
-                    "run_branch": existing_run_branch(manifest, pathlib.Path.cwd()) or None,
-                    "base_branch": manifest.base_branch or None,
-                    "merged_into": changes.merged_into or None,
-                    "pins": list(scan.pins),
-                }
-            )
-        )
+        print(json.dumps(status_json()))
         return 0
 
     pid_note = _pid_note(pid, alive=alive, finished=scan.finished)

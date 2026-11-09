@@ -13,7 +13,7 @@ from typing import Any
 
 import pydantic
 
-from agent6 import budget
+from agent6 import budget, kinds
 from agent6.harness import llm_json
 from agent6.prompts import judge
 from agent6.providers import Provider, ProviderError
@@ -31,7 +31,7 @@ class CandidateBrief(pydantic.BaseModel):
     session_id: str
     task: str
     diff: str
-    verify_ok: bool | None
+    verification: kinds.Verification | None
     cost_usd: float
 
 
@@ -51,7 +51,7 @@ _DIFF_CAP = 60_000
 def _build_user_message(candidates: list[CandidateBrief]) -> str:
     parts = [f"Comparing {len(candidates)} candidates for the same task."]
     for c in candidates:
-        verify = "PASSED" if c.verify_ok else "FAILED" if c.verify_ok is False else "not run"
+        verify = (c.verification or "unknown").upper()
         diff = c.diff[:_DIFF_CAP]
         if len(c.diff) > _DIFF_CAP:
             diff += "\n[diff truncated]"
@@ -130,7 +130,7 @@ def compare(
 
 def mechanical_ranking(candidates: list[CandidateBrief]) -> tuple[str, ...]:
     """Return the candidates ranked verify-pass first, then by lower cost, stable within ties."""
-    ranked = sorted(candidates, key=lambda c: (c.verify_ok is not True, c.cost_usd))
+    ranked = sorted(candidates, key=lambda c: (c.verification != "passed", c.cost_usd))
     return tuple(c.session_id for c in ranked)
 
 

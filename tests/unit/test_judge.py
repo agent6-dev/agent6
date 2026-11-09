@@ -43,10 +43,14 @@ def _prov(*texts: str) -> Provider:
 def _candidates() -> list[judge.CandidateBrief]:
     return [
         judge.CandidateBrief(
-            session_id="run-a", task="add auth", diff="diff a", verify_ok=True, cost_usd=0.10
+            session_id="run-a", task="add auth", diff="diff a", verification="passed", cost_usd=0.10
         ),
         judge.CandidateBrief(
-            session_id="run-b", task="add auth", diff="diff b", verify_ok=False, cost_usd=0.05
+            session_id="run-b",
+            task="add auth",
+            diff="diff b",
+            verification="unverified",
+            cost_usd=0.05,
         ),
     ]
 
@@ -119,14 +123,18 @@ def test_compare_raises_on_empty_candidates() -> None:
 
 def test_mechanical_ranking_orders_verify_pass_first_then_cost() -> None:
     candidates = [
-        judge.CandidateBrief(session_id="fail", task="t", diff="", verify_ok=False, cost_usd=0.01),
         judge.CandidateBrief(
-            session_id="pass-expensive", task="t", diff="", verify_ok=True, cost_usd=1.0
+            session_id="fail", task="t", diff="", verification="unverified", cost_usd=0.01
         ),
         judge.CandidateBrief(
-            session_id="pass-cheap", task="t", diff="", verify_ok=True, cost_usd=0.1
+            session_id="pass-expensive", task="t", diff="", verification="passed", cost_usd=1.0
         ),
-        judge.CandidateBrief(session_id="none", task="t", diff="", verify_ok=None, cost_usd=0.02),
+        judge.CandidateBrief(
+            session_id="pass-cheap", task="t", diff="", verification="passed", cost_usd=0.1
+        ),
+        judge.CandidateBrief(
+            session_id="none", task="t", diff="", verification=None, cost_usd=0.02
+        ),
     ]
     assert judge.mechanical_ranking(candidates) == (
         "pass-cheap",
@@ -143,10 +151,10 @@ def test_build_user_message_marks_only_truncated_diffs() -> None:
     msg = judge._build_user_message(
         [
             judge.CandidateBrief(
-                session_id="big", task="t", diff=big, verify_ok=True, cost_usd=0.1
+                session_id="big", task="t", diff=big, verification="passed", cost_usd=0.1
             ),
             judge.CandidateBrief(
-                session_id="small", task="t", diff=small, verify_ok=True, cost_usd=0.1
+                session_id="small", task="t", diff=small, verification="passed", cost_usd=0.1
             ),
         ]
     )
@@ -157,8 +165,12 @@ def test_build_user_message_marks_only_truncated_diffs() -> None:
 
 def test_mechanical_ranking_stable_within_ties() -> None:
     candidates = [
-        judge.CandidateBrief(session_id="first", task="t", diff="", verify_ok=True, cost_usd=0.1),
-        judge.CandidateBrief(session_id="second", task="t", diff="", verify_ok=True, cost_usd=0.1),
+        judge.CandidateBrief(
+            session_id="first", task="t", diff="", verification="passed", cost_usd=0.1
+        ),
+        judge.CandidateBrief(
+            session_id="second", task="t", diff="", verification="passed", cost_usd=0.1
+        ),
     ]
     assert judge.mechanical_ranking(candidates) == ("first", "second")
 

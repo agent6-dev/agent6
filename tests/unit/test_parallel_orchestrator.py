@@ -122,20 +122,26 @@ def _write_fake_run(
         manifest["models"] = {"driver": {"provider": "chatgpt", "model": "m"}}
         (session_dir / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
     if status == "passed":
-        events.append({"type": "session.end", "reason": "finish_session", "all_passed": True})
+        events.append(
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"}
+        )
     elif status in ("failed", "setup_command_failed", "budget_exhausted"):
         reason = "provider_error" if status == "failed" else status
-        events.append({"type": "session.end", "reason": reason, "all_passed": False})
+        events.append({"type": "session.stop", "reason": reason, "verification": "unverified"})
     elif status == "stale":
-        # Died without a session.end (OOM/SIGKILL): a recorded pid that is gone.
+        # Died without a session.stop (OOM/SIGKILL): a recorded pid that is gone.
         (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")
     elif status == "gated_fail":
         # A deliberate finish whose OWN verify ran this execution and failed (unlike
         # "finished", which never ran one): the compare must never crown it.
         events.append({"type": "verify.end", "exit_code": 1})
-        events.append({"type": "session.end", "reason": "finish_session", "all_passed": False})
-    else:  # "finished": a deliberate finish without all-passed
-        events.append({"type": "session.end", "reason": "finish_session", "all_passed": False})
+        events.append(
+            {"type": "session.stop", "reason": "finish_session", "verification": "failed"}
+        )
+    else:  # "finished": a deliberate finish without a gate
+        events.append(
+            {"type": "session.stop", "reason": "finish_session", "verification": "not_applicable"}
+        )
     (session_dir / "logs.jsonl").write_text(
         "\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8"
     )
@@ -177,7 +183,7 @@ class _FakeSpawner:
         self.status_by_lane = status_by_lane or {}
         self.cost_by_lane = cost_by_lane or {}
         # Lanes whose fabricated run dir carries a LIVE worker.pid (this test
-        # process), simulating the teardown window where session.end is already in
+        # process), simulating the teardown window where session.stop is already in
         # logs.jsonl but the lane process has not yet cleared its pid.
         self.pid_lanes = pid_lanes or set()
         # The group/fanout id the real bridge spawner stamps into the lane env;
@@ -890,7 +896,7 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
         return SessionSummary(
             session_id=rd.name, mode="run", task_label=session_status.TaskLabel("t"),
             status=next(statuses),
-            reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
+            detail="", cost_usd=0.0, usd_partial=False, last_activity=0.0,
         )  # fmt: skip
 
     def fake_worker_is_alive(_session_dir: pathlib.Path) -> bool:
@@ -933,7 +939,7 @@ def test_a_stop_that_cannot_be_written_ends_the_wait_after_the_grace(
         return SessionSummary(
             session_id=rd.name, mode="run", task_label=session_status.TaskLabel("t"),
             status="running",
-            reason="", cost_usd=0.0, usd_partial=False, mtime=0.0,
+            detail="", cost_usd=0.0, usd_partial=False, last_activity=0.0,
         )  # fmt: skip
 
     def fake_sleep(*_args: object) -> None:
@@ -1842,7 +1848,7 @@ def test_budget_only_fanout_exits_three_and_names_how_to_continue_a_lane(
         for line in (state / "sessions" / "runs" / "capped" / "logs.jsonl").read_text().splitlines()
     ]
     assert events[-1]["reason"] == reason
-    assert events[-1]["all_passed"] is (other_status == "passed")
+    assert events[-1]["verification"] == ("passed" if other_status == "passed" else None)
     shown, err = capsys.readouterr()
     assert "budget exhausted" in shown and "1pt" in err
     assert "--max-tokens-fallback), then continue with:" in shown
@@ -1975,7 +1981,7 @@ def test_await_waits_for_worker_pid_to_clear(
     capsys: pytest.CaptureFixture[str],
     runtime: app_lanes.LaneRuntime,
 ) -> None:
-    """session.end lands in logs.jsonl BEFORE the lane's teardown clears worker.pid.
+    """session.stop lands in logs.jsonl BEFORE the lane's teardown clears worker.pid.
 
     The await gate must keep waiting through that window (terminal = non-running status AND pid
     cleared/dead); importing inside it would misread the lane as still running and cleanup would
@@ -2251,7 +2257,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
 def test_a_crashed_lane_never_joins_the_coordinator(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """The died-without-end half of the same gate (a lane with no session.end folds "stale").
+    """The died-without-end half of the same gate (a lane with no session.stop folds "stale").
 
     Imported, named in the error, never joined.
     """
@@ -2638,7 +2644,7 @@ def test_crashed_lane_is_not_a_rankable_candidate(
 ) -> None:
     """A crashed lane is not a rankable candidate.
 
-    A lane that died without a session.end folds to "stale", which verify_ok maps to None, the same
+    A lane that died without a stop folds to "stale", with no final verification word, the same
     tri-state as a clean unverified finish; ranked by cost, the cheapest (earliest-crashing) lane
     would be stamped compare.winner=true and wear the winner glyph while the report says "no-
     verify".
@@ -2749,7 +2755,7 @@ def test_a_fanout_where_every_lane_failed_crowns_nobody(
 ) -> None:
     """A failed lane is imported but never ranked.
 
-    Only lanes that died WITHOUT a session.end were excluded, so a lane that
+    Only lanes that died WITHOUT a session.stop were excluded, so a lane that
     ended `provider_error` sailed into the candidate set: the fan-out stamped one
     `compare.winner=true`, wore the star in every listing, printed a merge
     command for a branch with nothing on it, and exited 0. `failed` is reserved
@@ -2907,16 +2913,16 @@ def test_fanout_exit_reflects_the_gate_verdicts() -> None:
     """
     from agent6.harness import judge
 
-    def _cand(verify_ok: bool | None) -> judge.CandidateBrief:
+    def _cand(verification: kinds.Verification | None) -> judge.CandidateBrief:
         return judge.CandidateBrief(
-            session_id="s", task="t", diff="", verify_ok=verify_ok, cost_usd=0.0
+            session_id="s", task="t", diff="", verification=verification, cost_usd=0.0
         )
 
     assert parallel_results.fanout_exit_code([]) == 1
-    assert parallel_results.fanout_exit_code([_cand(True), _cand(False)]) == 0
+    assert parallel_results.fanout_exit_code([_cand("passed"), _cand("failed")]) == 0
     assert parallel_results.fanout_exit_code([_cand(None), _cand(None)]) == 0  # gateless fan-out
-    assert parallel_results.fanout_exit_code([_cand(False), _cand(False)]) == 4
-    assert parallel_results.fanout_exit_code([_cand(False), _cand(None)]) == 4
+    assert parallel_results.fanout_exit_code([_cand("failed"), _cand("failed")]) == 4
+    assert parallel_results.fanout_exit_code([_cand("failed"), _cand(None)]) == 4
 
 
 def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
@@ -2955,7 +2961,9 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
         }
     )
     briefs = [
-        judge.CandidateBrief(session_id=f"s{i}", task="t", diff="", verify_ok=True, cost_usd=0.0)
+        judge.CandidateBrief(
+            session_id=f"s{i}", task="t", diff="", verification="passed", cost_usd=0.0
+        )
         for i in range(2)
     ]
     outcome = compare.rank(
@@ -3312,7 +3320,7 @@ def test_run_parallel_is_a_session_of_its_own(
     """The fan-out has a session record under the origin's runs.
 
     A manifest carrying the fan-out stamp and no run branch, a journal that opens with
-    session.start, records the dispatch and the ranking, and ends with session.end, and no worker
+    session.start, records the dispatch and the ranking, and ends with session.stop, and no worker
     pid left behind. Before it, `ps` printed "no live agent6 sessions" through the whole judge call
     and nothing grouped the lanes.
     """
@@ -3342,17 +3350,19 @@ def test_run_parallel_is_a_session_of_its_own(
     assert manifest.user_task == "do the task" and manifest.parallel is None
     scan = session_log.scan_session_log(coordinator / "logs.jsonl")
     # No model finished a fan-out: its lanes ran and were ranked.
-    assert scan.saw_start and scan.finished and scan.end_reason == "lanes_ranked"
-    types = [
-        json.loads(line)["type"]
+    assert scan.saw_start and scan.finished and scan.stop_reason == "lanes_ranked"
+    events = [
+        json.loads(line)
         for line in (coordinator / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     ]
+    types = [event["type"] for event in events]
     assert types[:2] == ["session.start", "loop.parallel.dispatched"]
-    assert "loop.parallel.compared" in types and types[-1] == "session.end"
+    assert "loop.parallel.compared" in types and types[-1] == "session.stop"
+    assert events[-1]["execution_id"] == events[0]["execution_id"]
     assert not (coordinator / "worker.pid").exists()
     # The lanes carry the gate verdicts; the fan-out's own end is that they were ranked.
     row = listing.summarize_session_dir(coordinator)
-    assert (row.status, row.reason) == ("finished", "lanes ranked")
+    assert (row.status, row.detail) == ("finished", "lanes ranked")
 
 
 def test_the_compare_judge_streams_into_the_coordinators_journal(
@@ -3588,7 +3598,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
         )
     coordinator = origin_state / "sessions" / "runs" / "crash"
     scan = session_log.scan_session_log(coordinator / "logs.jsonl")
-    assert scan.finished and scan.end_reason == "crashed"
+    assert scan.finished and scan.stop_reason == "crashed"
     assert not (coordinator / "worker.pid").exists()
     assert listing.summarize_session_dir(coordinator).status == "failed"
 
@@ -3610,7 +3620,7 @@ def test_the_coordinator_journals_a_crash_and_an_interrupt(
             fanout_id="kbi",
         )
     coordinator = origin_state / "sessions" / "runs" / "kbi"
-    assert session_log.scan_session_log(coordinator / "logs.jsonl").end_reason == "interrupted"
+    assert session_log.scan_session_log(coordinator / "logs.jsonl").stop_reason == "interrupted"
     assert listing.summarize_session_dir(coordinator).status == "stopped"
 
 

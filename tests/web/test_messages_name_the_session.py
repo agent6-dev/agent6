@@ -34,7 +34,7 @@ def _ask(state: pathlib.Path) -> str:
             json.dumps(e)
             for e in (
                 {"type": "session.start", "mode": "ask", "user_task": "t"},
-                {"type": "session.end", "reason": "answered", "all_passed": True},
+                {"type": "session.stop", "reason": "answered", "verification": "passed"},
             )
         )
         + "\n",

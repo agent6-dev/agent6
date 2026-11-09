@@ -55,7 +55,6 @@ class RunReviewError(Exception):
     """The run-review call failed to produce a response."""
 
 
-# `LogScan.verify_verdict`'s rule: ungated, a green final tree, this execution's own red, the rest.
 VerifyWord = Literal["not gated", "passed", "failed", "unverified"]
 
 
@@ -94,7 +93,7 @@ class RunDigest:
         mode: The session's mode.
         task: The task text.
         status: The session's status.
-        end_reason: The session's end reason, "" when it has none.
+        stop_reason: The session's end reason, "" when it has none.
         verify: The gate word.
         turns: The turn count, None when the journal has no end.
         tool_calls: The tool calls made.
@@ -120,7 +119,7 @@ class RunDigest:
     mode: str
     task: str
     status: str
-    end_reason: str
+    stop_reason: str
     verify: VerifyWord
     turns: int | None
     tool_calls: int
@@ -145,7 +144,7 @@ class RunDigest:
         """Return the digest rendered as the text the reviewer is given."""
         lines = [
             f"session {self.session_id} ({self.mode}): {self.task}",
-            f"ended: {self.end_reason or self.status}; verify {self.verify};"
+            f"ended: {self.stop_reason or self.status}; verify {self.verify};"
             f" {self.turns if self.turns is not None else '?'} turns,"
             f" {self.tool_calls} tool calls ({self.tool_errors} failed), ${self.cost_usd:.2f}",
         ]
@@ -248,8 +247,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
     first_errors: list[str] = []
     notices: collections.Counter[str] = collections.Counter()
     tool_calls = 0
-    end_reason = ""
-    all_passed: bool | None = None
+    stop_reason = ""
     execution_rc: int | None = None  # this execution's last verify exit, reset at a resume
     turns: int | None = None
     try:
@@ -301,20 +299,14 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
                 )
         elif etype in _NOTICE_EVENTS:
             notices[etype.removeprefix("loop.")] += 1
-        elif etype == "session.end":
-            end_reason = str(event.get("reason", ""))
-            passed = event.get("all_passed")
-            all_passed = passed if isinstance(passed, bool) else None
+        elif etype == "session.stop":
+            stop_reason = str(event.get("reason", ""))
             turns = _int(event.get("turns")) if "turns" in event else turns
-    # `LogScan.verify_verdict`'s rule: "failed" only on this execution's own red verify.
-    if summary.mode != "run" or (end_reason and all_passed is None):
-        verify = "not gated"
-    elif all_passed is True:
-        verify = "passed"
-    elif execution_rc not in (None, 0):
-        verify = "failed"
-    else:
-        verify = "unverified"
+    verify: VerifyWord = (
+        "not gated"
+        if summary.verification == "not_applicable"
+        else summary.verification or "unverified"
+    )
     use = memory.read_use(layout.state_dir)
     wrote = tuple(sorted(n for n, u in use.items() if layout.session_id in u.writers))
     return RunDigest(
@@ -322,7 +314,7 @@ def run_digest(  # noqa: PLR0912, PLR0915 (linear fold, like scan_session_log)
         mode=summary.mode,
         task=summary.task_label.task,
         status=summary.status,
-        end_reason=end_reason,
+        stop_reason=stop_reason,
         verify=verify,
         turns=turns,
         tool_calls=tool_calls,

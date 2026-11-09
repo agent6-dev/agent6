@@ -40,7 +40,7 @@ def summarize_session_log(logs_path: pathlib.Path) -> str:
     for e in events:
         counts[str(e.get("type", ""))] = counts.get(str(e.get("type", "")), 0) + 1
     out: list[str] = []
-    end = next((e for e in reversed(events) if e.get("type") == "session.end"), None)
+    end = next((e for e in reversed(events) if e.get("type") == "session.stop"), None)
     if end is not None:
         out.append(f"Ended: reason={end.get('reason')!r} turns={end.get('turns')}")
     top = sorted(counts.items(), key=lambda kv: kv[1], reverse=True)[:8]
@@ -48,7 +48,7 @@ def summarize_session_log(logs_path: pathlib.Path) -> str:
     notable_types = {
         "tool.call",
         "verify.end",
-        "session.end",
+        "session.stop",
         "loop.auto_commit",
         "loop.metric.sample",
     }
@@ -68,8 +68,8 @@ def fmt_run_event(e: dict[str, Any]) -> str:
         label = evidence.result_label(e.get("exit_code"), evidence.outcome(e), joiner="=")
         reason = f": {e['reason']}" if e.get("reason") else ""
         return f"verify.end {label}{reason}"
-    if t == "session.end":
-        return f"session.end reason={e.get('reason')}"
+    if t == "session.stop":
+        return f"session.stop reason={e.get('reason')}"
     if t == "loop.metric.sample":
         return f"loop.metric.sample score={e.get('score')}"
     return t

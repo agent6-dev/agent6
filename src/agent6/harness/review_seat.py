@@ -33,10 +33,10 @@ def build_user_message(ctx: review_panel.ReviewContext) -> str:
     """Return the task, verify result, prior findings and diff for one seat."""
     parts: list[str] = [f"TASK:\n{ctx.task.strip()[:4000]}"]
     parts.append(review_panel.rules_message(ctx.rules))
-    if ctx.verify_ok is None:
+    if ctx.verification is None:
         parts.append("VERIFY: not run.")
     else:
-        status = "PASSED" if ctx.verify_ok else "FAILED"
+        status = ctx.verification.upper()
         out = ctx.verify_output.strip()[-2000:]
         parts.append(f"VERIFY: {status}\n{out}" if out else f"VERIFY: {status}")
     if ctx.prior_findings:

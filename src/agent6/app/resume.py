@@ -275,11 +275,11 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     scan = session_log.scan_session_log(layout.logs_path)
     new_work = listing.needs_new_work(
         finished=scan.finished,
-        end_reason=scan.end_reason,
-        all_passed=scan.all_passed,
+        stop_reason=scan.stop_reason,
+        verification=scan.verification,
         saved_answers=len(ipc.saved_question_answers(layout.session_dir)),
     )
-    if scan.finished and scan.end_reason == "undone":
+    if scan.finished and scan.stop_reason == "undone":
         # The fork is the continuation; resuming here would redo the taken-back edit.
         reporter.refuse(listing.undone_refusal(session_id, scan.undone_to))
         lock.release_single_writer(worker_lock_fd)
@@ -294,7 +294,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         layout.session_dir,
         started_at=started_at,
         keep_questions=[request.id for request in carried.pending],
-        keep_steer=scan.end_reason == "setup_command_failed",
+        keep_steer=scan.stop_reason == "setup_command_failed",
     )
     if steer.strip() and not ipc.submit_steer(layout.session_dir, steer):
         reporter.error("could not write the initial steer request")

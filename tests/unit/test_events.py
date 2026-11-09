@@ -56,9 +56,15 @@ def test_reopen_drops_torn_tail_before_resumed_events(
         execution_id="resumed",
     )
     resumed.emit("role.text_delta", role="worker", text="done")
-    resumed.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+    resumed.emit(
+        "session.stop",
+        execution_id="execution",
+        reason="finish_session",
+        turns=1,
+        verification="passed",
+    )
 
-    expected = ["session.start", "session.resume", "role.text_delta", "session.end"]
+    expected = ["session.start", "session.resume", "role.text_delta", "session.stop"]
     assert [event["type"] for event in tail.tail_events(path, follow=False)] == expected
     assert [event["type"] for event in tail.LogTail(path).read()] == expected
     assert path.read_bytes().startswith(committed)
@@ -111,7 +117,7 @@ def test_emit_reprs_non_serializable_fields(tmp_path: pathlib.Path) -> None:
 def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> None:
     """A durable event that cannot land raises, and the in-process listener is not notified.
 
-    The journal is the read model every surface trusts; a lost session.end renders "running"
+    The journal is the read model every surface trusts; a lost session.stop renders "running"
     forever. Deltas stay best-effort and still render live, since the lossless transcripts keep
     their copy.
     """
@@ -122,7 +128,13 @@ def test_durable_emit_raises_on_unwritable_journal(tmp_path: pathlib.Path) -> No
     seen: list[dict[str, object]] = []
     sink.subscribe(seen.append)
     with pytest.raises(event_log.EventWriteError, match="unwritable"):
-        sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+        sink.emit(
+            "session.stop",
+            execution_id="execution",
+            reason="finish_session",
+            turns=1,
+            verification="passed",
+        )
     assert seen == []
     sink.emit("role.text_delta", role="worker", text="still live")  # ephemeral: must not raise
     assert [e["type"] for e in seen] == ["role.text_delta"]

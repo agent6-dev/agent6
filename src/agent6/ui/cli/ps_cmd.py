@@ -97,7 +97,8 @@ class _Live:
         for repo_id, summaries in summaries_by_repo.items():
             own_rows = rows_by_repo[repo_id]
             session_rows.extend(
-                (row.mtime, tree(row, own_rows)) for row in listing.nested_rows(summaries)
+                (row.group_last_activity, tree(row, own_rows))
+                for row in listing.nested_rows(summaries)
             )
         session_rows.sort(key=lambda item: item[0], reverse=True)
 
@@ -136,7 +137,7 @@ def _live_rows() -> _Live:
                         sdir.name,
                         summary.mode,
                         summary.status,
-                        summary.reason,
+                        summary.detail,
                         process.read_worker_pid(sdir),
                         process.frontend_is_live(sdir),
                         coordinator=summary.coordinator,

@@ -263,5 +263,7 @@ def test_quit_at_the_revise_choice_reads_as_an_operator_stop(tmp_path: pathlib.P
     with mock.patch("agent6.harness.repo_context.load_repo_summary", return_value=_repo(tmp_path)):
         result = wf.run("fix the bug in src/foo.py")
     assert result.reason == "steer_abort"
-    word, _ = session_status.status_word(finished=True, all_passed=False, end_reason=result.reason)
+    word, _ = session_status.status_word(
+        finished=True, verification="unverified", stop_reason=result.reason
+    )
     assert word == "stopped"

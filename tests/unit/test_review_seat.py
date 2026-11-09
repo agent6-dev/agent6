@@ -71,7 +71,7 @@ def _prov(text: str) -> Provider:
 
 
 def _ctx() -> review_panel.ReviewContext:
-    return review_panel.ReviewContext(task="add auth", diff=SAMPLE_DIFF, verify_ok=True)
+    return review_panel.ReviewContext(task="add auth", diff=SAMPLE_DIFF, verification="passed")
 
 
 def test_structured_review_parses_clean_json() -> None:

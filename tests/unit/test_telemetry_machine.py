@@ -35,10 +35,10 @@ def worker() -> list[dict[str, Any]]:
         },
         {"type": "budget.update", "ts": "2026-07-16T00:00:04+00:00", "usd_total": 0.25},
         {
-            "type": "session.end",
+            "type": "session.stop",
             "ts": "2026-07-16T00:00:04+00:00",
             "reason": "finish_session",
-            "verified": "passed",
+            "verification": "passed",
         },
     ]
 

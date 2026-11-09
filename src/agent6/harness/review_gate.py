@@ -416,7 +416,13 @@ class Reviewer:
             task=state.original_task,
             rules=repo_context.review_rules(self.chain.root, target.base_tree, self.hide),
             diff=diff,
-            verify_ok=state.verify.last_ok,
+            verification=(
+                "passed"
+                if state.verify.last_ok is True
+                else "failed"
+                if state.verify.last_ok is False
+                else None
+            ),
             verify_output=state.verify.last_tail,
             prior_findings=prior,
         )

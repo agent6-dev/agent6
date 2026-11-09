@@ -214,14 +214,14 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - `turn` also runs it after every editing turn.
 - A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff.
   It stays scoped until a full run of the gate passes.
-  The notice lists the selected files, `session.end` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
+  The notice lists the selected files, `session.stop` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
 - A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
 - The settled stop ends a plain run after `harness.settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or an editing step no gate judged.
     - A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
     - A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
     - `0` disables the stop, but the nudge at three idle turns still fires without announcing a stop; over a red gate the model must fix, the nudge is withheld while a finish would still go back.
     - Over a green gate of the run's own, the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
-    - A settled end whose only green was the base's carries `verified = "unverified"` and `all_passed = false`: an unverified end.
+    - A settled end whose only green was the base's carries `verification = "unverified"`: an unverified end.
     - Over a red gate it returns under the same cap, counted apart from the model's own finishes.
 
 **Per-turn commits** fire when a gate run returns 0, through `git_ops.py` outside the jail, onto the run's detached chain (`refs/agent6/<id>/head`, temp-index staged).
@@ -277,7 +277,7 @@ A finish-time check reports any ruling missing from the file.
 - `always` skills inject full text; the rest get an index line and load on demand; run mode only
 
 **The terminal tool** is `finish_session(summary)` in run mode and `finish_planning` in plan mode; ask mode has neither and ends on its final prose.
-Either call, once accepted, emits a `session.end` event and returns control to the front-end.
+Either call, once accepted, emits a `session.stop` event and returns control to the front-end.
 
 ## OAuth credentials
 
@@ -480,7 +480,7 @@ Uncommitted changes to tracked files are asked about over the `ask_user` channel
 `[git].dirty_tree = "stash"` and `"include"` answer without asking, and a run nobody can answer refuses before writing a manifest, discarding the empty dir.
 An included tree that is exactly an unmerged run's tip is recorded (`includes` in the manifest): when the including run merges and that run is still at the tip, it is stamped merged too (`merged.via`), so its own merge has nothing left to land.
 
-Every end the loop reaches records the tree the run left (`session.end.tree`), and a resume applies the same policy to the paths that differ from it: those changed outside the run.
+Every end the loop reaches records the tree the run left (`session.stop.tree`), and a resume applies the same policy to the paths that differ from it: those changed outside the run.
 `stash` sets aside those tracked changes, including staged renames and deletions.
 It refuses when the run also changed one of those paths, since stashing it would take the run's work with the edit.
 A resume after a death, a detach or an older session has no recorded tree: the changes no commit has and no tool of the run wrote follow the same policy, and its note names what the next commit takes.

@@ -99,7 +99,7 @@ def _verified(wf: loop.Harness, **verdict_kw: Any) -> str:
 
 
 def test_verification_carries_the_same_verdict_the_event_does() -> None:
-    """SessionResult.verified copies session.end.all_passed; "failed" means an observed red.
+    """SessionResult.verified copies session.stop.verification; "failed" means an observed red.
 
     Exit code, auto-merge and the notify hook read it instead of `completed`; folding "no
     verify ran" into failed sent the operator to bisect a failure that never happened.
@@ -119,7 +119,7 @@ def test_verification_carries_the_same_verdict_the_event_does() -> None:
 def test_settled_stranded_edits_are_labelled_not_committed() -> None:
     """A settled end labels edits that no commit holds."""
     assert session_status.status_word(
-        finished=True, all_passed=False, end_reason="settled", stranded=True
+        finished=True, verification="unverified", stop_reason="settled", stranded=True
     ) == ("finished", "unverified · not committed")
 
 
@@ -136,35 +136,31 @@ def test_settled_base_only_green_is_unverified(tmp_path: pathlib.Path) -> None:
     end = guards.settled_end(state, ctx)
     result = wf.finish(state, end, turn=3)
     assert result.reason == "settled"
-    assert result.verified == "unverified"
-    event = next(c.kwargs for c in emitted.emit.call_args_list if c.args == ("session.end",))
-    assert event["verified"] == "unverified"
-    assert event["all_passed"] is False
+    assert result.verification == "unverified"
+    event = next(c.kwargs for c in emitted.emit.call_args_list if c.args == ("session.stop",))
+    assert event["verification"] == "unverified"
+    assert event["verification"] == "unverified"
     assert finalize.session_exit_code(result, harness_gate=True) == 4
     assert finalize.session_exit_code(result, harness_gate=False) == 0
     assert session_status.status_word(
-        finished=True, all_passed=event["all_passed"], end_reason=result.reason
+        finished=True, verification=event["verification"], stop_reason=result.reason
     ) == ("finished", "unverified")
 
 
 def test_a_gateless_end_and_its_verdict_agree() -> None:
-    """all_passed=True needs an observed green; the gateless end carries None on the wire.
-
-    The grounded end turned the gateless None into True while `_verification` mapped it to
-    not_applicable, so the run read "passed" on every surface though nothing gated it. None
-    words as "finished", never "passed" or "failed".
-    """
+    """A stop event carries the same verification word as the loop result."""
     emitted: list[dict[str, Any]] = []
 
     def _capture(_type: str, **fields: Any) -> None:
         emitted.append(fields)
 
-    cases: tuple[tuple[bool, verify_verdict.VerifyVerdict, bool | None, str], ...] = (
-        (False, verify_verdict.VerifyVerdict(last_ok=None), None, "not_applicable"),
-        (True, verify_verdict.VerifyVerdict(last_ok=True, edited_since=False), True, "passed"),
-        (True, verify_verdict.VerifyVerdict(last_ok=False), False, "failed"),
+    cases: tuple[tuple[bool, verify_verdict.VerifyVerdict, str], ...] = (
+        (False, verify_verdict.VerifyVerdict(last_ok=None), "not_applicable"),
+        (True, verify_verdict.VerifyVerdict(last_ok=True, edited_since=False), "passed"),
+        (True, verify_verdict.VerifyVerdict(last_ok=False), "failed"),
+        (True, verify_verdict.VerifyVerdict(last_ok=None), "unverified"),
     )
-    for verify, gate_verdict, all_passed, verdict in cases:
+    for verify, gate_verdict, verification in cases:
         wf = _wf(verify=verify)
         wf.events = mock.MagicMock(emit=_capture)
         wf.events.emit = _capture  # type: ignore[method-assign]
@@ -177,10 +173,10 @@ def test_a_gateless_end_and_its_verdict_agree() -> None:
             ),
             turn=1,
         )
-        assert emitted and emitted[-1]["all_passed"] is all_passed
-        assert wf.gate.verification(state.verify) == verdict
+        assert emitted and emitted[-1]["verification"] == verification
+        assert wf.gate.verification(state.verify) == verification
         # The invariant the docstring promises: the event and the result agree.
-        assert (emitted[-1]["all_passed"] is True) == (
+        assert (emitted[-1]["verification"] == "passed") == (
             wf.gate.verification(state.verify) == "passed"
         )
 
@@ -212,15 +208,19 @@ def test_the_end_event_carries_whether_the_certifying_gate_ran_scoped() -> None:
             ),
             turn=1,
         )
-        assert (emitted[-1]["all_passed"], emitted[-1]["scoped"]) == (True, scoped)
+        assert (emitted[-1]["verification"], emitted[-1]["scoped"]) == ("passed", scoped)
     assert session_status.status_word(
-        finished=True, all_passed=True, end_reason="finish_session", scoped=True
+        finished=True, verification="passed", stop_reason="finish_session", scoped=True
     ) == ("passed", "scoped gate")
     assert session_status.status_word(
-        finished=True, all_passed=False, end_reason="finish_session", scoped=True, gate_red=True
+        finished=True,
+        verification="failed",
+        stop_reason="finish_session",
+        scoped=True,
+        gate_red=True,
     ) == ("finished", "gate red")
     assert session_status.status_word(
-        finished=True, all_passed=False, end_reason="finish_session"
+        finished=True, verification="unverified", stop_reason="finish_session"
     ) == (
         "finished",
         "unverified",

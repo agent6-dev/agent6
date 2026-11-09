@@ -197,7 +197,7 @@ def test_session_end_records_the_tree_the_run_left(
         json.loads(line)
         for line in (_session_dir(repo, "tree-END001") / "logs.jsonl").read_text().splitlines()
     ]
-    (end,) = [e for e in events if e["type"] == "session.end"]
+    (end,) = [e for e in events if e["type"] == "session.stop"]
     tip = git_read.chain_tip(repo, git_read.chain_ref_for("tree-END001"))
     assert end["tree"] == git_read.worktree_tree(repo, tip, frozenset())
     assert _git(repo, "log", "--oneline", "-1", "--format=%s").strip() == "seed"  # no commit made
@@ -465,7 +465,7 @@ def test_resume_stash_refusal_restores_work_the_run_never_committed(
         json.loads(line)
         for line in (_session_dir(repo, session_id) / "logs.jsonl").read_text().splitlines()
     ]
-    (end,) = [e for e in events if e["type"] == "session.end"]
+    (end,) = [e for e in events if e["type"] == "session.stop"]
     (repo / "a.py").write_text("x = 6  # operator on top\n", encoding="utf-8")
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
     capsys.readouterr()
@@ -576,7 +576,9 @@ def test_a_run_killed_before_it_recorded_a_tree_treats_unwritten_changes_as_outs
     repo = _setup(tmp_path, monkeypatch, policy)
     _stopped_run(repo, monkeypatch, "tree-KILL01", _edit("z.txt", "1\n"))
     logs = _session_dir(repo, "tree-KILL01") / "logs.jsonl"
-    kept = [ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.end"' not in ln]
+    kept = [
+        ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.stop"' not in ln
+    ]
     logs.write_text("\n".join(kept) + "\n", encoding="utf-8")  # as a SIGKILL leaves it
     (repo / "a.py").write_text("x = 2\n", encoding="utf-8")  # never written by the run
     (repo / "z.txt").write_text("2\n", encoding="utf-8")  # the run's own file, unfinished
@@ -608,7 +610,9 @@ def test_a_killed_runs_own_edit_to_a_committed_file_is_not_stashed(
         repo, "agent6 turn 2: w", ref=ref, fallback_parent=None, also_branch="agent6/tree-KILL02"
     )
     logs = _session_dir(repo, "tree-KILL02") / "logs.jsonl"
-    kept = [ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.end"' not in ln]
+    kept = [
+        ln for ln in logs.read_text(encoding="utf-8").splitlines() if '"session.stop"' not in ln
+    ]
     logs.write_text("\n".join(kept) + "\n", encoding="utf-8")  # as a SIGKILL leaves it
     (repo / "w.txt").write_text("2\n", encoding="utf-8")  # edited again by a command, then killed
     capsys.readouterr()

@@ -124,7 +124,7 @@ def test_removal_actions_delete_records_through_the_cli(tmp_path: pathlib.Path, 
     session.mkdir(parents=True)
     (session / "logs.jsonl").write_text(
         f'{{"type": "session.start", "mode": "{mode}"}}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n'
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n'
     )
 
     ok, message = (
@@ -329,7 +329,7 @@ def test_a_pending_question_on_an_ended_run_takes_an_answer_for_the_resume(
         '"wait":false}\n'
         '{"type":"question.prompt","id":"question-2","questions":[{"question":"db?"}],'
         '"wait":false}\n'
-        '{"type":"session.end","reason":"finish_session","all_passed":true}\n',
+        '{"type":"session.stop","reason":"finish_session","verification":"passed"}\n',
         encoding="utf-8",
     )
     (session_dir / "worker.pid").write_text("999999999", encoding="utf-8")  # never alive
@@ -632,7 +632,8 @@ def test_the_composer_refuses_an_empty_resume_of_a_finished_run(
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "finish_session", "all_passed": True}) + "\n",
+        json.dumps({"type": "session.stop", "reason": "finish_session", "verification": "passed"})
+        + "\n",
         encoding="utf-8",
     )
     spawned: list[str] = []
@@ -683,7 +684,8 @@ def test_the_composer_refuses_to_resume_a_fan_out(
         encoding="utf-8",
     )
     (session_dir / "logs.jsonl").write_text(
-        json.dumps({"type": "session.end", "reason": "lanes_ranked", "all_passed": True}) + "\n",
+        json.dumps({"type": "session.stop", "reason": "lanes_ranked", "verification": "passed"})
+        + "\n",
         encoding="utf-8",
     )
     spawned: list[str] = []
@@ -861,7 +863,7 @@ def test_undo_hands_the_page_the_rewind_notice(
     run.ensure()
     run.logs_path.write_text(
         '{"type": "session.start", "session_id": "done-AAAA11", "mode": "run", "user_task": "t"}\n'
-        '{"type": "session.end", "reason": "finish_session", "all_passed": true}\n',
+        '{"type": "session.stop", "reason": "finish_session", "verification": "passed"}\n',
         encoding="utf-8",
     )
 

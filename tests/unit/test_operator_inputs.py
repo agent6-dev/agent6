@@ -12,7 +12,7 @@ def test_task_then_steers_in_order_across_executions() -> None:
         {"type": "session.start", "user_task": "polish the TUI", "mode": "run"},
         {"type": "role.result", "text": "done"},
         {"type": "loop.steer.injected", "chars": 14, "text": "focus on tests"},
-        {"type": "session.end", "reason": "steer_abort"},
+        {"type": "session.stop", "reason": "steer_abort"},
         # A resume appends to the same journal; its steer joins the list.
         {"type": "session.resume"},
         {"type": "loop.steer.injected", "chars": 7, "text": "ship it"},

@@ -1208,38 +1208,6 @@ EVENTS: tuple[EventSpec, ...] = (
         ),
     ),
     EventSpec(
-        "session.end",
-        "Emitted at the end of every execution, with its reason.",
-        (
-            FieldSpec("reason", "str", True, "The reason for the outcome."),
-            FieldSpec(
-                "turns", "int", True, "Number of execution turns, or turns spent on one task."
-            ),
-            FieldSpec(
-                "all_passed",
-                "bool",
-                False,
-                "Final gate result; null when no verify command gated the run.",
-            ),
-            FieldSpec("summary", "str", False, "The result or outcome in words."),
-            FieldSpec(
-                "verified",
-                "str",
-                False,
-                "Final verification state: passed, failed, unverified or not_applicable.",
-            ),
-            FieldSpec(
-                "scoped", "bool", False, "Whether verification ran only the selected nearby tests."
-            ),
-            FieldSpec(
-                "final_verify_id", "str", False, "The final verification attempt identifier."
-            ),
-            FieldSpec("tree", "str", False, "The final working-tree content identifier."),
-            FieldSpec("tool", "str", False, "The repeated tool's name."),
-            FieldSpec("streak", "int", False, "Number of consecutive matching turns or calls."),
-        ),
-    ),
-    EventSpec(
         "session.resume",
         "Emitted at the start of every resumed execution.",
         (
@@ -1266,6 +1234,33 @@ EVENTS: tuple[EventSpec, ...] = (
         "session.steer_requested",
         "Ctrl-C requested an operator steer during the run.",
         (FieldSpec("source", "str", True, "Where the request or result came from."),),
+    ),
+    EventSpec(
+        "session.stop",
+        "The execution stopped, with its reason; the session stays resumable.",
+        (
+            FieldSpec("execution_id", "str", True, "Execution identifier; empty when unknown."),
+            FieldSpec("reason", "str", True, "The reason for the outcome."),
+            FieldSpec(
+                "turns", "int", True, "Number of execution turns, or turns spent on one task."
+            ),
+            FieldSpec("summary", "str", False, "The result or outcome in words."),
+            FieldSpec(
+                "verification",
+                "str",
+                False,
+                "Final verification state: passed, failed, unverified or not_applicable.",
+            ),
+            FieldSpec(
+                "scoped", "bool", False, "Whether verification ran only the selected nearby tests."
+            ),
+            FieldSpec(
+                "final_verify_id", "str", False, "The final verification attempt identifier."
+            ),
+            FieldSpec("tree", "str", False, "The final working-tree content identifier."),
+            FieldSpec("tool", "str", False, "The repeated tool's name."),
+            FieldSpec("streak", "int", False, "Number of consecutive matching turns or calls."),
+        ),
     ),
     EventSpec(
         "session.stranded",

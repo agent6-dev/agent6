@@ -45,7 +45,7 @@ def test_logscreen_renders_structural_events(tmp_path: pathlib.Path) -> None:
         },
         {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}, "ts": "t"},
         {"type": "verify.end", "exit_code": 0, "duration_s": 1.2, "ts": "t"},
-        {"type": "session.end", "all_passed": True, "ts": "t"},
+        {"type": "session.stop", "verification": "passed", "ts": "t"},
     ]
     _write_log(logs, events)
 
@@ -122,7 +122,9 @@ def test_logscreen_reload_picks_up_appended_lines(tmp_path: pathlib.Path) -> Non
             assert len(_lines(screen)) == 1
             # A live run keeps appending; reload pulls the new lines in.
             with logs.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps({"type": "session.end", "all_passed": True, "ts": "t"}) + "\n")
+                fh.write(
+                    json.dumps({"type": "session.stop", "verification": "passed", "ts": "t"}) + "\n"
+                )
             screen.action_reload()
             await pilot.pause()
             assert len(_lines(screen)) == 2

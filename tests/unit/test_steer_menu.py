@@ -682,7 +682,7 @@ def test_pause_menu_continuation_aligns_with_task(
 
     journal = [
         {"type": "session.start", "mode": "run", "user_task": "original task"},
-        {"type": "session.end", "all_passed": True},
+        {"type": "session.stop", "verification": "passed"},
         {"type": "session.resume", "steer": "write docs"},
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))

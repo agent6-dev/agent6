@@ -29,7 +29,7 @@ def test_reasoning_tool_call_and_result_all_render() -> None:
             {"type": "role.result", "role": "worker"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a.py"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-            {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+            {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
         ]
     )
     assert "fix the failing test" in out
@@ -391,7 +391,7 @@ def test_the_receipt_reads_the_mode_from_the_shared_task_headline() -> None:
             {"type": "session.start", "mode": "ask", "user_task": "why?"},
             {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
             {"type": "tool.result", "name": "read_file", "ok": True, "summary": "1 byte"},
-            {"type": "session.end", "reason": "answered", "all_passed": False},
+            {"type": "session.stop", "reason": "answered", "verification": "unverified"},
         ]
     )
     assert "1 tool" in out
@@ -437,8 +437,8 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
             {"type": "role.text_delta", "role": "worker", "text": "CoreTest"},
             {"type": "role.result", "role": "worker", "text": "CoreTest"},
             {
-                "type": "session.end",
-                "all_passed": True,
+                "type": "session.stop",
+                "verification": "passed",
                 "reason": "answered",
                 "summary": "CoreTest",
             },
@@ -452,8 +452,8 @@ def test_a_streamed_answer_is_not_repeated_on_the_answered_line() -> None:
             {"type": "role.call", "role": "worker"},
             {"type": "role.result", "role": "worker", "text": "CoreTest"},
             {
-                "type": "session.end",
-                "all_passed": True,
+                "type": "session.stop",
+                "verification": "passed",
                 "reason": "answered",
                 "summary": "CoreTest",
             },

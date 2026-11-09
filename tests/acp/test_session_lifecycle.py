@@ -65,7 +65,7 @@ def _record(
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     rows = [
         {"type": "session.start", "mode": mode, "user_task": task},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
     if checkpoint:
@@ -248,7 +248,7 @@ def test_load_replays_the_recorded_conversation_before_answering(tmp_path: pathl
         },
         panel,
         {"type": "diff.updated", "sha": "abc1234", "patch": "+guard"},
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     journal = "".join(json.dumps(row) + "\n" for row in rows)
     (d / "logs.jsonl").write_text(journal, encoding="utf-8")

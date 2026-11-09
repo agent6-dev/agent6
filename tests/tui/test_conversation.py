@@ -42,7 +42,7 @@ _EVENTS: list[dict[str, object]] = [
     {"type": "role.result", "role": "worker"},
     {"type": "tool.call", "name": "read_file", "args": {"path": "a"}},
     {"type": "tool.result", "name": "read_file", "ok": True, "summary": "12 bytes"},
-    {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+    {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
 ]
 
 
@@ -148,7 +148,7 @@ def test_an_unrendered_finish_call_with_bad_args_does_not_crash_the_screen(
     events: list[dict[str, object]] = [
         {"type": "session.start", "user_task": "do X"},
         {"type": "tool.call", "name": "finish_session", "args": "not an object"},
-        {"type": "session.end", "all_passed": True, "reason": "finish_session"},
+        {"type": "session.stop", "verification": "passed", "reason": "finish_session"},
     ]
 
     async def scenario() -> None:
@@ -174,7 +174,7 @@ def test_harness_end_labels_reach_the_conversation_and_dashboard(
     """A harness-declared end must not read passed in the done line, title or dashboard."""
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": "t"},
-        {"type": "session.end", "reason": reason, "all_passed": True},
+        {"type": "session.stop", "reason": reason, "verification": "passed"},
     ]
 
     async def scenario() -> None:
@@ -218,7 +218,7 @@ def test_steer_bar_stays_for_a_finished_run_as_the_resume_composer(tmp_path: pat
     """After the run ends the bar stays, and Enter resumes the run with the typed follow-up."""
 
     async def scenario() -> None:
-        app = _hosted(tmp_path / "run", _EVENTS)  # ends with session.end: finished
+        app = _hosted(tmp_path / "run", _EVENTS)  # ends with session.stop: finished
         async with app.run_test() as pilot:
             await pilot.pause()
             assert app.screen.query_one("#conv-input", composer.SteerInput).display
@@ -232,7 +232,7 @@ def test_steer_bar_shows_for_a_live_run_and_submits_over_the_bridge(tmp_path: pa
     run = tmp_path / "run"
 
     async def scenario() -> None:
-        app = _hosted(run, _EVENTS[:-1], live=True)  # no session.end, a live worker
+        app = _hosted(run, _EVENTS[:-1], live=True)  # no session.stop, a live worker
         async with app.run_test() as pilot:
             await pilot.pause()
             bar = app.screen.query_one("#conv-input", composer.SteerInput)
@@ -258,7 +258,7 @@ def test_resumed_execution_is_live_and_steers_over_the_bridge(tmp_path: pathlib.
     logs = run / "logs.jsonl"
 
     async def scenario() -> None:
-        app = _hosted(run, _EVENTS)  # ends with session.end: finished, no worker
+        app = _hosted(run, _EVENTS)  # ends with session.stop: finished, no worker
         async with app.run_test() as pilot:
             await pilot.pause()
             screen = app.screen
@@ -318,7 +318,7 @@ def test_follow_survives_the_live_pane_growing(tmp_path: pathlib.Path) -> None:
     logs = run / "logs.jsonl"
 
     async def scenario() -> None:
-        app = _hosted(run, events, live=True)  # no session.end, a live worker
+        app = _hosted(run, events, live=True)  # no session.stop, a live worker
         async with app.run_test(size=(60, 12)) as pilot:
             await pilot.pause()
             scroll = app.screen.query_one("#conv-scroll", containers.VerticalScroll)
@@ -464,7 +464,7 @@ def test_live_pane_is_dropped_over_a_dead_worker(tmp_path: pathlib.Path) -> None
         {"type": "role.call", "role": "worker"},
         {"type": "role.thinking_delta", "text": "planning the edit"},
         {"type": "role.text_delta", "text": "I will now edit"},
-        # killed here: no role.result, no session.end
+        # killed here: no role.result, no session.stop
     ]
 
     async def scenario(live: bool) -> tuple[bool, str]:

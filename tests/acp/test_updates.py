@@ -252,7 +252,7 @@ def test_a_run_that_failed_does_not_render_as_silence() -> None:
         "steer_abort": "stopped",
     }
     for reason, label in labels.items():
-        events = [{"type": "session.end", "reason": reason, "all_passed": False}]
+        events = [{"type": "session.stop", "reason": reason, "verification": "unverified"}]
         updates = updates_for_events(events, acp_session_id="s")
         assert updates, f"{reason} rendered as nothing"
         text = updates[-1]["params"]["update"]["content"]["text"]
@@ -283,13 +283,13 @@ def test_a_done_without_a_summary_emits_only_the_status() -> None:
 
 
 def test_a_red_gate_does_not_look_like_a_green_one() -> None:
-    """`finish_session` with all_passed=False is a finish over a RED verify."""
+    """`finish_session` with verification="unverified" is a finish over a RED verify."""
     red = updates_for_events(
-        [{"type": "session.end", "reason": "finish_session", "all_passed": False}],
+        [{"type": "session.stop", "reason": "finish_session", "verification": "unverified"}],
         acp_session_id="s",
     )
     green = updates_for_events(
-        [{"type": "session.end", "reason": "finish_session", "all_passed": True}],
+        [{"type": "session.stop", "reason": "finish_session", "verification": "passed"}],
         acp_session_id="s",
     )
     assert (
@@ -415,7 +415,7 @@ def test_a_tool_call_title_is_scrubbed_like_its_content() -> None:
 def test_a_gateless_finish_never_reads_as_a_failed_check() -> None:
     """A deliberate finish that verified nothing is "finished", not "did not pass"."""
     updates = updates_for_events(
-        [{"type": "session.end", "reason": "finish_session", "all_passed": False}],
+        [{"type": "session.stop", "reason": "finish_session", "verification": "unverified"}],
         acp_session_id="s",
     )
     text = updates[-1]["params"]["update"]["content"]["text"]
@@ -607,7 +607,7 @@ def test_journal_end_leaves_the_receipt_pointer_to_the_footer() -> None:
             "tree_before": "t",
             "tree_after": "t",
         },
-        {"type": "session.end", "final_verify_id": "v", "tree": "t", "reason": "finish_session"},
+        {"type": "session.stop", "final_verify_id": "v", "tree": "t", "reason": "finish_session"},
     ]
     info = _info()
     messages = updates_for_events(rows, acp_session_id="s")

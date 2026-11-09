@@ -7,6 +7,7 @@ from __future__ import annotations
 import dataclasses
 from typing import Literal
 
+from agent6 import kinds
 from agent6.viewmodel import format, review, session_status
 
 NodeStatus = Literal["pending", "in_progress", "passed", "failed", "skipped", "obsolete"]
@@ -332,8 +333,8 @@ class SessionState:
         last_verify: The last verify gate run.
         review: Durable panel evidence and finding history across executions.
         budget: The spend.
-        pending_approvals: Every approval asked this execution, answered or not.
-        pending_questions: Every question prompt asked this execution, answered or not.
+        approvals: Every approval asked this execution, answered or not.
+        questions: Every question prompt asked this execution, answered or not.
         log_tail: The bounded window of log lines, most recent last.
         log_count: The monotonic count of log lines ever; a live viewer diffs on it,
             since `len(log_tail)` freezes once the window saturates.
@@ -341,10 +342,10 @@ class SessionState:
             conversation's end line counts them; `len(tool_calls)` is a bounded window.
         recent_diffs: The bounded auto-commit diffs, for task filtering.
         started: An execution has begun; a parked or created run has none.
-        finished: A session.end was folded and no later execution began.
-        all_passed: The verify tri-state; None when no verify command gated the end.
+        finished: A session.stop was folded and no later execution began.
+        verification: The final verification word, or None when unknown.
         verify_scoped: The judging gate ran scoped.
-        end_reason: The session.end reason word.
+        stop_reason: The session.stop reason word.
         stranded: This execution finished with its edits uncommitted and no commit landed.
         end_summary: The end sentence the journal carries, "" when it carries none.
         unattended_questions: Questions the harness answered empty because nobody was
@@ -376,17 +377,17 @@ class SessionState:
     last_verify: VerifyView | None = None
     review: review.ReviewView = dataclasses.field(default_factory=review.ReviewView)
     budget: BudgetView = dataclasses.field(default_factory=BudgetView)
-    pending_approvals: tuple[ApprovalPrompt, ...] = ()
-    pending_questions: tuple[QuestionPrompt, ...] = ()
+    approvals: tuple[ApprovalPrompt, ...] = ()
+    questions: tuple[QuestionPrompt, ...] = ()
     log_tail: tuple[LogLine, ...] = ()
     log_count: int = 0
     tool_count: int = 0
     recent_diffs: tuple[DiffView, ...] = ()
     started: bool = False
     finished: bool = False
-    all_passed: bool | None = None
+    verification: kinds.Verification | None = None
     verify_scoped: bool = False
-    end_reason: str = ""
+    stop_reason: str = ""
     stranded: bool = False
     end_summary: str = ""
     unattended_questions: int = 0

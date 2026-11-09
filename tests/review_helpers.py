@@ -174,5 +174,11 @@ def reviewed_repo(cwd: pathlib.Path) -> layout.SessionLayout:
         n_abstain=0,
         completion="complete",
     )
-    sink.emit("session.end", reason="finish_session", turns=1, all_passed=True)
+    sink.emit(
+        "session.stop",
+        execution_id="execution",
+        reason="finish_session",
+        turns=1,
+        verification="passed",
+    )
     return saved

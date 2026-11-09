@@ -6,7 +6,7 @@
 its dir; listings (``summarize_session_dir``) and every header feed it facts from
 either producer -- the tolerant scanner (``LogScan``) or the typed fold
 (``SessionState``). The matrix pins the word per dir state for BOTH producers and
-for the listing, so no two surfaces can disagree about any non-``session.end``
+for the listing, so no two surfaces can disagree about any non-``session.stop``
 state (parked/created/starting/stale/waiting each shipped a real
 surface-disagreement bug before this existed).
 """
@@ -19,6 +19,7 @@ import pathlib
 
 import pytest
 
+from agent6 import kinds
 from agent6.sessions import ipc
 from agent6.viewmodel import (
     format,
@@ -73,8 +74,8 @@ _ANSWER: dict[str, object] = {"type": "approval.answer", "id": "approval-1", "ap
 _RESUME: dict[str, object] = {"type": "session.resume", "turn": 2}
 
 
-def _end(reason: str, all_passed: bool = False) -> dict[str, object]:
-    return {"type": "session.end", "reason": reason, "all_passed": all_passed}
+def _end(reason: str, verification: kinds.Verification | None = "unverified") -> dict[str, object]:
+    return {"type": "session.stop", "reason": reason, "verification": verification}
 
 
 # (name, events (None = no logs.jsonl), parked_task, pid, expected word, expected reason)
@@ -143,10 +144,10 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
         "died launching",
     ),
     ("killed-in-preflight-no-log", None, "", DEAD, "stale", "died launching"),
-    ("passed", [_START, _end("finish_session", True)], "", None, "passed", ""),
+    ("passed", [_START, _end("finish_session", "passed")], "", None, "passed", ""),
     (
         "passed-scoped",
-        [_START, {**_end("finish_session", True), "scoped": True}],
+        [_START, {**_end("finish_session", "passed"), "scoped": True}],
         "",
         None,
         "passed",
@@ -154,7 +155,11 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
     ),
     (
         "finished-gate-red",
-        [_START, {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1}, _end("finish_session")],
+        [
+            _START,
+            {"type": "verify.end", "cmd": ["pytest"], "exit_code": 1},
+            _end("finish_session", "failed"),
+        ],
         "",
         None,
         "finished",
@@ -163,7 +168,7 @@ MATRIX: list[tuple[str, list[dict[str, object]] | None, str, int | None, str, st
     ("finished-unverified", [_START, _end("finish_session")], "", None, "finished", "unverified"),
     (
         "finished-gateless",
-        [_START, {**_end("finish_session"), "all_passed": None}],
+        [_START, {**_end("finish_session"), "verification": "not_applicable"}],
         "",
         None,
         "finished",
@@ -198,7 +203,7 @@ def test_both_fact_producers_and_the_listing_agree(
     assert session_status.status_for_session_dir(d, scan.status_facts()) == (word, reason)
     assert session_status.status_for_session_dir(d, status_facts(fold)) == (word, reason)
     summary = listing.summarize_session_dir(d)
-    assert (summary.status, summary.reason) == (word, reason)
+    assert (summary.status, summary.detail) == (word, reason)
 
 
 @pytest.mark.parametrize(
@@ -206,13 +211,13 @@ def test_both_fact_producers_and_the_listing_agree(
     [("silent_finish", "no finish call"), ("metric_plateau", "metric plateau")],
 )
 @pytest.mark.parametrize(
-    ("all_passed", "verify_exit", "gate_detail"),
+    ("verification", "verify_exit", "gate_detail"),
     [
-        (True, 0, ""),
-        (None, None, ""),
-        (False, 1, "gate red"),
-        (False, 124, "gate timed out"),
-        (False, 0, "unverified"),
+        ("passed", 0, ""),
+        ("not_applicable", None, ""),
+        ("failed", 1, "gate red"),
+        ("failed", 124, "gate timed out"),
+        ("unverified", 0, "unverified"),
     ],
     ids=["green", "no-gate", "red", "timed-out", "stale-green"],
 )
@@ -221,7 +226,7 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
     tmp_path: pathlib.Path,
     reason: str,
     detail: str,
-    all_passed: bool | None,
+    verification: kinds.Verification | None,
     verify_exit: int | None,
     gate_detail: str,
     scoped: bool,
@@ -239,7 +244,7 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
             }
         )
     events.append(
-        {"type": "session.end", "reason": reason, "all_passed": all_passed, "scoped": scoped}
+        {"type": "session.stop", "reason": reason, "verification": verification, "scoped": scoped}
     )
     d = _mk(tmp_path, reason, events)
     scan = session_log.scan_session_log(d / "logs.jsonl")
@@ -248,9 +253,9 @@ def test_harness_end_labels_agree_across_the_scan_and_both_folds(
     assert session_status.status_for_session_dir(d, scan.status_facts()) == expected
     assert session_status.status_for_session_dir(d, status_facts(fold)) == expected
     summary = listing.summarize_session_dir(d)
-    assert (summary.status, summary.reason) == expected
+    assert (summary.status, summary.detail) == expected
     label = f"finished · {gate_detail or detail}"
-    assert format.listing_status_label(summary.mode, summary.status, summary.reason) == label
+    assert format.listing_status_label(summary.mode, summary.status, summary.detail) == label
     done = next(it for it in transcript.fold_transcript(events) if it.kind == "done")
     assert done.name == label
 
@@ -283,7 +288,7 @@ def test_pending_step_stop_labels_agree_in_the_listing_and_typed_fold(
     assert session_status.status_for_session_dir(d, scan.status_facts()) == (word, reason)
     assert session_status.status_for_session_dir(d, status_facts(fold)) == (word, reason)
     row = listing.summarize_session_dir(d)
-    assert (row.status, row.reason) == (word, reason)
+    assert (row.status, row.detail) == (word, reason)
     assert session_state_as_dict(fold, d)["status_label"] == format.status_label(word, reason)
     assert listing.summary_row(row)["label"] == format.status_label(word, reason)
 
@@ -316,13 +321,13 @@ def test_clearing_a_pending_step_stop_clears_its_label(tmp_path: pathlib.Path) -
     assert ipc.request_stop(d)
     assert session_state_as_dict(fold, d)["status_label"] == ("running · stopping after this turn")
     ipc.clear_stop_request(d)
-    assert listing.summarize_session_dir(d).reason == ""
+    assert listing.summarize_session_dir(d).detail == ""
     assert session_state_as_dict(fold, d)["status_label"] == "running"
 
 
-@pytest.mark.parametrize(("all_passed", "word"), [(True, "passed"), (None, "finished")])
+@pytest.mark.parametrize(("verification", "word"), [("passed", "passed"), (None, "finished")])
 def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
-    tmp_path: pathlib.Path, all_passed: bool | None, word: str
+    tmp_path: pathlib.Path, verification: kinds.Verification | None, word: str
 ) -> None:
     """A run whose commits all failed listed as plain "passed" while it exited 5.
 
@@ -330,9 +335,9 @@ def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
     without it.
     """
     end: dict[str, object] = {
-        "type": "session.end",
+        "type": "session.stop",
         "reason": "finish_session",
-        "all_passed": all_passed,
+        "verification": verification,
     }
     events: list[dict[str, object]] = [_START, end, {"type": "session.stranded"}]
     d = _mk(tmp_path, "strand-AAAAAA", events)
@@ -341,7 +346,7 @@ def test_a_finish_whose_edits_got_no_commit_reads_not_committed(
     for facts in (scan.status_facts(), status_facts(fold)):
         assert session_status.status_for_session_dir(d, facts) == (word, "not committed")
     row = listing.summarize_session_dir(d)
-    assert format.status_label(row.status, row.reason) == f"{word} · not committed"
+    assert format.status_label(row.status, row.detail) == f"{word} · not committed"
 
     resumed = [*events, _RESUME, end]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in resumed), encoding="utf-8")
@@ -366,8 +371,8 @@ def test_resume_clears_orphaned_approvals_and_carries_questions() -> None:
         _APPROVAL,
     ]
     state = viewmodel_state.fold_session(events)
-    assert len(state.pending_approvals) == 1  # the new execution's, not the orphan + a dup
-    (question,) = state.pending_questions
+    assert len(state.approvals) == 1  # the new execution's, not the orphan + a dup
+    (question,) = state.questions
     assert not question.answered and question.blocking is False
     assert status_facts(state).operator_blocked and status_facts(state).blocked_kind == "approval"
 
@@ -433,7 +438,7 @@ def test_pending_questions_are_counted_in_both_producers(tmp_path: pathlib.Path)
     assert session_status.status_for_session_dir(d, status_facts(fold)) == expect
     ended: list[dict[str, object]] = [
         *running,
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     d = _mk(tmp_path, "ended-pending", ended, parked="", pid=os.getpid())
     scan = session_log.scan_session_log(d / "logs.jsonl")
@@ -457,7 +462,7 @@ def test_a_saved_answer_reads_as_saved_not_pending(tmp_path: pathlib.Path) -> No
             "questions": [{"question": "a?"}],
             "wait": False,
         },
-        {"type": "session.end", "reason": "finish_session", "all_passed": True},
+        {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
     ]
     d = _mk(tmp_path, "saved-answer", ended, parked="", pid=os.getpid())
     assert ipc.write_question_answers(d, "question-1", ["x"])

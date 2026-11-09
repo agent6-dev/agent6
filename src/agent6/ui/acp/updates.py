@@ -157,7 +157,7 @@ class RunInfo:
                     self._verification = evidence.from_event(event)
                 except ValueError:
                     self._verification = None
-            case "session.end":
+            case "session.stop":
                 record = self._verification
                 if record is not None:
                     final = record.verify_id == event.get("final_verify_id") and record.certifies(

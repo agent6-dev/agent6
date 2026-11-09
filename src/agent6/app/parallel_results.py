@@ -11,7 +11,7 @@ import threading
 from collections.abc import Mapping
 
 from agent6 import budget as agent6_budget
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import compare as app_compare
 from agent6.app import finalize, lane_watch, stamps
 from agent6.app import reporter as app_reporter
@@ -98,11 +98,13 @@ def stamp_compare_outcomes(
         reporter.note(f"group [{group}]: the comparison stamp failed: {err}")
     of = len(candidates)
     crown = fanout_exit_code(candidates) != finalize.EXIT_VERIFY_FAILED
-    any_verified = any(c.verify_ok is True for c in candidates)
+    any_verified = any(c.verification == "passed" for c in candidates)
     by_id = {c.session_id: c for c in candidates}
     for rank_pos, session_id in enumerate(outcome.ranking, start=1):
         winner = (
-            rank_pos == 1 and crown and (not any_verified or by_id[session_id].verify_ok is True)
+            rank_pos == 1
+            and crown
+            and (not any_verified or by_id[session_id].verification == "passed")
         )
         compare = sessions_manifest.CompareStamp(rank=rank_pos, of=of, winner=winner, group=group)
         err = stamp(lane_watch.lane_link(origin_state, session_id), compare=compare)
@@ -274,7 +276,7 @@ def import_lanes(
         )
         summary = summarize_session_dir(dest)
         scan = session_log.scan_session_log(dest / sessions_layout.LOGS_NAME)
-        budget_stops += scan.end_reason == "budget_exhausted"
+        budget_stops += scan.stop_reason == "budget_exhausted"
         if scan.plan_usage is not None and (provider := lane_provider(dest)):
             seen = (scan.plan_usage_at, scan.plan_usage)
             readings[provider] = max(readings.get(provider, seen), seen, key=lambda r: r[0])
@@ -283,7 +285,7 @@ def import_lanes(
             failed.append(
                 (
                     landed,
-                    f"no result ({format.status_label(summary.status, summary.reason)});"
+                    f"no result ({format.status_label(summary.status, summary.detail)});"
                     f" {imported_branch_note(origin, res.branch)}, not ranked",
                 )
             )
@@ -296,7 +298,7 @@ def import_lanes(
                 session_id=res.spec.session_id,
                 task=app_compare.manifest_task(dest, task),
                 diff=git_read.diff_since(res.spec.workdir, base_sha),
-                verify_ok=summary.verify_ok,
+                verification=summary.verification,
                 cost_usd=summary.cost_usd,
             )
         )
@@ -337,9 +339,13 @@ def fanout_exit_code(
     """
     if not candidates:
         return 3 if all_budget_exhausted else 1
-    if any(c.verify_ok is True for c in candidates):
+    if any(c.verification == "passed" for c in candidates):
         return 0
-    return finalize.EXIT_VERIFY_FAILED if any(c.verify_ok is False for c in candidates) else 0
+    return (
+        finalize.EXIT_VERIFY_FAILED
+        if any(c.verification in ("failed", "unverified") for c in candidates)
+        else 0
+    )
 
 
 def print_report(
@@ -376,7 +382,7 @@ def print_report(
             scan = session_log.scan_session_log(res.session_dir / sessions_layout.LOGS_NAME)
             for line in scan.setup_output.splitlines():
                 reporter.out(f"    {line}")
-            if scan.end_reason == "budget_exhausted":
+            if scan.stop_reason == "budget_exhausted":
                 reporter.out(
                     "    raise the cap on the fork (--max-usd, --max-plan-points or"
                     " --max-tokens-fallback), then continue with:"
@@ -387,21 +393,28 @@ def print_report(
                 reporter.out(f"    kept: {', '.join(str(p) for p in kept)}")
 
 
-def fanout_end(rc: int, candidates: list[judge.CandidateBrief]) -> tuple[str, bool | None]:
-    """Map the fan-out's exit code to its `session.end` reason and gate verdict.
+def fanout_end(
+    rc: int, candidates: list[judge.CandidateBrief]
+) -> tuple[str, kinds.Verification | None]:
+    """Map the fan-out's exit code to its `session.stop` reason and gate verdict.
 
     Args:
         rc: The exit code.
         candidates: The rankable lanes.
 
     Returns:
-        The reason and `all_passed`: True when a lane's gate went green, None when
-        no lane had a gate.
+        The reason and final verification word, or None without a recorded verdict.
     """
     if rc == 130:
-        return "interrupted", False
+        return "interrupted", None
     if rc == 3:
-        return "budget_exhausted", False
+        return "budget_exhausted", None
     if rc == 0:
-        return "lanes_ranked", True if any(c.verify_ok for c in candidates) else None
-    return ("no_lane_passed" if rc == finalize.EXIT_VERIFY_FAILED else "no_lane_result"), False
+        return "lanes_ranked", "passed" if any(
+            c.verification == "passed" for c in candidates
+        ) else "not_applicable"
+    return (
+        ("no_lane_passed", "failed")
+        if rc == finalize.EXIT_VERIFY_FAILED
+        else ("no_lane_result", None)
+    )
