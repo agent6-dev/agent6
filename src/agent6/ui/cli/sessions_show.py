@@ -59,8 +59,8 @@ def _print_lineage(manifest: sessions_manifest.SessionManifest) -> None:
     if lineage:
         print(f"forked from: {lineage}")
     if manifest.worktree is not None:
-        gone = "" if manifest.worktree.is_dir() else " (gone)"
-        print(f"worktree:   {manifest.worktree}{gone}")
+        missing = sessions_manifest.worktree_blocker(manifest.worktree)
+        print(missing or f"worktree:   {manifest.worktree}")
 
 
 def _print_parallel_compare(

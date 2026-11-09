@@ -480,3 +480,10 @@ def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
         return SessionManifest.model_validate(data)
     except pydantic.ValidationError as exc:
         raise ManifestError(str(exc)) from exc
+
+
+def worktree_blocker(worktree: pathlib.Path | None) -> str:
+    """Return the resume refusal for a recorded worktree absent from this home."""
+    if worktree is not None and not (worktree / ".git").exists():
+        return f"worktree {worktree} not found; resume needs it"
+    return ""

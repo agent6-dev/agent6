@@ -252,18 +252,17 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         reporter.error(listing.fanout_resume_refusal(session_id))
         return 2
     cwd = manifest.worktree or repo
+    if missing := sessions_manifest.worktree_blocker(manifest.worktree):
+        reporter.error(
+            f"cannot resume {session_id}: {missing}; {commits_note(repo, manifest)};"
+            f" `agent6 fork {session_id}` continues it in a new worktree."
+        )
+        return 2
     if manifest.worktree is not None and manifest.worktree_git_dir is None:
         reporter.error(
             f"cannot resume {session_id}: its manifest names a worktree but not the repository"
             f" git dir it points into, so its jail cannot grant one; `agent6 fork {session_id}`"
             " continues its commits in a new worktree."
-        )
-        return 2
-    if manifest.worktree is not None and not (cwd / ".git").exists():
-        reporter.error(
-            f"cannot resume {session_id}: its worktree {cwd} is gone (pruned or removed);"
-            f" {commits_note(repo, manifest)}; `agent6 fork {session_id}` continues it in a"
-            " new worktree."
         )
         return 2
     # One writer per session dir, taken before any shared state is touched.

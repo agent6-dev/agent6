@@ -18,30 +18,25 @@ from agent6 import kinds, paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
-from agent6.viewmodel import comparison, format, review_queue, session_log, session_status
+from agent6.viewmodel import comparison, events, format, review_queue, session_log, session_status
 
 
 def session_mtime(session_dir: pathlib.Path) -> float:
-    """Return a session's last-activity time as epoch seconds.
-
-    The journal's mtime, else the manifest's, else the dir's; never the dir's first,
-    since a viewer's `frontends/` claim bumps it and would float a viewed run to newest.
-
-    Args:
-        session_dir: The session's state dir.
-
-    Returns:
-        The mtime, 0.0 when none of the three can be read.
-    """
+    """Return the last recorded event time, or the manifest start time without events."""
+    scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
+    if scan.last_ep is not None:
+        return scan.last_ep
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        if started := events.event_epoch(sessions_manifest.read_manifest(session_dir).start_ts):
+            return started
+    # Legacy state without recorded times has only filesystem metadata.
     for candidate in (
         session_dir / layout.LOGS_NAME,
         session_dir / sessions_manifest.MANIFEST_NAME,
         session_dir,
     ):
-        try:
+        with contextlib.suppress(OSError):
             return candidate.stat().st_mtime
-        except OSError:
-            continue
     return 0.0
 
 
@@ -131,6 +126,7 @@ class SessionSummary:
         model: The manifest's provider/model route for this execution.
         model_from_flag: The route came from a `--model` flag rather than config.
         worktree: The linked worktree the run works in, "" for a run in the checkout.
+        worktree_missing: The refusal when the recorded worktree is absent in this home.
         review_queue: Where the session sits in the review queue, derived from its journal.
     """
 
@@ -153,6 +149,7 @@ class SessionSummary:
     model: str = ""
     model_from_flag: bool = False
     worktree: str = ""
+    worktree_missing: str = ""
     review_queue: review_queue.ReviewQueueEntry = dataclasses.field(
         default_factory=review_queue.ReviewQueueEntry
     )
@@ -170,7 +167,10 @@ class SessionSummary:
     def id_cell(self, *, winner: bool) -> str:
         """Return the id cell every listing shows: the id, then the winner and worktree marks."""
         cell = f"{self.session_id} {format.WINNER_GLYPH}" if winner else self.session_id
-        return f"{cell} {format.WORKTREE_MARK}" if self.worktree else cell
+        if self.worktree:
+            missing = self.worktree_missing
+            return f"{cell} ({missing})" if missing else f"{cell} {format.WORKTREE_MARK}"
+        return cell
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -557,11 +557,8 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
                 f' branch; `agent6 fork {session_dir.name} --steer "..."` continues it in a'
                 " worktree of its own"
             )
-        if m.worktree is not None and not (m.worktree / ".git").exists():
-            return (
-                f"its worktree {m.worktree} is gone; `agent6 fork {session_dir.name}` continues"
-                " it in a new worktree"
-            )
+        if missing := sessions_manifest.worktree_blocker(m.worktree):
+            return missing
     if not (session_dir / "loop_state.json").is_file():
         return (
             "it never reached its first turn, so there is nothing to resume; start the task again"
@@ -734,7 +731,7 @@ def summarize_session_dir(
         unmerged=has_unmerged,
         cost_usd=scan.cost_usd or 0.0,
         usd_partial=scan.usd_partial,
-        last_activity=session_mtime(session_dir),
+        last_activity=scan.last_ep if scan.last_ep is not None else session_mtime(session_dir),
         verification=scan.verification,
         coordinator=lineage.coordinator if lineage is not None else "",
         lane=lineage.lane if lineage is not None else None,
@@ -744,5 +741,6 @@ def summarize_session_dir(
         model=format.format_model_route(manifest.models.driver) if manifest is not None else "",
         model_from_flag=manifest.models.driver_from_flag if manifest is not None else False,
         worktree=str(manifest.worktree) if manifest is not None and manifest.worktree else "",
+        worktree_missing=sessions_manifest.worktree_blocker(manifest.worktree) if manifest else "",
         review_queue=queue,
     )

@@ -158,6 +158,8 @@ def test_the_list_marks_a_run_that_works_in_its_own_worktree(
     _run(runs, "apart")
     _run(runs, "inplace")
     worktree = tmp_path / "cache" / "apart"
+    worktree.mkdir(parents=True)
+    (worktree / ".git").write_text("gitdir: elsewhere")
     (runs / "apart" / "manifest.json").write_text(
         json.dumps({"mode": "run", "worktree": str(worktree)}), encoding="utf-8"
     )

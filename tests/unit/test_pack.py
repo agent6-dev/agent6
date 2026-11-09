@@ -29,6 +29,70 @@ def _digest(text: str) -> str:
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def test_session_listing_survives_move(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Imported activity comes from events, and an absent worktree cannot look present."""
+    from agent6.sessions import manifest
+    from agent6.ui.cli import sessions_cmds, sessions_show
+    from agent6.viewmodel import listing
+
+    source = tmp_path / "source"
+    source.mkdir()
+    worktree = source / "linked"
+    worktree.mkdir()
+    (worktree / ".git").write_text("gitdir: elsewhere")
+    session = paths.state_dir(source) / "sessions/runs/s1"
+    _write(
+        session / "manifest.json",
+        manifest.SessionManifest(session_id="s1", worktree=worktree).model_dump_json(),
+    )
+    _write(
+        session / "logs.jsonl",
+        json.dumps({"type": "session.end", "ts": "2020-01-02T03:04:05Z"}) + "\n",
+    )
+    parked = session.parent / "parked"
+    _write(
+        parked / "manifest.json",
+        manifest.SessionManifest(
+            session_id="parked", start_ts="2019-01-02T03:04:05Z"
+        ).model_dump_json(),
+    )
+    before = listing.summarize_session_dir(session)
+    monkeypatch.chdir(source)
+    assert sessions_cmds._cmd_list(as_json=True) == 0
+    original = json.loads(capsys.readouterr().out)[0]
+    pack.pack(source)
+    dest = tmp_path / "destination"
+    dest.mkdir()
+    shutil.move(source / ".agent6", dest / ".agent6")
+    shutil.rmtree(worktree)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "other-home/state"))
+    pack.unpack(dest)
+    landed = paths.state_dir(dest) / "sessions/runs/s1"
+    os.utime(landed / "logs.jsonl", (1800000000, 1800000000))
+    after = listing.summarize_session_dir(landed)
+    assert before.last_activity == after.last_activity == 1577934245
+    assert (
+        listing.session_mtime(parked)
+        == listing.session_mtime(landed.parent / "parked")
+        == 1546398245
+    )
+    assert "(worktree)" in before.id_cell(winner=False)
+    assert "(worktree)" not in after.id_cell(winner=False)
+    assert f"worktree {worktree} not found; resume needs it" in after.id_cell(winner=False)
+    refusal = f"worktree {worktree} not found; resume needs it"
+    assert refusal in listing.resume_blocker(landed)
+    monkeypatch.chdir(dest)
+    assert sessions_cmds._cmd_list(as_json=True) == 0
+    imported = json.loads(capsys.readouterr().out)[0]
+    assert original["last_activity"] == imported["last_activity"]
+    assert original["when"] == imported["when"]
+    assert refusal in imported["id_cell"]
+    assert sessions_show._cmd_status("s1") == 0
+    assert refusal in capsys.readouterr().out
+
+
 def test_pack_snapshot(tmp_path: pathlib.Path) -> None:
     """A pack carries global settings, skills and repo payload, not locks or transfer hashes."""
     root = tmp_path / "project"
