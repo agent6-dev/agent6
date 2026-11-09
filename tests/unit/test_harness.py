@@ -9630,3 +9630,28 @@ def test_media_recovery_is_one_shot_and_only_caches_unsupported() -> None:
         )
     assert send.call_count == 2
     assert not recovery.unsupported
+
+
+def test_a_subject_that_cannot_read_git_reports_the_failed_commit(tmp_path: pathlib.Path) -> None:
+    """The subject's own git read sits inside the commit's error boundary.
+
+    A capture error there raised through the turn instead of reporting uncaptured work.
+    """
+    from agent6 import errors
+
+    events: list[dict[str, Any]] = []
+    wf = _wf(root=tmp_path, mode="run", per_turn=True)
+
+    def _capture(_type: str, **f: Any) -> None:
+        events.append({"type": _type, **f})
+
+    wf.events = mock.MagicMock()
+    wf.events.emit = _capture  # type: ignore[method-assign]
+    turn = _turn(number=3)
+    turn.edited = True
+    fault = errors.GitError("unable to read tree")
+    with mock.patch.object(type(wf.chain), "name_status", side_effect=fault):
+        wf._turn_auto_commit_and_metric(_state(), turn)  # pyright: ignore[reportPrivateUsage]
+    (evt,) = [e for e in events if e["type"] == "loop.auto_commit.failed"]
+    assert evt["commit_subject"] == "checkpoint" and "unable to read tree" in evt["error"]
+    assert turn.committed is False

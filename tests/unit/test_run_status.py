@@ -1421,3 +1421,68 @@ def test_show_json_carries_the_points_earlier_executions_banked(
     assert sessions_show._cmd_status("winsome-dawn", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
     assert (obj["plan_consumed"], obj["plan_prior_executions"], obj["plan_cap"]) == (5.0, 3.0, 10.0)
+
+
+def test_a_live_run_asking_after_an_earlier_end_reads_waiting(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A resume that asks before its execution begins is waiting, not the earlier end's word.
+
+    It read "passed (worker pid N alive)", and `agent6 answer` saved the answer for a resume
+    instead of handing it to the live worker.
+    """
+    from agent6.viewmodel import listing
+
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(5), "type": "session.start", "mode": "run"},
+            {
+                "ts": _ts(10),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
+            {
+                "ts": _ts(20),
+                "type": "question.prompt",
+                "id": "q1",
+                "prompt": "continue?",
+                "wait": True,
+            },
+        ],
+    )
+    process.write_worker_pid(d, os.getpid())
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "waiting"
+    assert listing.summarize_session_dir(d).status == "waiting"
+    assert listing.session_is_live(d)
+
+
+def test_a_record_a_newer_agent6_wrote_reads_unreadable_with_the_upgrade(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An older agent6 says the record is newer than it reads, not that the worker died."""
+    from agent6.sessions import manifest as sessions_manifest
+
+    d = _make_run(
+        tmp_path,
+        monkeypatch,
+        [
+            {"ts": _ts(5), "type": "session.start", "mode": "run"},
+            {
+                "ts": _ts(10),
+                "type": "session.stop",
+                "reason": "finish_session",
+                "verification": "passed",
+            },
+        ],
+    )
+    record = json.loads((d / "manifest.json").read_text())
+    record["version"] = sessions_manifest.MANIFEST_VERSION + 1
+    (d / "manifest.json").write_text(json.dumps(record))
+    assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
+    obj = json.loads(capsys.readouterr().out)
+    assert obj["status"] == "unreadable"
+    assert "newer record" in obj["detail"] and "upgrade agent6" in obj["detail"]

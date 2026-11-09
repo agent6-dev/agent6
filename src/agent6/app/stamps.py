@@ -105,21 +105,13 @@ def _models_brief(
 def write_manifest(path: pathlib.Path, m: manifest.SessionManifest) -> None:
     """Serialize the manifest to disk atomically; the one place one reaches disk.
 
-    An older manifest is upgraded to the shape written; a newer one is refused, since
-    `extra="ignore"` would drop the keys this binary does not know.
+    An older manifest is upgraded to the shape written; a newer one never reaches here, since
+    `read_manifest` refuses it.
 
     Args:
         path: The manifest file.
         m: The manifest to write.
-
-    Raises:
-        ManifestError: The manifest on disk is newer than this agent6 understands.
     """
-    if m.version > manifest.MANIFEST_VERSION:
-        raise manifest.ManifestError(
-            f"refusing to rewrite {path}: it is version {m.version}, newer than this agent6 "
-            f"understands (version {manifest.MANIFEST_VERSION}). Upgrade agent6 to stamp this run."
-        )
     if m.version != manifest.MANIFEST_VERSION:
         m = m.model_copy(update={"version": manifest.MANIFEST_VERSION})
     portable.atomic_write(path, m.model_dump_json(indent=2) + "\n")

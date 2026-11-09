@@ -286,6 +286,14 @@ class StatusFacts:
     stranded: bool = False
 
 
+def _waiting_reason(facts: StatusFacts) -> str:
+    """Return what a waiting run waits on and for how long."""
+    if facts.blocked_kind and facts.blocked_since_ep is not None:
+        age = format.format_age(time.time() - facts.blocked_since_ep)
+        return f"{facts.blocked_kind} {age}"
+    return "needs answer"
+
+
 def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tuple[str, str]:
     """Decide the status word and detail for a session that has a dir on disk.
 
@@ -300,9 +308,17 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
         facts: The event-derived facts from either reader.
 
     Returns:
-        The `(word, detail)` pair.
+        The `(word, detail)` pair; a record a newer agent6 wrote is "unreadable" with
+        the upgrade named, whatever the journal says.
     """
-    if facts.finished:
+    if (newer := sessions_manifest.newer_record(session_dir)) is not None:
+        return "unreadable", format.clip_cell(newer, 60)
+    live = process.worker_is_alive(session_dir)
+    if facts.operator_blocked and live:
+        # Before session.start too: a run asks about uncommitted changes before it starts, and a
+        # resume asks before its own execution begins, while the journal still ends in a stop.
+        word, reason = "waiting", _waiting_reason(facts)
+    elif facts.finished:
         word, reason = status_word(
             finished=True,
             verification=facts.verification,
@@ -316,15 +332,6 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
             note = f"{n} question{'s' if n != 1 else ''} unanswered"
             reason = f"{reason} · {note}" if reason else note
         return word, _with_pending(reason, facts.pending_questions, session_dir, " for the resume")
-    live = process.worker_is_alive(session_dir)
-    if facts.operator_blocked and live:
-        # Before session.start too: a run asks about uncommitted changes before it starts.
-        word = "waiting"
-        if facts.blocked_kind and facts.blocked_since_ep is not None:
-            age = format.format_age(time.time() - facts.blocked_since_ep)
-            reason = f"{facts.blocked_kind} {age}"
-        else:
-            reason = "needs answer"
     elif not facts.started:
         word, reason = unstarted_status(session_dir)
     elif not live:

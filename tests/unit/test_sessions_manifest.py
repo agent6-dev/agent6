@@ -211,14 +211,12 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
     assert sessions_manifest.read_manifest(tmp_path) == m
 
 
-def test_rewriting_a_newer_manifest_is_refused(tmp_path: pathlib.Path) -> None:
-    """A rewrite of a manifest a newer agent6 wrote is refused; reads stay tolerant.
+def test_reading_a_newer_manifest_is_refused(tmp_path: pathlib.Path) -> None:
+    """A manifest a newer agent6 wrote refuses to read, naming both versions and the upgrade.
 
-    `extra="ignore"` drops the keys this binary does not know, so a stamp would silently
-    downgrade the record it was meant to annotate.
+    `extra="ignore"` read it as a plain older record, so a dead worker read "stale (worker
+    exited without finishing)" and a stamp would have silently downgraded the record.
     """
-    from agent6.app import stamps
-
     _write(
         tmp_path,
         {
@@ -227,12 +225,13 @@ def test_rewriting_a_newer_manifest_is_refused(tmp_path: pathlib.Path) -> None:
             "future_key": {"x": 1},
         },
     )
-    m = sessions_manifest.read_manifest(tmp_path)  # reading it is fine
-    assert m.session_id == "r-1"
+    newer = sessions_manifest.MANIFEST_VERSION + 1
     with pytest.raises(
-        sessions_manifest.ManifestError, match=f"version {sessions_manifest.MANIFEST_VERSION + 1}"
+        sessions_manifest.ManifestError,
+        match=f"newer record .manifest version {newer} > {sessions_manifest.MANIFEST_VERSION}.:"
+        " upgrade agent6",
     ):
-        stamps.write_manifest(tmp_path / "manifest.json", m)
+        sessions_manifest.read_manifest(tmp_path)
     # Untouched on disk: the newer record keeps its version AND its keys.
     on_disk = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert on_disk["version"] == sessions_manifest.MANIFEST_VERSION + 1

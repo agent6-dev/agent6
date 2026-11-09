@@ -1187,11 +1187,12 @@ class Harness:
         if not self.chain.per_turn:
             # `commit_per_turn` governs the commit only; the metric block is promised regardless.
             return self._sample_metric(state, turn, sha="")
-        commit_subject = self.checkpoints.subject(
-            turn, fallback="checkpoint" if unjudged_changed else "verify passed"
-        )
+        fallback = "checkpoint" if unjudged_changed else "verify passed"
+        commit_subject = fallback
         sha = ""
         try:
+            # The subject reads git too (the chain's delta): a fault there is a failed commit.
+            commit_subject = self.checkpoints.subject(turn, fallback=fallback)
             sha = self.checkpoints.commit(
                 commit_subject, turn=turn.number, task_id=state.focus.surfaced_task_id
             )

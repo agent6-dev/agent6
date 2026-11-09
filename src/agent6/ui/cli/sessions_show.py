@@ -170,6 +170,9 @@ def _status_state(
     """
     word, reason = row.status, row.detail
     cell = format.listing_status_label(row.mode, row.status, row.detail, unmerged=row.unmerged)
+    if word == "unreadable":
+        # The record, not the journal, decides: a newer or corrupt manifest names itself.
+        return word, cell, format.dead_run_note(word, reason)[0]
     if scan.finished:
         if scan.end_summary:
             # The `ended:` line carries the run's own sentence; the raw reason would repeat it.

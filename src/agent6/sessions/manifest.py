@@ -458,6 +458,30 @@ def group_steer_refusal(session_dir: pathlib.Path) -> str | None:
     )
 
 
+def _newer_note(data: dict[str, object]) -> str | None:
+    """Return the note for a record a newer agent6 wrote, or None."""
+    version = data.get("version")
+    if isinstance(version, int) and version > MANIFEST_VERSION:
+        return f"newer record (manifest version {version} > {MANIFEST_VERSION}): upgrade agent6"
+    return None
+
+
+def newer_record(session_dir: pathlib.Path) -> str | None:
+    """Return the note for a manifest a newer agent6 wrote; None for any other file.
+
+    A version read only: the status decision asks this on every refresh, and a corrupt
+    or missing file is the full reader's business.
+
+    Args:
+        session_dir: The session directory.
+    """
+    try:
+        data = json.loads((session_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return _newer_note(data) if isinstance(data, dict) else None
+
+
 def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
     """Parse a session's manifest.json.
 
@@ -469,7 +493,7 @@ def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
 
     Raises:
         ManifestError: The file cannot be read, is not JSON (a truncated file, a torn UTF-8
-            tail), is not a JSON object, or fails validation.
+            tail), is not a JSON object, was written by a newer agent6, or fails validation.
     """
     path = session_dir / MANIFEST_NAME
     try:
@@ -478,6 +502,9 @@ def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
         raise ManifestError(str(exc)) from exc
     if not isinstance(data, dict):
         raise ManifestError("manifest is not a JSON object")
+    if (newer := _newer_note(data)) is not None:
+        # `extra="ignore"` would read a record it cannot interpret as a plain older one.
+        raise ManifestError(newer)
     if "harness" not in data and "workflow" in data:
         data["harness"] = data.pop("workflow")  # the stamp's key through version 3
     budget = data.get("budget")
