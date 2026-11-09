@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "A coding agent that jails model commands and uses editable state machines for long-running tasks."
 readme = "README.md"
 urls = { "Documentation" = "https://agent6.dev", "Homepage" = "https://agent6.dev", "Source" = "https://github.com/agent6-dev/agent6" }
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Eric Lesiuta" }]
 dependencies = [
@@ -99,7 +99,7 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py313"
 src = ["src", "tests"]
 # bench task repos are agent-input fixtures (some deliberately buggy); demo
 # seeds replay committed cassettes byte-exact. Lint must not touch either.
@@ -617,7 +617,7 @@ banned-from = [
 
 [tool.pyright]
 include = ["docs/gen_contracts.py", "docs/gen_formats.py", "src", "tests"]
-pythonVersion = "3.12"
+pythonVersion = "3.13"
 typeCheckingMode = "strict"
 reportMissingTypeStubs = false
 reportUnknownMemberType = false

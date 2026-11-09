@@ -114,7 +114,7 @@
 
 ### Project conventions
 
-- **Language**: Python 3.12+.
+- **Language**: Python 3.13+, the three most recent releases.
   Every `.py` file starts with `from __future__ import annotations`.
   Strict pyright.
 - **Layout**: src layout under `src/agent6/`; tests under `tests/`; Rust sandbox launcher under `src/agent6/jail/`.

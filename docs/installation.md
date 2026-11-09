@@ -56,7 +56,7 @@ For rustup's `cargo`, follow the [Rust toolchain setup](security.md#rust-toolcha
 
 ## Requirements
 
-- Python 3.12 or newer
+- Python 3.13 or newer
 - A C compiler on Python 3.15 (`tree-sitter` ships no wheel for it)
 - A Rust toolchain where `tree-sitter-language-pack` has no wheel (it ships wheels for glibc 2.34 and newer on x86_64 and aarch64, and builds with maturin elsewhere)
 - git 2.47 or newer

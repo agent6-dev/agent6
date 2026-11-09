@@ -106,7 +106,7 @@ jobs:
         # `uv build` tags the wheel `py3-none-linux_<arch>` (set by
         # hatch_build.py: the only native artifact is the bundled agent6-jail
         # binary, independent of the Python ABI — one wheel covers every
-        # interpreter satisfying `requires-python = ">=3.12"`). PyPI refuses
+        # interpreter satisfying `requires-python = ">=3.13"`). PyPI refuses
         # unqualified `linux_*` tags. The bundled binary is STATIC musl with no
         # glibc dependency, so it runs on any manylinux (down to 2_17) AND on
         # musl systems (Alpine); we advertise both. Re-tagging is pure metadata
