@@ -337,7 +337,7 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
     host cannot honor is refused, never downgraded.
 
     Args:
-        requested: "auto", "full", "partial" or "none".
+        requested: "auto", "full", "partial", "none" or "container".
         env: The detected environment.
 
     Returns:
@@ -349,8 +349,10 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
     """
     if sandbox_disabled_by_env():
         requested = "none"
+    # `container`: the launcher runs its `none` branch inside the container; the runtime is the
+    # boundary, so no host namespace probe decides anything here.
     if not env.sandbox_available:
-        if requested in ("auto", "none"):
+        if requested in ("auto", "none", "container"):
             return "none"
         raise IsolationUnavailableError(
             f"sandbox.isolation = {requested!r} requires the Linux kernel sandbox "
@@ -362,7 +364,7 @@ def resolve_isolation(requested: str, env: Environment) -> kinds.IsolationLevel:
         # `none` is never silent: callers warn, and with auto-approved run_command a confirm
         # gate fires too.
         return env.detected_isolation
-    if requested == "none":
+    if requested in ("none", "container"):
         # Self-authorizing: the config key, the flag and the env var are all operator-only.
         return "none"
     if requested in ("full", "partial") and not env.seccomp_arch_supported:

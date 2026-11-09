@@ -18,6 +18,7 @@ import pydantic
 
 from agent6 import child_env, kinds
 from agent6.config import (
+    container_config,
     git_config,
     harness_config,
     io,
@@ -80,6 +81,9 @@ class Config(pydantic.BaseModel):
     models: model_roles.ModelsConfig = pydantic.Field(default_factory=model_roles.ModelsConfig)
     sandbox: sandbox_config.SandboxConfig = pydantic.Field(
         default_factory=sandbox_config.SandboxConfig
+    )
+    container: container_config.ContainerConfig = pydantic.Field(
+        default_factory=container_config.ContainerConfig
     )
     git: git_config.GitConfig = pydantic.Field(default_factory=git_config.GitConfig)
     harness: harness_config.HarnessConfig = pydantic.Field(

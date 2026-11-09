@@ -11,6 +11,7 @@ import io
 import json
 import os
 import pathlib
+import shlex
 import signal
 import sys
 import time
@@ -164,6 +165,7 @@ def test_relative_path_runtime_keeps_its_identity_after_cwd_change(
     prefix = () if selection == "automatic" else (executable, *args)
     found = container.discover(workspace, container.ContainerOptions(runtime=prefix))
     assert found.runtime == (str(cli.path), *args)
+    assert found.target.runtime_id == shlex.join(found.runtime)
     assert found.exec == (str(cli.path), *args, "exec", "-i", "--user", "1001:1001", _ID)
     assert cli.calls()[0]["argv"] == [*args, *ps_args(workspace)]
     assert all(call["cwd"] == "/" for call in cli.calls())

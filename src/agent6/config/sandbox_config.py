@@ -25,20 +25,23 @@ class SandboxConfig(pydantic.BaseModel):
 
     # `none` is operator-only and LLM-unreachable, so writing it is the consent; the resolution
     # lives in detect.resolve_isolation.
-    isolation: Literal["auto", "full", "partial", "none"] = pydantic.Field(
+    isolation: Literal["auto", "full", "partial", "none", "container"] = pydantic.Field(
         json_schema_extra={
             "choice_meanings": {
                 "auto": "Strongest supported isolation, warning below full",
                 "full": "User and mount namespaces, seccomp and supported Landlock",
                 "partial": "Landlock and seccomp without namespaces",
                 "none": "Run commands without confinement",
+                "container": "Run commands inside the selected container",
             }
         },
         default="auto",
         description=(
             "Jailed-command confinement; explicit full or partial isolation refuses "
             "unsupported hosts; `--disable-sandbox` or `AGENT6_DISABLE_SANDBOX=1` disables "
-            "confinement."
+            "confinement; `container` runs every command inside the `[container]` selection, "
+            "where the runtime is the boundary and agent6 adds no confinement; filling "
+            "`[container]` alone changes nothing."
         ),
     )
     # A jailed child never out-reaches the process that launches it.

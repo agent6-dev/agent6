@@ -12,7 +12,7 @@ import pathlib
 
 from agent6 import errors, kinds
 from agent6 import paths as agent6_paths
-from agent6.app import confine, fork_worktrees, session_setup
+from agent6.app import confine, fork_worktrees, session_runtime, session_setup
 from agent6.config import Config
 from agent6.context import memory
 from agent6.sandbox import (
@@ -356,6 +356,68 @@ def _probe_checks(
     return [kinds.DoctorCheck(name="sandbox", status=status, detail=detail)]
 
 
+def _container_section(cfg: Config) -> list[kinds.DoctorCheck]:
+    """Print the container a run would select, inspected and never started or stopped.
+
+    Args:
+        cfg: The config, with `sandbox.isolation = "container"`.
+
+    Returns:
+        The section's summary rows.
+    """
+    check_render.line(
+        f"  isolation: {common.sgr('container', '1')}  ",
+        "(sandbox.isolation = container; commands run inside the selected container, which the"
+        " runtime bounds; agent6 adds no confinement there)",
+    )
+    out: list[kinds.DoctorCheck] = []
+    root = pathlib.Path.cwd()
+    try:
+        report = session_runtime.describe_container(cfg, root)
+    except JailUnavailableError as exc:
+        check_render.result("FAIL", "container.discovery", str(exc))
+        out.append(kinds.DoctorCheck(name="container.discovery", status="FAIL", detail=str(exc)))
+    else:
+        check_render.result("PASS", "container.discovery", report.detail)
+        out.append(
+            kinds.DoctorCheck(name="container.discovery", status="PASS", detail=report.detail)
+        )
+        for line in report.exposures:
+            check_render.line("  ", f"the container exposes a {line}", warning=True)
+            out.append(kinds.DoctorCheck(name="container.exposure", status="WARN", detail=line))
+    refusal = confine.startup_refusal(cfg, "none", root)
+    if refusal is not None:
+        check_render.result("FAIL", "a run would refuse", refusal)
+        out.append(kinds.DoctorCheck(name="sandbox.refusal", status="FAIL", detail=refusal))
+    else:
+        detail = "every explicit setting works inside a container"
+        out.append(kinds.DoctorCheck(name="sandbox.refusal", status="PASS", detail=detail))
+    print()
+    check_render.line(f"  {common.sgr('effective controls', '1')} ", "(as a run resolves them):")
+    for control in target_policy.container_controls(cfg):
+        reason = f"; {control.reason}" if control.reason else ""
+        check_render.line(
+            "  ", f"{control.leaf}: {control.behaviour} ({control.owner}, {control.probe}){reason}"
+        )
+    print()
+    grants = tools_policy.resolve_grants(cfg, root)
+    ws = tools_policy.workspace_for(
+        cfg, root, memory_dir=memory.memory_dir(agent6_paths.state_dir(root)), grants=grants
+    )
+    check_render.line(
+        f"  {common.sgr('in-process file tools', '1')} ", f"({_FILE_TOOLS}; no approval):"
+    )
+    check_render.line("  ", "Filesystem enforcement: in-process path refusal, on the host.")
+    check_render.rows(sandbox_paths.file_tool_rows(ws, grants))
+    print()
+    check_render.line(
+        f"  {common.sgr('secrets:', '1')} {agent6_paths.secrets_path()}  ",
+        "(0600, never passed into a child's environment, never copied into the container)",
+    )
+    print()
+    return out
+
+
 def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
     """Print what the file tools, jailed commands and MCP servers can reach, then probe the jail.
 
@@ -373,6 +435,8 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
     except (detect.IsolationUnavailableError, JailUnavailableError) as exc:
         check_render.result("FAIL", "isolation selection", str(exc))
         return [kinds.DoctorCheck(name="sandbox.isolation", status="FAIL", detail=str(exc))]
+    if cfg.sandbox.isolation == "container":
+        return _container_section(cfg)
     _header(cfg, env, selected)
     out = [
         kinds.DoctorCheck(name="sandbox.isolation", status="PASS", detail=f"selected '{selected}'")

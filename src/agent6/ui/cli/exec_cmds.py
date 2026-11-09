@@ -224,6 +224,13 @@ def run_attached(policy: kinds.JailPolicy, session_net: jail.SessionNetwork | No
             common.error(jail.survivors_message(left))
 
 
+CONTAINER_EXEC_REFUSAL = (
+    "sandbox.isolation = 'container': the commands run inside the selected container, and"
+    " `agent6 exec` joins only a local jail. Use the runtime's own exec, such as"
+    " `docker exec -it <container> sh`."
+)
+
+
 def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
     """Run a command, or the operator's shell, in a fresh sandbox built from the config.
 
@@ -240,6 +247,9 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
     """
     if not lock.hold_workspace(cwd):
         common.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
+        return 2
+    if cfg.sandbox.isolation == "container":
+        common.refuse(CONTAINER_EXEC_REFUSAL)
         return 2
     with contextlib.ExitStack() as stack:
         try:

@@ -83,6 +83,11 @@ _SYMBOL_TOOL_ARMS: dict[str, frozenset[str]] = {
 }
 
 
+def _in_container(target: kinds.ExecutionTarget | None) -> bool:
+    """Return whether commands run inside a container, unconfined there by design."""
+    return target is not None and target.transport == "container"
+
+
 class ToolDispatcher:
     """The tool dispatcher of one execution, or of a bare caller such as a review seat.
 
@@ -190,6 +195,7 @@ class ToolDispatcher:
             command_access is not None
             and command_access.session is not None
             and command_access.session.startup_stderr
+            and not _in_container(command_access.session.target)
         ):
             self._emit("jail.degraded", detail=command_access.session.startup_stderr)
         self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {

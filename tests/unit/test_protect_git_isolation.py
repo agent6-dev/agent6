@@ -118,3 +118,18 @@ def test_a_new_top_level_entry_can_be_created_on_partial(tmp_path: pathlib.Path)
         )
     )
     assert "made-them" in res.stdout, res.stdout + res.stderr
+
+
+def test_container_isolation_warns_about_the_container_alone(tmp_path: pathlib.Path) -> None:
+    """The local jail's gap warnings describe a jail a container run does not use.
+
+    They read "this run resolved to 'none', so jailed commands share this host's network"
+    under the start block's policy lines that say the container's network applies.
+    """
+    reporter, lines = _said()
+    cfg = Config.model_validate({"sandbox": {"isolation": "container"}})
+    confine.warn_sandbox_gaps(
+        "none", _env_without_namespaces(), cfg, reporter=reporter, root=tmp_path
+    )
+    assert len(lines) == 1, lines
+    assert "inside the selected container" in lines[0]

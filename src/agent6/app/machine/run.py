@@ -382,6 +382,15 @@ def run_machine(  # noqa: C901, PLR0911, PLR0912, PLR0915  # the refusals, one p
         reporter.error(str(exc))
         return 2
     cfg = configs.machine.config
+    if any(
+        c.config.sandbox.isolation == "container"
+        for c in (configs.machine, *configs.states.values())
+    ):
+        reporter.refuse(
+            "sandbox.isolation = 'container' is for runs: a machine's states run their commands"
+            " on this host. Set sandbox.isolation to a local level for machines."
+        )
+        return 2
     # Every state's grants are judged against the regions any state may write.
     shared_writes = state_configs.shared_write_regions(configs, cwd)
     if any(

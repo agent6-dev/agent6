@@ -349,13 +349,13 @@ A resumed owner keeps ownership of the same container and loses it to a replacem
 The owner stops the environment through the stop command only when no borrower is live, none ended without releasing, and a stop command is set; the observation afterwards decides `stopped` or `unknown`.
 Every other case is `left_running` with its reason, and a lease whose owner's worker died is reported as orphaned, never inherited.
 `session_runtime.prepare_container_execution` composes acquisition, the checkout mapping check (`container.check_checkout`: a linked worktree, fork, review worktree or machine clone outside the mounted workspace, or a `.git` pointer outside it, refuses before any command), launcher preparation and the lifecycle hook on `JailAccess`; the dispatcher reports the hook's outcome as `execution.environment` after the session closed and its jobs settled.
-No public config selects this path yet.
+`sandbox.isolation = "container"` selects this path: `execution.run_execution` prepares it in place of the local session, the fan-out and the machine lifecycles refuse under it, and `agent6 exec` names the runtime's own exec instead.
 
 ## Container discovery
 
 `sandbox/container.py::discover` accepts an internal frozen `ContainerOptions`, not a public config model.
 It returns a `ContainerDiscovery` with an exec prefix, unprepared `ExecutionTarget` facts and unexpanded `remote_env` metadata.
-No application path activates it or starts a container.
+`sandbox.isolation = "container"` activates it; `[container].start` is the one way a run starts a container.
 Config conversion belongs in app/tools, not sandbox.
 
 - A nonempty `exec` bypasses runtime and definition discovery; each argv element is preserved unchanged, including sudo wrappers and an operator-installed devcontainer CLI.
@@ -386,7 +386,7 @@ The [security boundary](security.md#container-discovery-boundary) defines query 
 ## Container transport
 
 `sandbox/container.py::prepare` installs a validated static Linux launcher through the selected exec prefix, then hands its raw stdin/stdout channel to `JailSession.connect`.
-This internal transport has no application activation or container lifecycle authority.
+`sandbox.isolation = "container"` activates this transport; lifecycle authority is the lease's ([environment ownership](#environment-ownership)).
 The application remains responsible for selecting transports and resolving effective controls.
 `sandbox/container_install.py` owns ELF validation, fixed bootstrap code and the host half of the mount proof; `jail_session` imports neither container module.
 

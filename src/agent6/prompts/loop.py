@@ -30,6 +30,7 @@ user message is the task.
     "__PARTIAL_FS_RULE__"
     "__GIT_PROTECT_RULE__"
     "__NETWORK_RULE__"
+    "__CONTAINER_RULE__"
     "__AUTO_COMMIT_RULE__"
     """- finish_session requests the run end; the gates below may return it.
 </agent6>
@@ -77,6 +78,13 @@ MODEL_GIT_RULE_NO_COMMANDS = """- Nothing commits automatically in this run. Com
 GIT_PROTECT_RULE = """- `.git/` is read-only inside the jail: history-mutating git commands
   (`git checkout`, `git reset`) fail there. Prior content is readable
   (`git show HEAD:path`) and restorable with the edit tools.
+"""
+
+# Fills __CONTAINER_RULE__ only under container isolation: commands see the container's path to
+# the workspace, the file tools the host's; they are the same files.
+CONTAINER_RULE = """- run_command runs inside a container, where the workspace is
+  `__COMMAND_ROOT__`; the file tools use the host path `__HOST_ROOT__`. The same
+  files; give commands container paths and file tools host paths.
 """
 
 # Fills __NETWORK_RULE__ only where jailed commands join a network with no route out.

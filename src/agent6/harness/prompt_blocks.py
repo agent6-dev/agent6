@@ -243,6 +243,7 @@ def build_system_prompt(
     commands_allowed: bool | None = None,
     protected_paths: bool = False,
     dag_available: bool = True,
+    container_roots: tuple[str, str] | None = None,
 ) -> str:
     """Assemble the system prompt from the static blocks and the run's context.
 
@@ -262,6 +263,8 @@ def build_system_prompt(
         commands_allowed: Whether the model may run commands; None reads the config.
         protected_paths: Whether the jail has protect paths beyond `.git`.
         dag_available: Whether the run has a curator.
+        container_roots: The command root inside the container and the host root, when the
+            commands run in a container; None otherwise.
 
     Returns:
         The prompt text.
@@ -305,6 +308,14 @@ def build_system_prompt(
     )
     offline = allowed and target_policy.resolve_network(config, isolation) != "host"
     base = base.replace("__NETWORK_RULE__", loop.NETWORK_RULE if offline else "")
+    container_rule = (
+        loop.CONTAINER_RULE.replace("__COMMAND_ROOT__", container_roots[0]).replace(
+            "__HOST_ROOT__", container_roots[1]
+        )
+        if container_roots is not None
+        else ""
+    )
+    base = base.replace("__CONTAINER_RULE__", container_rule)
     has_gate = bool(config.harness.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", loop.PLAN_VERIFY_RULE if has_gate else "")
     base = base.replace("__READONLY_COMMAND_RULE__", loop.READONLY_COMMAND_RULE if allowed else "")

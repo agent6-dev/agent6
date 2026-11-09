@@ -340,14 +340,28 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if session_setup.wants_session_network(cfg, inputs.isolation):
             session_net = jail.SessionNetwork.open()
             process.write_session_netns_pid(layout.session_dir, session_net.holder_pid)
-        access = session_runtime.prepare_local_execution(
-            cfg,
-            cwd,
-            inputs.isolation,
-            name=layout.session_id,
-            session_net=session_net,
-            worktree_git_dir=inputs.worktree_git_dir,
-        )
+        if cfg.sandbox.isolation == "container":
+            access = session_runtime.prepare_container_execution(
+                cfg,
+                session_runtime.mounted_root(cwd, inputs.worktree_git_dir),
+                session_runtime.container_options(cfg),
+                state_dir=state_dir,
+                session_id=layout.session_id,
+                execution_id=execution_id,
+                checkout=cwd,
+                worktree_git_dir=inputs.worktree_git_dir,
+                controls=target_policy.container_controls(cfg),
+                reporter=reporter,
+            )
+        else:
+            access = session_runtime.prepare_local_execution(
+                cfg,
+                cwd,
+                inputs.isolation,
+                name=layout.session_id,
+                session_net=session_net,
+                worktree_git_dir=inputs.worktree_git_dir,
+            )
         assert access.session is not None
         cfg = inputs.gate(cfg, budget, access.session.executable_available)
 

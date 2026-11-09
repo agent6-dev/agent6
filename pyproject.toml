@@ -207,6 +207,7 @@ banned-from = [
     "agent6.app.workspace_setup",
     "agent6.budget",
     "agent6.child_env",
+    "agent6.config.container_config",
     "agent6.config.git_config",
     "agent6.config.harness_config",
     "agent6.config.header_config",

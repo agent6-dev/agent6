@@ -2,6 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 from __future__ import annotations
 
+import dataclasses
 import json
 import pathlib
 
@@ -65,3 +66,21 @@ def test_failed_preparation_never_invokes_one_shot(
     cfg = Config.model_validate({"sandbox": {"isolation": "none", "network": "host"}})
     with pytest.raises(jail.JailUnavailableError, match="preparation refused"):
         session_runtime.prepare_local_execution(cfg, tmp_path, "none")
+
+
+def test_a_container_session_reports_no_degraded_sandbox(tmp_path: pathlib.Path) -> None:
+    """The launcher runs unconfined inside a container by design; its notice is no degrade."""
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"}}
+    )
+    access = session_runtime.prepare_local_execution(cfg, tmp_path, "none")
+    assert access.session is not None and access.session.target is not None
+    access.session.startup_stderr = "[agent6-jail] WARNING: running UNCONFINED"
+    access.session.target = dataclasses.replace(access.session.target, transport="container")
+    log = tmp_path / "events.jsonl"
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=cfg, command_access=access, events=event_log.EventSink(log)
+    )
+    d.close()
+    events = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    assert not [event for event in events if event["type"] == "jail.degraded"]

@@ -275,6 +275,14 @@ For Go's compiled-package cache, see [Go build cache](usage.md#go-build-cache).
 
 <!-- config-table: sandbox -->
 
+## `[container]`
+
+The container `sandbox.isolation = "container"` runs every command in; the runtime is the boundary and agent6 adds no confinement there.
+With `exec` empty, agent6 finds this workspace's running Docker or Podman dev container by its labels ([Commands inside a dev container](usage.md#commands-inside-a-dev-container)).
+Filling this table alone changes nothing.
+
+<!-- config-table: container -->
+
 ## `[git]`
 
 <!-- config-table: git -->

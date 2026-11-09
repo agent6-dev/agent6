@@ -277,6 +277,11 @@ def _launch_policy(
         # The recorded word, not the holder: a host-network run can still hold a netns for MCP.
         network = stamped[1] if stamped[1] is not None else ("session" if pid else None)
         return detect.resolve_isolation(recorded, detect.probed_environment()), network
+    if recorded == "container" or (
+        recorded in ("", "auto") and cfg.sandbox.isolation == "container"
+    ):
+        common.refuse(exec_cmds.CONTAINER_EXEC_REFUSAL)
+        return None
     if recorded not in ("", "auto"):
         common.refuse(
             f"run {layout.session_id} recorded isolation {recorded!r}, a level this agent6 does"

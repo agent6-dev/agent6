@@ -218,6 +218,7 @@ class Harness:
             commands_allowed=self.dispatcher.command_policy() != "deny",
             protected_paths=bool(self.dispatcher.extra_protect_paths),
             dag_available=self.dispatcher.dag_available,
+            container_roots=self._container_roots(),
         )
 
         # The root task is what `add_task` with `parent_id=None` attaches under.
@@ -253,6 +254,13 @@ class Harness:
             original_task=user_task,
             operator_task=operator_task,
         )
+
+    def _container_roots(self) -> tuple[str, str] | None:
+        """Return the command and host roots when the commands run in a container, else None."""
+        target = self.dispatcher.execution_target
+        if target is None or target.transport != "container":
+            return None
+        return str(target.command_root), str(target.host_root)
 
     def _prepare_rulings_file(self) -> None:
         """Move a store's legacy rulings file out of the model's reach and ensure the new one.

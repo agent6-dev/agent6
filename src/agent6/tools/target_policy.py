@@ -171,3 +171,99 @@ def effective_controls(
         file_owner,
     )
     return tuple(sorted(rows, key=lambda control: control.leaf))
+
+
+def container_controls(config: Config) -> tuple[kinds.EffectiveControl, ...]:
+    """Describe every sandbox leaf as a container run resolves it, without probing.
+
+    The runtime and the container's mounts bound commands; agent6 enforces only what the
+    launcher applies inside (the memory cap) and what the host file tools apply (grants and
+    hidden paths). An explicit setting a container cannot honor refuses at startup.
+
+    Args:
+        config: The configured sandbox leaves, with `sandbox.isolation = "container"`.
+
+    Returns:
+        One immutable row per sandbox leaf.
+    """
+    sb = config.sandbox
+    rows: list[kinds.EffectiveControl] = []
+
+    def row(
+        name: str,
+        effective: kinds.ControlValue,
+        behaviour: str,
+        owner: kinds.EnforcementOwner,
+        reason: str = "",
+        probe: kinds.ProbeState = "resolved",
+    ) -> None:
+        rows.append(
+            kinds.EffectiveControl(
+                leaf=f"sandbox.{name}",
+                configured=getattr(sb, name),
+                effective=effective,
+                behaviour=behaviour,
+                owner=owner,
+                probe=probe,
+                reason=reason,
+            )
+        )
+
+    row("isolation", "container", "commands run inside the selected container", "container")
+    row(
+        "network",
+        "container",
+        "the container's network",
+        "container",
+        "" if sb.network != "session" else "session networking requires full isolation",
+        probe="not probed",
+    )
+    row("home", "host", "the container user's HOME, inherited", "container")
+    row(
+        "protect_git",
+        "off",
+        "file-tool protection only" if config.protects_git else "protection disabled",
+        "host file tools" if config.protects_git else "agent6",
+        "command-side git protection is unsupported in a container" if config.protects_git else "",
+    )
+    row(
+        "run_commands",
+        sb.run_commands,
+        "command permission; session approvals may change it",
+        "agent6",
+    )
+    row(
+        "fetch_approved_hosts",
+        sb.fetch_approved_hosts,
+        "fetch withheld; a command inside has the container's network",
+        "container",
+    )
+    row(
+        "memory_limit_mib",
+        sb.memory_limit_mib,
+        "per-process RLIMIT_DATA in MiB, applied by the launcher inside"
+        if sb.memory_limit_mib
+        else "no memory cap",
+        "agent6",
+    )
+    for name in ("extra_read_paths", "extra_write_paths"):
+        row(
+            name,
+            getattr(sb, name),
+            "host file-tool grants only; commands see the container's mounts",
+            "host file tools",
+        )
+    row(
+        "extra_device_paths",
+        sb.extra_device_paths,
+        "not mounted by agent6; the container's devices apply",
+        "container",
+        "device grants create no container mounts" if sb.extra_device_paths else "",
+    )
+    row(
+        "hide_paths",
+        sb.hide_paths,
+        "host file-tool denials; a path a container mount exposes refuses at startup",
+        "host file tools",
+    )
+    return tuple(sorted(rows, key=lambda control: control.leaf))

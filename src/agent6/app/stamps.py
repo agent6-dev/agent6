@@ -39,6 +39,8 @@ def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
         The stamp, holding resolved words since `auto` degrades.
     """
     level = _LEVELS.get(isolation)
+    if isolation and cfg.sandbox.isolation == "container":
+        isolation = "container"  # the launcher's level inside is none; the surfaces say where
     return manifest.PolicyStamp(
         run_commands=cfg.sandbox.run_commands,
         isolation=isolation or str(cfg.sandbox.isolation),

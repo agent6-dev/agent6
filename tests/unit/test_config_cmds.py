@@ -35,6 +35,7 @@ def test_extra_body_value_completer_offers_routing_presets() -> None:
         "full",
         "partial",
         "none",
+        "container",
     ]
 
 

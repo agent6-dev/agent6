@@ -726,7 +726,7 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 ### Container discovery boundary
 
 `sandbox/container.py::discover` is an internal, read-only discovery boundary.
-The separate `prepare` entry point opens the [container transport](#container-transport-boundary); neither is activated by application config.
+The separate `prepare` entry point opens the [container transport](#container-transport-boundary); `sandbox.isolation = "container"` activates both.
 Its host runtime CLI has the operator's authority, including daemon socket access and any privilege wrapper the operator supplies.
 Discovery never adds `sudo -n`; a refused socket query names `container.runtime` and the docker group rather than retrying with more privilege.
 The operator must trust the runtime executable, its context and its configuration; a remote daemon's mount paths do not prove a shared host tree.
@@ -748,7 +748,7 @@ There is no launcher transfer, model-command execution, mount creation, containe
 
 ### Container transport boundary
 
-**Host jail bypass is deliberate.** `container.prepare` launches the existing Rust `none` branch inside the selected container, not inside the host jail.
+**Host jail bypass is deliberate.** `sandbox.isolation = "container"` runs every command inside the selected container, where `container.prepare` launches the existing Rust `none` branch, not the host jail; the operator chooses it by name, and the start block says so.
 The runtime and container configuration are the command boundary: agent6 adds no namespaces, Landlock rules, seccomp filters, mounts or `/dev` nodes there.
 The launcher still enforces per-command memory limits, owns job handles, captures output and cleans up its descendants.
 It neither starts nor stops the container, and attaching grants no ownership.

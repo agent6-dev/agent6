@@ -577,7 +577,20 @@ depends_on = ["agent6.errors", "agent6.tools", "agent6.vcs.git_command"]
 [[modules]]
 # The package __init__ re-exports the models as the public API.
 path = "agent6.config"
-depends_on = ["agent6.config.git_config", "agent6.config.harness_config", "agent6.config.header_config", "agent6.config.model", "agent6.config.model_roles", "agent6.config.oauth_config", "agent6.config.provider_config", "agent6.config.sandbox_config", "agent6.config.surface_config", "agent6.config.validation", "agent6.kinds"]
+depends_on = [
+  "agent6.config.container_config",
+  "agent6.config.git_config",
+  "agent6.config.harness_config",
+  "agent6.config.header_config",
+  "agent6.config.model",
+  "agent6.config.model_roles",
+  "agent6.config.oauth_config",
+  "agent6.config.provider_config",
+  "agent6.config.sandbox_config",
+  "agent6.config.surface_config",
+  "agent6.config.validation",
+  "agent6.kinds",
+]
 
 [[modules]]
 # The config models share validation policy and the operator-facing error.
@@ -596,6 +609,11 @@ depends_on = ["agent6.config.validation"]
 [[modules]]
 path = "agent6.config.provider_config"
 depends_on = ["agent6.config.header_config", "agent6.config.oauth_config", "agent6.config.sandbox_config", "agent6.config.validation"]
+
+[[modules]]
+# The [container] model: which container runs the commands, and its start and stop.
+path = "agent6.config.container_config"
+depends_on = ["agent6.config.validation"]
 
 [[modules]]
 # The [sandbox] and [mcp] models; paths for the private-dir grant refusals.
@@ -624,6 +642,7 @@ path = "agent6.config.model"
 # at the leaf rather than in whichever model declared one first.
 depends_on = [
   "agent6.child_env",
+  "agent6.config.container_config",
   "agent6.config.git_config",
   "agent6.config.harness_config",
   "agent6.config.io",

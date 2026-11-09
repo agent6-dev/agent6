@@ -44,6 +44,12 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
 from agent6.viewmodel import wire
 
+CONTAINER_LANES_REFUSAL = (
+    "sandbox.isolation = 'container' runs commands in the container that mounts this workspace;"
+    " a fan-out's lanes are clones outside it. Run one task at a time here, or in a linked"
+    " worktree under the mounted workspace with `agent6 run --worktree`."
+)
+
 
 def run_parallel(
     task: str,
@@ -111,15 +117,20 @@ def run_parallel(
         reporter.error(str(exc))
         return 2
     base_sha = origin_status.head_sha
-    if spawner is None:
+    in_container = cfg.sandbox.isolation == "container"
+    if spawner is None and not in_container:
         cfg = workspace_setup.infer_if_unset(cfg, origin, reporter=reporter, at=base_sha)
-    # Before any clone: a lane's clone holds tracked files only.
-    refusal = workspace_setup.gate_refusal(
-        cfg,
-        origin,
-        workspace_setup.origin_gate(cfg, origin),
-        workspace="a lane's clone",
-        at=base_sha,
+    # Before any clone: a lane's clone holds tracked files only, and a container mounts none.
+    refusal = (
+        CONTAINER_LANES_REFUSAL
+        if in_container
+        else workspace_setup.gate_refusal(
+            cfg,
+            origin,
+            workspace_setup.origin_gate(cfg, origin),
+            workspace="a lane's clone",
+            at=base_sha,
+        )
     )
     if refusal is not None:
         reporter.refuse(refusal)

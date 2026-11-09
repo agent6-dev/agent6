@@ -28,6 +28,8 @@ _REFERENCE = re.compile(
 # Exact non-config literals: events, checks, filenames, modules, telemetry and a suggestion key.
 _NON_CONFIG = {
     ("acp/updates.py", "budget.update"),
+    ("cli/check_sandbox.py", "container.discovery"),
+    ("cli/check_sandbox.py", "container.exposure"),
     ("cli/check_sandbox.py", "sandbox.grants"),
     ("cli/check_sandbox.py", "sandbox.refusal"),
     ("cli/completions_cmd.py", "agent6.fish"),

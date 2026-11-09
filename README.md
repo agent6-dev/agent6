@@ -110,6 +110,7 @@ The repository stays at its real path, and the jail sees your system toolchains 
 - `full`: commands cannot read your provider keys or the secrets file, `.git` is read-only to them (`sandbox.protect_git = "auto"`, `git.control = "agent6"`), and they get a private network (`sandbox.network = "auto"`).
 - `partial`: commands cannot read your keys or the secrets file, but they share agent6's network and can write `.git`.
 - `none`: no confinement.
+- `container`: commands run inside the dev container that mounts your workspace, found by its labels or named in `[container]`; the runtime is the boundary, and agent6 adds no confinement there.
 
 Commands ask for approval by default (`sandbox.run_commands = "ask"`).
 agent6's own git never pushes, rewrites history or runs `reset --hard`, and no config key turns that on.

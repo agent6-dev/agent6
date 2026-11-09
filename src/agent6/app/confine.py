@@ -59,6 +59,45 @@ def persistent_home_warning(isolation: kinds.IsolationLevel, persistent: pathlib
     )
 
 
+def _confinement_warning(
+    isolation: kinds.IsolationLevel, env: detect.Environment, cfg: Config
+) -> str | None:
+    """Return the one warning about what the resolved level does not confine, if any."""
+    if cfg.sandbox.isolation == "container":
+        return (
+            "commands run inside the selected container with no confinement from agent6: the"
+            " runtime and the container's mounts bound them, and whatever the container"
+            " mounts from this host is theirs. The file tools stay on the host under the"
+            " configured grants. The timeout and sandbox.memory_limit_mib still apply inside."
+        )
+    if isolation == "none":
+        # The one owner of the cause; `check sandbox` prints the same.
+        return (
+            f"running UNSANDBOXED ({session_setup.no_jail_cause(cfg, env)}). "
+            "Every command runs as a plain subprocess, as you and with your HOME, with no "
+            "filesystem, network, "
+            "or syscall confinement: the LLM's run_command, the verify command, and "
+            "any spawned MCP server. The timeout and sandbox.memory_limit_mib still "
+            "apply. Only the "
+            "surrounding environment, a container for instance, bounds what a command "
+            "can reach. Use sandbox.isolation = 'auto', 'full', or 'partial' for "
+            "kernel-enforced isolation."
+            + (
+                " git.control = 'agent6' is not enforced without the sandbox; "
+                "a commit the model runs lands on the checkout's branch."
+                if cfg.git.control == "agent6"
+                else ""
+            )
+        )
+    if isolation == "full" and env.landlock_abi < 1:
+        return (
+            "sandbox.isolation = 'full' runs without Landlock, because this kernel has none."
+            " Namespaces, the read-only root filesystem and seccomp still confine commands."
+            " Landlock needs Linux 5.13+ with the Landlock LSM enabled."
+        )
+    return None
+
+
 def warn_sandbox_gaps(
     isolation: kinds.IsolationLevel,
     env: detect.Environment,
@@ -92,31 +131,11 @@ def warn_sandbox_gaps(
                 f"sandbox.isolation = 'auto' resolved to '{isolation}', not 'full',"
                 f" because {reason}."
             )
-    if isolation == "none":
-        # The one owner of the cause; `check sandbox` prints the same.
-        reporter.warn(
-            f"running UNSANDBOXED ({session_setup.no_jail_cause(cfg, env)}). "
-            "Every command runs as a plain subprocess, as you and with your HOME, with no "
-            "filesystem, network, "
-            "or syscall confinement: the LLM's run_command, the verify command, and "
-            "any spawned MCP server. The timeout and sandbox.memory_limit_mib still "
-            "apply. Only the "
-            "surrounding environment, a container for instance, bounds what a command "
-            "can reach. Use sandbox.isolation = 'auto', 'full', or 'partial' for "
-            "kernel-enforced isolation."
-            + (
-                " git.control = 'agent6' is not enforced without the sandbox; "
-                "a commit the model runs lands on the checkout's branch."
-                if cfg.git.control == "agent6"
-                else ""
-            )
-        )
-    elif isolation == "full" and env.landlock_abi < 1:
-        reporter.warn(
-            "sandbox.isolation = 'full' runs without Landlock, because this kernel has none."
-            " Namespaces, the read-only root filesystem and seccomp still confine commands."
-            " Landlock needs Linux 5.13+ with the Landlock LSM enabled."
-        )
+    if (warning := _confinement_warning(isolation, env, cfg)) is not None:
+        reporter.warn(warning)
+    if cfg.sandbox.isolation == "container":
+        # The rest describes the local jail; the start block's policy lines cover the container.
+        return
     warn_unscoped_sockets(isolation, env, cfg, reporter=reporter)
     if isolation == "partial" and paths.is_root():
         # The root banner names running as root; this names what it costs at this level.
@@ -376,9 +395,10 @@ def check_protect_git_support(cfg: Config, isolation: kinds.IsolationLevel) -> s
     """
     if isolation == "full" or cfg.sandbox.protect_git != "on":
         return None
+    where = "'container'" if cfg.sandbox.isolation == "container" else repr(isolation)
     return (
         "sandbox.protect_git = 'on' requires sandbox.isolation = 'full' to bind-remount .git"
-        f" read-only, but this run resolved to {isolation!r}. Set sandbox.protect_git = 'auto'"
+        f" read-only, but this run resolved to {where}. Set sandbox.protect_git = 'auto'"
         " to run without it where 'full' is unavailable, or sandbox.isolation = 'full'."
     )
 
@@ -411,6 +431,12 @@ def check_jail_home(
             "sandbox.home = 'host' requires sandbox.isolation = 'none': the operator's own HOME"
             f" has no place inside a jail, but this run resolved to {isolation!r}. Set"
             " sandbox.home = 'auto' for the level's own HOME."
+        )
+    if cfg.sandbox.isolation == "container" and cfg.sandbox.home in ("tmp", "cache"):
+        return (
+            f"sandbox.home = {cfg.sandbox.home!r} has no place inside a container, whose"
+            " toolchain lives under its user's HOME. Set sandbox.home = 'auto' or 'host' to"
+            " inherit the container user's HOME."
         )
     if isolation != "full" and cfg.sandbox.home == "tmp":
         persistent = paths.jail_cache_home(paths.checkout_root(workspace))
@@ -759,6 +785,12 @@ def check_network_support(cfg: Config, isolation: kinds.IsolationLevel) -> str |
     """
     if isolation == "full" or cfg.sandbox.network != "session":
         return None
+    if cfg.sandbox.isolation == "container":
+        return (
+            "sandbox.network = 'session' requires sandbox.isolation = 'full': a container's"
+            " network is the runtime's, not a run-private one. Set sandbox.network = 'auto' or"
+            " 'host' to accept the container's network."
+        )
     return (
         "sandbox.network = 'session' requires sandbox.isolation = 'full' to give the run its"
         f" own network, but this run resolved to {isolation!r}. Set sandbox.network = 'auto' to"
@@ -777,6 +809,8 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
         this host resolves them. With no jail binary to probe, the two stay `auto`.
     """
     out = registry.resolved_adaptive_values(cfg)
+    if cfg.sandbox.isolation == "container":
+        return out  # nothing is probed or started for a listing; the start block says what runs
     if cfg.sandbox.isolation == "auto" or cfg.sandbox.network == "auto":
         try:
             selected = detect.resolve_isolation(cfg.sandbox.isolation, detect.probed_environment())

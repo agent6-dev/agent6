@@ -127,7 +127,8 @@ def select_isolation(
         reporter.refuse(str(exc))
         raise preflight.SessionRefusedError(2) from exc
     confine.warn_cleartext_credential_endpoints(cfg, reporter=reporter)
-    if not confirm_unconfined(selected, cfg):
+    # A container is the boundary the operator chose; the unconfined confirm is for `none`.
+    if cfg.sandbox.isolation != "container" and not confirm_unconfined(selected, cfg):
         reporter.note("aborted.")
         raise preflight.SessionRefusedError(2)
     budget_err = preflight.budget_preflight(cfg, reporter=reporter)
@@ -366,6 +367,74 @@ def prepare_local_execution(
     )
 
 
+def container_options(cfg: Config) -> container.ContainerOptions:
+    """Return the `[container]` table as the sandbox's typed selection.
+
+    Args:
+        cfg: The resolved config.
+
+    Returns:
+        The options; an empty `workspace` means none.
+    """
+    return container.ContainerOptions(
+        exec=cfg.container.exec,
+        runtime=cfg.container.runtime,
+        workspace=pathlib.Path(cfg.container.workspace) if cfg.container.workspace else None,
+        start=cfg.container.start,
+        stop=cfg.container.stop,
+    )
+
+
+def mounted_root(cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None) -> pathlib.Path:
+    """Return the workspace a dev container mounts: the repository of a linked worktree, else cwd.
+
+    Args:
+        cwd: The checkout commands run in.
+        worktree_git_dir: The repository's `.git` recorded for a linked worktree, or None.
+
+    Returns:
+        The host root discovery looks up by label.
+    """
+    if worktree_git_dir is not None and worktree_git_dir.name == ".git":
+        return worktree_git_dir.parent
+    return cwd
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ContainerReport:
+    """What `check sandbox` says about the container a run would select, inspected only.
+
+    Attributes:
+        detail: The container, user and workspace path, or the opaque prefix.
+        exposures: Host paths and sockets the container mounts from outside the workspace.
+    """
+
+    detail: str
+    exposures: tuple[str, ...]
+
+
+def describe_container(cfg: Config, root: pathlib.Path) -> ContainerReport:
+    """Inspect the container the config selects, starting and stopping nothing.
+
+    Args:
+        cfg: The resolved config.
+        root: The host workspace.
+
+    Returns:
+        The report.
+
+    Raises:
+        jail.JailUnavailableError: Discovery refused; the message names the fix.
+    """
+    found = container.discover(root, container_options(cfg))
+    target = found.target
+    detail = (
+        f"container {target.container_id or 'behind the exec prefix'}; user"
+        f" {target.user or 'unknown'}; workspace {target.command_root}"
+    )
+    return ContainerReport(detail, container.exposures(found))
+
+
 def prepare_container_execution(
     cfg: Config,
     root: pathlib.Path,
@@ -377,11 +446,12 @@ def prepare_container_execution(
     checkout: pathlib.Path | None = None,
     worktree_git_dir: pathlib.Path | None = None,
     controls: tuple[kinds.EffectiveControl, ...] = (),
+    reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> command_tools.JailAccess:
-    """Acquire the container, check the checkout's mapping and prepare the transport.
+    """Acquire the container, check the checkout and the hidden paths, and prepare the transport.
 
-    Internal: nothing in the public config selects this path yet. A failure after the
-    acquisition releases the lease, which stops a container this run started.
+    `sandbox.isolation = "container"` selects this path. A failure after the acquisition
+    releases the lease, which stops a container this run started.
 
     Args:
         cfg: The resolved config.
@@ -393,18 +463,23 @@ def prepare_container_execution(
         checkout: The checkout commands run in; None means the workspace itself.
         worktree_git_dir: The checkout's repository git dir, when it is a linked worktree.
         controls: Effective controls the caller resolved.
+        reporter: Receives the ownership line and what the container exposes.
 
     Returns:
         The prepared access, whose lifecycle hook releases the lease at close.
 
     Raises:
-        container.ContainerError: Discovery, start, the mapping check or preparation refused.
+        container.ContainerError: Discovery, start, the mapping check, a hidden path a mount
+            exposes, or preparation refused.
         environment_lease.LeaseError: The lease record is malformed.
         OSError: The host side of the mapping proof failed.
     """
     acquired = environment_lease.acquire(
         state_dir, root, options, session_id=session_id, execution_id=execution_id
     )
+    reporter.note(f"container: {acquired.reason}")
+    for line in container.exposures(acquired.discovery):
+        reporter.warn(f"the container exposes a {line}")
     settle = functools.partial(
         environment_lease.release,
         state_dir,
@@ -415,6 +490,7 @@ def prepare_container_execution(
     )
     try:
         container.check_checkout(acquired.discovery, checkout or root, worktree_git_dir)
+        container.check_hidden_paths(acquired.discovery, cfg.sandbox.hide_paths)
         discovery = dataclasses.replace(
             acquired.discovery,
             target=dataclasses.replace(acquired.discovery.target, lifecycle_ref=acquired.ref),

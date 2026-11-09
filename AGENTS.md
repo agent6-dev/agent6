@@ -192,7 +192,7 @@ uv run ruff check && uv run ruff format --check && \
 
 - The threat model, defense layers, and rationale live in `docs/security.md`; a change preserves:
 - The jail bounds what the model can do to a repo; `run_command` argv stays unscreened, because a script the model writes bypasses any blocklist.
-- Every child process whose argv depends on LLM output goes through `agent6.sandbox.jail.run_in_jail`, `spawn_in_jail` or the prepared `JailSession` supervisor channel (audit: `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`).
+- Every child process whose argv depends on LLM output goes through `agent6.sandbox.jail.run_in_jail`, `spawn_in_jail` or the prepared `JailSession` supervisor channel, local or inside a container (audit: `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`).
   The documented `notify-send` data argument is the only exception.
   A module shelling out with fixed argv from operator input may call `subprocess` directly; that allowlist lives in `docs/security.md`, pinned by `tests/security/test_subprocess_allowlist.py`.
 - Adding a tool (`tools/schema.py`), loosening a security default, or dialling a host not derived from a provider `base_url` each require a `Security review note:` in the commit message.

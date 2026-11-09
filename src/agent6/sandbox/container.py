@@ -11,6 +11,7 @@ import os
 import pathlib
 import re
 import selectors
+import shlex
 import shutil
 import subprocess
 import time
@@ -99,6 +100,8 @@ class ContainerDiscovery:
     target: kinds.ExecutionTarget
     runtime: tuple[str, ...] = ()
     remote_env: tuple[tuple[str, str | None], ...] = ()
+    # Inspected bind mounts as (host source, container destination); empty behind a manual exec.
+    mounts: tuple[tuple[str, str], ...] = ()
 
 
 class _InspectModel(pydantic.BaseModel):
@@ -427,6 +430,59 @@ def check_checkout(
             )
 
 
+def check_hidden_paths(discovery: ContainerDiscovery, hide_paths: tuple[str, ...]) -> None:
+    """Refuse a hidden host path the container's mounts expose to commands.
+
+    An explicit restriction is enforced or refused: a hidden path under a bind mount's
+    source is reachable inside, and behind a manual exec prefix nothing can be inspected,
+    so a non-empty list refuses there too.
+
+    Args:
+        discovery: The selected container, with the mounts discovery inspected.
+        hide_paths: `[sandbox].hide_paths`, host paths.
+
+    Raises:
+        ContainerMappingError: An entry is exposed, or the mounts cannot be inspected.
+    """
+    if not hide_paths:
+        return
+    if not discovery.mounts and discovery.target.container_id is None:
+        raise ContainerMappingError(
+            "sandbox.hide_paths cannot be enforced behind container.exec: the container's "
+            "mounts cannot be inspected; unset the hidden paths or select the container by "
+            "discovery"
+        )
+    for hidden in hide_paths:
+        path = pathlib.Path(hidden).resolve()
+        for source, destination in discovery.mounts:
+            mounted = pathlib.Path(source).resolve()
+            if path.is_relative_to(mounted) or mounted.is_relative_to(path):
+                raise ContainerMappingError(
+                    f"sandbox.hide_paths entry {hidden} is exposed to commands through the "
+                    f"container mount {source} at {destination}; unset it or change the mount"
+                )
+
+
+def exposures(discovery: ContainerDiscovery) -> tuple[str, ...]:
+    """Name what the container exposes to commands beyond the workspace.
+
+    Args:
+        discovery: The selected container.
+
+    Returns:
+        One line per host path mounted from outside the workspace, sockets named as such;
+        empty when the mounts were not inspected or hold only the workspace.
+    """
+    root = discovery.target.host_root.resolve()
+    lines: list[str] = []
+    for source, destination in discovery.mounts:
+        if pathlib.Path(source).resolve().is_relative_to(root):
+            continue
+        kind = "socket" if source.endswith(".sock") else "host path"
+        lines.append(f"{kind} {source} mounted at {destination}")
+    return tuple(lines)
+
+
 def discover(host_root: pathlib.Path, options: ContainerOptions) -> ContainerDiscovery:
     """Select a container without starting it, executing metadata or opening repo definitions.
 
@@ -493,12 +549,14 @@ def discover(host_root: pathlib.Path, options: ContainerOptions) -> ContainerDis
         exec=(*runtime, "exec", "-i", "--user", user, id_),
         runtime=runtime,
         remote_env=remote_env,
+        mounts=tuple((m.source, m.destination) for m in row.mounts if m.type == "bind"),
         target=kinds.ExecutionTarget(
             transport="container",
             host_root=host_root,
             command_root=command_root,
             user=user,
             home=None,
+            runtime_id=shlex.join(runtime),
             container_id=id_,
             environment=kinds.ExecutionEnvironment(variables=(), inherit=True),
         ),

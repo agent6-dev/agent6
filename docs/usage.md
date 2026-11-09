@@ -508,6 +508,23 @@ The verify command is the success gate.
 - `--session-id ID`: name the session yourself
 - `agent6 prompt show [--mode run|plan|ask|read_only] [--json]`: preview the system prompt, built-in tools and first message with a task placeholder; MCP tools are discovered at run start and are not included
 
+### Commands inside a dev container
+
+Set `sandbox.isolation = "container"` to run setup, verification and the model's commands in your dev container.
+agent6 finds the running Docker or Podman dev container of this workspace by its labels, without Node or the devcontainers CLI; start it in VS Code, with your own CLI, or with `container.start`.
+`container.exec` names another container, `container.workspace` another path inside it, and `container.runtime` the runtime CLI (`["sudo", "-n", "docker"]` where docker needs sudo).
+File tools, credentials and session records stay on the host; the start block shows the container, both roots, the user, HOME, who owns the container and every control the container does not enforce.
+The receipt names the environment each check ran in and whether the container was left running; `container.stop` runs only for a container the run started, after every attached run ended.
+A fan-out refuses under container isolation (its lanes are clones outside the mount); `agent6 exec` does too (use the runtime's own exec).
+
+```toml
+[sandbox]
+isolation = "container"
+
+[container]
+runtime = ["sudo", "-n", "docker"]
+```
+
 ### Go build cache
 
 Go's build cache lives under the jail's HOME, not your own.
