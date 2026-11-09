@@ -180,7 +180,7 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - `branch_per_run` also advances a visible `agent6/<id>` branch
 - HEAD never moves; when the run's own branch is the checked-out one, the index and the working tree are brought forward for the paths the commit changed, each only where it still matches the old tip
 - consolidation is chosen at `sessions merge` time (`git.merge_method`: `tasks`, the default, one commit per task range; `squash`; `merge`; `ff_only`)
-- `[git].control = "model"` turns the block off: no chain, no run branch, the model's own commits are the record, and `sessions diff`/`commits`/`merge`, `/undo` and `fork` refuse for such a run
+- `[git].control = "model"` turns the block off: no per-turn chain or run branch, the model's own commits are the record, and `sessions diff`/`commits`/`merge`, `/undo` and `fork` refuse for such a run
 
 **The task DAG is a curator-owned side store.** `add_task` and `update_task` write it, with `depends_on` edges, cycle-checked; `list_tasks` reads it back. None of them picks the next tool.
 
@@ -343,6 +343,8 @@ The primitive is git plumbing in [subrun.py](https://github.com/agent6-dev/agent
 
 - `clone_workspace(origin, dest)`: a plain `git clone` of a disposable lane workspace.
 - `import_run(origin, lane_repo, branch, lane_session_dir, origin_state)`: fetches the lane's branch into the origin and moves its session dir under `<origin_state>/sessions/runs/`, refusing to overwrite an existing branch or session dir.
+  With model git control it fetches HEAD into the lane's chain ref and creates its checked-out branch only when that name is free.
+  Cleanup keeps a clone whose HEAD or ref tips the origin cannot reach, unless a merge stamp covers them.
 - `LaneSpawner` / `GroupLaneSpawner`: the Protocols for dispatching one lane, or a sibling group, and awaiting completion.
 
 [app/lanes.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lanes.py) implements those Protocols: it holds the front-end's `LaneRuntime`, plans the lanes, clones, spawns, awaits and imports one lane, and builds the coordinator's `/parallel` dispatcher.

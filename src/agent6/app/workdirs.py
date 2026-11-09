@@ -201,10 +201,10 @@ def sweep_fanout_clones(
                     )
                     if why:
                         break
+                tips = list(git_read.commit_tips(clone))
                 # Reachability, not existence: a loose object is one `git gc` from gone.
                 if any(
-                    tip is not None
-                    and not git_read.commit_is_reachable(origin, tip)
+                    not git_read.commit_is_reachable(origin, tip)
                     and not recorded_merged(origin, clone, tip)
                     for tip in tips
                 ):
@@ -255,7 +255,13 @@ def write_lane_config(
 
 
 def cleanup(
-    imported: list[subrun.LaneSpec], *, workdir_root: pathlib.Path, base: pathlib.Path, cfg: Config
+    imported: list[subrun.LaneSpec],
+    *,
+    origin: pathlib.Path,
+    workdir_root: pathlib.Path,
+    base: pathlib.Path,
+    cfg: Config,
+    note_keep: Callable[[pathlib.Path, str], None] = lambda _path, _why: None,
 ) -> None:
     """Tear down the clone, state dir, jail home and config of each imported lane, best-effort.
 
@@ -264,11 +270,28 @@ def cleanup(
 
     Args:
         imported: The lanes whose import landed.
+        origin: The repository that must reach every clone tip.
+        note_keep: Receives the kept clone and reason.
         workdir_root: The group dir.
         base: The per-repo base dir.
         cfg: The run's config.
     """
     for spec in imported:
+        try:
+            tips = git_read.commit_tips(spec.workdir)
+            if any(
+                tip
+                and not git_read.commit_is_reachable(origin, tip)
+                and not recorded_merged(origin, spec.workdir, tip)
+                for tip in tips
+            ):
+                note_keep(
+                    spec.workdir, "commits this repo cannot reach; merge or archive the clone first"
+                )
+                continue
+        except errors.GitError as exc:
+            note_keep(spec.workdir, f"git could not check its commits: {exc}")
+            continue
         shutil.rmtree(paths.state_dir(spec.workdir), ignore_errors=True)
         shutil.rmtree(paths.jail_cache_home(spec.workdir), ignore_errors=True)
         shutil.rmtree(spec.workdir, ignore_errors=True)

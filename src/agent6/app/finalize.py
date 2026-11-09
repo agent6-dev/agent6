@@ -534,7 +534,7 @@ def _print_model_git_footer(
     cwd: pathlib.Path,
     reporter: app_reporter.Reporter,
 ) -> None:
-    """Say where a model-controlled run's work is: no agent6 branch exists to merge or diff.
+    """Say where a model-controlled run's work is: an imported lane's ref, else the checkout.
 
     Args:
         manifest: The session's manifest.
@@ -552,7 +552,7 @@ def _print_model_git_footer(
         current = st.branch
         head = st.head_sha[:12]
         modified = st.modified_count
-    where = current or head or "the current checkout"
+    where = wire.commits_ref(manifest, cwd) or current or head or "the current checkout"
     reporter.out(f'\ngit was model-controlled ([git].control = "model"); its work is on {where}')
     if modified:
         reporter.out(f"  tracked files with uncommitted changes: {modified}")

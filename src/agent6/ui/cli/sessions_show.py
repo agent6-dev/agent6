@@ -33,6 +33,7 @@ from agent6.viewmodel import (
     summarize_session_dir,
     tail,
     transcript,
+    wire,
 )
 
 
@@ -615,8 +616,13 @@ def _changes(
         The text row ("" without a run branch) and the base the work is merged into ("" when none).
     """
     run_branch = manifest.run_branch or ""
-    if not run_branch:
-        return _Changes("", "")
+    if manifest.git_control == "model" or not run_branch:
+        ref = (
+            wire.commits_ref(manifest, pathlib.Path.cwd())
+            if manifest.git_control == "model"
+            else ""
+        )
+        return _Changes(f"work is on {ref}" if ref else "", "")
     if undone:
         return _Changes(f"{run_branch} (taken back by /undo)", "")
     cwd = pathlib.Path.cwd()

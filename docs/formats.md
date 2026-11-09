@@ -2429,7 +2429,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `base_branch` | `str` | The branch that commit was on. |
 | `review_base_tree` | `str` | The base tree of a `/review` session, whose AGENTS.md binds it. |
 | `run_branch` | `str \| None` | The run's own branch, or None. |
-| `git_control` | `str` | `[git].control` at start; a `model` run has no chain or branch, and the git surfaces refuse through `model_git_refusal`. |
+| `git_control` | `str` | `[git].control` at start; a `model` run has no per-turn chain or branch. The git surfaces refuse through `model_git_refusal`. |
 | `models` | `ModelsBrief` | The models the run resolved. |
 | `harness` | `HarnessStamp` | The strategy the run started with. |
 | `policy` | `PolicyStamp` | The policy the run launched under. |

@@ -601,6 +601,22 @@ def object_exists(path: pathlib.Path, sha: str) -> bool:
     return git_command.run(path, "cat-file", "-e", sha, check=False).returncode == 0
 
 
+def commit_tips(path: pathlib.Path) -> tuple[str, ...]:
+    """Return the commits at HEAD and every ref, for clone cleanup.
+
+    Args:
+        path: The clone to inspect.
+
+    Returns:
+        The commit ids at its tips.
+
+    Raises:
+        GitError: Git could not enumerate the tips.
+    """
+    result = git_command.run(path, "rev-list", "--no-walk", "--all", "HEAD")
+    return tuple(result.stdout.splitlines())
+
+
 def commit_is_reachable(path: pathlib.Path, sha: str) -> bool:
     """Return whether any ref reaches the commit.
 

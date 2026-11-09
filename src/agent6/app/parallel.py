@@ -42,6 +42,7 @@ from agent6.sessions import event_log, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
+from agent6.viewmodel import wire
 
 
 def run_parallel(
@@ -330,6 +331,8 @@ def _drive_fanout(
         )
     workdirs.cleanup(
         batch.imported,
+        origin=origin,
+        note_keep=lambda path, why: reporter.note(f"kept {path}: {why}"),
         workdir_root=lanes[0].workdir.parent,
         base=workdirs.workdir_base(cfg, origin),
         cfg=cfg,
@@ -353,11 +356,19 @@ def _drive_fanout(
         group=fanout_id,
         reporter=reporter,
     )
+    model_refs = {}
+    for spec in batch.imported:
+        manifest = sessions_manifest.read_manifest(
+            lane_watch.lane_link(origin_state, spec.session_id)
+        )
+        if manifest.git_control == "model":
+            model_refs[spec.session_id] = wire.commits_ref(manifest, origin)
     parallel_results.print_report(
         batch.candidates,
         outcome,
         batch.failed,
         rows=batch.rows,
+        model_refs=model_refs,
         # A lane that made no commit imports no branch.
         committed={
             spec.session_id: git_read.branch_exists(

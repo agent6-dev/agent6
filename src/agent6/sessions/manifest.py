@@ -314,8 +314,8 @@ class SessionManifest(pydantic.BaseModel):
         base_branch: The branch that commit was on.
         review_base_tree: The base tree of a `/review` session, whose AGENTS.md binds it.
         run_branch: The run's own branch, or None.
-        git_control: `[git].control` at start; a `model` run has no chain or branch, and the
-            git surfaces refuse through `model_git_refusal`.
+        git_control: `[git].control` at start; a `model` run has no per-turn chain or branch.
+            The git surfaces refuse through `model_git_refusal`.
         models: The models the run resolved.
         harness: The strategy the run started with.
         policy: The policy the run launched under.

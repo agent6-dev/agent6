@@ -334,6 +334,7 @@ def _resolve_session_manifest(
     *,
     recent_note: str = "using most recent run",
     missing_hint: str = "",
+    allow_model: bool = False,
 ) -> tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest] | int:
     """Resolve a run id, or "" for the newest, to its layout and manifest.
 
@@ -344,6 +345,7 @@ def _resolve_session_manifest(
         session_id: The run.
         recent_note: What to print when the newest run was taken.
         missing_hint: What to add when nothing matches.
+        allow_model: Permit read-only comparison of model-controlled runs.
 
     Returns:
         `(layout, manifest)`, or the exit code of a printed error.
@@ -381,6 +383,8 @@ def _resolve_session_manifest(
         f"{target_id} is a fan-out; its lanes hold the commits"
         f" (`agent6 sessions show {target_id}` lists them)"
         if manifest.fanout is not None
+        else None
+        if allow_model
         else sessions_manifest.model_git_refusal(manifest, "sessions")
     )
     if refusal is not None:

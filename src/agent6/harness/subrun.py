@@ -119,11 +119,13 @@ def import_run(
     branch: str,
     lane_session_dir: pathlib.Path,
     origin_state: pathlib.Path,
+    *,
+    model_control: bool = False,
 ) -> pathlib.Path:
     """Land a finished lane's branch in the origin and move its run dir under the origin's state.
 
-    Both refusals are checked before the fetch or the move, so a refusal touches neither. A lane
-    that never committed has no branch to land; its record imports all the same.
+    A model-controlled lane lands HEAD on its chain ref and keeps a free branch name.
+    A harness-controlled lane without a branch imports only its record.
 
     Args:
         origin: The coordinator's repo.
@@ -131,6 +133,7 @@ def import_run(
         branch: The lane's branch.
         lane_session_dir: The lane's run dir.
         origin_state: The origin's state dir.
+        model_control: Import HEAD instead of a harness-owned branch.
 
     Returns:
         The imported run dir.
@@ -138,12 +141,21 @@ def import_run(
     Raises:
         SubrunError: When the branch or run dir already exists in the origin, or the fetch fails.
     """
-    if git_read.branch_exists(origin, branch):
+    if not model_control and git_read.branch_exists(origin, branch):
         raise SubrunError(f"branch {branch!r} already exists in {origin}")
     dest_session_dir = layout.bucket_dir(origin_state, "runs") / lane_session_dir.name
     if dest_session_dir.exists():
         raise SubrunError(f"run dir already exists: {dest_session_dir}")
-    if git_read.branch_exists(lane_repo, branch):
+    if model_control:
+        try:
+            head = git_read.status(lane_repo)
+            chain = git_read.chain_ref_for(lane_session_dir.name)
+            git_ops.fetch_branch(origin, lane_repo, f"HEAD:{chain}")
+            if head.branch != "HEAD" and not git_read.branch_exists(origin, head.branch):
+                git_ops.create_branch_at(origin, head.branch, head.head_sha)
+        except errors.GitError as exc:
+            raise SubrunError(f"import HEAD from {lane_repo} failed: {exc}") from exc
+    elif git_read.branch_exists(lane_repo, branch):
         try:
             git_ops.fetch_branch(origin, lane_repo, f"{branch}:{branch}")
         except errors.GitError as exc:

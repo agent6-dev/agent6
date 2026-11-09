@@ -190,9 +190,24 @@ def import_lane(
         link.unlink()
     try:
         with lock if lock is not None else contextlib.nullcontext():
-            return subrun.import_run(
-                origin, res.spec.workdir, res.branch, res.session_dir, origin_state
+            manifest = sessions_manifest.read_manifest(res.session_dir)
+            model_control = manifest.git_control == "model"
+            branch = git_read.status(res.spec.workdir).branch if model_control else ""
+            free_branch = branch and branch != "HEAD" and not git_read.branch_exists(origin, branch)
+            dest = subrun.import_run(
+                origin,
+                res.spec.workdir,
+                res.branch,
+                res.session_dir,
+                origin_state,
+                model_control=model_control,
             )
+            if free_branch:
+                stamps.write_manifest(
+                    dest / sessions_manifest.MANIFEST_NAME,
+                    manifest.model_copy(update={"run_branch": branch}),
+                )
+            return dest
     except subrun.SubrunError:
         if had_link:
             lane_watch.symlink_lane(origin_state, res)
@@ -355,6 +370,7 @@ def print_report(
     *,
     rows: Mapping[str, listing.SessionSummary],
     committed: Mapping[str, bool],
+    model_refs: Mapping[str, str] | None = None,
     fanout_id: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
@@ -366,6 +382,7 @@ def print_report(
         failed: The failed lanes with their reasons.
         rows: Each candidate's listing row, by session id.
         committed: Whether each lane's import landed a branch, by session id.
+        model_refs: Imported work locations for model-controlled lanes.
         fanout_id: The fan-out's session id.
         reporter: Receives the lines.
     """
@@ -373,7 +390,12 @@ def print_report(
         f"\n[agent6] parallel fan-out {fanout_id} complete: {len(candidates)} candidate(s)"
     )
     app_compare.print_ranked_candidates(
-        candidates, outcome, rows=rows, committed=committed, reporter=reporter
+        candidates,
+        outcome,
+        rows=rows,
+        committed=committed,
+        model_refs=model_refs,
+        reporter=reporter,
     )
     if failed:
         reporter.out("\nfailed lanes:")

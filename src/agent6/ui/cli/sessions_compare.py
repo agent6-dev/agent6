@@ -25,6 +25,7 @@ from agent6.viewmodel import (
     format,
     listing,
     summarize_session_dir,
+    wire,
 )
 
 
@@ -44,11 +45,11 @@ def _candidate_diff(
         `(diff, from_merge)`; the diff is "" when nothing records the change, which never
         blocks the comparison.
     """
-    base_sha, run_branch = manifest.base_sha, manifest.run_branch or ""
+    base_sha = manifest.base_sha
     if not base_sha:
         return "", False
-    if run_branch and git_read.branch_exists(cwd, run_branch):
-        return git_read.diff_range(cwd, base_sha, run_branch), False
+    if ref := wire.commits_ref(manifest, cwd):
+        return git_read.diff_range(cwd, base_sha, ref), False
     merged = manifest.merged
     if merged is None:
         return "", False
@@ -203,7 +204,7 @@ def _cmd_compare(
     resolved: list[tuple[sessions_layout.SessionLayout, sessions_manifest.SessionManifest]] = []
     seen: set[str] = set()
     for query in session_ids:
-        res = sessions_cmds._resolve_session_manifest(cwd, query)
+        res = sessions_cmds._resolve_session_manifest(cwd, query, allow_model=True)
         if isinstance(res, int):
             return res
         layout, manifest = res
@@ -232,11 +233,21 @@ def _cmd_compare(
         for layout, manifest in resolved
         if manifest.run_branch
     }
+    model_refs = {
+        layout.session_id: wire.commits_ref(manifest, cwd)
+        for layout, manifest in resolved
+        if manifest.git_control == "model"
+    }
     recorded = _recorded_outcome(resolved, candidates) if by_fanout and not rejudge else None
     if recorded is not None:
         print(f"[agent6] the recorded verdict for {common.plural(len(candidates), 'lane')}:")
         compare.print_ranked_candidates(
-            candidates, recorded, rows=rows, merged_into=merged, committed=committed
+            candidates,
+            recorded,
+            rows=rows,
+            merged_into=merged,
+            committed=committed,
+            model_refs=model_refs,
         )
         print("\n(recorded when the fan-out ran; `--rejudge` spends a fresh judge call)")
         return 0
@@ -246,7 +257,12 @@ def _cmd_compare(
     outcome = compare_ranking.rank(cfg, candidates, transcript_dir=paths.state_dir(cwd) / "compare")
     print(f"[agent6] comparing {len(candidates)} runs:")
     compare.print_ranked_candidates(
-        candidates, outcome, rows=rows, merged_into=merged, committed=committed
+        candidates,
+        outcome,
+        rows=rows,
+        merged_into=merged,
+        committed=committed,
+        model_refs=model_refs,
     )
     # Re-judging one fan-out's lanes can contradict its stamp, which the listings read: say so.
     groups = {manifest.parallel.group if manifest.parallel else None for _, manifest in resolved}

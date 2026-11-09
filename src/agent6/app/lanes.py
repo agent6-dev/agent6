@@ -357,6 +357,8 @@ def run_lane_to_completion(
     # Each lane removes its own dirs only; the group dir goes with whichever empties it last.
     workdirs.cleanup(
         [res.spec],
+        origin=origin,
+        note_keep=lambda path, why: reporter.note(f"kept {path}: {why}"),
         workdir_root=res.spec.workdir.parent,
         base=workdirs.workdir_base(cfg, origin),
         cfg=cfg,

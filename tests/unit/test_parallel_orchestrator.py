@@ -2339,9 +2339,13 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
         branch: str,
         lane_session_dir: pathlib.Path,
         origin_state: pathlib.Path,
+        *,
+        model_control: bool = False,
     ) -> pathlib.Path:
         held.append(lock.locked())
-        return real_import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
+        return real_import_run(
+            origin, lane_repo, branch, lane_session_dir, origin_state, model_control=model_control
+        )
 
     monkeypatch.setattr(subrun, "import_run", observe)
     spec = subrun.LaneSpec(
@@ -3665,3 +3669,159 @@ def test_a_relative_workdir_resolves_to_an_absolute_path(
     cfg = Config.model_validate({"workspace": {"base_dir": "wt"}})
 
     assert workdirs.workdir_base(cfg, origin) == tmp_path.resolve() / "wt" / paths.repo_id(origin)
+
+
+@pytest.mark.parametrize("head_kind", ["branch", "taken", "detached"])
+def test_model_parallel_import_keeps_lane_commits(
+    origin: pathlib.Path,
+    tmp_path: pathlib.Path,
+    runtime: app_lanes.LaneRuntime,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    head_kind: str,
+) -> None:
+    """Model-owned lane commits survive clone cleanup under a durable origin ref."""
+    from agent6.config import layer
+    from agent6.viewmodel import wire
+
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"backend": "openai", "base_url": "http://127.0.0.1:1"}},
+            "models": {"default": {"model": "p/m"}},
+            "git": {"control": "model"},
+            "sandbox": {
+                "isolation": "none",
+                "home": "cache",
+                "network": "host",
+                "run_commands": "allow",
+            },
+            "harness": {"verify_infer": False},
+            "review": {"trigger": "off"},
+            "workspace": {"base_dir": str(tmp_path / "clones")},
+        }
+    )
+    tips: dict[str, str] = {}
+    clones: list[pathlib.Path] = []
+    base = git_read.status(origin).head_sha
+
+    class Provider:
+        def call(self, **_kw: Any) -> ProviderResponse:
+            cwd = pathlib.Path.cwd()
+            (session,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
+            name = session.name
+            if name not in tips:
+                if head_kind == "detached":
+                    _git(cwd, "checkout", "--detach")
+                else:
+                    _git(cwd, "checkout", "-b", name)
+                (cwd / "work.txt").write_text(name)
+                _git(cwd, "add", "work.txt")
+                _git(cwd, "commit", "-qm", "lane work")
+                tips[name] = git_read.status(cwd).head_sha
+                if head_kind == "taken":
+                    _git(origin, "branch", name, base)
+            tool = {
+                "type": "tool_use",
+                "id": "end",
+                "name": "finish_session",
+                "input": {"summary": "committed lane work"},
+            }
+            return ProviderResponse(
+                text="",
+                tool_uses=(tool,),
+                stop_reason="tool_use",
+                input_tokens=10,
+                output_tokens=5,
+                cache_read_tokens=0,
+                cache_creation_tokens=0,
+                raw={"content": [tool]},
+            )
+
+    def provider(*_a: Any, **_kw: Any) -> Provider:
+        return Provider()
+
+    monkeypatch.setattr(role_providers, "build_role_provider", provider)
+
+    def spawn(argv: list[str], cwd: pathlib.Path, **kw: Any) -> tuple[pathlib.Path, str]:
+        clones.append(cwd)
+        with monkeypatch.context() as child:
+            child.chdir(cwd)
+            for key, value in kw["env"].items():
+                if key.startswith("AGENT6_"):
+                    child.setenv(key, value)
+            assert cli_main(argv) == 0
+            (session,) = (paths.state_dir(cwd) / "sessions" / "runs").iterdir()
+        return session, ""
+
+    def no_judge(*_a: Any, **_kw: Any) -> Any:
+        from agent6.providers import ProviderError
+
+        raise ProviderError("mechanical ranking for this test")
+
+    monkeypatch.setattr(
+        parallel_cmd,
+        "lane_runtime",
+        lambda: dataclasses.replace(runtime, spawn=spawn, build_provider=no_judge),
+    )
+    config = tmp_path / "model.toml"
+    config.write_text(layer.materialize(cfg, explicit_leaves=frozenset()))
+    monkeypatch.chdir(origin)
+    assert (
+        cli_main(["--config", str(config), "run", "--auto-approve", "/parallel 2 -- do work"]) == 0
+    )
+    out = capsys.readouterr().out
+    assert len(tips) == 2
+    for name, tip in tips.items():
+        chain = git_read.chain_ref_for(name)
+        assert git_read.chain_tip(origin, chain) == tip
+        m = sessions_manifest.read_manifest(paths.state_dir(origin) / "sessions" / "runs" / name)
+        expected = name if head_kind == "branch" else chain
+        assert wire.commits_ref(m, origin) == expected
+        table = out.split("ranked candidates (best first):", 1)[1]
+        assert f"work is on {expected}" in table
+        assert cli_main(["sessions", "show", name]) == 0
+        shown = capsys.readouterr().out
+        assert f"work is on {expected}" in shown
+        assert "merge with:" not in shown
+        if head_kind == "taken":
+            assert git_read.branch_tip_sha(origin, name) == base
+    group = next(iter(tips)).rsplit("-l", 1)[0]
+    assert cli_main(["--config", str(config), "sessions", "compare", group]) == 0
+    compared = capsys.readouterr().out
+    for name in tips:
+        expected = name if head_kind == "branch" else git_read.chain_ref_for(name)
+        assert f"work is on {expected}" in compared
+    assert "merge with:" not in compared
+    assert all(not clone.exists() for clone in clones)
+    assert "merge with:" not in out
+    assert "nothing to merge" not in out
+
+
+@pytest.mark.parametrize("checkout_base", [False, True])
+def test_cleanup_keeps_unreachable_model_head(
+    origin: pathlib.Path, tmp_path: pathlib.Path, checkout_base: bool
+) -> None:
+    """An imported record alone is not proof that a lane's commits are safe."""
+    cfg = Config()
+    (spec,) = _specs(tmp_path, cfg, "unsafe", "1")
+    _git(origin, "clone", "--quiet", str(origin), str(spec.workdir))
+    _git(spec.workdir, "config", "user.name", "test")
+    _git(spec.workdir, "config", "user.email", "test@example.org")
+    _git(spec.workdir, "checkout", "-b", "model-work")
+    (spec.workdir / "work.txt").write_text("keep me")
+    _git(spec.workdir, "add", "work.txt")
+    _git(spec.workdir, "commit", "-qm", "work")
+    _git(origin, "fetch", str(spec.workdir), "HEAD")
+    if checkout_base:
+        _git(spec.workdir, "checkout", "main")
+    notes: list[str] = []
+    workdirs.cleanup(
+        [spec],
+        origin=origin,
+        workdir_root=spec.workdir.parent,
+        base=spec.workdir.parent,
+        cfg=cfg,
+        note_keep=lambda _p, why: notes.append(why),
+    )
+    assert spec.workdir.is_dir()
+    assert notes and "cannot reach" in notes[0]
