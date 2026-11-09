@@ -13,7 +13,7 @@ import contextlib
 import os
 import pathlib
 import shutil
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, paths
@@ -549,7 +549,9 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 if included is not None:
                     stamps.stamp_includes(layout.session_dir, included)
 
-        def _gate(cfg: Config, budget: agent6_budget.BudgetTracker) -> Config:
+        def _gate(
+            cfg: Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]
+        ) -> Config:
             # Infer an unset gate, then drop it last when commands are withheld.
             configured_gate = bool(cfg.harness.verify_command)
             # In the repository, never the run's worktree: a signal such as `.venv` is absent
@@ -558,6 +560,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 cfg,
                 cwd if review_world is not None else repo,
                 mode=mode,
+                available=available,
                 events=events,
                 transcript_sink=transcript_sink,
                 budget=budget,

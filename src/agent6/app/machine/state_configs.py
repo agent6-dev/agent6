@@ -20,6 +20,7 @@ from agent6.config import Config, ConfigError, SandboxConfig, io, layer
 from agent6.machine import AgentState, MachineSpec, ToolState
 from agent6.sandbox import detect
 from agent6.tools import policy as tools_policy
+from agent6.tools import target_policy
 
 
 class SandboxWidenedError(ConfigError):
@@ -83,7 +84,7 @@ class _Side:
     @property
     def network(self) -> kinds.NetworkMode:
         """The network a jailed child of this side joins on this host."""
-        return tools_policy.resolve_network(self.config, self.isolation)
+        return target_policy.resolve_network(self.config, self.isolation)
 
 
 def _covered(path: str, trees: Iterable[str]) -> bool:

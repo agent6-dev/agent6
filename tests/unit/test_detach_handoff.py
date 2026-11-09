@@ -11,6 +11,7 @@ import pathlib
 import types
 from collections.abc import Callable, Sequence
 from typing import Any
+from unittest import mock
 
 import pytest
 
@@ -242,6 +243,9 @@ def _stub_execution_internals(
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
+    monkeypatch.setattr(
+        session_runtime, "prepare_local_execution", mock.MagicMock(return_value=mock.MagicMock())
+    )
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(harness_loop, "Harness", _Workflow)
     monkeypatch.setattr(session_runtime, "session_facts_provider", _returning(lambda: None))
@@ -279,7 +283,7 @@ def test_a_loop_crash_prints_the_end_that_it_journals(
                 tui_enabled=False,
                 interactive=False,
                 task="do the thing",
-                gate=lambda cfg, _b: cfg,
+                gate=lambda cfg, _b, _a: cfg,
                 chain_branch=None,
                 base_sha="",
                 untracked_at_start=frozenset(),
@@ -350,7 +354,7 @@ def test_a_detached_ask_execution_hands_the_run_over_instead_of_answering_with_i
             tui_enabled=False,
             interactive=False,
             task="what does this repo do?",
-            gate=lambda cfg, _b: cfg,
+            gate=lambda cfg, _b, _a: cfg,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),
@@ -421,7 +425,7 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
             tui_enabled=False,
             interactive=False,
             task="what does this repo do?",
-            gate=lambda cfg, _b: cfg,
+            gate=lambda cfg, _b, _a: cfg,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),
@@ -498,7 +502,7 @@ def test_an_answer_streamed_to_the_terminal_is_not_printed_on_it_again(
             tui_enabled=False,
             interactive=False,
             task="name the class",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),

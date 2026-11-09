@@ -9,6 +9,7 @@ import subprocess
 
 import pytest
 
+from agent6.sandbox import tool_paths
 from agent6.tools import verify_infer
 from agent6.ui.cli import init_wizard, prompt_cmds
 
@@ -123,7 +124,9 @@ def test_manifest_linked_out_of_the_repo_stays_out_of_the_inference_context(
     context = verify_infer.gather_repo_manifests(repo, "")
     assert _MARKER not in context and "module inside" in context
     # The `test:` target is the outside file's, so the Makefile signal does not match.
-    assert verify_infer.repo_signals(repo)[0][1] == "pyproject"
+    assert (
+        next(verify_infer.repo_signals(repo, available=tool_paths.jail_resolves))[1] == "pyproject"
+    )
 
 
 def test_init_infers_no_verify_command_from_a_hidden_agents_md(

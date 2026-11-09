@@ -1,11 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A run whose jail came up degraded says so once, at session open, not per command.
-
-`JailSession.open()` stores the launcher's setup stderr at its ready handshake (a refused /proc
-mount under rootless podman, a skipped grant).
-"""
-
 from __future__ import annotations
 
 import json
@@ -13,157 +7,61 @@ import pathlib
 
 import pytest
 
+from agent6.app import session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail, jail_session
 from agent6.sessions import event_log
-from agent6.tools import dispatch, tool_errors
+from agent6.tools import dispatch
 
 
-class _StubSession:
-    def __init__(self, startup_stderr: str) -> None:
-        self.startup_stderr = startup_stderr
-
-    def close(self) -> None:  # pragma: no cover - dispatcher teardown
-        pass
-
-
-def _patch_open(monkeypatch: pytest.MonkeyPatch, stub: _StubSession) -> None:
-    def fake_open(cls: object, policy: object, *, session_net: object = None) -> _StubSession:
-        return stub
-
-    monkeypatch.setattr("agent6.sandbox.jail_session.JailSession.open", classmethod(fake_open))
-
-
-def _events(path: pathlib.Path, kind: str) -> list[dict[str, object]]:
-    if not path.exists():
-        return []
-    return [
-        e
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if (e := json.loads(line)).get("type") == kind
-    ]
-
-
-def _dispatcher(
-    tmp_path: pathlib.Path, events: event_log.EventSink, stub: _StubSession
-) -> dispatch.ToolDispatcher:
-    # network = "host" needs no session netns.
-    (tmp_path / "s").mkdir(exist_ok=True)
-    return dispatch.ToolDispatcher(
-        root=tmp_path,
-        config=Config.model_validate({"sandbox": {"network": "host"}}),
-        isolation="full",
-        events=events,
-        session_dir=tmp_path / "s",
-        use_jail_session=True,
+@pytest.mark.parametrize("warning", ["", "[agent6-jail] warning: fresh /proc mount failed (EPERM)"])
+def test_prepared_session_surfaces_startup_stderr_once(
+    tmp_path: pathlib.Path, warning: str
+) -> None:
+    """A prepared session emits its startup diagnostic on injection, not per command."""
+    cfg = Config.model_validate(
+        {"sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"}}
     )
-
-
-def test_a_degraded_session_emits_jail_degraded_once(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    warning = "[agent6-jail] warning: fresh /proc mount failed (EPERM)"
-    stub = _StubSession(warning)
-    _patch_open(monkeypatch, stub)
-    log = tmp_path / "e.jsonl"
-    d = _dispatcher(tmp_path, event_log.EventSink(log), stub)
+    access = session_runtime.prepare_local_execution(cfg, tmp_path, "none")
+    assert access.session is not None
+    # Only the diagnostic is injected; commands use the real supervisor.
+    access.session.startup_stderr = warning
+    log = tmp_path / "events.jsonl"
+    d = dispatch.ToolDispatcher(
+        root=tmp_path, config=cfg, command_access=access, events=event_log.EventSink(log)
+    )
     try:
-        assert d._run_session() is stub  # pyright: ignore[reportPrivateUsage]
-        d._run_session()  # already open -> no second emit  # pyright: ignore[reportPrivateUsage]
+        initial = (
+            [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+        )
+        assert [event["detail"] for event in initial if event["type"] == "jail.degraded"] == (
+            [warning] if warning else []
+        )
+        for message in ("first", "second"):
+            result = d.dispatch("run_command", {"argv": ["/bin/echo", message]}).to_wire()
+            assert result["returncode"] == 0
+            assert result["stdout"] == f"{message}\n"
     finally:
         d.close()
-    degraded = _events(log, "jail.degraded")
-    assert len(degraded) == 1, degraded
-    assert warning in str(degraded[0].get("detail"))
+        d.close()
+    events = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    degraded = [event for event in events if event["type"] == "jail.degraded"]
+    assert [event["detail"] for event in degraded] == ([warning] if warning else [])
 
 
-def test_a_clean_session_emits_nothing(
+def test_failed_preparation_never_invokes_one_shot(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    stub = _StubSession("")
-    _patch_open(monkeypatch, stub)
-    log = tmp_path / "e.jsonl"
-    d = _dispatcher(tmp_path, event_log.EventSink(log), stub)
-    try:
-        d._run_session()  # pyright: ignore[reportPrivateUsage]
-    finally:
-        d.close()
-    assert _events(log, "jail.degraded") == []
-
-
-def test_concurrent_callers_open_exactly_one_session(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The lazy session open is locked: two threads reaching it together open one launcher.
-
-    A dropped `JailSession` leaks its launcher, its namespaces and its network holder; the sleep
-    widens the window the race needs.
-    """
-    import threading
-    import time
-
-    opened: list[_StubSession] = []
-
-    def slow_open(cls: object, policy: object, *, session_net: object = None) -> _StubSession:
-        time.sleep(0.05)  # the window a check-then-set leaves open
-        stub = _StubSession("")
-        opened.append(stub)
-        return stub
-
-    monkeypatch.setattr("agent6.sandbox.jail_session.JailSession.open", classmethod(slow_open))
-    d = _dispatcher(tmp_path, event_log.EventSink(tmp_path / "e.jsonl"), _StubSession(""))
-    seen: list[object] = []
-    try:
-        threads = [
-            threading.Thread(
-                target=lambda: seen.append(d._run_session())  # pyright: ignore[reportPrivateUsage]
-            )
-            for _ in range(4)
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-    finally:
-        d.close()
-
-    assert len(opened) == 1, f"opened {len(opened)} sessions; {len(opened) - 1} leaked"
-    assert seen == [opened[0]] * 4
-
-
-@pytest.mark.parametrize("background", [False, True])
-def test_failed_session_open_never_falls_back(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, background: bool
-) -> None:
-    """A session preparation failure refuses every attempt instead of changing transport."""
-    attempts = 0
-    one_shots = 0
+    """The preparation error propagates before any dispatcher or fallback can run."""
 
     def refuse(*args: object, **kwargs: object) -> jail_session.JailSession:
-        nonlocal attempts
-        attempts += 1
         raise jail.JailUnavailableError("preparation refused")
 
     def one_shot(*args: object, **kwargs: object) -> None:
-        nonlocal one_shots
-        one_shots += 1
-        raise AssertionError("failed preparation invoked a one-shot runner")
+        pytest.fail("failed preparation invoked a one-shot runner")
 
     monkeypatch.setattr(jail_session.JailSession, "open", refuse)
-    d = dispatch.ToolDispatcher(
-        root=tmp_path,
-        config=Config.model_validate(
-            {"sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"}}
-        ),
-        isolation="none",
-        session_dir=tmp_path / "session",
-        use_jail_session=True,
-    )
     monkeypatch.setattr(jail, "run_in_jail", one_shot)
-    try:
-        for _ in range(2):
-            with pytest.raises(tool_errors.ToolError, match="preparation refused"):
-                d.dispatch("run_command", {"argv": ["true"], "background": background})
-        assert attempts == 1 and one_shots == 0
-    finally:
-        d.close()
+    cfg = Config.model_validate({"sandbox": {"isolation": "none", "network": "host"}})
+    with pytest.raises(jail.JailUnavailableError, match="preparation refused"):
+        session_runtime.prepare_local_execution(cfg, tmp_path, "none")

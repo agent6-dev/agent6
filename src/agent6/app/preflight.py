@@ -23,6 +23,7 @@ from agent6.app import role_providers, session_setup
 from agent6.config import Config, plan_metered
 from agent6.models import pricing, validate
 from agent6.providers import TranscriptSink
+from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, manifest
 from agent6.tools import schema, verify_infer
 from agent6.vcs import git_read
@@ -614,6 +615,7 @@ def infer_verify_if_unset(
     cfg: Config,
     cwd: pathlib.Path,
     *,
+    available: Callable[[str], bool] = tool_paths.jail_resolves,
     mode: str,
     events: event_log.EventSink,
     transcript_sink: TranscriptSink,
@@ -631,6 +633,7 @@ def infer_verify_if_unset(
         cfg: The run's config.
         cwd: The workspace.
         mode: The session mode; only run and plan infer.
+        available: The target executable lookup; passive local callers use the advisory PATH.
         events: Receives `loop.verify_inferred`.
         transcript_sink: The recorder the inference call goes to.
         budget: The tracker the inference call bills.
@@ -680,7 +683,9 @@ def infer_verify_if_unset(
         )
         return resp.text or ""
 
-    inferred = verify_infer.infer_verify_command(cwd, agents_md, llm_call=_llm_call, hide=hide)
+    inferred = verify_infer.infer_verify_command(
+        cwd, agents_md, available=available, llm_call=_llm_call, hide=hide
+    )
     events.emit("loop.verify_inferred", command=list(inferred.argv), source=inferred.source)
     passed = verify_infer.passed_over_text(inferred)
     passed_line = f"\n         passed over: {passed}" if passed else ""

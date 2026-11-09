@@ -14,7 +14,7 @@ from agent6.app import confine
 from agent6.config import Config
 from agent6.sandbox import tool_paths
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import path_safety
+from agent6.tools import path_safety, target_policy
 from agent6.tools import policy as tools_policy
 
 # Mirrors the launcher's system binds and WriteFile device rules, pinned in tests/security.
@@ -287,7 +287,7 @@ def command_rows(
     Returns:
         The rows.
     """
-    net = tools_policy.resolve_network(cfg, selected)
+    net = target_policy.resolve_network(cfg, selected)
     configured = _grant_rows(grants)
     mounts = tool_paths.operator_tool_mounts()
     rows = [*_system_rows(selected, net, abi, proc_ok=proc_ok), *_tool_rows(mounts)]

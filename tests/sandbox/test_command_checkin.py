@@ -28,6 +28,7 @@ from typing import Any
 import pytest
 
 from agent6 import kinds
+from agent6.app import session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail, jail_session
 from agent6.tools import dispatch, tool_errors
@@ -49,7 +50,7 @@ def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatch
         config=cfg,
         isolation="none",
         session_dir=session_dir,
-        use_jail_session=True,
+        command_access=session_runtime.prepare_local_execution(cfg, root, "none"),
     )
 
 
@@ -132,7 +133,11 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: pathlib.Path) -> None:
         }
     )
     d = dispatch.ToolDispatcher(
-        root=root, config=cfg, isolation="none", session_dir=session_dir, use_jail_session=True
+        root=root,
+        config=cfg,
+        isolation="none",
+        session_dir=session_dir,
+        command_access=session_runtime.prepare_local_execution(cfg, root, "none"),
     )
     try:
         out = d.dispatch("run_verify_command", {}).to_wire()
@@ -220,7 +225,7 @@ def test_a_read_only_mode_cannot_background(tmp_path: pathlib.Path) -> None:
         isolation="none",
         mode="ask",
         session_dir=session_dir,
-        use_jail_session=True,
+        command_access=session_runtime.prepare_local_execution(cfg, root, "none"),
     )
     try:
         with pytest.raises(tool_errors.ToolError, match="not available in ask mode"):
@@ -348,7 +353,7 @@ def test_a_plan_or_ask_command_runs_bounded_instead_of_handing_back(tmp_path: pa
         config=cfg,
         isolation="none",
         session_dir=session_dir,
-        use_jail_session=True,
+        command_access=session_runtime.prepare_local_execution(cfg, root, "none"),
         mode="plan",
     )
     out = _run(d, "sleep 1; echo done")

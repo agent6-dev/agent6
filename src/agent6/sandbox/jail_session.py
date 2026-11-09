@@ -27,6 +27,30 @@ READ_LIMIT = 65536
 _REQUEST_LIMIT = 1024 * 1024
 _READY_LIMIT = 4096
 _ANSWER_LIMIT = 128 * 1024 * 1024
+# Direct argv needs a file, not a shell builtin; empty PATH entries denote the command cwd.
+# Landlock leaves stat/access unconfined; opening checks grants without executing a candidate.
+_EXECUTABLE_LOOKUP = """\
+search=$PATH
+unreadable=
+while :; do
+    directory=${search%%:*}
+    candidate=${directory:-.}/$1
+    if [ -f "$candidate" ] && [ -x "$candidate" ]; then
+        if ( : < "$candidate" ) 2>/dev/null; then exit 0; fi
+        if [ ! -r "$candidate" ]; then unreadable=$candidate; fi
+    fi
+    case "$search" in
+        *:*) search=${search#*:} ;;
+        *) break ;;
+    esac
+done
+if [ -n "$unreadable" ]; then
+    printf '%s\\n' "$unreadable: execute-only executable visibility is indeterminate" >&2
+    printf '%s\\n' 'Use an explicit command path to skip this advisory lookup.' >&2
+    exit 2
+fi
+exit 1
+"""
 
 
 class _Ready(pydantic.BaseModel):
@@ -241,19 +265,25 @@ class JailSession:
     # Carried on every request: the launcher's own default would ignore the operator's cap.
     _memory_limit_mib: int
     startup_stderr: str = ""
+    target: kinds.ExecutionTarget | None = None
     _stderr: _Stderr | None = None
     _request_id: int = 0
     _close_error: str | None = None
 
     @classmethod
     def open(
-        cls, policy: kinds.JailPolicy, *, session_net: jail.SessionNetwork | None = None
+        cls,
+        policy: kinds.JailPolicy,
+        *,
+        session_net: jail.SessionNetwork | None = None,
+        controls: tuple[kinds.EffectiveControl, ...] = (),
     ) -> JailSession:
         """Start a serving launcher confined by the policy; its argv is ignored.
 
         Args:
             policy: The confinement every request runs under.
             session_net: The run's session network, when one exists.
+            controls: The resolved local controls, without claiming per-control probes.
 
         Returns:
             The session, ready for its first request.
@@ -264,9 +294,6 @@ class JailSession:
         """
         binary = jail.require_jail_binary()
         join_args, join_fds = jail.network_join_args(policy, session_net)
-        spec = jail.policy_spec(policy)
-        spec["mode"] = "serve"
-        data = _frame(spec)
         proc = jail.spawn_launcher(
             binary,
             join_args,
@@ -276,11 +303,48 @@ class JailSession:
             pass_fds=join_fds,
             die_with_agent=False,
         )
+        target = kinds.ExecutionTarget(
+            transport="local",
+            host_root=policy.cwd,
+            command_root=policy.cwd,
+            user=str(os.getuid()),
+            home=dict(policy.env).get("HOME"),
+            environment=kinds.ExecutionEnvironment(policy.env),
+            controls=controls,
+        )
+        return cls.connect(proc, policy, target=target)
+
+    @classmethod
+    def connect(
+        cls,
+        proc: subprocess.Popen[bytes],
+        policy: kinds.JailPolicy,
+        *,
+        target: kinds.ExecutionTarget,
+    ) -> JailSession:
+        """Own a process transport and prepare its supervisor before returning.
+
+        The transport must carry raw stdin/stdout, never a terminal. Failure closes it;
+        it does not authorize selecting a different execution target.
+
+        Args:
+            proc: The process carrying the supervisor channel.
+            policy: The local launcher confinement policy.
+            target: Prepared transport and environment facts.
+
+        Returns:
+            The ready session, owning the transport.
+
+        Raises:
+            jail.JailUnavailableError: The supervisor handshake failed.
+        """
         assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
         stderr = _Stderr(proc.stderr)
         stderr.start()
         try:
-            proc.stdin.write(data)
+            spec = jail.policy_spec(policy)
+            spec["mode"] = "serve"
+            proc.stdin.write(_frame(spec))
             proc.stdin.flush()
             ready = _Ready.model_validate_json(
                 _read_frame(proc, _READY_LIMIT, deadline=time.monotonic() + 10)
@@ -305,7 +369,45 @@ class JailSession:
             _stderr=stderr,
             _memory_limit_mib=policy.memory_limit_mib,
             startup_stderr=startup_stderr,
+            target=dataclasses.replace(target, protocol_version=ready.protocol),
         )
+
+    def executable_available(self, executable: str) -> bool:
+        """Look up a bare executable inside the prepared target's command environment.
+
+        Paths remain advisory: setup may create a workspace-relative runner later.
+        A fixed /bin/sh probe opens readable files without running them or a PATH-selected shell.
+
+        Args:
+            executable: The candidate executable name or advisory path.
+
+        Returns:
+            Whether the target can read and resolve the executable, or True for advisory paths.
+
+        Raises:
+            jail.JailUnavailableError: The probe failed, timed out or could not determine
+                target visibility.
+        """
+        if "/" in executable:
+            return True
+        if self.target is None:
+            raise jail.JailUnavailableError("command session has no prepared target")
+        result = self.run(
+            ("/bin/sh", "-c", _EXECUTABLE_LOOKUP, "agent6-lookup", executable),
+            env=self.target.environment.variables,
+            timeout_s=10,
+        )
+        if not isinstance(result, kinds.CommandResult) or result.exec_failed:
+            raise jail.JailUnavailableError("target executable lookup could not run")
+        if result.timed_out:
+            raise jail.JailUnavailableError("target executable lookup timed out")
+        if result.returncode not in (0, 1):
+            detail = result.stderr.strip()[-400:]
+            raise jail.JailUnavailableError(
+                f"target executable lookup failed (exit {result.returncode})"
+                + (f": {detail}" if detail else "")
+            )
+        return result.returncode == 0
 
     def run(
         self,

@@ -22,7 +22,7 @@ from agent6.config import Config, ConfigError, ReviewerConfig, RoleModel
 from agent6.models import registry
 from agent6.sessions import event_log, manifest
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import policy as tools_policy
+from agent6.tools import target_policy
 
 _LEVELS: dict[str, kinds.IsolationLevel] = {"full": "full", "partial": "partial", "none": "none"}
 
@@ -42,7 +42,7 @@ def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
     return manifest.PolicyStamp(
         run_commands=cfg.sandbox.run_commands,
         isolation=isolation or str(cfg.sandbox.isolation),
-        network=tools_policy.resolve_network(cfg, level) if level is not None else "",
+        network=target_policy.resolve_network(cfg, level) if level is not None else "",
         commit_per_turn=cfg.git.commit_per_turn,
     )
 

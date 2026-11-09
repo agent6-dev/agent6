@@ -86,7 +86,7 @@ def test_provider_setup_failure_journals_session_end(
         tui_enabled=False,
         interactive=False,
         task="do the thing",
-        gate=lambda c, _b: c,
+        gate=lambda c, _b, _a: c,
         chain_branch=None,
         base_sha="",
         untracked_at_start=frozenset(),
@@ -135,7 +135,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
         close=lambda: closed.append("session"),
     )
 
-    def _fail_gate(_cfg: Config, _budget: object) -> Config:
+    def _fail_gate(_cfg: Config, _budget: object, _available: object) -> Config:
         raise RuntimeError("gate setup failed")
 
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
@@ -223,7 +223,7 @@ def test_mcp_setup_failure_journals_session_end(
         tui_enabled=False,
         interactive=False,
         task="do the thing",
-        gate=lambda c, _b: c,
+        gate=lambda c, _b, _a: c,
         chain_branch=None,
         base_sha="",
         untracked_at_start=frozenset(),
@@ -324,6 +324,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         )
 
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "prepare_local_execution", _returning(mock.MagicMock()))
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(mcp))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
@@ -354,7 +355,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         tui_enabled=False,
         interactive=False,
         task="do the thing",
-        gate=lambda c, _b: c,
+        gate=lambda c, _b, _a: c,
         chain_branch=None,
         base_sha="",
         untracked_at_start=frozenset(),
@@ -452,6 +453,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         cfg=Config(),
     )
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "prepare_local_execution", _returning(mock.MagicMock()))
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
@@ -466,7 +468,7 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         tui_enabled=True,
         interactive=False,
         task=None,  # a resumed execution: wf.resume()
-        gate=lambda c, _b: c,
+        gate=lambda c, _b, _a: c,
         chain_branch=None,
         base_sha="",
         untracked_at_start=frozenset(),
@@ -524,6 +526,7 @@ def _wired_frontend(
         cfg=cfg,
     )
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
+    monkeypatch.setattr(session_runtime, "prepare_local_execution", _returning(mock.MagicMock()))
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
@@ -605,7 +608,7 @@ def test_the_chown_runs_after_the_auto_merge_writes(
             tui_enabled=False,
             interactive=False,
             task="do the thing",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),
@@ -735,7 +738,7 @@ def test_auto_merge_leaves_harness_ends_on_the_run_branch_and_says_why(
             tui_enabled=False,
             interactive=False,
             task="do the thing",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=branch,
             base_sha=base,
             untracked_at_start=frozenset(),
@@ -856,7 +859,7 @@ def test_a_finish_with_no_commit_is_journaled_and_reads_not_committed(
             tui_enabled=False,
             interactive=False,
             task="do the thing",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=branch,
             base_sha=base,
             untracked_at_start=frozenset(),
@@ -945,7 +948,7 @@ def test_a_raising_dashboard_scope_prints_one_crash_line_and_journals_no_second_
                 tui_enabled=False,
                 interactive=False,
                 task="do the thing",
-                gate=lambda c, _b: c,
+                gate=lambda c, _b, _a: c,
                 chain_branch=None,
                 base_sha="",
                 untracked_at_start=frozenset(),
@@ -1020,6 +1023,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
         tools.dispatcher.settle_background = _boom
         return tools
 
+    monkeypatch.setattr(session_runtime, "prepare_local_execution", _returning(mock.MagicMock()))
     monkeypatch.setattr(session_runtime, "build_session_tools", _tools)
     said: list[str] = []
     end = execution.run_execution(
@@ -1034,7 +1038,7 @@ def test_an_interrupt_after_the_runs_end_leaves_its_result_standing(
             tui_enabled=False,
             interactive=False,
             task="do the thing",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),
@@ -1123,7 +1127,7 @@ def test_an_interrupted_end_records_the_tree_the_run_left(
             tui_enabled=False,
             interactive=False,
             task="do the thing",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),
@@ -1195,7 +1199,7 @@ def test_a_second_interrupt_during_the_tree_read_still_journals_the_end(
             tui_enabled=False,
             interactive=False,
             task="do the thing",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),
@@ -1263,7 +1267,7 @@ def test_an_escape_before_the_harness_exists_records_the_tree_too(
         tui_enabled=False,
         interactive=False,
         task="do the thing",
-        gate=lambda c, _b: c,
+        gate=lambda c, _b, _a: c,
         chain_branch=None,
         base_sha=head,
         untracked_at_start=frozenset(),
@@ -1342,7 +1346,7 @@ def test_a_plan_under_auto_merge_prints_no_skipped_note(
             tui_enabled=False,
             interactive=False,
             task="plan the thing",
-            gate=lambda c, _b: c,
+            gate=lambda c, _b, _a: c,
             chain_branch=None,
             base_sha="",
             untracked_at_start=frozenset(),

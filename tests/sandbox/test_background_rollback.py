@@ -9,6 +9,7 @@ import time
 import pytest
 
 from agent6 import config, kinds, paths
+from agent6.app import session_runtime
 from agent6.sessions import layout
 from agent6.tools import background, dispatch
 
@@ -128,7 +129,7 @@ def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
             config=cfg,
             isolation=isolation,
             session_dir=session_dir,
-            use_jail_session=True,
+            command_access=session_runtime.prepare_local_execution(cfg, work, isolation),
         )
         real_write = os.pwrite
         writes = 0
@@ -154,16 +155,19 @@ def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
             ).to_wire()
             assert started["background_id"] == "bg1" and started["still_running"]
             shells = tools._shells  # pyright: ignore[reportPrivateUsage]
-            owner = tools._session  # pyright: ignore[reportPrivateUsage]
+            access = tools._command_access  # pyright: ignore[reportPrivateUsage]
+            assert access is not None
+            owner = access.session
             assert shells is not None and owner is not None
             shell = shells._get("bg1")  # pyright: ignore[reportPrivateUsage]
             assert not shell.job._owns_session  # pyright: ignore[reportPrivateUsage]
             fd = shell.log_fd
             assert os.pread(fd, 100, 0) == b"before\n"
-            temp = tools._command_tmp  # pyright: ignore[reportPrivateUsage]
-            net = tools._own_session_net  # pyright: ignore[reportPrivateUsage]
+            temp = access.temp  # pyright: ignore[reportPrivateUsage]
+            net = access.network  # pyright: ignore[reportPrivateUsage]
+            holder = net._holder if net is not None else None  # pyright: ignore[reportPrivateUsage]
             if isolation == "full":
-                assert net is not None
+                assert holder is not None and holder.poll() is None
             else:
                 assert temp is not None
             (work / "release").touch()
@@ -177,25 +181,32 @@ def test_dispatcher_close_retains_shared_capture_until_copy_succeeds(
                 patch.setattr(os, "pwrite", partial)
                 with pytest.raises(background.BackgroundError, match="copy full"):
                     tools.close()
-                assert tools._session is owner  # pyright: ignore[reportPrivateUsage]
+                assert access.session is owner  # pyright: ignore[reportPrivateUsage]
                 assert owner._proc.poll() is None  # pyright: ignore[reportPrivateUsage]
                 assert shells._get("bg1") is shell  # pyright: ignore[reportPrivateUsage]
                 assert shell.log_fd == fd and os.pread(fd, 100, 0) == b"before\naf"
-                assert tools._command_tmp is temp  # pyright: ignore[reportPrivateUsage]
-                assert tools._own_session_net is net  # pyright: ignore[reportPrivateUsage]
+                assert access.temp is temp  # pyright: ignore[reportPrivateUsage]
+                assert access.network is net  # pyright: ignore[reportPrivateUsage]
+                if holder is not None:
+                    assert holder.poll() is None
                 if temp is not None:
                     assert pathlib.Path(temp.name).is_dir()
 
             tools.close()
-            assert tools._session is None  # pyright: ignore[reportPrivateUsage]
+            assert owner._close_error is not None  # pyright: ignore[reportPrivateUsage]
             assert owner._proc.poll() == 0  # pyright: ignore[reportPrivateUsage]
             with pytest.raises(OSError):
                 os.fstat(fd)
             assert (shells.log_root / "bg1/out.log").read_bytes() == b"before\nafter\n"
-            assert tools._command_tmp is None  # pyright: ignore[reportPrivateUsage]
-            assert tools._own_session_net is None  # pyright: ignore[reportPrivateUsage]
+            assert access.temp is None or not pathlib.Path(access.temp.name).exists()  # pyright: ignore[reportPrivateUsage]
+            if holder is not None:
+                assert holder.poll() is not None
             if temp is not None:
                 assert not pathlib.Path(temp.name).exists()
             tools.close()
         finally:
             tools.close()
+            if tools._command_access is not None:  # pyright: ignore[reportPrivateUsage]
+                net = tools._command_access.network  # pyright: ignore[reportPrivateUsage]
+                if net is not None:
+                    net.close()

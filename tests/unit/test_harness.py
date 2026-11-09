@@ -42,6 +42,7 @@ from agent6.harness import (
     verify_verdict,
 )
 from agent6.providers import ProviderError, ProviderResponse
+from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, process
 from agent6.tools import mcp_client, operator_prompts
 from agent6.tools import results as tools_results
@@ -73,6 +74,9 @@ class _StubDispatcher:
     dag_available = True
     last_verification = None
     verify_withheld = False
+
+    def executable_available(self, executable: str) -> bool:
+        return tool_paths.jail_resolves(executable)
 
     def available_tool_names(self) -> tuple[str, ...]:
         return ()

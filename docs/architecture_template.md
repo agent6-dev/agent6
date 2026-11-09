@@ -67,7 +67,7 @@ A commit lands on the session's chain after a turn that changed the tree.
 ## The run lifecycle
 
 `app/run.py`'s `run_task` composes the run's stages.
-The diagram draws them in call order: refusals and clamps, the route preflight, isolation, git preflight, the manifest, provider construction, gate inference, tool assembly, the loop, then auto-merge and the end report.
+The diagram draws them in call order: refusals and clamps, the route preflight, isolation, git preflight, the manifest, provider construction, target preparation, gate inference, tool assembly, the loop, then auto-merge and the end report.
 The stash finalize is last because it runs from `finally`, on every exit path, refusals included.
 
 <!-- diagram: run-lifecycle -->
@@ -260,6 +260,27 @@ A successful connect replaces the entry atomically.
 `app/session_setup.py::sign_in_refusal` shares the bound-grant diagnosis between run preflight, `check config` and `model`.
 `connect --status` reads the same validator's `BoundGrantError.cause` and checks each locally usable credential without refreshing or exchanging it.
 The bound store's security rules are in [Security](security.md#8-secrets-and-connect).
+
+## Prepared execution targets
+
+`app/session_runtime.py::prepare_local_execution` resolves a local policy and opens its command session before gate inference or workspace commands.
+`tools/command_tools.py::JailAccess` carries that policy, session, resolved grants and owned local resources into dispatch; it contains no lazy session callback.
+Setup, baseline verification, model commands and later verification use that same session.
+A failed preparation propagates before dispatch exists; it never selects one-shot execution.
+Bare dispatchers explicitly retain the local one-shot path.
+
+`kinds.ExecutionTarget` holds immutable transport, workspace roots, user, HOME, environment policy, effective controls and observed protocol identity.
+Unobserved runtime, container, launcher-instance, launcher-version and lifecycle identities are `None`.
+The readiness protocol advertises its version, not the launcher's instance identifier or binary version.
+The record is separate from live job state and resource cleanup.
+
+`tools/policy.py` owns permission and grant assembly; `tools/target_policy.py` resolves local control descriptions, networking and HOME selection.
+The dispatcher still gates tool availability and journals approvals before execution.
+Preparing a transport grants no command permission.
+`JailSession.connect` accepts a process transport and performs the common supervisor handshake; command handlers need no transport-specific argv or environment branches.
+Verification inference accepts an executable-availability callable: active runs use their prepared session and its environment, while passive local previews explicitly use the advisory local PATH lookup.
+Mid-run gate adoption uses the same lookup.
+Source discovery still reads the host workspace.
 
 ## Jail supervisor protocol
 

@@ -1748,7 +1748,9 @@ def test_command_hand_back_distinguishes_operator_stop_from_checkin(
     session.run.side_effect = run
     try:
         with mock.patch.object(
-            d, "_jail_access", dataclasses.replace(d._jail_access, get_session=lambda: session)
+            d,
+            "_command_access",
+            dataclasses.replace(d._jail_access("run_command"), session=session),
         ):
             result = d.dispatch("run_command", {"argv": ["sleep", "40"]})
         out = result.to_wire()
@@ -1826,7 +1828,9 @@ def test_an_operator_stop_that_fails_stays_reachable_for_teardown(tmp_path: path
     try:
         with (
             mock.patch.object(
-                d, "_jail_access", dataclasses.replace(d._jail_access, get_session=lambda: session)
+                d,
+                "_command_access",
+                dataclasses.replace(d._jail_access("run_command"), session=session),
             ),
             pytest.raises(tool_errors.ToolError, match=r"operator's stop.*777"),
         ):

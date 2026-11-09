@@ -50,7 +50,7 @@ from agent6.machine import journal as machine_journal
 from agent6.sandbox import detect, jail
 from agent6.sessions import layout, lock, process
 from agent6.tools import policy as tools_policy
-from agent6.tools import result_format
+from agent6.tools import result_format, target_policy
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import machine_logs, machine_state
 
@@ -258,7 +258,7 @@ def machine_tool_policy_factory(
             argv = bundle.anchored_argv(argv, bundle_dir, cwd)
         env = {**env_base, **{k: os.environ[k] for k in pass_env if k in os.environ}}
         # A tool's processes die with its state, so its network is its own, never a shared one.
-        network = tools_policy.resolve_network(cfg, isolation)
+        network = target_policy.resolve_network(cfg, isolation)
         return tools_policy.jail_policy(
             cwd,
             cfg,

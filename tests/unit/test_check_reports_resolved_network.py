@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from agent6.config import Config
-from agent6.tools import policy
+from agent6.tools import target_policy
 
 
 @pytest.mark.parametrize(
@@ -28,7 +28,7 @@ def test_the_resolved_network_follows_the_level_and_the_knob(
     configured: str, isolation: str, expected: str
 ) -> None:
     cfg = Config.model_validate({"sandbox": {"network": configured}})
-    assert policy.resolve_network(cfg, isolation) == expected  # type: ignore[arg-type]
+    assert target_policy.resolve_network(cfg, isolation) == expected  # type: ignore[arg-type]
 
 
 def test_a_callers_own_answer_wins_but_still_cannot_outrun_the_level() -> None:
@@ -38,5 +38,5 @@ def test_a_callers_own_answer_wins_but_still_cannot_outrun_the_level() -> None:
     it is still the host's network.
     """
     cfg = Config()
-    assert policy.resolve_network(cfg, "full", override="none") == "none"
-    assert policy.resolve_network(cfg, "partial", override="none") == "host"
+    assert target_policy.resolve_network(cfg, "full", override="none") == "none"
+    assert target_policy.resolve_network(cfg, "partial", override="none") == "host"

@@ -24,9 +24,9 @@ from typing import Protocol
 from agent6 import kinds
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
+from agent6.sandbox import tool_paths
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import policy as tools_policy
-from agent6.tools import tool_errors, verify_infer
+from agent6.tools import target_policy, tool_errors, verify_infer
 from agent6.vcs import git_read
 
 # The lines of the command's output a failure's summary carries.
@@ -105,7 +105,9 @@ def origin_gate(cfg: Config, origin: pathlib.Path) -> tuple[str, ...]:
         return cfg.harness.verify_command
     hide = cfg.sandbox.hide_paths
     agents_md = verify_infer.read_agents_md(origin, hide)
-    return verify_infer.infer_verify_command(origin, agents_md, hide=hide).argv
+    return verify_infer.infer_verify_command(
+        origin, agents_md, available=tool_paths.jail_resolves, hide=hide
+    ).argv
 
 
 def gate_refusal(
@@ -283,7 +285,7 @@ def _no_route_line(cfg: Config, isolation: kinds.IsolationLevel) -> str:
     Returns:
         The line, "" when commands share the host's network.
     """
-    if tools_policy.resolve_network(cfg, isolation) == "host":
+    if target_policy.resolve_network(cfg, isolation) == "host":
         return ""
     return (
         "\n  the command ran with no route off this machine (sandbox.network), so it has to"

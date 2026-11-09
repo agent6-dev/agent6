@@ -50,8 +50,7 @@ from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, process
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import manifest as sessions_manifest
-from agent6.tools import dispatch, operator_prompts
-from agent6.tools import policy as tools_policy
+from agent6.tools import command_tools, dispatch, operator_prompts, target_policy
 from agent6.vcs import commit_message, git_read
 from agent6.viewmodel import policy, transcript_text
 
@@ -101,7 +100,7 @@ class ExecutionInputs:
     tui_enabled: bool
     interactive: bool
     task: str | None
-    gate: Callable[[Config, agent6_budget.BudgetTracker], Config]
+    gate: Callable[[Config, agent6_budget.BudgetTracker, Callable[[str], bool]], Config]
     chain_branch: str | None
     base_sha: str
     untracked_at_start: frozenset[str]
@@ -317,6 +316,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
     session: session_runtime.SessionProviders | None = None
+    access: command_tools.JailAccess | None = None
+    session_net: jail.SessionNetwork | None = None
     hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
     try:
         stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
@@ -336,7 +337,19 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             conversations=conversations,
         )
         budget = session.budget
-        cfg = inputs.gate(cfg, budget)
+        if session_setup.wants_session_network(cfg, inputs.isolation):
+            session_net = jail.SessionNetwork.open()
+            process.write_session_netns_pid(layout.session_dir, session_net.holder_pid)
+        access = session_runtime.prepare_local_execution(
+            cfg,
+            cwd,
+            inputs.isolation,
+            name=layout.session_id,
+            session_net=session_net,
+            worktree_git_dir=inputs.worktree_git_dir,
+        )
+        assert access.session is not None
+        cfg = inputs.gate(cfg, budget, access.session.executable_available)
 
         steer_state = frontend.make_steer_state(
             events,
@@ -346,7 +359,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 session.rm_role.model,
                 cfg.sandbox.run_commands,
                 inputs.isolation,
-                tools_policy.resolve_network(cfg, inputs.isolation),
+                target_policy.resolve_network(cfg, inputs.isolation),
             ),
         )
     except (KeyboardInterrupt, Exception) as exc:
@@ -357,8 +370,14 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             tree = _tree_left_before_the_loop(cwd, inputs, hidden)
             reason = _journal_escape(events, exc, execution_id=execution_id, turns=0, tree=tree)
             reporter.err(f"\n[agent6] {label} {reason}")
-        if session is not None:
-            session.close()
+        with contextlib.ExitStack() as cleanup:
+            if session_net is not None:
+                cleanup.callback(process.clear_session_netns_pid, layout.session_dir)
+                cleanup.callback(session_net.close)
+            if access is not None:
+                cleanup.callback(access.close)
+            if session is not None:
+                cleanup.callback(session.close)
         raise
 
     interrupted = False
@@ -368,18 +387,12 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     undo_outcome: list[tuple[str, str]] = []
     dispatcher: dispatch.ToolDispatcher | None = None
     mcp_manager = None
-    session_net: jail.SessionNetwork | None = None
     try:
         reporter.note(f"{'resume ' if inputs.resuming else ''}session id: {inputs.session_id}")
         if not console_stream and not inputs.tui_enabled:
             for line in policy.session_policy(layout.session_dir).models:
                 reporter.note(line)
 
-        # The session network before its first member; the MCP servers before the harness.
-        if session_setup.wants_session_network(cfg, inputs.isolation):
-            session_net = jail.SessionNetwork.open()
-            # Published so `agent6 exec` can join it: a namespace is named through a /proc entry.
-            process.write_session_netns_pid(layout.session_dir, session_net.holder_pid)
         mcp_manager = session_setup.start_mcp_manager_if_enabled(
             cfg, cwd, inputs.isolation, reporter=reporter, events=events, session_net=session_net
         )
@@ -400,6 +413,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             loop_log=loop_log,
             mcp_manager=mcp_manager,
             session_net=session_net,
+            command_access=access,
             rm_role=session.rm_role,
             worktree_git_dir=inputs.worktree_git_dir,
         )
@@ -636,6 +650,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 cleanup.callback(_close_mcp)
                 if dispatcher is not None:
                     cleanup.callback(dispatcher.close)
+                else:
+                    cleanup.callback(access.close)
                 cleanup.callback(session.close)
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.

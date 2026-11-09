@@ -19,6 +19,7 @@ import time
 
 import pytest
 
+from agent6.app import session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.sessions import layout as sessions_layout
@@ -47,7 +48,12 @@ def _serving(
         config=Config.model_validate({"sandbox": {"run_commands": "allow"}}),
         isolation="full",
         session_dir=session_dir,
-        use_jail_session=True,
+        command_access=session_runtime.prepare_local_execution(
+            Config.model_validate({"sandbox": {"run_commands": "allow"}}),
+            tmp_path,
+            "full",
+            session_net=net,
+        ),
         session_net=net,
     )
     serve = (

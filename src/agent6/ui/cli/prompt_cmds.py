@@ -11,6 +11,7 @@ from typing import Literal
 from agent6 import paths
 from agent6.config import layer
 from agent6.harness import prompt_preview
+from agent6.sandbox import tool_paths
 from agent6.tools import verify_infer
 
 
@@ -40,7 +41,11 @@ def _cmd_prompt_show(
         # The gate shapes the prompt, so infer it as a run does; the LLM tier spends, so not here.
         hide = cfg.sandbox.hide_paths
         inferred = verify_infer.infer_verify_command(
-            cwd, verify_infer.read_agents_md(cwd, hide), llm_call=None, hide=hide
+            cwd,
+            verify_infer.read_agents_md(cwd, hide),
+            available=tool_paths.jail_resolves,
+            llm_call=None,
+            hide=hide,
         )
         if inferred.argv:
             cfg = cfg.with_verify_command(inferred.argv)

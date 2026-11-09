@@ -112,6 +112,26 @@ Every tool call that allows the model to run arbitrary commands (`run_command`, 
 `mcp add` probes under the same jail, and skips the probe only when there is no jail at all or a run would refuse the config, saying so.
 It is the operator's own invocation naming the server they are adding.
 
+### Effective controls
+
+An execution target describes each sandbox leaf with its configured value, effective value and behaviour, enforcement owner, probe state and any warning or refusal reason.
+The owner vocabulary is `agent6`, `container`, `host file tools` or `unsupported`; local preparation uses no container owner.
+`resolved` means policy selection, not a successful enforcement probe; `not probed` claims no inspection, and `prepared` means preparation was observed.
+A ready launcher alone does not prove every configured path exists or every optional kernel feature works.
+Startup diagnostics and live sandbox checks retain those qualifications.
+
+The record includes command approval, fetch approvals, path and device grants, HOME, networking, git protection and the per-process memory cap.
+Under `none`, file-tool restrictions remain host-enforced while commands have no filesystem, device or network confinement.
+Under `partial`, Landlock grants do not provide mount masks or a private network.
+Preparing the session does not grant command permission: configured deny and approval requests remain in force.
+Local executable lookup runs a fixed `/bin/sh` probe through that session with its command environment; candidate names are positional arguments, not shell text.
+It opens executable PATH files for reading to check target visibility and Landlock grants, without reading their contents or running candidates or a PATH-selected shell.
+Confirming visibility requires read access; a builtin alone cannot satisfy a direct argv command.
+Shell-wrapped builtins recognized by inference need an available `sh`, not an external namesake.
+An unreadable execute-only PATH candidate leaves visibility indeterminate unless a later readable match exists.
+Indeterminate visibility, a timeout or an abnormal probe exit refuses inference or adoption rather than reporting an executable absent.
+An explicit command path skips this advisory lookup, not command approval or confinement.
+
 **Modes** (`[sandbox].isolation`)
 
 | Mode | Applies |
@@ -702,7 +722,8 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 
 ### 12. Host-side subprocess allowlist
 
-Every child process whose argv depends on model output runs through `run_in_jail` ([Sandbox](#2-sandbox)).
+Every child process whose argv depends on model output runs through `run_in_jail`, `spawn_in_jail` or the prepared `JailSession` supervisor channel ([Sandbox](#2-sandbox)).
+These are the reviewed command boundary, not exemptions for transport-specific subprocesses.
 The exception is `notify-send`: it has no stdin mode, so a machine `notify` message is one data argument after `--`.
 A fixed set of modules also shells out directly with `subprocess.run` / `Popen`, each with fixed argv.
 `tests/security/test_subprocess_allowlist.py` pins the file list; audit with `rg 'subprocess\.|os\.(system|exec|posix_spawn)' src/agent6/`.

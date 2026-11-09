@@ -28,7 +28,7 @@ from agent6 import errors, evidence, kinds, paths
 from agent6.config import Config
 from agent6.context import memory, skills
 from agent6.graph import curator as graph_curator
-from agent6.sandbox import jail, jail_session, tool_paths
+from agent6.sandbox import jail, tool_paths
 from agent6.sessions import event_log, ipc
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import (
@@ -48,6 +48,7 @@ from agent6.tools import (
     schema,
     sessions,
     skill_tools,
+    target_policy,
     tool_errors,
 )
 from agent6.tools import policy as tools_policy
@@ -102,7 +103,7 @@ class ToolDispatcher:
         session_dir: The run's dir, for background commands, the file bridge and the
             effective command policy; None leaves them unwired.
         findings: The session's findings reader behind `list_findings`; None refuses the tool.
-        use_jail_session: Whether one jail process serves every command of the run.
+        command_access: Prepared commands owned by this dispatcher; None selects local one-shots.
         session_net: The run's session network; None makes the dispatcher's own.
     """
 
@@ -123,7 +124,7 @@ class ToolDispatcher:
         state_dir: pathlib.Path | None = None,
         session_dir: pathlib.Path | None = None,
         findings: Callable[[], results.FindingsResult] | None = None,
-        use_jail_session: bool = False,
+        command_access: command_tools.JailAccess | None = None,
         session_net: jail.SessionNetwork | None = None,
         shared_writes: tuple[pathlib.Path, ...] = (),
     ) -> None:
@@ -140,7 +141,11 @@ class ToolDispatcher:
             paths.mkdir_for_real_user(mem)
         # Resolved once: every jail launch and the file tools hold the same directories. A
         # machine state's grants are judged against the regions its other states write too.
-        self._grants = tools_policy.resolve_grants(config, self._root, shared_writes=shared_writes)
+        self._grants = (
+            command_access.grants
+            if command_access is not None
+            else tools_policy.resolve_grants(config, self._root, shared_writes=shared_writes)
+        )
         self._ws = tools_policy.workspace_for(
             config, self._root, memory_dir=mem, grants=self._grants
         )
@@ -171,20 +176,18 @@ class ToolDispatcher:
             if session_dir is not None
             else None
         )
-        # One jail process per run, so its commands share a netns, a PID namespace and a /tmp.
-        self._use_session = use_jail_session
+        self._command_access = command_access
         self._session_net = session_net
         self._own_session_net: jail.SessionNetwork | None = None
-        self._session: jail_session.JailSession | None = None
-        self._session_error: jail.JailUnavailableError | None = None
-        # Two threads racing the lazy open would leak a jail process and its namespaces.
-        self._session_lock = threading.Lock()
         self._temp_lock = threading.Lock()
         self._command_tmp: tempfile.TemporaryDirectory[str] | None = None
         self._session_dir = session_dir
-        self._jail_access = command_tools.JailAccess(
-            get_policy=self._jail_policy, get_session=self._run_session, net_for=self._net_for
-        )
+        if (
+            command_access is not None
+            and command_access.session is not None
+            and command_access.session.startup_stderr
+        ):
+            self._emit("jail.degraded", detail=command_access.session.startup_stderr)
         self._handlers: dict[str, Callable[[dict[str, Any]], results.ToolResult]] = {
             schema.Agent6DocsInput.TOOL_NAME: fs_tools.agent6_docs,
             schema.ReadFileInput.TOOL_NAME: lambda raw: fs_tools.read_file(self._ws, raw),
@@ -277,7 +280,7 @@ class ToolDispatcher:
         # `fetch` is redundant when a jailed command already has the network.
         if (
             name == schema.FetchInput.TOOL_NAME
-            and tools_policy.resolve_network(self._config, self.isolation) == "host"
+            and target_policy.resolve_network(self._config, self.isolation) == "host"
         ):
             return "not available (a jailed command has the network)"
         if name in _SYMBOL_TOOL_ARMS.get(os.environ.get("AGENT6_SYMBOL_TOOLS", ""), frozenset()):
@@ -486,12 +489,10 @@ class ToolDispatcher:
         """Stop the background commands and close the jail session; idempotent."""
         if self._shells is not None:
             self._shells.stop_all()
-        with self._session_lock:
-            if self._session is not None:
-                error = self._session.close()
-                self._session = None
-                if error:
-                    self._emit("jail.degraded", detail=error)
+        if self._command_access is not None:
+            error = self._command_access.close()
+            if error:
+                self._emit("jail.degraded", detail=error)
         if self._own_session_net is not None:  # never the run's; that is its own to close
             self._own_session_net.close()
             self._own_session_net = None
@@ -509,12 +510,12 @@ class ToolDispatcher:
             argv: The command.
 
         Returns:
-            Whether it was adopted; False when commands are withheld or a bare argv[0] does not
-            resolve on the jail PATH, since a gate the sandbox cannot run would abort the run.
+            Whether it was adopted; False when commands are withheld or the target cannot
+            resolve a bare argv[0], since a gate it cannot run would abort the run.
         """
         if self.command_policy() == "deny":
             return False
-        if not tool_paths.jail_resolves(argv[0]):
+        if not self.executable_available(argv[0]):
             return False
         self._config = self._config.with_verify_command(argv)
         return True
@@ -653,7 +654,7 @@ class ToolDispatcher:
                 argv,
                 label="verify_command",
                 timeout_s=timeout_s,
-                access=self._jail_access,
+                access=self._jail_access("verify_command"),
             )
         except (tool_errors.ToolError, KeyboardInterrupt) as exc:
             outcome = "interrupted" if isinstance(exc, KeyboardInterrupt) else "unavailable"
@@ -742,7 +743,7 @@ class ToolDispatcher:
         res, _timeout = command_tools.run_argv_raw(
             argv,
             label="setup_command",
-            access=self._jail_access,
+            access=self._jail_access("setup_command"),
         )
         self._emit("workspace.setup", **kinds.workspace_setup_fields(res))
         return res
@@ -771,7 +772,7 @@ class ToolDispatcher:
                 args.argv,
                 mode=self._mode,
                 get_background=self._background,
-                access=self._jail_access,
+                access=self._jail_access("run_command"),
             )
         return command_tools.run_model_command(
             args.argv,
@@ -780,7 +781,7 @@ class ToolDispatcher:
             checkin=self._config.harness.command_checkin_s,
             interrupted=self._operator_wants_out_now,
             emit=self._emit,
-            access=self._jail_access,
+            access=self._jail_access("run_command"),
         )
 
     def _operator_wants_out(self) -> bool:
@@ -1013,7 +1014,7 @@ class ToolDispatcher:
             argv,
             label="metric_command",
             timeout_s=self._config.harness.verify_timeout_s,
-            access=self._jail_access,
+            access=self._jail_access("metric_command"),
         )
         if outcome.exec_failed:
             raise tool_errors.OperatorCommandUnexecutableError(
@@ -1090,30 +1091,37 @@ class ToolDispatcher:
         """
         return self._net() if policy.network == "session" else None
 
-    def _run_session(self) -> jail_session.JailSession | None:
-        """Return the prepared command session, or an explicitly selected one-shot path.
+    def _jail_access(self, label: str) -> command_tools.JailAccess:
+        """Return the injected session or the explicitly selected local one-shot policy.
+
+        Args:
+            label: The command's name, for a one-shot preparation error.
 
         Returns:
-            The session; None only when `use_jail_session` is off.
+            The command policy and optional prepared session.
 
         Raises:
-            jail.JailUnavailableError: Preparation failed; no other transport is attempted.
+            ToolError: The one-shot policy or network could not be prepared.
         """
-        if not self._use_session:
-            return None
-        with self._session_lock:
-            if self._session_error is not None:
-                raise self._session_error
-            if self._session is None:
-                try:
-                    policy = self._jail_policy(("true",))
-                    net = self._net_for(policy)
-                    self._session = jail_session.JailSession.open(policy, session_net=net)
-                    if self._session.startup_stderr:
-                        self._emit("jail.degraded", detail=self._session.startup_stderr)
-                except (jail.JailUnavailableError, OSError) as exc:
-                    self._session_error = jail.JailUnavailableError(
-                        f"command session preparation failed: {exc}"
-                    )
-                    raise self._session_error from exc
-            return self._session
+        if self._command_access is not None:
+            return self._command_access
+        try:
+            policy = self._jail_policy(())
+            return command_tools.JailAccess(
+                policy=policy, session=None, grants=self._grants, network=self._net_for(policy)
+            )
+        except jail.JailUnavailableError as exc:
+            raise tool_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc
+
+    @property
+    def execution_target(self) -> kinds.ExecutionTarget | None:
+        """Return the prepared target, or None for a bare one-shot caller."""
+        access = self._command_access
+        return access.session.target if access is not None and access.session is not None else None
+
+    def executable_available(self, executable: str) -> bool:
+        """Return target executable availability, or the bare local caller's advisory lookup."""
+        access = self._command_access
+        if access is not None and access.session is not None:
+            return access.session.executable_available(executable)
+        return tool_paths.jail_resolves(executable)

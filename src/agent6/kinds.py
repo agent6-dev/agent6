@@ -322,6 +322,56 @@ class JailPolicy:
     memory_limit_mib: int = 0
 
 
+ControlValue = str | int | tuple[str, ...]
+EnforcementOwner = Literal["agent6", "container", "host file tools", "unsupported"]
+ProbeState = Literal["not probed", "resolved", "prepared"]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class EffectiveControl:
+    """One configured sandbox leaf and the enforcement actually selected for it."""
+
+    leaf: str
+    configured: ControlValue
+    effective: ControlValue
+    behaviour: str
+    owner: EnforcementOwner
+    probe: ProbeState = "resolved"
+    reason: str = ""
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExecutionEnvironment:
+    """The command environment, independent of the transport that carries it."""
+
+    variables: tuple[tuple[str, str], ...]
+    inherit: bool = False
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ExecutionTarget:
+    """Immutable execution facts; None means unobserved, never an inferred identity.
+
+    Local `user` is the decimal UID inherited by commands as their real and effective UID.
+
+    Lifecycle ownership refers to an external lease, not mutable job or cleanup state.
+    """
+
+    transport: str
+    host_root: pathlib.Path
+    command_root: pathlib.Path
+    user: str | None
+    home: str | None
+    environment: ExecutionEnvironment
+    controls: tuple[EffectiveControl, ...] = ()
+    runtime_id: str | None = None
+    container_id: str | None = None
+    launcher_instance: str | None = None
+    protocol_version: int | None = None
+    launcher_version: str | None = None
+    lifecycle_ref: str | None = None
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ModelRoute:
     """A provider and a model on it, the pair every model choice resolves to.

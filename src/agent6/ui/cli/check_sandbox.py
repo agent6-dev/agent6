@@ -22,7 +22,7 @@ from agent6.sandbox import (
     landlock_abi,
     run_in_jail,
 )
-from agent6.tools import path_safety
+from agent6.tools import path_safety, target_policy
 from agent6.tools import policy as tools_policy
 from agent6.ui.cli import check_render, common, sandbox_paths
 from agent6.vcs import git_read
@@ -115,7 +115,7 @@ def _header(cfg: Config, env: detect.Environment, selected: kinds.IsolationLevel
         selected: The resolved isolation level.
     """
     abi = str(env.landlock_abi) if env.sandbox_available else "n/a (no Linux sandbox)"
-    net = tools_policy.resolve_network(cfg, selected)
+    net = target_policy.resolve_network(cfg, selected)
     sockets = ""
     if selected == "partial" or (selected == "full" and net == "host"):
         # The jail shares the host's network namespace, so only the Landlock scope keeps a
@@ -247,7 +247,7 @@ def _probe(
             res = _jail("/usr/bin/getent", "hosts", "example.com")
             ok = res.returncode != 0
             # The probe's jail has no network whatever the config says.
-            net = tools_policy.resolve_network(cfg, isolation)
+            net = target_policy.resolve_network(cfg, isolation)
             gives = (
                 "the host's network (sandbox.network)"
                 if net == "host"
@@ -446,7 +446,7 @@ def check_sandbox_section(cfg: Config) -> list[kinds.DoctorCheck]:
         "commands also run unconfined"
         if selected == "none"
         else "command files are confined; command egress is unbounded"
-        if tools_policy.resolve_network(cfg, selected) == "host"
+        if target_policy.resolve_network(cfg, selected) == "host"
         else "command files and egress are confined"
     )
     check_render.line(

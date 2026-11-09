@@ -5,36 +5,42 @@
 from __future__ import annotations
 
 import dataclasses
-import pathlib
+import tempfile
 from collections.abc import Callable
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 
 from agent6 import kinds
 from agent6.sandbox import jail, jail_session
-from agent6.tools import background, result_format, results, schema, tool_errors
-
-
-class JailPolicyFactory(Protocol):
-    """Resolve a command's policy with optional timeout and writable grants."""
-
-    def __call__(
-        self,
-        argv: tuple[str, ...],
-        *,
-        timeout_s: float | None = None,
-        extra_rw_paths: tuple[pathlib.Path, ...] = (),
-    ) -> kinds.JailPolicy:
-        """Resolve the command policy."""
-        ...
+from agent6.tools import background, policy, result_format, results, schema, tool_errors
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class JailAccess:
-    """The dispatcher's lazy access to jail policy, session and network."""
+    """Resolved command policy and transport; None explicitly selects one-shot execution.
 
-    get_policy: JailPolicyFactory
-    get_session: Callable[[], jail_session.JailSession | None]
-    net_for: background.NetFor
+    The owner closes jobs before these resources. Grants also govern host file tools.
+    """
+
+    policy: kinds.JailPolicy
+    session: jail_session.JailSession | None
+    grants: policy.Grants
+    network: jail.SessionNetwork | None = None
+    temp: tempfile.TemporaryDirectory[str] | None = None
+    owns_network: bool = False
+
+    def close(self) -> str:
+        """Close the session before releasing its local storage and owned network.
+
+        Returns:
+            The session cleanup error, or an empty string.
+        """
+        try:
+            return self.session.close() if self.session is not None else ""
+        finally:
+            if self.temp is not None:
+                self.temp.cleanup()
+            if self.owns_network and self.network is not None:
+                self.network.close()
 
 
 def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:
@@ -56,7 +62,7 @@ def start_detached(
         mode: The session's mode; only a session that edits owns a background command's
             lifetime, derived from the same tool set that withholds read_background elsewhere.
         get_background: Returns the run's background roster.
-        access: The dispatcher's lazy jail accessors.
+        access: The resolved command policy and session.
 
     Returns:
         The hand-back, with no output yet.
@@ -73,9 +79,9 @@ def start_detached(
     try:
         view = shells.start(
             argv,
-            lambda a, rw: access.get_policy(a, extra_rw_paths=rw),
-            session=access.get_session(),
-            net_for=access.net_for,
+            lambda a, rw: dataclasses.replace(access.policy, argv=a),
+            session=access.session,
+            net_for=lambda _policy: access.network,
         )
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
@@ -112,7 +118,7 @@ def run_model_command(
         checkin: Seconds until a running command is handed back; 0 disables the hand-back.
         interrupted: Whether the operator asked for an immediate stop.
         emit: The run's event sink, for `command.backgrounded`.
-        access: The dispatcher's lazy jail accessors.
+        access: The resolved command policy and session.
 
     Returns:
         The outcome, or the hand-back with the output so far.
@@ -120,7 +126,7 @@ def run_model_command(
     Raises:
         ToolError: The jail is unavailable or the operator's stop could not end the command.
     """
-    session = access.get_session()
+    session = access.session
     if (
         session is None
         or shells is None
@@ -133,7 +139,7 @@ def run_model_command(
             access=access,
         )
     try:
-        policy = access.get_policy(argv)
+        policy = access.policy
         outcome = session.run(
             argv,
             env=policy.env,
@@ -242,7 +248,7 @@ def run_argv_raw(
 
     Args:
         argv: The command.
-        access: The dispatcher's lazy jail accessors.
+        access: The resolved command policy and session.
         label: The tool's name, for the error.
         timeout_s: The wall-clock limit; the policy's default when None.
 
@@ -254,13 +260,17 @@ def run_argv_raw(
         ToolError: The jail is unavailable.
     """
     try:
-        policy = access.get_policy(argv, timeout_s=timeout_s)
-        session = access.get_session()
+        policy = dataclasses.replace(
+            access.policy,
+            argv=argv,
+            timeout_s=access.policy.timeout_s if timeout_s is None else timeout_s,
+        )
+        session = access.session
         # The operator's gate needs a verdict, not a handle.
         outcome = (
             session.run(argv, env=policy.env, timeout_s=policy.timeout_s)
             if session is not None
-            else jail.run_in_jail(policy, session_net=access.net_for(policy))
+            else jail.run_in_jail(policy, session_net=access.network)
         )
     except jail.JailUnavailableError as exc:
         raise tool_errors.ToolError(f"{label}: jail unavailable: {exc}") from exc

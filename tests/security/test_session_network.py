@@ -20,6 +20,7 @@ from typing import assert_type
 import pytest
 
 from agent6 import kinds
+from agent6.app import session_runtime
 from agent6.config import Config
 from agent6.sandbox import jail
 from agent6.tools import dispatch, results
@@ -276,11 +277,11 @@ def test_the_network_accessors_never_answer_none(tmp_path: pathlib.Path) -> None
     d = dispatch.ToolDispatcher(root=tmp_path, config=Config(), isolation="full")
     try:
         on_host = tools_policy.jail_policy(tmp_path, Config(), "full", ("true",), network="host")
-        assert d._jail_access.net_for(on_host) is None
+        assert d._net_for(on_host) is None
         assert d._own_session_net is None, "a host policy opened a network"
         shared = tools_policy.jail_policy(tmp_path, Config(), "full", ("true",), network="session")
         assert_type(d._net(), jail.SessionNetwork)
-        assert d._jail_access.net_for(shared) is d._net()
+        assert d._net_for(shared) is d._net()
     finally:
         d.close()
 
@@ -316,7 +317,11 @@ def test_the_dev_server_case_end_to_end(tmp_path: pathlib.Path) -> None:
     cfg = Config.model_validate({"sandbox": {"run_commands": "allow"}})
     sess = pathlib.Path(tempfile.mkdtemp(prefix="privnet-", dir=tmp_path))
     d = dispatch.ToolDispatcher(
-        root=tmp_path, config=cfg, isolation="full", session_dir=sess, use_jail_session=True
+        root=tmp_path,
+        config=cfg,
+        isolation="full",
+        session_dir=sess,
+        command_access=session_runtime.prepare_local_execution(cfg, tmp_path, "full"),
     )
     try:
         serve = (
@@ -506,7 +511,9 @@ def test_an_mcp_server_reaches_the_dev_server_only_on_the_private_network(
         config=cfg,
         isolation="full",
         session_dir=sess,
-        use_jail_session=True,
+        command_access=session_runtime.prepare_local_execution(
+            cfg, tmp_path, "full", session_net=net
+        ),
         mcp_manager=mgr,
         session_net=net,
     )
@@ -611,7 +618,7 @@ def test_two_runs_can_each_hold_the_same_port(tmp_path: pathlib.Path) -> None:
             config=cfg,
             isolation="full",
             session_dir=pathlib.Path(tempfile.mkdtemp(prefix=f"run{i}-", dir=tmp_path)),
-            use_jail_session=True,
+            command_access=session_runtime.prepare_local_execution(cfg, tmp_path, "full"),
         )
         for i in (1, 2)
     ]

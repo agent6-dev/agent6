@@ -20,6 +20,7 @@ from agent6.config import Config, MCPServerEntry
 from agent6.models import registry
 from agent6.sandbox import detect, jail, tool_paths
 from agent6.tools import policy as tools_policy
+from agent6.tools import target_policy
 
 # `partial`'s fixed Landlock grants in jail/src/main.rs; tests/security pins each against it.
 PARTIAL_SYSTEM_RO = ("/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc")
@@ -183,7 +184,7 @@ def warn_unscoped_sockets(
         reporter: Where the warning goes.
     """
     shares_host_sockets = isolation == "partial" or (
-        isolation == "full" and tools_policy.resolve_network(cfg, isolation) == "host"
+        isolation == "full" and target_policy.resolve_network(cfg, isolation) == "host"
     )
     if shares_host_sockets and env.landlock_abi < 6:
         reporter.warn(
@@ -781,8 +782,10 @@ def resolved_config_values(cfg: Config) -> dict[str, object]:
             selected = detect.resolve_isolation(cfg.sandbox.isolation, detect.probed_environment())
         except jail.JailBinaryError:
             return out
-        if cfg.sandbox.isolation == "auto":
-            out["sandbox.isolation"] = selected
-        if cfg.sandbox.network == "auto":
-            out["sandbox.network"] = tools_policy.resolve_network(cfg, selected)
+        for control in target_policy.effective_controls(cfg, selected):
+            if (
+                control.leaf in ("sandbox.isolation", "sandbox.network")
+                and control.configured == "auto"
+            ):
+                out[control.leaf] = control.effective
     return out

@@ -13,6 +13,7 @@ import time
 import pytest
 
 from agent6 import kinds
+from agent6.app import session_runtime
 from agent6.sandbox import jail, jail_session
 
 
@@ -328,7 +329,10 @@ def test_a_run_scoped_dispatcher_serves_its_commands_from_one_process(
 
     cfg = Config.model_validate({"sandbox": {"isolation": "full", "run_commands": "allow"}})
     scoped = dispatch.ToolDispatcher(
-        root=tmp_path, config=cfg, isolation="full", use_jail_session=True
+        root=tmp_path,
+        config=cfg,
+        isolation="full",
+        command_access=session_runtime.prepare_local_execution(cfg, tmp_path, "full"),
     )
     try:
         first = scoped.dispatch(
@@ -370,7 +374,7 @@ def test_a_backgrounded_server_is_reachable_by_the_run_s_next_command(
         root=tmp_path,
         config=cfg,
         isolation="full",
-        use_jail_session=True,
+        command_access=session_runtime.prepare_local_execution(cfg, tmp_path, "full"),
         session_dir=tmp_path / "session",
         state_dir=tmp_path / "state",
     )

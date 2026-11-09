@@ -12,6 +12,7 @@ import contextlib
 import json
 import os
 import pathlib
+from collections.abc import Callable
 
 from agent6 import budget, directive, errors, kinds, terminal
 from agent6 import paths as agent6_paths
@@ -551,7 +552,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         if parking is not None:
             reporter.note(parking)
 
-        def _gate(cfg: Config, _budget: budget.BudgetTracker) -> Config:
+        def _gate(
+            cfg: Config, _budget: budget.BudgetTracker, _available: Callable[[str], bool]
+        ) -> Config:
             pinned = sessions_manifest.GateStamp(availability="pending")
             with contextlib.suppress(sessions_manifest.ManifestError, OSError):
                 pinned = sessions_manifest.read_manifest(layout.session_dir).harness.gate

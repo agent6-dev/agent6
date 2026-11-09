@@ -355,6 +355,7 @@ class VerifyGate:
         inferred = verify_infer.infer_verify_command(
             self.chain.root,
             verify_infer.read_agents_md(self.chain.root, self.hide),
+            available=self.dispatcher.executable_available,
             llm_call=None,
             hide=self.hide,
         )

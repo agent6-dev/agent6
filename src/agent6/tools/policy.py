@@ -13,12 +13,12 @@ import pathlib
 import stat
 import tempfile
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any
 
 from agent6 import kinds, paths
 from agent6.config import Config
 from agent6.sandbox import detect, jail, tool_paths
-from agent6.tools import path_safety, result_format
+from agent6.tools import path_safety, result_format, target_policy
 
 # `full`'s default HOME: the launcher creates it inside the run's private /tmp tmpfs.
 JAIL_TMP_HOME = pathlib.Path("/tmp/agent6-home")  # noqa: S108 - resolved inside the jail
@@ -53,29 +53,6 @@ def host_network_reads() -> tuple[pathlib.Path, ...]:
     return tuple(out)
 
 
-def jail_home_kind(
-    config: Config, isolation: kinds.IsolationLevel
-) -> Literal["tmp", "cache", "host"]:
-    """Return which HOME a command gets: `auto` is each level's own.
-
-    `tmp` is `full`'s private tmpfs, `cache` is `partial`'s persistent directory, `host` is
-    the operator's own HOME where nothing confines the command.
-
-    Args:
-        config: The run's config.
-        isolation: The resolved isolation level.
-
-    Returns:
-        `tmp`, `cache` or `host`.
-    """
-    word = config.sandbox.home
-    if word != "auto":
-        return word
-    if isolation == "full":
-        return "tmp"
-    return "cache" if isolation == "partial" else "host"
-
-
 def persistent_jail_home(
     config: Config,
     isolation: kinds.IsolationLevel,
@@ -101,7 +78,7 @@ def persistent_jail_home(
     Returns:
         The repository's persistent HOME, or None.
     """
-    if jail_home_kind(config, isolation) != "cache":
+    if target_policy.jail_home_kind(config, isolation) != "cache":
         return None
     if worktree_git_dir is not None and worktree_git_dir.name == ".git":
         return paths.jail_cache_home(worktree_git_dir.parent)
@@ -428,39 +405,13 @@ def workspace_for(
     )
 
 
-def resolve_network(
-    config: Config, isolation: kinds.IsolationLevel, *, override: kinds.NetworkMode | None = None
-) -> kinds.NetworkMode:
-    """Return the network a child gets.
-
-    Clamped to what the level can provide: only `full` has namespaces, so everywhere else the
-    child shares this process's network and the policy says so (preflight has refused an
-    explicit setting it cannot honour and warned about an automatic one).
-
-    Args:
-        config: The run's config.
-        isolation: The resolved isolation level.
-        override: A caller's own answer; an MCP server's reachability is the operator's
-            per-server choice.
-
-    Returns:
-        "host" outside `full`, else the override when given, else "host" under
-        `network = "host"`, else "session".
-    """
-    if isolation != "full":
-        return "host"
-    if override is not None:
-        return override
-    return "host" if config.sandbox.network == "host" else "session"
-
-
 def _home_for(
     config: Config, isolation: kinds.IsolationLevel, persistent: pathlib.Path | None
 ) -> str:
     """Return the HOME a command gets: persistent, the operator's own, or the jail's tmpfs."""
     if persistent is not None:
         return str(persistent)
-    if jail_home_kind(config, isolation) == "host":
+    if target_policy.jail_home_kind(config, isolation) == "host":
         return str(pathlib.Path.home())  # nothing confines the command: its HOME is the operator's
     return str(JAIL_TMP_HOME)
 
@@ -536,7 +487,7 @@ def jail_policy(
             worktree's `.git` pointer names anything but the recorded git dir (a rewritten
             pointer grants nothing).
     """
-    network = resolve_network(config, isolation, override=network)
+    network = target_policy.resolve_network(config, isolation, override=network)
     protect_paths: list[pathlib.Path] = []
     # A writable `.git` lets a jailed command plant a clean filter that the auto-commit runs on
     # the host. `full` re-binds `.git` read-only, which needs a mount namespace; `partial` has only

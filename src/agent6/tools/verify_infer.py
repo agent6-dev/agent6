@@ -21,9 +21,8 @@ import os
 import pathlib
 import re
 import shlex
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
-from agent6.sandbox import tool_paths
 from agent6.tools import path_safety, tool_errors
 from agent6.vcs import git_read
 
@@ -36,7 +35,9 @@ _OPERATOR = re.compile(r"[|&;<>]")
 _PROMPT = re.compile(r"^[$>](?:\s+|$)")
 # The POSIX builtins a shell line may open with before its program: the jail's own `sh` has
 # them; `source` is bash's, absent from dash.
-_SH_BUILTINS = frozenset({".", ":", "cd", "eval", "exec", "export", "set", "umask", "unset"})
+_SH_BUILTINS = frozenset(
+    {".", ":", "cd", "eval", "exec", "exit", "export", "set", "umask", "unset"}
+)
 _VERIFY_HEADING = re.compile(r"^#{1,6}\s*(verify|test)\b", re.IGNORECASE)
 _SETUP_HEADING = re.compile(r"^#{1,6}\s*setup command\b", re.IGNORECASE)
 _INLINE_VERIFY = re.compile(r"^\s*(?:verify|test)\s*:\s*(.+)$", re.IGNORECASE)
@@ -357,7 +358,9 @@ def _verify_sh(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
     return (argv, "verify.sh")
 
 
-def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
+def _package_json(
+    repo_root: pathlib.Path, hide: tuple[str, ...], available: Callable[[str], bool]
+) -> Signal | None:
     """Return `npm test` when package.json has a test script other than npm's placeholder.
 
     In a jail without npm the script itself is the gate when it is a plain command whose
@@ -369,6 +372,7 @@ def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | No
     Args:
         repo_root: The directory whose package.json is read.
         hide: `[sandbox].hide_paths`; a hidden package.json reads as absent.
+        available: The selected target's executable lookup.
 
     Returns:
         The command and its source, "package.json"; None when there is no test script, or
@@ -383,16 +387,17 @@ def _package_json(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | No
     if not isinstance(script, str) or _NPM_PLACEHOLDER.fullmatch(script.strip()):
         return None
     hooked = isinstance(scripts, dict) and any(k in scripts for k in ("pretest", "posttest"))
-    if not hooked and not tool_paths.jail_resolves("npm") and (argv := _plain_argv(script)):
+    if not hooked and not available("npm") and (argv := _plain_argv(script, available)):
         return (argv, "package.json")
     return (("npm", "test", "--silent"), "package.json")
 
 
-def _plain_argv(script: str) -> tuple[str, ...]:
+def _plain_argv(script: str, available: Callable[[str], bool]) -> tuple[str, ...]:
     """Return a shell script as an argv the jail can run, or () when it needs a shell.
 
     Args:
         script: The package.json test script.
+        available: The selected target's executable lookup.
 
     Returns:
         The script's words; () when it needs a shell, names its runner by path, or the jail's
@@ -407,7 +412,7 @@ def _plain_argv(script: str) -> tuple[str, ...]:
     if not words or "=" in words[0] or any(set(w) & _SHELL_SYNTAX for w in words):
         return ()
     # A path runner counts as found, and one missing where the gate runs ends the run unstarted.
-    return tuple(words) if "/" not in words[0] and tool_paths.jail_resolves(words[0]) else ()
+    return tuple(words) if "/" not in words[0] and available(words[0]) else ()
 
 
 def _makefile(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signal | None:
@@ -447,27 +452,32 @@ def _loose_python_tests(repo_root: pathlib.Path, hide: tuple[str, ...]) -> Signa
     return None
 
 
-def repo_signals(repo_root: pathlib.Path, hide: tuple[str, ...] = ()) -> list[Signal]:
-    """Return every repo signal that matches, the preferred one first.
+def repo_signals(
+    repo_root: pathlib.Path, hide: tuple[str, ...] = (), *, available: Callable[[str], bool]
+) -> Iterator[Signal]:
+    """Yield repo signals in priority order, probing each only when requested.
 
     Args:
         repo_root: The directory whose files are probed.
+        available: The selected target's executable lookup.
         hide: `[sandbox].hide_paths`; a hidden file reads as absent.
 
-    Returns:
+    Yields:
         The matches as (command, source) pairs.
     """
     # Loose Python tests last, so a Rust or Go repo's `tests/` dir never reads as pytest.
-    probes = (
+    probes: tuple[Callable[[pathlib.Path, tuple[str, ...]], Signal | None], ...] = (
         _verify_sh,
-        _package_json,
+        lambda root, hidden: _package_json(root, hidden, available),
         _makefile,
         _python_manifest,
         _cargo,
         _go,
         _loose_python_tests,
     )
-    return [found for probe in probes if (found := probe(repo_root, hide))]
+    for probe in probes:
+        if found := probe(repo_root, hide):
+            yield found
 
 
 # The files fed to the LLM.
@@ -544,6 +554,7 @@ def infer_verify_command(
     repo_root: pathlib.Path,
     agents_md: str,
     *,
+    available: Callable[[str], bool],
     llm_call: Callable[[str], str] | None = None,
     hide: tuple[str, ...] = (),
 ) -> InferredVerify:
@@ -557,6 +568,7 @@ def infer_verify_command(
     Args:
         repo_root: The repository.
         agents_md: The AGENTS.md text.
+        available: Executable lookup in the selected target; no host search is implicit.
         llm_call: Takes the gathered context and returns the model's text; None skips
             the LLM tier, as does a repo with no manifest and no AGENTS.md prose.
         hide: `[sandbox].hide_paths`; a hidden file reads as absent.
@@ -568,7 +580,10 @@ def infer_verify_command(
 
     def runnable(argv: tuple[str, ...], named_by: str) -> bool:
         head = command_head(argv)
-        if tool_paths.jail_resolves(head) or (argv[:2] == ("sh", "-c") and head in _SH_BUILTINS):
+        shell = argv[:2] == ("sh", "-c")
+        if shell and not available("sh"):
+            head = "sh"
+        elif (shell and head in _SH_BUILTINS) or available(head):
             return True
         why = f"names `{shlex.join(argv)}`, and the sandbox has no `{head}`"
         passed.append((named_by, why))
@@ -577,14 +592,14 @@ def infer_verify_command(
     argv = verify_from_agents_md(agents_md)
     if argv is not None and runnable(argv, "AGENTS.md"):
         return InferredVerify(argv, "agents_md", tuple(passed))
-    signals = repo_signals(repo_root, hide)
-    for i, (argv, source) in enumerate(signals):
+    signals = repo_signals(repo_root, hide, available=available)
+    for argv, source in signals:
         if runnable(argv, source):
             if source in _ECOSYSTEM_SOURCES:
                 # One ecosystem's runner is the gate; the other ecosystems here are named.
                 passed += [
                     (other, f"names `{shlex.join(cmd)}`, which this gate does not run")
-                    for cmd, other in signals[i + 1 :]
+                    for cmd, other in signals
                     if other in _ECOSYSTEM_SOURCES
                 ]
             return InferredVerify(argv, source, tuple(passed))

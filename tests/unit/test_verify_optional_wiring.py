@@ -27,7 +27,7 @@ from agent6.app import (
 )
 from agent6.config import Config, layer, layer_data
 from agent6.harness import loop_snapshot, prompt_blocks, run_chain, verify_verdict
-from agent6.sandbox import detect
+from agent6.sandbox import detect, tool_paths
 from agent6.tools import dispatch
 from agent6.vcs import git_read
 
@@ -386,7 +386,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     def _execution(
         _cfg: Config, _layout: object, inputs: execution.ExecutionInputs, **_kw: object
     ) -> execution.ExecutionEnd:
-        used.append(inputs.gate(_cfg, mock.MagicMock()).harness.verify_command)
+        used.append(inputs.gate(_cfg, mock.MagicMock(), lambda _exe: True).harness.verify_command)
         return execution.ExecutionEnd(0)
 
     monkeypatch.setattr(execution, "run_execution", _execution)
@@ -791,7 +791,11 @@ def test_the_decline_line_prints_when_its_reason_changes(
         chain=run_chain.RunChain(tmp_path),
         config=Config(),
         provider=mock.MagicMock(),
-        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        dispatcher=mock.MagicMock(
+            last_verification=None,
+            verify_withheld=False,
+            executable_available=tool_paths.jail_resolves,
+        ),
         logger=lines.append,
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
@@ -1010,7 +1014,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
     def _execution(
         _cfg: Config, _layout: object, inputs: execution.ExecutionInputs, **_kw: object
     ) -> execution.ExecutionEnd:
-        inputs.gate(_cfg, mock.MagicMock())
+        inputs.gate(_cfg, mock.MagicMock(), lambda _exe: True)
         return execution.ExecutionEnd(0)
 
     monkeypatch.setattr(execution, "run_execution", _execution)

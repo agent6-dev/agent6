@@ -30,10 +30,11 @@ from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
 from agent6.harness import compaction_elision, review_gate
 from agent6.providers import Provider, TranscriptSink
-from agent6.sandbox import detect, jail
+from agent6.sandbox import detect, jail, jail_session
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
-from agent6.tools import dispatch, mcp_client, operator_prompts
+from agent6.tools import command_tools, dispatch, mcp_client, operator_prompts, target_policy
+from agent6.tools import policy as tools_policy
 
 
 def resolve_isolation_or_refuse(
@@ -296,6 +297,73 @@ class SessionTools:
     cfg: Config
 
 
+def prepare_local_execution(
+    cfg: Config,
+    root: pathlib.Path,
+    isolation: kinds.IsolationLevel,
+    *,
+    name: str = "run",
+    session_net: jail.SessionNetwork | None = None,
+    worktree_git_dir: pathlib.Path | None = None,
+    extra_protect_paths: tuple[pathlib.Path, ...] = (),
+    shared_writes: tuple[pathlib.Path, ...] = (),
+) -> command_tools.JailAccess:
+    """Resolve local permissions and prepare a session before any workspace command.
+
+    The returned access owns its temporary directory and any network it creates.
+    Preparation failure releases both and propagates, never choosing another transport.
+
+    Args:
+        cfg: The resolved config.
+        root: The host workspace.
+        isolation: The resolved local isolation level.
+        name: The session's temporary-directory label.
+        session_net: An existing network shared with MCP servers; None creates one if needed.
+        worktree_git_dir: The recorded repository git directory.
+        extra_protect_paths: Additional read-only command paths.
+        shared_writes: Other machine states' writable regions for grant resolution.
+
+    Returns:
+        The policy, prepared session and owned resources.
+    """
+    grants = tools_policy.resolve_grants(cfg, root, shared_writes=shared_writes)
+    temp = tools_policy.command_temp(isolation, name)
+    own_net = False
+    try:
+        policy = tools_policy.jail_policy(
+            root.resolve(),
+            cfg,
+            isolation,
+            (),
+            grants=grants,
+            temp_dir=pathlib.Path(temp.name) if temp is not None else None,
+            worktree_git_dir=worktree_git_dir,
+            extra_protect_paths=extra_protect_paths,
+        )
+        if policy.network == "session" and session_net is None:
+            session_net = jail.SessionNetwork.open()
+            own_net = True
+        session = jail_session.JailSession.open(
+            policy,
+            session_net=session_net,
+            controls=target_policy.effective_controls(cfg, isolation),
+        )
+    except BaseException:
+        if temp is not None:
+            temp.cleanup()
+        if own_net and session_net is not None:
+            session_net.close()
+        raise
+    return command_tools.JailAccess(
+        policy=policy,
+        session=session,
+        grants=grants,
+        temp=temp,
+        network=session_net,
+        owns_network=own_net,
+    )
+
+
 def build_session_tools(
     cfg: Config,
     *,
@@ -309,6 +377,7 @@ def build_session_tools(
     loop_log: Callable[[str], None],
     mcp_manager: mcp_client.MCPManager | None,
     rm_role: RoleModel,
+    command_access: command_tools.JailAccess | None = None,
     session_net: jail.SessionNetwork | None = None,
     worktree_git_dir: pathlib.Path | None = None,
 ) -> SessionTools:
@@ -320,6 +389,7 @@ def build_session_tools(
         state_dir: The repo's state directory.
         layout: The session's directory layout.
         isolation: The isolation level.
+        command_access: An already-prepared session; None prepares the local target here.
         mode: The run mode.
         events: The run's event sink.
         prompts: The operator prompt gate.
@@ -334,27 +404,39 @@ def build_session_tools(
     """
     # The curator runs in-process: the run's worker.lock already makes this the sole writer.
     curator = graph_curator.GraphCurator(layout)
-    dispatcher = dispatch.ToolDispatcher(
-        root=cwd,
-        config=cfg,
-        isolation=isolation,
-        prompts=prompts,
-        events=events,
-        curator=curator,
-        run_root_node_id=None,  # Harness seeds the root + calls set_run_root_node_id
-        mcp_manager=mcp_manager,
-        worktree_git_dir=worktree_git_dir,
-        mode=mode,
-        state_dir=state_dir,
-        session_dir=layout.session_dir,
-        findings=functools.partial(review_actions.findings_result, layout.session_dir),
-        use_jail_session=True,
-        session_net=session_net,
-    )
     compact_drop, compact_summarise, keep_recent = role_providers.resolve_compaction_thresholds(
         cfg, rm_role, log=loop_log
     )
     cfg = role_providers.resolve_decompose(cfg, rm_role, log=loop_log)
+    access = command_access or prepare_local_execution(
+        cfg,
+        cwd,
+        isolation,
+        name=layout.session_id,
+        session_net=session_net,
+        worktree_git_dir=worktree_git_dir,
+    )
+    try:
+        dispatcher = dispatch.ToolDispatcher(
+            root=cwd,
+            config=cfg,
+            isolation=isolation,
+            prompts=prompts,
+            events=events,
+            curator=curator,
+            run_root_node_id=None,  # Harness seeds the root + calls set_run_root_node_id
+            mcp_manager=mcp_manager,
+            worktree_git_dir=worktree_git_dir,
+            mode=mode,
+            state_dir=state_dir,
+            session_dir=layout.session_dir,
+            findings=functools.partial(review_actions.findings_result, layout.session_dir),
+            command_access=access,
+            session_net=session_net,
+        )
+    except BaseException:
+        access.close()
+        raise
     return SessionTools(
         curator=curator,
         dispatcher=dispatcher,

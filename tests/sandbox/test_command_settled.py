@@ -9,7 +9,7 @@ from unittest import mock
 import pytest
 
 from agent6 import paths, providers
-from agent6.app import role_providers
+from agent6.app import role_providers, session_runtime
 from agent6.config import Config
 from agent6.harness import guards, loop, loop_conversation, loop_state, run_chain
 from agent6.tools import dispatch, results
@@ -33,7 +33,7 @@ def _dispatcher(tmp_path: pathlib.Path, checkin: float) -> dispatch.ToolDispatch
         config=cfg,
         isolation="none",
         session_dir=session_dir,
-        use_jail_session=True,
+        command_access=session_runtime.prepare_local_execution(cfg, root, "none"),
     )
 
 

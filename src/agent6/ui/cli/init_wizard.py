@@ -19,6 +19,7 @@ from collections.abc import Callable
 
 from agent6 import errors, paths
 from agent6.config import layer, write
+from agent6.sandbox import tool_paths
 from agent6.tools import verify_infer
 
 _EMPTY_CONFIG = """\
@@ -224,7 +225,7 @@ def _setup_verify_command(
         if not ask("  Re-infer and replace it?", False):
             return
     inferred = verify_infer.infer_verify_command(
-        root, verify_infer.read_agents_md(root, hide), hide=hide
+        root, verify_infer.read_agents_md(root, hide), available=tool_paths.jail_resolves, hide=hide
     )
     if passed := verify_infer.passed_over_text(inferred):
         print(f"  passed over: {passed}")
@@ -259,7 +260,7 @@ def _setup_agents_md(
     agents = root / "AGENTS.md"
     hide = layer.load_effective(root, config_paths).config.sandbox.hide_paths
     inferred = verify_infer.infer_verify_command(
-        root, verify_infer.read_agents_md(root, hide), hide=hide
+        root, verify_infer.read_agents_md(root, hide), available=tool_paths.jail_resolves, hide=hide
     )
     verify_hint = shlex.join(inferred.argv) or "# EDIT: your verify pipeline"
     if not agents.is_file():

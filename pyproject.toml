@@ -376,6 +376,7 @@ banned-from = [
     "agent6.tools.schema",
     "agent6.tools.sessions",
     "agent6.tools.skill_tools",
+    "agent6.tools.target_policy",
     "agent6.tools.tool_errors",
     "agent6.tools.verify_infer",
     "agent6.ui.acp.frontend",

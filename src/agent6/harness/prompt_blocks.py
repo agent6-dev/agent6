@@ -18,7 +18,7 @@ from agent6 import kinds
 from agent6.config import Config, plan_metered
 from agent6.context import memory, skills
 from agent6.prompts import loop
-from agent6.tools import policy
+from agent6.tools import target_policy
 
 
 def memory_block(index: str, memory_dir_path: str, *, mode: str) -> str:
@@ -303,7 +303,7 @@ def build_system_prompt(
     allowed = (
         config.sandbox.run_commands != "deny" if commands_allowed is None else commands_allowed
     )
-    offline = allowed and policy.resolve_network(config, isolation) != "host"
+    offline = allowed and target_policy.resolve_network(config, isolation) != "host"
     base = base.replace("__NETWORK_RULE__", loop.NETWORK_RULE if offline else "")
     has_gate = bool(config.harness.verify_command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", loop.PLAN_VERIFY_RULE if has_gate else "")

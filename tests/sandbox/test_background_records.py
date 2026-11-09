@@ -10,6 +10,7 @@ import time
 import pytest
 
 from agent6 import config, kinds, paths
+from agent6.app import session_runtime
 from agent6.sandbox import jail_session
 from agent6.sessions import layout
 from agent6.tools import background, dispatch
@@ -151,7 +152,7 @@ def test_dispatcher_adoption_does_not_grant_host_records(
             config=cfg,
             isolation=isolation,
             session_dir=session_dir,
-            use_jail_session=True,
+            command_access=session_runtime.prepare_local_execution(cfg, work, isolation),
         )
         try:
             started = tools.dispatch(

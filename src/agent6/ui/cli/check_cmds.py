@@ -240,7 +240,11 @@ def _doctor_check_verify(cfg: Config) -> list[kinds.DoctorCheck]:
         # A run infers one from the deterministic tiers or goes gateless; say what this repo infers.
         cwd, hide = pathlib.Path.cwd(), cfg.sandbox.hide_paths
         inferred = verify_infer.infer_verify_command(
-            cwd, verify_infer.read_agents_md(cwd, hide), llm_call=None, hide=hide
+            cwd,
+            verify_infer.read_agents_md(cwd, hide),
+            available=tool_paths.jail_resolves,
+            llm_call=None,
+            hide=hide,
         )
         passed = verify_infer.passed_over_text(inferred)
         nothing = "nothing here a run can use" if passed else "nothing here to infer from"
