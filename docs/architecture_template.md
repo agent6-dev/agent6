@@ -168,7 +168,7 @@ A resume after a death there runs none of the turn's calls again: the model gets
 - A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
 - The settled stop ends a plain run after `harness.settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or an editing step no gate judged.
     - A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
-    - A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
+    - A verify run or a wait on a live background command is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
     - `0` disables the stop, but the nudge at three idle turns still fires without announcing a stop; over a red gate the model must fix, the nudge is withheld while a finish would still go back.
     - Over a green gate of the run's own, the stop reads `finished · settled` and exits 0, since the worker called no `finish_session`.
     - A settled end whose only green was the base's carries `verification = "unverified"`: an unverified end.
