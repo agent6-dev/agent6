@@ -100,6 +100,8 @@ pub struct Job {
     stopped: Option<Value>,
     observed: Option<i32>,
     capture_error: String,
+    // The first channel loss names the cause; a later error on the dead channel repeats it.
+    lost: Option<String>,
     log: File,
 }
 
@@ -145,6 +147,7 @@ impl Job {
                     stopped: None,
                     observed: None,
                     capture_error: String::new(),
+                    lost: None,
                     log,
                 })
             }
@@ -221,14 +224,20 @@ impl Job {
         if let Some(stopped) = &self.stopped {
             return json!({"running": false, "returncode": stopped["returncode"], "error": stopped["error"].as_str().unwrap_or(""), "capture_error": stopped["capture_error"].as_str().unwrap_or("")});
         }
-        self.exchange(b"p").unwrap_or_else(|e| self.lost(e))
+        match self.exchange(b"p") {
+            Ok(answer) => answer,
+            Err(error) => self.lost(error),
+        }
     }
 
     pub fn stop(&mut self) -> Value {
         if let Some(answer) = &self.stopped {
             return answer.clone();
         }
-        let answer = self.exchange(b"s").unwrap_or_else(|e| self.lost(e));
+        let answer = match self.exchange(b"s") {
+            Ok(answer) => answer,
+            Err(error) => self.lost(error),
+        };
         self.stopped = Some(answer.clone());
         self.process.take();
         answer
@@ -265,10 +274,38 @@ impl Job {
         self.receive()
     }
 
-    fn lost(&self, error: io::Error) -> Value {
+    fn lost(&mut self, error: io::Error) -> Value {
+        let reason = self
+            .lost
+            .get_or_insert_with(|| format!("job outcome or cleanup unknown: {error}"))
+            .clone();
         json!({"running": false, "stopped": false, "returncode": self.observed,
-            "error": format!("job outcome or cleanup unknown: {error}"),
-            "capture_error": self.capture_error})
+            "error": reason, "capture_error": self.capture_error})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A channel lost to ECONNRESET keeps that cause when a later write fails with EPIPE.
+    #[test]
+    fn a_lost_job_keeps_the_first_cause() {
+        let mut job = Job {
+            process: None,
+            stopped: None,
+            observed: Some(0),
+            capture_error: "output capture failed: File too large".into(),
+            lost: None,
+            log: File::open("/dev/null").unwrap(),
+        };
+        let first = job.lost(io::Error::from_raw_os_error(libc::ECONNRESET));
+        let second = job.lost(io::Error::from_raw_os_error(libc::EPIPE));
+        assert_eq!(first["error"], second["error"]);
+        assert!(first["error"].as_str().unwrap().contains("Connection reset"));
+        assert_eq!(job.status()["error"], first["error"]);
+        assert_eq!(job.stop()["error"], first["error"]);
+        assert_eq!(job.status()["capture_error"], "output capture failed: File too large");
     }
 }
 
