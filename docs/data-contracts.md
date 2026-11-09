@@ -33,7 +33,7 @@ Scan session dirs into the listing rows every front-end's hub shows.
 Public fields: [Formats](formats.md#cli-json).
 
 - **Written by:** ui/cli/sessions_cmds, ui/web/model
-- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, run, stop}, harness/review_session, ui/{mcp_server, spawn}, ui/acp/{review, session}, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_review, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, home}, ui/web/{actions, review_routes, sse}, viewmodel/{__init__, state_view, wire}
+- **Read by:** app/{btw, compare, finalize, fork, fork_worktrees, lane_watch, lanes, parallel_results, preflight, resume, run, stop}, harness/review_session, ui/{mcp_server, spawn}, ui/acp/{review, session}, ui/cli/{answer_cmd, ask, common, completers, entry, fork, net_cmds, plan_watch, ps_cmd, sessions_compare, sessions_merge, sessions_review, sessions_show, steer_cmd, stop_cmd}, ui/telemetry/export, ui/tui/{app, dashboard, home}, ui/web/{actions, review_routes, sse}, viewmodel/{__init__, state_view, wire}
 - **Guarded by:** [test_cli_sessions_list.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_cli_sessions_list.py) (21 test files exercise it)
 
 ## CLI session status

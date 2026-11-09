@@ -136,7 +136,7 @@ def _review_cell(row: viewmodel_listing.ListingRow) -> str:
         f"{n} {name.replace('_', ' ')}" for name, n in viewmodel_listing.lane_groups(row).items()
     )
     if lanes:
-        parts.append(f"lanes: {lanes}")
+        parts.append(f"lane queue groups: {lanes}")
     return " · ".join(p for p in parts if p)
 
 

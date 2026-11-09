@@ -100,7 +100,7 @@ def _review_cell(row: viewmodel_listing.ListingRow) -> text.Text:
     )
     parts = [keymap.QUEUE_TEXT[group] if group != "other" else "", entry.reason]
     if lanes:
-        parts.append(f"lanes: {lanes}")
+        parts.append(f"lane queue groups: {lanes}")
     style = {
         "needs_answer": "bold yellow",
         "blocked": "bold red",

@@ -104,8 +104,9 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
             # The sentinel goes even when the tailer raises, or the loop blocks on heartbeats.
             events.put(None)
 
-    # Fixed while the run is live; re-read on the heartbeat once it finishes.
+    # A coordinator's lanes change independently of its own log.
     header = manifest_header(session_dir, repo=repo)
+    fanout = "fanout" in header
 
     threading.Thread(target=tail, daemon=True).start()
 
@@ -166,16 +167,16 @@ def stream_session(chan: SseChannel, session_dir: pathlib.Path, *, repo: pathlib
         last_delta_emit = 0.0
         while True:
             try:
-                ev: dict[str, Any] | None = events.get(timeout=HEARTBEAT_S)
+                ev: dict[str, Any] | None = events.get(timeout=1.0 if fanout else HEARTBEAT_S)
             except queue.Empty:
                 if not chan.ping():
                     return
                 # A run dead without session.stop would pin this worker; parked is excluded.
                 word = summarize_session_dir(session_dir).status
-                if word != "parked" and died_without_end(word):
+                if not fanout and word != "parked" and died_without_end(word):
                     send_frame(dead=True)
                     return
-                if state.finished:
+                if state.finished or fanout:
                     header = manifest_header(session_dir, repo=repo, status=word)
                 # Shell cleanup and other disk-backed values can change without a log event.
                 if not send_frame():

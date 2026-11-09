@@ -125,6 +125,9 @@ async function renderRun(id, opts, gen) {
     cards._plan_btn = planBtn;
   }
   app.appendChild(actions);
+  const lanes = mk("lanes", "Fan-out", "", app);
+  delete lanes.parentElement.dataset.w;
+  lanes.parentElement.style.display = "none";
 
   // The heading states the mode; paintRun fills it in from the snapshot.
   mk('head', opts.title || 'Session', ''); // status/summary leads the drawer
@@ -399,6 +402,27 @@ function paintDetails(cards, s, asOf) {
 }
 
 function paintRun(cards, s) {
+  if (cards.lanes) {
+    cards.lanes.parentElement.style.display = s.fanout ? "" : "none";
+    cards.lanes.replaceChildren();
+    if (s.fanout) {
+      cards.lanes.previousSibling.textContent = `fan-out: ${s.fanout.lanes} lanes`;
+      const table = el('table');
+      const head = el('tr');
+      for (const label of ['id', 'model', 'status', 'cost']) head.appendChild(el('th', null, label));
+      table.appendChild(head);
+      for (const lane of s.lanes || []) {
+        const row = el('tr');
+        const cell = el('td');
+        const link = el('a', null, lane.session_id);
+        link.href = '#/session/' + encodeURIComponent(lane.session_id);
+        cell.appendChild(link); row.appendChild(cell);
+        for (const key of ['model', 'label', 'cost']) row.appendChild(el('td', null, lane[key]));
+        table.appendChild(row);
+      }
+      cards.lanes.appendChild(table);
+    }
+  }
   paintFindings(cards, s);
   // Stop/compact/answers only mean something on a live run; a finished run
   // ignores the bridge markers. The composer flips to resume mode instead of

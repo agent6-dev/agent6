@@ -78,7 +78,7 @@ class TuiExit:
 
     Attributes:
         quit_hub: The operator quit the hub, not just the view.
-        open_next: A session the hub opens next: the run a plan's Run this plan started.
+        open_next: The session to open next, such as a lane or a plan's new run.
     """
 
     quit_hub: bool = False
@@ -885,6 +885,10 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         elif self.screen is self._dash:
             self.push_screen(self._conv)
 
+    def open_session(self, session_dir: pathlib.Path) -> None:
+        """Open another session view."""
+        self.exit(TuiExit(open_next=session_dir))
+
     def action_to_hub(self) -> None:
         """Leave the view; from the hub loop, back to the hub."""
         self.exit(TuiExit())
@@ -932,9 +936,13 @@ def run_tui(
         session_dir, exit_on_end=exit_on_end, from_hub=from_hub, config_paths=config_paths
     )
     result = app.run() or TuiExit()
+    while result.open_next is not None and not from_hub:
+        session_dir = result.open_next
+        app = Agent6TUI(session_dir, from_hub=from_hub, config_paths=config_paths)
+        result = app.run() or TuiExit()
     if app.detached:
         sid = session_dir.name
-        if exit_on_end:
+        if app.exit_on_end:
             # The parent's lifecycle prints the reattach line once the run is in the background.
             print(f"[agent6] leaving the view: {sid} detaches to the background after this turn.")
         else:

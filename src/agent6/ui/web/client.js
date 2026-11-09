@@ -507,7 +507,7 @@ function paintSession(r, it, g) {
   // The queue's reason beside the row, and a fan-out's lanes by group: recorded facts, no re-review.
   const q = r.review_queue || {};
   const laneGroups = Object.entries(r.lane_groups || {}).map(([k, n]) => `${n} ${QUEUE_LABEL[k].toLowerCase()}`).join(', ');
-  const review = [q.reason, laneGroups && `lanes: ${laneGroups}`].filter(Boolean).join(' · ');
+  const review = [q.reason, laneGroups && `lane queue groups: ${laneGroups}`].filter(Boolean).join(' · ');
   if (review) g.appendChild(el('div', 'sub review-queue', review));
   it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   if (QUEUE_LEVEL[r.queue_group]) it.appendChild(pill(QUEUE_LEVEL[r.queue_group], QUEUE_LABEL[r.queue_group]));

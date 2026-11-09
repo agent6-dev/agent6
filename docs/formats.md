@@ -1642,6 +1642,8 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `git_control` | `JSON` | The launch git-control policy. |
 | `base_sha` | `JSON` | The run chain's base commit. |
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
+| `fanout` | `JSON` | The coordinator's lane count and dispatch spec. |
+| `lanes` | `JSON` | Its current lane summaries, from the same listing as `sessions show`. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
 | `comparison` | `JSON` | The group record from the coordinator, directly or through the lane's group. |
 | `compare` | `JSON` | The lane's CompareStamp when recorded. |

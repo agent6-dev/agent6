@@ -159,6 +159,8 @@ def manifest_header(
         unmerged: Whether the run holds unmerged work, when a repository is supplied.
         forked_from: The rendered fork lineage when recorded.
         worktree: The linked worktree path when recorded.
+        fanout: The coordinator's lane count and dispatch spec.
+        lanes: Its current lane summaries, from the same listing as `sessions show`.
         compare: The lane's CompareStamp when recorded.
         compare.line: The rendered comparison placement.
         comparison: The group record from the coordinator, directly or through the lane's group.
@@ -186,6 +188,16 @@ def manifest_header(
                 session_dir, scan.status_facts()
             )
         header["unmerged"] = listing.unmerged(m, status, git_read.run_ref_tips(repo))
+    if m.fanout is not None:
+        header["fanout"] = m.fanout.model_dump(mode="json")
+        header["lanes"] = [
+            listing.summary_row(lane)
+            for lane in listing.lanes_of(
+                layout.layout_of(session_dir).state_dir,
+                session_dir.name,
+                branch_tips=git_read.run_ref_tips(repo) if repo is not None else None,
+            )
+        ]
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha
     lineage = format.format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)
