@@ -595,7 +595,7 @@ def test_config_save_keeps_filter_scroll_and_row_focus(
     ) as saved:
         dialog.get_by_role("button", name=action, exact=True).click()
     assert saved.value.ok, saved.value.text()
-    expect(row.locator(".val")).to_have_text("deny" if action == "Save" else "ask")
+    expect(row.locator(".val")).to_have_text('"deny"' if action == "Save" else '"ask"')
     expect(dialog).to_have_count(0)
     expect(search).to_have_value("sandbox.")
     assert rows.all_text_contents() == before

@@ -195,13 +195,13 @@ async function run() {
   row('sandbox.run_commands').onclick();
   all(overlay()).find(e => e.tag === 'select').value = 'allow';
   await button('Save', overlay()).onclick();
-  assert.equal(row('sandbox.run_commands').children[1].textContent, 'allow');
+  assert.equal(row('sandbox.run_commands').children[1].textContent, '"allow"');
   assert.equal(search().value, 'sandbox.');
   assert.equal(document.activeElement, row('sandbox.run_commands'));
   assert.equal(window.scrollY, 140);
   row('sandbox.run_commands').onclick();
   await button('Unset', overlay()).onclick();
-  assert.equal(row('sandbox.run_commands').children[1].textContent, 'ask');
+  assert.equal(row('sandbox.run_commands').children[1].textContent, '"ask"');
   assert.equal(search().value, 'sandbox.');
   assert.equal(document.activeElement, row('sandbox.run_commands'));
   await postJSON('/api/config/entry', {
