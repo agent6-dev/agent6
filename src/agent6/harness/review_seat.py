@@ -140,7 +140,7 @@ def structured_review(
     Returns:
         The seat's verdict; a provider error or junk output abstains with `error` set.
     """
-    system = review.REVIEW_SYSTEM_PROMPT.format(focus=ctx.focus or "general correctness")
+    system = review.panel_prompt(ctx.focus)
     try:
         resp = provider.call(
             system=system,
@@ -251,9 +251,7 @@ def repo_review(
     Returns:
         The seat's verdict; a provider error or no valid verdict abstains with `error` set.
     """
-    system = review.REPO_REVIEW_SYSTEM_PROMPT.format(
-        focus=ctx.focus or "general correctness", max_turns=max_turns
-    )
+    system = review.panel_prompt(ctx.focus, max_turns=max_turns)
     conversation = loop_conversation.Conversation()
     conversation.notice(build_user_message(ctx))
     if recovery is None:

@@ -97,13 +97,15 @@ def task_prompt(task: str, module: str) -> str:
 # default. New knobs plug in here once they exist.
 CONDITIONS: dict[str, str] = {
     "baseline": "",
+    # G12 extends the base config's trailing [harness] table.
+    "verify_finish": 'verify_when = "finish"\n',
+    "revise_auto": '[prompt]\nrevise_prompt = "auto"\n',
     # Thrust 2: front-loaded decomposition.
-    "decompose": "[prompt]\ndecompose = true\n",
-    # Aggressive thresholds that force compaction on the read-heavy `needle` task
-    # (for future tier-1 compaction work). NB the keep-last-K tier-2 hybrid that
-    # this once A/B'd was measured inert and scrapped -- see FINDINGS.md; tier-2
-    # almost never fires because tier-1 keeps context bounded below its trigger.
-    "compact_tight": "[compaction]\ndrop_at_chars = 18000\nsummarise_at_chars = 36000\n",
+    "decompose": '[prompt]\ndecompose = "on"\n',
+    # The tail must fit below the tier-2 trigger; zero selects a hard restart.
+    "compact_tight": (
+        "[compaction]\ndrop_at_chars = 18000\nsummarise_at_chars = 36000\nkeep_recent_chars = 0\n"
+    ),
     # Skills/prompt-style thrust: conditions swap the static base prompt for a
     # rendered file under prompts/ ({ROOT} is filled with this directory at run
     # time). base_rendered.md is byte-equivalent to the shipped run-mode base;
@@ -147,12 +149,6 @@ CONDITIONS: dict[str, str] = {
     # index). If this reproduces the index harm on mistral, the effect is
     # plain prompt-length sensitivity, not the skills index specifically.
     "padding_neutral": '[prompt]\nsystem_prompt_file = "{ROOT}/prompts/padding_neutral.md"\n',
-    # Native spec-recheck finish gate: the skill mechanism's one-turn bounce
-    # as a loop feature ([harness].spec_recheck_on_finish). A/B against
-    # baseline on eventflow (spec-vs-suite gap) and textkit (suite IS the
-    # spec: measures the pure cost of a wasted bounce).
-    # Header-less on purpose: extends the base block's trailing [harness].
-    "spec_recheck": "spec_recheck_on_finish = true\n",
     # Bootstrap question: with the using-superpowers meta-skill injected
     # always-on (verbatim, no harness tool-mapping added), does the model
     # start invoking use_skill for a matching indexed skill? Compare the
@@ -176,20 +172,15 @@ USER_SUFFIX: dict[str, str] = {
 
 
 def _provider_block(provider: str, model: str, verify: list[str], effort: str = "") -> str:
-    """Per-run base config: pin all three roles to the test model, wire verify,
-    allow run_command. Providers + secrets come from the layered global config."""
+    """Pin the default route and effort, wire verification and allow commands."""
     verify_toml = "[" + ", ".join(json.dumps(a) for a in verify) + "]"
     effort_line = f"effort = {json.dumps(effort)}\n" if effort else ""
-    roles = "\n".join(
-        f"[models.{role}]\nprovider = {json.dumps(provider)}\nmodel = {json.dumps(model)}\n"
-        + effort_line
-        for role in ("worker", "planner", "reviewer")
-    )
+    route = f"[models.default]\nmodel = {json.dumps(f'{provider}/{model}')}\n{effort_line}"
     # [harness] is deliberately the LAST section: a condition fragment
     # WITHOUT a section header (see CONDITIONS) legally extends it, whereas a
     # second [harness] header would be invalid TOML (cannot declare twice).
     return (
-        f'{roles}\n[sandbox]\nrun_commands = "allow"\n\n'
+        f'{route}\n[sandbox]\nrun_commands = "allow"\n\n'
         f"[harness]\nverify_command = {verify_toml}\n"
         f"verify_timeout_s = 60.0\n"
     )
@@ -222,6 +213,7 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
         "iterations": None,
         "stop_reason": None,
         "verification": None,
+        "task_rewritten": False,
         "usd": None,
         "tokens_in": None,
         "tokens_out": None,
@@ -265,6 +257,8 @@ def _extract_metrics(state_home: Path) -> dict[str, Any]:
             # Recorded benchmark rows keep their schema; live events use turns.
             m["iterations"] = e.get("turns")
             m["verification"] = e.get("verification")
+        elif t == "loop.prompt_revision.result":
+            m["task_rewritten"] = True
         elif t == "loop.compact.summarise.done":
             m["compactions"] += 1
             compacted = True
@@ -339,6 +333,7 @@ def one_run(
     budget: float,
     label: str,
     effort: str = "",
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     module = TASKS[task]
     session_id = f"{task}-{condition}-r{rep}-{uuid.uuid4().hex[:6]}"
@@ -365,18 +360,26 @@ def one_run(
     )
     # Fail on a dead config key here, in 200ms, not after a task's spend:
     # `config show` loads the same merged layers the run will.
-    subprocess.run(
-        [AGENT6_BIN, "--config", str(cfg), "config", "show"],
-        cwd=workdir,
-        check=True,
-        stdout=subprocess.DEVNULL,
-    )
+    if not dry_run:
+        subprocess.run(
+            [AGENT6_BIN, "--config", str(cfg), "config", "show"],
+            cwd=workdir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
 
     _git(workdir, "init", "-q")
     _git(workdir, "config", "user.email", "bench@bench")
     _git(workdir, "config", "user.name", "bench")
     _git(workdir, "add", "-A")
-    _git(workdir, "commit", "-qm", "seed")
+    _git(workdir, "-c", "commit.gpgsign=false", "commit", "-qm", "seed")
+    if dry_run:
+        return {
+            "dry_run": True,
+            "condition": condition,
+            "config": str(cfg),
+            "state_home": str(state_home),
+        }
 
     env = dict(os.environ)
     env["XDG_STATE_HOME"] = str(state_home)
@@ -432,6 +435,7 @@ def one_run(
         "model": model,
         "provider": provider,
         "condition": condition,
+        "effort": effort,
         "rep": rep,
         "session_id": session_id,
         "score": grade.get("score", 0.0),
@@ -459,7 +463,10 @@ def main() -> None:
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--parallel", type=int, default=4)
     ap.add_argument("--budget", type=float, default=0.60)
-    ap.add_argument("--effort", default="", help="pin [models.*].effort for every role")
+    ap.add_argument("--effort", default="", help="pin models.default.effort")
+    ap.add_argument(
+        "--dry-run", action="store_true", help="seed repos and configs; no agent or grader"
+    )
     ap.add_argument("--label", required=True)
     args = ap.parse_args()
 
@@ -484,12 +491,18 @@ def main() -> None:
             budget=args.budget,
             label=args.label,
             effort=args.effort,
+            dry_run=args.dry_run,
         )
         for t in tasks
         for c in conditions
         for r in range(args.reps)
     ]
     print(f"[coreagent] {len(jobs)} runs, parallel={args.parallel}, model={args.model}")
+    if args.dry_run:
+        for job in jobs:
+            print(json.dumps(one_run(**job)))
+        print(f"[coreagent] dry run: {len(jobs)} repos prepared; no agent or grader launched")
+        return
     print(f"[coreagent] -> {out_path}")
     done = 0
     with cf.ThreadPoolExecutor(max_workers=args.parallel) as ex:

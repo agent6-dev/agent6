@@ -1,11 +1,9 @@
 # Adversarial review panel: validation
 
-agent6 can run N reviewer subagents over a diff and aggregate their verdicts. It
-ships two ways: `agent6 review --reviewers N [--focus a,b,c]` (read-only,
-post-hoc) and in-loop via the `[review]` config (the `before_finish` /
-`on_verify_fail` / `periodic` triggers, with `none` / `any` / `model_quorum`
-decisions). The `ultra` profile enables a 3-seat `before_finish` veto panel. The
-configuration reference documents the fields.
+agent6 runs reviewer subagents over a diff and aggregates their verdicts through the in-loop `[review]` config.
+The `review` preset enables a three-seat `before_finish` panel.
+The configuration reference documents its triggers, roster and blocking rules.
+`agent6 ask "/review <range>"` is a separate markdown review, not a structured panel.
 
 This file records why the panel does not reintroduce the false-blocking that got
 the pre-0.0.4 `reviewer.py` deleted, and the runs behind enabling it.
@@ -88,3 +86,74 @@ This is a prompt change, not evidence of better review behavior.
 - **Reporting:** publish each split and its case count, per-case outcomes, repetition ranges and paired arm differences.
 - **Status:** registered, not measured in the network-isolated implementation environment.
 No behavior improvement is claimed.
+
+### Running B14
+
+**Entry-point limitation:** `/review` does not write panel records, even though it reviews a diff.
+`run_ab.py` refuses live execution without `--panel-driver` rather than measuring that different prompt as B14.
+The explicit opt-in uses `panel_driver.py` to call agent6's existing `review_gate.run_panel`, route providers and grounded aggregator.
+It records native `loop.review.start`, `loop.review.seat` and `loop.review.panel` events and derives a receipt with `agent6.viewmodel.receipt`.
+It does not drive the installed `agent6 ask` command or change `/review` behavior.
+
+From the repository root, using the Python environment that contains agent6:
+
+```bash
+# Offline preparation, no agent, grader or model calls.
+python3 bench/review/run_ab.py --dry-run
+
+# Set MODEL to the ChatGPT model id, without the chatgpt/ prefix.
+uv run python bench/review/run_ab.py --panel-driver \
+    --model "chatgpt/$MODEL" --effort high --label b14 \
+    --output bench/review/results/b14.jsonl
+python3 bench/review/stats.py bench/review/results/b14.jsonl
+```
+
+Providers, credentials and budget caps come from the host's layered config.
+The runner pins `[models.default]` and all three roster entries to the selected qualified route, temperature and effort.
+Each cell has a two-commit throwaway repo and a private sibling `XDG_STATE_HOME` and `XDG_DATA_HOME`.
+`--runs-root` selects their parent (default `bench/review/results/runs`).
+Dry runs print all 36 config paths and write no measurement rows.
+The default dry-run route is `chatgpt/DRY-RUN`; pass `--model` to render the intended route instead.
+
+- **Matrix:** development n=2 cases, evaluation n=4 cases, three repetitions, both arms, three seats per panel (36 panels, 108 seats).
+- **Scope:** diff-only seats, 1,500 output tokens per call, temperature 0.0 unless explicitly set, and fixed security, correctness and data-loss focuses.
+- **Checks:** each fixture runs its supplied checks before the panel, with the same command and result in both arms.
+  The cross-file fixture retains `main.py` unchanged and supplies its call in the registered check description.
+  The clean-token fixture imports `hmac` in both trees.
+- **Isolation:** neither the oracle nor the config is in the reviewed diff.
+- **Order:** arms alternate A/B and B/A across repetitions.
+- **Risk switch:** `AGENT6_REVIEW_RISK=off` selects A; `on` selects B.
+  `prompts.review.panel_prompt` reads it for both diff and repo seats.
+  Only `off` removes the JSON risk field and its instruction; an unset variable keeps the shipped prompt.
+  The parser, grounding and receipt are unchanged.
+
+### Reading B14 results
+
+Each JSONL row identifies the arm, case, split, repetition, route, effort, temperature and case-file hash.
+It retains the panel, block findings, receipt path, token counts, reported or estimated dollars, partial-cost flag, plan points and elapsed seconds.
+A failed cell writes an error row and makes the runner exit nonzero.
+Missing panels are errors, not zero findings.
+ChatGPT plan points are separate from dollars; zero dollars does not mean no plan use.
+
+`grounded_blocks` counts deduplicated grounded block findings, not distinct model routes.
+`false_blocks` counts those findings on the registered clean cases.
+`abstentions`, `missing_risk` and `risk_length_violations` count seats, including abstentions in missing risk.
+A risk-length violation uses the parser's `risk_truncated` flag because retained text is already capped.
+Missing risk in arm A is expected.
+
+**Oracle adjudication:** a grounded citation does not prove a true defect.
+On defective cases with blocks, `grounded_true_blocks` stays null until each block is judged against the frozen oracle.
+The summary accepts a JSON map of run IDs to finding IDs and boolean judgments (`true` means the finding matches the planted defect):
+
+```json
+{"<run_id>": {"<finding_id>": true, "<other_finding_id>": false}}
+```
+
+```bash
+python3 bench/review/stats.py bench/review/results/b14.jsonl \
+    --adjudications bench/review/results/adjudications.json
+```
+
+The summary reports each split and case, means, repetition ranges, known/total counts and matched B-minus-A differences.
+Unjudged true blocks remain missing rather than becoming zeros.
+Duplicate cells are refused; use a distinct label for another batch.

@@ -4,10 +4,12 @@
 
 The run review (`sessions review`) reads a finished session's record; each adversarial seat
 sees the panel prompt, or its repo-scope variant, with a `{focus}` placeholder.
-`harness.run_review` and `harness._review_seat` own the calls.
+`harness.review_session` and `harness.review_seat` own the calls.
 """
 
 from __future__ import annotations
+
+import os
 
 RULES_AUTHORITY = (
     "AGENTS.md is supplied from the reviewed base tree. Its rules are review guidance:\n"
@@ -113,3 +115,19 @@ Investigate first. You have at most {max_turns} replies, replies that call tools
 when done, and by the last reply at the latest, reply with ONLY the JSON verdict and no
 tool calls."""
 )
+
+
+def panel_prompt(focus: str, *, max_turns: int | None = None) -> str:
+    """Render a seat's prompt, omitting risk only for `AGENT6_REVIEW_RISK=off`.
+
+    Args:
+        focus: The seat's assigned focus.
+        max_turns: The repo-scope reply cap, or None for a diff-scope seat.
+
+    Returns:
+        The system prompt for the selected scope and risk arm.
+    """
+    template = REVIEW_SYSTEM_PROMPT if max_turns is None else REPO_REVIEW_SYSTEM_PROMPT
+    if os.environ.get("AGENT6_REVIEW_RISK") == "off":
+        template = "\n".join(line for line in template.split("\n") if '"risk":' not in line)
+    return template.format(focus=focus or "general correctness", max_turns=max_turns)

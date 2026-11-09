@@ -74,6 +74,44 @@ def _ctx() -> review_panel.ReviewContext:
     return review_panel.ReviewContext(task="add auth", diff=SAMPLE_DIFF, verification="passed")
 
 
+@pytest.mark.parametrize("repo_scope", [False, True])
+def test_risk_ablation_changes_only_the_risk_line(
+    monkeypatch: pytest.MonkeyPatch, repo_scope: bool
+) -> None:
+    """Both seat paths omit the risk instruction only for the explicit off arm."""
+    provider = mock.Mock()
+    provider.call.return_value = _RepoResp('{"verdict":"pass","summary":"ok","findings":[]}')
+
+    def call() -> str:
+        if repo_scope:
+            review_seat.repo_review(
+                provider,
+                _ctx(),
+                seat_index=0,
+                focus="security",
+                model_route="p/m",
+                tools=[],
+                dispatch=lambda _name, _args: results.RawResult({}),
+                max_turns=2,
+            )
+        else:
+            review_seat.structured_review(
+                provider, _ctx(), seat_index=0, focus="security", model_route="p/m"
+            )
+        return str(provider.call.call_args.kwargs["system"])
+
+    monkeypatch.delenv("AGENT6_REVIEW_RISK", raising=False)
+    default = call()
+    monkeypatch.setenv("AGENT6_REVIEW_RISK", "off")
+    arm_a = call()
+    monkeypatch.setenv("AGENT6_REVIEW_RISK", "on")
+    arm_b = call()
+    assert '"risk":' not in arm_a
+    assert "what could fail" not in arm_a
+    assert default == arm_b
+    assert arm_a == "\n".join(line for line in arm_b.split("\n") if '"risk":' not in line)
+
+
 def test_structured_review_parses_clean_json() -> None:
     v = review_seat.structured_review(
         _prov(_BLOCK_JSON), _ctx(), seat_index=0, focus="security", model_route="m1"

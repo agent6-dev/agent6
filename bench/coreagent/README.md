@@ -25,6 +25,9 @@ run's `logs.jsonl` + the grader):
 - `redundant_reads` (+ `_post_compact`): read-shaped tool calls repeating an
   earlier `(name,args)`. The primary compaction-quality signal.
 - `iterations` (loop turns), `usd`, `tokens_in/out`, `wall_s`, `stop_reason`, `tampered`.
+- `verification`: the final `session.stop.verification` word, not a guess from the grader.
+- `task_rewritten`: whether `loop.prompt_revision.result` was recorded (the rewrite is used automatically in `revise_auto`).
+  A started or failed revision alone does not count.
 
 ## Tasks (`tasks/<name>/`)
 
@@ -53,17 +56,49 @@ python3 run.py --model qwen/qwen3.6-35b-a3b --provider openrouter \
 python3 stats.py results/myrun.jsonl          # per-cell mean+/-se + treatment deltas
 ```
 
-Providers + secrets come from the layered global `~/.config/agent6` config; the
-harness only pins the three roles to `--model` and wires the verify command.
+Providers and secrets come from the layered global `~/.config/agent6` config.
+The harness writes `[models.default]` with `model = "<provider>/<model>"` and the optional `effort` pin, plus `harness.verify_command = ["bash", "verify.sh"]`.
+Keep global role overrides unset and other experiment settings at their defaults so every role inherits the tested route and only the condition changes.
+Each live run checks its merged config with `agent6 config show` before spending.
 Anthropic models (unpriced) get token caps instead of `--max-usd`.
+ChatGPT routes use the host's plan cap; `--budget` caps dollars, not plan use.
+
+### G12 and B15 on ChatGPT
+
+From the repository root, with the installed binary on PATH (or `AGENT6_BIN` set):
+
+```bash
+# G12: model-only verification versus the harness-run finish gate.
+python3 bench/coreagent/run.py --provider chatgpt --model <model> --effort high \
+    --tasks textkit,rpn,ledger,bugs --conditions baseline,verify_finish \
+    --reps 3 --parallel 2 --label g12
+python3 bench/coreagent/stats.py bench/coreagent/results/g12.jsonl
+
+# B15: original task versus an automatic helper rewrite.
+python3 bench/coreagent/run.py --provider chatgpt --model <model> --effort high \
+    --tasks textkit,rpn,ledger,bugs --conditions baseline,revise_auto \
+    --reps 3 --parallel 2 --label b15
+python3 bench/coreagent/stats.py bench/coreagent/results/b15.jsonl
+```
+
+Replace `<model>` with the model id, without the `chatgpt/` prefix.
+Both commands write the route `chatgpt/<model>`.
+Add `--dry-run` to build the same repos and configs without launching agent6 or the grader.
+`COREAGENT_RUNS` selects the repo and private state directory parent (default `~/coreagent-runs`).
+Dry runs print each config path and do not append result rows.
 
 ## Conditions (`CONDITIONS` in run.py)
 
-- `baseline`: shipped defaults.
-- `decompose`: `[prompt].decompose = true`.
-- `compact_tight`: aggressive `[compaction]` thresholds to force tier-2 on a
-  moderate task.
-- `decompose_tight`: both.
+| Condition | Setting | Comparison |
+|-----------|---------|------------|
+| `baseline` | Shipped defaults: `harness.verify_when = "never"`, `prompt.revise_prompt = "off"` | G12 and B15 control |
+| `verify_finish` | `harness.verify_when = "finish"` | G12 treatment: harness runs the finish gate; both arms retain the same tools and verify command |
+| `revise_auto` | `prompt.revise_prompt = "auto"` | B15 treatment: helper rewrites the task before the worker loop |
+| `decompose` | `prompt.decompose = "on"` | Front-loaded decomposition |
+| `compact_tight` | Lower compaction thresholds | Force compaction on moderate tasks |
+
+The other prompt and skill conditions are listed in `CONDITIONS`.
+The historical `spec_recheck` condition is unavailable because `harness.spec_recheck_on_finish` is not a supported config key.
 
 Add a condition by adding a config-TOML fragment to the dict. The task prompt is
 deliberately NEUTRAL about decomposition, so any DAG-use difference comes from the
