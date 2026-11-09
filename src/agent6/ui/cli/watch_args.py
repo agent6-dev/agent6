@@ -211,10 +211,12 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         sub,
         "answer",
         help=(
-            "Answer a run's ask_user question without a terminal: the same answer"
+            "Answer a run's question or approval without a terminal: the same answer"
             " file the TUI, web and attach write. With no TEXT it lists the pending"
-            " questions and their options; one TEXT per question, in order. A queued"
-            " question's answer reaches the run at its next turn; an ended run's at"
+            " questions and approvals with their options; one TEXT per question, in order."
+            " For an approval, give yes, no, session or session-deny (session options"
+            " only when offered). An approval takes priority unless --question is given."
+            " A queued question's answer reaches the run at its next turn; an ended run's at"
             " its resume."
         ),
     )
@@ -230,7 +232,7 @@ def _add_answer_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser])
         "answers",
         nargs="*",
         metavar="TEXT",
-        help="One answer per question, in the order asked; an option's text, or free text.",
+        help="One TEXT per question, or an approval option: yes, no, session, session-deny.",
     )
 
 

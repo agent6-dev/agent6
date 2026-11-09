@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`agent6 answer`: the headless seat at an `ask_user` question.
-
-`agent6 steer` refuses a run blocked on a question and every other way in needs a terminal.
-"""
+"""`agent6 answer` answers questions and approvals without a terminal."""
 
 from __future__ import annotations
 
@@ -346,3 +343,105 @@ def test_answer_reaches_a_detached_resumes_start_gate(
     capsys.readouterr()
     process.write_worker_pid(layout.session_dir, 999_999_999)
     assert cli_answer_cmd._cmd_answer("curious-fox", ("stash",)) != 0
+
+
+@pytest.mark.parametrize("option", ["yes", "no", "session", "session-deny"])
+def test_answer_releases_a_headless_approval(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    option: str,
+) -> None:
+    """A claimless CLI answer releases the real parked approval bridge."""
+    import concurrent.futures
+    import time
+
+    from agent6 import portable
+    from agent6.sessions import event_log
+    from agent6.tools import operator_prompts
+    from agent6.ui.cli import interact
+    from agent6.viewmodel import open_approval
+
+    layout = _run_with_events(tmp_path, monkeypatch, [{"type": "session.start", "mode": "ask"}])
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    events = event_log.EventSink(layout.logs_path)
+    prompts = operator_prompts.OperatorPrompts(
+        approver=interact.build_approver(layout.session_dir, None),
+        questioner=interact.build_questioner(layout.session_dir),
+        journal=events.emit,
+        session_dir=layout.session_dir,
+    )
+    with concurrent.futures.ThreadPoolExecutor() as pool:
+        waiting = pool.submit(prompts.approve, "fetch https://github.com", scope=ipc.COMMAND_SCOPE)
+        try:
+            deadline = time.monotonic() + 5
+            while open_approval(layout.session_dir) is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            assert open_approval(layout.session_dir) is not None
+            assert not waiting.done()
+            assert cli_answer_cmd._cmd_answer("curious-fox", ()) == 0
+            out = capsys.readouterr().out
+            assert "fetch https://github.com" in out
+            for word in ("yes", "no", "session", "session-deny"):
+                assert word in out
+            assert cli_answer_cmd._cmd_answer("curious-fox", (option,)) == 0
+            assert waiting.result(timeout=5) is (option in ("yes", "session"))
+        finally:
+            ipc.write_steer_answer(layout.session_dir, "abort")
+
+
+@pytest.mark.parametrize("answers", [("maybe",), ("yes", "no")])
+def test_answer_refuses_invalid_approval_options(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    answers: tuple[str, ...],
+) -> None:
+    """An invalid approval answer names the four words and writes nothing."""
+    layout = _run_with_events(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "session.start", "mode": "ask"},
+            {"type": "approval.prompt", "id": "approval-1", "prompt": "Fetch?", "standing": True},
+        ],
+    )
+    assert cli_answer_cmd._cmd_answer("curious-fox", answers) == 2
+    err = capsys.readouterr().err
+    assert "yes, no, session, session-deny" in err
+    assert not (layout.session_dir / "approvals" / "approval-1.answer").exists()
+
+
+def test_answer_completes_a_live_approval(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Completion offers a live approval, not a dead worker's leftover prompt."""
+    from agent6.ui.cli import completers
+
+    layout = _run_with_events(
+        tmp_path,
+        monkeypatch,
+        [
+            {"type": "session.start", "mode": "ask"},
+            {"type": "approval.prompt", "id": "approval-1", "prompt": "Fetch?"},
+        ],
+    )
+    assert completers._complete_answerable_ids("curious") == [layout.session_id]
+    process.write_worker_pid(layout.session_dir, 999_999_999)
+    assert completers._complete_answerable_ids("curious") == []
+
+
+def test_question_beside_an_approval_prints_an_explicit_selector(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The listed question command cannot accidentally answer the approval."""
+    layout = _run_with_question(tmp_path, monkeypatch, questions=[{"question": "Which port?"}])
+    with layout.logs_path.open("a") as log:
+        log.write(
+            json.dumps({"type": "approval.prompt", "id": "approval-1", "prompt": "Fetch?"}) + "\n"
+        )
+    assert cli_answer_cmd._cmd_answer("curious-fox", ()) == 0
+    assert "--question question-1 TEXT" in capsys.readouterr().out
+    assert cli_answer_cmd._cmd_answer("curious-fox", ("8080",), "question-1") == 0
+    assert ipc.read_question_answers(layout.session_dir, "question-1", timeout_s=1) == ("8080",)
+    assert not (layout.session_dir / "approvals" / "approval-1.answer").exists()
