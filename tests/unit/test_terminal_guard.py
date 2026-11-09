@@ -11,6 +11,7 @@ import pathlib
 import pty
 import select
 import sys
+import tempfile
 
 import pytest
 
@@ -111,9 +112,11 @@ def test_a_task_a_model_wrote_cannot_drive_the_terminal(
 
 
 def test_a_crash_report_naming_model_text_prints_scrubbed(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A refusal or crash report quoting a name a command chose reaches stderr scrubbed."""
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", None)
 
     def crash(_argv: list[str] | None = None) -> int:
         raise RuntimeError(f"file {OSC52}gone")

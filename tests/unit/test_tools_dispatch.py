@@ -3031,3 +3031,25 @@ def test_read_file_bounds_media_before_validation(
     with pytest.raises(tool_errors.ToolError, match=f"exceeds {cap} MiB"):
         d.dispatch("read_file", {"path": "large"})
     assert media.DOCUMENT_MAX_BYTES + 1 in seen
+
+
+@pytest.mark.parametrize("isolation", ["none", "partial", "full"])
+def test_command_temp_files_belong_to_session(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    session = tmp_path / "state" / "sessions" / "runs" / "test"
+    session.mkdir(parents=True)
+    runner = dispatch.ToolDispatcher(
+        root=root, config=Config(), isolation=isolation, session_dir=session
+    )
+    policy = runner._jail_policy(("true",))
+    temp = pathlib.Path(dict(policy.env)["TMPDIR"])
+    assert temp.is_relative_to(session)
+    assert temp in policy.extra_rw_paths
+    assert dict(runner._jail_policy(("true",)).env)["TMPDIR"] == str(temp)
+    (temp / "leftover").write_text("test")
+    runner.close()
+    assert not temp.exists()
+    runner.close()

@@ -15,6 +15,7 @@ import json
 import os
 import pathlib
 import shlex
+import tempfile
 import threading
 import time
 import uuid
@@ -178,6 +179,8 @@ class ToolDispatcher:
         self._session_failed = False
         # Two threads racing the lazy open would leak a jail process and its namespaces.
         self._session_lock = threading.Lock()
+        self._temp_lock = threading.Lock()
+        self._command_tmp: tempfile.TemporaryDirectory[str] | None = None
         self._session_dir = session_dir
         self._jail_access = command_tools.JailAccess(
             get_policy=self._jail_policy, get_session=self._run_session, net_for=self._net_for
@@ -492,6 +495,9 @@ class ToolDispatcher:
         if self._own_session_net is not None:  # never the run's; that is its own to close
             self._own_session_net.close()
             self._own_session_net = None
+        if self._command_tmp is not None:
+            self._command_tmp.cleanup()
+            self._command_tmp = None
 
     def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:
         """Adopt a verify command mid-run, once a gateless run's tree has materialized.
@@ -1045,6 +1051,12 @@ class ToolDispatcher:
         extra_rw_paths: tuple[pathlib.Path, ...] = (),
     ) -> kinds.JailPolicy:
         """Return the jail policy for an argv, with this dispatcher's protect paths and git dir."""
+        with self._temp_lock:
+            if self._command_tmp is None:
+                self._command_tmp = tempfile.TemporaryDirectory(
+                    prefix="command-tmp-", dir=self._session_dir
+                )
+            temp_dir = pathlib.Path(self._command_tmp.name)
         return tools_policy.jail_policy(
             self._root,
             self._config,
@@ -1052,6 +1064,7 @@ class ToolDispatcher:
             argv,
             timeout_s=timeout_s,
             extra_rw_paths=extra_rw_paths,
+            temp_dir=temp_dir,
             extra_protect_paths=self.extra_protect_paths,
             worktree_git_dir=self._worktree_git_dir,
             grants=self._grants,

@@ -7,6 +7,7 @@ The lifecycle is `agent6.app.run.run_task`.
 
 from __future__ import annotations
 
+import contextvars
 import dataclasses
 import os
 import pathlib
@@ -21,6 +22,7 @@ from agent6.config import (
 )
 from agent6.context import skills as agent6_skills
 from agent6.sessions import event_log
+from agent6.tools import operator_prompts
 from agent6.ui import btw, spawn, steer
 from agent6.ui.cli import (
     ask,
@@ -35,6 +37,10 @@ from agent6.ui.cli import (
 )
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.viewmodel import session_policy
+
+crash_session: contextvars.ContextVar[pathlib.Path | None] = contextvars.ContextVar(
+    "crash_session", default=None
+)
 
 
 def _skills_task_prefix(cfg: Config, names: tuple[str, ...]) -> tuple[str, str]:
@@ -101,6 +107,18 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
     console_cell: list[console_render.ConsoleView | None] = [None]
     steer_cell: list[steer.SteerState | None] = [None]
 
+    def build_approver(session_dir: pathlib.Path) -> operator_prompts.Approver:
+        """Remember the session record before any run prompts or model calls.
+
+        Args:
+            session_dir: The run's record directory.
+
+        Returns:
+            The terminal approver.
+        """
+        crash_session.set(session_dir)
+        return interact.build_approver(session_dir, console_cell, steer_cell)
+
     def attach_console_view(events: event_log.EventSink) -> None:
         """Create the console view on the run's event sink."""
         # The sink's path is the handle to the run dir, so the layout need not cross the protocol.
@@ -132,9 +150,7 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         close_console_view=close_console_view,
         loop_logger=lambda mode: live.loop_logger(mode, console_cell[0]),
         tui_session=lambda session_dir, enabled: live.tui_session(session_dir, enabled=enabled),
-        build_approver=lambda session_dir: interact.build_approver(
-            session_dir, console_cell, steer_cell
-        ),
+        build_approver=build_approver,
         build_questioner=lambda session_dir: interact.build_questioner(session_dir, console_cell),
         make_steer_state=lambda events, session_dir, facts: _remember_steer(
             steer_cell,

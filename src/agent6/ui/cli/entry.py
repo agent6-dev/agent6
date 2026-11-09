@@ -132,6 +132,9 @@ def cli_main(argv: list[str] | None = None) -> int:
     Returns:
         The exit code.
     """
+    from agent6.ui.cli import run
+
+    run.crash_session.set(None)
     with terminal_guard.guarded_terminal():
         try:
             try:
@@ -158,7 +161,9 @@ def cli_main(argv: list[str] | None = None) -> int:
                 raise
             common.error(f"unexpected {type(exc).__name__}: {exc}")
             try:
-                fd, path = tempfile.mkstemp(prefix="agent6-crash-", suffix=".log")
+                fd, path = tempfile.mkstemp(
+                    prefix="agent6-crash-", suffix=".log", dir=run.crash_session.get()
+                )
                 with os.fdopen(fd, "w", encoding="utf-8") as fh:
                     traceback.print_exc(file=fh)
                 print(f"  full traceback: {path}", file=sys.stderr)

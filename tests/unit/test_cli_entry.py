@@ -12,6 +12,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import tempfile
 
 import pytest
 
@@ -63,8 +64,11 @@ def test_cli_main_passes_through_return_code(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_cli_main_converts_unexpected_exception_to_friendly_error(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+
     def _boom(_argv: list[str] | None = None) -> int:
         raise RuntimeError("kaboom")
 
@@ -300,3 +304,24 @@ def test_a_long_plan_task_reaches_the_preflight(
     err = capsys.readouterr().err
     assert rc == 2, err
     assert "No providers configured" in err
+
+
+def test_crash_report_uses_active_session(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    session = tmp_path / "session"
+    session.mkdir()
+
+    def boom(_argv: list[str] | None = None) -> int:
+        frontend = run.session_frontend()
+        frontend.build_approver(session)
+        raise RuntimeError("session crash")
+
+    monkeypatch.setattr(entry, "main", boom)
+    monkeypatch.delenv("AGENT6_DEBUG", raising=False)
+    assert cli_main() == 1
+    reports = list(session.glob("agent6-crash-*.log"))
+    assert len(reports) == 1
+    assert "session crash" in reports[0].read_text()

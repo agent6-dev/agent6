@@ -458,6 +458,7 @@ def jail_policy(
     extra_protect_paths: tuple[pathlib.Path, ...] = (),
     network: kinds.NetworkMode | None = None,
     env_base: dict[str, str] | None = None,
+    temp_dir: pathlib.Path | None = None,
     worktree_git_dir: pathlib.Path | None = None,
     grants: Grants | None = None,
 ) -> kinds.JailPolicy:
@@ -479,6 +480,7 @@ def jail_policy(
         network: A caller's own network answer; see `resolve_network`.
         env_base: The child's env instead of the passthrough set; the jail defaults (PATH, HOME,
             the `[git.commit]` identity, the uv and bytecode settings) apply either way.
+        temp_dir: The dispatcher-owned temporary directory for command files.
         worktree_git_dir: The repository git dir recorded at session start or when agent6
             added the worktree, granted read-only while the `.git` pointer still resolves
             to it. A linked worktree with no record gets no grant.
@@ -523,6 +525,8 @@ def jail_policy(
             refusal = jail_home_refusal(persistent)
         if refusal is not None:
             raise jail.JailUnavailableError(refusal)
+    if temp_dir is not None:
+        env["TMPDIR"] = str(temp_dir)
     env["HOME"] = str(persistent or JAIL_TMP_HOME)
     # That HOME holds no git identity, so a `git commit` the model runs (`git.control = "model"`)
     # carries the operator's `[git.commit]` one; an unset field leaves the identity to git (a
@@ -566,6 +570,7 @@ def jail_policy(
         extra_rw_paths=(
             *(path for path, _real in grants.write),
             *extra_rw_paths,
+            *((temp_dir,) if temp_dir is not None else ()),
             *(() if persistent is None else (persistent,)),
         ),
         grant_sources=tuple(
