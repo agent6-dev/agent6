@@ -146,26 +146,32 @@ class SettledGuard:
     Attributes:
         tree: The last tree sha seen; execution-local, so a resumed execution
             re-measures on its first turn.
-        idle: Consecutive turns with no edit, no commit, no memory write and an
-            unchanged tree.
+        head: The last HEAD seen; a commit the model makes under its own git control
+            moves it without touching the tree.
+        idle: Consecutive turns with no edit, no commit, no memory write, an unchanged
+            tree and an unchanged HEAD.
         nudged: The one settled nudge went out.
         gateless_ever_edited: An editing step did not end with a green verify. Persisted.
     """
 
     tree: str = ""
+    head: str = ""
     idle: int = 0
     nudged: bool = False
     gateless_ever_edited: bool = False
 
-    def note_turn(self, tree: str, *, progress: bool, verify_ran: bool) -> None:
+    def note_turn(self, tree: str, head: str, *, progress: bool, verify_ran: bool) -> None:
         """Count the turn: progress restarts the streak, a verify run is neutral.
 
         Args:
             tree: The tree sha after the turn.
-            progress: An edit, a commit, a memory write or a tree change happened.
+            head: The HEAD sha after the turn.
+            progress: An edit, a commit, a memory write, a tree change or a HEAD move
+                happened.
             verify_ran: A verify ran this turn.
         """
         self.tree = tree
+        self.head = head
         if progress:
             self.restart()
         elif not verify_ran:
@@ -267,10 +273,15 @@ def verify_settled(
     guard = state.settled
     if not (state.verify.ever_passed or guard.gateless_ever_edited):
         return None
-    tree = ctx.tree_sha()
+    tree, head = ctx.tree_sha(), ctx.head_sha()
     guard.note_turn(
         tree,
-        progress=turn.committed or turn.edited or turn.wrote_memory or tree != guard.tree,
+        head,
+        progress=turn.committed
+        or turn.edited
+        or turn.wrote_memory
+        or tree != guard.tree
+        or head != guard.head,
         verify_ran=turn.verify_just_passed or turn.verify_just_failed,
     )
     if turn.finish is not None:

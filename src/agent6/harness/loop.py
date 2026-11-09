@@ -1405,6 +1405,7 @@ class Harness:
             gate_present=lambda: self.gate.present(state.verify),
             verify_command=lambda: self.gate.command(state.verify),
             tree_sha=self.chain.tree_sha,
+            head_sha=self.chain.head_sha,
             tree_green=lambda: self.gate.tree_green(state.verify),
             budget_remaining=self._budget_fraction_remaining,
             operator_wait_s=lambda: self.dispatcher.operator_wait_s,

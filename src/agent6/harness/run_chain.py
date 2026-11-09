@@ -142,6 +142,13 @@ class RunChain:
         except (errors.GitError, OSError):
             return ""
 
+    def head_sha(self) -> str:
+        """Return the checkout's HEAD commit, or "" when it has none."""
+        try:
+            return git_read.chain_tip(self.root, "HEAD") or ""
+        except (errors.GitError, OSError):
+            return ""
+
     def is_dirty(self) -> bool:
         """Return whether the worktree holds content the chain does not.
 

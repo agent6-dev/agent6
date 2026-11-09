@@ -104,6 +104,8 @@ class TurnContext:
     end_rejected: Callable[[loop_state.TurnState, str], bool]
     # The standing goal's re-entry nudge for a soft end, or None when the run may end.
     standing_absorb: Callable[[str, int], str | None]
+    # HEAD of the checkout: under model git control the model's own commits move it.
+    head_sha: Callable[[], str] = lambda: ""
 
 
 # An advisor: one heuristic over the turn, answering with a nudge, a stop or nothing.

@@ -331,3 +331,14 @@ def test_a_green_harness_end_reads_finished_never_passed(reason: str, detail: st
         assert session_status.status_word(
             finished=True, verification="passed", stop_reason=reason, scoped=scoped
         ) == ("finished", detail)
+
+
+def test_a_commit_the_model_makes_under_its_own_git_control_is_progress() -> None:
+    """Under `git.control = "model"` a commit moves HEAD, not the tree; the idle streak restarts."""
+    state = _green_state()
+    heads = iter(["h1"] * 5 + ["h2"] * 20)
+    ctx = turn_context(tree_sha=lambda: "tree", head_sha=lambda: next(heads))
+    answers = [guards.verify_settled(_turn(i), state, ctx) for i in range(1, 15)]
+    # The HEAD move at turn 6 restarts the streak, so no stop comes within fourteen turns.
+    assert not [a for a in answers if isinstance(a, advice.Stop)]
+    assert state.settled.idle == 8

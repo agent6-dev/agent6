@@ -184,7 +184,7 @@ uv run ruff check && uv run ruff format --check && \
 - agent6 reviews its own source with `agent6 ask "/review <range>"`; `sessions review` output lands in `$XDG_STATE_HOME/agent6/<repo-id>/reviews/`, a path the jail hides from a run.
 - The default work is test and hunt: drive every surface as a user (the CLI, the TUI, the web, ACP), fix what reads wrong at its root, pin it red first.
 - Public names and shapes first: a wrong name costs least today.
-- A change reviews itself. After an editing turn, read the diff with `/review` as deep as the change warrants: a security, shape or public-name change gets a full read and a second model's opinion; a docstring or a message gets a glance. No fixed panel; the worker decides the depth.
+- A change reviews itself. After an editing turn, read your own diff and judge it as deep as the change warrants: a security, shape or public-name change gets a full read and names what a second reviewer should check; a docstring or a message gets a glance. `/review` is the operator's steer for that second opinion, not a command a run can issue. No fixed panel; the worker decides the depth.
 
 ## Security invariants
 
