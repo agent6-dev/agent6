@@ -149,14 +149,27 @@ def _setup(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.P
     return repo
 
 
-@pytest.mark.parametrize("free", [90, 100, 110])
+@pytest.mark.parametrize(
+    ("total", "free", "free_note"),
+    [
+        (1000, 90, "0 MiB free (9.0%)"),
+        (1000, 100, None),
+        (1000, 110, None),
+        (82_000_000_000, 5_492_600_832, "5.1 GiB free (6.7%)"),
+        (20 * 1024**3, 1024**3, "1.0 GiB free (5.0%)"),
+        (20 * 1024**3, 1024**3 - 1, "1024 MiB free (5.0%)"),
+        (20 * 1024**3, 550_000_000, "525 MiB free (2.6%)"),
+    ],
+)
 def test_launch_reports_low_state_disk_space_without_refusing(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    total: int,
     free: int,
+    free_note: str | None,
 ) -> None:
-    """Fresh and resumed executions warn strictly below ten percent, without refusing work."""
+    """Fresh and resumed executions report low space in GiB or MiB without refusing work."""
     repo = _setup(tmp_path, monkeypatch)
     state = paths.state_dir(repo)
     usage = shutil.disk_usage(repo)
@@ -164,7 +177,7 @@ def test_launch_reports_low_state_disk_space_without_refusing(
 
     def disk_usage(path: Any) -> Any:
         seen.append(pathlib.Path(path))
-        return usage._replace(total=1000, used=1000 - free, free=free)
+        return usage._replace(total=total, used=total - free, free=free)
 
     monkeypatch.setattr(shutil, "disk_usage", disk_usage)
     monkeypatch.setattr(role_providers, "build_role_provider", _use(_Scripted([_finish()])))
@@ -175,9 +188,8 @@ def test_launch_reports_low_state_disk_space_without_refusing(
         assert cli_main(command) == 0
         notice = capsys.readouterr().err
         assert state in seen
-        assert ("low disk space" in notice) == (free < 100)
-        if free < 100:
-            assert f"{free} bytes" in notice and "9.0%" in notice and str(state) in notice
+        expected = [] if free_note is None else [f"[agent6] low disk space: {free_note} at {state}"]
+        assert [line for line in notice.splitlines() if "low disk space" in line] == expected
         seen.clear()
 
 

@@ -152,7 +152,12 @@ def note_state_disk_space(state_dir: pathlib.Path, *, reporter: app_reporter.Rep
         return
     if usage.free * 10 < usage.total:
         percent = 100 * usage.free / usage.total
-        reporter.note(f"low disk space: {usage.free} bytes free ({percent:.1f}%) at {state_dir}")
+        free_space = (
+            f"{usage.free / 1024**3:.1f} GiB"
+            if usage.free >= 1024**3
+            else f"{usage.free / 1024**2:.0f} MiB"
+        )
+        reporter.note(f"low disk space: {free_space} free ({percent:.1f}%) at {state_dir}")
 
 
 def install_inside_workspace(cwd: pathlib.Path) -> pathlib.Path | None:
