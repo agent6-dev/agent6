@@ -73,7 +73,7 @@ def unsupported_note() -> str:
 
 # Repo-config keys that run a repo-controlled command on the host, blanked with `-c` (highest
 # precedence): fsmonitor on every index refresh, diff.external on every diff, gpg.program on
-# every commit. None costs correctness: agent6's per-step commits are unsigned by design.
+# every commit. None costs correctness: agent6's per-turn commits are unsigned by design.
 # Content drivers (filter.*, merge.*.driver) have no blanket switch; `repo_driver_overrides`
 # blanks each by name. The prefix keys pin the `a/` and `b/` headers every cited path reads.
 _GIT_HARDENING: tuple[str, ...] = (

@@ -139,7 +139,7 @@ class DiffUpdated:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class AutoCommit:
-    """One per-step commit on the run's chain (`loop.auto_commit`)."""
+    """One per-turn commit on the run's chain (`loop.auto_commit`)."""
 
     turn: int
     sha: str

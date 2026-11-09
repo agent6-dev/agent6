@@ -358,7 +358,7 @@ class TestUseSkillGating:
         sd = _skills_env(tmp_path, monkeypatch)
         _install(sd, "tidy")
         d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-        for mode in ("plan", "ask", "machine", "agent"):
+        for mode in ("plan", "ask", "machine", "read_only"):
             assert "use_skill" not in {t.name for t in toolset.tool_definitions(d, mode=mode)}, mode
 
 

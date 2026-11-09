@@ -14,13 +14,13 @@ from agent6.sessions import process
 from agent6.viewmodel import (
     ApprovalPrompt,
     BudgetView,
-    CommitStep,
     SessionState,
     TaskNodeView,
     approval_parts,
     context_fill,
     log_line,
     session_state_as_dict,
+    state_types,
 )
 from agent6.viewmodel import state as viewmodel_state
 
@@ -1057,8 +1057,8 @@ def test_approval_parts_is_the_one_shape_every_surface_renders() -> None:
     assert approval_parts("Allow fetch?") == ("Allow fetch?", "")
 
 
-def test_auto_commits_fold_into_the_step_list() -> None:
-    """Every per-step commit lands in `steps` oldest first; a sha-less auto_commit adds no step."""
+def test_auto_commits_fold_into_the_commit_list() -> None:
+    """Commits stay oldest first; a sha-less auto_commit adds no commit."""
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
         {"type": "loop.auto_commit", "turn": 3, "sha": "a" * 40, "subject": "fix parser"},
@@ -1067,26 +1067,45 @@ def test_auto_commits_fold_into_the_step_list() -> None:
     s = viewmodel_state.apply_event(
         s, {"type": "loop.auto_commit", "turn": 5, "sha": "b" * 40, "subject": "add test"}
     )
-    assert [(st.turn, st.sha[:1], st.subject) for st in s.steps] == [
+    assert [(st.turn, st.sha[:1], st.subject) for st in s.commits] == [
         (3, "a", "fix parser"),
         (5, "b", "add test"),
     ]
 
 
-def test_fold_until_commit_stops_at_that_step() -> None:
-    """A step's details are the fold up to and including its auto_commit; None for a foreign sha."""
+def test_run_history_is_named_commits_on_the_wire() -> None:
+    """The snapshot exposes commits, never the removed steps field."""
+    from agent6.viewmodel import state_view
+
+    state = viewmodel_state.fold_session(
+        [{"type": "loop.auto_commit", "turn": 3, "sha": "a" * 40, "subject": "fix parser"}]
+    )
+    payload = json.loads(json.dumps(state_view.session_state_as_dict(state)))
+    assert "steps" not in payload
+    assert payload["commits"] == [
+        {
+            "turn": 3,
+            "sha": "a" * 40,
+            "subject": "fix parser",
+            "label": "turn 3 · aaaaaaa · fix parser",
+        }
+    ]
+
+
+def test_fold_until_commit_stops_at_that_commit() -> None:
+    """The fold includes the selected commit and refuses a foreign sha."""
     events = [
         {"type": "session.start", "session_id": "s", "mode": "run", "user_task": "t"},
         {"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40, "subject": "one"},
         {"type": "loop.auto_commit", "turn": 2, "sha": "b" * 40, "subject": "two"},
     ]
     at = viewmodel_state.fold_until_commit(events, "a" * 40)
-    assert at is not None and [s.turn for s in at.steps] == [1]
-    assert [s.turn for s in viewmodel_state.fold_session(events).steps] == [1, 2]
+    assert at is not None and [s.turn for s in at.commits] == [1]
+    assert [s.turn for s in viewmodel_state.fold_session(events).commits] == [1, 2]
     assert viewmodel_state.fold_until_commit(events, "c" * 40) is None
-    # A prefix of at least seven hex digits names the step, like `/diff?sha=`.
+    # A prefix of at least seven hex digits names the commit, like `/diff?sha=`.
     by_prefix = viewmodel_state.fold_until_commit(events, "b" * 7)
-    assert by_prefix is not None and [s.turn for s in by_prefix.steps] == [1, 2]
+    assert by_prefix is not None and [s.turn for s in by_prefix.commits] == [1, 2]
     assert viewmodel_state.fold_until_commit(events, "b" * 6) is None
 
 
@@ -1124,10 +1143,13 @@ def test_one_owner_for_the_open_approval() -> None:
     assert viewmodel_state.open_approval_of(s, taken=lambda _aid: True) is None
 
 
-def test_a_step_label_is_one_line_every_surface_shows() -> None:
-    """One step line for the TUI and the web, with no dangling separator on a subjectless step."""
-    assert CommitStep(3, "abcdef1234", "fix: parse").label == "turn 3 · abcdef1 · fix: parse"
-    assert CommitStep(3, "abcdef1234", "").label == "turn 3 · abcdef1"
+def test_a_commit_label_is_one_line_every_surface_shows() -> None:
+    """The shared commit label has no dangling separator when the subject is empty."""
+    assert (
+        state_types.RunCommit(3, "abcdef1234", "fix: parse").label
+        == "turn 3 · abcdef1 · fix: parse"
+    )
+    assert state_types.RunCommit(3, "abcdef1234", "").label == "turn 3 · abcdef1"
 
 
 def test_the_end_takes_the_cursor_off_the_task_in_progress() -> None:
@@ -1217,12 +1239,12 @@ def test_snapshot_reads_manifest_once(
 
 
 def test_a_journal_written_before_the_turn_rename_keeps_its_commit_turns() -> None:
-    """An `auto_commit` event stamped `iteration` folds to a step with that turn number."""
+    """An `auto_commit` event stamped `iteration` folds to a commit with that turn number."""
     s = viewmodel_state.apply_event(
         viewmodel_state.initial_state(),
         {"type": "loop.auto_commit", "iteration": 3, "sha": "a" * 40, "subject": "fix parser"},
     )
-    assert [st.turn for st in s.steps] == [3]
+    assert [st.turn for st in s.commits] == [3]
 
 
 def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> None:

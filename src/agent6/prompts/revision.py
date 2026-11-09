@@ -120,7 +120,7 @@ def progress_summary_from_notice(text: str) -> str:
 
 
 def context_restart_notice(
-    mode: Literal["run", "plan", "ask", "agent"],
+    mode: Literal["run", "plan", "ask", "read_only"],
     pins: Sequence[str] = (),
     decisions: str = "",
     *,

@@ -160,7 +160,7 @@ def test_render_show_marks_overrides(repo: pathlib.Path) -> None:
 def test_config_show_pins_the_default_settled_stop(repo: pathlib.Path) -> None:
     """Config show exposes the measured 12-turn settled stop with its default origin."""
     settings = _by_key(config_view.build_config_view(layer.load_effective(repo)))
-    setting = settings["harness.verify_settled_stop_after"]
+    setting = settings["harness.settled_stop_after"]
     assert setting.value == 12 and setting.default == 12
     assert setting.source == "default" and setting.py_type == "int"
 
@@ -171,10 +171,10 @@ def test_config_load_and_show_accept_a_settled_stop_override(
 ) -> None:
     """A settled-stop override loads from TOML and shows its value and origin."""
     paths_mod.repo_config_path(repo).write_text(
-        f"[harness]\nverify_settled_stop_after = {stop_after}\n", encoding="utf-8"
+        f"[harness]\nsettled_stop_after = {stop_after}\n", encoding="utf-8"
     )
     settings = _by_key(config_view.build_config_view(layer.load_effective(repo)))
-    setting = settings["harness.verify_settled_stop_after"]
+    setting = settings["harness.settled_stop_after"]
     assert setting.value == stop_after and setting.default == 12
     assert setting.source == "repo" and setting.modified is True
 
@@ -182,13 +182,28 @@ def test_config_load_and_show_accept_a_settled_stop_override(
 def test_config_load_refuses_a_negative_settled_stop(repo: pathlib.Path) -> None:
     """A negative settled-stop threshold is rejected as an invalid value, not an unknown key."""
     paths_mod.repo_config_path(repo).write_text(
-        "[harness]\nverify_settled_stop_after = -1\n", encoding="utf-8"
+        "[harness]\nsettled_stop_after = -1\n", encoding="utf-8"
     )
     with pytest.raises(ConfigError) as exc:
         layer.load_effective(repo)
     text = str(exc.value)
-    assert "harness.verify_settled_stop_after" in text
+    assert "harness.settled_stop_after" in text
     assert "greater than or equal to 0" in text
+
+
+@pytest.mark.parametrize("layered", [False, True])
+def test_loader_refuses_the_old_settled_stop_key(repo: pathlib.Path, layered: bool) -> None:
+    """Both loaders name the removed key and the key that replaces it."""
+    path = paths_mod.repo_config_path(repo)
+    path.write_text("[harness]\nverify_settled_stop_after = 3\n", encoding="utf-8")
+    with pytest.raises(ConfigError) as exc:
+        if layered:
+            layer.load_effective(repo)
+        else:
+            load_config(path)
+    assert "harness.verify_settled_stop_after" in str(exc.value)
+    assert "harness.settled_stop_after" in str(exc.value)
+    assert "extra_forbidden" in str(exc.value)
 
 
 def test_render_show_json(repo: pathlib.Path) -> None:

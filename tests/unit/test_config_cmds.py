@@ -272,6 +272,25 @@ def test_config_get_suggests_a_key_from_the_layers_it_was_given(
     assert "Did you mean 'providers.zz.base_url'" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize("verb", ["show", "get", "set"])
+def test_config_refuses_the_old_settled_stop_key(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    verb: str,
+) -> None:
+    """The removed key is refused by name with its replacement, never mapped."""
+    from agent6.ui import cli
+
+    monkeypatch.chdir(tmp_path)
+    key = "harness.verify_settled_stop_after"
+    args = ["config", verb, key, *(["3"] if verb == "set" else [])]
+    assert cli.main(args) == 2
+    err = capsys.readouterr().err
+    assert f"unknown config key '{key}'" in err
+    assert "'harness.settled_stop_after'" in err
+
+
 def test_config_get_distinguishes_a_section_from_an_unknown_key(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

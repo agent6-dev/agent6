@@ -164,8 +164,8 @@ def apply_event(  # noqa: C901, PLR0911, PLR0912, PLR0915  # one branch per even
         case events.AutoCommit(turn=turn, sha=sha, subject=subject):
             if not sha:
                 return state
-            step = state_types.CommitStep(turn=turn, sha=sha, subject=subject)
-            return dataclasses.replace(state, steps=(*state.steps, step))
+            commit = state_types.RunCommit(turn=turn, sha=sha, subject=subject)
+            return dataclasses.replace(state, commits=(*state.commits, commit))
 
         case events.DiffUpdated(patch=patch, sha=sha):
             entry = state_types.DiffView(patch=patch, task_id=state.cursor_task_id, sha=sha)
@@ -580,6 +580,6 @@ def fold_until_commit(
     state = initial_state()
     for event in events:
         state = apply_event(state, event)
-        if state.steps and state.steps[-1].sha.startswith(sha):
+        if state.commits and state.commits[-1].sha.startswith(sha):
             return state
     return None

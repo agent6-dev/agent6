@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The dashboard's diff pane.
 
-A step picker and a cumulative toggle over the latest commit's patch, the verify
-output, a selected step's patch, or the commits made while a selected task was
+A commit picker and a cumulative toggle over the latest commit's patch, the verify
+output, a selected commit's patch, or the commits made while a selected task was
 in focus.
 """
 
@@ -25,11 +25,11 @@ from agent6.viewmodel import SessionState, format
 
 
 class DiffPane(forms.ScrollPane):
-    """The diff pane; a picker change posts `StepChanged`, since the header follows the step.
+    """The diff pane; a picker change posts `CommitChanged`, since the header follows the commit.
 
     Attributes:
-        step_sel: The selected step's sha; "" for the latest commit.
-        cumulative: Whether the patch runs from the session's base to the step.
+        commit_sel: The selected commit's sha; "" for the latest commit.
+        cumulative: Whether the patch runs from the session's base to the commit.
     """
 
     DEFAULT_CSS = """
@@ -40,16 +40,16 @@ class DiffPane(forms.ScrollPane):
     DiffPane #diff-body { width: 1fr; height: auto; pointer: text; }
     """
 
-    class StepChanged(message.Message):
-        """The selected step or the cumulative toggle changed."""
+    class CommitChanged(message.Message):
+        """The selected commit or the cumulative toggle changed."""
 
     def __init__(self, session_dir: pathlib.Path, *, id: str) -> None:
         """Bind the pane to a session dir."""
         super().__init__(id=id)
         self._session_dir = session_dir
-        self.step_sel = ""
+        self.commit_sel = ""
         self.cumulative = False
-        self._nav_steps = -1  # how many steps the selector lists
+        self._nav_commits = -1  # how many commits the selector lists
         self._rendered: tuple[object, ...] | None = None  # the inputs last painted
 
     def compose(self) -> app.ComposeResult:
@@ -64,7 +64,7 @@ class DiffPane(forms.ScrollPane):
                 value="",
                 allow_blank=False,
                 opens="down",
-                id="diff-step",
+                id="diff-commit",
             )
             yield widgets.Checkbox("cumulative", compact=True, id="diff-cumulative", disabled=True)
         yield widgets.Static("", id="diff-body")
@@ -76,7 +76,7 @@ class DiffPane(forms.ScrollPane):
         return "agent6"
 
     def sync_nav(self, s: SessionState) -> None:
-        """Refresh the step selector from the state's commits, newest first.
+        """Refresh the commit selector from the state's commits, newest first.
 
         Hidden while nothing is committed, and under `[git].control = "model"`, which
         has no chain to select from.
@@ -85,20 +85,20 @@ class DiffPane(forms.ScrollPane):
             s: The session's fold.
         """
         nav = self.query_one("#diff-nav", forms.PickerRow)
-        if self.git_control() == "model" or not s.steps:
+        if self.git_control() == "model" or not s.commits:
             nav.display = False
             return
         nav.display = True
-        if len(s.steps) != self._nav_steps:
-            self._nav_steps = len(s.steps)
+        if len(s.commits) != self._nav_commits:
+            self._nav_commits = len(s.commits)
             options = [("latest commit", "")]
-            options.extend((st.label, st.sha) for st in reversed(s.steps))
-            select = self.query_one("#diff-step", widgets.Select)
+            options.extend((st.label, st.sha) for st in reversed(s.commits))
+            select = self.query_one("#diff-commit", widgets.Select)
             select.set_options(options)
-            select.value = self.step_sel if any(v == self.step_sel for _, v in options) else ""
+            select.value = self.commit_sel if any(v == self.commit_sel for _, v in options) else ""
             self._sync_cumulative()
 
-    def _step_patch(self, sha: str) -> str:
+    def _commit_patch(self, sha: str) -> str:
         if self.cumulative:
             with contextlib.suppress(manifest.ManifestError):
                 base = manifest.read_manifest(self._session_dir).base_sha
@@ -107,19 +107,19 @@ class DiffPane(forms.ScrollPane):
         return git_read.commit_diff(pathlib.Path.cwd(), sha) or "(no diff)"
 
     def on_select_changed(self, event: widgets.Select.Changed) -> None:
-        """Follow the step picker."""
-        if event.select.id != "diff-step":
+        """Follow the commit picker."""
+        if event.select.id != "diff-commit":
             return
         event.stop()
-        self.step_sel = str(event.value or "")
+        self.commit_sel = str(event.value or "")
         self._sync_cumulative()
-        self.post_message(self.StepChanged())
+        self.post_message(self.CommitChanged())
 
     def _sync_cumulative(self) -> None:
-        """Disable and clear the cumulative box unless a step is chosen, as the web does."""
+        """Disable and clear the cumulative box unless a commit is chosen, as the web does."""
         box = self.query_one("#diff-cumulative", widgets.Checkbox)
-        box.disabled = not self.step_sel
-        if not self.step_sel and box.value:
+        box.disabled = not self.commit_sel
+        if not self.commit_sel and box.value:
             box.value = False
 
     def on_checkbox_changed(self, event: widgets.Checkbox.Changed) -> None:
@@ -128,7 +128,7 @@ class DiffPane(forms.ScrollPane):
             return
         event.stop()
         self.cumulative = bool(event.value)
-        self.post_message(self.StepChanged())
+        self.post_message(self.CommitChanged())
 
     def render_state(self, s: SessionState, *, sel: str | None, filt: str) -> None:
         """Paint the pane for the state, skipping when none of its inputs changed.
@@ -142,7 +142,7 @@ class DiffPane(forms.ScrollPane):
             filt: The border title's suffix for the filter.
         """
         self.sync_nav(s)
-        key = (sel, s.recent_diffs, s.last_verify, s.latest_diff, self.step_sel, self.cumulative)
+        key = (sel, s.recent_diffs, s.last_verify, s.latest_diff, self.commit_sel, self.cumulative)
         if self._rendered is not None and all(
             a is b for a, b in zip(self._rendered, key, strict=True)
         ):
@@ -221,12 +221,12 @@ class DiffPane(forms.ScrollPane):
     def _story(self, s: SessionState, sel: str | None) -> text.Text:
         verify = s.last_verify
         dt = text.Text()
-        if self.step_sel:
-            step = next((st for st in s.steps if st.sha == self.step_sel), None)
-            if step is not None:
-                what = "cumulative to" if self.cumulative else "step"
-                dt.append(f"{what} {step.label}\n", style="bold")
-                append_colored_diff(dt, self._step_patch(step.sha), cap=4000)
+        if self.commit_sel:
+            commit = next((st for st in s.commits if st.sha == self.commit_sel), None)
+            if commit is not None:
+                what = "cumulative to" if self.cumulative else "commit"
+                dt.append(f"{what} {commit.label}\n", style="bold")
+                append_colored_diff(dt, self._commit_patch(commit.sha), cap=4000)
                 return dt
         if sel is not None:
             task_diffs = [d for d in s.recent_diffs if d.task_id == sel]

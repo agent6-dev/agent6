@@ -82,7 +82,7 @@ def test_fetch_description_limits_the_mode_restriction_to_read_only_states() -> 
     description = (
         sandbox_config.SandboxConfig.model_fields["fetch_approved_hosts"].description or ""
     )
-    assert 'read-only machine agent states (`mode = "agent"`)' in description
+    assert 'read-only machine agent states (`mode = "read_only"`)' in description
     assert "fetch" in schema.mode_tools("run").names
-    assert "fetch" not in schema.mode_tools("agent").names
+    assert "fetch" not in schema.mode_tools("read_only").names
     assert "fetch" not in schema.mode_tools("machine").names

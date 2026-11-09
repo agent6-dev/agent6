@@ -54,7 +54,7 @@ def test_no_separate_dependency_tool_and_both_carriers_expose_depends_on(
 ) -> None:
     """No mode lists an `add_dependency` tool; both carriers' schemas expose `depends_on`."""
     d = dispatch.ToolDispatcher(root=tmp_path, config=_config(tmp_path))
-    for mode in ("run", "plan", "ask", "machine", "agent"):
+    for mode in ("run", "plan", "ask", "machine", "read_only"):
         names = {t.name for t in toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert "add_dependency" not in names, mode
     assert "depends_on" in schema.DagAddTaskInput.model_json_schema()["properties"]

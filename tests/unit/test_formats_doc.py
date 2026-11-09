@@ -37,7 +37,7 @@ def test_formats_page_is_not_stale() -> None:
         ("`sessions list --json` group fields", "viewmodel.listing.row_json"),
         ("`sessions show --json`", "ui.cli.sessions_show._cmd_status"),
         (
-            "`attach --json` approval and commit-step fields",
+            "`attach --json` approval and commit fields",
             "viewmodel.state_view.session_state_as_dict",
         ),
         ("`/api/meta` payload", "ui.web.server._Handler._route"),

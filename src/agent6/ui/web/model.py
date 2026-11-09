@@ -117,27 +117,27 @@ def draft_workspace(
     return workspace if (workspace / ".git").exists() else None
 
 
-def draft_step_diff_payload(
+def draft_commit_diff_payload(
     workspace: pathlib.Path, session_dir: pathlib.Path, sha: str, *, cumulative: bool
 ) -> tuple[dict[str, Any] | None, str]:
-    """Return the patch one draft step introduced, or the whole bundle as of that step.
+    """Return the patch one draft commit introduced, or the whole bundle as of that commit.
 
     A draft starts from the empty tree, so the cumulative patch is the bundle so far.
 
     Args:
         workspace: The draft's workspace.
         session_dir: The draft's journal directory.
-        sha: The step's commit; "" selects the latest journaled commit.
-        cumulative: Whole bundle instead of the one step.
+        sha: The commit sha; "" selects the latest journaled commit.
+        cumulative: Whole bundle instead of the one commit.
 
     Returns:
         The payload and "", or None and the reason.
     """
     if not sha:
-        steps = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).steps
-        if not steps:
+        commits = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).commits
+        if not commits:
             return None, "no commit yet"
-        sha = steps[-1].sha
+        sha = commits[-1].sha
     return _diff_payload(
         workspace,
         sha,
@@ -150,22 +150,22 @@ def draft_step_diff_payload(
 def _diff_payload(
     repo: pathlib.Path, sha: str, *, base: str, cumulative: bool, miss: str
 ) -> tuple[dict[str, Any] | None, str]:
-    """Return one step's patch, or the chain `base..sha` when cumulative and a base is known.
+    """Return one commit's patch, or the chain `base..sha` when cumulative and a base is known.
 
     Attributes:
-        patch: The unified patch for the selected step or chain.
+        patch: The unified patch for the selected commit or chain.
         old_spans: Base paths to per-line [start, end, class] spans in UTF-16 units.
             Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
         new_spans: Head paths to per-line [start, end, class] spans in UTF-16 units.
             Line 1 is index 0; undisplayed lines and unhighlighted sides are empty.
 
-        cumulative: Whether the patch covers the chain rather than one step.
+        cumulative: Whether the patch covers the chain rather than one commit.
 
     Args:
         repo: The repository.
-        sha: The step's commit.
+        sha: The commit sha.
         base: The chain's base; "" when unknown.
-        cumulative: The chain instead of the one step.
+        cumulative: The chain instead of the one commit.
         miss: The reason to give when the sha has no diff.
 
     Returns:
@@ -575,16 +575,16 @@ def config_suggestions(
     return choices.config_value_choices(eff, key)
 
 
-def step_diff_payload(
+def commit_diff_payload(
     repo: pathlib.Path, session_dir: pathlib.Path, sha: str, *, cumulative: bool
 ) -> tuple[dict[str, Any] | None, str]:
-    """Return the patch one run step introduced, or the whole chain up to it.
+    """Return the patch one run commit introduced, or the whole chain up to it.
 
     Args:
         repo: The repository the run worked in.
         session_dir: The run's directory.
-        sha: The step's commit; "" selects the latest journaled commit.
-        cumulative: The chain `base..sha` instead of the one step.
+        sha: The commit sha; "" selects the latest journaled commit.
+        cumulative: The chain `base..sha` instead of the one commit.
 
     Returns:
         The payload and "", or None and the reason; a model-controlled run has no chain.
@@ -594,12 +594,12 @@ def step_diff_payload(
     except manifest.ManifestError as exc:
         return None, f"unreadable manifest: {exc}"
     if m.git_control == "model":
-        return None, "the model owns git in this run: no step chain to select from"
+        return None, "the model owns git in this run: no commit chain to select from"
     if not sha:
-        steps = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).steps
-        if not steps:
+        commits = fold_session(tail_events(session_dir / layout.LOGS_NAME, follow=False)).commits
+        if not commits:
             return None, "no commit yet"
-        sha = steps[-1].sha
+        sha = commits[-1].sha
     return _diff_payload(
         repo,
         sha,

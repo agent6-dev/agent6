@@ -1113,7 +1113,7 @@ def test_sse_run_frame_carries_the_compare_outcome(
 
 
 def _corrupt_journal(inst: pathlib.Path) -> None:
-    (inst / "journal.jsonl").write_text('{"type": "step", "bogus": true}\n', encoding="utf-8")
+    (inst / "journal.jsonl").write_text('{"type": "commit", "bogus": true}\n', encoding="utf-8")
 
 
 def test_corrupt_journal_hub_shows_unreadable(
@@ -1889,11 +1889,11 @@ def _git_chain(repo: pathlib.Path) -> tuple[str, str, str]:
     git("commit", "-q", "-m", "base")
     base = git("rev-parse", "HEAD")
     (repo / "a.txt").write_text("one\ntwo\n")
-    git("commit", "-q", "-am", "step one")
+    git("commit", "-q", "-am", "commit one")
     c1 = git("rev-parse", "HEAD")
     (repo / "b.txt").write_text("three\n")
     git("add", "-A")
-    git("commit", "-q", "-m", "step two")
+    git("commit", "-q", "-m", "commit two")
     c2 = git("rev-parse", "HEAD")
     return base, c1, c2
 
@@ -2014,44 +2014,44 @@ def test_bare_diff_returns_the_latest_commit(
     assert json.loads(raw)["error"] == "no commit yet"
 
 
-def test_step_diff_serves_one_step_or_the_cumulative_chain(
+def test_commit_diff_serves_one_commit_or_the_cumulative_chain(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
-    """The diff card reads `/diff?sha=`: one step's patch, or `base..sha` with `cumulative=1`.
+    """The diff card reads `/diff?sha=`: one commit's patch, or `base..sha` with `cumulative=1`.
 
     A run the model controls has no chain and is refused, as is a sha not among its commits.
     """
     _srv, port = server
     base, c1, c2 = _git_chain(tmp_path)
-    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "steps-run"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "commits-run"
     session_dir.mkdir(parents=True)
     (session_dir / "logs.jsonl").write_text("", encoding="utf-8")
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "agent6"}),
         encoding="utf-8",
     )
-    status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}")
+    status, raw, _ = _get(port, f"/api/session/commits-run/diff?sha={c2}")
     payload = json.loads(raw)
     assert set(payload) == {"cumulative", "new_spans", "old_spans", "patch"}
     patch = str(payload["patch"])
     assert status == 200 and "three" in patch and "two" not in patch
-    status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c2}&cumulative=1")
+    status, raw, _ = _get(port, f"/api/session/commits-run/diff?sha={c2}&cumulative=1")
     patch = str(json.loads(raw)["patch"])
     assert status == 200 and "two" in patch and "three" in patch
-    status, _raw, _ = _get(port, "/api/session/steps-run/diff?sha=deadbeef")
+    status, _raw, _ = _get(port, "/api/session/commits-run/diff?sha=deadbeef")
     assert status == 422
     (session_dir / "manifest.json").write_text(
         json.dumps({"version": 3, "mode": "run", "base_sha": base, "git_control": "model"}),
         encoding="utf-8",
     )
-    status, raw, _ = _get(port, f"/api/session/steps-run/diff?sha={c1}")
+    status, raw, _ = _get(port, f"/api/session/commits-run/diff?sha={c1}")
     assert status == 422 and "owns git" in str(json.loads(raw)["error"])
 
 
-def test_session_snapshot_as_of_a_step(
+def test_session_snapshot_as_of_a_commit(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
-    """`?step=<sha>` folds the log up to that commit and stamps `as_of`.
+    """`?commit=<sha>` folds the log up to that commit and stamps `as_of`.
 
     A sha the run never made is refused.
     """
@@ -2066,15 +2066,38 @@ def test_session_snapshot_as_of_a_step(
     (session_dir / "logs.jsonl").write_text(
         "".join(json.dumps(e) + "\n" for e in events), encoding="utf-8"
     )
-    status, raw, _ = _get(port, f"/api/session/asof-run?step={'a' * 40}")
+    status, raw, _ = _get(port, f"/api/session/asof-run?commit={'a' * 40}")
     snap = json.loads(raw)
     assert status == 200 and snap["as_of"] == {"turn": 1, "sha": "a" * 40}
-    assert [st["turn"] for st in snap["steps"]] == [1]
+    assert [st["turn"] for st in snap["commits"]] == [1]
     status, raw, _ = _get(port, "/api/session/asof-run")
     snap = json.loads(raw)
-    assert status == 200 and snap["as_of"] is None and len(snap["steps"]) == 2
-    status, _raw, _ = _get(port, f"/api/session/asof-run?step={'c' * 40}")
+    assert status == 200 and snap["as_of"] is None and len(snap["commits"]) == 2
+    status, _raw, _ = _get(port, f"/api/session/asof-run?commit={'c' * 40}")
     assert status == 422
+
+
+@pytest.mark.parametrize("kind, bucket", [("session", "runs"), ("draft", "machines")])
+@pytest.mark.parametrize("query", ["step=", "step=aaaaaaa", "commit=aaaaaaa&step=aaaaaaa"])
+def test_snapshot_refuses_the_old_step_query(
+    server: tuple[web_server.WebServer, int],
+    tmp_path: pathlib.Path,
+    kind: str,
+    bucket: str,
+    query: str,
+) -> None:
+    """An obsolete query cannot silently select a commit or return the live snapshot."""
+    _, port = server
+    directory = paths.state_dir(tmp_path) / "sessions" / bucket / "history"
+    directory.mkdir(parents=True)
+    (directory / "logs.jsonl").write_text(
+        json.dumps({"type": "loop.auto_commit", "turn": 1, "sha": "a" * 40}) + "\n"
+    )
+    status, raw, _ = _get(port, f"/api/{kind}/history?{query}")
+    assert status == 422
+    error = json.loads(raw)["error"]
+    assert "unknown query parameter" in error and "step" in error
+    assert "commit" in error
 
 
 def test_a_malformed_body_is_the_clients_error(server: tuple[web_server.WebServer, int]) -> None:
@@ -2303,7 +2326,7 @@ def test_a_merge_after_session_end_reaches_an_open_stream(tmp_path: pathlib.Path
     )
 
 
-def test_the_step_picker_fetches_through_the_base_it_was_rendered_with() -> None:
+def test_the_commit_picker_fetches_through_the_base_it_was_rendered_with() -> None:
     """A machine-create draft's fetches go through `/api/draft/<name>`."""
     from agent6.ui.web import page
 
@@ -2313,7 +2336,7 @@ def test_the_step_picker_fetches_through_the_base_it_was_rendered_with() -> None
     assert body.count("cards._base") >= 2
 
 
-def test_the_draft_route_serves_what_the_step_picker_asks_for(
+def test_the_draft_route_serves_what_the_commit_picker_asks_for(
     server: tuple[web_server.WebServer, int], tmp_path: pathlib.Path
 ) -> None:
     _, port = server
@@ -2331,7 +2354,7 @@ def test_the_draft_route_serves_what_the_step_picker_asks_for(
         encoding="utf-8",
     )
 
-    status, body, _ = _get(port, f"/api/draft/draft-AAAAAAAA?step={sha}")
+    status, body, _ = _get(port, f"/api/draft/draft-AAAAAAAA?commit={sha}")
     assert status == 200 and json.loads(body).get("as_of") is not None
     status, body, _ = _get(port, f"/api/draft/draft-AAAAAAAA/diff?sha={sha}&cumulative=0")
     assert status == 422  # no workspace on disk: the reason, not a missing route

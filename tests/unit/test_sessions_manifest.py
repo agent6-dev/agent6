@@ -415,16 +415,7 @@ def test_a_resumed_execution_reports_whose_gate_it_used(
 
 
 def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: pathlib.Path) -> None:
-    """The bug this vocabulary exists to prevent.
-
-    "What kind of session is this" used to be answered in a dozen places, each
-    re-deriving it from a bare string -- and two of them disagreed: the
-    manifest's own list refused `machine` and `agent` outright while
-    `mode_tools` happily built a tool surface for both, so a real mode was
-    reported as damaged data. One table now, and the two failures are
-    distinguished: a mode this agent6 does not know, and a known mode that
-    resume cannot pick up.
-    """
+    """Known non-resumable modes are not reported as unknown modes."""
     from agent6 import kinds
 
     for name, kind in kinds.SESSION_KINDS.items():
@@ -445,7 +436,7 @@ def test_each_mode_gets_its_own_tool_surface() -> None:
     from agent6.tools import schema
 
     assert schema.mode_tools("machine").extras == schema.MACHINE_EXTRA_TOOLS
-    assert schema.mode_tools("agent").extras == schema.MACHINE_EXTRA_TOOLS
+    assert schema.mode_tools("read_only").extras == schema.MACHINE_EXTRA_TOOLS
     assert schema.mode_tools("ask").extras == schema.ASK_EXTRA_TOOLS
     for name, kind in kinds.SESSION_KINDS.items():
         names = schema.mode_tools(name).names

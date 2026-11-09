@@ -417,9 +417,9 @@ def run_one(
     # Re-confirm the containment invariant at the subprocess boundary.
     root_r = req.root.resolve()
     protect = tuple(rp for p in req.protect_paths if (rp := p.resolve()).is_relative_to(root_r))
-    # "machine" and "agent" are read-only loops: the dispatcher refuses edits and commands.
+    # "machine" and "read_only" loops refuse edits and commands at the dispatcher.
     mode = r.mode
-    read_only = mode in ("machine", "agent")
+    read_only = mode in ("machine", "read_only")
     # The bridges need a per-state log for the front-end to see the prompt.
     bridges: _MachineBridges | None = None
     if events_sink is not None and req.events_log is not None:
@@ -484,7 +484,7 @@ def run_one(
         dispatcher=dispatcher,
         prompts=prompts,
         logger=reporter.err,
-        mode="agent" if mode == "agent" else "run",
+        mode="read_only" if mode == "read_only" else "run",
         state_dir=paths.state_dir(req.cwd),
         compaction=compaction_window.CompactionSettings(
             drop_at_chars=compact_drop,

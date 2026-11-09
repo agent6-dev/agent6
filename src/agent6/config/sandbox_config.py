@@ -74,7 +74,7 @@ class SandboxConfig(pydantic.BaseModel):
             "never URL prefixes; fixed fetch limits: https only, 1 MiB, redirects returned "
             "without following; tool hidden when jailed commands have host networking "
             '(`sandbox.network = "host"` or `sandbox.isolation` other than `"full"`); tool '
-            'withheld from read-only machine agent states (`mode = "agent"`)'
+            'withheld from read-only machine agent states (`mode = "read_only"`)'
         ),
     )
     # A read-only bind-remount; the harness's own commits run outside the jail and are unaffected.

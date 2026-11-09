@@ -43,9 +43,9 @@ class GitCommitSquashConfig(pydantic.BaseModel):
             "The message of the one commit a squash merge produces: `agent6` (the task's first "
             "clause as the subject, then `continued: <steer>` for a run resumed with `--steer`, "
             "then the finish "
-            "summary as the body, else the steps as bullets), "
+            "summary as the body, else the commit subjects as bullets), "
             "`conventional` (the same body under a `type(scope): subject` derived from the diff, "
-            "no model call), `combine` (git's own squash message: the per-step log concatenated), "
+            "no model call), `combine` (git's own squash message: the commit log concatenated), "
             "or "
             "`model` (model-written from up to 64 KiB of the base-to-tip diff, marked when "
             "truncated, with the task, its continuation and execution finish "
@@ -199,7 +199,7 @@ class GitConfig(pydantic.BaseModel):
             "on one task graph subtask squashed under that subtask's title (checkpoints outside "
             "any subtask take the `[git.commit.squash]` message, so a run that never decomposed "
             'lands as one commit); `git.merge_method = "squash"`: one commit; `git.merge_method '
-            '= "merge"`: a merge commit keeping per-step history; `git.merge_method = '
+            '= "merge"`: a merge commit keeping per-turn history; `git.merge_method = '
             '"ff_only"`: fast-forward only; consolidation only, per-turn commits always on the '
             "run's chain; `sessions merge -m` lands one commit with that message"
         ),

@@ -647,7 +647,7 @@ def infer_verify_if_unset(
         if mode == "run":
             reporter.note(
                 "verify_infer = false: running gateless"
-                " (per-step commits, no green gate; nothing is inferred or adopted)."
+                " (per-turn commits, no green gate; nothing is inferred or adopted)."
             )
         return cfg
     hide = cfg.sandbox.hide_paths
@@ -683,7 +683,7 @@ def infer_verify_if_unset(
         if mode == "run":
             reporter.note(
                 "no verify_command set and none could be inferred; running"
-                " gateless\n         (per-step commits, no green gate). If the run"
+                " gateless\n         (per-turn commits, no green gate). If the run"
                 " creates a recognizable project, a verify\n         command is"
                 f" adopted mid-run; pin one with harness.verify_command.{passed_line}"
             )

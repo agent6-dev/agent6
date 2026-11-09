@@ -1021,6 +1021,46 @@ reason = "done"
 """
 
 
+@pytest.mark.parametrize("mode", [None, "read_only"])
+def test_machine_check_accepts_read_only_mode(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    mode: str | None,
+) -> None:
+    """The read-only mode is accepted explicitly and remains the default."""
+    from agent6.machine import schema, semantics
+
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "judge.asm.toml"
+    body = AGENT_MACHINE_HARD
+    if mode is not None:
+        body = body.replace('kind = "agent"', f'kind = "agent"\nmode = "{mode}"')
+    source.write_text(body, encoding="utf-8")
+
+    assert main(["machine", "check", str(source)]) == 0, capsys.readouterr().err
+    state = semantics.load_machine(source).states["judge"]
+    assert isinstance(state, schema.AgentState)
+    assert state.mode == "read_only"
+
+
+def test_machine_check_refuses_agent_mode(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The old mode is refused with one diagnostic naming read_only."""
+    monkeypatch.chdir(tmp_path)
+    source = tmp_path / "judge.asm.toml"
+    source.write_text(
+        AGENT_MACHINE_HARD.replace('kind = "agent"', 'kind = "agent"\nmode = "agent"'),
+        encoding="utf-8",
+    )
+
+    assert main(["machine", "check", str(source)]) == 1
+    problems = capsys.readouterr().err.splitlines()
+    assert len(problems) == 2
+    assert "mode" in problems[1] and "read_only" in problems[1]
+
+
 AGENT_RUN_MACHINE = AGENT_MACHINE_HARD.replace(
     'machine = "hard-usd"', 'machine = "run-warn"'
 ).replace('kind = "agent"', 'kind = "agent"\nmode = "run"', 1)

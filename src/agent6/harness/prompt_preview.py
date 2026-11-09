@@ -20,14 +20,14 @@ from agent6.tools import dispatch
 def system_prompt_for(
     config: Config,
     root: pathlib.Path,
-    mode: Literal["run", "plan", "ask", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "read_only"] = "run",
     *,
     state_dir: pathlib.Path | None = None,
 ) -> str:
     """Assemble the exact system prompt a run would send for this root, config and mode.
 
     The memory index, the decisions and the installed skills load on the loop's own rules:
-    no recall in agent mode, skills in run mode only.
+    no recall in read_only mode, skills in run mode only.
 
     Args:
         config: The run's config.
@@ -40,7 +40,7 @@ def system_prompt_for(
     """
     repo = repo_context.load_repo_summary(root, config.sandbox.hide_paths)
     # Agent mode assembles without repo context: one gate for every recall block.
-    recall = None if mode == "agent" else state_dir
+    recall = None if mode == "read_only" else state_dir
     return prompt_blocks.build_system_prompt(
         config=config,
         repo=repo,
@@ -75,7 +75,7 @@ class ModelExchange:
 def model_exchange_for(
     config: Config,
     root: pathlib.Path,
-    mode: Literal["run", "plan", "ask", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "read_only"] = "run",
     *,
     state_dir: pathlib.Path | None = None,
 ) -> ModelExchange:
@@ -96,7 +96,7 @@ def model_exchange_for(
     dispatcher = dispatch.ToolDispatcher(
         root=root,
         config=config,
-        mode="machine" if mode == "agent" else mode,
+        mode="machine" if mode == "read_only" else mode,
         state_dir=state_dir,
     )
     tools = tuple(toolset.tool_definitions(dispatcher, mode=mode))
@@ -122,7 +122,7 @@ def _shown_isolation(config: Config) -> kinds.IsolationLevel:
 
 
 def _installed_skills(
-    root: pathlib.Path, config: Config, mode: Literal["run", "plan", "ask", "agent"]
+    root: pathlib.Path, config: Config, mode: Literal["run", "plan", "ask", "read_only"]
 ) -> skills.ResolvedSkills | None:
     """Return the skills the loop would show: run mode only, None when nothing is installed."""
     if mode != "run":

@@ -142,7 +142,7 @@ def _configured_context(
     """Build the advisor's context through the harness with a configured stop."""
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=config.Config.model_validate({"harness": {"verify_settled_stop_after": stop_after}}),
+        config=config.Config.model_validate({"harness": {"settled_stop_after": stop_after}}),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
         logger=lambda _line: None,

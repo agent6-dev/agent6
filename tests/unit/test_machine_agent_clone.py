@@ -164,7 +164,7 @@ def test_read_only_states_see_the_machine_tree_and_land_nothing(
     runner = _runner(origin, tmp_path)
     assert runner(_req(0), None).reason == "finish_session"
     tip_after_run = git_read.chain_tip(origin, BRANCH)
-    assert runner(_req(1, mode="agent"), None).reason == "finish_session"
+    assert runner(_req(1, mode="read_only"), None).reason == "finish_session"
     judge_dir = _FakeChild.workdirs[-1]
     assert judge_dir != origin
     assert "work0.txt" in _FakeChild.seen_files[-1]  # the run state's committed work
@@ -182,7 +182,7 @@ def test_without_a_machine_tree_read_only_states_run_in_place(
     runner = agent.build_machine_agent_runner(
         _OVERLAYS, origin, tmp_path / "m1" / "agent_transcripts", (), None
     )
-    assert runner(_req(0, mode="agent"), None).reason == "finish_session"
+    assert runner(_req(0, mode="read_only"), None).reason == "finish_session"
     assert _FakeChild.workdirs == [origin]
     assert not (tmp_path / "clones").exists()
 
@@ -580,7 +580,7 @@ def test_invalid_utf8_result_routes_failed_instead_of_escaping(
     monkeypatch.setattr(agent.subprocess, "Popen", bad_result)
     runner = agent.build_machine_agent_runner(_OVERLAYS, origin, tmp_path / "transcripts")
 
-    assert runner(_req(0, mode="agent"), None).reason == "error"
+    assert runner(_req(0, mode="read_only"), None).reason == "error"
 
 
 def test_spawn_failure_routes_failed_and_discards_the_unused_clone(
@@ -683,7 +683,7 @@ def _state_in_a_clone(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     setup: list[str],
-    mode: Literal["run", "agent", "machine"] = "run",
+    mode: Literal["run", "read_only", "machine"] = "run",
 ) -> tuple[agent.AgentExecResult, _Finishes, pathlib.Path, pathlib.Path]:
     """Run one run-mode state through `run_one` in a fresh clone, with a setup command."""
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
@@ -719,11 +719,11 @@ def _state_in_a_clone(
     return agent.run_one(req), prov, origin, clone
 
 
-@pytest.mark.parametrize("mode", ["run", "agent", "machine"])
+@pytest.mark.parametrize("mode", ["run", "read_only", "machine"])
 def test_a_state_runs_the_setup_command_in_its_fresh_clone(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    mode: Literal["run", "agent", "machine"],
+    mode: Literal["run", "read_only", "machine"],
 ) -> None:
     """A state's clone holds tracked files only: with no setup step it had no environment."""
     result, prov, origin, clone = _state_in_a_clone(
@@ -735,11 +735,11 @@ def test_a_state_runs_the_setup_command_in_its_fresh_clone(
     assert not (origin / ".setup-ran").exists()
 
 
-@pytest.mark.parametrize("mode", ["run", "agent", "machine"])
+@pytest.mark.parametrize("mode", ["run", "read_only", "machine"])
 def test_a_state_whose_setup_command_fails_makes_no_model_call(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
-    mode: Literal["run", "agent", "machine"],
+    mode: Literal["run", "read_only", "machine"],
 ) -> None:
     """A state going on after a failed setup would spend its turns in an unbuilt clone."""
     result, prov, _origin_dir, _clone = _state_in_a_clone(

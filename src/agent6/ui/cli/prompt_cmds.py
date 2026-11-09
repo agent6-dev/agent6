@@ -17,7 +17,7 @@ from agent6.tools import verify_infer
 def _cmd_prompt_show(
     config_paths: tuple[pathlib.Path, ...],
     *,
-    mode: Literal["run", "plan", "ask", "agent"],
+    mode: Literal["run", "plan", "ask", "read_only"],
     as_json: bool = False,
 ) -> int:
     """Preview a session's first model call without discovering MCP tools.

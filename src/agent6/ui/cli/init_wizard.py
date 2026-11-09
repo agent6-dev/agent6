@@ -100,7 +100,7 @@ to infer its verify_command when one is not configured).
 
 _GITIGNORE_ENTRIES = (".env", ".env.*", ".envrc", "secrets/", "*.pem", "*.key")
 
-# Build artifacts a verify run leaves, kept out of the per-step commits.
+# Build artifacts a verify run leaves, kept out of the per-turn commits.
 _ECOSYSTEM_GITIGNORE: dict[str, tuple[str, ...]] = {
     "go": ("*.test",),
     "node": ("node_modules/",),

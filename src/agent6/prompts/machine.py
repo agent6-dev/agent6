@@ -86,6 +86,7 @@ grammar. Terminal states end the machine.
 ### agent: run a nested agent6 loop
     [states.review]
     kind = "agent"
+    mode = "read_only"                      # default; "run" enables coding tools
     # The state runs the operator's effective worker model; `model` is not a
     # field. Pin a specific one only when you must, in a
     # `[states.review.config.models.worker]` table (`model = "provider/model"`): a model
@@ -99,7 +100,7 @@ grammar. Terminal states end the machine.
 
   agent labels are exactly: ok, failed, budget_exhausted, timeout.
   An agent state may write ONLY [vars.agent] vars.
-  By default an agent state is a READ-ONLY structured-output judge (classify /
+  By default an agent state uses `mode = "read_only"`, a structured-output judge (classify /
   score / decide -> a finish_session result; it cannot edit the repo). For a state
   that must do real coding work, add `mode = "run"` to give it the full edit and
   verify tool set; the harness commits its edits.

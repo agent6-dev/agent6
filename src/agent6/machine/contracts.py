@@ -47,7 +47,7 @@ class AgentRequest(pydantic.BaseModel):
         max_usd: The slice's spend cap, or None to inherit the config's.
         remaining_usd: The machine's unspent budget, or None when uncapped.
         max_plan_points: The slice's plan-points cap, or None.
-        mode: The nested loop's mode: `agent` (a read-only structured judge) or `run`.
+        mode: The nested loop's mode: `read_only` (a read-only structured judge) or `run`.
         state_name: The state, for its own watchable logs.jsonl; "" for the authoring agent.
         step_seq: The transition, likewise; 0 for the authoring agent.
         output_schema: The finish contract the execution refuses a non-conforming result by.
@@ -63,7 +63,7 @@ class AgentRequest(pydantic.BaseModel):
     max_usd: float | None = None
     remaining_usd: float | None = None
     max_plan_points: float | None = None
-    mode: str = "agent"
+    mode: str = "read_only"
     state_name: str = ""
     step_seq: int = 0
     output_schema: str | None = None

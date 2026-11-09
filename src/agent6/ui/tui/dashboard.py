@@ -171,8 +171,8 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         """The diff pane."""
         return self.query_one("#diff", diff_pane.DiffPane)
 
-    def on_diff_pane_step_changed(self, _event: diff_pane.DiffPane.StepChanged) -> None:
-        """Repaint for the newly selected step."""
+    def on_diff_pane_commit_changed(self, _event: diff_pane.DiffPane.CommitChanged) -> None:
+        """Repaint for the newly selected commit."""
         self.render_state()
 
     def _details_state(self, s: SessionState) -> tuple[SessionState, str]:
@@ -182,18 +182,18 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             s: The app's live fold.
 
         Returns:
-            The selected step's state and ` · as of turn N`, else the live fold and "".
+            The selected commit's state and ` · as of turn N`, else the live fold and "".
         """
-        sha = self.diff.step_sel
+        sha = self.diff.commit_sel
         if not sha:
             return s, ""
-        if self._step_state is None or self._step_state[0] != sha:
+        if self._commit_state is None or self._commit_state[0] != sha:
             at = state.fold_until_commit(tail.tail_events(self._tui.logs_path, follow=False), sha)
             if at is None:
                 return s, ""
-            self._step_state = (sha, at)
-        at = self._step_state[1]
-        return at, f" · as of turn {at.steps[-1].turn}"
+            self._commit_state = (sha, at)
+        at = self._commit_state[1]
+        return at, f" · as of turn {at.commits[-1].turn}"
 
     def __init__(
         self,
@@ -215,7 +215,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
         # nothing to redo, and a burst never rebuilds the tree and table per event.
         self._rendered_tree: tuple[object, ...] | None = None
         self._rendered_tools: tuple[object, object] | None = None
-        self._step_state: tuple[str, SessionState] | None = None  # the fold as of the step
+        self._commit_state: tuple[str, SessionState] | None = None  # the fold as of the commit
 
     @property
     def _tui(self) -> tui_app.Agent6TUI:

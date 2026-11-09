@@ -57,7 +57,7 @@ class Compactor:
     settings: compaction_window.CompactionSettings
     provider: Provider
     curator: graph_curator.GraphCurator | None
-    mode: Literal["run", "plan", "ask", "agent"]
+    mode: Literal["run", "plan", "ask", "read_only"]
     dag_available: bool
     decisions: Callable[[], str]
     compact_requested: Callable[[], str | None]

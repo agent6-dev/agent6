@@ -66,8 +66,8 @@ class RunHeader(widgets.Static):
 
         Args:
             s: The app's fold.
-            ds: The state the details are as of: the selected step's, or the live one.
-            as_of: The suffix naming the selected step, or "".
+            ds: The state the details are as of: the selected commit's, or the live one.
+            as_of: The suffix naming the selected commit, or "".
             active: A model call is in flight, which earns the spinner and the seconds
                 since the last event; a live worker between calls is not a working model.
         """
@@ -79,9 +79,9 @@ class RunHeader(widgets.Static):
             beat = f" {spinner} {tui.seconds_since_event()}s"
         role_line = f"{role.role} / {role.model}{beat}" if role else self._start_role()
         finished = self._end_label()
-        # Tasks and cost are as of the selected step; ctx is live.
+        # Tasks and cost are as of the selected commit; ctx is live.
         done_n = sum(1 for t in ds.tasks if t.status in order.DONE_STATUSES)
-        step = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
+        tasks = f"tasks: {done_n}/{len(ds.tasks)}" if ds.tasks else "tasks: —"
         cell = session_status.cost_cell(
             ds.budget.usd_total,
             partial=ds.budget.usd_partial,
@@ -91,7 +91,7 @@ class RunHeader(widgets.Static):
         segments = ["[b]agent6[/]"]
         if finished:
             segments.append(finished)
-        segments.extend((step, f"cost: [b]{cell}[/]"))
+        segments.extend((tasks, f"cost: [b]{cell}[/]"))
         # This execution's metered spend against its cap: a resume re-arms the cap while
         # usd_total stays cumulative.
         if ds.budget.usd_cap > 0:

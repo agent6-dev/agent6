@@ -745,6 +745,8 @@ def _format_validation_error(
             msg = _MISSING_BACKEND
         elif issue["type"] == "extra_forbidden" and loc == "context":
             msg = "rename the context table to [compaction]; keep its keys and values"
+        elif issue["type"] == "extra_forbidden" and loc == "harness.verify_settled_stop_after":
+            msg = "unknown config key; use harness.settled_stop_after with the same value"
         lines.append(f"  - {loc}: {msg} (type={issue['type']})")
         if locate is not None and (where := locate(loc, issue["type"])):
             lines.append(where)

@@ -186,7 +186,7 @@ agent6 stop ID                # stop during the current turn (the worker killed 
 agent6 stop ID --after-turn   # finish the current turn, then stop
 agent6 sessions show          # status, turn, elapsed, cost, the gate's word, where the changes are; --json
 agent6 sessions diff          # the git diff the run produced; --stat, --path P
-agent6 sessions commits       # the run's per-step commits
+agent6 sessions commits       # the run's per-turn commits
 agent6 sessions merge         # land on the run's starting branch (warns first when the gate did not certify it); --method, --into BRANCH
 agent6 sessions transcript    # the conversation as text; --no-thinking, --seq N, --tools calls|none
 agent6 sessions graph         # the task graph, each line led by the id /retire takes
@@ -367,6 +367,7 @@ A run whose worker exited without recording an end reads `stale`, for example af
   - `finish_session` reads `passed · not committed` over a green gate and `finished · not committed` with no gate
   - `silent_finish`, `metric_plateau`, `verify_settled` and `settled` also add `· not committed` to their status
 - `verify_settled` and `settled` are the harness's own stop for a run whose turns stopped changing the tree: the worker called no `finish_session`, and `agent6 resume ID` continues it
+  - `harness.settled_stop_after` sets the idle-turn limit (default 12); `0` disables the stop but keeps the nudge
 
 ## Plan, review, and ask
 
@@ -520,7 +521,7 @@ The reversal needs its own checks; the original receipt does not certify a merge
     - a plan whose open questions have blank `**A:**` lines still runs, after one warning that names them; `agent6 plan edit <id>` answers them first
 - `--decompose`: a task graph up front; `--skill NAME`: a skill in the prompt (a skill whose text waits on a person stalls an unattended run in `ask_user`; `agent6 skills disable NAME` keeps it out)
 - `--session-id ID`: name the session yourself
-- `agent6 prompt show [--mode run|plan|ask|agent] [--json]`: preview the system prompt, built-in tools and first message with a task placeholder; MCP tools are discovered at run start and are not included
+- `agent6 prompt show [--mode run|plan|ask|read_only] [--json]`: preview the system prompt, built-in tools and first message with a task placeholder; MCP tools are discovered at run start and are not included
 
 ## Isolated workspaces
 

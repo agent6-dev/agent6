@@ -194,7 +194,7 @@ def test_decompose_swaps_dag_rules_block(tmp_path: pathlib.Path) -> None:
     assert "<dag-rules>" in run_auto and "<decompose-first>" not in run_auto
     # decompose is a run-mode worker feature: other modes never carry either block
     # or a leaked sentinel.
-    for mode in ("plan", "ask", "agent"):
+    for mode in ("plan", "ask", "read_only"):
         text = prompt_blocks.build_system_prompt(config=on, repo=repo, mode=mode, skills=None)  # pyright: ignore[reportPrivateUsage]
         assert "__DAG_RULES_BLOCK__" not in text and "<decompose-first>" not in text
 
@@ -216,7 +216,7 @@ def test_dag_hint_renders_only_where_the_dag_tools_exist() -> None:
     assert "<decompose-first>" in run_dec and "Do not edit" in run_dec
     plan_hint = hint(rid, "plan", True)
     assert "<decompose-first>" not in plan_hint and "optional" in plan_hint
-    for mode in ("ask", "agent"):
+    for mode in ("ask", "read_only"):
         assert hint(rid, mode, True) == ""
     # decompose off, or no curator, never emits the directive
     assert "<decompose-first>" not in hint(rid, "run", False)
@@ -481,7 +481,7 @@ def test_tool_definitions_machine_and_agent_modes_are_read_only_finish(
     p.write_text(_VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"'), "utf-8")
     cfg = load_config(p)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
-    for mode in ("machine", "agent"):
+    for mode in ("machine", "read_only"):
         names = {t.name for t in toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
         assert schema.ReadFileInput.TOOL_NAME in names, mode
         assert schema.FinishSessionInput.TOOL_NAME in names, mode
@@ -518,7 +518,7 @@ def test_mcp_tools_are_run_mode_only(tmp_path: pathlib.Path) -> None:
     run_names = {t.name for t in toolset.tool_definitions(d_run, mode="run")}
     assert "mcp__fs__write_file" in run_names
 
-    for mode in ("plan", "ask", "machine", "agent"):
+    for mode in ("plan", "ask", "machine", "read_only"):
         d = dispatch.ToolDispatcher(root=tmp_path, config=cfg)
         d._mcp_manager = cast("mcp_client.MCPManager", fake_mgr)  # pyright: ignore[reportPrivateUsage]
         names = {t.name for t in toolset.tool_definitions(d, mode=mode)}  # pyright: ignore[reportPrivateUsage]
@@ -543,7 +543,7 @@ def test_build_system_prompt_machine_and_agent_modes(tmp_path: pathlib.Path) -> 
         agents_md="",
         recent_log="",
     )
-    agent = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="agent", skills=None)  # pyright: ignore[reportPrivateUsage]
+    agent = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="read_only", skills=None)  # pyright: ignore[reportPrivateUsage]
     assert "state of a state machine" in agent
     assert "run_verify_command" not in agent
 
@@ -606,7 +606,7 @@ def _wf(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
-                verify_settled_stop_after=12,
+                settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",
@@ -672,7 +672,7 @@ def _plan_wf(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
                 loop_guard_kill_threshold=10,
-                verify_settled_stop_after=12,
+                settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
                 verify_command=(),
                 verify_when="never",

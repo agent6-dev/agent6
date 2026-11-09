@@ -299,7 +299,7 @@ class AgentState(pydantic.BaseModel):
     Attributes:
         kind: The discriminator.
         notify: The message journaled on entry, or None.
-        mode: `agent`, a read-only structured judge; or `run`, with the coding tools.
+        mode: `read_only`, a read-only structured judge; or `run`, with the coding tools.
         prompt: The prompt template.
         output_schema: The schema the payload must match.
         capture: How the payload is written to the blackboard.
@@ -315,7 +315,7 @@ class AgentState(pydantic.BaseModel):
 
     kind: Literal["agent"]
     notify: _NotifySpecT | None = None
-    mode: Literal["agent", "run"] = "agent"
+    mode: Literal["read_only", "run"] = "read_only"
     prompt: str = pydantic.Field(min_length=1)
     output_schema: str = pydantic.Field(min_length=1)
     capture: Capture

@@ -522,7 +522,7 @@ def chain_continue_from(
     """Make the chain continue from a commit that already holds its landed work.
 
     Refs only move forward: a tip the commit descends from fast-forwards to it, and any other
-    tip gets a commit with the head's tree and both as parents, so the run's earlier steps
+    tip gets a commit with the head's tree and both as parents, so the run's earlier commits
     stay reachable. No checkout and no working tree is touched.
 
     Args:

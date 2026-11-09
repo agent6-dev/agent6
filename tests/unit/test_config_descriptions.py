@@ -115,7 +115,7 @@ def test_commit_identity_docstring_names_environment_precedence() -> None:
 
 
 def test_settled_descriptions_arm_on_editing_progress() -> None:
-    description = harness_config.HarnessConfig.model_fields["verify_settled_stop_after"].description
+    description = harness_config.HarnessConfig.model_fields["settled_stop_after"].description
     assert description is not None
     assert "after a green verify or an editing step" in description
     for path in ("guards.py", "nudges.py"):

@@ -48,7 +48,7 @@ def test_network_refusal_writes_a_valid_error_result(tmp_path: pathlib.Path) -> 
         overlay={"sandbox": {"network": "session"}},
         isolation="partial",
         transcript_dir=cwd / "transcripts",
-        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
+        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
     rc, result = _round_trip(tmp_path, req)
     assert rc == 0
@@ -67,7 +67,7 @@ def test_config_error_is_salvaged_not_a_traceback(tmp_path: pathlib.Path) -> Non
         overlay={"budget": {"max_tokens_fallback": -5}},
         isolation="none",
         transcript_dir=cwd / "transcripts",
-        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
+        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
     rc, result = _round_trip(tmp_path, req)
     assert rc == 0

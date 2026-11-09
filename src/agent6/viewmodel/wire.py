@@ -198,12 +198,12 @@ def manifest_header(
     return header
 
 
-class UnknownStepError(ValueError):
-    """A step sha that is none of the run's commits."""
+class UnknownCommitError(ValueError):
+    """A commit sha that is none of the run's commits."""
 
 
 def session_snapshot(
-    session_dir: pathlib.Path, *, repo: pathlib.Path | None = None, step: str = ""
+    session_dir: pathlib.Path, *, repo: pathlib.Path | None = None, commit: str = ""
 ) -> dict[str, Any]:
     """Fold a session's state into the wire dict.
 
@@ -215,28 +215,28 @@ def session_snapshot(
     Attributes:
         as_of: The selected commit's turn and sha, or null for the current snapshot.
 
-        as_of.turn: The selected checkpoint's turn number.
-        as_of.sha: The selected checkpoint's commit identifier.
+        as_of.turn: The selected commit's turn number.
+        as_of.sha: The selected commit identifier.
 
     Args:
         session_dir: The session's state dir.
         repo: The repository, or None to take the manifest's word on branches.
-        step: A commit sha of the run; folds only up to that commit and stamps `as_of`.
+        commit: A commit sha of the run; folds only up to that commit and stamps `as_of`.
 
     Returns:
         The session snapshot.
 
     Raises:
-        UnknownStepError: `step` is none of the run's commits.
+        UnknownCommitError: `commit` is none of the run's commits.
     """
     events = tail.tail_events(session_dir / layout.LOGS_NAME, follow=False)
     as_of: dict[str, Any] | None = None
-    if step:
-        at = viewmodel_state.fold_until_commit(events, step)
+    if commit:
+        at = viewmodel_state.fold_until_commit(events, commit)
         if at is None:
-            raise UnknownStepError(f"no commit {step} in this run")
+            raise UnknownCommitError(f"no commit {commit} in this run")
         state = at
-        as_of = {"turn": at.steps[-1].turn, "sha": at.steps[-1].sha}
+        as_of = {"turn": at.commits[-1].turn, "sha": at.commits[-1].sha}
     else:
         state = viewmodel_state.fold_session(events)
     word, _reason = session_status.status_for_session_dir(

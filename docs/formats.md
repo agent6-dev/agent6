@@ -1578,7 +1578,7 @@ Source: [`budget.BudgetTracker.format_summary`](https://github.com/agent6-dev/ag
 
 `attach --json`, `/api/session/<id>` and `/api/draft/<name>` read `SessionState` with the serializer's replacements and header fields below.
 The serializer removes `task_label` and renders `log_tail` as strings.
-The `row` additions belong to approvals and commit steps, not the snapshot root.
+The `row` additions belong to approvals and commits, not the snapshot root.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1609,7 +1609,7 @@ The `row` additions belong to approvals and commit steps, not the snapshot root.
 | `undone_text` | `str` | The message /undo took back, for the composer to refill. |
 | `finish_summary` | `str` | The finish tool's summary, the agent's closing statement. |
 | `latest_diff` | `str` | The patch of the most recent auto-commit. |
-| `steps` | `tuple[CommitStep, ...]` | The run's per-step commits, oldest first. |
+| `commits` | `tuple[RunCommit, ...]` | The run's per-turn commits, oldest first. |
 | `steer_requests` | `int` | The monotonic count of mid-run steer requests; the TUI compares it with its own count to react once per press. |
 | `compact_elided` | `int` | The elision markers in the current context. |
 | `compact_gists_live` | `int` | The live gists in the current context; a demoted gist is back to a bare marker, and a tier-2 restart resets both. |
@@ -1645,12 +1645,12 @@ The `row` additions belong to approvals and commit steps, not the snapshot root.
 | `compare` | `JSON` | The lane's CompareStamp when recorded. |
 | `compare.line` | `JSON` | The rendered comparison placement. |
 | `as_of` | `JSON` | The selected commit's turn and sha, or null for the current snapshot. |
-| `as_of.turn` | `JSON` | The selected checkpoint's turn number. |
-| `as_of.sha` | `JSON` | The selected checkpoint's commit identifier. |
+| `as_of.turn` | `JSON` | The selected commit's turn number. |
+| `as_of.sha` | `JSON` | The selected commit identifier. |
 
 Sources: [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py), [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py), [`branch_facts`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`manifest_header`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`session_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py).
 
-### `attach --json` approval and commit-step fields
+### `attach --json` approval and commit fields
 
 **Support: public.** Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
@@ -1660,7 +1660,7 @@ Source: [`viewmodel.state_view.session_state_as_dict`](https://github.com/agent6
 | --- | --- | --- |
 | `head` | `JSON` | The question part added to each pending approval. |
 | `payload` | `JSON` | The command part added to each pending approval. |
-| `label` | `JSON` | The picker label added to each commit step. |
+| `label` | `JSON` | The picker label added to each commit. |
 
 ## Machine snapshots
 
@@ -1995,14 +1995,14 @@ Source: [`ui.web.model.machine_reasoning_snapshot`](https://github.com/agent6-de
 
 ### `/api/session/<id>/diff` payload
 
-**Support: public.** Return one step's patch, or the chain `base..sha` when cumulative and a base is known.
+**Support: public.** Return one commit's patch, or the chain `base..sha` when cumulative and a base is known.
 
 Source: [`ui.web.model._diff_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `cumulative` | `JSON` | Whether the patch covers the chain rather than one step. |
-| `patch` | `JSON` | The unified patch for the selected step or chain. |
+| `cumulative` | `JSON` | Whether the patch covers the chain rather than one commit. |
+| `patch` | `JSON` | The unified patch for the selected commit or chain. |
 | `old_spans` | `JSON` | Base paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
 | `new_spans` | `JSON` | Head paths to per-line [start, end, class] spans in UTF-16 units. Line 1 is index 0; undisplayed lines and unhighlighted sides are empty. |
 
@@ -3041,17 +3041,17 @@ Source: [`agent6.viewmodel.state_types.DiffView`](https://github.com/agent6-dev/
 | `task_id` | `str \| None` | The task in focus when the commit landed, or null. |
 | `sha` | `str` | The auto-commit identifier. |
 
-### CommitStep
+### RunCommit
 
-**Support: public.** One per-step commit of the run, which the dashboards select among.
+**Support: public.** One per-turn commit of the run, which the dashboards select among.
 
-Source: [`agent6.viewmodel.state_types.CommitStep`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.state_types.RunCommit`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `turn` | `int` | The turn that produced the checkpoint. |
-| `sha` | `str` | The checkpoint commit identifier. |
-| `subject` | `str` | The checkpoint commit's subject. |
+| `turn` | `int` | The turn that produced the commit. |
+| `sha` | `str` | The commit identifier. |
+| `subject` | `str` | The commit's subject. |
 
 ### MachineStateView
 

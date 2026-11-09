@@ -63,7 +63,7 @@ def test_aligned_chain_tip_passes(tmp_path: pathlib.Path) -> None:
 
 
 def test_own_forward_commit_is_allowed(tmp_path: pathlib.Path) -> None:
-    # The run's own per-step commit advances the chain forward from the
+    # The run's own per-turn commit advances the chain forward from the
     # snapshot on the same line (a kill after the commit but before the next
     # snapshot refresh). The tip descends from snap_head, so resume proceeds.
     repo = _init_repo(tmp_path)

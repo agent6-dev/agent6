@@ -48,8 +48,8 @@ async function renderRun(id, opts, gen) {
     };
     const stopBtn = el('button', 'danger', '■ Stop now');
     stopBtn.onclick = () => stopRun('/api/session/' + encodeURIComponent(id), 'this session');
-    const stepBtn = el('button', null, 'Stop after turn');
-    stepBtn.onclick = async () => {
+    const turnBtn = el('button', null, 'Stop after turn');
+    turnBtn.onclick = async () => {
       try { const d = await postJSON('/api/session/' + encodeURIComponent(id) + '/stop', { after_turn: true }); toast(d.message || 'stopping after the current turn'); }
       catch (e) { toast(e.message, true); }
     };
@@ -118,8 +118,8 @@ async function renderRun(id, opts, gen) {
       finally { reviewBtn.disabled = false; }
     };
     cards._review_btn = reviewBtn; // paintRun gates it: the CLI refuses a live run's review
-    for (const b of [stopBtn, stepBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn]) actions.appendChild(b);
-    cards._live_btns = [stopBtn, stepBtn, compactBtn]; // paintRun disables these once finished
+    for (const b of [stopBtn, turnBtn, compactBtn, planBtn, forkBtn, reviewBtn, mergeBtn, rmBtn]) actions.appendChild(b);
+    cards._live_btns = [stopBtn, turnBtn, compactBtn]; // paintRun disables these once finished
     cards._rm_btn = rmBtn; // paintRun gates it the other way: the server refuses a live run
     cards._plan_btn = planBtn;
   }
@@ -331,7 +331,7 @@ function paintPrompts(cards, s) {
   }
 }
 
-// Budget and task graph: the live state, or the state as of the step picked
+// Budget and task graph: the live state, or the state as of the commit picked
 // in the Latest commit card (the server folds the log up to that commit).
 function paintDetails(cards, s, asOf) {
   // budget
@@ -487,8 +487,8 @@ function paintRun(cards, s) {
     cards.head.appendChild(el('div', 'sub muted', `${esc(r.role)} / ${esc(r.model)}${inFlight ? ' …' : ''}`));
   }
 
-  const stepState = (cards._diffPick && cards._diffPick.sha && cards._stepState) ? cards._stepState : null;
-  paintDetails(cards, stepState || s, stepState ? stepState.as_of : null);
+  const commitState = (cards._diffPick && cards._diffPick.sha && cards._commitState) ? cards._commitState : null;
+  paintDetails(cards, commitState || s, commitState ? commitState.as_of : null);
 
   // conversation: the live in-progress turn paints from this frame at once (a
   // heartbeat ticks via hbTick() on a live-but-silent run so it reads as alive,
@@ -555,7 +555,7 @@ function paintRun(cards, s) {
     planCard.style.display = 'none';
   }
 
-  // diff: the latest commit by default; a step selector over the run's
+  // diff: the latest commit by default; a commit selector over the run's
   // chain (newest first) with a cumulative toggle, hidden truthfully when the
   // model owns git (no chain) or nothing is committed yet.
   cards.diff.innerHTML = '';
@@ -563,22 +563,22 @@ function paintRun(cards, s) {
   cards._diffCache ||= new Map();
   // An ask or a plan never commits: no card, as the shells card goes without a shell.
   cards.diff.parentElement.style.display = s.mode === 'ask' || s.mode === 'plan' ? 'none' : '';
-  const steps = (s.steps || []).slice().reverse();
+  const commits = (s.commits || []).slice().reverse();
   if (s.git_control === 'model') {
-    cards.diff.appendChild(el('div', 'muted', 'the model owns git in this run: no step chain'));
-  } else if (!steps.length) {
+    cards.diff.appendChild(el('div', 'muted', 'the model owns git in this run: no commit chain'));
+  } else if (!commits.length) {
     cards.diff.appendChild(el('div', 'muted', 'no commit yet'));
   } else {
     const nav = el('div', 'row pickers'); // the composers' picker-row style
     const sel = el('select', 'field');
     sel.appendChild(new Option('latest commit', ''));
-    for (const st of steps) sel.appendChild(new Option(st.label, st.sha)); // the server's CommitStep.label
+    for (const st of commits) sel.appendChild(new Option(st.label, st.sha)); // the server's RunCommit.label
     const cum = document.createElement('input'); cum.type = 'checkbox';
     const cumLabel = el('label', 'pick');
     cumLabel.appendChild(cum); cumLabel.appendChild(el('span', 'muted', 'cumulative'));
     const pick = cards._diffPick || { sha: '', cumulative: false };
     sel.value = pick.sha; cum.checked = pick.cumulative;
-    // Cumulative applies to a chosen step: with "latest commit" picked the box
+    // Cumulative applies to a chosen commit: with "latest commit" picked the box
     // is off and disabled, as the TUI's is.
     const syncCum = () => { if (!sel.value) { cum.checked = false; } cum.disabled = !sel.value; };
     syncCum();
@@ -593,9 +593,9 @@ function paintRun(cards, s) {
       cards._diffPick.cumulative = cum.checked;
       const request = ++cards._diffGeneration;
       const current = () => request === cards._diffGeneration && body.isConnected;
-      const selected = sel.value, sha = selected || steps[0].sha;
+      const selected = sel.value, sha = selected || commits[0].sha;
       if (!selected) {
-        cards._stepState = null; paintDetails(cards, s, null);
+        cards._commitState = null; paintDetails(cards, s, null);
         body.appendChild(renderDiff({patch: s.latest_diff || ''}));
       }
       const url = cards._base + '/diff?sha=' + encodeURIComponent(sha) + '&cumulative=' + (cum.checked ? '1' : '0');
@@ -603,12 +603,12 @@ function paintRun(cards, s) {
         if (!cards._diffCache.has(url)) cards._diffCache.set(url, getJSON(url).catch(e => { cards._diffCache.delete(url); throw e; }));
         const d = await cards._diffCache.get(url);
         if (!current()) return;
-        if (cum.checked && d.cumulative === false) { cum.checked = false; cards._diffPick.cumulative = false; toast('this run has no base to accumulate from; showing the single step'); }
+        if (cum.checked && d.cumulative === false) { cum.checked = false; cards._diffPick.cumulative = false; toast('this run has no base to accumulate from; showing the single commit'); }
         body.innerHTML = ''; body.appendChild(renderDiff(d));
         if (!selected) return;
-        const st = await getJSON(cards._base + '?step=' + encodeURIComponent(selected));
+        const st = await getJSON(cards._base + '?commit=' + encodeURIComponent(selected));
         if (!current()) return;
-        cards._stepState = st; paintDetails(cards, st, st.as_of);
+        cards._commitState = st; paintDetails(cards, st, st.as_of);
       } catch (e) { if (current()) body.appendChild(el('div', 'muted', e.message)); }
     };
     sel.onchange = show; cum.onchange = show;

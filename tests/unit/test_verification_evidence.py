@@ -367,8 +367,8 @@ def test_denied_attempt_transcript_names_outcome(tmp_path: pathlib.Path) -> None
     assert "denied" in item.detail and "None" not in item.detail
 
 
-@pytest.mark.parametrize("mode", ["ask", "plan", "agent"])
-def test_non_run_end_omits_empty_tree(mode: Literal["ask", "plan", "agent"]) -> None:
+@pytest.mark.parametrize("mode", ["ask", "plan", "read_only"])
+def test_non_run_end_omits_empty_tree(mode: Literal["ask", "plan", "read_only"]) -> None:
     """Only run-mode ends carry an observed tree field."""
     harness = gate_tests._wf(verify=False, mode=mode)
     state = loop_state.LoopState(original_task="t", tool_calls=0)

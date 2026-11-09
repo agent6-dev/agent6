@@ -145,7 +145,7 @@ def snapshot_head_mismatch(
 ) -> tuple[str, str] | None:
     """Detect a chain tip that diverged from the run's last snapshot.
 
-    Forward movement on the same line is the run's own per-step commits and
+    Forward movement on the same line is the run's own per-turn commits and
     resumes cleanly; only a tip that is not a descendant of the snapshot head
     counts. Committed history only. A snapshot with no recorded head, a corrupt
     snapshot or an unborn ref is skipped.

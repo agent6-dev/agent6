@@ -47,19 +47,20 @@ Unset roles fall back to `worker`.
 
 ## Units of work
 
-Largest first.
-
 | unit | what it is | bounded by |
 |---|---|---|
 | machine | a state-machine instance; each of its agent states hands one task to the harness | the `.asm.toml` and its journal |
 | fan-out | a `/parallel` group: N sessions on one task | the coordinator's session |
 | session | one task's durable record: its dir, journal, task graph, chain of commits and memory use | the id; it holds several executions |
 | execution | one continuous run of the harness over a session, from a `run`, `resume` or `fork` to an end | `max_turns` and the budget cap, re-armed per execution |
-| turn | one model call and everything the harness does with its answer: the tool dispatch, the advisors, the gates, the notices; a prose-only answer is a turn too; `turn` is its index | one provider call |
+| turn | one harness loop iteration: a model call and the tool dispatch, advisors, gates and notices for its answer; a prose-only answer is a turn too | its index within the execution |
 | tool call | one tool the model asked for inside a turn; a finish is the last one executed | one dispatch |
+| commit | one entry in the session's git history | its sha |
+| checkpoint | saved harness state for resume | its checkpoint file |
+| task | one node in the task graph | its task id |
 
-A step is a commit on the session's chain, taken after a turn that changed the tree (a verified step or an un-gated checkpoint).
-`git.commit_per_turn` controls whether editing turns commit; the diff pane's step picker counts those commits.
+A commit lands on the session's chain after a turn that changed the tree.
+`git.commit_per_turn` controls whether editing turns commit; the diff pane's commit picker lists those commits.
 `run` is the mode beside `plan` and `ask`, and the command that opens a session.
 
 ## The run lifecycle
@@ -164,7 +165,7 @@ A resume after a death there runs none of the turn's calls again: the model gets
   It stays scoped until a full run of the gate passes.
   The notice lists the selected files, `session.end` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
 - A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
-- The settled stop ends a plain run after `harness.verify_settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or an editing step no gate judged.
+- The settled stop ends a plain run after `harness.settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or an editing step no gate judged.
     - A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
     - A verify run is neutral; an edit, a commit, a memory write, a tree change or an operator steer restarts the streak.
     - `0` disables the stop, but the nudge at three idle turns still fires without announcing a stop; over a red gate the model must fix, the nudge is withheld while a finish would still go back.
@@ -422,7 +423,7 @@ It refuses when the run also changed one of those paths, since stashing it would
 A resume after a death, a detach or an older session has no recorded tree: the changes no commit has and no tool of the run wrote follow the same policy, and its note names what the next commit takes.
 
 A resume whose merge stamp covers everything the run committed, in a checkout whose HEAD holds the landing commit, continues from HEAD (`app/resume_chain.py`).
-The chain ref and run branch only move forward: to HEAD after a `merge` or `ff_only` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier steps stay reachable for `fork --at-turn`.
+The chain ref and run branch only move forward: to HEAD after a `merge` or `ff_only` landing, else to a commit that joins the landed tip to HEAD's tree, so the earlier commits stay reachable for `fork --at-turn`.
 The manifest's `base_sha` and the merge stamp's tip move to that commit, so `sessions diff`, `sessions commits`, the squash message, the review diff and the next merge read only the new work.
 `base_branch` moves to the branch the merge landed on when the checkout has it out.
 Where the workspace's HEAD does not hold the landing commit (a worktree run, a fork of a squash-merged run), the chain stays as it is and a resume moves `base_sha` alone, to the commit the next merge into `base_branch` starts from.

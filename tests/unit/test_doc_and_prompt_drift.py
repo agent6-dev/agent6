@@ -91,7 +91,7 @@ def test_security_docs_scope_escalation_and_install_claims_to_confined_levels() 
 
 def _registered_tool_names() -> set[str]:
     names = {cls.TOOL_NAME for cls in tool_schema.ALL_TOOLS}
-    for mode in ("run", "plan", "ask", "machine", "agent"):
+    for mode in ("run", "plan", "ask", "machine", "read_only"):
         mt = tool_schema.mode_tools(mode)
         names |= {cls.TOOL_NAME for cls in (*mt.base, *mt.extras)}
     return names

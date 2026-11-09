@@ -146,7 +146,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
             resumable=False,
         ),
         SessionKind(
-            name="agent",
+            name="read_only",
             role="worker",
             edits=False,
             runs_commands=False,
@@ -157,7 +157,7 @@ SESSION_KINDS: dict[str, SessionKind] = {
 }
 
 
-# The modes an operator starts and resumes; machine and agent executions are the machine agent's.
+# Only resumable modes start outside the machine supervisor.
 OPERATOR_MODES: tuple[str, ...] = tuple(k.name for k in SESSION_KINDS.values() if k.resumable)
 
 # The roles whose output is the session talking; every other role is a side call on the journal.
@@ -211,13 +211,13 @@ def session_bucket(name: str) -> str:
         The mode's name plus `s`, such as `runs`.
 
     Raises:
-        UnknownSessionKindError: The mode is unknown, or is `agent`, whose executions
+        UnknownSessionKindError: The mode is unknown, or is `read_only`, whose executions
             live under their machine instance.
     """
     kind = session_kind(name)
-    if kind.name == "agent":
+    if kind.name == "read_only":
         raise UnknownSessionKindError(
-            "an agent execution lives under its machine instance, not sessions/"
+            "a read_only execution lives under its machine instance, not sessions/"
         )
     return f"{kind.name}s"
 

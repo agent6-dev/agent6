@@ -119,7 +119,7 @@ def session_state_as_dict(
         plan_md: A plan session's deliverable when readable.
         head: The question part added to each pending approval.
         payload: The command part added to each pending approval.
-        label: The picker label added to each commit step.
+        label: The picker label added to each commit.
 
     Args:
         state: The folded state.
@@ -134,7 +134,7 @@ def session_state_as_dict(
         The state's fields with tuples as lists, plus the computed `context_pct`,
         `needs_new_work`, `open_approval`, `status`, `status_label`, the full `task`, `task_line`,
         `dead_state`, `operator_blocked`, the rendered budget text, approval parts and
-        step labels, and `log_tail` as plain strings.
+        commit labels, and `log_tail` as plain strings.
         Spend is `budget.cost_usd`; journal event fields keep their stored names.
     """
     d = dataclasses.asdict(state)
@@ -161,8 +161,8 @@ def session_state_as_dict(
     )
     for ap, row in zip(state.pending_approvals, d["pending_approvals"], strict=True):
         row["head"], row["payload"] = state_types.approval_parts(ap.prompt)
-    for step, row in zip(state.steps, d["steps"], strict=True):
-        row["label"] = step.label
+    for commit, row in zip(state.commits, d["commits"], strict=True):
+        row["label"] = commit.label
     current = session_fold.open_approval_of(state)
     d["open_approval"] = None if current is None else current.id
     fallback_task = ""

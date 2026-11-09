@@ -33,11 +33,7 @@ from agent6.sessions import process
 from agent6.ui import spawn
 from agent6.ui.telemetry import export
 from agent6.ui.web import actions, auth, git_model, model, page, review_routes, sse
-from agent6.viewmodel import (
-    UnknownStepError,
-    machine_snapshot,
-    session_snapshot,
-)
+from agent6.viewmodel import machine_snapshot, wire
 
 # The typed bodies are a few strings; an uncapped Content-Length would buffer arbitrary bytes.
 _MAX_BODY_BYTES = 1 << 20
@@ -1056,11 +1052,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": f"no draft {name!r}"}, status=404)
             return
         if sub == "":
-            step = (parse.parse_qs(parse.urlsplit(self.path).query).get("step") or [""])[0]
-            try:
-                self._send_json(session_snapshot(draft_dir, step=step))
-            except UnknownStepError as e:
-                self._send_json({"error": str(e)}, status=422)
+            self._send_session_snapshot(draft_dir)
         elif sub == "conversation":
             self._send_json(model.conversation_payload(draft_dir))
         elif sub == "diff":
@@ -1070,7 +1062,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
                 gone = "the drafting workspace is gone (removed with a published draft)"
                 payload, why = None, gone
             else:
-                payload, why = model.draft_step_diff_payload(
+                payload, why = model.draft_commit_diff_payload(
                     workspace,
                     draft_dir,
                     (q.get("sha") or [""])[0],
@@ -1085,6 +1077,24 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_json({"error": f"not found: draft/{name}/{sub}"}, status=404)
 
+    def _send_session_snapshot(
+        self, session_dir: pathlib.Path, *, repo: pathlib.Path | None = None
+    ) -> None:
+        """Send the live or commit-selected snapshot, refusing unknown query parameters."""
+        query = parse.parse_qs(parse.urlsplit(self.path).query, keep_blank_values=True)
+        unknown = sorted(query.keys() - {"commit"})
+        if unknown:
+            names = ", ".join(repr(name) for name in unknown)
+            self._send_json(
+                {"error": f"unknown query parameter(s): {names}; expected 'commit'"}, status=422
+            )
+            return
+        commit = (query.get("commit") or [""])[0]
+        try:
+            self._send_json(wire.session_snapshot(session_dir, repo=repo, commit=commit))
+        except wire.UnknownCommitError as exc:
+            self._send_json({"error": str(exc)}, status=422)
+
     def _route_session(self, session_id: str, sub: str) -> None:
         """Dispatch `/api/session/<id>[/<sub>]`."""
         session_dir = model.session_dir_for(self.cwd, session_id)
@@ -1092,11 +1102,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": f"no session {session_id!r}"}, status=404)
             return
         if sub == "":
-            step = (parse.parse_qs(parse.urlsplit(self.path).query).get("step") or [""])[0]
-            try:
-                self._send_json(session_snapshot(session_dir, repo=self.cwd, step=step))
-            except UnknownStepError as e:
-                self._send_json({"error": str(e)}, status=422)
+            self._send_session_snapshot(session_dir, repo=self.cwd)
         elif sub == "receipt":
             self._send_json(review_routes.receipt_payload(self.cwd, session_dir))
         elif sub == "findings":
@@ -1111,7 +1117,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(model.restate_payload(session_dir))
         elif sub == "diff":
             q = parse.parse_qs(parse.urlsplit(self.path).query)
-            payload, why = model.step_diff_payload(
+            payload, why = model.commit_diff_payload(
                 self.cwd,
                 session_dir,
                 (q.get("sha") or [""])[0],

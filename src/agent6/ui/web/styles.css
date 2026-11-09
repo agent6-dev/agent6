@@ -235,7 +235,7 @@ main { padding: 0; }
    the sizing lives here (not an inline flex the phone rule must override). */
 .composer .row > textarea.field { flex: 1 1 0; min-width: 0; }
 .composer .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
-/* Picker rows (pickerRow above a composer, the Latest commit card's step row):
+/* Picker rows (pickerRow above a composer, the Latest commit card's picker row):
    compact dropdowns sized to their value, each beside its label; on a narrow
    screen the pairs wrap whole. */
 .pickers { flex-wrap: wrap; gap: 6px 16px; margin-bottom: 8px; font-size: 13px; }

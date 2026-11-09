@@ -23,7 +23,7 @@ from agent6.sessions import ipc
 from agent6.tools import dispatch, mcp_client, operator_prompts, schema, tool_errors
 from tests.unit.test_mcp_client import _fake_server_argv  # pyright: ignore[reportPrivateUsage]
 
-Mode = Literal["run", "plan", "ask", "machine", "agent"]
+Mode = Literal["run", "plan", "ask", "machine", "read_only"]
 
 # The guards' own vocabulary. A refusal in these words came from a gate; a
 # refusal in any other words (an argument that failed validation, a missing

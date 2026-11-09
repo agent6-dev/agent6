@@ -210,7 +210,7 @@ def test_runs_merge_squash_is_one_commit_and_records_manifest(
     rc = main(["sessions", "merge", "run-AAAA11", "--method", "squash"])
     assert rc == 0
     assert (tmp_path / "a.txt").exists() and (tmp_path / "b.txt").exists()
-    # exactly one new commit on main (the squash), not the two per-step commits
+    # exactly one new commit on main (the squash), not the two per-turn commits
     assert _git(tmp_path, "rev-list", "--count", f"{base}..main") == "1"
     layout = sessions_layout.SessionLayout(
         state_dir=paths.state_dir(tmp_path), session_id="run-AAAA11"
@@ -294,7 +294,7 @@ def test_runs_merge_method_merge_keeps_history(
     assert rc == 0
     assert (tmp_path / "a.txt").exists()  # the merge landed the work on main
     log = _git(tmp_path, "log", "--oneline")
-    assert "agent6 turn 1: add a" in log  # --no-ff keeps the per-step commit reachable
+    assert "agent6 turn 1: add a" in log  # --no-ff keeps the per-turn commit reachable
 
 
 def test_runs_merge_squash_honors_message(
@@ -996,7 +996,7 @@ def test_merge_squash_conventional_style_derives_the_subject(
 def test_merge_squash_default_style_writes_the_run_message(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The default `agent6` squash style writes the run's task and its condensed steps."""
+    """The default `agent6` squash style writes the run's task and its condensed commit subjects."""
     monkeypatch.chdir(tmp_path)
     _setup_run(
         tmp_path,
@@ -1030,11 +1030,7 @@ def _write_finish_log(tmp_path: pathlib.Path, session_id: str, *, end_reason: st
 def test_merge_squash_body_is_the_finish_summary(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The squash body is the summary the run finished on.
-
-    A run whose steps were all `checkpoint` landed with no body, and one with prose steps
-    landed their first lines in place of the summary.
-    """
+    """The final summary supplies the squash body, regardless of the commit subjects."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FIN111", commits=[("a.txt", "a\n", "agent6 turn 6: checkpoint")])
     summary = _write_finish_log(tmp_path, "run-FIN111", end_reason="finish_session")
@@ -1045,7 +1041,7 @@ def test_merge_squash_body_is_the_finish_summary(
 def test_merge_squash_ignores_a_finish_the_run_did_not_end_on(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A finish call the run did not end on supplies no body: the steps do."""
+    """A finish call the run did not end on supplies no body: the commit subjects do."""
     monkeypatch.chdir(tmp_path)
     _setup_run(tmp_path, "run-FIN222", commits=[("a.txt", "a\n", "agent6 turn 1: add a")])
     summary = _write_finish_log(tmp_path, "run-FIN222", end_reason="steer_abort")

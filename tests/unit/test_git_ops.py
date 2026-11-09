@@ -1673,7 +1673,7 @@ def test_chain_commit_keeps_tracked_but_ignored_files(tmp_path: pathlib.Path) ->
 
 
 def test_chain_commit_leaves_the_operators_untracked_files_out(tmp_path: pathlib.Path) -> None:
-    """Files untracked when the run started are the operator's and enter no per-step commit."""
+    """Files untracked when the run started are the operator's and enter no per-turn commit."""
     _init_repo(tmp_path)
     head = _rev(tmp_path, "HEAD")
     ref = "refs/agent6/u/head"

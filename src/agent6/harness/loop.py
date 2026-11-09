@@ -3,7 +3,7 @@
 """Run the agent loop: one system prompt, one model driving tool calls, a harness around it.
 
 The harness bounds the loop (jail, budget, verify timeout, turn cap) and records it (events,
-the task graph, per-step commits of every tree a verify certified). The heuristics that nudge or
+the task graph, per-turn commits of every tree a verify certified). The heuristics that nudge or
 end a run are advisor functions (`guards`, `metric_rules`, `quiet_turns`) and finish gates
 (`finish_gates`), run in a declared order; the loop applies their answers. The review panel
 gates checkpoints and never steers.
@@ -94,7 +94,7 @@ class Harness:
     measure and stop. The harness keeps the loop bounded and observable.
 
     Attributes:
-        chain: The run's commit chain: the repository root, the per-step commits, the worktree.
+        chain: The run's commit chain: the repository root, the per-turn commits, the worktree.
         config: The effective config.
         provider: The model provider the worker calls go to.
         dispatcher: The tool dispatcher.
@@ -168,7 +168,7 @@ class Harness:
     # The gate a resumed execution carried from the last one, set before the state is built.
     adopted_on_resume: tuple[str, ...] = ()
     interactive: bool = False
-    mode: Literal["run", "plan", "ask", "agent"] = "run"
+    mode: Literal["run", "plan", "ask", "read_only"] = "run"
     plan_output_path: pathlib.Path | None = None
     # A snapshot write fault warns once, not every turn; it disables resume, never the run.
     snapshot_write_failed: bool = dataclasses.field(default=False, init=False)
@@ -1382,7 +1382,7 @@ class Harness:
             execution_start=execution_start,
             went_quiet_max_nudges=self.config.harness.went_quiet_max_nudges,
             loop_guard_kill_threshold=self.config.harness.loop_guard_kill_threshold,
-            verify_settled_stop_after=self.config.harness.verify_settled_stop_after,
+            settled_stop_after=self.config.harness.settled_stop_after,
             stagnation_notice_after_s=self.config.harness.stagnation_notice_after_s,
             verify_when=self.gate.when,
             verify_retries=self.gate.retries,
@@ -1918,9 +1918,9 @@ class Harness:
         """Return the repo memory index for the system prompt.
 
         Returns:
-            The index text; "" without a state dir, in agent mode, or when unreadable.
+            The index text; "" without a state dir, in read_only mode, or when unreadable.
         """
-        if self.state_dir is None or self.mode == "agent":
+        if self.state_dir is None or self.mode == "read_only":
             return ""
         return agent6_memory.index_text(self.state_dir)
 
@@ -2012,7 +2012,7 @@ class Harness:
 
     @functools.cached_property
     def checkpoints(self) -> run_checkpoint.Checkpoints:
-        """Return the per-step commit writer."""
+        """Return the per-turn commit writer."""
         return run_checkpoint.Checkpoints(
             chain=self.chain,
             style=self.config.git.commit.checkpoint.message,

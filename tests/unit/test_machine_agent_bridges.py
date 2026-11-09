@@ -274,7 +274,7 @@ def test_the_agent_seat_journals_under_a_driving_role(
         overlay={},
         isolation="none",
         transcript_dir=tmp_path / "transcripts",
-        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="agent"),
+        request=AgentRequest(prompt="hi", timeout_s=30.0, mode="read_only"),
     )
     provider, _summariser, _events = agent._build_agent_providers(  # pyright: ignore[reportPrivateUsage]
         Config(),

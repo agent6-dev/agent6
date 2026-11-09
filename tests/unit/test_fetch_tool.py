@@ -324,7 +324,7 @@ def test_a_machine_state_gets_no_network(tmp_path: pathlib.Path) -> None:
     assert "fetch" in schema.mode_tools("run").names
     assert "fetch" in schema.mode_tools("ask").names
     assert "fetch" not in schema.mode_tools("machine").names
-    assert "fetch" not in schema.mode_tools("agent").names
+    assert "fetch" not in schema.mode_tools("read_only").names
 
 
 def test_a_port_out_of_range_is_a_fetch_refusal_and_a_note_needs_a_30x() -> None:

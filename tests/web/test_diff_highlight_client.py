@@ -114,7 +114,7 @@ const patch = 'diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1 +1 @@\n-p
 const payload = {patch, cumulative: false,
   old_spans: {'a.py': [[[0, 4, 'keyword']]]}, new_spans: {'a.py': [[[0, 6, 'keyword']]]}};
 const state = {mode: 'run', git_control: 'agent6',
-  steps: [{sha: 'abcdef1', label: 'one'}], latest_diff: patch};
+  commits: [{sha: 'abcdef1', label: 'one'}], latest_diff: patch};
 const calls = [];
 getJSON = async url => { calls.push(url); return payload; };
 let finished = false;
@@ -126,7 +126,7 @@ let finished = false;
   assert.equal(calls.length, 1, 'live repaint fetched the same commit again');
   const waiters = [];
   getJSON = url => new Promise(resolve => waiters.push({url, resolve}));
-  paintDiff(cards, {...state, steps: [{sha: 'abcdef2', label: 'two'}]});
+  paintDiff(cards, {...state, commits: [{sha: 'abcdef2', label: 'two'}]});
   paintDiff(cards, state); await tick();
   waiters[0].resolve({...payload, patch: patch.replace('return', 'stale!')}); await tick();
   assert.ok(!cards.diff.textContent.includes('stale!'));

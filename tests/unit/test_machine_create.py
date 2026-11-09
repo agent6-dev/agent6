@@ -1265,7 +1265,7 @@ def test_timed_out_agent_state_salvages_spend_from_its_event_log(
     runner = agent.build_machine_agent_runner(
         {"": agent.StateOverlay({}, "full")}, tmp_path, tmp_path / "tr"
     )
-    res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="agent"), events_log)
+    res = runner(AgentRequest(prompt="p", timeout_s=1.0, mode="read_only"), events_log)
     assert res.reason == "timeout"
     assert res.usd == pytest.approx(0.0588752)
     assert (res.input_tokens, res.output_tokens) == (66084, 838)

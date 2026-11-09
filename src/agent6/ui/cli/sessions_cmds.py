@@ -441,7 +441,7 @@ def _pruned_branch_note(
 
 
 def _cmd_commits(*, session_id: str) -> int:
-    """List the per-step commits on a run's branch or chain ref.
+    """List the per-turn commits on a run's branch or chain ref.
 
     Args:
         session_id: The run, or "" for the newest.

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The dashboard's step selector time-travels the task tree and the cost line."""
+"""The dashboard's commit selector time-travels the task tree and the cost line."""
 
 from __future__ import annotations
 
@@ -30,24 +30,24 @@ def _no_patch(self: diff_pane.DiffPane, sha: str) -> str:
     return "(no diff)"  # the diff pane's git read is not under test
 
 
-def test_a_selected_step_relabels_the_details_as_of_that_turn(
+def test_a_selected_commit_relabels_the_details_as_of_that_turn(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     d = tmp_path / "s1"
     _mk(d)
-    monkeypatch.setattr(diff_pane.DiffPane, "_step_patch", _no_patch)
+    monkeypatch.setattr(diff_pane.DiffPane, "_commit_patch", _no_patch)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
         async with app.run_test(size=(140, 40)) as pilot:
             await pilot.pause()
             dash = app._dash  # pyright: ignore[reportPrivateUsage]
-            dash.diff.step_sel = "a" * 40
+            dash.diff.commit_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
             assert dash.query_one("#plan", widgets.Tree).border_title == "tasks · as of turn 1"
             assert "as of turn 1" in str(dash.query_one("#top", widgets.Static).render())
-            dash.diff.step_sel = ""
+            dash.diff.commit_sel = ""
             dash.render_state()
             await pilot.pause()
             assert dash.query_one("#plan", widgets.Tree).border_title == ""
@@ -55,10 +55,10 @@ def test_a_selected_step_relabels_the_details_as_of_that_turn(
     asyncio.run(scenario())
 
 
-def test_the_top_line_counts_tasks_as_of_the_selected_step(
+def test_the_top_line_counts_tasks_as_of_the_selected_commit(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """With a step selected, `tasks:` and `cost:` follow it and only `ctx:` is live."""
+    """With a commit selected, `tasks:` and `cost:` follow it and only `ctx:` is live."""
     d = tmp_path / "s2"
     d.mkdir(parents=True)
     events = [
@@ -81,7 +81,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
         {"type": "session.end", "reason": "finish_session", "all_passed": True},
     ]
     (d / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events), encoding="utf-8")
-    monkeypatch.setattr(diff_pane.DiffPane, "_step_patch", _no_patch)
+    monkeypatch.setattr(diff_pane.DiffPane, "_commit_patch", _no_patch)
 
     async def scenario() -> None:
         app = tui_app.Agent6TUI(d)
@@ -92,7 +92,7 @@ def test_the_top_line_counts_tasks_as_of_the_selected_step(
             await pilot.pause()
             live = str(dash.query_one("#top", widgets.Static).render())
             assert "tasks: 1/2" in live and "as of turn" not in live
-            dash.diff.step_sel = "a" * 40
+            dash.diff.commit_sel = "a" * 40
             dash.render_state()
             await pilot.pause()
             top = str(dash.query_one("#top", widgets.Static).render())
@@ -108,7 +108,7 @@ def test_the_diff_pane_keeps_saying_the_model_owns_git(
     """Under `[git].control = "model"` the diff pane's title survives every paint."""
     d = tmp_path / "s3"
     _mk(d)
-    monkeypatch.setattr(diff_pane.DiffPane, "_step_patch", _no_patch)
+    monkeypatch.setattr(diff_pane.DiffPane, "_commit_patch", _no_patch)
 
     def model_owns_git(_self: diff_pane.DiffPane) -> str:
         return "model"

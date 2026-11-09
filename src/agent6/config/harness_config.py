@@ -270,14 +270,14 @@ class HarnessConfig(pydantic.BaseModel):
         ),
     )
     # Measured: six idle turns cut steered runs mid-work, twelve none (bench/coreagent/FINDINGS.md).
-    verify_settled_stop_after: int = pydantic.Field(
+    settled_stop_after: int = pydantic.Field(
         default=12,
         ge=0,
         description=(
             "consecutive turns with no edit, commit or memory write and an unchanged tree "
             "before a plain run ends after a green verify or an editing step; verify runs "
-            "neutral; streak reset by progress or operator steer; "
-            "`harness.verify_settled_stop_after = 0`: stop disabled, nudge at three idle turns "
+            "neutral; streak reset by progress or operator steer; default 12, measured; "
+            "`harness.settled_stop_after = 0`: stop disabled, nudge at three idle turns "
             "retained"
         ),
     )

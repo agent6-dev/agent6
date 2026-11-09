@@ -37,13 +37,13 @@ def test_an_agent_execution_has_no_sessions_bucket() -> None:
     no listing scans instead of failing loudly at the routing bug.
     """
     with pytest.raises(kinds.UnknownSessionKindError):
-        kinds.session_bucket("agent")
+        kinds.session_bucket("read_only")
 
 
 def test_every_mode_has_a_scanned_bucket() -> None:
     """A mode whose bucket no listing scans writes a session dir nothing can find."""
     for name in kinds.SESSION_KINDS:
-        if name == "agent":
+        if name == "read_only":
             continue  # no directory of its own (see the refusal test)
         assert kinds.session_bucket(name) in sessions_layout.SESSION_BUCKETS
 

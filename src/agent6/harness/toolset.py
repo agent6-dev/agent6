@@ -40,7 +40,7 @@ DAG_TOOLS = (
 def tool_definitions(
     dispatcher: tools_dispatch.ToolDispatcher,
     *,
-    mode: Literal["run", "plan", "ask", "machine", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "machine", "read_only"] = "run",
 ) -> list[ToolDefinition]:
     """Build the tool list the loop exposes in a mode.
 

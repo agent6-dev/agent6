@@ -336,7 +336,7 @@ SESSION = (
     Producer(
         "viewmodel.state_view",
         "session_state_as_dict",
-        "`attach --json` approval and commit-step fields",
+        "`attach --json` approval and commit fields",
         "row",
     ),
     Producer("viewmodel.wire", "branch_facts", "`attach --json` branch fields", "out"),
@@ -605,7 +605,7 @@ def build_markdown() -> str:
         "`attach --json`, `/api/session/<id>` and `/api/draft/<name>` read `SessionState` "
         "with the serializer's replacements and header fields below.\n"
         "The serializer removes `task_label` and renders `log_tail` as strings.\n"
-        "The `row` additions belong to approvals and commit steps, not the snapshot root."
+        "The `row` additions belong to approvals and commits, not the snapshot root."
     )
     session_cls = importlib.import_module("agent6.viewmodel.state_types").SessionState
     sections.append(_table(composed_fields(session_cls, SESSION[:1] + SESSION[2:])))

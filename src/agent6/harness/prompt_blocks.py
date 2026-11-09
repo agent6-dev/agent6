@@ -96,7 +96,7 @@ def initial_instructions(mode: str, run_commands: str, *, has_gate: bool) -> str
     """
     if mode == "plan":
         return "The task is above; `finish_planning` ends the pass with the plan markdown."
-    if mode == "agent":
+    if mode == "read_only":
         return (
             "The task is above; `finish_session` ends the step with a `result`"
             " matching the schema the task names."
@@ -234,7 +234,7 @@ def build_system_prompt(
     *,
     config: Config,
     repo: kinds.RepoSummary,
-    mode: Literal["run", "plan", "ask", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "read_only"] = "run",
     memory_index: str = "",
     memory_dir_path: str = "",
     decisions: str = "",
@@ -270,7 +270,7 @@ def build_system_prompt(
         loop.ASK_SYSTEM_PROMPT_BASE
         if mode == "ask"
         else loop.AGENT_SYSTEM_PROMPT_BASE
-        if mode == "agent"
+        if mode == "read_only"
         else loop.PLAN_SYSTEM_PROMPT_BASE
         if mode == "plan"
         else loop.SYSTEM_PROMPT_BASE
@@ -329,7 +329,7 @@ def build_system_prompt(
         )
 
     # Machine agent states get only the budget cap and their base prompt.
-    if mode == "agent":
+    if mode == "read_only":
         parts.append(
             loop.V2_BUDGET_BLOCK_TEMPLATE.format(
                 usd_cap=(

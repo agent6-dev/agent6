@@ -246,7 +246,7 @@ def test_read_only_states_allow_disabled_commits(tmp_path: pathlib.Path) -> None
     """Read-only agent and tool states need no commit chain."""
     _operator("[git]\ncommit_per_turn = false\n")
     spec = load_machine(
-        _write(tmp_path, RUN_STATE_AFTER_WAIT.replace('mode = "run"', 'mode = "agent"'))
+        _write(tmp_path, RUN_STATE_AFTER_WAIT.replace('mode = "run"', 'mode = "read_only"'))
     )
     configs = state_configs.resolve_configs(spec, tmp_path, detect.probed_environment())
     assert not configs.states["work"].config.git.commit_per_turn

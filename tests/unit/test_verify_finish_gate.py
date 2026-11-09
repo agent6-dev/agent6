@@ -31,7 +31,7 @@ from agent6.viewmodel import session_status
 def _wf(
     *,
     verify: bool,
-    mode: Literal["run", "plan", "ask", "agent"] = "run",
+    mode: Literal["run", "plan", "ask", "read_only"] = "run",
     root: pathlib.Path = pathlib.Path("/tmp"),
 ) -> loop.Harness:
     data: dict[str, Any] = {"harness": {"verify_command": ["true"]}} if verify else {}

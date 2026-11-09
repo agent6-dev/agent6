@@ -40,11 +40,11 @@ def test_a_gateless_run_is_not_told_to_run_verify() -> None:
     assert "finish_session" in prompt_blocks.initial_instructions("run", "allow", has_gate=False)
 
 
-@pytest.mark.parametrize("mode", ["run", "plan", "ask", "agent"])
+@pytest.mark.parametrize("mode", ["run", "plan", "ask", "read_only"])
 def test_no_instruction_names_a_tool_outside_the_mode_surface(mode: str) -> None:
     """Every backticked tool name in a mode's header is one that mode exposes."""
     all_tools = set().union(
-        *(schema.mode_tools(m).permitted for m in ("run", "plan", "ask", "machine", "agent"))
+        *(schema.mode_tools(m).permitted for m in ("run", "plan", "ask", "machine", "read_only"))
     )
     permitted = schema.mode_tools(mode).permitted
     for rc in ("allow", "ask", "deny"):

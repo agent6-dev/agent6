@@ -116,7 +116,8 @@ def test_defaulted_request_omits_nothing() -> None:
         '{"cwd":"/w","root":"/w","overlay":{},"isolation":"none","transcript_dir":"/t",'
         '"events_log":null,"protect_paths":[],"shared_writes":[],"commit_identity":null,'
         '"request":{"prompt":"p","timeout_s":1.0,"operator_task":null,'
-        '"effort":null,"max_usd":null,"remaining_usd":null,"max_plan_points":null,"mode":"agent","state_name":"",'
+        '"effort":null,"max_usd":null,"remaining_usd":null,"max_plan_points":null,'
+        '"mode":"read_only","state_name":"",'
         '"step_seq":0,'
         '"output_schema":null,"schemas":{}}}'
     )

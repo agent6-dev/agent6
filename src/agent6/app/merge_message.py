@@ -133,7 +133,7 @@ def model_squash_message(
                 events=events,
                 budget=tracker,
             )
-        steps = "\n".join(f"- {r.subject}" for r in rows[:100])
+        subjects = "\n".join(f"- {r.subject}" for r in rows[:100])
         files = "\n".join(
             f"{s}\t{p}" for s, p in git_read.range_name_status(cwd, base_sha, run_branch)[:200]
         )
@@ -147,7 +147,7 @@ def model_squash_message(
         system = (
             "Write a git commit message describing the entire base-to-tip diff being landed,"
             " not just the latest execution or review feedback. The diff is authoritative;"
-            " the task, its continuation, finish summaries and per-step subjects are context only."
+            " the task, its continuation, finish summaries and commit subjects are context only."
             " Use only"
             " the facts given. Write one imperative subject line under 72 characters, a blank"
             " line, then a short body. Output the message text only."
@@ -165,7 +165,7 @@ def model_squash_message(
                 f"Task: {task}\n"
                 + (f"Continued: {continued}\n" if continued else "")
                 + f"Finish summaries (execution order):\n{summaries}\n"
-                f"Per-step subjects:\n{steps}\nChanged files (status\tpath):\n{files}\n"
+                f"Commit subjects:\n{subjects}\nChanged files (status\tpath):\n{files}\n"
                 f"Base-to-tip diff ({base_sha}..{run_branch}):\n{diff}"
             ),
             max_tokens=500,

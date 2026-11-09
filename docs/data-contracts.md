@@ -255,7 +255,7 @@ The parse boundary of a `.asm.toml` machine file.
 
 - **Written by:** machine/semantics
 - **Read by:** app/machine/{bundle, create, host_preflight, run, state_configs}, machine/{__init__, contracts, dryrun, engine, execution, graph, journal}, ui/cli/{completers, config_cmds, machine_check, machine_cmds, watch}, ui/tui/machines, ui/web/{actions, server, sse}, viewmodel/machine_state
-- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (14 test files exercise it)
+- **Guarded by:** [test_machine_model.py](https://github.com/agent6-dev/agent6/blob/master/tests/unit/test_machine_model.py) (15 test files exercise it)
 
 ## JournalEvent
 

@@ -197,13 +197,13 @@ class RoleCall:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class CommitStep:
-    """One per-step commit of the run, which the dashboards select among.
+class RunCommit:
+    """One per-turn commit of the run, which the dashboards select among.
 
     Attributes:
-        turn: The turn that produced the checkpoint.
-        sha: The checkpoint commit identifier.
-        subject: The checkpoint commit's subject.
+        turn: The turn that produced the commit.
+        sha: The commit identifier.
+        subject: The commit's subject.
     """
 
     turn: int
@@ -212,7 +212,7 @@ class CommitStep:
 
     @property
     def label(self) -> str:
-        """The step picker's line: `turn N · sha7 · subject`, a part left out when empty."""
+        """The commit picker's line: `turn N · sha7 · subject`, a part left out when empty."""
         return " · ".join(p for p in (f"turn {self.turn}", self.sha[:7], self.subject) if p)
 
 
@@ -353,7 +353,7 @@ class SessionState:
         undone_text: The message /undo took back, for the composer to refill.
         finish_summary: The finish tool's summary, the agent's closing statement.
         latest_diff: The patch of the most recent auto-commit.
-        steps: The run's per-step commits, oldest first.
+        commits: The run's per-turn commits, oldest first.
         steer_requests: The monotonic count of mid-run steer requests; the TUI
             compares it with its own count to react once per press.
         compact_elided: The elision markers in the current context.
@@ -394,7 +394,7 @@ class SessionState:
     undone_text: str = ""
     finish_summary: str = ""
     latest_diff: str = ""
-    steps: tuple[CommitStep, ...] = ()
+    commits: tuple[RunCommit, ...] = ()
     steer_requests: int = 0
     compact_elided: int = 0
     compact_gists_live: int = 0

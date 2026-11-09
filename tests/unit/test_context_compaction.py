@@ -349,7 +349,7 @@ def test_restart_notice_is_dag_aware() -> None:
         # Still tells the worker not to start over.
         assert "the task continues from it" in notice
     # ask, machine and agent have no DAG tools, so the DAG paragraph is absent.
-    for mode in ("ask", "agent"):
+    for mode in ("ask", "read_only"):
         notice = revision.context_restart_notice(mode)
         assert "list_tasks" not in notice
         assert "the task continues from it" in notice

@@ -3,7 +3,7 @@
 """A repo-defined git content driver never runs a host command on agent6's ops.
 
 `filter.<n>.clean/smudge/process` and `merge.<n>.driver` in a repo's own `.git/config`
-are host commands: the clean filter fires on the per-step auto-commit's `git add`, the
+are host commands: the clean filter fires on the per-turn auto-commit's `git add`, the
 merge driver on the chain merge's `merge-tree`. A cloned repo brings them pre-poisoned,
 and under `partial` a jailed command can write `.git/config` mid-run; either way no model
 action is needed. agent6 neutralizes each by name unless `git.run_repo_drivers` opts in
@@ -54,7 +54,7 @@ def _poison_clean_filter(root: pathlib.Path, marker: pathlib.Path) -> None:
 
 
 def test_the_auto_commit_does_not_run_a_repo_clean_filter(tmp_path: pathlib.Path) -> None:
-    """The per-step commit's temp-index `git add` does not run a clean filter by default.
+    """The per-turn commit's temp-index `git add` does not run a clean filter by default.
 
     The payload must not fire, and the commit still records the raw content.
     """

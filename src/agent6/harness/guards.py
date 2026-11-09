@@ -141,7 +141,7 @@ class SettledGuard:
 
     Once the run has a green verify or an editing step, idle turns count:
     one nudge at `VERIFY_SETTLED_NUDGE_AFTER`,
-    the stop at `harness.verify_settled_stop_after` unless disabled.
+    the stop at `harness.settled_stop_after` unless disabled.
 
     Attributes:
         tree: The last tree sha seen; execution-local, so a resumed execution
@@ -275,7 +275,7 @@ def verify_settled(
     )
     if turn.finish is not None:
         return None
-    stop_after = ctx.verify_settled_stop_after
+    stop_after = ctx.settled_stop_after
     if stop_after > 0 and guard.idle >= stop_after:
         return advice.Stop(
             lambda: settled_end(state, ctx),

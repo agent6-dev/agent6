@@ -59,7 +59,7 @@ def condense_commit_message(
     continued: str = "",
     fit: bool = True,
 ) -> str:
-    """Fold per-step commits into one message that reads as a single authored commit.
+    """Fold per-turn commits into one message that reads as a single authored commit.
 
     Args:
         rows: The commits, oldest first.
@@ -70,7 +70,7 @@ def condense_commit_message(
 
     Returns:
         The headline, a `continued: <steer>` paragraph when there is one, then the summary
-        whole, else the distinct per-step subjects as bullets with the `agent6 turn N:`
+        whole, else the distinct commit subjects as bullets with the `agent6 turn N:`
         prefix and checkpoint noise stripped.
     """
     bullets: list[str] = []

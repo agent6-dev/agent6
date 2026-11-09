@@ -106,7 +106,7 @@ capture = { finish_json = "verdict" }   # payload -> blackboard var `verdict`
 timeout_s = 600
 on = { ok = "route", failed = "poll", timeout = "poll", budget_exhausted = "halt" }
 
-# mode = "agent"                   # "agent" (default, read-only) | "run"
+# mode = "read_only"                   # "read_only" (default, read-only) | "run"
 # max_usd = 1.5                    # this agent slice's metered-spend cap
 
 # [states.classify.config.models.worker]   # this state's model; unset: your worker model
@@ -131,7 +131,7 @@ An `agent` state spins up a normal agent6 run: its own transcript, budget slice,
 
 `mode` chooses the tool surface.
 
-- `"agent"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`
+- `"read_only"` (default): a read-only, structured-output loop: the read and navigation tools (`read_file`, `list_dir`, `outline`, `find_definition`, `find_references`) plus `finish_session`
 - `"run"`: coding work (edit + verify tools and the auto-commit), as `agent6 run` has
 
 Where a run state's work lands:

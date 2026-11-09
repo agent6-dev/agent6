@@ -70,10 +70,10 @@ from agent6.viewmodel.state import (  # noqa: ICN003  # re-export
 from agent6.viewmodel.state_types import (  # noqa: ICN003  # re-export
     ApprovalPrompt,
     BudgetView,
-    CommitStep,
     Question,
     QuestionPrompt,
     RoleCall,
+    RunCommit,
     SessionState,
     TaskNodeView,
     ToolCallView,
@@ -94,7 +94,7 @@ from agent6.viewmodel.transcript import (  # noqa: ICN003  # re-export
 )
 from agent6.viewmodel.transcript_items import TranscriptItem  # noqa: ICN003  # re-export
 from agent6.viewmodel.wire import (  # noqa: ICN003  # re-export
-    UnknownStepError,
+    UnknownCommitError,
     existing_run_branch,
     machine_snapshot,
     manifest_branches,
@@ -107,7 +107,6 @@ __all__ = [
     "MAX_LOG_TAIL",
     "ApprovalPrompt",
     "BudgetView",
-    "CommitStep",
     "InstanceProbes",
     "LogScan",
     "LogTail",
@@ -117,6 +116,7 @@ __all__ = [
     "Question",
     "QuestionPrompt",
     "RoleCall",
+    "RunCommit",
     "SessionState",
     "SessionSummary",
     "StatusFacts",
@@ -125,7 +125,7 @@ __all__ = [
     "TranscriptFold",
     "TranscriptItem",
     "TransitionView",
-    "UnknownStepError",
+    "UnknownCommitError",
     "apply_event",
     "approval_parts",
     "armed_wait",

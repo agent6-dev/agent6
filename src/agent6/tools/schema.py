@@ -663,7 +663,7 @@ _EXTRA_TOOLS: dict[str, tuple[type[_ToolInput], ...]] = {
     "plan": PLAN_EXTRA_TOOLS,
     "ask": ASK_EXTRA_TOOLS,
     "machine": MACHINE_EXTRA_TOOLS,
-    "agent": MACHINE_EXTRA_TOOLS,
+    "read_only": MACHINE_EXTRA_TOOLS,
 }
 
 
