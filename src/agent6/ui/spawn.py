@@ -382,6 +382,14 @@ def _located(
     A session writes its worker pid before its journal's first event, so a dir recording
     another worker belongs to a session that appeared at the same moment, not to this
     child; a dir recording no worker (a machine draft) is the child's.
+
+    Args:
+        list_dirs: Lists the candidate dirs, newest first.
+        before: The dirs that existed before the spawn.
+        pid: The spawned child's pid.
+
+    Returns:
+        The child's dir, or None while it has not appeared.
     """
     for d in list_dirs():
         if d in before or not (d / layout.LOGS_NAME).exists():
