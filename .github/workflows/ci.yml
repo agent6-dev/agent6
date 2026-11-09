@@ -140,3 +140,61 @@ jobs:
 
       - name: agent6 check sandbox
         run: agent6 check sandbox
+
+  container-smoke:
+    name: container isolation (amd64)
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv + Python 3.12
+        uses: astral-sh/setup-uv@v10.3.1
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Sync dev environment
+        run: uv sync --all-extras --dev
+
+      - name: Download the built wheel
+        uses: actions/download-artifact@v8
+        with:
+          name: agent6-dist-amd64
+          path: dist/
+
+      - name: Install the built wheel into the env
+        run: |
+          wheel=$(ls dist/agent6-*.whl)
+          uv pip install --reinstall "$wheel"
+
+      - name: Allow unprivileged user namespaces (Ubuntu 24.04 AppArmor)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Build this repository's dev container and start it labelled as VS Code does
+        # The runtime test attaches to the container that mounts this checkout, as a developer's
+        # VS Code would have started it; the image's user takes the runner's uid and gid.
+        run: |
+          docker build -t agent6-devcontainer:ci -f .devcontainer/Dockerfile .devcontainer
+          printf 'FROM agent6-devcontainer:ci\nUSER root\nRUN groupmod -g %s vscode && usermod -u %s -g %s vscode && chown -R %s:%s /home/vscode\nUSER vscode\n' \
+            "$(id -g)" "$(id -u)" "$(id -g)" "$(id -u)" "$(id -g)" | docker build -t agent6-devcontainer:ci-uid -
+          docker run -d --name agent6-ci \
+            --label "devcontainer.local_folder=$PWD" \
+            --label 'devcontainer.metadata=[{"remoteUser":"vscode"}]' \
+            -v "$PWD:/workspaces/agent6" -w /workspaces/agent6 --user vscode \
+            agent6-devcontainer:ci-uid sleep infinity
+
+      - name: The container tests against the real container, none skipped
+        env:
+          AGENT6_CONTAINER_TEST_RUNTIME: '["docker"]'
+        run: |
+          set -o pipefail
+          uv run --no-sync pytest -ra --override-ini=pythonpath= -n 0 \
+            tests/sandbox/test_container_runtime.py tests/sandbox/test_container_transport.py \
+            tests/sandbox/test_container_isolation.py | tee container-tests.log
+          ! grep -q '^SKIPPED' container-tests.log
+
+      - name: agent6 check sandbox under container isolation
+        run: |
+          printf '[sandbox]\nisolation = "container"\n' > /tmp/container.toml
+          uv run --no-sync agent6 --config /tmp/container.toml check sandbox

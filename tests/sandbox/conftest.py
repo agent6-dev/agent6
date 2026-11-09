@@ -244,6 +244,8 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
     assert target.launcher_instance in rendered and stamp.target_id in rendered
     assert str(target.host_root) in rendered and str(target.command_root) in rendered
     assert "Run jobs settled" in rendered and "Environment lifecycle unknown" in rendered
+    # The records alone carry the receipt: a second read with no runtime access renders the same.
+    assert receipt.render(receipt.read_receipt(saved.session_dir, target.host_root)) == rendered
     return rendered
 
 

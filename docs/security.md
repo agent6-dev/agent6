@@ -760,6 +760,12 @@ A mount inventory is an observation, not confinement or a complete credential sc
 The host file tools and session records remain outside this transport.
 A same-user process or container administrator can tamper with the environment; protocol identity detects accidental replacement, not a hostile runtime.
 
+**Observed failure behaviour** (`tests/sandbox/test_container_transport.py`, `test_container_runtime.py`).
+A lost runtime client, a lost agent process or a closed channel ends the launcher and every job it owns; the record reads unknown, never settled.
+A stop reaches a foreground command within a few polls; a backgrounded command and a `setsid` escapee end with their job's subreaper, and a sibling session or an unrelated container process lives on.
+Output past the retained cap comes back cut with the session alive.
+A container replaced under a lease is attached, never owned.
+
 **Installation trusts the selected binary and target utilities.** The selected `AGENT6_JAIL_BIN`, bundled launcher or PATH launcher must be a native x86-64 or aarch64 static Linux ELF without an interpreter or shared-library dependencies.
 No runtime download, build, cross-architecture fallback or host execution fallback occurs.
 The fixed `/bin/sh` bootstrap requires `uname`, `mktemp`, `head -c` and `chmod`; absent utilities refuse by name.
