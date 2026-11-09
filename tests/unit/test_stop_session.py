@@ -211,13 +211,11 @@ def test_a_started_shell_records_no_host_signal_authority(tmp_path: pathlib.Path
 
 def test_a_gone_shell_pid_is_ignored(tmp_path: pathlib.Path) -> None:
     proc = _spawn("import time; time.sleep(60)")
-    identity = process.process_identity(proc.pid)
+    pid_start = process.pid_record(proc.pid).partition(" ")[2]
     shell = tmp_path / "shells" / "bg1"
     shell.mkdir(parents=True)
     (shell / "meta.json").write_text(
-        json.dumps(
-            {"id": "bg1", "command": "sleep 60", "pid": identity[0], "pid_start": identity[1]}
-        ),
+        json.dumps({"id": "bg1", "command": "sleep 60", "pid": proc.pid, "pid_start": pid_start}),
         encoding="utf-8",
     )
     proc.terminate()

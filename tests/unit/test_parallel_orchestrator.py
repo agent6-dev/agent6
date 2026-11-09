@@ -209,7 +209,8 @@ class _FakeSpawner:
             (spec.workdir / f"lane{spec.lane}.txt").write_text(
                 f"lane {spec.lane}\n", encoding="utf-8"
             )
-            git_ops.commit_all(spec.workdir, f"lane {spec.lane} work")
+            _git(spec.workdir, "add", "-A")
+            _git(spec.workdir, "commit", "-q", "-m", f"lane {spec.lane} work")
         session_dir = self.state_root / f"lane{spec.lane}" / "sessions" / "runs" / spec.session_id
         _write_fake_run(
             session_dir,
@@ -3256,7 +3257,8 @@ def test_sweep_keeps_a_clone_holding_unmerged_commits(
     subrun.clone_workspace(origin, unmerged)
     git_ops.create_branch(unmerged, "agent6/fan-a-l1")
     (unmerged / "x.txt").write_text("x\n", encoding="utf-8")
-    git_ops.commit_all(unmerged, "lane work")
+    _git(unmerged, "add", "-A")
+    _git(unmerged, "commit", "-q", "-m", "lane work")
 
     merged = scoped / "fan-b" / "lane-1"
     merged.parent.mkdir(parents=True)
@@ -3408,7 +3410,8 @@ def test_sweep_keeps_a_clone_whose_tip_the_origin_cannot_reach(
     subrun.clone_workspace(origin, lane)
     git_ops.create_branch(lane, "agent6/fan-x-l1")
     (lane / "x.txt").write_text("lane work\n", encoding="utf-8")
-    git_ops.commit_all(lane, "lane work")
+    _git(lane, "add", "-A")
+    _git(lane, "commit", "-q", "-m", "lane work")
     tip = subprocess.run(
         ["git", "-C", str(lane), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
     ).stdout.strip()

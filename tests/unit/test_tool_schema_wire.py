@@ -2,8 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """Structural pin for the LLM-facing tool schemas.
 
-``schemas_as_provider_tools()`` emits the Anthropic-shape descriptors the model
-sees for every tool in ``ALL_TOOLS``. Their STRUCTURE -- tool names, required
+``wire_schema()`` emits the input schemas the model sees for every tool in
+``ALL_TOOLS``. Their STRUCTURE -- tool names, required
 fields, property names and types (incl. nested ``$defs`` like ``EditPair``) --
 is frozen LLM I/O: a silent drift changes what every model can call. This pins
 that structure against a golden digest so a schema change is deliberate.
@@ -23,8 +23,8 @@ from agent6.tools import schema as tools_schema
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_tool_schemas.json"
 # The loop-only control tools (finish_session, run_metric_command, the task
 # tools, ask_user, use_skill), plan's finish_planning, ask's agent6_docs -- the
-# LLM-facing surface OUTSIDE ALL_TOOLS that schemas_as_provider_tools() (and so
-# _GOLDEN) does not cover. Pinned as a deduped, name-sorted digest.
+# LLM-facing surface OUTSIDE ALL_TOOLS that _GOLDEN does not cover.
+# Pinned as a deduped, name-sorted digest.
 _GOLDEN_EXTRA = pathlib.Path(__file__).parent / "data" / "golden_extra_tool_schemas.json"
 
 
@@ -60,10 +60,7 @@ def _entry(name: str, schema: dict[str, Any]) -> dict[str, Any]:
 
 
 def _digest() -> list[dict[str, Any]]:
-    return [
-        _entry(tool["name"], tool["input_schema"])
-        for tool in tools_schema.schemas_as_provider_tools()
-    ]
+    return [_entry(cls.TOOL_NAME, tools_schema.wire_schema(cls)) for cls in tools_schema.ALL_TOOLS]
 
 
 def _extra_digest() -> list[dict[str, Any]]:

@@ -296,18 +296,6 @@ def _read_pid_record(session_dir: pathlib.Path) -> tuple[int, str] | None:
 type ProcessIdentity = tuple[int, str]
 
 
-def process_identity(pid: int) -> ProcessIdentity:
-    """Return a pid with the start time that distinguishes it from later reuse.
-
-    Args:
-        pid: The pid.
-
-    Returns:
-        The identity.
-    """
-    return pid, _proc_start_time(pid)
-
-
 def process_is_alive(identity: ProcessIdentity) -> bool:
     """Return whether an identity still names its live process.
 

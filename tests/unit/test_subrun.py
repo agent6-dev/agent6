@@ -64,7 +64,8 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: pathlib.Path) -> No
     branch = "agent6/lane-1"
     git_ops.create_branch(lane_repo, branch)
     (lane_repo / "feature.txt").write_text("new stuff\n", encoding="utf-8")
-    git_ops.commit_all(lane_repo, "lane change")
+    _git(lane_repo, "add", "-A")
+    _git(lane_repo, "commit", "-q", "-m", "lane change")
 
     lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)
@@ -130,7 +131,8 @@ def test_import_run_refuses_existing_run_dir(tmp_path: pathlib.Path) -> None:
     branch = "agent6/lane-1"
     git_ops.create_branch(lane_repo, branch)
     (lane_repo / "feature.txt").write_text("new stuff\n", encoding="utf-8")
-    git_ops.commit_all(lane_repo, "lane change")
+    _git(lane_repo, "add", "-A")
+    _git(lane_repo, "commit", "-q", "-m", "lane change")
 
     lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01ABC"
     lane_session_dir.mkdir(parents=True)

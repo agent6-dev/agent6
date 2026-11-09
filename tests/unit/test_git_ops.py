@@ -72,7 +72,8 @@ def test_path_limited_stash_keeps_staged_deletions_and_renames(
     """A selected staged deletion or rename stashes without taking unrelated run edits."""
     _init_repo(tmp_path)
     (tmp_path / "run [work].py").write_text("x = 1\n", encoding="utf-8")
-    git_ops.commit_all(tmp_path, "track run file")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "track run file"], check=True)
     (tmp_path / "run [work].py").write_text("x = 5\n", encoding="utf-8")
     (tmp_path / "notes.txt").write_text("operator notes\n", encoding="utf-8")
     selected = {"README.md"}
@@ -168,7 +169,8 @@ def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: pathlib.Path) -> None:
     (tmp_path / "new.txt").write_text("x\n", encoding="utf-8")
     # Index-refreshing op through agent6's hardened command runner.
     git_read.status(tmp_path)
-    git_ops.commit_all(tmp_path, "msg")
+    git_command.run(tmp_path, "add", "-A")
+    git_command.run(tmp_path, "commit", "-m", "msg")
     assert not marker.exists(), "repo core.fsmonitor command executed on the host"
 
 
@@ -193,7 +195,8 @@ def test_git_ops_skips_repo_hooks_by_default(tmp_path: pathlib.Path) -> None:
     marker = tmp_path / "HOOK_FIRED"
     _add_pre_commit_hook(tmp_path, marker)
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
-    git_ops.commit_all(tmp_path, "c")  # no set_repo_hook_policy call: the default governs
+    git_command.run(tmp_path, "add", "-A")
+    git_command.run(tmp_path, "commit", "-m", "c")  # no set_repo_hook_policy: the default governs
     assert not marker.exists()
 
 
@@ -204,7 +207,8 @@ def test_git_ops_runs_repo_hooks_when_enabled(tmp_path: pathlib.Path) -> None:
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
     try:
         git_policy.set_repo_hook_policy(True)  # git.run_repo_hooks = true
-        git_ops.commit_all(tmp_path, "c")
+        git_command.run(tmp_path, "add", "-A")
+        git_command.run(tmp_path, "commit", "-m", "c")
         assert marker.exists()
     finally:
         git_policy.set_repo_hook_policy(False)  # reset process-wide policy for other tests
@@ -271,7 +275,9 @@ def test_commit_diff_survives_poisoned_diff_external(tmp_path: pathlib.Path) -> 
         check=True,
     )
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
-    sha = git_ops.commit_all(tmp_path, "change readme")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "change readme"], check=True)
+    sha = _rev(tmp_path, "HEAD")
     out = git_read.commit_diff(tmp_path, sha)
     assert not marker.exists(), "repo diff.external command executed on the host"
     assert "README.md" in out, "git show honored the external diff and lost the patch"
@@ -303,7 +309,9 @@ def test_commit_diff_survives_poisoned_textconv(tmp_path: pathlib.Path) -> None:
     marker = tmp_path / "PWNED_TEXTCONV_SHOW"
     _poison_textconv(tmp_path, marker)
     (tmp_path / "README.md").write_text("changed\n", encoding="utf-8")
-    sha = git_ops.commit_all(tmp_path, "change readme")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "change readme"], check=True)
+    sha = _rev(tmp_path, "HEAD")
     out = git_read.commit_diff(tmp_path, sha)
     assert not marker.exists(), "git show ran the repo textconv driver on the host"
     assert "README.md" in out, "git show lost the patch under --no-textconv"
@@ -322,7 +330,8 @@ def test_git_ops_neutralizes_repo_gpg_signing(tmp_path: pathlib.Path) -> None:
         check=True,
     )
     (tmp_path / "n.txt").write_text("x\n", encoding="utf-8")
-    git_ops.commit_all(tmp_path, "c")  # must not raise or fire the signing program
+    git_command.run(tmp_path, "add", "-A")
+    git_command.run(tmp_path, "commit", "-m", "c")  # must not raise or fire the signing program
     assert not marker.exists(), "repo gpg.program executed on the host during commit"
 
 
@@ -364,15 +373,6 @@ def test_status_dirty_repo(tmp_path: pathlib.Path) -> None:
     assert st.untracked_count == 1
 
 
-def test_commit_all_returns_sha_and_log(tmp_path: pathlib.Path) -> None:
-    _init_repo(tmp_path)
-    (tmp_path / "f.txt").write_text("y", encoding="utf-8")
-    sha = git_ops.commit_all(tmp_path, "add f", trailers={"agent6-step": "x"})
-    assert len(sha) == 40
-    log = git_read.recent_log(tmp_path, n=5)
-    assert "add f" in log
-
-
 def test_create_branch(tmp_path: pathlib.Path) -> None:
     _init_repo(tmp_path)
     git_ops.create_branch(tmp_path, "agent6/test")
@@ -385,7 +385,8 @@ def test_create_branch_at_is_additive_no_checkout(tmp_path: pathlib.Path) -> Non
     base = git_read.status(tmp_path).head_sha
     # Advance HEAD so base != current; the fork branch must land on base.
     (tmp_path / "b.txt").write_text("b\n", encoding="utf-8")
-    git_ops.commit_all(tmp_path, "second")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "second"], check=True)
     git_ops.create_branch_at(tmp_path, "agent6/fork", base)
     assert git_read.status(tmp_path).branch == "main", "must not check out the new branch"
     forked = subprocess.run(
@@ -407,7 +408,9 @@ def test_create_branch_at_idempotent_and_refuses_move(tmp_path: pathlib.Path) ->
     git_ops.create_branch_at(tmp_path, "agent6/fork", base)
     git_ops.create_branch_at(tmp_path, "agent6/fork", base)  # idempotent: no raise
     (tmp_path / "c.txt").write_text("c\n", encoding="utf-8")
-    other = git_ops.commit_all(tmp_path, "third")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "commit", "-q", "-m", "third"], check=True)
+    other = _rev(tmp_path, "HEAD")
     with pytest.raises(errors.GitError):
         git_ops.create_branch_at(tmp_path, "agent6/fork", other)
 
@@ -530,28 +533,6 @@ def test_verify_git_identity_missing_raises(
         git_read.verify_git_identity(repo, git_read.CommitIdentity())
 
 
-def test_commit_all_with_identity_overrides_author(tmp_path: pathlib.Path) -> None:
-    _init_repo(tmp_path)
-    (tmp_path / "f.txt").write_text("y", encoding="utf-8")
-    sha = git_ops.commit_all(
-        tmp_path,
-        "add f",
-        identity=git_read.CommitIdentity(
-            name="agent6",
-            email="agent6@example.com",
-            trailer="Co-authored-by: Alice <alice@example.com>",
-        ),
-    )
-    show = subprocess.run(
-        ["git", "-C", str(tmp_path), "show", "--no-patch", "--format=%an|%ae|%B", sha],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout
-    assert "agent6|agent6@example.com|" in show
-    assert "Co-authored-by: Alice <alice@example.com>" in show
-
-
 def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: pathlib.Path) -> None:
     """A failed git's error text includes stdout when stderr is empty.
 
@@ -560,7 +541,7 @@ def test_commit_error_surfaces_stdout_when_stderr_empty(tmp_path: pathlib.Path) 
     _init_repo(tmp_path)
     # `git commit` exits 1 with "nothing to commit, working tree clean" on stdout.
     with pytest.raises(errors.GitError) as excinfo:
-        git_ops.commit_all(tmp_path, "no-op commit on clean repo")
+        git_command.run(tmp_path, "commit", "-m", "no-op commit on clean repo")
     msg = str(excinfo.value)
     # The detail (from stdout) must be present so callers can pattern-match.
     assert "nothing to commit" in msg.lower()
@@ -588,7 +569,10 @@ def test_restore_stash_conflict_keeps_stash(tmp_path: pathlib.Path) -> None:
     git_ops.stash_tracked_changes(tmp_path, "agent6 auto-stash")
     # A conflicting commit on the same line means the stash cannot apply cleanly.
     (tmp_path / "README.md").write_text("committed change\n", encoding="utf-8")
-    git_ops.commit_all(tmp_path, "conflicting commit")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    subprocess.run(
+        ["git", "-C", str(tmp_path), "commit", "-q", "-m", "conflicting commit"], check=True
+    )
     entry = git_read.find_stash(tmp_path, "agent6 auto-stash")
     assert entry is not None
     assert git_ops.restore_stash(tmp_path, entry) is False
@@ -1333,21 +1317,6 @@ def test_condense_subject_drops_only_a_markdown_heading_mark() -> None:
     assert commit_message.condense_commit_message((), subject="#include <stdio.h> fails") == (
         "#include <stdio.h> fails"
     )
-
-
-def test_commit_all_appends_the_identity_trailer_once(tmp_path: pathlib.Path) -> None:
-    _init_repo(tmp_path)
-    (tmp_path / "f.txt").write_text("x", encoding="utf-8")
-    line = "Assisted-by: agent6:m1 (worker)"
-    git_ops.commit_all(tmp_path, "add f", identity=git_read.CommitIdentity(trailer=line))
-    head_msg = subprocess.run(
-        ["git", "-C", str(tmp_path), "log", "-1", "--format=%B"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert head_msg.count(line) == 1
-    assert head_msg.splitlines()[0] == "add f"
 
 
 def test_render_commit_trailer_joins_the_code_writers() -> None:

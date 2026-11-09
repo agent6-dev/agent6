@@ -284,29 +284,6 @@ def clone_repo(origin: pathlib.Path, dest: pathlib.Path) -> None:
     git_command.run(pathlib.Path("/"), "clone", str(origin.absolute()), str(dest.absolute()))
 
 
-def commit_all(
-    path: pathlib.Path,
-    message: str,
-    *,
-    trailers: dict[str, str] | None = None,
-    identity: git_read.CommitIdentity | None = None,
-) -> str:
-    """Stage everything and commit.
-
-    Args:
-        path: The repository.
-        message: The commit message.
-        trailers: Trailer lines appended to the message.
-        identity: The author and committer overrides; None uses the repo's config,
-            validated at startup by `git_read.verify_git_identity`.
-
-    Returns:
-        The new HEAD sha.
-    """
-    git_command.run(path, "add", "-A")
-    return _commit(path, message, trailers=trailers, identity=identity)
-
-
 def commit_paths(
     path: pathlib.Path,
     message: str,
@@ -336,7 +313,10 @@ def commit_paths(
     if not paths:
         raise errors.GitError("commit_paths requires at least one path")
     git_command.run(path, "add", "--", *paths, env_extra=git_read.LITERAL_PATHSPECS)
-    return _commit(path, message, trailers=trailers, identity=identity, only_paths=paths)
+    env_extra = {**(_identity_env(identity) or {}), **git_read.LITERAL_PATHSPECS}
+    full_message = _full_message(message, trailers, identity)
+    git_command.run(path, "commit", "-m", full_message, "--", *paths, env_extra=env_extra)
+    return git_command.run(path, "rev-parse", "HEAD").stdout.strip()
 
 
 def _identity_env(identity: git_read.CommitIdentity | None) -> dict[str, str] | None:
@@ -609,35 +589,6 @@ def tree_with_paths_from(path: pathlib.Path, tree: str, rev: str, paths: Sequenc
         return git_command.run(path, "write-tree", env_extra=env).stdout.strip()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-
-
-def _commit(
-    path: pathlib.Path,
-    message: str,
-    *,
-    trailers: dict[str, str] | None,
-    identity: git_read.CommitIdentity | None,
-    only_paths: tuple[str, ...] | None = None,
-) -> str:
-    """Commit the index, or only the given paths from the worktree.
-
-    Args:
-        path: The repository.
-        message: The commit message.
-        trailers: Trailer lines appended to the message.
-        identity: The author and committer overrides; None uses the repo's config.
-        only_paths: The repo-relative paths; None commits the index.
-
-    Returns:
-        The new HEAD sha.
-    """
-    env_extra = {**(_identity_env(identity) or {}), **git_read.LITERAL_PATHSPECS}
-    full_message = _full_message(message, trailers, identity)
-    argv = ["commit", "-m", full_message]
-    if only_paths is not None:
-        argv.extend(["--", *only_paths])
-    git_command.run(path, *argv, env_extra=env_extra)
-    return git_command.run(path, "rev-parse", "HEAD").stdout.strip()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

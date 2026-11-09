@@ -742,15 +742,3 @@ def wire_schema(cls: type[_ToolInput]) -> dict[str, Any]:
         model.pop("description", None)
     schema.setdefault("type", "object")
     return schema
-
-
-def schemas_as_provider_tools() -> list[dict[str, Any]]:
-    """Return ALL_TOOLS as Anthropic-shape tool descriptors, dict-typed to avoid an import cycle."""
-    return [
-        {
-            "name": cls.TOOL_NAME,
-            "description": cls.TOOL_DESCRIPTION,
-            "input_schema": wire_schema(cls),
-        }
-        for cls in ALL_TOOLS
-    ]

@@ -19,7 +19,6 @@ from agent6.config import Config, RoleModel
 from agent6.harness import subrun
 from agent6.sessions import manifest, process
 from agent6.ui.cli import parallel
-from agent6.vcs import git_ops
 from agent6.viewmodel import session_log
 
 
@@ -90,7 +89,8 @@ def test_detached_lane_loads_snapshot_and_records_notes(
     monkeypatch.delenv("AGENT6_REASONING_EFFORT", raising=False)
     subprocess.run(["git", "init", "-q", "-b", "main", str(short_repo)], check=True)
     (short_repo / "README.md").write_text("Local lane smoke.\n")
-    git_ops.commit_all(short_repo, "init")
+    subprocess.run(["git", "-C", str(short_repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(short_repo), "commit", "-q", "-m", "init"], check=True)
     global_path = paths.global_config_path()
     global_path.parent.mkdir(parents=True, exist_ok=True)
     global_path.write_text(
