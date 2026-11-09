@@ -30,7 +30,9 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         calls.update(form="new", argv=argv)
         return 0
 
-    def _exec_in_session(layout: Any, cfg: Any, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
+    def _exec_in_session(
+        layout: Any, cfg: Any, cwd: pathlib.Path, argv: tuple[str, ...], **kwargs: object
+    ) -> int:
         calls.update(form="session", argv=argv)
         return 0
 
@@ -45,6 +47,39 @@ def dispatched(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr("agent6.ui.cli.common.resolve_target", _resolve)
     monkeypatch.setattr("agent6.config.layer.load_effective", _effective)
     return calls
+
+
+@pytest.mark.parametrize("fresh", [False, True])
+def test_disable_sandbox_reaches_the_executed_policy(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, fresh: bool
+) -> None:
+    """Both exec forms carry the explicit opt-out into the command's real policy."""
+    from agent6.sessions import layout as sessions_layout
+    from agent6.ui.cli import common, net_cmds
+
+    monkeypatch.chdir(tmp_path)
+    layout = sessions_layout.SessionLayout(tmp_path / "state", "test-session")
+
+    def target(_target: str) -> sessions_layout.SessionLayout:
+        return layout
+
+    def live(_directory: pathlib.Path) -> bool:
+        return True
+
+    monkeypatch.setattr(common, "resolve_target", target)
+    monkeypatch.setattr(net_cmds, "session_is_live", live)
+    seen: list[kinds.JailPolicy] = []
+
+    def attached(policy: kinds.JailPolicy, *_args: object, **_kwargs: object) -> int:
+        seen.append(policy)
+        return 0
+
+    monkeypatch.setattr(exec_cmds, "run_attached", attached)
+    argv = ["exec", "--disable-sandbox", *(["--new"] if fresh else [layout.session_id])]
+    assert cli.main([*argv, "--", "true"]) == 0
+    assert len(seen) == 1
+    assert seen[0].isolation == "none"
+    assert seen[0].network == "host"
 
 
 def test_new_takes_the_command_verbatim(dispatched: dict[str, Any]) -> None:

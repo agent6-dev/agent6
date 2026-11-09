@@ -5,14 +5,13 @@
 The protocol owns stdout, so the reporter writes to stderr. The run id is minted
 before the run starts, so `session/cancel` has something to address, and once per
 ACP session: later prompts resume the same run with their text as its first
-steering instruction. `run_task` reads the process cwd, so runs are serialised on
-the connection and a second prompt waits.
+steering instruction. Each execution receives its session cwd explicitly.
+Runs are serialised on the connection and a second prompt waits.
 """
 
 from __future__ import annotations
 
 import dataclasses
-import os
 import pathlib
 import sys
 import threading
@@ -255,7 +254,6 @@ class RunBridge:
 
     server: acp_server.ACPServer
     config_paths: tuple[pathlib.Path, ...] = ()
-    # One run at a time: the chdir in `_run` is process-global.
     _runs: threading.Lock = dataclasses.field(default_factory=threading.Lock)
     _running: acp_session.Session | None = None  # under `_runs`; named to a queued prompt
     _asks: threading.Lock = dataclasses.field(default_factory=threading.Lock)
@@ -534,7 +532,6 @@ class RunBridge:
             ACP's stop reason.
         """
         layout = session.layout(agent6_paths.state_dir(session.cwd))
-        os.chdir(session.cwd)
         session.execution += 1
         journal_before = viewmodel_tail.journal_size(layout.logs_path)
 
@@ -571,6 +568,7 @@ class RunBridge:
                     self.config_paths,
                     session.session_id,
                     frontend=self._frontend(session, announced),
+                    cwd=session.cwd,
                     force=False,
                     started_at=started_at,
                     steer=text,
@@ -584,6 +582,7 @@ class RunBridge:
                     effective.config,
                     text,
                     frontend=self._frontend(session, announced),
+                    cwd=session.cwd,
                     started_at=started_at,
                     session_id=session.session_id,
                     config_paths=self.config_paths,

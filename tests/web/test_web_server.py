@@ -2988,12 +2988,15 @@ def test_routes_payload_lists_every_route_and_the_modes_default(
         200,
         {"preset_label": "none (config default)", "model_label": "o/f (config default)"},
     )
-    pinned = {"harness": {"preset": "fast", "preset_from_flag": True}}
+    pinned = {
+        "harness": {"preset": "fast", "preset_from_flag": True},
+        "models": {"driver": {"provider": "o", "model": "recorded"}},
+    }
     manifest.write_text(json.dumps({"session_id": "run-r", "mode": "run", **pinned}))
     status, body, _ = _get(port, "/api/session/run-r/resume_defaults")
     assert json.loads(body) == {
         "preset_label": "fast (as recorded)",
-        "model_label": "o/f (config default)",
+        "model_label": "o/recorded (as recorded)",
     }
 
 

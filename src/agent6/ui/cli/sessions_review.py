@@ -106,7 +106,7 @@ def _cmd_sessions_review(  # noqa: PLR0911
         return 2
     budget = session_setup.budget_tracker(cfg)
     reviews_dir = paths.state_dir(cwd) / "reviews"
-    transcript_sink = TranscriptSink(reviews_dir)
+    transcript_sink = TranscriptSink(reviews_dir, objects_dir=reviews_dir / "objects")
     try:
         reviewer = role_providers.build_role_provider(
             cfg, "reviewer", transcript_sink=transcript_sink, budget=budget, seat="review:run"

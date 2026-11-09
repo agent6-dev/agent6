@@ -48,7 +48,7 @@ def _scan_for_secret(transcripts_dir: pathlib.Path, secret: str) -> list[pathlib
 def test_transcript_redacts_api_key_on_success(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-supersecret-do-not-leak"
     provider = AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -79,7 +79,7 @@ def test_transcript_redacts_api_key_on_success(
 def test_transcript_redacts_api_key_on_http_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-secret-error-path"
     provider = AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -98,7 +98,7 @@ def test_transcript_redacts_api_key_on_http_error(
 def test_transcript_redacts_api_key_on_network_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-secret-net-error"
     provider = AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -118,7 +118,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A 401 body echoing the key carries the marker, in the transcript and the error text."""
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     api_key = "sk-ant-echoed-back-by-a-gateway"
     provider = AnthropicProvider(
         api_key=api_key, model="claude-test", prompt_caching=False, transcript_sink=sink
@@ -139,7 +139,7 @@ def test_a_response_body_echoing_the_credential_is_scrubbed(
 
 def test_record_scrubs_credential_values_from_the_bodies(tmp_path: pathlib.Path) -> None:
     """A body string equal to a credential in the auth headers is scrubbed at serialization."""
-    sink = TranscriptSink(tmp_path / "t")
+    sink = TranscriptSink(tmp_path / "t", objects_dir=tmp_path / "objects")
     path = sink.record(
         request_headers={"authorization": "Bearer sk-tok-123456789"},
         request_body={"echo": "sk-tok-123456789"},
@@ -173,10 +173,12 @@ def test_seq_continues_across_resume_executions(tmp_path: pathlib.Path) -> None:
     conversation with a false 'context summarised' marker.
     """
     d = tmp_path / "transcripts"
-    leg1 = TranscriptSink(d)
+    leg1 = TranscriptSink(d, objects_dir=tmp_path / "objects")
     for _ in range(2):
         leg1.record(request_headers={}, request_body={}, response_status=200, response_body={})
-    leg2 = TranscriptSink(d)  # the resume's fresh sink over the same dir
+    leg2 = TranscriptSink(
+        d, objects_dir=tmp_path / "objects"
+    )  # the resume's fresh sink over the same dir
     p = leg2.record(request_headers={}, request_body={}, response_status=200, response_body={})
     assert json.loads(p.read_text(encoding="utf-8"))["seq"] == 3
     from agent6.viewmodel import transcript_render
@@ -199,7 +201,7 @@ def test_transcript_record_publishes_via_atomic_write(
         real(path, data)
 
     monkeypatch.setattr(portable, "atomic_write", spy)
-    sink = TranscriptSink(tmp_path)
+    sink = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects")
     path = sink.record(
         url="https://x",
         request_headers={"x-api-key": "sk-secret"},
@@ -243,7 +245,7 @@ def test_transcripts_omit_images_and_error_echoes(tmp_path: pathlib.Path, shape:
         ]
     }
     original = json.dumps(body)
-    path = TranscriptSink(tmp_path).record(
+    path = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
         request_headers={},
         request_body=body,
         response_status=400,
@@ -264,7 +266,11 @@ def test_image_error_echo_is_scrubbed_before_excerpting(
 ) -> None:
     """A long base64 echo cannot escape through the transport's short error excerpts."""
     encoded = base64.b64encode(b"private pixels" * 8 * copies).decode()
-    provider = AnthropicProvider(api_key="key", model="m", transcript_sink=TranscriptSink(tmp_path))
+    provider = AnthropicProvider(
+        api_key="key",
+        model="m",
+        transcript_sink=TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
+    )
 
     def post(url: str, **kwargs: Any) -> _FakeResponse:
         return _FakeResponse(status_code=400, text="bad image: " + encoded)
@@ -324,7 +330,7 @@ def test_transcript_omits_native_document_payload(tmp_path: pathlib.Path, shape:
             "resource": {"uri": "file:///page.pdf", "mimeType": "application/pdf", "blob": encoded},
         },
     }[shape]
-    path = TranscriptSink(tmp_path).record(
+    path = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
         request_headers={},
         request_body={
             "content": [
@@ -430,7 +436,7 @@ def test_credentials_are_scrubbed_before_payload_echoes(
         "type": "image",
         "source": {"type": "base64", "media_type": "image/png", "data": encoded},
     }
-    sink = TranscriptSink(tmp_path)
+    sink = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects")
     text = "upstream echoed " + secret
     if target == "sink":
         path = sink.record(
@@ -573,7 +579,7 @@ def test_synthetic_media_labels_retain_source_path(
         if responses
         else {"messages": openai_messages.anthropic_to_openai_messages("s", canonical)}
     )
-    saved = TranscriptSink(tmp_path).record(
+    saved = TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
         request_headers={},
         request_body=request,
         response_status=200,
@@ -581,6 +587,6 @@ def test_synthetic_media_labels_retain_source_path(
     )
     text = saved.read_text()
     assert encoded not in text
-    body = objects.materialize(json.loads(text), saved.parent.parent / "objects")["request"]["body"]
+    body = objects.materialize(json.loads(text), tmp_path / "objects")["request"]["body"]
     last = body["input" if responses else "messages"][-1]["content"][-1]
     assert last["source"]["source_path"] == path

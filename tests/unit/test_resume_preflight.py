@@ -1371,6 +1371,65 @@ def test_resume_model_flag_is_recorded_and_replayed(
     ]
 
 
+@pytest.mark.parametrize("parked", [False, True])
+@pytest.mark.parametrize("model", ["", "claude-y"])
+def test_resume_keeps_the_recorded_route_or_reports_its_replacement(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    parked: bool,
+    model: str,
+) -> None:
+    """A config-selected model survives resume unless the operator picks another model."""
+    from agent6.app import stamps
+    from agent6.config import Config, load_config
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_repo(repo)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")
+    session_id = "plan-ROUTE1"
+    session_dir = paths.state_dir(repo) / "sessions" / "runs" / session_id
+    if parked:
+        _park_manifest(session_dir, preset="none", from_flag=False)
+    else:
+        _plan_session_dir(repo, session_id)
+    _stub_load_effective(monkeypatch, _PLANNER_AND_WORKER, tmp_path)
+    cfg = load_config(tmp_path / "cfg.toml")
+    mode = "run" if parked else "plan"
+    role = "worker" if parked else "planner"
+    recorded = cfg.with_model_route(role, cfg.model_route(role, "claude-recorded"))
+    stamps.stamp_execution(session_dir, recorded, mode, "none")
+    seen: list[str] = []
+
+    def capture(cfg: Config, *_args: object, **_kwargs: object) -> int:
+        driver = cfg.models.resolve(role)
+        assert driver is not None
+        seen.append(driver.model)
+        return 0
+
+    monkeypatch.setattr(run, "run_task", capture)
+
+    def ready(*_args: object, **_kwargs: object) -> bool:
+        return True
+
+    monkeypatch.setattr(preflight, "route_preflight", ready)
+    monkeypatch.setattr(session_runtime, "select_isolation", _unconfined)
+    monkeypatch.setattr(git_read, "verify_git_identity", _nothing)
+
+    def execute(cfg: Config, *args: object, **kwargs: object) -> execution.ExecutionEnd:
+        capture(cfg)
+        return execution.ExecutionEnd(0)
+
+    monkeypatch.setattr(execution, "run_execution", execute)
+    assert cli_resume._cmd_resume((), session_id, force=False, model=model) == 0
+    assert seen == [model or "claude-recorded"]
+    output = capsys.readouterr()
+    note = "resuming with anthropic/claude-y (recorded: anthropic/claude-recorded)"
+    assert (note in output.out + output.err) == bool(model)
+
+
 def test_a_parked_resume_hands_run_task_the_config_path(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

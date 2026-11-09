@@ -64,7 +64,7 @@ def test_other_streams_keep_failed_usage_on_the_result(
     """Failed streams retain per-call cache usage instead of exposing only a budget total."""
     tracker = agent6_budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1)
     provider: Provider
-    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     creation = 0
     if api_format == "anthropic":
         provider = AnthropicProvider(

@@ -183,6 +183,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     session_id: str,
     *,
     frontend: app_frontend.SessionFrontend,
+    cwd: pathlib.Path | None = None,
     force: bool,
     started_at: float,
     tui: bool = False,
@@ -196,13 +197,14 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
 ) -> int:
     """Resume a paused or crashed session from its snapshot.
 
-    The budget is a fresh ceiling per execution. The process cwd is the
-    repository; a fork's execution drives the fork's own worktree.
+    The budget is a fresh ceiling per execution.
+    A fork's execution drives the fork's own worktree.
 
     Args:
         config_paths: The `--config` files in command-line order; none means discovery alone.
         session_id: The session's id or prefix.
         frontend: The surface's seam: console, confirms, approvals, questions.
+        cwd: The repository directory; None uses the process cwd.
         force: Whether to resume onto a chain tip that diverged from the snapshot.
         started_at: The instant this execution began; the stale-state clear keeps
             bridge markers written since.
@@ -218,7 +220,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     Returns:
         The process exit code.
     """
-    repo = pathlib.Path.cwd()
+    repo = cwd if cwd is not None else pathlib.Path.cwd()
     state = agent6_paths.state_dir(repo)
     if steer.strip() and (problem := directive.steer_problem(steer)) is not None:
         reporter.error(problem)
@@ -233,8 +235,8 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
     # The manifest first: clearing state before it would clobber a session resume refuses.
     try:
         manifest = sessions_manifest.read_manifest(layout.session_dir)
-        # A `--model` set on the run replays unless this resume sets its own.
-        recorded = manifest.models.replay_driver
+        # A resume keeps the recorded route unless it sets its own.
+        recorded = manifest.models.driver
         route: str | kinds.ModelRoute | None = model or (
             kinds.ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         )
@@ -326,6 +328,16 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             except ConfigError as exc:
                 reporter.error(str(exc))
                 return 2
+            driver = cfg.models.resolve(role)
+            if (
+                recorded is not None
+                and driver is not None
+                and (driver.provider, driver.model) != (recorded.provider, recorded.model)
+            ):
+                reporter.note(
+                    f"resuming with {driver.provider}/{driver.model}"
+                    f" (recorded: {recorded.provider}/{recorded.model})"
+                )
             saved_task = manifest.parked_task
             lock.release_single_writer(worker_lock_fd)
             worker_lock_fd = None
@@ -335,6 +347,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 saved_task,
                 operator_task=manifest.parked_operator_task,
                 frontend=frontend,
+                cwd=repo,
                 started_at=started_at,
                 session_id=session_id,
                 config_paths=config_paths,
@@ -497,7 +510,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 reporter.error(str(exc))
                 return 2
 
-        transcript_sink = TranscriptSink(layout.transcripts_dir)
+        transcript_sink = TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
         events = event_log.EventSink(layout.logs_path)
         # The execution's one gate to the operator, whichever front-end answers.
         prompts = operator_prompts.OperatorPrompts(
@@ -692,6 +705,16 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             reporter.note(
                 f"this run's earlier work landed on {manifest.base_branch}; its diff and"
                 f" next merge start at {moved[:12]}"
+            )
+        driver = cfg.models.resolve(role)
+        if (
+            recorded is not None
+            and driver is not None
+            and (driver.provider, driver.model) != (recorded.provider, recorded.model)
+        ):
+            reporter.note(
+                f"resuming with {driver.provider}/{driver.model}"
+                f" (recorded: {recorded.provider}/{recorded.model})"
             )
         # Every preflight passed: the operator's new choices are recorded from here.
         if preset:

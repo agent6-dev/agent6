@@ -63,7 +63,7 @@ def test_transcript_reference_lists_the_written_keys(tmp_path: pathlib.Path) -> 
 
     from agent6.providers import provider_types
 
-    path = provider_types.TranscriptSink(tmp_path).record(
+    path = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects").record(
         request_headers={},
         request_body={},
         response_status=200,

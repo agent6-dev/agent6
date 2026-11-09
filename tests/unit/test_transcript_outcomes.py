@@ -27,7 +27,9 @@ def test_sessions_transcript_labels_an_unfinalized_record(
     )
     layout.ensure()
     layout.logs_path.write_text('{"type": "session.start"}\n')
-    provider_types.TranscriptSink(layout.transcripts_dir).for_seat(seat).open(
+    provider_types.TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir).for_seat(
+        seat
+    ).open(
         request_headers={},
         request_body={"messages": [{"role": "user", "content": "pending request"}]},
     )
@@ -78,7 +80,9 @@ def test_history_search_accepts_incomplete_and_error_records(
     tmp_path: pathlib.Path, error: str | None
 ) -> None:
     """An empty or raw error response does not make a valid attempt unreadable to search."""
-    attempt = provider_types.TranscriptSink(tmp_path / "transcripts").open(
+    attempt = provider_types.TranscriptSink(
+        tmp_path / "transcripts", objects_dir=tmp_path / "objects"
+    ).open(
         request_headers={},
         request_body={"messages": [{"role": "user", "content": "pending request"}]},
     )

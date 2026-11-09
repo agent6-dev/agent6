@@ -31,9 +31,9 @@ from typing import TYPE_CHECKING
 import webm
 
 if TYPE_CHECKING:
-    from playwright.sync_api import Page
+    from playwright.sync_api import Page, ViewportSize
 
-VIEWPORTS = {
+VIEWPORTS: dict[str, ViewportSize] = {
     "desktop": {"width": 1280, "height": 800},
     "hero": {"width": 1600, "height": 900},
     "phone": {"width": 390, "height": 844},

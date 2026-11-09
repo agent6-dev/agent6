@@ -31,7 +31,12 @@ def seen(monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path) -> dict[str, A
         return sessions_layout.SessionLayout(state_dir=tmp_path, session_id=target or "newest-run")
 
     def _exec(
-        layout: sessions_layout.SessionLayout, cfg: Any, cwd: pathlib.Path, argv: tuple[str, ...]
+        layout: sessions_layout.SessionLayout,
+        cfg: Any,
+        cwd: pathlib.Path,
+        argv: tuple[str, ...],
+        *,
+        disable_sandbox: bool = False,
     ) -> int:
         calls.update(target=layout.session_id, argv=argv)
         return 0

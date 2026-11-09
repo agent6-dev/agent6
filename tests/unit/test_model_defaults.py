@@ -233,7 +233,7 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
             "review": {"trigger": "off"},
         }
     )
-    sink = provider_types.TranscriptSink(tmp_path)
+    sink = provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path.parent / "objects")
     events = event_log.EventSink(tmp_path / "events.jsonl")
     budget = session_setup.budget_tracker(cfg)
     built: list[tuple[str, str]] = []

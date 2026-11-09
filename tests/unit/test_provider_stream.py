@@ -135,7 +135,7 @@ def test_idle_kill_before_output_reports_prefill_and_records(
 ) -> None:
     monkeypatch.setattr(stream_lifecycle, "STREAM_FIRST_DATA_TIMEOUT_S", 0.05)
     monkeypatch.setattr(stream_lifecycle, "STREAM_WATCHDOG_TICK_S", 0.01)
-    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
 
     with (
         mock.patch("httpx2.stream", side_effect=_serve(_ParkedResponse())),
@@ -270,7 +270,7 @@ def test_idle_kill_classifies_when_close_ends_iteration_cleanly(
 
 
 def test_4xx_threads_status_retry_after_and_label(tmp_path: pathlib.Path) -> None:
-    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     resp = _ErrorResponse(status_code=429, body='{"error":"rate"}', headers={"retry-after": "7"})
 
     with (
@@ -289,7 +289,7 @@ def test_4xx_threads_status_retry_after_and_label(tmp_path: pathlib.Path) -> Non
 
 
 def test_http_error_body_read_stops_at_the_surfaced_prefix(tmp_path: pathlib.Path) -> None:
-    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     resp = _ChunkedErrorResponse()
 
     with (

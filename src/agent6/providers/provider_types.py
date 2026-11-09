@@ -233,6 +233,7 @@ class TranscriptAttempt:
     """
 
     path: pathlib.Path | None = None
+    objects_dir: pathlib.Path | None = None
     ts: str = ""
     seq: int = 0
     model_call_id: str | None = None
@@ -296,8 +297,9 @@ class TranscriptAttempt:
         text = scrub_secret_values(json.dumps(payload), self.request_headers)
         clean = json.loads(scrub_secret_values(text, self.response_headers))
         clean = media.omit_payloads(clean)
+        assert self.objects_dir is not None
         clean["request"]["body"] = objects.reference_fields(
-            clean["request"]["body"], self.path.parent.parent / "objects"
+            clean["request"]["body"], self.objects_dir
         )
         portable.atomic_write(self.path, json.dumps(clean, indent=2, sort_keys=True))
 
@@ -443,12 +445,13 @@ class TranscriptSink:
     A sink over existing transcripts continues from the highest sequence.
     """
 
-    __slots__ = ("_dir", "_lock", "_seq")
+    __slots__ = ("_dir", "_lock", "_objects_dir", "_seq")
 
-    def __init__(self, transcripts_dir: pathlib.Path) -> None:
-        """Open the sink over a directory, creating it and continuing its seq."""
+    def __init__(self, transcripts_dir: pathlib.Path, *, objects_dir: pathlib.Path) -> None:
+        """Open the transcript directory with an explicit store for referenced values."""
         paths.mkdir_for_real_user(transcripts_dir)
         self._dir = transcripts_dir
+        self._objects_dir = objects_dir
         self._lock = threading.Lock()
         self._seq = retention.last_sequence(transcripts_dir)
 
@@ -485,6 +488,7 @@ class TranscriptSink:
         ts = datetime.datetime.now(tz=datetime.UTC).strftime("%Y%m%dT%H%M%S%fZ")
         attempt = TranscriptAttempt(
             path=self._dir / f"{ts}-{seq:06d}.json",
+            objects_dir=self._objects_dir,
             ts=ts,
             seq=seq,
             model_call_id=call_context.model_call_id if call_context is not None else None,

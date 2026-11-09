@@ -273,6 +273,7 @@ def _add_net_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -
             " Without CMD, opens $SHELL (/bin/sh when the sandbox's PATH lacks it)."
         ),
     )
+    common._add_sandbox_flags(exec_p, approvals=False)
     exec_rest = exec_p.add_argument(
         "rest",
         nargs=argparse.REMAINDER,

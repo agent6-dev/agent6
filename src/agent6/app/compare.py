@@ -92,7 +92,7 @@ def rank(
     """
     reviewer = cfg.models.resolve("reviewer")
     if len(candidates) > 1 and reviewer is not None:
-        sink = TranscriptSink(transcript_dir)
+        sink = TranscriptSink(transcript_dir, objects_dir=transcript_dir / "objects")
         budget = session_setup.budget_tracker(cfg, max_usd=max_usd)
         try:
             provider: Provider = build_provider(cfg, sink, budget, events)

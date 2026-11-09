@@ -23,6 +23,27 @@ def _args(**kw: bool) -> argparse.Namespace:
     return argparse.Namespace(**kw)
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["run", "--disable-sandbox", "task"],
+        ["resume", "--disable-sandbox", "session"],
+        ["fork", "--disable-sandbox", "session"],
+        ["plan", "--disable-sandbox", "task"],
+        ["ask", "--disable-sandbox", "question"],
+        ["exec", "--new", "--disable-sandbox", "--", "ls", "/"],
+        ["exec", "--disable-sandbox", "session", "--", "ls", "/"],
+        ["machine", "run", "--disable-sandbox", "loop.asm.toml"],
+    ],
+)
+def test_every_command_runner_accepts_the_sandbox_opt_out(argv: list[str]) -> None:
+    """The operator's explicit sandbox opt-out has the same spelling on every runner."""
+    from agent6.ui.cli import parser as cli_parser
+
+    args = cli_parser.build_parser().parse_args(cli_parser._inject_default_verb(argv))
+    assert args.disable_sandbox is True
+
+
 def test_from_args_reads_both_flags() -> None:
     o = session_setup.SandboxOverrides.from_args(_args(disable_sandbox=True, auto_approve=True))
     assert o.disable_sandbox is True

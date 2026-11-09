@@ -159,7 +159,7 @@ def run_parallel(
             origin,
             mode="run",
             events=events,
-            transcript_sink=TranscriptSink(layout.transcripts_dir),
+            transcript_sink=TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir),
             budget=session_setup.budget_tracker(cfg),
             reporter=reporter,
         )

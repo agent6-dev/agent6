@@ -51,7 +51,7 @@ def _session(
     (layout.session_dir / "receipt.json").write_text('{"kept": true}')
     (layout.graph_dir / "node.json").write_text('{"id": "0001"}')
     layout.journal_path.write_text('{"graph_version": 1}\n')
-    sink = provider_types.TranscriptSink(layout.transcripts_dir)
+    sink = provider_types.TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
     for _ in range(2):
         sink.record(
             request_headers={},
@@ -93,7 +93,7 @@ def test_prune_artifacts_keeps_recovery_and_records_counts_and_sequence(
     assert main(["fork", layout.session_id, "--at-turn", "1", "--no-run"]) == 2
     assert stamp in capsys.readouterr().err
     assert loop_snapshot.load_session_snapshot(layout.session_dir / "loop_state.json").messages
-    resumed = provider_types.TranscriptSink(layout.transcripts_dir)
+    resumed = provider_types.TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
     attempt = resumed.open(
         request_headers={}, request_body={"messages": [{"role": "user", "content": "again"}]}
     )
@@ -103,7 +103,7 @@ def test_prune_artifacts_keeps_recovery_and_records_counts_and_sequence(
     assert stamp in captured.err and json.loads(captured.out)[0]["seq"] == 3
     assert main(["sessions", "prune", "--older-than", "7"]) == 0
     assert (
-        provider_types.TranscriptSink(layout.transcripts_dir)
+        provider_types.TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
         .open(request_headers={}, request_body={})
         .seq
         == 4

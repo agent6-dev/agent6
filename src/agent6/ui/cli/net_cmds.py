@@ -294,7 +294,12 @@ def _launch_policy(
 
 
 def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
-    layout: sessions_layout.SessionLayout, cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]
+    layout: sessions_layout.SessionLayout,
+    cfg: Config,
+    cwd: pathlib.Path,
+    argv: tuple[str, ...],
+    *,
+    disable_sandbox: bool = False,
 ) -> int:
     """Run a command in the jail, network and tree the run's own commands get.
 
@@ -309,6 +314,7 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
         cfg: The effective config, the fallback when the run is unstamped.
         cwd: The checkout, the workspace of a run that has no worktree of its own.
         argv: The command.
+        disable_sandbox: Run on the host instead of under the recorded confinement.
 
     Returns:
         The command's exit code; 2 when the run is not live or its network is gone.
@@ -318,10 +324,12 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
         common.refuse(f"{no_session_network_reason(layout)}")
         return 2
     pid = process.read_session_netns_pid(layout.session_dir)
-    launch = _launch_policy(layout, cfg, pid)
+    launch = ("none", "host") if disable_sandbox else _launch_policy(layout, cfg, pid)
     if launch is None:
         return 2
     isolation, network = launch
+    if disable_sandbox:
+        common.note("WARNING: --disable-sandbox runs this command on the host without confinement.")
     workspace, git_dir = _recorded_workspace(layout, cwd)
     try:
         policy = exec_cmds.exec_policy(

@@ -59,7 +59,7 @@ class ModelsBrief(pydantic.BaseModel):
 
     @property
     def replay_driver(self) -> ModelBrief | None:
-        """The driver a resume or fork without its own `--model` re-applies: a flag-selected one."""
+        """The flag-selected driver a fork without its own `--model` re-applies."""
         return self.driver if self.driver_from_flag else None
 
 

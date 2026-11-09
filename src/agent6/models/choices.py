@@ -146,7 +146,7 @@ def default_label(name: str, *, recorded: bool = False) -> str:
 
     Args:
         name: What the entry runs under; "" reads as `none`.
-        recorded: A resume replays the run's own flag, so the origin reads `as recorded`.
+        recorded: A resume replays the run's recorded choice.
 
     Returns:
         The label.
@@ -163,8 +163,8 @@ def resume_defaults(
 ) -> tuple[str, str]:
     """Return the (preset, model) labels of a resume row's no-flag entries.
 
-    A preset or model the run set by flag is replayed; anything else is what the config
-    resolves now. An unreadable manifest names the config's.
+    The recorded model and any flag-selected preset are replayed.
+    An unreadable manifest names the config's choices.
 
     Args:
         cwd: The hub's directory.
@@ -181,7 +181,7 @@ def resume_defaults(
     except sessions_manifest.ManifestError:
         replayed, driver, mode = "", None, "run"
     else:
-        replayed, driver = manifest.harness.replay_preset, manifest.models.replay_driver
+        replayed, driver = manifest.harness.replay_preset, manifest.models.driver
     route = (
         f"{driver.provider}/{driver.model}"
         if driver is not None

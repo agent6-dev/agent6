@@ -51,7 +51,8 @@ WRITERS: dict[str, Callable[[pathlib.Path, pathlib.Path], object]] = {
         layout.SessionLayout(state, "s1").logs_path
     ).emit("session.stranded"),
     "transcripts": lambda repo, state: provider_types.TranscriptSink(
-        layout.SessionLayout(state, "s1").transcripts_dir
+        layout.SessionLayout(state, "s1").transcripts_dir,
+        objects_dir=layout.SessionLayout(state, "s1").objects_dir,
     ),
     "background shells": lambda repo, state: background.BackgroundShells(_session(state)),
     "graph append": lambda repo, state: storage.append_jsonl(

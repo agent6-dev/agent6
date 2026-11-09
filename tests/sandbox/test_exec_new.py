@@ -44,6 +44,28 @@ def test_a_pipe_passes_through_and_the_exit_code_is_the_commands(tmp_path: pathl
     assert failed.returncode == 7, failed.stderr
 
 
+@pytest.mark.needs_namespaces
+def test_the_full_jail_root_lists_without_becoming_writable(tmp_path: pathlib.Path) -> None:
+    """The private root lists mounted names but grants no root writes or host files."""
+    config = tmp_path / "full.toml"
+    config.write_text('[sandbox]\nisolation = "full"\n', encoding="utf-8")
+    done = subprocess.run(
+        _exec_new(
+            "--",
+            "sh",
+            "-c",
+            "ls -1 / && ! touch /root-write-probe && ! cat /etc/shadow",
+            config=config,
+        ),
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        cwd=tmp_path,
+        check=False,
+    )
+    assert done.returncode == 0, done.stderr
+    assert {b"dev", b"proc", b"tmp", b"usr"} <= set(done.stdout.splitlines())
+
+
 @pytest.fixture
 def granted_config_home(monkeypatch: pytest.MonkeyPatch) -> Iterator[pathlib.Path]:
     """An `XDG_CONFIG_HOME` outside /tmp, which `full` replaces whole: only the mask can hide it."""

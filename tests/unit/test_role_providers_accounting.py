@@ -38,7 +38,9 @@ def test_shared_model_id_keeps_each_routes_price(
         }
     )
     tracker = budget.BudgetTracker(max_usd=20, max_tokens_fallback=-1, max_plan_points=-1)
-    sink = provider_types.TranscriptSink(tmp_path / "transcript.jsonl")
+    sink = provider_types.TranscriptSink(
+        tmp_path / "transcript.jsonl", objects_dir=tmp_path / "objects"
+    )
     response = httpx2.Response(
         200,
         request=httpx2.Request("POST", "https://api.openai.com/v1/chat/completions"),

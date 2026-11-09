@@ -536,7 +536,12 @@ def _dispatch_exec_new(args: argparse.Namespace) -> int:
         common.error(f"{exc}")
         return 2
     argv = tuple(rest[1:] if rest[:1] == ["--"] else rest)
-    return exec_cmds.exec_new(eff.config, pathlib.Path.cwd(), argv)
+    cfg = (
+        eff.config.with_sandbox_overrides(disable_sandbox=True)
+        if args.disable_sandbox
+        else eff.config
+    )
+    return exec_cmds.exec_new(cfg, pathlib.Path.cwd(), argv)
 
 
 def _dispatch_exec(args: argparse.Namespace) -> int:
@@ -580,7 +585,9 @@ def _dispatch_exec(args: argparse.Namespace) -> int:
     except ConfigError as exc:
         common.error(f"{exc}")
         return 2
-    return net_cmds.exec_in_session(layout, cfg, pathlib.Path.cwd(), argv)
+    return net_cmds.exec_in_session(
+        layout, cfg, pathlib.Path.cwd(), argv, disable_sandbox=args.disable_sandbox
+    )
 
 
 def _dispatch_forward(args: argparse.Namespace) -> int:

@@ -119,7 +119,9 @@ def model_squash_message(
         provider = role_providers.build_role_provider(
             cfg,
             "worker",
-            transcript_sink=TranscriptSink(transcript_dir),
+            transcript_sink=TranscriptSink(
+                transcript_dir, objects_dir=transcript_dir.parent / "objects"
+            ),
             budget=tracker,
             events=events,
         )

@@ -512,7 +512,9 @@ def test_review_seats_resolve_their_own_modality_facts(
     worker = role_providers.input_capabilities(cfg, cfg.models.resolve("worker"))
     seats = role_providers.build_review_seats(
         cfg,
-        transcript_sink=provider_types.TranscriptSink(cache_home / "transcripts"),
+        transcript_sink=provider_types.TranscriptSink(
+            cache_home / "transcripts", objects_dir=cache_home / "objects"
+        ),
         budget=budget.BudgetTracker(max_usd=1.0, max_tokens_fallback=10000, max_plan_points=0),
     )
     assert worker.image == "unsupported"

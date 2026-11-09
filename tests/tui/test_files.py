@@ -118,6 +118,29 @@ def test_markdown_renders_a_heading_and_toggles_source(repo: pathlib.Path, suffi
     asyncio.run(scenario())
 
 
+def test_subtitle_follows_a_file_then_a_folder_and_root(repo: pathlib.Path) -> None:
+    """Selecting a folder cannot leave the previous file's name in the subtitle."""
+    (repo / "docs").mkdir()
+    (repo / "example.py").write_text("answer = 42\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.press("F")
+            assert app.sub_title == "Files · repo"
+            await _select(pilot, "example.py")
+            assert app.sub_title == "Files · example.py"
+            await _select(pilot, "docs")
+            assert app.sub_title == "Files · docs"
+            tree = app.screen.query_one(widgets.DirectoryTree)
+            tree.move_cursor(tree.root)
+            await pilot.press("enter")
+            await pilot.pause()
+            assert app.sub_title == "Files · repo"
+
+    asyncio.run(scenario())
+
+
 def test_python_displays_highlighted_source(repo: pathlib.Path) -> None:
     """A Python file paints syntax colours instead of rendering as Markdown."""
     (repo / "example.py").write_text("def answer():\n    return 42\n", encoding="utf-8")

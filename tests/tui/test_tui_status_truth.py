@@ -449,6 +449,39 @@ def test_a_resume_from_the_composer_carries_the_picked_preset(
     asyncio.run(scenario())
 
 
+def test_resume_row_keeps_a_config_selected_recorded_model(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The resume row selects the recorded model and offers the current config route."""
+    config = tmp_path / "config.toml"
+    config.write_text(
+        '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "o/configured"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    session = tmp_path / "recorded1"
+    _mk_parked(session)
+    manifest = session / "manifest.json"
+    body = json.loads(manifest.read_text())
+    body["models"] = {"driver": {"provider": "o", "model": "recorded"}}
+    manifest.write_text(json.dumps(body))
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(session, config_paths=(config,))
+        async with app.run_test(size=(140, 40)) as pilot:
+            await waits.wait_for(pilot, lambda: _screen_is(app, "_conv"), "conversation")
+            row = app._conv.query_one("#conv-resume", composer.ResumeOptions)
+            await waits.wait_for(pilot, lambda: row.display, "resume row")
+            picker = row.query_one("#resume-model", widgets.Select)
+            assert picker.value == ""
+            options = picker._options  # pyright: ignore[reportPrivateUsage]
+            assert str(options[0][0]) == "o/recorded (as recorded)"
+            assert "o/configured" in [value for _, value in options]
+
+    asyncio.run(scenario())
+
+
 def test_the_resume_rows_name_what_a_bare_resume_runs_under(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:

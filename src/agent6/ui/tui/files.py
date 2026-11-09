@@ -86,6 +86,16 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self.app.sub_title = f"Files · {self._root.name}"
         self.query_one(widgets.DirectoryTree).focus()
 
+    def on_directory_tree_directory_selected(
+        self, event: widgets.DirectoryTree.DirectorySelected
+    ) -> None:
+        """Name the selected folder, or the tree root."""
+        event.stop()
+        path = event.path
+        name = str(path.relative_to(self._root)) if path.is_relative_to(self._root) else str(path)
+        label = terminal.printable_name(self._root.name if name == "." else name)
+        self.app.sub_title = f"Files · {label}"
+
     async def on_directory_tree_file_selected(
         self, event: widgets.DirectoryTree.FileSelected
     ) -> None:

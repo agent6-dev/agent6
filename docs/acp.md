@@ -93,6 +93,7 @@ The prompt and its answer go through the same gate every front-end answers throu
 A session is one conversation in one directory.
 
 - `session/new` carries an absolute `cwd`, a git repository, whose own layered config applies
+  Each execution uses that directory without changing the connection process's cwd.
 - the first prompt starts an `agent6 run`; every later prompt resumes it with the text as its steering instruction (an execution that died before its first checkpoint leaves nothing to resume: the next prompt starts a new run, and the editor is told)
   After an undo on another surface, the next prompt follows the run's continuation.
 - a busy session refuses a prompt rather than queueing it; one connection runs one prompt at a time across its sessions, and a prompt on another session queues and says for which session it waits

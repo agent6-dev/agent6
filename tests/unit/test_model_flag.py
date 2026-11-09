@@ -129,9 +129,8 @@ def test_a_resume_rows_defaults_name_what_a_bare_resume_runs_under(
 ) -> None:
     """A resume row's defaults name what a bare resume runs under.
 
-    A preset or model the run set by flag is replayed, `as recorded`; anything else is what the
-    current config resolves, the model's under a picked preset; an unreadable manifest names the
-    config's.
+    The recorded model survives a config or preset change; an unreadable manifest names the
+    config's route.
     """
     config = tmp_path / "xdg" / "config" / "agent6" / "config.toml"
     config.write_text(
@@ -149,11 +148,9 @@ def test_a_resume_rows_defaults_name_what_a_bare_resume_runs_under(
     manifest(harness={"preset": "no_review"}, models={"driver": {"provider": "o", "model": "m"}})
     assert choices.resume_defaults(repo, (), run) == (
         "none (config default)",
-        "anthropic/claude-x (config default)",
+        "o/m (as recorded)",
     )
-    assert choices.resume_defaults(repo, (), run, preset="fast")[1] == (
-        "anthropic/claude-fast (config default)"
-    )
+    assert choices.resume_defaults(repo, (), run, preset="fast")[1] == "o/m (as recorded)"
     manifest(
         harness={"preset": "fast", "preset_from_flag": True},
         models={"driver": {"provider": "o", "model": "m"}, "driver_from_flag": True},

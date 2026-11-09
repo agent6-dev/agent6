@@ -192,7 +192,7 @@ def _tool_use_stream() -> list[str]:
 def test_streaming_calls_back_on_each_text_delta(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
@@ -236,7 +236,7 @@ def test_streaming_calls_back_on_each_text_delta(
 def test_streaming_reassembles_tool_use_input_across_deltas(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
@@ -267,7 +267,7 @@ def test_streaming_callback_exception_does_not_break_stream(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A callback that raises does not take the run down."""
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
@@ -329,7 +329,7 @@ def test_streaming_premature_end_without_message_stop_raises(
     The loop re-issues the request; partial content and its input tokens are never recorded as
     finished.
     """
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
@@ -354,7 +354,7 @@ def test_streaming_error_event_raises_and_records_transcript(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """A mid-stream `error` event raises a retryable ProviderError and is kept in the transcript."""
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
@@ -389,7 +389,7 @@ def test_streaming_error_event_raises_and_records_transcript(
 def test_streaming_propagates_http_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
@@ -430,7 +430,7 @@ def test_streaming_redirect_status_is_preserved(monkeypatch: pytest.MonkeyPatch)
 def test_streaming_429_captures_retry_after(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )
@@ -459,7 +459,7 @@ def test_non_streaming_path_unchanged_when_callback_is_none(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
     """With no callback the provider never calls httpx2.stream; bench runs rely on that path."""
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test", model="claude-test", prompt_caching=False, transcript_sink=sink
     )

@@ -102,6 +102,31 @@ def _loaded(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
     return layer_data.EffectiveConfig(config=Config(), sources={}, layers=())
 
 
+@pytest.mark.parametrize("resuming", [False, True])
+def test_prompt_uses_session_cwd_without_moving_the_process(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, resuming: bool
+) -> None:
+    """Two sessions keep their own cwd while the connection's process stays put."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(session_setup, "load_session_config", _loaded)
+    seen: list[object] = []
+
+    def execute(*_args: object, **kwargs: object) -> int:
+        seen.append(kwargs.get("cwd"))
+        assert pathlib.Path.cwd() == tmp_path
+        return 0
+
+    monkeypatch.setattr(run, "run_task", execute)
+    monkeypatch.setattr(resume, "resume_task", execute)
+    bridge = _bridge({})
+    for name in ("one", "two"):
+        cwd = _repo(tmp_path / name)
+        session = session_mod.Session(acp_id=name, session_id=name, cwd=cwd)
+        bridge._run(session, "task", resuming=resuming, started_at=time.time())
+        assert pathlib.Path.cwd() == tmp_path
+    assert seen == [tmp_path / "one", tmp_path / "two"]
+
+
 def test_the_reporter_never_writes_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
     """Stdout IS the protocol stream.
 
@@ -1954,7 +1979,7 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
         '[models.default]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
-    monkeypatch.chdir(repo)
+    monkeypatch.chdir(tmp_path)
     session = session_mod.Session(acp_id="s", cwd=repo, execution_live=True)
     seen: list[tuple[bool, bool, bool]] = []
     real_run_task = run.run_task
@@ -1965,6 +1990,8 @@ def test_a_cancel_during_the_lifecycles_startup_stops_the_execution(
         return real_run_task(cfg, text, **kw)
 
     def _execution(*_a: object, **_k: object) -> execution.ExecutionEnd:
+        assert _k["cwd"] == repo
+        assert pathlib.Path.cwd() == tmp_path
         session_dir = session.layout(paths.state_dir(repo)).session_dir
         seen.append(
             (

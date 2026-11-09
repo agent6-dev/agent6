@@ -689,7 +689,7 @@ def test_a_stream_cut_before_usage_is_recorded_as_truncated(tmp_path: pathlib.Pa
         api_key="sk-test",
         model="kimi",
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
-        transcript_sink=provider_types.TranscriptSink(tmp_path),
+        transcript_sink=provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
     )
     lines = _chunk(  # finish_reason, then the connection drops: no usage, no [DONE]
         {"choices": [{"index": 0, "delta": {"content": "done"}, "finish_reason": "stop"}]}

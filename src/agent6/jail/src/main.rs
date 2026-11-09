@@ -1557,6 +1557,12 @@ fn apply_landlock_full(policy: &Policy) -> io::Result<()> {
         .create()
         .map_err(|e| io::Error::other(format!("create ruleset: {e}")))?;
     let mut ruleset = ruleset;
+    // Only mounted paths and their synthetic parents exist in the pivoted root.
+    // ReadDir lists those names without granting file reads, execution or writes.
+    let root = PathFd::new("/").map_err(io_err)?;
+    ruleset = ruleset
+        .add_rule(PathBeneath::new(root, AccessFs::ReadDir))
+        .map_err(|e| io::Error::other(format!("rule root listing: {e}")))?;
     if let Ok(fd) = PathFd::new(policy.cwd.as_path()) {
         ruleset = ruleset
             .add_rule(PathBeneath::new(fd, sets.all))

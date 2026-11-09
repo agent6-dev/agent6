@@ -105,6 +105,48 @@ def open_page(browser: Browser) -> Iterator[Callable[[int], tuple[Page, list[str
             context.close()
 
 
+def test_resume_composer_keeps_the_recorded_model(
+    port: int,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """The resume composer names the recorded model and offers the current config route."""
+    from playwright.sync_api import expect
+
+    config = tmp_path / "config" / "agent6"
+    config.mkdir(parents=True)
+    (config / "config.toml").write_text(
+        '[providers.o]\nbackend = "openai"\nbase_url = "https://x/v1"\n'
+        '[models.worker]\nmodel = "o/configured"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config.parent))
+    session = paths.state_dir(tmp_path) / "sessions" / "runs" / "recorded1"
+    session.mkdir(parents=True)
+    (session / "manifest.json").write_text(
+        json.dumps(
+            {
+                "session_id": session.name,
+                "mode": "run",
+                "parked_task": "continue",
+                "models": {"driver": {"provider": "o", "model": "recorded"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/{session.name}")
+    model = page.locator(".composer select").nth(1)
+    expect(model).to_be_visible()
+    expect(model.locator("option:checked")).to_have_text("o/recorded (as recorded)")
+    expect(model.locator('option[value="o/configured"]')).to_have_count(1)
+    expect(model).to_have_value("")
+    model.select_option("o/configured")
+    expect(model).to_have_value("o/configured")
+    assert not errors
+
+
 @pytest.mark.parametrize("mixed", [False, True])
 def test_hub_headings_only_separate_distinct_groups(
     port: int,

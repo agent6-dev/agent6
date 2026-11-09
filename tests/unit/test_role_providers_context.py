@@ -45,7 +45,9 @@ def _session(
         cfg,
         role="worker",
         events=event_log.EventSink(tmp_path / "logs.jsonl"),
-        transcript_sink=provider_types.TranscriptSink(tmp_path / "transcripts"),
+        transcript_sink=provider_types.TranscriptSink(
+            tmp_path / "transcripts", objects_dir=tmp_path / "objects"
+        ),
         stream_text=streaming,
         conversations=conversation_state.Conversations(
             path=tmp_path / conversation_state.FILE_NAME

@@ -25,6 +25,23 @@ def _reference(value: Any, directory: pathlib.Path) -> dict[str, str]:
     return {"$object": digest}
 
 
+def test_a_bare_transcript_directory_keeps_its_objects_inside(tmp_path: pathlib.Path) -> None:
+    """A review directory owns its objects instead of spilling them into its parent."""
+    from agent6.sessions import objects
+
+    reviews = tmp_path / "reviews"
+    sink = provider_types.TranscriptSink(reviews, objects_dir=reviews / "objects")
+    body = {"messages": [{"role": "user", "content": "review this"}]}
+    attempt = sink.open(request_headers={}, request_body=body)
+    assert attempt.path is not None
+    assert (reviews / "objects").is_dir()
+    attempt.response_status = 200
+    attempt.write("completed")
+    record = objects.materialize(json.loads(attempt.path.read_text()), reviews / "objects")
+    assert record["request"]["body"] == body
+    assert not (tmp_path / "objects").exists()
+
+
 @pytest.mark.parametrize("field", ["messages", "input"])
 def test_objects_are_sanitized_canonical_and_reused_on_retry(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, field: str
@@ -47,7 +64,7 @@ def test_objects_are_sanitized_canonical_and_reused_on_retry(
         real_write(path, data)
 
     monkeypatch.setattr(portable, "atomic_write", write)
-    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     first = sink.open(request_headers=headers, request_body=body)
     assert first.path is not None
     raw = json.loads(first.path.read_text())
@@ -137,7 +154,9 @@ def test_bench_cost_reader_uses_materialized_records(
 
     script = (_ROOT / "bench" / "swebench" / "in_container.sh").read_text()
     code = script.split(" > /out/cost.json", 1)[1].split("\n", 1)[1].split("\nPYEOF", 1)[0]
-    path = provider_types.TranscriptSink(tmp_path / "transcripts").record(
+    path = provider_types.TranscriptSink(
+        tmp_path / "transcripts", objects_dir=tmp_path / "objects"
+    ).record(
         url="https://example.com/api",
         request_headers={},
         request_body={"messages": [{"role": "user", "content": "task"}]},
@@ -162,7 +181,7 @@ def test_forty_compacting_calls_store_each_distinct_value_once(
     """Tier-1 rewrites add objects for changed messages, not for their unchanged suffix."""
     from agent6.sessions import objects
 
-    sink = provider_types.TranscriptSink(tmp_path / "transcripts")
+    sink = provider_types.TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     conversation = loop_conversation.Conversation()
     conversation.notice("task")
     values: set[str] = set()

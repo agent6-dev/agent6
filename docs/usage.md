@@ -446,8 +446,15 @@ The verify command is the success gate.
 
 ## Run options
 
+- `--disable-sandbox`: run commands on the host without filesystem, syscall or namespace confinement; use only on a disposable or already-isolated machine.
+  Available on `run`, `resume`, `fork`, `plan`, `ask`, `exec` (including `--new`) and `machine run`.
+  Place it before the session or command in `exec`; it overrides recorded isolation for that command only.
+  `AGENT6_DISABLE_SANDBOX=1` applies the same opt-out across verbs.
+
 - `--preset <name>`: a strategy preset (`no_review`, `review`, `deep_review`, or your own; `none` selects no preset), fixed for the execution; `resume --preset` switches ([presets](config.md#presets))
-- `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded pick unless it sets its own
+- `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded route unless it sets its own
+  The web and TUI resume composers default to that route and offer the config's routes as choices.
+  A resume that changes the route prints both the chosen and recorded routes.
 - `--parallel 3` (or `provider/model-a,model-b`): isolated lanes, auto-compared into a ranked report; the fan-out is a session of its own that `attach`, `stop` and `sessions show` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#parallel))
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[workspace].base_dir`
     - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([isolated workspaces](#isolated-workspaces)), so you can keep working there or start more runs

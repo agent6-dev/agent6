@@ -206,7 +206,7 @@ def test_recovered_id_and_result_are_echoed_once_on_the_next_turn(
     provider = OpenAIProvider(
         api_key="k",
         model="weak-model",
-        transcript_sink=TranscriptSink(transcripts),
+        transcript_sink=TranscriptSink(transcripts, objects_dir=tmp_path / "objects"),
     )
     conversation = loop_conversation.Conversation()
     conversation.notice("Read a.py")

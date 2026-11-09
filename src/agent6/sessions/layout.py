@@ -98,6 +98,11 @@ class SessionLayout:
         return self.session_dir / "transcripts"
 
     @property
+    def objects_dir(self) -> pathlib.Path:
+        """The sanitized values shared by transcripts and checkpoints."""
+        return self.session_dir / "objects"
+
+    @property
     def logs_path(self) -> pathlib.Path:
         """The event journal."""
         return self.session_dir / LOGS_NAME

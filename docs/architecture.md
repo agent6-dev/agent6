@@ -524,6 +524,7 @@ Minting picks an id no bucket holds; `run --session-id` refuses one another buck
 | `steer.request`, `stop.request`, `compact.request` | the operator's pending asks, which the loop reads at its turn boundary |
 | `untracked-at-start` | the files the run treats as the operator's (repo-root-relative, NUL-separated): those untracked when it started, plus those that appeared between executions and it cannot show it wrote; left out of every chain commit and dirty check; a fork records its own checkout's set, and an `/undo` fork the set of the checkout it keeps |
 
+Transcript callers supply the object directory explicitly: sessions use the layout's `objects/`, and `sessions review` uses `<state-dir>/reviews/objects/`.
 The [Formats reference](formats.md#provider-transcripts) describes provider attempt records, their pre-send write and finalization, and their call and request ids.
 Review calls carry a frozen `CallContext` through `RequestContext` to the transport and transcript writer.
 Review conversations use `(panel_id, seat_index)` rather than focus text, so identical seats remain separate.

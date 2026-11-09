@@ -217,6 +217,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - creating one is denied at both levels: Landlock handles `MakeChar` / `MakeBlock` and grants them nowhere, and seccomp `EPERM`s the `mknod` pair by device type (below).
       `full` `sandbox.isolation` also has the user namespace (no `CAP_MKNOD` in the initial one)
     - under `partial` `sandbox.isolation` with `--allow-root`, Landlock, seccomp and the capability drop deny it
+- `/` (`full` `sandbox.isolation`): Landlock permits directory listings across the private mounted tree, including its synthetic parents and empty hidden-path masks, without granting file reads, execution or writes.
 - `/proc` (`full` `sandbox.isolation`): fresh and private, empty if that fails; Landlock grants it read without execute
     - the launcher, PID 1 there, hides its `/proc` entry from the command (dumpable 0, capabilities dropped) and runs with an empty environment
 - seccomp: a 36-syscall deny-list returning `EPERM`.

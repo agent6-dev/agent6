@@ -408,7 +408,7 @@ def _thinking_then_tool_stream() -> list[str]:
 def test_streaming_preserves_thinking_blocks(
     monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
 ) -> None:
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = AnthropicProvider(
         api_key="sk-test",
         model="claude-test",

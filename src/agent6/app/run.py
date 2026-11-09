@@ -55,6 +55,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     task: str,
     *,
     frontend: app_frontend.SessionFrontend,
+    cwd: pathlib.Path | None = None,
     started_at: float,
     operator_task: str | None = None,
     session_id: str = "",
@@ -87,6 +88,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         task: The task text.
         operator_task: The words before composition; None means `task` is uncomposed.
         frontend: The surface's seam: console, confirms, approvals, questions.
+        cwd: The repository directory; None uses the process cwd.
         started_at: The instant this execution began; the stale-state clear keeps
             bridge markers written since.
         session_id: An explicit id; empty allocates one.
@@ -117,7 +119,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     if operator_task is None:
         operator_task = task
     role = kinds.session_kind(mode).role
-    repo = pathlib.Path.cwd()
+    repo = cwd if cwd is not None else pathlib.Path.cwd()
     # The run's checkout: the repository, or the worktree `worktree` adds below.
     cwd = repo
     if (cwd / ".git").is_file() and not preflight.require_git_repo(cwd, reporter=reporter):
@@ -400,7 +402,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             discard_husk_dir(layout.session_dir)
             return 2
 
-        transcript_sink = TranscriptSink(layout.transcripts_dir)
+        transcript_sink = TranscriptSink(layout.transcripts_dir, objects_dir=layout.objects_dir)
         events = event_log.EventSink(layout.logs_path)
         # The execution's one gate to the operator, whichever front-end answers.
         prompts = operator_prompts.OperatorPrompts(

@@ -132,7 +132,7 @@ def _add_budget_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
+def _add_sandbox_flags(parser: argparse.ArgumentParser, *, approvals: bool = True) -> None:
     """Add the per-invocation sandbox and approval override flags every paid command carries.
 
     `--disable-sandbox` is a one-off `sandbox.isolation = "none"`.
@@ -140,6 +140,7 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
 
     Args:
         parser: The verb's parser.
+        approvals: Include the model command approval flags.
     """
     group = parser.add_argument_group("sandbox")
     group.add_argument(
@@ -151,6 +152,8 @@ def _add_sandbox_flags(parser: argparse.ArgumentParser) -> None:
             " disposable or already-isolated machine; the host becomes the only boundary."
         ),
     )
+    if not approvals:
+        return
     approval = group.add_mutually_exclusive_group()
     approval.add_argument(
         "--auto-approve",

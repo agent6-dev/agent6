@@ -126,7 +126,9 @@ def test_stream_attempt_keeps_one_record_with_its_outcome(
     provider = openai.OpenAIProvider(
         api_key=_SECRET,
         model="m",
-        transcript_sink=provider_types.TranscriptSink(tmp_path).for_seat("worker"),
+        transcript_sink=provider_types.TranscriptSink(
+            tmp_path, objects_dir=tmp_path / "objects"
+        ).for_seat("worker"),
     )
     error: BaseException | None = None
     with mock.patch("httpx2.stream", return_value=contextlib.closing(response)):
@@ -151,7 +153,7 @@ def test_stream_attempt_keeps_one_record_with_its_outcome(
     if ending == "final_parse":
         assert isinstance(error, provider_types.ProviderError)
         assert "duplicate tool_call.id" in str(error)
-    files = list(tmp_path.iterdir())
+    files = list(tmp_path.glob("*.json"))
     assert len(files) == 1
     doc = json.loads(files[0].read_text())
     assert doc["outcome"] == outcome
@@ -193,12 +195,14 @@ def test_redacted_attempt_is_on_disk_before_the_http_send(tmp_path: pathlib.Path
         for path in tmp_path.glob("*.json"):
             raw = json.loads(path.read_text())
             assert "$object" in raw["request"]["body"]["messages"][0]
-            pre_send.append(objects.materialize(raw, tmp_path.parent / "objects", record_path=path))
+            pre_send.append(objects.materialize(raw, tmp_path / "objects", record_path=path))
         assert len(pre_send) == 1, "request was sent without a transcript"
         raise httpx2.ConnectError("no route")
 
     provider = openai.OpenAIProvider(
-        api_key=_SECRET, model="m", transcript_sink=provider_types.TranscriptSink(tmp_path)
+        api_key=_SECRET,
+        model="m",
+        transcript_sink=provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
     )
     with mock.patch("httpx2.stream", side_effect=send), pytest.raises(provider_types.ProviderError):
         provider.call(
@@ -245,7 +249,7 @@ def test_redacted_attempt_is_on_disk_before_the_http_send(tmp_path: pathlib.Path
     assert _SECRET not in text and encoded not in text
     assert "payload_omitted" in text
     (path,) = tmp_path.glob("*.json")
-    final = objects.materialize(json.loads(path.read_text()), tmp_path.parent / "objects")
+    final = objects.materialize(json.loads(path.read_text()), tmp_path / "objects")
     assert final["request"] == pre_send[0]["request"]
     assert final["outcome"] == "failed"
 
@@ -266,7 +270,9 @@ def test_response_credentials_are_redacted_from_all_evidence(
         + b"data: [DONE]\n\n",
     )
     provider = openai.OpenAIProvider(
-        api_key=_SECRET, model="m", transcript_sink=provider_types.TranscriptSink(tmp_path)
+        api_key=_SECRET,
+        model="m",
+        transcript_sink=provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
     )
     with mock.patch("httpx2.stream", return_value=contextlib.closing(response)):
         provider.call(system="s", messages=[], text_delta_callback=lambda _: None)
@@ -294,7 +300,9 @@ def test_nonstreaming_attempt_is_written_before_send_and_finalized(
         )
 
     provider = openai.OpenAIProvider(
-        api_key=_SECRET, model="m", transcript_sink=provider_types.TranscriptSink(tmp_path)
+        api_key=_SECRET,
+        model="m",
+        transcript_sink=provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
     )
     with mock.patch("agent6.providers.transport.http_post", side_effect=send):
         if status == 200:
@@ -331,7 +339,9 @@ def test_a_credential_split_across_deltas_never_reaches_a_failed_record(
         + _chunk({"choices": [{"delta": {"content": _SECRET[half:]}}]}),
     )
     provider = openai.OpenAIProvider(
-        api_key=_SECRET, model="m", transcript_sink=provider_types.TranscriptSink(tmp_path)
+        api_key=_SECRET,
+        model="m",
+        transcript_sink=provider_types.TranscriptSink(tmp_path, objects_dir=tmp_path / "objects"),
     )
     with (
         mock.patch("httpx2.stream", return_value=contextlib.closing(response)),

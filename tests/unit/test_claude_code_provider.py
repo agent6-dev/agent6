@@ -275,7 +275,7 @@ def test_account_email_is_scrubbed_and_never_recorded(tmp_path: pathlib.Path) ->
             "turns": [[_round(thinking=f"user is {email}", text=f"Hi {email}, done")]],
         },
     )
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     provider = _provider(binary, transcript_sink=sink)
     resp = provider.call(system="s", messages=USER0, tools=None)
     assert resp.text == "Hi <operator-email>, done"
@@ -290,7 +290,10 @@ def test_local_transcript_keeps_the_call_id_without_an_http_request_id(
 ) -> None:
     """A local process records its logical call identity without inventing an HTTP attempt."""
     binary, _ = _install(tmp_path, {"turns": [[_round(text="ok")]]})
-    inner = _provider(binary, transcript_sink=TranscriptSink(tmp_path / "transcripts"))
+    inner = _provider(
+        binary,
+        transcript_sink=TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects"),
+    )
     events = event_log.EventSink(tmp_path / "logs.jsonl")
     provider = role_providers.InstrumentedProvider(
         inner=inner,
@@ -896,7 +899,7 @@ def test_side_call_is_one_process_and_call_for_text_returns_the_text(
 
 def test_transcript_round_is_anthropic_shaped(tmp_path: pathlib.Path) -> None:
     binary, _ = _install(tmp_path, {"turns": [[_round(text="hello")]]})
-    sink = TranscriptSink(tmp_path / "transcripts")
+    sink = TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects")
     _provider(binary, transcript_sink=sink).call(system="sys", messages=USER0, tools=None)
     files = sorted((tmp_path / "transcripts").glob("*.json"))
     assert len(files) == 1
@@ -997,7 +1000,7 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Pa
             }
         )
 
-    sink = TranscriptSink(tmp_path / "t")
+    sink = TranscriptSink(tmp_path / "t", objects_dir=tmp_path / "objects")
     provider = role_providers.build_role_provider(
         cfg("low"), "worker", transcript_sink=sink, budget=_budget()
     )
@@ -1596,7 +1599,10 @@ def test_media_mcp_answer_bypasses_text_guard_and_omits_persistence(
             ]
         },
     )
-    provider = _provider(binary, transcript_sink=TranscriptSink(tmp_path / "transcripts"))
+    provider = _provider(
+        binary,
+        transcript_sink=TranscriptSink(tmp_path / "transcripts", objects_dir=tmp_path / "objects"),
+    )
     try:
         first = provider.call(system="s", messages=USER0, tools=TOOLS)
         history[1]["content"] = first.raw["content"]
