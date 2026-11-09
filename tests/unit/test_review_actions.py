@@ -135,15 +135,26 @@ def test_live_actions_are_applied_only_by_the_worker(tmp_path: pathlib.Path) -> 
         lock.release_single_writer(fd)
 
 
+@pytest.mark.parametrize("resume_confirmed", [False, True])
 def test_fix_uses_stored_evidence_and_refuses_a_second_pending_steer(
-    tmp_path: pathlib.Path,
+    tmp_path: pathlib.Path, resume_confirmed: bool
 ) -> None:
     saved = review_helpers.reviewed_session(tmp_path)
     process.write_worker_pid(saved.session_dir, os.getpid())
     try:
-        request = review_records.FindingAction(request_id="fix", expected_version=1, action="fix")
-        review_actions.act(saved.session_dir, "f1", request, source="cli", wait_s=0)
+        request = review_records.FindingAction(
+            request_id="fix", expected_version=1, action="fix", resume=resume_confirmed
+        )
+
+        def resume(text: str) -> str:
+            pytest.fail("a live Fix must not launch another worker")
+
+        review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume, wait_s=0)
         review_actions.drain(event_log.EventSink(saved.logs_path), execution_id="live")
+        result = review_actions.act(
+            saved.session_dir, "f1", request, source="cli", resume=resume, wait_s=0
+        )
+        assert result.status == "submitted" and result.message == "steer submitted"
         text = (saved.session_dir / ipc.STEER_ANSWER_FILE).read_text()
         for evidence in (
             "f1",
@@ -351,6 +362,63 @@ def test_failed_fix_records_delivery_failure_without_resolving(
     assert review_actions.read_review(saved.session_dir).findings[0].status == "open"
 
 
+@pytest.mark.parametrize("acknowledge_before_return", [False, True])
+def test_resume_receipt_distinguishes_launch_from_worker_acknowledgement(
+    tmp_path: pathlib.Path, acknowledge_before_return: bool
+) -> None:
+    saved = review_helpers.reviewed_session(tmp_path)
+    request = review_records.FindingAction(
+        request_id="resume", expected_version=1, action="fix", resume=True
+    )
+    steers: list[str] = []
+    fd: int | None = None
+    events = event_log.EventSink(saved.logs_path)
+
+    def resume(text: str) -> str:
+        nonlocal fd
+        fd = lock.acquire_single_writer(saved.session_dir)
+        assert fd is not None
+        process.write_worker_pid(saved.session_dir, os.getpid())
+        steers.append(text)
+        if acknowledge_before_return:
+            review_actions.drain(events, execution_id="resumed", resume_steer=text)
+        return ""
+
+    try:
+        result = review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume)
+        view = review_actions.read_review(saved.session_dir)
+        finding = view.findings[0]
+        expected_types = ["loop.review.fix.requested"]
+        if acknowledge_before_return:
+            expected_types.append("loop.review.fix.submitted")
+        assert [action.type for action in finding.actions] == expected_types
+        assert finding.actions[0].action == "resume"
+        assert finding.status == "open"
+        assert result.request_id == "resume" and result.finding_id == "f1"
+        assert result.version == view.version == (3 if acknowledge_before_return else 2)
+        assert result.message == "run resumed to fix finding f1" + (
+            "" if acknowledge_before_return else "; submission acknowledgement pending"
+        )
+        assert result.status == ("submitted" if acknowledge_before_return else "queued")
+        before = saved.logs_path.read_bytes()
+        retry = review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume)
+        assert retry.status == ("submitted" if acknowledge_before_return else "delivery_unknown")
+        assert saved.logs_path.read_bytes() == before
+        review_actions.drain(events, execution_id="resumed", resume_steer=steers[0])
+        acknowledged = review_actions.act(
+            saved.session_dir, "f1", request, source="cli", resume=resume
+        )
+        assert acknowledged.status == "submitted" and acknowledged.version == 3
+        assert acknowledged.message == "run resumed to fix finding f1"
+        finding = review_actions.read_review(saved.session_dir).findings[0]
+        assert finding.status == "open"
+        assert len(finding.actions) == 2 and finding.actions[-1].execution_id == "resumed"
+        assert len(steers) == 1
+    finally:
+        process.clear_worker_pid(saved.session_dir)
+        lock.release_single_writer(fd)
+
+
 def test_resume_failure_is_recorded_and_not_retried(tmp_path: pathlib.Path) -> None:
     saved = review_helpers.reviewed_session(tmp_path)
     request = review_records.FindingAction(
@@ -364,10 +432,40 @@ def test_resume_failure_is_recorded_and_not_retried(tmp_path: pathlib.Path) -> N
 
     first = review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume)
     assert first.status == "failed" and first.message == "no resumable snapshot"
+    assert first.version == review_actions.read_review(saved.session_dir).version == 3
+    assert review_actions.read_review(saved.session_dir).findings[0].status == "open"
     assert (
         review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume) == first
     )
     assert len(attempts) == 1
+
+
+def test_successful_launcher_preserves_recorded_failure(tmp_path: pathlib.Path) -> None:
+    saved = review_helpers.reviewed_session(tmp_path)
+    request = review_records.FindingAction(
+        request_id="resume", expected_version=1, action="fix", resume=True
+    )
+
+    def resume(text: str) -> str:
+        fd = lock.acquire_single_writer(saved.session_dir)
+        assert fd is not None
+        try:
+            event_log.EventSink(saved.logs_path).emit(
+                "loop.review.fix.failed",
+                finding_id="f1",
+                request_id="resume",
+                source="cli",
+                version=3,
+                error="worker refused instruction",
+            )
+        finally:
+            lock.release_single_writer(fd)
+        return ""
+
+    result = review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume)
+    assert result.status == "failed" and result.version == 3
+    assert result.message == "worker refused instruction"
+    assert review_actions.read_review(saved.session_dir).findings[0].status == "open"
 
 
 def test_resume_fix_is_acknowledged_after_an_intervening_resolution(tmp_path: pathlib.Path) -> None:
@@ -383,7 +481,8 @@ def test_resume_fix_is_acknowledged_after_an_intervening_resolution(tmp_path: pa
         return ""
 
     pending = review_actions.act(saved.session_dir, "f1", request, source="cli", resume=resume)
-    assert pending.status == "delivery_unknown"
+    assert pending.status == "queued" and pending.version == 2
+    assert pending.message == "run resumed to fix finding f1; submission acknowledgement pending"
     fd = lock.acquire_single_writer(saved.session_dir)
     assert fd is not None
     process.write_worker_pid(saved.session_dir, os.getpid())

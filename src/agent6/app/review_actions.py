@@ -163,6 +163,8 @@ def _recorded(view: review.ReviewView, request: ActionRequest) -> ActionResult |
         "failed": last.error or "Fix delivery failed",
         "delivery_unknown": "delivery unknown; no submission result was recorded",
     }[status]
+    if status == "submitted" and first.action == "resume":
+        message = f"run resumed to fix finding {first.finding_id}"
     return ActionResult.model_validate(
         dict(
             request_id=last.request_id,
@@ -442,5 +444,15 @@ def act(
                 current = _recorded(read_review(session_dir), request)
                 if current is not None and current.status == "delivery_unknown":
                     _emit(events, request, "fix.failed", error=error)
-        return _recorded(read_review(session_dir), request) or result
+        result = _recorded(read_review(session_dir), request) or result
+        if not error and result.status == "delivery_unknown":
+            return result.model_copy(
+                update={
+                    "status": "queued",
+                    "message": (
+                        f"run resumed to fix finding {finding_id}; "
+                        "submission acknowledgement pending"
+                    ),
+                }
+            )
     return result

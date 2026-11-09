@@ -320,7 +320,7 @@ The in-loop review panel returns structured findings over the run's diff.
 `prompts.review.panel_prompt` renders both seat scopes; the explicit `AGENT6_REVIEW_RISK=off` environment switch omits the risk instruction for the registered [B14 benchmark](../bench/review/README.md#running-b14), without changing parsing or grounding.
 An observation opens a new finding but does not reopen a resolved one.
 Only resolution and reopening events change that state.
-A Fix request leaves the finding open and reads as delivery unknown until a submission or failure event arrives.
+In the journal fold, a Fix request leaves the finding open and reads as delivery unknown until a submission or failure event arrives.
 The fold retains action reasons in append order and never treats a fixed disposition as proof that verification passed.
 Freshness compares both tree IDs and path coverage with an explicit requested comparison.
 Without that comparison, freshness is unknown.
@@ -340,6 +340,12 @@ A repeated request ID returns its journal result or retained worker reply before
 A worker refusal is final for that request ID; a new attempt needs a new ID.
 Fix records its request before submitting the server-built instruction, so a crash between those writes leaves delivery unknown rather than a claimed success.
 An explicit resume releases the writer lock before the injected launcher runs; the resumed worker records submission when it takes that instruction.
+After a successful launcher handoff, an otherwise unknown-delivery response says `run resumed to fix finding <id>; submission acknowledgement pending`.
+It uses the existing `queued` status and retains the request's recorded version.
+Recorded failures and submissions take precedence.
+An acknowledged resume uses `submitted` and the resume-specific message without the pending qualifier.
+A live submission keeps `steer submitted`.
+Launch confirmation creates no journal event: a retry before acknowledgement still reads as delivery unknown and never launches again.
 
 The web Findings card reads the same review fold as the merge guard.
 `ui/web/review_routes.py` serves recorded comparisons and files from immutable tree IDs, without a checkout or private review refs.

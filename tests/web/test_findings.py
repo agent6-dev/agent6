@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import threading
 from collections.abc import Iterator
@@ -8,6 +9,10 @@ from typing import Any
 
 import pytest
 
+from agent6 import paths
+from agent6.app import review_actions
+from agent6.sessions import event_log, layout, lock, process
+from agent6.ui import spawn
 from agent6.ui.web import server
 from tests import review_helpers
 from tests.web import signin
@@ -87,6 +92,53 @@ def test_findings_routes_return_line_evidence(tmp_path: pathlib.Path, api: int) 
     assert origin["base_location"]["path"] == "old.txt"
     assert origin["commits"] == [view["panels"][0]["target"]["base_commit"]]
     assert len(view["merge_guard"]["open_block_ids"]) == 4
+
+
+@pytest.mark.parametrize("acknowledge_before_return", [False, True])
+def test_confirmed_resume_returns_shared_receipt(
+    tmp_path: pathlib.Path,
+    api: int,
+    monkeypatch: pytest.MonkeyPatch,
+    acknowledge_before_return: bool,
+) -> None:
+    saved = layout.SessionLayout(paths.state_dir(tmp_path), "review-run")
+    fd: int | None = None
+
+    def resume(cwd: pathlib.Path, session_id: str, *, steer: str, **kwargs: object) -> str:
+        nonlocal fd
+        assert cwd == tmp_path and session_id == saved.session_id
+        assert "Review finding f1" in steer
+        fd = lock.acquire_single_writer(saved.session_dir)
+        assert fd is not None
+        process.write_worker_pid(saved.session_dir, os.getpid())
+        if acknowledge_before_return:
+            review_actions.drain(
+                event_log.EventSink(saved.logs_path), execution_id="resumed", resume_steer=steer
+            )
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
+    try:
+        code, result = _request(
+            api, "/f1/fix", dict(request_id="web-resume", expected_version=1, resume=True)
+        )
+        assert code == (200 if acknowledge_before_return else 202)
+        assert result == dict(
+            request_id="web-resume",
+            finding_id="f1",
+            version=3 if acknowledge_before_return else 2,
+            status="submitted" if acknowledge_before_return else "queued",
+            message="run resumed to fix finding f1"
+            + ("" if acknowledge_before_return else "; submission acknowledgement pending"),
+        )
+        view = review_actions.read_review(saved.session_dir)
+        assert view.version == result["version"]
+        assert view.findings[0].status == "open"
+        assert len(view.findings[0].actions) == (2 if acknowledge_before_return else 1)
+        assert view.findings[0].actions[0].source == "web"
+    finally:
+        process.clear_worker_pid(saved.session_dir)
+        lock.release_single_writer(fd)
 
 
 def test_findings_routes_distinguish_missing_invalid_and_conflicting(api: int) -> None:

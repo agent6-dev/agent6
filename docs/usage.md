@@ -392,13 +392,18 @@ agent6 sessions reopen <id> <finding-id> --reason "Still reproducible"
 - Fix builds its instruction from the stored finding and reviewed target, and asks the worker to reproduce the report before changing code.
   It leaves the finding open and refuses an occupied steer slot or an unknown delivery.
 - `--resume` confirms the background resume of the same session.
-  An unavailable resume reports its failure and does not create a new run.
+  - A successful launch reports `run resumed to fix finding <id>`.
+  - `; submission acknowledgement pending` means the worker has not yet recorded taking the instruction.
+    A recorded submission reports the same message without the qualifier.
+  - An unavailable resume reports its failure and does not create a new run.
 - Each action prints its request ID and resulting review version.
   `--request-id <id>` retries that action without sending it twice; `--expected-version <n>` refuses a stale view instead of using the current version.
 - A live worker applies actions at its steer boundary.
   An action still waiting after five seconds reports `action queued`; an approval or question wait must end before the boundary is reached.
-- `steer submitted` means the instruction entered the steer bridge, not that the finding was fixed.
-  A crash between the request and submission records reads as `delivery unknown`; retrying the request ID does not resend it.
+- `steer submitted` means a live instruction entered the steer bridge.
+  Neither a launch nor a submission resolves the finding; Resolve records that decision.
+- Fix retries read the journal, not the launch confirmation from the initiating response.
+  Without a recorded submission or failure, a retry reports `delivery unknown` and never launches or sends the instruction again.
 
 ## The review queue
 

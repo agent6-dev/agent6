@@ -11,7 +11,7 @@ import pytest
 from textual import widgets
 
 from agent6.app import review_actions
-from agent6.sessions import event_log, ipc, process
+from agent6.sessions import event_log, ipc, lock, process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import home, modals
@@ -304,6 +304,51 @@ def test_offline_fix_requires_confirmation_and_reports_resume_failure(
             )
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("acknowledge_before_return", [False, True])
+def test_confirmed_resume_displays_shared_receipt(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, acknowledge_before_return: bool
+) -> None:
+    saved = review_helpers.reviewed_session(tmp_path)
+    fd: int | None = None
+
+    def resume(cwd: pathlib.Path, session_id: str, *, steer: str, **kwargs: object) -> str:
+        nonlocal fd
+        assert cwd == tmp_path and session_id == saved.session_id
+        assert "Review finding f1" in steer
+        fd = lock.acquire_single_writer(saved.session_dir)
+        assert fd is not None
+        process.write_worker_pid(saved.session_dir, os.getpid())
+        if acknowledge_before_return:
+            review_actions.drain(
+                event_log.EventSink(saved.logs_path), execution_id="resumed", resume_steer=steer
+            )
+        return ""
+
+    monkeypatch.setattr(spawn, "spawn_detached_resume", resume)
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(saved.state_dir, tmp_path)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("v", "f", "y")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            view = review_actions.read_review(saved.session_dir)
+            finding = view.findings[0]
+            assert view.version == (3 if acknowledge_before_return else 2)
+            assert finding.status == "open" and finding.actions[0].source == "tui"
+            assert len(finding.actions) == (2 if acknowledge_before_return else 1)
+            pending = "" if acknowledge_before_return else "; submission acknowledgement pending"
+            assert _shown(app.screen.query_one("#review-result", widgets.Static)) == (
+                f"run resumed to fix finding f1{pending} (request {finding.actions[0].request_id})"
+            )
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        process.clear_worker_pid(saved.session_dir)
+        lock.release_single_writer(fd)
 
 
 def test_merge_refusal_keeps_the_finding_ids_visible(
