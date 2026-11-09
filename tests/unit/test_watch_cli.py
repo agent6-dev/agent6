@@ -8,6 +8,7 @@ import json
 import os
 import pathlib
 import time
+from typing import Any
 
 import pytest
 
@@ -80,6 +81,85 @@ def test_watch_run_json_snapshot(
         assert row["cost_usd"] == 0.25
         assert "user_task" not in row and "task_clipped" not in row
     assert out["tool_calls"][0]["name"] == "grep"
+
+
+def test_headless_approve_exposes_a_blocking_question_without_answering_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The driver's public JSON distinguishes queued, blocking and answered real prompts."""
+    import threading
+
+    from agent6 import portable
+    from agent6.app import frontend
+    from agent6.sessions import event_log, ipc
+    from agent6.tools import operator_prompts, schema
+    from agent6.ui.cli import interact
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(portable, "has_controlling_tty", lambda: False)
+    monkeypatch.setenv("AGENT6_DETACHED_AWAY", "approve")
+    session_id = "chain-question"
+    session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / session_id
+    session_dir.mkdir(parents=True)
+    process.write_worker_pid(session_dir, os.getpid())
+    events = event_log.EventSink(session_dir / "logs.jsonl")
+    events.emit(
+        "session.start", session_id=session_id, user_task="t", mode="run", execution_id="e1"
+    )
+    frontend.apply_spawned_away_default(session_dir, (ipc.COMMAND_SCOPE,))
+    prompts = operator_prompts.OperatorPrompts(
+        approver=interact.build_approver(session_dir),
+        questioner=interact.build_questioner(session_dir),
+        journal=events.emit,
+        session_dir=session_dir,
+    )
+    assert prompts.approve("command?", scope=ipc.COMMAND_SCOPE)
+    question = (schema.UserQuestion(question="which?", options=("a", "b")),)
+    queued = prompts.ask(question, wait=False)
+    assert queued.status == "pending"
+    assert main(["attach", session_id, "--json"]) == 0
+    snapshot = json.loads(capsys.readouterr().out)
+    assert snapshot["live"] and not snapshot["operator_blocked"]
+    assert [(q["wait"], q["answered"], q["blocking"]) for q in snapshot["questions"]] == [
+        (False, False, False)
+    ]
+
+    entered = threading.Event()
+    await_reply = ipc.await_frontend_reply
+
+    def observed(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        return await_reply(*args, **kwargs)
+
+    monkeypatch.setattr(ipc, "await_frontend_reply", observed)
+    answers: list[operator_prompts.QuestionAnswer] = []
+    worker = threading.Thread(target=lambda: answers.append(prompts.ask(question)), daemon=True)
+    worker.start()
+    try:
+        assert entered.wait(timeout=5), "question did not enter the front-end wait"
+        assert worker.is_alive() and not answers
+        assert not process.frontend_is_live(session_dir)
+        assert main(["attach", session_id, "--json"]) == 0
+        snapshot = json.loads(capsys.readouterr().out)
+        assert snapshot["live"] and snapshot["operator_blocked"]
+        assert [q["id"] for q in snapshot["questions"] if not q["answered"] and q["blocking"]] == [
+            "question-2"
+        ]
+        assert main(["answer", session_id, "--question", "question-2", "b"]) == 0
+        capsys.readouterr()
+        worker.join(timeout=10)
+        assert not worker.is_alive()
+        assert answers[0].answers == ("b",)
+        assert main(["attach", session_id, "--json"]) == 0
+        snapshot = json.loads(capsys.readouterr().out)
+        assert snapshot["live"] and not snapshot["operator_blocked"]
+        assert snapshot["questions"][1]["answered"]
+        assert not any(not q["answered"] and q["blocking"] for q in snapshot["questions"])
+    finally:
+        ipc.request_stop(session_dir, now=True)
+        worker.join(timeout=10)
+        process.clear_worker_pid(session_dir)
+    assert not worker.is_alive()
 
 
 def test_watch_machine_json_snapshot(

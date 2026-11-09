@@ -138,6 +138,8 @@
 
 ### Dev environment and session practice
 
+- Unattended-chain briefs say "ask no questions; decide by the conventions and record the decision in the commit body".
+  Drivers stop scheduling on a live unanswered blocking question, not only on child exit; follow the [driver contract](docs/usage.md#unattended-chains).
 - Dogfood the installed binary (`.venv/bin/agent6`) from throwaway git repos outside this one.
 - Run the five-gate in its own systemd unit (`systemd-run --user --collect` with RuntimeMaxSec/MemoryMax caps, the login PATH) and read its `EXIT=` line.
   Certify on a quiet machine, with the tree untouched while the gate runs: contention produces false timing reds.

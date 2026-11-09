@@ -176,6 +176,21 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
   - `resume` and `sessions merge` refuse the undone run and name the fork
   - it is refused while another live run drives the checkout
 
+### Unattended chains
+
+Development briefs follow the [unattended-chain rule](../AGENTS.md#dev-environment-and-session-practice).
+`AGENT6_DETACHED_AWAY=approve` grants approvals; it does not answer questions.
+A headless run still waits on `ask_user(wait=true)` unless away mode is `deny`.
+
+An external chain driver polls `agent6 attach ID --json`, as well as watching child exit.
+Its parked-question stop condition is `live == true` and a member of `questions` with `answered == false` and `blocking == true`.
+The driver reports the session ID and question `id`, stops scheduling subsequent work, and retains the session for an operator to answer with `agent6 answer ID --question QID TEXT` or stop with `agent6 stop ID`.
+It must not fabricate an answer or automatically resume the chain.
+
+Queued questions (`wait=false`), answered questions and questions from earlier executions do not meet this condition.
+`operator_blocked` alone is insufficient: approvals can also block a run.
+This is a contract for external chain drivers, not a change to interactive fan-out waits; no such external development-chain driver is included in this repository.
+
 ### Parallel directive
 
 `/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same fan-out as `run --parallel SPEC TASK`.
