@@ -84,7 +84,7 @@ This is a prompt change, not evidence of better review behavior.
 - **Protocol:** run both arms on each case, with three independent repetitions and three seats per panel, using identical model routes, temperatures, token caps and supplied checks.
 - **Measures:** grounded true blocks, false blocks on clean cases, abstentions, missing risk, risk-length violations, tokens, cost and elapsed time.
 - **Reporting:** publish each split and its case count, per-case outcomes, repetition ranges and paired arm differences.
-- **Status:** registered, not measured in the network-isolated implementation environment.
+- **Status:** measured 2026-11-05 on `chatgpt/gpt-6-astra` at effort high, three seats, three repetitions, all six cases (`results/b14.jsonl`): no false block and no abstention in either arm on the clean cases, every arm-B seat returned a risk within the bound, 69 more input tokens and 84 to 151 more output tokens per seat, one to three seconds more per panel; the planted cases' `grounded_true_blocks` stay null until each block is adjudicated against the frozen oracle.
 No behavior improvement is claimed.
 
 ### Running B14
