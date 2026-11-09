@@ -102,6 +102,23 @@ if (expected.includes('no panel')) assert.ok(!cards.findings.textContent.include
     )
 
 
+def test_receipt_survives_findings_refresh_during_and_after_fetch() -> None:
+    """A streamed review repaint keeps the pending and rendered receipt in the card."""
+    _run("""
+const cards = {_id: 'run', _base: '/api/session/run', findings: el('div')};
+let resolve;
+getJSON = async () => new Promise(r => { resolve = r; });
+paintFindings(cards, {finished: true, review: {version: 1}});
+const pending = cards.findings.querySelector('button').onclick();
+paintFindings(cards, {finished: true, review: {version: 0}});
+resolve({text: 'Receipt run', verifications: []});
+await pending;
+assert.ok(cards.findings.textContent.includes('Receipt run'));
+paintFindings(cards, {finished: true, review: {version: 1}});
+assert.ok(cards.findings.textContent.includes('Receipt run'));
+""")
+
+
 def test_line_origin_badge_uses_the_observation_and_links_immutable_base_evidence() -> None:
     _run("""
 const e = entry('head', 8, 'new.txt');

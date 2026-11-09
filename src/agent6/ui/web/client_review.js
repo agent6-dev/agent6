@@ -158,12 +158,17 @@ function paintFindings(cards, state) {
   cards._findings_key = key;
   const host = cards.findings; host.innerHTML = '';
   if (!cards._readOnly) {
-    const inspect = el('button', 'mini', 'Receipt'); host.appendChild(inspect);
-    const receipt = el('div', 'receipt'); host.appendChild(receipt);
-    inspect.onclick = async () => {
-      try { drawReceipt(receipt, await getJSON(cards._base + '/receipt')); }
-      catch (e) { toast(e.message, true); }
-    };
+    // Keep the receipt's fetch target and output across streamed findings refreshes.
+    if (!cards._receipt) {
+      cards._receipt = el('div');
+      const inspect = el('button', 'mini', 'Receipt'); cards._receipt.appendChild(inspect);
+      const receipt = el('div', 'receipt'); cards._receipt.appendChild(receipt);
+      inspect.onclick = async () => {
+        try { drawReceipt(receipt, await getJSON(cards._base + '/receipt')); }
+        catch (e) { toast(e.message, true); }
+      };
+    }
+    host.appendChild(cards._receipt);
   }
   const counts = review.open_counts || {};
   host.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
