@@ -9,6 +9,7 @@ the Python side sweeps each command's escapees.
 
 from __future__ import annotations
 
+import itertools
 import json
 import os
 import pathlib
@@ -451,13 +452,16 @@ def _serve_raw(cwd: pathlib.Path) -> subprocess.Popen[bytes]:
     spec = {"cwd": str(cwd), "argv": ["true"], "isolation": "none", "mode": "serve"}
     proc.stdin.write((json.dumps(spec) + "\n").encode())
     proc.stdin.flush()
-    proc.stdout.readline()  # ready line
+    assert json.loads(proc.stdout.readline()) == {"ready": True, "protocol": 1}
     return proc
+
+
+_REQUEST_IDS = itertools.count(1)
 
 
 def _ask(proc: subprocess.Popen[bytes], request: dict[str, object]) -> dict[str, object]:
     assert proc.stdin is not None and proc.stdout is not None
-    proc.stdin.write((json.dumps(request) + "\n").encode())
+    proc.stdin.write((json.dumps({**request, "id": next(_REQUEST_IDS)}) + "\n").encode())
     proc.stdin.flush()
     return json.loads(proc.stdout.readline())
 

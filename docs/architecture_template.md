@@ -259,6 +259,33 @@ A successful connect replaces the entry atomically.
 `connect --status` reads the same validator's `BoundGrantError.cause` and checks each locally usable credential without refreshing or exchanging it.
 The bound store's security rules are in [Security](security.md#8-secrets-and-connect).
 
+## Jail supervisor protocol
+
+`sandbox/jail_session.py` owns one serving launcher per run at every local isolation level.
+`jail/src/session.rs` owns its newline-delimited JSON protocol on stdin and stdout.
+The initial policy selects `mode = "serve"`; after confinement setup, the launcher sends `{"ready":true,"protocol":1}`.
+Python refuses malformed readiness or a different protocol version before sending any command.
+
+- Each `run`, `background`, `status` or `stop` request carries a positive, increasing `id`; its single response carries the same `id`.
+- Only one request may be active; Python is the command-channel writer, and the Rust serve loop is the response writer.
+- `{"kind":"cancel","id":N}` has no response of its own and applies only to the active request with that ID.
+  Cancellation requests early hand-back when `checkin_s > 0` and `log_dir` is set; otherwise it stops the active command's process group and returns its exit result.
+- Cancellation for any other ID is ignored, including one that races a completed request.
+- One nonblocking stdin reader belongs to the serve loop and is borrowed by the foreground command while it waits.
+  It consumes cancellation and EOF without waiting for the command deadline, and a partial frame never blocks command polling.
+- EOF stops the foreground command instead of handing it back, then ends the session and its background jobs.
+  Malformed input also closes the session after command cleanup.
+
+Policy and request frames are capped at 1 MiB, including the newline.
+Python caps readiness at 4 KiB and waits at most 10 seconds for it after writing the policy.
+Responses are capped at 128 MiB, enough for JSON escaping of the retained command output (4 MiB head and 4 MiB tail per stream).
+Python rejects a response with the wrong ID and closes that session rather than using it for another request.
+A separate Python reader drains launcher stderr throughout setup and execution, retaining its last 64 KiB with a truncation marker.
+Startup diagnostics are surfaced once; the retained tail accompanies later protocol failures.
+Command stdout and stderr are captured separately from these protocol streams.
+Closing the session shuts stdin and discards pending response bytes while stderr keeps draining.
+Python waits up to 10 seconds for launcher exit before killing and reaping it.
+
 ## Tool dispatch
 
 Every LLM tool call passes the same gates: audit events wrap it, the mode backstop refuses an out-of-surface name, MCP calls take an approval, and the handler table routes the rest by name.

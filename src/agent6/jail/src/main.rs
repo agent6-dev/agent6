@@ -40,6 +40,8 @@ use nix::unistd::{chdir, fork, getgid, getuid, pivot_root, ForkResult, Pid};
 use seccompiler::{BpfProgram, SeccompAction, SeccompFilter, TargetArch};
 use serde::Deserialize;
 
+mod session;
+
 // deny_unknown_fields: a policy field this binary does not know (version skew
 // between the Python side and a stale or pinned AGENT6_JAIL_BIN) could be a
 // restriction it would silently drop, so refuse instead of running weaker.
@@ -127,60 +129,6 @@ struct Policy {
     mode: String,
 }
 
-/// One command to run against an already-established jail.
-// deny_unknown_fields, like Policy above: a request naming a field this launcher
-// does not know is a version skew between the Python side and this binary, and
-// silently dropping it could mean dropping a confinement the caller meant to set.
-// Refuse it rather than run a request we only half-understand.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChildRequest {
-    argv: Vec<String>,
-    #[serde(default)]
-    env: Vec<(String, String)>,
-    #[serde(default = "default_timeout")]
-    timeout_s: f64,
-    #[serde(default = "default_memory_limit_mb")]
-    memory_limit_mb: u64,
-    #[serde(default)]
-    checkin_s: f64,
-    #[serde(default)]
-    log_dir: String,
-}
-
-impl ChildRequest {
-    fn child_spec(&self) -> ChildSpec<'_> {
-        ChildSpec {
-            argv: &self.argv,
-            env: &self.env,
-            memory_limit_mb: self.memory_limit_mb,
-            timeout_s: self.timeout_s,
-            checkin_s: self.checkin_s,
-            log_dir: &self.log_dir,
-        }
-    }
-}
-
-/// What a serving launcher is asked to do. A backgrounded command's pid is
-/// namespace-local, so the launcher is the only process that can wait on it or
-/// signal it: `status` and `stop` name that pid and it does the work.
-#[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-enum Request {
-    /// Run to completion; answer with the result.
-    Run(ChildRequest),
-    /// Start the command and answer at once, leaving it running. When stdin closes,
-    /// the PID namespace takes it down under `full`, and
-    /// `sweep_backgrounded` kills it at the other levels.
-    Background(ChildRequest),
-    /// Report whether a backgrounded command is still running, reaping it and
-    /// answering with its exit code once it is not.
-    Status { pid: i32 },
-    /// Kill a backgrounded command's process group, then reap it; in a PID
-    /// namespace, also sweep what the command left outside its group.
-    Stop { pid: i32 },
-}
-
 fn default_mode() -> String {
     "once".to_string()
 }
@@ -248,7 +196,7 @@ fn main() {
     // for exec mode where stdin belongs to the child (its JSON-RPC pipe).
     // Without it, the policy is the FIRST LINE of stdin -- not the whole
     // stream: in serve mode the same pipe then carries one request per line.
-    let mut input = String::new();
+    let mut input = Vec::new();
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--hold-netns") {
         hold_netns();
@@ -256,27 +204,29 @@ fn main() {
     let userns_fd = fd_arg(&args, "--userns-fd");
     let netns_fd = fd_arg(&args, "--netns-fd");
     let policy_fd = fd_arg(&args, "--policy-fd");
-    // The client's way to say "hand the running command back NOW" without
-    // waiting out the check-in: one byte on this pipe. A separate channel, not
-    // the request pipe, because that one is in lockstep -- the client is
-    // blocked reading the answer to the very request this interrupts.
-    let interrupt_fd = fd_arg(&args, "--interrupt-fd");
-    if let Some(fd) = interrupt_fd {
-        prepare_interrupt_fd(fd);
-    }
     let read_ok = match policy_fd {
         // from_raw_fd owns the fd and closes it at end of scope, so the child
         // never inherits the policy channel.
         Some(fd) => {
             let file = unsafe { std::fs::File::from_raw_fd(fd) };
-            io::BufReader::new(file).read_line(&mut input).is_ok()
+            io::BufReader::new(file)
+                .take((session::FRAME_LIMIT + 1) as u64)
+                .read_until(b'\n', &mut input)
+                .is_ok()
         }
-        None => io::stdin().lock().read_line(&mut input).is_ok(),
+        None => io::stdin()
+            .lock()
+            .take((session::FRAME_LIMIT + 1) as u64)
+            .read_until(b'\n', &mut input)
+            .is_ok(),
     };
-    if !read_ok || input.trim().is_empty() {
+    if !read_ok || input.is_empty() {
         die("failed to read policy");
     }
-    let mut policy: Policy = match serde_json::from_str(&input) {
+    if input.len() > session::FRAME_LIMIT {
+        die("policy frame exceeds 1048576 bytes");
+    }
+    let mut policy: Policy = match serde_json::from_slice(&input) {
         Ok(p) => p,
         Err(e) => die(format!("invalid policy JSON: {e}")),
     };
@@ -330,45 +280,14 @@ fn main() {
         _ => None,
     };
     match policy.isolation.as_str() {
-        "full" => run_full(&policy, join, interrupt_fd),
-        "partial" => run_partial(&policy, interrupt_fd),
-        "none" => run_unconfined(&policy, interrupt_fd),
+        "full" => run_full(&policy, join),
+        "partial" => run_partial(&policy),
+        "none" => run_unconfined(&policy),
         other => die(format!("unknown sandbox isolation: {other}")),
     }
 }
 
-/// Make the interrupt pipe non-blocking (the poll below must never wait) and
-/// close-on-exec (a jailed command must not inherit the channel that steers
-/// its own hand-back).
-fn prepare_interrupt_fd(fd: RawFd) {
-    unsafe {
-        let flags = libc::fcntl(fd, libc::F_GETFL);
-        if flags < 0 || libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) < 0 {
-            die("could not set O_NONBLOCK on --interrupt-fd");
-        }
-        if libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) < 0 {
-            die("could not set FD_CLOEXEC on --interrupt-fd");
-        }
-    }
-}
-
-/// Whether the client has asked for an immediate hand-back. Drains what is
-/// there: one request is one hand-back, and a byte left behind would convert
-/// the next command the moment it started.
-fn interrupt_requested(fd: Option<RawFd>) -> bool {
-    let Some(fd) = fd else { return false };
-    let mut buf = [0u8; 64];
-    let mut asked = false;
-    loop {
-        let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
-        if n <= 0 {
-            return asked; // EAGAIN (nothing pending), EOF, or an error
-        }
-        asked = true;
-    }
-}
-
-fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Option<RawFd>) -> ! {
+fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>) -> ! {
     let real_uid = getuid().as_raw();
     if let Err(e) = setup_namespaces(&policy.network, join) {
         die(format!("namespace setup failed: {e}"));
@@ -421,14 +340,15 @@ fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Option<
                 die(format!("PR_SET_DUMPABLE failed: {e}"));
             }
             if policy.mode == "serve" {
-                serve(&policy.cwd, true, interrupt_fd);
+                session::serve(&policy.cwd, true);
             }
             // A one-shot launcher never hands a command back (its spec sets
             // no check-in), so there is no pid to carry out of here.
             let outcome = if policy.mode == "exec" {
                 run_child_exec(&policy.child_spec(), &policy.cwd)
             } else {
-                run_child(&policy.child_spec(), &policy.cwd, None).map(|_| ())
+                run_child(&policy.child_spec(), &policy.cwd, None)
+                    .and_then(|answer| session::write_answer(&answer))
             };
             if let Err(e) = outcome {
                 die(format!("child execution failed: {e}"));
@@ -439,7 +359,7 @@ fn run_full(policy: &Policy, join: Option<(RawFd, RawFd)>, interrupt_fd: Option<
     }
 }
 
-fn run_unconfined(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
+fn run_unconfined(policy: &Policy) -> ! {
     // `isolation = "none"`: the operator's explicit opt-out, or a host with no
     // confinement mechanism at all. NOTHING here confines the child -- no
     // namespaces, no Landlock, no seccomp -- so this branch must stay reachable
@@ -464,14 +384,15 @@ fn run_unconfined(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
         die(format!("PR_SET_DUMPABLE failed: {e}"));
     }
     if policy.mode == "serve" {
-        serve(&policy.cwd, false, interrupt_fd);
+        session::serve(&policy.cwd, false);
     }
     // A one-shot launcher never hands a command back (its spec sets no
     // check-in), so there is no pid to carry out of here.
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd, None).map(|_| ())
+        run_child(&policy.child_spec(), &policy.cwd, None)
+            .and_then(|answer| session::write_answer(&answer))
     };
     if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
@@ -479,7 +400,7 @@ fn run_unconfined(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
     std::process::exit(0);
 }
 
-fn run_partial(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
+fn run_partial(policy: &Policy) -> ! {
     // No namespaces, no pivot_root. Landlock confines the FS; seccomp +
     // NO_NEW_PRIVS bound the syscall surface; we still operate on the real cwd
     // and inherit the original /proc, /tmp, network namespace from the parent.
@@ -495,113 +416,20 @@ fn run_partial(policy: &Policy, interrupt_fd: Option<RawFd>) -> ! {
         die(format!("PR_SET_DUMPABLE failed: {e}"));
     }
     if policy.mode == "serve" {
-        serve(&policy.cwd, false, interrupt_fd);
+        session::serve(&policy.cwd, false);
     }
     // A one-shot launcher never hands a command back (its spec sets no
     // check-in), so there is no pid to carry out of here.
     let outcome = if policy.mode == "exec" {
         run_child_exec(&policy.child_spec(), &policy.cwd)
     } else {
-        run_child(&policy.child_spec(), &policy.cwd, None).map(|_| ())
+        run_child(&policy.child_spec(), &policy.cwd, None)
+            .and_then(|answer| session::write_answer(&answer))
     };
     if let Err(e) = outcome {
         die(format!("child execution failed: {e}"));
     }
     std::process::exit(0);
-}
-
-/// Run one command per stdin line inside the namespaces already established,
-/// answering each with the same single-line JSON result the one-shot mode
-/// prints. Exits when stdin closes, which takes the PID namespace (and any
-/// backgrounded server in it) down with it.
-fn serve(cwd: &Path, pid_namespaced: bool, interrupt_fd: Option<RawFd>) -> ! {
-    // Setup (mounts, /proc, Landlock, seccomp) is complete by the time we are
-    // called, so any warning it emitted is already on our stderr. Signal that
-    // with one line the client consumes before its first request: it gives
-    // JailSession.open() a known point to read those warnings off stderr,
-    // instead of guessing with a timeout whether setup has flushed yet.
-    println!("{{\"ready\":true}}");
-    if io::stdout().flush().is_err() {
-        die("serve: the request channel is gone");
-    }
-    let stdin = io::stdin();
-    let mut line = String::new();
-    // Backgrounded commands in start order, each with the namespace's pids at
-    // its start: what a stop sweeps ends where the next still-running command
-    // began. Without
-    // a PID namespace the snapshot is empty and the Python side sweeps.
-    let mut backgrounded: Vec<(i32, HashSet<i32>)> = Vec::new();
-    loop {
-        line.clear();
-        match stdin.lock().read_line(&mut line) {
-            Ok(0) => {
-                if !pid_namespaced {
-                    let pids: Vec<i32> = backgrounded.iter().map(|(pid, _)| *pid).collect();
-                    sweep_backgrounded(&pids);
-                }
-                std::process::exit(0)
-            }
-            Ok(_) => {}
-            Err(e) => die(format!("serve: reading request failed: {e}")),
-        }
-        if line.trim().is_empty() {
-            continue;
-        }
-        let request: Request = match serde_json::from_str(&line) {
-            Ok(r) => r,
-            Err(e) => die(format!("serve: invalid request JSON: {e}")),
-        };
-        let outcome: io::Result<()> = match request {
-            // A run that was handed back keeps running, so it is swept and
-            // polled exactly like one that started in the background.
-            Request::Run(child) => {
-                let before = if pid_namespaced {
-                    namespace_pids()
-                } else {
-                    HashSet::new()
-                };
-                run_child(&child.child_spec(), cwd, interrupt_fd).map(|handed_back| {
-                    if let Some(pid) = handed_back {
-                        backgrounded.push((pid, before));
-                    }
-                })
-            }
-            Request::Background(child) => {
-                let before = if pid_namespaced {
-                    namespace_pids()
-                } else {
-                    HashSet::new()
-                };
-                spawn_detached(&child.child_spec(), cwd).map(|pid| backgrounded.push((pid, before)))
-            }
-            Request::Status { pid } => answer_status(pid),
-            Request::Stop { pid } => {
-                let mut answer = stop_result(pid);
-                if pid_namespaced {
-                    answer["survivors"] = sweep_escapees_of(pid, &mut backgrounded).into();
-                }
-                println!("{answer}");
-                io::stdout().flush()
-            }
-        };
-        // A command that could not be EXECUTED (bad path, missing interpreter)
-        // is the caller's argv being wrong, not this jail being broken: answer
-        // it like the one-shot launcher does and keep serving. Dying here cost
-        // the whole run its namespaces, and every backgrounded server in them,
-        // over one typo.
-        if let Err(e) = outcome {
-            let result = serde_json::json!({
-                "returncode": 127,
-                "stdout": "",
-                "stderr": format!("child execution failed: {e}"),
-                "exec_failed": true,
-            });
-            println!("{result}");
-            if io::stdout().flush().is_err() {
-                die("serve: the request channel is gone");
-            }
-        }
-    }
 }
 
 /// Set IFF_UP on `lo` in the CURRENT network namespace.
@@ -2423,8 +2251,8 @@ fn take_terminal_foreground(cmd: &mut Command) {
 fn run_child(
     spec: &ChildSpec<'_>,
     cwd: &Path,
-    interrupt_fd: Option<RawFd>,
-) -> io::Result<Option<i32>> {
+    mut active: Option<&mut session::Active<'_>>,
+) -> io::Result<serde_json::Value> {
     if spec.argv.is_empty() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "empty argv"));
     }
@@ -2483,16 +2311,22 @@ fn run_child(
     // reaped) or an unexpected wait error both proceed to the unified teardown
     // + real reap below.
     while let Ok(WaitStatus::StillAlive) = waitid(Id::Pid(child_wait), wait_flags) {
+        let control = active
+            .as_mut()
+            .map(|a| a.poll())
+            .unwrap_or(session::Control::Continue);
+        if control == session::Control::Closed || (control == session::Control::Cancel && !converts)
+        {
+            break;
+        }
         if spec.timeout_s > 0.0 && start.elapsed() > timeout {
             timed_out = true;
             break;
         }
-        if converts && (start.elapsed() > checkin || interrupt_requested(interrupt_fd)) {
+        if converts && (start.elapsed() > checkin || control == session::Control::Cancel) {
             // Hand the command back rather than kill it: whether a long command
             // is stuck or working is a judgement, so it goes to whoever can
-            // make one. The client can ask for that judgement EARLY (a byte on
-            // the interrupt pipe) when the operator has pressed Stop -- the
-            // same hand-back, just not at the end of a 15-minute check-in.
+            // make one. A cancellation frame asks for the same hand-back early.
             // Render BEFORE spilling -- the answer carries the output so far,
             // and spilling clears the retained capture.
             let (out, err) = {
@@ -2516,13 +2350,9 @@ fn run_child(
                 "stdout": out,
                 "stderr": err,
             });
-            let mut stream = io::stdout().lock();
-            writeln!(stream, "{answer}")?;
-            stream.flush()?;
             // No killpg, no reap: the drain threads keep appending to the log
             // and the caller polls the pid through `status`/`stop`.
-            std::mem::forget(child);
-            return Ok(Some(child_pid));
+            return Ok(answer);
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -2577,9 +2407,7 @@ fn run_child(
         "stderr": stderr,
         "timed_out": timed_out,
     });
-    let mut out = io::stdout().lock();
-    writeln!(out, "{result}")?;
-    Ok(None)
+    Ok(result)
 }
 
 /// Where a handed-back command's output continues.
@@ -2695,18 +2523,16 @@ fn wait_code(status: WaitStatus) -> Option<i32> {
 
 /// Whether a backgrounded command is still running, reaping it once it is not
 /// so its pid cannot be recycled under a later request.
-fn answer_status(pid: i32) -> io::Result<()> {
+fn status_result(pid: i32) -> serde_json::Value {
     let running = serde_json::json!({"running": true, "returncode": null});
-    let result = match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
+    match waitpid(Pid::from_raw(pid), Some(WaitPidFlag::WNOHANG)) {
         Ok(WaitStatus::StillAlive) => running,
         Ok(status) => match wait_code(status) {
             Some(code) => serde_json::json!({"running": false, "returncode": code}),
             None => running,
         },
         Err(e) => serde_json::json!({"running": false, "returncode": null, "error": e.to_string()}),
-    };
-    println!("{result}");
-    io::stdout().flush()
+    }
 }
 
 /// Kill a backgrounded command's group and reap it: the answer to a stop
@@ -2871,14 +2697,6 @@ fn spawn_detached(spec: &ChildSpec<'_>, cwd: &Path) -> io::Result<i32> {
     cmd.stderr(Stdio::null());
     let child = cmd.spawn()?;
     let pid = child.id() as i32;
-    let result = serde_json::json!({
-        "returncode": 0,
-        "stdout": "",
-        "stderr": "",
-        "pid": pid,
-    });
-    println!("{result}");
-    io::stdout().flush()?;
     Ok(pid)
 }
 

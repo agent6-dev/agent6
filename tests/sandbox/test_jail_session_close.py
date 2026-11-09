@@ -1,67 +1,64 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`JailSession.close()` never propagates an exception at teardown.
-
-`stdin.close()` followed by `communicate()` re-hits the closed pipe in the flush and
-raises `ValueError: flush of closed file` on Python 3.12 and 3.13 (3.14 tolerates it).
-These tests use a fake launcher proc, so they need no namespaces and run on every
-interpreter.
-"""
+"""Session teardown tolerates closed pipes and reaps a launcher that ignored EOF."""
 
 from __future__ import annotations
 
+import io
 import json
-import os
 import pathlib
+import select
 import subprocess
-from typing import Any
+import time
+from typing import IO, Any
 
 import pytest
 
+from agent6 import kinds
 from agent6.sandbox import jail, jail_jobs, jail_session
 
 
 class _FakeProc:
-    """A launcher Popen stand-in whose communicate() raises like 3.12's does."""
+    """A launcher Popen stand-in with a bounded wait."""
 
-    def __init__(self, *, communicate_raises: BaseException | None, alive_after: bool) -> None:
+    def __init__(self, *, wait_raises: BaseException | None, alive_after: bool) -> None:
         self.pid = 424242
-        self.stdin = None  # close() must not depend on stdin being present
-        self._communicate_raises = communicate_raises
+        self.stdin: IO[bytes] | None = None
+        self.stdout = None
+        self.stderr = None
+        self._wait_raises = wait_raises
         self._alive_after = alive_after
-        self.communicated = False
+        self.waited = False
 
-    def communicate(self, timeout: float | None = None) -> tuple[bytes, bytes]:
-        self.communicated = True
-        if self._communicate_raises is not None:
-            raise self._communicate_raises
-        return (b"", b"")
+    def wait(self, timeout: float | None = None) -> int:
+        self.waited = True
+        if self._wait_raises is not None:
+            raise self._wait_raises
+        return 0
 
     def poll(self) -> int | None:
         return None if self._alive_after else 0
 
 
 def _session(proc: Any, *, pid_namespaced: bool = True) -> jail_session.JailSession:
-    # A real pipe end for the interrupt channel: close() closes it, and a
-    # bogus number would make that the failure under test instead of the flush.
-    _, interrupt_w = os.pipe()
     return jail_session.JailSession(
         _proc=proc,
         _binary=pathlib.Path("/nonexistent"),
         _pid_namespaced=pid_namespaced,
-        _interrupt_w=interrupt_w,
         _memory_limit_mib=0,
     )
 
 
-def test_close_swallows_the_closed_stdin_flush_valueerror() -> None:
-    proc = _FakeProc(communicate_raises=ValueError("flush of closed file"), alive_after=False)
+def test_close_tolerates_an_already_closed_stdin() -> None:
+    proc = _FakeProc(wait_raises=None, alive_after=False)
+    proc.stdin = io.BytesIO()
+    proc.stdin.close()
     _session(proc).close()  # must not raise
-    assert proc.communicated
+    assert proc.waited
 
 
-def test_close_kills_a_launcher_that_outlived_the_drain(monkeypatch: pytest.MonkeyPatch) -> None:
-    """close() SIGKILLs the group of a launcher left alive by a timed-out communicate().
+def test_close_kills_a_launcher_that_ignored_eof(monkeypatch: pytest.MonkeyPatch) -> None:
+    """close() SIGKILLs the group of a launcher left alive by a timed-out wait().
 
     The kill reaches the pid, and close() does not raise when the killpg of an already-exited
     process errors.
@@ -73,11 +70,44 @@ def test_close_kills_a_launcher_that_outlived_the_drain(monkeypatch: pytest.Monk
 
     monkeypatch.setattr("agent6.sandbox.jail.os.killpg", _fake_killpg)
     proc = _FakeProc(
-        communicate_raises=subprocess.TimeoutExpired(cmd="jail", timeout=10.0),
+        wait_raises=subprocess.TimeoutExpired(cmd="jail", timeout=10.0),
         alive_after=True,
     )
     _session(proc).close()  # must not raise
     assert killed == [proc.pid]
+
+
+@pytest.mark.parametrize(
+    "isolation", ["none", "partial", pytest.param("full", marks=pytest.mark.needs_namespaces)]
+)
+def test_close_drains_a_response_interrupted_before_it_was_read(
+    tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
+) -> None:
+    """An unread response larger than the pipe must not force a healthy launcher to be killed."""
+    session = jail_session.JailSession.open(
+        kinds.JailPolicy(cwd=tmp_path, argv=(), isolation=isolation, network="host")
+    )
+    proc = session._proc  # pyright: ignore[reportPrivateUsage]
+
+    def interrupt_response() -> bool:
+        assert proc.stdout is not None
+        assert select.select([proc.stdout], [], [], 5)[0], "no response became readable"
+        assert proc.poll() is None
+        raise KeyboardInterrupt
+
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            session.run(
+                ("python3", "-c", "print('x' * (1024 * 1024))"),
+                interrupted=interrupt_response,
+            )
+    finally:
+        started = time.monotonic()
+        survivors = session.close()
+        elapsed = time.monotonic() - started
+    assert elapsed < 3, f"close took {elapsed:.2f}s; launcher exit={proc.returncode}"
+    assert proc.returncode == 0
+    assert not survivors
 
 
 def test_a_survivor_of_the_sweep_is_named_by_every_stop(
@@ -120,7 +150,7 @@ def test_a_survivor_of_the_sweep_is_named_by_every_stop(
         return {"stopped": True, "returncode": 0}
 
     monkeypatch.setattr(jail_session.JailSession, "_request", stopped)
-    session = _session(_FakeProc(communicate_raises=None, alive_after=False), pid_namespaced=False)
+    session = _session(_FakeProc(wait_raises=None, alive_after=False), pid_namespaced=False)
     assert (
         "4321"
         in jail_jobs.SessionJob(
@@ -133,7 +163,7 @@ def test_a_survivor_of_the_sweep_is_named_by_every_stop(
     )
     settled._final = jail_session.BackgroundStatus(running=False, returncode=0, error="")  # pyright: ignore[reportPrivateUsage]
     assert "4321" in settled.stop()
-    namespaced = _session(_FakeProc(communicate_raises=None, alive_after=False))
+    namespaced = _session(_FakeProc(wait_raises=None, alive_after=False))
     job2 = jail_jobs.SessionJob(
         namespaced, 7, tmp_path / "job2", before=namespaced.child_snapshot()
     )
@@ -162,7 +192,7 @@ def test_a_survivor_of_the_sweep_fails_the_command_and_comes_back_from_close(
     monkeypatch.setattr("agent6.sandbox.jail.kill_escapees", sweep)
     monkeypatch.setattr("agent6.sandbox.jail.own_children", no_children)
     monkeypatch.setattr(jail_session.JailSession, "_request", answered)
-    session = _session(_FakeProc(communicate_raises=None, alive_after=False), pid_namespaced=False)
+    session = _session(_FakeProc(wait_raises=None, alive_after=False), pid_namespaced=False)
     with pytest.raises(jail.JailUnavailableError, match="4321"):
         session.run(("true",))
     assert session.close() == frozenset({4321})

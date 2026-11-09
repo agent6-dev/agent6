@@ -12,15 +12,141 @@ import pathlib
 import select
 import signal
 import subprocess
+import threading
 import time
 from collections.abc import Callable
-from typing import cast
+from typing import IO, cast
+
+import pydantic
 
 from agent6 import kinds
 from agent6.sandbox import jail
 
 # The answer wait's poll interval: an operator Stop reads as immediate at this cost.
 _ANSWER_POLL_S = 0.2
+_PROTOCOL_VERSION = 1
+_REQUEST_LIMIT = 1024 * 1024
+_READY_LIMIT = 4096
+_ANSWER_LIMIT = 128 * 1024 * 1024
+
+
+class _Ready(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="forbid", strict=True)
+    ready: bool
+    protocol: int
+
+
+class _Answer(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(extra="allow", strict=True)
+    id: int = pydantic.Field(gt=0)
+
+
+@dataclasses.dataclass(slots=True)
+class _Stderr:
+    """Drain transport diagnostics independently, retaining a bounded tail."""
+
+    pipe: IO[bytes]
+    _tail: bytearray = dataclasses.field(default_factory=bytearray)
+    _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
+    _done: threading.Event = dataclasses.field(default_factory=threading.Event)
+    _thread: threading.Thread | None = None
+    _truncated: bool = False
+
+    def start(self) -> None:
+        os.set_blocking(self.pipe.fileno(), False)
+        self._thread = threading.Thread(target=self._drain, daemon=True)
+        self._thread.start()
+
+    def _read_available(self) -> bool:
+        for _ in range(128):
+            try:
+                chunk = os.read(self.pipe.fileno(), 8192)
+            except BlockingIOError:
+                return True
+            if not chunk:
+                return False
+            self._tail.extend(chunk)
+            if len(self._tail) > 65536:
+                del self._tail[:-65536]
+                self._truncated = True
+        return True
+
+    def _drain(self) -> None:
+        while not self._done.is_set():
+            if select.select([self.pipe], [], [], 0.1)[0]:
+                with self._lock:
+                    if not self._read_available():
+                        return
+
+    def text(self) -> str:
+        with self._lock:
+            if not self.pipe.closed:
+                self._read_available()
+            prefix = "[jail stderr truncated]\n" if self._truncated else ""
+            return prefix + jail.lossy_text(bytes(self._tail)).strip()
+
+    def close(self) -> None:
+        self._done.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1)
+
+
+def _frame(request: dict[str, object]) -> bytes:
+    try:
+        data = (json.dumps(request, allow_nan=False) + "\n").encode()
+    except (TypeError, ValueError) as exc:
+        raise jail.JailUnavailableError(f"jail session request is not valid JSON: {exc}") from exc
+    if len(data) > _REQUEST_LIMIT:
+        raise jail.JailUnavailableError(f"jail protocol frame exceeds {_REQUEST_LIMIT} bytes")
+    return data
+
+
+def _read_frame(
+    proc: subprocess.Popen[bytes],
+    limit: int,
+    *,
+    request_id: int = 0,
+    interrupted: Callable[[], bool] | None = None,
+    deadline: float | None = None,
+) -> bytes:
+    """Read one bounded frame without blocking cancellation on a partial line.
+
+    Args:
+        proc: The protocol peer.
+        limit: Maximum frame bytes, including the newline.
+        request_id: The active request, or zero during readiness.
+        interrupted: Polled while reading; true sends one cancellation frame.
+        deadline: The readiness deadline, or None for a command response.
+
+    Returns:
+        The complete frame, including its newline.
+
+    Raises:
+        EOFError: The peer closed stdout before a complete frame.
+        jail.JailUnavailableError: The frame is oversized, malformed or late.
+    """
+    assert proc.stdout is not None and proc.stdin is not None
+    line = bytearray()
+    asked = False
+    while True:
+        if deadline is not None and time.monotonic() > deadline:
+            raise jail.JailUnavailableError("jail session handshake timed out")
+        if not asked and interrupted is not None and interrupted():
+            proc.stdin.write(_frame({"kind": "cancel", "id": request_id}))
+            proc.stdin.flush()
+            asked = True
+        if not select.select([proc.stdout], [], [], _ANSWER_POLL_S)[0]:
+            continue
+        chunk = os.read(proc.stdout.fileno(), min(65536, limit + 1 - len(line)))
+        if not chunk:
+            raise EOFError("jail session ended before a complete protocol frame")
+        line.extend(chunk)
+        if len(line) > limit:
+            raise jail.JailUnavailableError(f"jail protocol frame exceeds {limit} bytes")
+        if b"\n" in chunk:
+            if line.find(b"\n") != len(line) - 1:
+                raise jail.JailUnavailableError("jail session sent data after a protocol frame")
+            return bytes(line)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -52,29 +178,20 @@ class Stopped:
     survivors: frozenset[int]
 
 
-def _abandon_launcher(proc: subprocess.Popen[bytes], interrupt_w: int) -> None:
-    """Unregister, close and reap a launcher that failed setup.
-
-    Closing stdin here swallows the EPIPE the dead peer forces on the buffered spec
-    write; left to garbage collection it surfaces as unraisable noise, and the
-    unreaped child is a zombie for the rest of the process.
-
-    Args:
-        proc: The launcher; its group is killed if it still runs.
-        interrupt_w: The write end of its interrupt pipe.
-    """
-    jail.forget_launcher(proc.pid)
-    with contextlib.suppress(OSError):
-        os.close(interrupt_w)
-    for pipe in (proc.stdin, proc.stdout, proc.stderr):
-        if pipe is not None:
-            with contextlib.suppress(OSError, ValueError):
-                pipe.close()
+def _abandon_launcher(proc: subprocess.Popen[bytes], stderr: _Stderr | None) -> None:
+    """Kill, unregister and reap a launcher whose protocol cannot be trusted."""
     if proc.poll() is None:
         with contextlib.suppress(OSError):
             os.killpg(proc.pid, signal.SIGKILL)
     with contextlib.suppress(subprocess.TimeoutExpired, OSError):
         proc.wait(timeout=5.0)
+    if stderr is not None:
+        stderr.close()
+    jail.forget_launcher(proc.pid)
+    for pipe in (proc.stdin, proc.stdout, proc.stderr):
+        if pipe is not None:
+            with contextlib.suppress(OSError, ValueError):
+                pipe.close()
 
 
 @dataclasses.dataclass(slots=True)
@@ -100,12 +217,11 @@ class JailSession:
     _binary: pathlib.Path
     # Without a PID namespace a `setsid` escapee reparents here, so each command's sweep runs here.
     _pid_namespaced: bool
-    # One byte on the interrupt pipe asks the launcher to hand the running command back now; the
-    # request pipe is in lockstep and this side is blocked reading that request's answer.
-    _interrupt_w: int
     # Carried on every request: the launcher's own default would ignore the operator's cap.
     _memory_limit_mib: int
     startup_stderr: str = ""
+    _stderr: _Stderr | None = None
+    _request_id: int = 0
     # What was already ours at open; without a PID namespace, anything beyond it at close is
     # this session's escapee.
     _opened_with: frozenset[int] = frozenset()
@@ -134,47 +250,47 @@ class JailSession:
         binary = jail.require_jail_binary()
         join_args, join_fds = jail.network_join_args(policy, session_net)
         jail.become_subreaper()
-        interrupt_r, interrupt_w = os.pipe()
-        try:
-            proc = jail.spawn_launcher(
-                binary,
-                ["--interrupt-fd", str(interrupt_r), *join_args],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                pass_fds=(interrupt_r, *join_fds),
-            )
-        except BaseException:
-            os.close(interrupt_w)
-            raise
-        finally:
-            os.close(interrupt_r)
         spec = jail.policy_spec(policy)
         spec["mode"] = "serve"
-        assert proc.stdin is not None and proc.stdout is not None
+        data = _frame(spec)
+        proc = jail.spawn_launcher(
+            binary,
+            join_args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            pass_fds=join_fds,
+        )
+        assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
+        stderr = _Stderr(proc.stderr)
+        stderr.start()
         try:
-            proc.stdin.write((json.dumps(spec) + "\n").encode())
+            proc.stdin.write(data)
             proc.stdin.flush()
-            # The ready line keeps the lockstep and marks where a setup warning is on stderr.
-            ready = proc.stdout.readline()
-        except OSError as exc:
-            # EPIPE: the launcher died before consuming the spec.
-            err = jail.lossy_text(jail.read_available(proc.stderr)).strip()
-            _abandon_launcher(proc, interrupt_w)
-            raise jail.JailUnavailableError(
-                f"jail session died during setup: {err or exc}"
-            ) from exc
-        if not ready:
-            err = jail.lossy_text(jail.read_available(proc.stderr)).strip()
-            _abandon_launcher(proc, interrupt_w)
-            raise jail.JailUnavailableError(f"jail session died during setup: {err or 'no output'}")
-        startup_stderr = jail.lossy_text(jail.read_available(proc.stderr, budget_s=0.1)).strip()
+            ready = _Ready.model_validate_json(
+                _read_frame(proc, _READY_LIMIT, deadline=time.monotonic() + 10)
+            )
+            if not ready.ready or ready.protocol != _PROTOCOL_VERSION:
+                raise jail.JailUnavailableError(
+                    f"jail session handshake requires protocol {_PROTOCOL_VERSION}, got {ready}"
+                )
+            startup_stderr = stderr.text()
+        except (EOFError, OSError, ValueError, jail.JailUnavailableError) as exc:
+            err = stderr.text()
+            _abandon_launcher(proc, stderr)
+            if isinstance(exc, (EOFError, OSError)):
+                reason = f"jail session died during setup: {err or exc}"
+            else:
+                reason = f"jail session handshake failed: {str(exc)[:500]}"
+                if err:
+                    reason += f": {err}"
+            raise jail.JailUnavailableError(reason) from exc
         pid_namespaced = policy.isolation == "full"
         return cls(
             _proc=proc,
             _binary=binary,
             _pid_namespaced=pid_namespaced,
-            _interrupt_w=interrupt_w,
+            _stderr=stderr,
             _memory_limit_mib=policy.memory_limit_mib,
             startup_stderr=startup_stderr,
             _opened_with=frozenset() if pid_namespaced else frozenset(jail.own_children()),
@@ -201,8 +317,8 @@ class JailSession:
             timeout_s: The command's deadline.
             checkin_s: When the launcher hands a still-running command back.
             log_dir: Where a handed-back command's output goes.
-            interrupted: Polled while waiting; once true the launcher hands the
-                command back at once, as the check-in would, and teardown stops it.
+            interrupted: Polled while waiting; true requests early hand-back when a
+                check-in and log directory allow it, otherwise stops the command.
 
         Returns:
             The result, or the handoff of a command still running.
@@ -331,8 +447,8 @@ class JailSession:
     ) -> dict[str, object]:
         """Send one request and read its one answer line.
 
-        The channel is in lockstep: every request gets exactly one answer, or the
-        next request reads this one's.
+        Only cancellation may be sent before the response; it names this request
+        and has no response of its own.
 
         Args:
             request: The request object.
@@ -346,68 +462,58 @@ class JailSession:
                 raw pipe error, which no handler in the run catches.
         """
         assert self._proc.stdin is not None and self._proc.stdout is not None
+        self._request_id += 1
+        data = _frame({**request, "id": self._request_id})
         try:
-            self._proc.stdin.write((json.dumps(request) + "\n").encode())
+            self._proc.stdin.write(data)
             self._proc.stdin.flush()
-            line = self._await_answer(interrupted)
-        except (OSError, ValueError) as exc:  # ValueError: a closed pipe
-            raise jail.JailUnavailableError(f"jail session is gone: {exc}") from exc
-        if not line:
-            raise jail.JailUnavailableError("jail session ended before answering")
-        try:
-            parsed = json.loads(line.decode(errors="replace"))
-        except ValueError as exc:
+            line = _read_frame(
+                self._proc, _ANSWER_LIMIT, request_id=self._request_id, interrupted=interrupted
+            )
+            try:
+                answer = _Answer.model_validate_json(line)
+            except pydantic.ValidationError as exc:
+                raise jail.JailUnavailableError(
+                    "jail session answered with an invalid request ID or JSON: "
+                    + str(exc.errors(include_input=False, include_url=False)[0]["msg"])
+                ) from exc
+            if answer.id != self._request_id:
+                raise jail.JailUnavailableError(
+                    f"jail session answered request ID {answer.id}, expected {self._request_id}"
+                )
+            return answer.model_dump()
+        except (EOFError, OSError, ValueError, jail.JailUnavailableError) as exc:
+            err = self._stderr.text() if self._stderr is not None else ""
+            _abandon_launcher(self._proc, self._stderr)
             raise jail.JailUnavailableError(
-                f"jail session produced unparseable output: {line!r}"
+                f"jail session protocol failed: {exc}" + (f": {err}" if err else "")
             ) from exc
-        if not isinstance(parsed, dict):
-            raise jail.JailUnavailableError(f"jail session answered with {type(parsed).__name__}")
-        return parsed  # pyright: ignore[reportUnknownVariableType]
-
-    def _await_answer(self, interrupted: Callable[[], bool] | None) -> bytes:
-        """Return the launcher's answer line, waiting in a way an operator Stop can cut short.
-
-        Selecting on the raw descriptor is safe because the channel is in lockstep:
-        a complete answer can never sit in the reader's buffer while select says
-        there is nothing to read.
-
-        Args:
-            interrupted: Polled while waiting; true asks the launcher to hand the command
-                back. None waits without polling.
-
-        Returns:
-            The answer line; empty at EOF.
-        """
-        assert self._proc.stdout is not None
-        if interrupted is None:
-            return self._proc.stdout.readline()
-        asked = False
-        while not select.select([self._proc.stdout], [], [], _ANSWER_POLL_S)[0]:
-            if not asked and interrupted():
-                # Once: a second byte would hand back whatever command runs next.
-                with contextlib.suppress(OSError):
-                    os.write(self._interrupt_w, b"\x01")
-                asked = True
-        return self._proc.stdout.readline()
 
     def close(self) -> frozenset[int]:
-        """Shut the request channel; the launcher exits on the EOF.
-
-        `communicate()` closes stdin itself; a manual `stdin.close()` before it
-        makes Python 3.12 and 3.13 raise `ValueError: flush of closed file`.
+        """Close stdin, let EOF stop the launcher, then sweep command escapees.
 
         Returns:
-            The pids the sweep could not kill; empty under a PID namespace, which
-            takes everything with it.
+            Pids the sweep could not kill; empty under a PID namespace.
         """
-        with contextlib.suppress(OSError):
-            os.close(self._interrupt_w)
-        with contextlib.suppress(subprocess.TimeoutExpired, ValueError, OSError):
-            self._proc.communicate(timeout=10.0)
-        if self._proc.poll() is None:
-            with contextlib.suppress(OSError):
-                os.killpg(self._proc.pid, signal.SIGKILL)
-        jail.forget_launcher(self._proc.pid)
+        deadline = time.monotonic() + 10.0
+        if self._proc.stdin is not None:
+            with contextlib.suppress(ValueError, OSError):
+                self._proc.stdin.close()
+        # An interrupted response can fill stdout and keep the launcher from reading stdin's EOF.
+        with contextlib.suppress(ValueError, OSError):
+            if self._proc.stdout is not None and not self._proc.stdout.closed:
+                while self._proc.poll() is None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    readable, _, _ = select.select(
+                        [self._proc.stdout], [], [], min(remaining, _ANSWER_POLL_S)
+                    )
+                    if readable and not os.read(self._proc.stdout.fileno(), 65536):
+                        break
+        with contextlib.suppress(subprocess.TimeoutExpired, OSError):
+            self._proc.wait(timeout=max(0.0, deadline - time.monotonic()))
+        _abandon_launcher(self._proc, self._stderr)
         return self._sweep(frozenset())
 
     def child_snapshot(self) -> kinds.ChildSnapshot:

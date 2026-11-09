@@ -232,9 +232,17 @@ Each `--security-opt` flag on this page turns off a protection of the container 
     - a model's `run_command` in a run is not wall-clock killed: at `[harness].command_checkin_s` it is handed back as a background job ([config](config.md#harness)).
       Under `agent6 plan` and `agent6 ask`, in a machine state, without a jail session, or with `command_checkin_s = 0`, it is killed after 600 s
 - One launcher per run at every isolation level; under `full` `sandbox.isolation` its commands share that netns, PID namespace, and private `/tmp`, and under `partial` the host's network and `/tmp`
-    - closing the run's channel takes the PID namespace down
+    - EOF on the run's command channel stops the foreground process group without waiting for its deadline or handing it back.
+      Under `full`, session exit takes the PID namespace down; under `partial` and `none`, the launcher stops its tracked background groups and Python sweeps escaped descendants
     - a launcher that cannot start leaves each command its own
 - The policy arrives as JSON on a pipe from agent6, validated against a strict schema; unknown fields are refused.
+- The [supervisor protocol](architecture.md#jail-supervisor-protocol) uses stdin for requests and request-correlated cancellation, stdout for responses, and stderr for launcher diagnostics.
+  One nonblocking reader owns stdin even while a foreground command runs, and only the serve loop writes responses.
+    - captured commands receive `/dev/null` on stdin and separate stdout/stderr pipes; detached commands receive `/dev/null` on all three streams
+    - commands do not inherit the protocol streams; dumpable 0 on the launcher and the child's capability drop prevent reopening its descriptors through `/proc/<pid>/fd`
+    - protocol version, request IDs and frame-size checks reject incompatible or malformed peers; they do not authenticate a launcher the operator selected or provide confinement under `none`
+    - malformed input stops the active group before closing the session; stale cancellation IDs cannot stop another request
+    - Python drains launcher stderr independently with bounded retention, so diagnostics cannot fill that pipe while it waits for a response
 
 **Verify**
 
