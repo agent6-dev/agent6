@@ -834,6 +834,10 @@ class ToolDispatcher:
         """
         return command_tools.stop_background(raw, get_background=self._background)
 
+    def background_running(self) -> bool:
+        """Return whether a background command this run started is still running."""
+        return self._shells is not None and self._shells.any_running()
+
     def _background(self) -> background.BackgroundShells:
         """Return the background roster.
 

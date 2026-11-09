@@ -55,9 +55,8 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
     nudge_answers = [a for a in answers if isinstance(a, advice.Nudge)]
     stops = [a for a in answers if isinstance(a, advice.Stop)]
     assert [a.text for a in nudge_answers] == [
-        "[harness settled] Changes are committed and the last three turns changed"
-        " nothing; finish_session ends the run, and at 12 unchanged turns the run ends on its"
-        " own."
+        "[harness settled] The last three turns changed nothing; finish_session ends the run,"
+        " and at 12 unchanged turns the run ends on its own."
     ]
     assert nudge_answers[0].fields == {"turn": nudges.VERIFY_SETTLED_NUDGE_AFTER + 1, "idle": 3}
     assert len(stops) == 1 and answers[-1] is stops[0]
@@ -181,8 +180,7 @@ def test_zero_disables_the_settled_stop_but_keeps_the_nudge(
     assert len(nudge_answers) == 1 and answers[3] is nudge_answers[0]
     assert nudge_answers[0].fields == {"turn": 4, "idle": 3}
     assert nudge_answers[0].text == (
-        "[harness settled] Changes are committed and the last three turns changed"
-        " nothing; finish_session ends the run."
+        "[harness settled] The last three turns changed nothing; finish_session ends the run."
     )
 
 
@@ -342,3 +340,14 @@ def test_a_commit_the_model_makes_under_its_own_git_control_is_progress() -> Non
     # The HEAD move at turn 6 restarts the streak, so no stop comes within fourteen turns.
     assert not [a for a in answers if isinstance(a, advice.Stop)]
     assert state.settled.idle == 8
+
+
+def test_a_turn_waiting_on_a_live_background_command_holds_the_streak() -> None:
+    """Reading a command of its own still running is waiting, not idling: no stop, no nudge."""
+    state = _green_state()
+    ctx = turn_context(tree_sha=lambda: "tree")
+    answers = [
+        guards.verify_settled(_turn(i, waited_on_background=True), state, ctx) for i in range(1, 20)
+    ]
+    assert answers == [None] * 19
+    assert state.settled.idle == 0

@@ -160,21 +160,22 @@ class SettledGuard:
     nudged: bool = False
     gateless_ever_edited: bool = False
 
-    def note_turn(self, tree: str, head: str, *, progress: bool, verify_ran: bool) -> None:
-        """Count the turn: progress restarts the streak, a verify run is neutral.
+    def note_turn(self, tree: str, head: str, *, progress: bool, neutral: bool) -> None:
+        """Count the turn: progress restarts the streak, a neutral turn holds it.
 
         Args:
             tree: The tree sha after the turn.
             head: The HEAD sha after the turn.
             progress: An edit, a commit, a memory write, a tree change or a HEAD move
                 happened.
-            verify_ran: A verify ran this turn.
+            neutral: A verify ran, or the worker waited on a command of its own still
+                running.
         """
         self.tree = tree
         self.head = head
         if progress:
             self.restart()
-        elif not verify_ran:
+        elif not neutral:
             self.idle += 1
 
     def restart(self) -> None:
@@ -257,8 +258,9 @@ def verify_settled(
     """Nudge once, then stop, a plain run that settled after a good state.
 
     The stop is an ending the end gates judge and a standing task may absorb.
-    A finish call this turn disarms both. A metric run's end belongs to its
-    plateau and ceiling rules, and its read-only turns are work.
+    A finish call this turn disarms both. A verify run and a wait on a command
+    the worker started are neutral. A metric run's end belongs to its plateau
+    and ceiling rules, and its read-only turns are work.
 
     Args:
         turn: The turn whose tools ran.
@@ -282,7 +284,7 @@ def verify_settled(
         or turn.wrote_memory
         or tree != guard.tree
         or head != guard.head,
-        verify_ran=turn.verify_just_passed or turn.verify_just_failed,
+        neutral=turn.verify_just_passed or turn.verify_just_failed or turn.waited_on_background,
     )
     if turn.finish is not None:
         return None

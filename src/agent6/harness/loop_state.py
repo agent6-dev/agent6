@@ -187,6 +187,8 @@ class TurnState:
         edited: An edit landed this turn.
         wrote_memory: A write to the memory store landed this turn.
         committed: A checkpoint committed this turn.
+        waited_on_background: A command the worker started was still running when the
+            worker started or read it this turn.
         dag_mutated: A DAG tool ran this turn.
         metric_sampled: The worker ran the metric itself this turn.
         metric_feedback: The metric notice for the model, if any.
@@ -215,6 +217,7 @@ class TurnState:
     edited: bool = False
     wrote_memory: bool = False
     committed: bool = False
+    waited_on_background: bool = False
     dag_mutated: bool = False
     metric_sampled: bool = False
     metric_feedback: str | None = None

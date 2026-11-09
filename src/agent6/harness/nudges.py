@@ -215,10 +215,7 @@ def verify_settled_nudge(stop_after: int) -> str:
     Returns:
         The nudge with the configured threshold, or no stop sentence.
     """
-    text = (
-        "[harness settled] Changes are committed and the last three turns changed"
-        " nothing; finish_session ends the run"
-    )
+    text = "[harness settled] The last three turns changed nothing; finish_session ends the run"
     if stop_after > 0:
         return f"{text}, and at {stop_after} unchanged turns the run ends on its own."
     return f"{text}."

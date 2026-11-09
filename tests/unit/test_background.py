@@ -268,3 +268,21 @@ def test_adopt_retains_a_command_when_its_log_and_cleanup_fail(tmp_path: pathlib
     session.survivors = frozenset()
     shells.stop("bg1")
     assert session.stopped == [42, 42]
+
+
+def test_any_running_reads_the_roster_live(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """True while a started command runs, false once stopped: what the settled guard reads."""
+    job = _Job()
+
+    def start_in_jail(*_a: object, **_k: object) -> _Job:
+        return job
+
+    monkeypatch.setattr(jail_jobs, "start_in_jail", start_in_jail)
+    shells = background.BackgroundShells(tmp_path / "shells")
+    assert not shells.any_running()
+    shells.start(("sleep", "60"), lambda _a, _rw: cast(kinds.JailPolicy, object()))
+    assert shells.any_running()
+    shells.stop_all()
+    assert not shells.any_running()
