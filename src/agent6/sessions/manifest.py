@@ -474,6 +474,9 @@ def newer_record(session_dir: pathlib.Path) -> str | None:
 
     Args:
         session_dir: The session directory.
+
+    Returns:
+        The note naming both versions and the upgrade, or None.
     """
     try:
         data = json.loads((session_dir / MANIFEST_NAME).read_text(encoding="utf-8"))
