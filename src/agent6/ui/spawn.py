@@ -375,11 +375,19 @@ def _stderr_tail(err: IO[str], limit: int = 2000) -> str:
 
 
 def _located(
-    list_dirs: Callable[[], list[pathlib.Path]], before: set[pathlib.Path]
+    list_dirs: Callable[[], list[pathlib.Path]], before: set[pathlib.Path], pid: int
 ) -> pathlib.Path | None:
-    """Return the newest listed dir not in the before set whose log exists, or None."""
+    """Return the new dir the child with this pid owns, or None while none does.
+
+    A session writes its worker pid before its journal's first event, so a dir recording
+    another worker belongs to a session that appeared at the same moment, not to this
+    child; a dir recording no worker (a machine draft) is the child's.
+    """
     for d in list_dirs():
-        if d not in before and (d / layout.LOGS_NAME).exists():
+        if d in before or not (d / layout.LOGS_NAME).exists():
+            continue
+        recorded = process.read_worker_pid(d)
+        if recorded is None or recorded == pid:
             return d
     return None
 
@@ -407,7 +415,7 @@ def spawn_and_locate(
         The new dir and "", or None and why.
     """
     return _spawn_and_wait(
-        argv, cwd, ready=lambda _pid: _located(list_dirs, before), env=env, timeout_s=timeout_s
+        argv, cwd, ready=lambda pid: _located(list_dirs, before, pid), env=env, timeout_s=timeout_s
     )
 
 

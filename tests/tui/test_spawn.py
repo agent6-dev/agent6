@@ -299,3 +299,42 @@ def test_run_cli_output_hands_back_stdout_alone_on_success(
         False,
         "x is live; its record is not complete.",
     )
+
+
+def test_spawn_and_locate_skips_a_session_another_worker_owns(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session that appears at the same moment is not the spawned one.
+
+    The hub navigated to a CLI run started in the same minute: the newest new dir was taken
+    for the child's.
+    """
+    from agent6.sessions import process
+
+    base = tmp_path / "dirs"
+    base.mkdir()
+
+    class _Proc:
+        pid = 424242
+
+        def __init__(self) -> None:
+            for name, pid in (("a-decoy", 1), ("b-mine", 424242)):
+                (base / name).mkdir()
+                (base / name / "logs.jsonl").write_text("", encoding="utf-8")
+                process.write_worker_pid(base / name, pid)
+
+        def poll(self) -> int | None:
+            return None
+
+    def _popen(*_a: object, **_k: object) -> _Proc:
+        return _Proc()
+
+    monkeypatch.setattr(spawn.subprocess, "Popen", _popen)
+    found, err = spawn.spawn_and_locate(
+        ["agent6", "run", "--", "t"],
+        tmp_path,
+        before=set(),
+        list_dirs=lambda: sorted(p for p in base.iterdir() if p.is_dir()),
+    )
+    assert err == ""
+    assert found == base / "b-mine"
