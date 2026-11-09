@@ -50,6 +50,29 @@ def mark_lane(monkeypatch: pytest.MonkeyPatch, path: pathlib.Path) -> None:
     monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
 
 
+def test_four_explicit_routes_without_default_are_not_runnable(
+    lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All executable roles configured still require the public default-route baseline."""
+    cfg = Config.model_validate(
+        {
+            "providers": {"p": {"backend": "openai", "base_url": "http://localhost:1/v1"}},
+            "models": {
+                role: {"model": f"p/{role}"} for role in kinds.MODEL_ROLES if role != "default"
+            },
+        }
+    )
+    written = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset())
+    assert "default" not in tomllib.loads(written.path.read_text())["models"]
+    for name in ("AGENT6_LANE_CONFIG", "AGENT6_SUBRUN", "AGENT6_PARALLEL_LINEAGE"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(ConfigError, match=r"No models\.default\.model configured"):
+        session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
+    mark_lane(monkeypatch, written.path)
+    with pytest.raises(ConfigError, match="lane snapshot"):
+        session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
+
+
 def test_snapshot_writes_resolved_roles(lane: subrun.LaneSpec) -> None:
     path = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset()).path
     models = tomllib.loads(path.read_text())["models"]
