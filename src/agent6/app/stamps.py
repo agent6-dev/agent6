@@ -11,7 +11,6 @@ import contextlib
 import datetime
 import os
 import pathlib
-from collections.abc import Sequence
 from typing import Any
 
 from agent6 import __version__, kinds, portable, task_text
@@ -89,7 +88,7 @@ def write_session_manifest(
     effective_preset: str = "none",
     preset_from_flag: bool = False,
     driver_from_flag: bool = False,
-    gate: tuple[Sequence[str], str] | None = None,
+    gate: manifest.GateStamp | None = None,
     isolation: str = "",
     parent_session_id: str | None = None,
     forked_from_turn: int | None = None,
@@ -117,7 +116,7 @@ def write_session_manifest(
         effective_preset: The preset the run uses.
         preset_from_flag: The preset came from `--preset`, so a resume replays it.
         driver_from_flag: The driver model came from `--model`.
-        gate: A fork's pin of the source's (verify command, origin).
+        gate: A fork's pinned gate record from its source.
         isolation: The resolved isolation level.
         review_base_tree: The base tree of a `/review` session; "" otherwise.
         parent_session_id: A fork's source run.
@@ -131,14 +130,12 @@ def write_session_manifest(
         budget: The caps the run's `--max-*` flags set, so a resume replays them.
     """
     lineage = parallel_lineage()
-    # A fresh run carries the configured gate until `pin_gate` stamps the pair it resolved; a
-    # gateless config's run or plan infers one at its start, so its gate is pending until then.
     if gate is None:
-        origin = "configured" if cfg.harness.verify_command else ""
-        if not origin and mode in ("run", "plan"):
-            origin = "pending"
-        gate = (cfg.harness.verify_command, origin)
-    verify_command, verify_origin = gate
+        gate = manifest.GateStamp(
+            command=cfg.harness.verify_command,
+            source="configured" if cfg.harness.verify_command else "",
+            availability="pending" if mode in ("run", "plan") else "ready",
+        )
     m = manifest.SessionManifest(
         agent6_version=__version__,
         session_id=session_id,
@@ -163,8 +160,7 @@ def write_session_manifest(
             revise_prompt=cfg.prompt.revise_prompt,
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
-            verify_command=tuple(verify_command),
-            verify_origin=verify_origin,
+            gate=gate,
         ),
         policy=_policy_stamp(cfg, isolation),
         budget=budget or manifest.BudgetStamp(),
@@ -182,10 +178,10 @@ def write_session_manifest(
     write_manifest(layout.manifest_path, m)
 
 
-def lane_verify_origin() -> str:
+def lane_gate_source() -> manifest.GateSource:
     """Return the origin of the gate a lane's config carries, or "" outside a lane.
 
-    `AGENT6_LANE_VERIFY_ORIGIN`: the coordinator resolves the gate in the origin, where the
+    `AGENT6_LANE_GATE_SOURCE`: the coordinator resolves the gate in the origin, where the
     repo signals are, and writes it into the lane's config; the lane alone would read it
     as configured.
 
@@ -194,7 +190,8 @@ def lane_verify_origin() -> str:
     """
     if parallel_lineage() is None:
         return ""
-    return os.environ.get("AGENT6_LANE_VERIFY_ORIGIN", "")
+    source = os.environ.get("AGENT6_LANE_GATE_SOURCE", "")
+    return source if source in ("configured", "inferred", "adopted") else ""
 
 
 def parallel_lineage() -> manifest.ParallelLineage | None:
@@ -421,55 +418,49 @@ def stamp_continuation(session_dir: pathlib.Path, steer: str) -> None:
         )
 
 
-def stamp_verify_gate(session_dir: pathlib.Path, argv: Sequence[str], origin: str) -> None:
-    """Pin the gate the run is judged by and where it came from.
-
-    From here on the pair is the run's, so a mid-run edit to AGENTS.md cannot move the gate.
+def stamp_verify_gate(session_dir: pathlib.Path, gate: manifest.GateStamp) -> None:
+    """Pin the gate record that viewers and the next execution read.
 
     Args:
         session_dir: The session directory.
-        argv: The gate command.
-        origin: Where the gate came from (`HarnessStamp.verify_origin`).
+        gate: The pinned command, source and execution availability.
     """
     m = manifest.read_manifest(session_dir)
-    harness = m.harness.model_copy(update={"verify_command": tuple(argv), "verify_origin": origin})
+    harness = m.harness.model_copy(update={"gate": gate})
     write_manifest(session_dir / manifest.MANIFEST_NAME, m.model_copy(update={"harness": harness}))
 
 
 def pin_gate(
     session_dir: pathlib.Path,
-    argv: Sequence[str],
-    origin: str,
+    gate: manifest.GateStamp,
     *,
     events: event_log.EventSink,
     reporter: app_reporter.Reporter,
 ) -> None:
     """Pin the execution's gate, and re-pin it when the loop adopts one mid-run.
 
-    A failed stamp is reported, never raised or swallowed: the execution is still worth
-    running, and the manifest is where every viewer and the next execution read the gate.
+    A failed stamp is reported because viewers and the next execution read it.
 
     Args:
         session_dir: The run.
-        argv: The gate command.
-        origin: Where the gate came from.
+        gate: The pinned command, source and execution availability.
         events: The run's event sink, watched for an adopted gate.
         reporter: Where a failed stamp is reported.
     """
 
-    def _stamp(gate: Sequence[str], why: str) -> None:
+    def _stamp(record: manifest.GateStamp) -> None:
         try:
-            stamp_verify_gate(session_dir, gate, why)
+            stamp_verify_gate(session_dir, record)
         except (manifest.ManifestError, OSError) as exc:
             reporter.note(f"could not record this run's verify gate: {exc}")
 
-    _stamp(argv, origin)
+    _stamp(gate)
 
     def _repin_adopted_gate(event: dict[str, Any]) -> None:
         """Re-pin on a `loop.verify_inferred` event that adopted a gate."""
         if event.get("type") == "loop.verify_inferred" and event.get("adopted_at") is not None:
             command = tuple(event.get("command", ()))
-            _stamp(command, "adopted" if command else "unadopted")
+            _stamp(manifest.GateStamp(command=command, source="adopted" if command else ""))
 
     # EventSink swallows a listener's exceptions; _stamp reports for itself.
     events.subscribe(_repin_adopted_gate)

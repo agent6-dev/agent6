@@ -18,7 +18,7 @@ from agent6 import paths
 from agent6.sessions import ipc, layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
-from agent6.viewmodel import format, review_queue, session_log, session_status
+from agent6.viewmodel import comparison, format, review_queue, session_log, session_status
 
 
 def session_mtime(session_dir: pathlib.Path) -> float:
@@ -100,31 +100,6 @@ def is_session_husk(session_dir: pathlib.Path) -> bool:
         True when the dir has none of the three.
     """
     return not layout.session_has_record(session_dir) and not process.worker_is_alive(session_dir)
-
-
-def session_compare(session_dir: pathlib.Path) -> sessions_manifest.CompareStamp | None:
-    """Return the fan-out compare stamp on a lane's manifest.
-
-    The event fold does not carry it, so every run view reads it from here.
-
-    Args:
-        session_dir: The session's state dir.
-
-    Returns:
-        The stamp, or None for a run outside a compared fan-out or with an unreadable
-        manifest.
-    """
-    try:
-        manifest = sessions_manifest.read_manifest(session_dir)
-    except sessions_manifest.ManifestError:
-        return None
-    return manifest.compare
-
-
-def is_winner(session_dir: pathlib.Path) -> bool:
-    """Return whether a run is its fan-out's compare winner."""
-    compare = session_compare(session_dir)
-    return compare is not None and compare.winner
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -314,7 +289,7 @@ def rows_for(
     """
     tips = git_read.run_ref_tips(cwd)
     dirs = session_dirs(paths.state_dir(cwd), buckets)
-    winners = {d.name for d in dirs if is_winner(d)}
+    winners = {d.name for d in dirs if comparison.is_winner(d)}
     rows = nested_rows((summarize_session_dir(d, branch_tips=tips) for d in dirs), sort=sort)
     return rows, winners
 

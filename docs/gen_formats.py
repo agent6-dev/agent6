@@ -649,7 +649,9 @@ def build_markdown() -> str:
     )
     sections.append("## Typed records")
     sections.append(
-        "`SessionManifest` is the public `manifest.json` record, with nested stamps below.\n"
+        "`SessionManifest` is the private, durable `manifest.json` record.\n"
+        "`HarnessStamp.gate` separates the pinned command and source from execution availability.\n"
+        "`ComparisonStamp` holds group facts on the coordinator; `CompareStamp` links each lane.\n"
         "Other records are nested objects used by the CLI and web serializers above.\n"
         "Properties are absent unless a serializer adds them explicitly."
     )

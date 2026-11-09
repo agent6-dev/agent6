@@ -429,6 +429,7 @@ depends_on = [
 # transcript delegates pending tools and verifications to transcript_items.
 # transcript_items and transcript use transcript_text for previews and marker bodies.
 # state and session_log share review's finding and disposition fold.
+# comparison resolves group records through sessions.layout and sessions.manifest.
 path = "agent6.viewmodel"
 depends_on = [
   "agent6.budget",

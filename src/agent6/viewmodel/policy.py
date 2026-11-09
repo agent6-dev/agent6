@@ -24,10 +24,7 @@ class SessionPolicy:
         run_commands: The commands mode ("allow", "deny", "ask"), "" when unknown.
         isolation: The sandbox isolation word, "" when unknown.
         network: The network the run's commands join ("session", "host"), "" when unknown.
-        verify_command: The verify gate's argv, empty when there is no gate.
-        verify_origin: Where the gate came from ("configured", "inferred", "adopted"),
-            "pending" for a run whose execution has not resolved its gate yet, or "withheld"
-            for one whose commands are withheld, so it may not run the gate it names.
+        verify_gate: The pinned gate, its source and execution availability.
         mode: "run", "plan" or "ask"; an ask has no gate to name.
     """
 
@@ -35,8 +32,7 @@ class SessionPolicy:
     run_commands: str
     isolation: str
     network: str
-    verify_command: tuple[str, ...]
-    verify_origin: str
+    verify_gate: manifest.GateStamp
     mode: str = ""
 
     def gate(self) -> str:
@@ -49,14 +45,16 @@ class SessionPolicy:
             `gate` plus the shell line with its origin in parentheses, `gate withheld:` plus
             the shell line, or "no verify gate".
         """
-        if self.verify_origin == "pending":
+        if self.verify_gate.availability == "pending" and not self.verify_gate.command:
             return "verify gate not settled yet"
-        if self.verify_origin == "withheld" and self.verify_command:
-            return f"gate withheld: {shlex.join(self.verify_command)}"
-        if not self.verify_command:
+        if self.verify_gate.availability == "withheld" and self.verify_gate.command:
+            return f"gate withheld: {shlex.join(self.verify_gate.command)}"
+        if not self.verify_gate.command:
             return "no verify gate"
-        origin = self.verify_origin or "unknown origin"
-        return f"gate {shlex.join(self.verify_command)} ({origin})"
+        origin = self.verify_gate.source or "unknown origin"
+        if self.verify_gate.availability == "pending":
+            origin += ", pending"
+        return f"gate {shlex.join(self.verify_gate.command)} ({origin})"
 
     def short(self) -> str:
         """Return the compact form for a border or header: isolation, network, commands mode."""
@@ -70,7 +68,13 @@ class SessionPolicy:
             for a run whose manifest could not be read (an all-empty policy must not claim
             "no verify gate" about a run it knows nothing of).
         """
-        known = (self.model, self.isolation, self.network, self.run_commands, self.verify_command)
+        known = (
+            self.model,
+            self.isolation,
+            self.network,
+            self.run_commands,
+            self.verify_gate.command,
+        )
         if not any(known):
             return ""
         parts = [p for p in (self.model, self.short()) if p]
@@ -117,7 +121,7 @@ def session_policy(session_dir: pathlib.Path) -> SessionPolicy:
 def manifest_policy(m: manifest.SessionManifest | None) -> SessionPolicy:
     """Return the policy from an already-read manifest, or empty when unavailable."""
     if m is None:
-        return SessionPolicy("", "", "", "", (), "")
+        return SessionPolicy("", "", "", "", manifest.GateStamp())
     driver = m.models.driver
     # A manifest an older agent6 wrote holds the configured word; `auto` names no network.
     network = m.policy.network if m.policy.network in ("session", "host") else ""
@@ -126,7 +130,6 @@ def manifest_policy(m: manifest.SessionManifest | None) -> SessionPolicy:
         run_commands=m.policy.run_commands,
         isolation=m.policy.isolation,
         network=network,
-        verify_command=tuple(m.harness.verify_command),
-        verify_origin=m.harness.verify_origin,
+        verify_gate=m.harness.gate,
         mode=m.mode,
     )

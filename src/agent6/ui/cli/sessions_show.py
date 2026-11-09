@@ -24,6 +24,7 @@ from agent6.vcs import git_read
 from agent6.viewmodel import (
     LogScan,
     SessionSummary,
+    comparison,
     existing_run_branch,
     format,
     listing,
@@ -60,7 +61,9 @@ def _print_lineage(manifest: sessions_manifest.SessionManifest) -> None:
         print(f"worktree:   {manifest.worktree}{gone}")
 
 
-def _print_parallel_compare(manifest: sessions_manifest.SessionManifest) -> None:
+def _print_parallel_compare(
+    manifest: sessions_manifest.SessionManifest, session_dir: pathlib.Path
+) -> None:
     """Print a lane's place in its fan-out; a no-op for any other run.
 
     The coordinator it nests under, then the compare outcome once there is one: its place,
@@ -68,10 +71,11 @@ def _print_parallel_compare(manifest: sessions_manifest.SessionManifest) -> None
 
     Args:
         manifest: The run's manifest.
+        session_dir: The run's directory, used to read its coordinator.
     """
     if (lineage := manifest.parallel) is not None:
         print(f"lane of:    {lineage.coordinator} (lane {lineage.lane} of group {lineage.group})")
-    formatted = format.format_compare(manifest.compare)
+    formatted = format.format_compare(manifest.compare, comparison.session_comparison(session_dir))
     if formatted is None:
         return
     headline, rationale = formatted
@@ -349,7 +353,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         forked_from_turn: The fork's source turn, or null.
         forked_from_sha: The fork's source commit, or null.
         worktree: The linked worktree path, or null.
-        compare: The CompareStamp, or null outside a compared lane.
+        compare: The lane placement and group id, or null outside a compared lane.
+        comparison: The group record on its coordinator, or null for other sessions.
         parallel: The ParallelLineage, or null outside a lane.
         fanout: The FanoutStamp, or null outside a coordinator.
         lanes: The coordinator's summary_row objects.
@@ -449,6 +454,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
                     "forked_from_sha": manifest.forked_from_sha,
                     "worktree": str(manifest.worktree) if manifest.worktree else None,
                     "compare": compare_json,
+                    "comparison": manifest.comparison.model_dump(mode="json")
+                    if manifest.comparison
+                    else None,
                     "parallel": manifest.parallel.model_dump(mode="json")
                     if manifest.parallel
                     else None,
@@ -485,7 +493,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     ]:
         print(prefix + task.replace("\n", "\n" + " " * 12))
     _print_lineage(manifest)
-    _print_parallel_compare(manifest)
+    _print_parallel_compare(manifest, target)
     _print_fanout(manifest, lanes, lane_manifests)
     print(
         f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"

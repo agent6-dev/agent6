@@ -466,8 +466,8 @@ function paintRun(cards, s) {
   if (s.compare && s.compare.line) add('compare', s.compare.line); // format_compare, server-side
   cards.head.appendChild(kv);
   // The judge's reason sits under its compare row (as sessions show prints it).
-  if (s.compare && s.compare.rationale) {
-    cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.compare.rationale));
+  if (s.comparison && s.comparison.rationale) {
+    cards.head.appendChild(el('div', 'sub muted', 'judge: ' + s.comparison.rationale));
   }
   // The same one-line fold the CLI banner and the TUI composer read; a setting and its value
   // stay on one line, so a narrow card breaks the line only between settings.

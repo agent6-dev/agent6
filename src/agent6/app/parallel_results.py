@@ -41,10 +41,10 @@ def imported_branch_note(origin: pathlib.Path, branch: str) -> str:
 
 
 def stamp(session_dir: pathlib.Path, **updates: object) -> str | None:
-    """Apply field updates to an imported lane's manifest.
+    """Apply field updates to a session's manifest.
 
     Args:
-        session_dir: The lane's imported dir.
+        session_dir: The session's directory.
         **updates: The manifest fields to set.
 
     Returns:
@@ -69,22 +69,34 @@ def stamp_compare_outcomes(
     outcome: app_compare.RankOutcome,
     *,
     origin_state: pathlib.Path,
+    coordinator_dir: pathlib.Path,
+    group: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
-    """Stamp the auto-compare outcome into each ranked lane's manifest.
+    """Stamp the group on its coordinator and each lane's placement on the lane.
 
-    The rationale and judge cost describe the whole group's ranking and land on
-    every lane. Rank 1 is the winner unless every gate ran red, and, when any lane
-    verified green, only if it is one: the judge's ranking is untrusted.
+    Rank 1 wins unless every gate ran red, and only a verified lane wins when any verified.
 
     Args:
         candidates: The ranked lanes.
         outcome: The ranking.
         origin_state: The origin's state dir.
+        coordinator_dir: The manifest owner for the group's ranking and judge spend.
+        group: The comparison group id.
         reporter: Receives a note per stamp failure; the others still land.
     """
+    comparison = sessions_manifest.ComparisonStamp(
+        group=group,
+        ranking=outcome.ranking,
+        ranked_by=outcome.ranked_by,
+        rationale=outcome.rationale[:2000] if outcome.ranked_by == "judge" else "",
+        judge_cost_usd=outcome.judge_cost_usd,
+        judge_cost_partial=outcome.judge_cost_partial,
+    )
+    err = stamp(coordinator_dir, comparison=comparison)
+    if err is not None:
+        reporter.note(f"group [{group}]: the comparison stamp failed: {err}")
     of = len(candidates)
-    text = outcome.rationale[:2000] if outcome.ranked_by == "judge" else ""
     crown = fanout_exit_code(candidates) != finalize.EXIT_VERIFY_FAILED
     any_verified = any(c.verify_ok is True for c in candidates)
     by_id = {c.session_id: c for c in candidates}
@@ -92,15 +104,7 @@ def stamp_compare_outcomes(
         winner = (
             rank_pos == 1 and crown and (not any_verified or by_id[session_id].verify_ok is True)
         )
-        compare = sessions_manifest.CompareStamp(
-            rank=rank_pos,
-            of=of,
-            winner=winner,
-            ranked_by=outcome.ranked_by,
-            rationale=text,
-            judge_cost_usd=outcome.judge_cost_usd,
-            judge_cost_partial=outcome.judge_cost_partial,
-        )
+        compare = sessions_manifest.CompareStamp(rank=rank_pos, of=of, winner=winner, group=group)
         err = stamp(lane_watch.lane_link(origin_state, session_id), compare=compare)
         if err is not None:
             reporter.note(f"lane [{session_id}]: imported, but the compare stamp failed: {err}")

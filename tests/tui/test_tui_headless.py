@@ -2140,3 +2140,48 @@ def test_a_waiting_question_of_a_dead_run_is_answered_for_the_resume(
             assert ipc.read_question_answers(tmp_path, "question-1", timeout_s=1.0) == ("pg",)
 
     asyncio.run(scenario())
+
+
+def test_lane_header_reads_the_coordinators_rationale(tmp_path: pathlib.Path) -> None:
+    """The rendered lane header reads group facts from the coordinator's manifest."""
+    runs = tmp_path / "sessions" / "runs"
+    lane = runs / "lane"
+    coordinator = runs / "fan"
+    lane.mkdir(parents=True)
+    coordinator.mkdir()
+    (lane / "manifest.json").write_text(
+        json.dumps(
+            {
+                "mode": "run",
+                "compare": {"group": "fan", "rank": 1, "of": 2, "winner": True},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (coordinator / "manifest.json").write_text(
+        json.dumps(
+            {
+                "comparison": {
+                    "group": "fan",
+                    "ranking": ["lane", "other"],
+                    "ranked_by": "judge",
+                    "rationale": "covers the edge case",
+                    "judge_cost_usd": 0.0123,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (lane / "logs.jsonl").write_text("", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = tui_app.Agent6TUI(lane)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _show_dashboard(pilot)
+            app._tick()
+            await pilot.pause()
+            top = str(app._dash.query_one("#top", widgets.Static).render())
+            assert "rank 1/2 · winner · judge ($0.01)" in top
+            assert "covers the edge case" in top
+
+    asyncio.run(scenario())

@@ -189,18 +189,37 @@ def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> Non
 
 
 def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None:
-    # A lane's manifest carries the compare block; the snapshot embeds it for the page header.
+    """A lane snapshot reads its rationale and cost from the coordinator's record."""
     d = _run(tmp_path, "lane1", [{"type": "session.start", "user_task": "x"}])
     (d / "manifest.json").write_text(
         json.dumps(
             {"compare": {"group": "fan", "rank": 1, "of": 2, "winner": True,
-                         "ranked_by": "judge", "rationale": "cleanest diff"}}
+                         }}
         ),
         encoding="utf-8",
     )  # fmt: skip
+    owner = _run(tmp_path, "fan", [])
+    (owner / "manifest.json").write_text(
+        json.dumps(
+            {
+                "comparison": {
+                    "group": "fan",
+                    "ranking": ["lane1", "lane2"],
+                    "ranked_by": "judge",
+                    "rationale": "cleanest diff",
+                    "judge_cost_usd": 0.01,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     snap = session_snapshot(d)
+    assert snap["comparison"]["rationale"] == "cleanest diff"
+    assert snap["comparison"]["judge_cost_usd"] == 0.01
+    assert snap["compare"]["group"] == "fan"
     assert snap["compare"]["winner"] is True and snap["compare"]["rank"] == 1
-    assert snap["compare"]["rationale"] == "cleanest diff"
+    assert "rationale" not in snap["compare"]
+    assert "judge_cost_usd" not in snap["compare"]
     # A run with no compare block carries no `compare` key (non-lane runs).
     plain = _run(tmp_path, "plain", [{"type": "session.start", "user_task": "y"}])
     assert "compare" not in session_snapshot(plain)
@@ -711,7 +730,7 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
     stamps.stamp_parked(layout.session_dir, task="t", reason="checkout busy")
     snap = session_snapshot(layout.session_dir)
     assert snap["status_label"] == "parked · checkout busy"
-    assert snap["policy"].endswith("· gate python3 -m pytest (configured)")
+    assert snap["policy"].endswith("· gate python3 -m pytest (configured, pending)")
     # A gateless config's run infers its gate at the start; parked, it has not yet.
     stamps.write_session_manifest(
         layout,

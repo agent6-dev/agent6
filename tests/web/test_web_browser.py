@@ -1150,3 +1150,41 @@ def test_the_worktree_pane_has_a_hash_that_survives_reload(
     page.wait_for_selector(".git-side .gd-subject")
     assert "Uncommitted changes" in page.locator(".git-side .gd-subject").inner_text()
     assert errors == [], errors
+
+
+def test_lane_details_read_the_coordinators_rationale(
+    port: int,
+    tmp_path: pathlib.Path,
+    open_page: Callable[[int], tuple[Page, list[str]]],
+) -> None:
+    """The lane header reads the group record rather than a copied lane rationale."""
+    from playwright.sync_api import expect
+
+    runs = paths.state_dir(tmp_path) / "sessions" / "runs"
+    for sid, stamp in {
+        "fan": {
+            "comparison": {
+                "group": "fan",
+                "ranking": ["lane"],
+                "ranked_by": "judge",
+                "rationale": "covers the edge case",
+                "judge_cost_usd": 0.0123,
+            }
+        },
+        "lane": {"compare": {"group": "fan", "rank": 1, "of": 1, "winner": True}},
+    }.items():
+        session = runs / sid
+        session.mkdir(parents=True)
+        (session / "manifest.json").write_text(
+            json.dumps({"mode": "run", **stamp}), encoding="utf-8"
+        )
+        (session / "logs.jsonl").write_text(
+            json.dumps({"type": "session.start", "mode": "run", "user_task": "Compare lanes"})
+            + "\n",
+            encoding="utf-8",
+        )
+    page, errors = open_page(port)
+    page.goto(f"http://127.0.0.1:{port}/#/session/lane")
+    expect(page.get_by_text("judge: covers the edge case", exact=True)).to_be_visible()
+    expect(page.get_by_text("rank 1/1 · winner · judge ($0.01)", exact=True)).to_be_visible()
+    assert not errors

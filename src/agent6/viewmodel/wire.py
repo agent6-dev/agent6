@@ -16,6 +16,7 @@ from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_read
 from agent6.viewmodel import (
+    comparison,
     format,
     listing,
     machine_logs,
@@ -160,6 +161,7 @@ def manifest_header(
         worktree: The linked worktree path when recorded.
         compare: The lane's CompareStamp when recorded.
         compare.line: The rendered comparison placement.
+        comparison: The group record from the coordinator, directly or through the lane's group.
 
     Args:
         session_dir: The session's state dir.
@@ -191,9 +193,12 @@ def manifest_header(
         header["forked_from"] = lineage
     if m.worktree is not None:
         header["worktree"] = str(m.worktree)
+    group_record = comparison.session_comparison(session_dir)
+    if group_record is not None:
+        header["comparison"] = group_record.model_dump(mode="json")
     if m.compare is not None:
         header["compare"] = m.compare.model_dump(mode="json")
-        line, _rationale = format.format_compare(m.compare) or ("", "")
+        line, _rationale = format.format_compare(m.compare, group_record) or ("", "")
         header["compare"]["line"] = line
     return header
 

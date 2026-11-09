@@ -278,11 +278,14 @@ def format_lineage(parent: str | None, turn: int | None, sha: str | None) -> str
     return f"{parent}@turn {turn}{sha_note}"
 
 
-def format_compare(compare: manifest.CompareStamp | None) -> tuple[str, str] | None:
+def format_compare(
+    compare: manifest.CompareStamp | None, comparison: manifest.ComparisonStamp | None = None
+) -> tuple[str, str] | None:
     """Word a lane's fan-out compare outcome.
 
     Args:
         compare: The lane's compare stamp, None for a run outside a compared fan-out.
+        comparison: The group record from its coordinator, None when unavailable.
 
     Returns:
         The headline (`rank 1/2 · winner · judge ($0.0102)`, the figure being the judge
@@ -294,13 +297,15 @@ def format_compare(compare: manifest.CompareStamp | None) -> tuple[str, str] | N
     parts = [f"rank {compare.rank}/{compare.of}"]
     if compare.winner:
         parts.append("winner")
-    if compare.ranked_by:
-        by = compare.ranked_by
-        if compare.judge_cost_usd > 0 or compare.judge_cost_partial:
-            cost = budget.format_usd(compare.judge_cost_usd, partial=compare.judge_cost_partial)
+    if comparison is not None:
+        by = comparison.ranked_by
+        if comparison.judge_cost_usd > 0 or comparison.judge_cost_partial:
+            cost = budget.format_usd(
+                comparison.judge_cost_usd, partial=comparison.judge_cost_partial
+            )
             by += f" ({cost})"
         parts.append(by)
-    return " · ".join(parts), compare.rationale
+    return " · ".join(parts), comparison.rationale if comparison is not None else ""
 
 
 def status_label(status: str, reason: str = "") -> str:

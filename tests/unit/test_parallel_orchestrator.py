@@ -1389,7 +1389,7 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     """The fan-out's auto-compare stamps a `compare` block into every imported lane's manifest.
 
     Winner and loser alike record rank, of and winner; with no reviewer configured,
-    `ranked_by="mechanical"` with an empty rationale.
+    the coordinator records the mechanical ranking with an empty rationale.
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()  # no reviewer -> mechanical ranking
@@ -1414,13 +1414,11 @@ def test_compare_outcome_stamped_into_each_lane_manifest(
     )
     assert m2["compare"] == {
         "rank": 1, "of": 2, "winner": True,
-        "ranked_by": "mechanical", "rationale": "", "judge_cost_usd": 0.0,
-        "judge_cost_partial": False,
+        "group": "fan",
     }  # fmt: skip
     assert m1["compare"] == {
         "rank": 2, "of": 2, "winner": False,
-        "ranked_by": "mechanical", "rationale": "", "judge_cost_usd": 0.0,
-        "judge_cost_partial": False,
+        "group": "fan",
     }  # fmt: skip
     # The lineage stamp is untouched by the compare stamp (shared rewrite merges).
     assert m1["parallel"] == {"group": "fan", "lane": 1, "coordinator": "fan"}
@@ -1432,10 +1430,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
     monkeypatch: pytest.MonkeyPatch,
     runtime: app_lanes.LaneRuntime,
 ) -> None:
-    """When the judge ranks, every lane records the same truncated rationale and judge cost.
-
-    Each records `ranked_by="judge"`; the rationale is truncated to bound the manifest.
-    """
+    """The coordinator holds the ranking and judge cost once; lanes hold only placement."""
     origin_state = paths.state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
@@ -1444,7 +1439,11 @@ def test_compare_stamp_records_judge_rationale_truncated(
 
     def fake_rank(*_a: object, **_k: object) -> compare.RankOutcome:
         return compare.RankOutcome(
-            ("fan-l1", "fan-l2"), long_rationale, "judge", judge_cost_usd=0.0123
+            ("fan-l1", "fan-l2"),
+            long_rationale,
+            "judge",
+            judge_cost_usd=0.0123,
+            judge_cost_partial=True,
         )
 
     monkeypatch.setattr(compare, "rank", fake_rank)
@@ -1460,12 +1459,21 @@ def test_compare_stamp_records_judge_rationale_truncated(
     m2 = json.loads(
         (origin_state / "sessions" / "runs" / "fan-l2" / "manifest.json").read_text("utf-8")
     )
-    assert m1["compare"]["ranked_by"] == "judge" and m1["compare"]["winner"] is True
-    assert m1["compare"]["rank"] == 1 and m2["compare"]["rank"] == 2
-    assert len(m1["compare"]["rationale"]) == 2000  # truncated ~2000
-    assert m2["compare"]["rationale"] == m1["compare"]["rationale"]  # same group rationale
-    # The judge call's group cost lands on every lane, same figure (never summed).
-    assert m1["compare"]["judge_cost_usd"] == m2["compare"]["judge_cost_usd"] == 0.0123
+    assert m1["compare"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
+    assert m2["compare"] == {"group": "fan", "rank": 2, "of": 2, "winner": False}
+    assert m1["comparison"] is None and m2["comparison"] is None
+    coordinator = json.loads(
+        (origin_state / "sessions" / "runs" / "fan" / "manifest.json").read_text("utf-8")
+    )
+    assert coordinator["compare"] is None
+    assert coordinator["comparison"] == {
+        "group": "fan",
+        "ranking": ["fan-l1", "fan-l2"],
+        "ranked_by": "judge",
+        "rationale": long_rationale[:2000],
+        "judge_cost_usd": 0.0123,
+        "judge_cost_partial": True,
+    }
 
 
 def test_run_parallel_removes_its_emptied_workdir_levels(
@@ -3027,10 +3035,10 @@ def test_lane_is_self_describing_from_birth(
     app_lanes.bridge_spawner(
         spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin, max_usd=None,
         fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
-        verify_origin="inferred",
+        gate_source="inferred",
     )  # fmt: skip
     assert captured[-1]["AGENT6_PARALLEL_LINEAGE"] == "co:fan:2"
-    assert captured[-1]["AGENT6_LANE_VERIFY_ORIGIN"] == "inferred"
+    assert captured[-1]["AGENT6_LANE_GATE_SOURCE"] == "inferred"
 
     # The writer records it from the env, exactly as the spawned lane would.
     monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:2")

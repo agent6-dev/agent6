@@ -83,6 +83,27 @@ class PolicyStamp(pydantic.BaseModel):
     commit_per_turn: bool = True
 
 
+GateSource = Literal["", "configured", "inferred", "adopted"]
+
+
+class GateStamp(pydantic.BaseModel):
+    """The pinned gate and its availability for this execution.
+
+    Attributes:
+        command: The pinned argv; only operator config can replace it on resume.
+        source: `configured` from operator config, `inferred` from repo signals,
+            `adopted` mid-run, or "" for no gate.
+        availability: `ready` after resolution, `pending` before resolution, or `withheld`
+            when this execution cannot run the command.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    command: tuple[str, ...] = ()
+    source: GateSource = ""
+    availability: Literal["ready", "pending", "withheld"] = "ready"
+
+
 class HarnessStamp(pydantic.BaseModel):
     """The in-loop strategy the run started with, so `resume` re-applies it.
 
@@ -90,13 +111,7 @@ class HarnessStamp(pydantic.BaseModel):
         review_trigger: `[review].trigger` at launch.
         revise_prompt: `[prompt].revise_prompt` at launch.
         preset: The preset in force at launch.
-        verify_command: The gate the run is pinned to, so a mid-run edit to its source cannot
-            move it; on a resumed execution only operator config outranks it.
-        verify_origin: `configured` (a config file, which the model cannot write), `inferred`
-            (repo signals, which it can), `adopted` (gained mid-run by a gateless run),
-            `pending` (a run or plan whose execution has not resolved its gate yet),
-            `withheld` (commands are withheld, so the execution runs gateless and the
-            command is the gate it would run), or "" for no gate.
+        gate: The pinned gate, its source and this execution's availability.
         preset_from_flag: The preset came from `--preset` rather than a config file.
     """
 
@@ -105,8 +120,7 @@ class HarnessStamp(pydantic.BaseModel):
     review_trigger: str = ""
     revise_prompt: str = ""
     preset: str = "none"
-    verify_command: tuple[str, ...] = ()
-    verify_origin: str = ""
+    gate: GateStamp = GateStamp(availability="pending")
     preset_from_flag: bool = False
 
     @property
@@ -241,11 +255,7 @@ class CompareStamp(pydantic.BaseModel):
         rank: The lane's place, 1 first.
         of: How many lanes were ranked.
         winner: The lane ranked first.
-        ranked_by: What ranked it.
-        rationale: The judge's reason.
-        judge_cost_usd: The judge call's cost for the whole group, recorded on every lane, so
-            summing it across lanes double-counts; 0.0 only when no judge call was made.
-        judge_cost_partial: The cost is a lower bound (an unpriced reviewer).
+        group: The comparison group recorded on its coordinator.
     """
 
     model_config = _MODEL_CONFIG
@@ -253,14 +263,33 @@ class CompareStamp(pydantic.BaseModel):
     rank: int = 0
     of: int = 0
     winner: bool = False
-    ranked_by: str = ""
+    group: str = ""
+
+
+class ComparisonStamp(pydantic.BaseModel):
+    """A group's ranking and judge spend, owned by its coordinator.
+
+    Attributes:
+        group: The comparison group id.
+        ranking: The ranked lane ids, best first.
+        ranked_by: The ranking method, `judge` or `mechanical`.
+        rationale: The judge's reason, at most 2000 characters; empty for mechanical ranking.
+        judge_cost_usd: The group's judge spend in USD, zero when no judge call was made.
+        judge_cost_partial: The cost is a lower bound because some judge usage was unpriced.
+    """
+
+    model_config = _MODEL_CONFIG
+
+    group: str = ""
+    ranking: tuple[str, ...] = ()
+    ranked_by: Literal["judge", "mechanical"] = "mechanical"
     rationale: str = ""
     judge_cost_usd: float = 0.0
     judge_cost_partial: bool = False
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 7
+MANIFEST_VERSION = 9
 MANIFEST_NAME = "manifest.json"
 
 
@@ -314,7 +343,8 @@ class SessionManifest(pydantic.BaseModel):
         includes: The unmerged run this run took in under `dirty_tree = "include"`, stamped
             merged when this run lands; None when it took none, or more than that run's tip.
         parallel: A fan-out lane's lineage, or None.
-        compare: A fan-out lane's compare stamp, or None.
+        compare: A fan-out lane's placement and group reference, or None.
+        comparison: The group's ranking and judge spend on its coordinator, or None.
         fanout: A fan-out's own record on its coordinator, or None.
     """
 
@@ -350,6 +380,7 @@ class SessionManifest(pydantic.BaseModel):
     includes: IncludedRun | None = None
     parallel: ParallelLineage | None = None
     compare: CompareStamp | None = None
+    comparison: ComparisonStamp | None = None
     fanout: FanoutStamp | None = None
 
     def session_mode(self) -> kinds.ResumableMode:

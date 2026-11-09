@@ -263,7 +263,7 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
         "mode": "run",
         "user_task": "t",
         "base_sha": "a" * 40,
-        "harness": {"verify_command": ["pytest"], "verify_origin": "configured"},
+        "harness": {"gate": {"command": ["pytest"], "source": "configured"}},
     }
     (layout.session_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     result = loop_snapshot.SessionResult(
@@ -331,7 +331,7 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         "mode": "run",
         "user_task": "t",
         "base_sha": "a" * 40,
-        "harness": {"verify_command": ["pytest", "-q"], "verify_origin": "configured"},
+        "harness": {"gate": {"command": ["pytest", "-q"], "source": "configured"}},
     }
     result = loop_snapshot.SessionResult(
         completed=True,

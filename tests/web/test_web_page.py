@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "24e0fbe59eaa67c2e7ef1af54bd209742db317a967b51a4075352f68a58dc6be"
+PAGE_SHA256 = "efdeded157b8ccbfb89def5e628ca6f963a9ef10070ecdfd719ad727e58766df"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -225,7 +225,7 @@ def test_the_policy_line_breaks_only_between_its_settings() -> None:
     assert ".nowrap { white-space: nowrap; }" in css
 
 
-def test_the_commit_commit_row_is_a_picker_row() -> None:
+def test_the_commit_step_row_is_a_picker_row() -> None:
     """The Latest commit card's dropdown shares the picker rows' style on the dark page."""
     run = resources.files("agent6.ui.web").joinpath("client_run.js").read_text(encoding="utf-8")
     assert "const nav = el('div', 'row pickers');" in run

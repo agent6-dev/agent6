@@ -565,7 +565,7 @@ def test_without_a_judge_the_candidates_keep_their_points(
 def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
     return {
         "parallel": {"group": "fan", "lane": rank, "coordinator": "fan"},
-        "compare": {"rank": rank, "of": 2, "winner": winner, "ranked_by": "judge"},
+        "compare": {"rank": rank, "of": 2, "winner": winner, "group": "fan"},
     }
 
 
@@ -918,6 +918,22 @@ def _stamped_fanout(repo: pathlib.Path) -> None:
         commits=[("b.txt", "b\n", "add b")],
         manifest_extra=_lane_extra(winner=True, rank=1),
     )
+    owner = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="fan")
+    owner.ensure()
+    owner.manifest_path.write_text(
+        json.dumps(
+            {
+                "comparison": {
+                    "group": "fan",
+                    "ranking": ["run-BBBB22", "run-AAAA11"],
+                    "ranked_by": "judge",
+                    "rationale": "b covers the edge case",
+                    "judge_cost_usd": 0.0123,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     _write_reviewer_config(repo)
 
 
@@ -935,6 +951,8 @@ def test_compare_of_a_fanout_id_prints_the_recorded_verdict_without_judging(
     assert judge.calls == 0, "the recorded verdict is on disk; asking for it costs nothing"
     out = capsys.readouterr().out
     assert "recorded verdict" in out
+    assert "b covers the edge case" in out
+    assert "judge $0.01" in out
     assert out.index("run-BBBB22") < out.index("run-AAAA11"), "the stamped order, best first"
     assert "--rejudge" in out, "the way to a fresh opinion is named"
 

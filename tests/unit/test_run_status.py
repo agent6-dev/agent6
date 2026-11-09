@@ -566,9 +566,23 @@ def test_status_shows_fan_out_compare_outcome(
     manifest = json.loads((d / "manifest.json").read_text("utf-8"))
     manifest["compare"] = {
         "group": "fan", "rank": 1, "of": 2, "winner": True,
-        "ranked_by": "judge", "rationale": "cleanest diff, all tests pass",
     }  # fmt: skip
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    coordinator = d.parent / "fan"
+    coordinator.mkdir()
+    (coordinator / "manifest.json").write_text(
+        json.dumps(
+            {
+                "comparison": {
+                    "group": "fan",
+                    "ranking": [d.name],
+                    "ranked_by": "judge",
+                    "rationale": "cleanest diff, all tests pass",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
 
     sessions_show._cmd_status("winsome-dawn-YWH5ZS")
     out = capsys.readouterr().out

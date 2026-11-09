@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 9,
   "agent6_version": "0.1.0",
   "session_id": "r-lane02",
   "mode": "run",
@@ -23,8 +23,11 @@
     "review_trigger": "on",
     "revise_prompt": "off",
     "preset": "none",
-    "verify_command": [],
-    "verify_origin": "",
+    "gate": {
+      "command": [],
+      "source": "",
+      "availability": "pending"
+    },
     "preset_from_flag": false
   },
   "policy": {
@@ -68,10 +71,8 @@
     "rank": 1,
     "of": 3,
     "winner": true,
-    "ranked_by": "judge",
-    "rationale": "cleanest diff",
-    "judge_cost_usd": 0.0102,
-    "judge_cost_partial": true
+    "group": "p-abc"
   },
+  "comparison": null,
   "fanout": null
 }

@@ -163,11 +163,14 @@ def run_parallel(
             budget=session_setup.budget_tracker(cfg),
             reporter=reporter,
         )
-    verify_origin = ""
+    gate_source = ""
     if cfg.harness.verify_command:
-        verify_origin = "configured" if configured_gate else "inferred"
+        gate_source = "configured" if configured_gate else "inferred"
     # The gate every lane runs, pinned on the coordinator as a run pins its own.
-    stamps.stamp_verify_gate(layout.session_dir, cfg.harness.verify_command, verify_origin)
+    stamps.stamp_verify_gate(
+        layout.session_dir,
+        sessions_manifest.GateStamp(command=cfg.harness.verify_command, source=gate_source),
+    )
     if spawner is None:
         spawner = functools.partial(
             app_lanes.bridge_spawner,
@@ -179,7 +182,7 @@ def run_parallel(
             lane_away=lane_away,
             fanout_id=fanout_id,
             coordinator=fanout_id,
-            verify_origin=verify_origin,
+            gate_source=gate_source,
             explicit_leaves=explicit_leaves,
             runtime=runtime,
             operator_task=operator_task,
@@ -328,6 +331,8 @@ def _drive_fanout(
         batch.candidates,
         outcome,
         origin_state=origin_state,
+        coordinator_dir=coordinator_dir,
+        group=fanout_id,
         reporter=reporter,
     )
     parallel_results.print_report(

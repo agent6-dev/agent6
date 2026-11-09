@@ -10,6 +10,7 @@ import pathlib
 import subprocess
 import time
 from collections.abc import Callable
+from typing import Any
 from unittest import mock
 
 import pytest
@@ -278,20 +279,28 @@ def _role_cfg(extra: dict[str, object]) -> Config:
     )
 
 
-def _capture_pin(pinned: list[tuple[tuple[str, ...], str]]) -> Callable[..., None]:
-    def _pin(_dir: pathlib.Path, argv: object, origin: str, **_k: object) -> None:
-        pinned.append((tuple(argv), origin))  # pyright: ignore[reportArgumentType]
+def _capture_pin(pinned: list[dict[str, object]]) -> Callable[..., None]:
+    real_pin = stamps.pin_gate
+
+    def _pin(session_dir: pathlib.Path, *args: Any, **kwargs: Any) -> None:
+        real_pin(session_dir, *args, **kwargs)
+        payload = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
+        pinned.append(payload["harness"]["gate"])
         raise _Stop()
 
     return _pin
 
 
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("run_commands", ["allow", "deny"])
 @pytest.mark.parametrize(
-    ("snapshot_gate", "manifest_gate", "origin", "expected_origin"),
+    ("snapshot_gate", "manifest_gate", "source", "availability"),
     [
-        ((), ("true",), "adopted", "adopted"),
-        (("true",), (), "unadopted", ""),
-        ((), ("true",), "withheld", "inferred"),
+        ((), ("true",), "adopted", "ready"),
+        (("true",), (), "", "ready"),
+        ((), ("true",), "configured", "withheld"),
+        ((), ("true",), "inferred", "withheld"),
+        ((), ("true",), "adopted", "withheld"),
     ],
 )
 def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
@@ -299,8 +308,10 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     monkeypatch: pytest.MonkeyPatch,
     snapshot_gate: tuple[str, ...],
     manifest_gate: tuple[str, ...],
-    origin: str,
-    expected_origin: str,
+    source: str,
+    availability: str,
+    run_commands: str,
+    configured: bool,
 ) -> None:
     """Adoption re-pins the manifest before the after-tools snapshot advances.
 
@@ -323,7 +334,13 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
                 "session_id": "crashed-AAAA11",
                 "mode": "run",
                 "user_task": "t",
-                "harness": {"verify_command": manifest_gate, "verify_origin": origin},
+                "harness": {
+                    "gate": {
+                        "command": manifest_gate,
+                        "source": source,
+                        "availability": availability,
+                    }
+                },
             }
         ),
         encoding="utf-8",
@@ -343,7 +360,12 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         ),
         encoding="utf-8",
     )
-    cfg = _role_cfg({"sandbox": {"run_commands": "allow"}})
+    cfg = _role_cfg(
+        {
+            "sandbox": {"run_commands": run_commands},
+            "harness": {"verify_command": ["configured-gate"] if configured else []},
+        }
+    )
     effective = layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 
     def _effective(*_a: object, **_k: object) -> layer_data.EffectiveConfig:
@@ -374,10 +396,14 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
         )
         == 0
     )
-    assert used == [manifest_gate]
+    expected_gate = ("configured-gate",) if configured else manifest_gate
+    assert used == [expected_gate if run_commands == "allow" else ()]
     persisted = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert tuple(persisted["harness"]["verify_command"]) == manifest_gate
-    assert persisted["harness"]["verify_origin"] == expected_origin
+    assert persisted["harness"]["gate"] == {
+        "command": list(expected_gate),
+        "source": "configured" if configured else source,
+        "availability": "withheld" if expected_gate and run_commands == "deny" else "ready",
+    }
 
 
 def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
@@ -441,7 +467,7 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
     def _yes(*_a: object) -> bool:
         return True
 
-    pinned: list[tuple[tuple[str, ...], str]] = []
+    pinned: list[dict[str, object]] = []
     monkeypatch.setattr(layer, "load_effective", _load)
     monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
@@ -464,7 +490,9 @@ def test_a_withheld_resumed_execution_is_not_regated_by_the_snapshot(
             force=False,
             reporter=app_reporter.Reporter(out=said.append, err=said.append),
         )
-    assert pinned == [(("pytest", "-q"), "withheld")], f"the withheld execution: {pinned}"
+    assert pinned == [
+        {"command": ["pytest", "-q"], "source": "inferred", "availability": "withheld"}
+    ]
     assert any("running gateless" in line for line in said)
 
 
@@ -502,7 +530,7 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     def _provider(*_a: object, **_k: object) -> mock.MagicMock:
         return mock.MagicMock()
 
-    pinned: list[tuple[tuple[str, ...], str]] = []
+    pinned: list[dict[str, object]] = []
     monkeypatch.setattr(detect, "probed_environment", object)
     monkeypatch.setattr(detect, "resolve_isolation", _full)
     monkeypatch.setattr(confine, "warn_sandbox_gaps", _none)
@@ -525,7 +553,9 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
             mode="run",
             reporter=app_reporter.Reporter(out=said.append, err=said.append),
         )
-    assert pinned == [(("pytest", "-q"), "withheld")], f"the withheld execution: {pinned}"
+    assert pinned == [
+        {"command": ["pytest", "-q"], "source": "configured", "availability": "withheld"}
+    ]
     assert any("running gateless" in line for line in said)
 
 
@@ -939,7 +969,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
                 "session_id": "withheld-AAAA11",
                 "mode": "run",
                 "user_task": "t",
-                "harness": {"verify_command": list(gate), "verify_origin": "configured"},
+                "harness": {"gate": {"command": list(gate), "source": "configured"}},
             }
         ),
         encoding="utf-8",

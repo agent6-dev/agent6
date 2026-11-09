@@ -178,32 +178,6 @@ def snapshot_head_mismatch(
     return (snap_head, current_head)
 
 
-def execution_gate_origin(
-    *, configured: bool, has_gate: bool, pinned: str, withheld: bool = False
-) -> str:
-    """Name where this execution's gate came from.
-
-    Config outranks the run's pin, the pin stands when reused, and a gateless
-    execution claims nothing.
-
-    Args:
-        configured: Whether config names the gate.
-        has_gate: Whether the execution runs a gate at all.
-        pinned: The origin the run's manifest pins.
-        withheld: Whether commands withheld the gate for this execution.
-
-    Returns:
-        "withheld", "configured", the pinned origin, "inferred", or "" for no gate.
-    """
-    if withheld:
-        return "withheld"
-    if not has_gate:
-        return ""
-    if configured:
-        return "configured"
-    return "inferred" if pinned in ("", "pending", "withheld") else pinned
-
-
 def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume is refused, in preflight order
     config_paths: tuple[pathlib.Path, ...],
     session_id: str,
@@ -565,16 +539,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             reporter.note(parking)
 
         def _gate(cfg: Config, _budget: budget.BudgetTracker) -> Config:
-            # The run's resolved gate is reused, not re-inferred: the snapshot's, unless a
-            # newer adopted or unadopted pin outranks it; config outranks both.
-            pinned_origin, pinned_gate = "", ()
+            pinned = sessions_manifest.GateStamp(availability="pending")
             with contextlib.suppress(sessions_manifest.ManifestError, OSError):
-                pinned = sessions_manifest.read_manifest(layout.session_dir).harness
-                pinned_origin, pinned_gate = pinned.verify_origin, pinned.verify_command
+                pinned = sessions_manifest.read_manifest(layout.session_dir).harness.gate
+            # A resolved pin outranks a snapshot that predates adoption or un-adoption.
             replay_gate = (
-                pinned_gate
-                if pinned_origin in ("adopted", "unadopted", "withheld")
-                else snapshot.verify_command
+                pinned.command if pinned.availability != "pending" else snapshot.verify_command
             )
             execution_configured = bool(cfg.harness.verify_command)
             reused = not execution_configured and bool(replay_gate)
@@ -592,21 +562,21 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     f"reusing this run's verify command: {preflight.gate_text(replay_gate)}"
                 )
             # The manifest says which gate this execution used.
-            if tuple(pinned_gate) != cfg.harness.verify_command and not withheld:
+            if pinned.command != cfg.harness.verify_command and not withheld:
                 # Both directions: the frozen system prompt names the old gate either way.
                 reporter.note(
                     "this run's verify gate changed:"
-                    f" was {preflight.gate_text(tuple(pinned_gate))},"
+                    f" was {preflight.gate_text(pinned.command)},"
                     f" now {preflight.gate_text(cfg.harness.verify_command)}"
                 )
             stamps.pin_gate(
                 layout.session_dir,
-                gate_before if withheld else cfg.harness.verify_command,
-                execution_gate_origin(
-                    configured=execution_configured,
-                    has_gate=bool(cfg.harness.verify_command),
-                    pinned=pinned_origin,
-                    withheld=withheld,
+                sessions_manifest.GateStamp(
+                    command=gate_before,
+                    source=("configured" if execution_configured else pinned.source or "inferred")
+                    if gate_before
+                    else "",
+                    availability="withheld" if withheld else "ready",
                 ),
                 events=events,
                 reporter=reporter,

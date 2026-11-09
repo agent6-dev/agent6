@@ -1095,7 +1095,21 @@ def test_sse_run_frame_carries_the_compare_outcome(
                                     {"type": "session.end", "all_passed": True}])  # fmt: skip
     session_dir = paths.state_dir(tmp_path) / "sessions" / "runs" / "cmp-run"
     (session_dir / "manifest.json").write_text(
-        json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
+        json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "group": "fan"}}),
+        encoding="utf-8",
+    )
+    owner = session_dir.parent / "fan"
+    owner.mkdir()
+    (owner / "manifest.json").write_text(
+        json.dumps(
+            {
+                "comparison": {
+                    "group": "fan",
+                    "ranked_by": "judge",
+                    "rationale": "covers the edge case",
+                }
+            }
+        ),
         encoding="utf-8",
     )
     conn = signin.SignedIn(port, timeout=10)
@@ -1105,6 +1119,8 @@ def test_sse_run_frame_carries_the_compare_outcome(
         snap = _read_until(resp, lambda s: s.get("finished") is True)
         compare = cast("dict[str, Any]", snap["compare"])
         assert compare["winner"] is True and compare["rank"] == 1
+        group_record = cast("dict[str, Any]", snap["comparison"])
+        assert group_record["rationale"] == "covers the edge case"
     finally:
         conn.close()
 

@@ -20,6 +20,7 @@ from agent6.ui.cli import common, compare_ranking, sessions_cmds
 from agent6.vcs import git_read
 from agent6.viewmodel import (
     LIVE_STATUS_WORDS,
+    comparison,
     died_without_end,
     format,
     listing,
@@ -148,20 +149,22 @@ def _recorded_outcome(
         The outcome, or None when any candidate lacks an auto-compare stamp (then it is judged).
     """
     ids = {c.session_id for c in candidates}
-    stamps = {
-        layout.session_id: manifest.compare
-        for layout, manifest in resolved
-        if layout.session_id in ids and manifest.compare is not None and manifest.compare.rank
-    }
-    if len(stamps) != len(ids):
+    lanes = [(layout, manifest) for layout, manifest in resolved if layout.session_id in ids]
+    if not lanes:
         return None
-    first = stamps[min(stamps, key=lambda sid: stamps[sid].rank)]
+    record = comparison.session_comparison(lanes[0][0].session_dir)
+    if record is None or not ids.issubset(record.ranking):
+        return None
+    if any(
+        manifest.compare is None or manifest.compare.group != record.group for _, manifest in lanes
+    ):
+        return None
     return compare.RankOutcome(
-        ranking=tuple(sorted(stamps, key=lambda sid: stamps[sid].rank)),
-        rationale=first.rationale,
-        ranked_by="judge" if first.ranked_by == "judge" else "mechanical",
-        judge_cost_usd=first.judge_cost_usd,
-        judge_cost_partial=first.judge_cost_partial,
+        ranking=tuple(sid for sid in record.ranking if sid in ids),
+        rationale=record.rationale,
+        ranked_by=record.ranked_by,
+        judge_cost_usd=record.judge_cost_usd,
+        judge_cost_partial=record.judge_cost_partial,
     )
 
 

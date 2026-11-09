@@ -25,10 +25,10 @@ from agent6.sessions import manifest, process
 from agent6.ui.tui import theme
 from agent6.viewmodel import (
     SessionState,
+    comparison,
     format,
     manifest_branches,
     manifest_header,
-    session_compare,
     session_status,
 )
 
@@ -140,11 +140,14 @@ class RunHeader(widgets.Static):
         """Return a lane's compare line, cached once stamped; "" for a non-lane run."""
         if self._compare_line is not None:
             return self._compare_line
-        formatted = format.format_compare(session_compare(self._tui.session_dir))
+        formatted = format.format_compare(
+            comparison.session_compare(self._tui.session_dir),
+            comparison.session_comparison(self._tui.session_dir),
+        )
         if formatted is None:
             return ""  # not cached: a live lane is stamped after its import
         headline, rationale = formatted
-        rat = f" — {rationale[:100]}" if rationale else ""
+        rat = f": {rationale[:100]}" if rationale else ""
         self._compare_line = f"\ncompare: {headline}{rat}"
         return self._compare_line
 

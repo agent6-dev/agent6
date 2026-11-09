@@ -1217,8 +1217,8 @@ def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
     err = capsys.readouterr().err
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "wt-GATE02"))
-    assert manifest.harness.verify_command == (".venv/bin/python", "-m", "pytest", "-q")
-    assert manifest.harness.verify_origin == "inferred"
+    assert manifest.harness.gate.command == (".venv/bin/python", "-m", "pytest", "-q")
+    assert manifest.harness.gate.source == "inferred"
     assert "inferred from pyproject: .venv/bin/python -m pytest -q" in err
     assert manifest.worktree is not None and (manifest.worktree / ".venv/bin/python").exists()
 
@@ -1231,13 +1231,13 @@ def test_a_lane_stamps_the_gate_origin_its_coordinator_resolved(
     _git(repo, "commit", "-qam", "the operator's edit")
     _script(monkeypatch)
     monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
-    monkeypatch.setenv("AGENT6_LANE_VERIFY_ORIGIN", "inferred")
+    monkeypatch.setenv("AGENT6_LANE_GATE_SOURCE", "inferred")
 
     assert cli_main(["run", "--session-id", "fan-l1", "task"]) == 0
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "fan-l1"))
-    assert manifest.harness.verify_command == ("true",)
-    assert manifest.harness.verify_origin == "inferred"
+    assert manifest.harness.gate.command == ("true",)
+    assert manifest.harness.gate.source == "inferred"
 
 
 def test_a_setup_command_that_leaves_the_gate_path_missing_ends_the_session_saying_so(

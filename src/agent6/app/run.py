@@ -418,7 +418,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         # the park, which the execution's start clears.
         parked = stamps.parked_stamp(layout.session_dir)
         # A lane's config carries the gate its coordinator resolved, origin and all.
-        lane_gate_origin = stamps.lane_verify_origin()
+        lane_gate_source = stamps.lane_gate_source()
         stamps.write_session_manifest(
             layout,
             session_id=effective_session_id,
@@ -430,7 +430,15 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             run_branch=run_branch,
             cfg=cfg,
             mode=mode,
-            gate=(cfg.harness.verify_command, lane_gate_origin) if lane_gate_origin else None,
+            gate=(
+                sessions_manifest.GateStamp(
+                    command=cfg.harness.verify_command,
+                    source=lane_gate_source,
+                    availability="pending",
+                )
+                if lane_gate_source
+                else None
+            ),
             effective_preset=(preset_stamp[0] if preset_stamp else (preset or cfg.preset)),
             preset_from_flag=(preset_stamp[1] if preset_stamp else bool(preset)),
             driver_from_flag=bool(model),
@@ -553,18 +561,16 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             cfg = preflight.drop_gate_if_unrunnable(
                 cfg, session_dir=layout.session_dir, reporter=reporter
             )
-            # The origin follows the resolved gate, never the configured one.
-            pinned_gate, gate_origin = cfg.harness.verify_command, ""
-            if cfg.harness.verify_command:
-                gate_origin = lane_gate_origin or ("configured" if configured_gate else "inferred")
-            elif gate_before:
-                # Withheld with commands: the execution is gateless, the manifest names the gate.
-                pinned_gate, gate_origin = gate_before, "withheld"
-            # From here the run is judged by this gate, whatever its source says later.
+            source = lane_gate_source or ("configured" if configured_gate else "inferred")
             stamps.pin_gate(
                 layout.session_dir,
-                pinned_gate,
-                gate_origin,
+                sessions_manifest.GateStamp(
+                    command=gate_before,
+                    source=source if gate_before else "",
+                    availability="withheld"
+                    if gate_before and not cfg.harness.verify_command
+                    else "ready",
+                ),
                 events=events,
                 reporter=reporter,
             )

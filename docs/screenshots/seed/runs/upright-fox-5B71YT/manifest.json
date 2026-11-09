@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 8,
   "agent6_version": "0.0.39",
   "session_id": "upright-fox-5B71YT",
   "mode": "run",
@@ -24,17 +24,20 @@
     "review_trigger": "before_finish",
     "revise_prompt": "off",
     "preset": "none",
-    "verify_command": [
-      "python3",
-      "-m",
-      "unittest",
-      "discover",
-      "-s",
-      "tests",
-      "-t",
-      "."
-    ],
-    "verify_origin": "configured",
+    "gate": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests",
+        "-t",
+        "."
+      ],
+      "source": "configured",
+      "availability": "ready"
+    },
     "preset_from_flag": false
   },
   "policy": {

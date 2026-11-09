@@ -1,5 +1,5 @@
 {
-  "version": 7,
+  "version": 9,
   "agent6_version": "0.1.0",
   "session_id": "r-fresh01",
   "mode": "run",
@@ -26,8 +26,11 @@
     "review_trigger": "off",
     "revise_prompt": "on",
     "preset": "strict",
-    "verify_command": [],
-    "verify_origin": "",
+    "gate": {
+      "command": [],
+      "source": "",
+      "availability": "pending"
+    },
     "preset_from_flag": false
   },
   "policy": {
@@ -55,5 +58,6 @@
   "includes": null,
   "parallel": null,
   "compare": null,
+  "comparison": null,
   "fanout": null
 }

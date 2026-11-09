@@ -142,7 +142,7 @@ def bridge_spawner(
     at: str | None = None,
     fanout_id: str,
     coordinator: str,
-    verify_origin: str = "",
+    gate_source: str = "",
     runtime: LaneRuntime,
 ) -> subrun.LaneResult:
     """Clone the origin and spawn a detached `agent6 run` in the clone.
@@ -162,7 +162,7 @@ def bridge_spawner(
         at: A commit to detach the clone at; the coordinator's chain tip.
         fanout_id: The group the lane belongs to.
         coordinator: The session every listing nests the lane under.
-        verify_origin: Where the gate in the lane's config came from, "" when it has none.
+        gate_source: Where the gate in the lane's config came from, "" when it has none.
         runtime: The front-end's spawn primitive.
 
     Returns:
@@ -214,7 +214,7 @@ def bridge_spawner(
         # The lane's own manifest records its lineage, so a coordinator death orphans nothing.
         "AGENT6_PARALLEL_LINEAGE": f"{coordinator}:{fanout_id}:{spec.lane}",
         # Resolved in the origin, where the repo signals are; the lane stamps the same origin.
-        "AGENT6_LANE_VERIFY_ORIGIN": verify_origin,
+        "AGENT6_LANE_GATE_SOURCE": gate_source,
     }
     operator_path = config_path.with_suffix(".task.txt")
     operator_path.write_text(operator_task if operator_task is not None else task, encoding="utf-8")
@@ -244,7 +244,7 @@ def run_lane_to_completion(
     max_usd: float | None = None,
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
-    verify_origin: str = "",
+    gate_source: str = "",
     spawner: subrun.LaneSpawner | None = None,
     at: str | None = None,
     import_lock: threading.Lock | None = None,
@@ -275,7 +275,7 @@ def run_lane_to_completion(
         max_usd: The lane's spend cap.
         auto_approve: The coordinator's own `--auto-approve`, forwarded.
         lane_away: The lane's away-mode.
-        verify_origin: Where the gate in the config came from, "" when it has none.
+        gate_source: Where the gate in the config came from, "" when it has none.
         spawner: Clones and spawns the lane; the bridge spawner by default.
         at: A commit to detach the clone at.
         import_lock: Serializes the import across the group, since concurrent fetches
@@ -305,7 +305,7 @@ def run_lane_to_completion(
             explicit_leaves=explicit_leaves,
             fanout_id=group,
             coordinator=coordinator,
-            verify_origin=verify_origin,
+            gate_source=gate_source,
             runtime=runtime,
         )
     res = spawner(spec, task)
@@ -463,12 +463,12 @@ def build_lane_spawner(
             )
 
         # The coordinator's manifest pins the gate the lanes' config carries.
-        verify_origin = ""
+        gate_source = ""
         if cfg.harness.verify_command:
             try:
-                verify_origin = sessions_manifest.read_manifest(coord_dir).harness.verify_origin
+                gate_source = sessions_manifest.read_manifest(coord_dir).harness.gate.source
             except sessions_manifest.ManifestError:
-                verify_origin = ""
+                gate_source = ""
 
         def one(pair: tuple[subrun.LaneSpec, subrun.LaneTask]) -> subrun.LaneResult:
             spec, lane = pair
@@ -478,7 +478,7 @@ def build_lane_spawner(
                 pins=lane.pins,
                 at=at,
                 cfg=cfg,
-                verify_origin=verify_origin,
+                gate_source=gate_source,
                 explicit_leaves=explicit_leaves,
                 origin=origin,
                 origin_state=origin_state,

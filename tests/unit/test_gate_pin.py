@@ -48,14 +48,16 @@ def test_a_gate_adopted_mid_execution_re_pins(tmp_path: pathlib.Path) -> None:
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
     reporter, _said = _quiet()
-    stamps.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
-    assert sessions_manifest.read_manifest(layout.session_dir).harness.verify_command == ()
+    stamps.pin_gate(
+        layout.session_dir, sessions_manifest.GateStamp(), events=events, reporter=reporter
+    )
+    assert sessions_manifest.read_manifest(layout.session_dir).harness.gate.command == ()
 
     events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
 
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
-    assert pinned.verify_command == ("pytest", "-q")
-    assert pinned.verify_origin == "adopted"
+    assert pinned.gate.command == ("pytest", "-q")
+    assert pinned.gate.source == "adopted"
 
 
 def test_an_un_adopted_gate_re_pins_gateless(tmp_path: pathlib.Path) -> None:
@@ -63,11 +65,13 @@ def test_an_un_adopted_gate_re_pins_gateless(tmp_path: pathlib.Path) -> None:
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
     reporter, _said = _quiet()
-    stamps.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
+    stamps.pin_gate(
+        layout.session_dir, sessions_manifest.GateStamp(), events=events, reporter=reporter
+    )
     events.emit("loop.verify_inferred", command=["pytest", "-q"], source="agents_md", adopted_at=3)
     events.emit("loop.verify_inferred", command=[], source="unadopted", adopted_at=5)
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
-    assert pinned.verify_command == () and pinned.verify_origin == "unadopted"
+    assert pinned.gate.command == () and pinned.gate.source == ""
 
 
 def test_a_preflight_inference_is_not_an_adoption(tmp_path: pathlib.Path) -> None:
@@ -76,12 +80,15 @@ def test_a_preflight_inference_is_not_an_adoption(tmp_path: pathlib.Path) -> Non
     events = _sink(tmp_path)
     reporter, _said = _quiet()
     stamps.pin_gate(
-        layout.session_dir, ("make", "check"), "configured", events=events, reporter=reporter
+        layout.session_dir,
+        sessions_manifest.GateStamp(command=("make", "check"), source="configured"),
+        events=events,
+        reporter=reporter,
     )
     events.emit("loop.verify_inferred", command=["pytest"], source="repo_signals")
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
-    assert pinned.verify_command == ("make", "check")
-    assert pinned.verify_origin == "configured"
+    assert pinned.gate.command == ("make", "check")
+    assert pinned.gate.source == "configured"
 
 
 def test_a_pin_that_cannot_be_written_is_reported(tmp_path: pathlib.Path) -> None:
@@ -89,7 +96,9 @@ def test_a_pin_that_cannot_be_written_is_reported(tmp_path: pathlib.Path) -> Non
     layout = _layout(tmp_path)
     events = _sink(tmp_path)
     reporter, said = _quiet()
-    stamps.pin_gate(layout.session_dir, (), "", events=events, reporter=reporter)
+    stamps.pin_gate(
+        layout.session_dir, sessions_manifest.GateStamp(), events=events, reporter=reporter
+    )
     layout.manifest_path.unlink()
     events.emit("loop.verify_inferred", command=["pytest"], source="agents_md", adopted_at=1)
     assert any("could not record this run's verify gate" in line for line in said)
@@ -107,11 +116,11 @@ def test_a_fork_inherits_the_gate_its_source_was_judged_by(tmp_path: pathlib.Pat
         base_branch="main",
         run_branch=None,
         cfg=Config(),  # no verify_command configured, as the source had none
-        gate=(("pytest", "-q"), "adopted"),
+        gate=sessions_manifest.GateStamp(command=("pytest", "-q"), source="adopted"),
     )
     pinned = sessions_manifest.read_manifest(dst.session_dir).harness
-    assert pinned.verify_command == ("pytest", "-q")
-    assert pinned.verify_origin == "adopted"
+    assert pinned.gate.command == ("pytest", "-q")
+    assert pinned.gate.source == "adopted"
 
 
 def test_nothing_runs_a_second_gate_at_the_end_of_a_run(tmp_path: pathlib.Path) -> None:
@@ -169,7 +178,7 @@ def test_a_red_gate_nobody_checked_says_so_and_names_the_check(
                 "mode": "run",
                 "base_sha": "a" * 40,
                 "forked_from_sha": forked_from_sha,
-                "harness": {"verify_command": ["uv", "run", "pytest"]},
+                "harness": {"gate": {"command": ["uv", "run", "pytest"], "source": "inferred"}},
             }
         ),
         encoding="utf-8",
@@ -225,8 +234,7 @@ def test_a_gate_that_changed_between_executions_takes_no_blame_for_the_edits(
     )
     stamps.pin_gate(
         layout.session_dir,
-        ("make", "test"),
-        "configured",
+        sessions_manifest.GateStamp(command=("make", "test"), source="configured"),
         events=_sink(tmp_path),
         reporter=_quiet()[0],
     )
@@ -278,7 +286,10 @@ def test_a_resumed_red_gate_reads_the_first_executions_baseline(
         "".join(json.dumps(record) + "\n" for record in records), encoding="utf-8"
     )
     stamps.pin_gate(
-        layout.session_dir, ("pytest",), "configured", events=_sink(tmp_path), reporter=_quiet()[0]
+        layout.session_dir,
+        sessions_manifest.GateStamp(command=("pytest",), source="configured"),
+        events=_sink(tmp_path),
+        reporter=_quiet()[0],
     )
     finalize.print_session_end(
         loop_snapshot.SessionResult(
@@ -327,8 +338,10 @@ def test_a_run_records_the_isolation_it_actually_ran_under(tmp_path: pathlib.Pat
 def test_a_fresh_gateless_manifest_leaves_the_gate_pending(tmp_path: pathlib.Path) -> None:
     """A gateless config's run or plan infers its gate at the start; an ask never has one."""
     layout = _layout(tmp_path)
-    assert sessions_manifest.read_manifest(layout.session_dir).harness.verify_origin == "pending"
-    for mode, expected in (("plan", "pending"), ("ask", "")):
+    assert (
+        sessions_manifest.read_manifest(layout.session_dir).harness.gate.availability == "pending"
+    )
+    for mode, expected in (("plan", "pending"), ("ask", "ready")):
         stamps.write_session_manifest(
             layout,
             session_id=layout.session_id,
@@ -339,13 +352,18 @@ def test_a_fresh_gateless_manifest_leaves_the_gate_pending(tmp_path: pathlib.Pat
             cfg=Config(),
             mode=mode,
         )
-        assert sessions_manifest.read_manifest(layout.session_dir).harness.verify_origin == expected
+        assert (
+            sessions_manifest.read_manifest(layout.session_dir).harness.gate.availability
+            == expected
+        )
 
 
 def test_an_empty_gate_never_carries_an_origin(tmp_path: pathlib.Path) -> None:
     """`configured` beside `()` is self-contradictory on disk; the next execution reads it."""
     layout = _layout(tmp_path)
     reporter, _said = _quiet()
-    stamps.pin_gate(layout.session_dir, (), "", events=_sink(tmp_path), reporter=reporter)
+    stamps.pin_gate(
+        layout.session_dir, sessions_manifest.GateStamp(), events=_sink(tmp_path), reporter=reporter
+    )
     pinned = sessions_manifest.read_manifest(layout.session_dir).harness
-    assert (pinned.verify_command, pinned.verify_origin) == ((), "")
+    assert (pinned.gate.command, pinned.gate.source) == ((), "")

@@ -1540,7 +1540,8 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `forked_from_turn` | `JSON` | The fork's source turn, or null. |
 | `forked_from_sha` | `JSON` | The fork's source commit, or null. |
 | `worktree` | `JSON` | The linked worktree path, or null. |
-| `compare` | `JSON` | The CompareStamp, or null outside a compared lane. |
+| `compare` | `JSON` | The lane placement and group id, or null outside a compared lane. |
+| `comparison` | `JSON` | The group record on its coordinator, or null for other sessions. |
 | `parallel` | `JSON` | The ParallelLineage, or null outside a lane. |
 | `fanout` | `JSON` | The FanoutStamp, or null outside a coordinator. |
 | `lanes` | `JSON` | The coordinator's summary_row objects. |
@@ -1642,6 +1643,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `base_sha` | `JSON` | The run chain's base commit. |
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
+| `comparison` | `JSON` | The group record from the coordinator, directly or through the lane's group. |
 | `compare` | `JSON` | The lane's CompareStamp when recorded. |
 | `compare.line` | `JSON` | The rendered comparison placement. |
 | `as_of` | `JSON` | The selected commit's turn and sha, or null for the current snapshot. |
@@ -2402,7 +2404,9 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 
 ## Typed records
 
-`SessionManifest` is the public `manifest.json` record, with nested stamps below.
+`SessionManifest` is the private, durable `manifest.json` record.
+`HarnessStamp.gate` separates the pinned command and source from execution availability.
+`ComparisonStamp` holds group facts on the coordinator; `CompareStamp` links each lane.
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
 
@@ -2443,7 +2447,8 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `merged` | `MergeStamp \| None` | The merge record, None until the run branch is merged. |
 | `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run lands; None when it took none, or more than that run's tip. |
 | `parallel` | `ParallelLineage \| None` | A fan-out lane's lineage, or None. |
-| `compare` | `CompareStamp \| None` | A fan-out lane's compare stamp, or None. |
+| `compare` | `CompareStamp \| None` | A fan-out lane's placement and group reference, or None. |
+| `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its coordinator, or None. |
 | `fanout` | `FanoutStamp \| None` | A fan-out's own record on its coordinator, or None. |
 
 ### `agent6 ps` JSON row
@@ -2789,8 +2794,7 @@ Source: [`agent6.sessions.manifest.HarnessStamp`](https://github.com/agent6-dev/
 | `review_trigger` | `str` | `[review].trigger` at launch. |
 | `revise_prompt` | `str` | `[prompt].revise_prompt` at launch. |
 | `preset` | `str` | The preset in force at launch. |
-| `verify_command` | `tuple[str, ...]` | The gate the run is pinned to, so a mid-run edit to its source cannot move it; on a resumed execution only operator config outranks it. |
-| `verify_origin` | `str` | `configured` (a config file, which the model cannot write), `inferred` (repo signals, which it can), `adopted` (gained mid-run by a gateless run), `pending` (a run or plan whose execution has not resolved its gate yet), `withheld` (commands are withheld, so the execution runs gateless and the command is the gate it would run), or "" for no gate. |
+| `gate` | `GateStamp` | The pinned gate, its source and this execution's availability. |
 | `preset_from_flag` | `bool` | The preset came from `--preset` rather than a config file. |
 
 ### PolicyStamp
@@ -2869,10 +2873,22 @@ Source: [`agent6.sessions.manifest.CompareStamp`](https://github.com/agent6-dev/
 | `rank` | `int` | The lane's place, 1 first. |
 | `of` | `int` | How many lanes were ranked. |
 | `winner` | `bool` | The lane ranked first. |
-| `ranked_by` | `str` | What ranked it. |
-| `rationale` | `str` | The judge's reason. |
-| `judge_cost_usd` | `float` | The judge call's cost for the whole group, recorded on every lane, so summing it across lanes double-counts; 0.0 only when no judge call was made. |
-| `judge_cost_partial` | `bool` | The cost is a lower bound (an unpriced reviewer). |
+| `group` | `str` | The comparison group recorded on its coordinator. |
+
+### ComparisonStamp
+
+**Support: public.** A group's ranking and judge spend, owned by its coordinator.
+
+Source: [`agent6.sessions.manifest.ComparisonStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `group` | `str` | The comparison group id. |
+| `ranking` | `tuple[str, ...]` | The ranked lane ids, best first. |
+| `ranked_by` | `Literal['judge', 'mechanical']` | The ranking method, `judge` or `mechanical`. |
+| `rationale` | `str` | The judge's reason, at most 2000 characters; empty for mechanical ranking. |
+| `judge_cost_usd` | `float` | The group's judge spend in USD, zero when no judge call was made. |
+| `judge_cost_partial` | `bool` | The cost is a lower bound because some judge usage was unpriced. |
 
 ### FanoutStamp
 
@@ -3171,6 +3187,18 @@ Source: [`agent6.sessions.manifest.ModelBrief`](https://github.com/agent6-dev/ag
 | --- | --- | --- |
 | `provider` | `str` | The configured provider name. |
 | `model` | `str` | The provider's model identifier. |
+
+### GateStamp
+
+**Support: public.** The pinned gate and its availability for this execution.
+
+Source: [`agent6.sessions.manifest.GateStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `command` | `tuple[str, ...]` | The pinned argv; only operator config can replace it on resume. |
+| `source` | `Literal['', 'configured', 'inferred', 'adopted']` | `configured` from operator config, `inferred` from repo signals, `adopted` mid-run, or "" for no gate. |
+| `availability` | `Literal['ready', 'pending', 'withheld']` | `ready` after resolution, `pending` before resolution, or `withheld` when this execution cannot run the command. |
 
 ### PanelView
 

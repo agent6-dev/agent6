@@ -20,7 +20,7 @@ import datetime
 import json
 import pathlib
 import shutil
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from typing import Any
 
 from agent6 import errors, kinds, paths, portable
@@ -226,7 +226,7 @@ class _ForkPlan:
     preset_from_flag: bool
     driver_from_flag: bool
     cfg: Config
-    gate: tuple[Sequence[str], str]
+    gate: sessions_manifest.GateStamp
     budget: sessions_manifest.BudgetStamp
     worktree_git_dir: pathlib.Path | None
 
@@ -362,7 +362,7 @@ def _plan_fork(
         preset_from_flag=sm.harness.preset_from_flag,
         driver_from_flag=sm.models.driver_from_flag,
         cfg=cfg,
-        gate=(sm.harness.verify_command, sm.harness.verify_origin),
+        gate=sm.harness.gate,
         budget=sm.budget,
         worktree_git_dir=sm.worktree_git_dir,
     )
@@ -433,7 +433,7 @@ def create_fork(
             plan.cfg,
             cwd,
             # Config outranks the source's pin on the fork's first execution.
-            plan.cfg.harness.verify_command or tuple(plan.gate[0]),
+            plan.cfg.harness.verify_command or plan.gate.command,
             workspace="a fork's new worktree",
             at=plan.forked_from_sha or None,
         )

@@ -36,7 +36,21 @@ def fan_out(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.
     repo = tmp_path / "repo"
     repo.mkdir()
     monkeypatch.chdir(repo)
-    _session(repo, "fan", {"fanout": {"lanes": 2, "spec": "2"}})
+    _session(
+        repo,
+        "fan",
+        {
+            "fanout": {"lanes": 2, "spec": "2"},
+            "comparison": {
+                "group": "fan",
+                "ranking": ["fan-l2", "fan-l1"],
+                "ranked_by": "judge",
+                "rationale": "covers the edge case",
+                "judge_cost_usd": 0.0123,
+                "judge_cost_partial": True,
+            },
+        },
+    )
     for lane in (1, 2):
         _session(
             repo,
@@ -47,7 +61,7 @@ def fan_out(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.
                     "driver_from_flag": True,
                 },
                 "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
-                "compare": {"rank": 3 - lane, "of": 2, "winner": lane == 2, "ranked_by": "judge"},
+                "compare": {"rank": 3 - lane, "of": 2, "winner": lane == 2, "group": "fan"},
             },
         )
     return repo
@@ -584,3 +598,26 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
 
     assert main(["sessions", "show", "fan-l1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["baseline_ok"] is False
+
+
+def test_status_json_keeps_comparison_on_its_owner(
+    fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Lane status names the group; coordinator status carries its ranking and judge cost."""
+    assert main(["sessions", "show", "fan-l2", "--json"]) == 0
+    lane = json.loads(capsys.readouterr().out)
+    assert lane["compare"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
+    assert lane["comparison"] is None
+    assert main(["sessions", "show", "fan", "--json"]) == 0
+    coordinator = json.loads(capsys.readouterr().out)
+    assert coordinator["compare"] is None
+    assert coordinator["comparison"] == {
+        "group": "fan",
+        "ranking": ["fan-l2", "fan-l1"],
+        "ranked_by": "judge",
+        "rationale": "covers the edge case",
+        "judge_cost_usd": 0.0123,
+        "judge_cost_partial": True,
+    }
+    assert main(["sessions", "show", "fan-l2"]) == 0
+    assert "judge: covers the edge case" in capsys.readouterr().out

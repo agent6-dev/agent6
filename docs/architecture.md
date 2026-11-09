@@ -416,6 +416,7 @@ The detached spawn `app/lanes.py` drives (`ui.spawn`'s `spawn_and_locate`, the p
 - the fan-out is a session of its own under the origin's runs, named by the fan-out id; `stop <id>` ends it with its lanes, and `resume` refuses it
     - a manifest with the fan-out stamp and no run branch
     - a journal: the dispatch, the judge's streamed `role.*` events (`role = "judge"`), `loop.parallel.compared` with the ranking and rationale, the judge's cost as its own spend, the end
+    - a manifest comparison record: the group id, ranking, method, rationale and judge cost; lane manifests keep only their placement and group id
     - a worker pid while the lanes run and the judge ranks them
 - every lane's manifest names the session that dispatched it (`parallel.coordinator`, stamped from the spawn env), so each listing nests lanes under their coordinator, folded into a count
 - each lane's live session dir symlinks into `<origin_state>/sessions/runs/` on locate: a fan-out is visible in every hub while it runs
@@ -670,7 +671,7 @@ agent6 also sets markers for its own children:
 - `AGENT6_SUBRUN=1`: subordinate work (a lane, a machine state, a `/btw` question), which never fans out itself ([Parallel runs](#parallel-runs)).
 - `AGENT6_STREAM_TO_LOG=1`: a detached spawn or lane emits its stream deltas as events with no console echo.
 - `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`: the lineage a lane's manifest records.
-- `AGENT6_LANE_VERIFY_ORIGIN`: the origin of the verify gate the coordinator resolved, which a lane's manifest records.
+- `AGENT6_LANE_GATE_SOURCE`: the origin of the verify gate the coordinator resolved, which a lane's manifest records.
 
 ## Pre-1.0 stability
 

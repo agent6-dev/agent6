@@ -99,7 +99,19 @@ def test_the_hub_row_and_the_run_view_carry_rendered_cells(tmp_path: pathlib.Pat
     assert wire.session_snapshot(spent)["budget"]["usd_text"] == "$0.16 / $1.00"
 
     (spent / "manifest.json").write_text(
-        json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}}),
+        json.dumps({"compare": {"rank": 1, "of": 2, "winner": True, "group": "fan"}}),
+        encoding="utf-8",
+    )
+    owner = _run(tmp_path, "fan", [])
+    (owner / "manifest.json").write_text(
+        json.dumps(
+            {
+                "comparison": {
+                    "group": "fan",
+                    "ranked_by": "judge",
+                }
+            }
+        ),
         encoding="utf-8",
     )
     assert wire.session_snapshot(spent)["compare"]["line"] == "rank 1/2 · winner · judge"

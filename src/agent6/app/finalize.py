@@ -223,7 +223,7 @@ def _print_red_gate(
     base = ""
     with contextlib.suppress(sessions_manifest.ManifestError):
         m = sessions_manifest.read_manifest(layout.session_dir)
-        gate, base = m.harness.verify_command, (m.forked_from_sha or m.base_sha)
+        gate, base = m.harness.gate.command, (m.forked_from_sha or m.base_sha)
     if not (gate and base):
         return
     if scan.baseline_ok is not None:

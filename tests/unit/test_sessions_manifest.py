@@ -76,9 +76,8 @@ def test_unknown_keys_are_dropped_never_folded(tmp_path: pathlib.Path) -> None:
     assert m.run_branch == "agent6/r"
 
 
-def test_legacy_compare_group_is_ignored(tmp_path: pathlib.Path) -> None:
-    # The pre-dedup stamp carried a `group` key (the lineage's fact); it is
-    # dropped on read (extra="ignore"), the rest of the stamp survives.
+def test_lane_compare_keeps_placement_and_group_only(tmp_path: pathlib.Path) -> None:
+    """A lane keeps its group reference and drops facts owned by the coordinator."""
     _write(
         tmp_path,
         {"compare": {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}},
@@ -86,7 +85,8 @@ def test_legacy_compare_group_is_ignored(tmp_path: pathlib.Path) -> None:
     m = sessions_manifest.read_manifest(tmp_path)
     assert m.compare is not None
     assert m.compare.rank == 1 and m.compare.winner is True
-    assert not hasattr(m.compare, "group")
+    assert m.compare.group == "fan"
+    assert set(m.compare.model_dump()) == {"group", "rank", "of", "winner"}
 
 
 def test_session_mode_accepts_the_two_known_modes(tmp_path: pathlib.Path) -> None:
@@ -204,10 +204,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
             rank=1,
             of=3,
             winner=True,
-            ranked_by="judge",
-            rationale="cleanest diff",
-            judge_cost_usd=0.0102,
-            judge_cost_partial=True,
+            group="p-abc",
         ),
     )
     path = tmp_path / "manifest.json"
@@ -377,41 +374,16 @@ def test_the_gate_is_pinned_with_where_it_came_from(tmp_path: pathlib.Path) -> N
         json.dumps({"version": 3, "mode": "run", "session_id": "r"}), encoding="utf-8"
     )
     assert (
-        sessions_manifest.read_manifest(tmp_path).harness.verify_origin == ""
+        sessions_manifest.read_manifest(tmp_path).harness.gate.source == ""
     )  # gateless until pinned
-    stamps.stamp_verify_gate(tmp_path, ("uv", "run", "pytest"), "inferred")
+    stamps.stamp_verify_gate(
+        tmp_path, sessions_manifest.GateStamp(command=("uv", "run", "pytest"), source="inferred")
+    )
     wf = sessions_manifest.read_manifest(tmp_path).harness
-    assert wf.verify_command == ("uv", "run", "pytest")
-    assert wf.verify_origin == "inferred"
+    assert wf.gate.command == ("uv", "run", "pytest")
+    assert wf.gate.source == "inferred"
     # Re-stamping is what adoption does; it must not disturb the rest.
     assert sessions_manifest.read_manifest(tmp_path).mode == "run"
-
-
-@pytest.mark.parametrize(
-    ("configured", "has_gate", "pinned", "expected"),
-    [
-        (True, True, "inferred", "configured"),  # config outranks the pin
-        (False, True, "adopted", "adopted"),  # an adopted gate stays adopted
-        (False, True, "", "inferred"),  # the execution had to re-infer
-        (False, True, "pending", "inferred"),  # a parked run never pinned one
-        (False, True, "withheld", "inferred"),  # a withheld pin, re-armed by this execution
-        (False, False, "inferred", ""),  # gateless execution claims nothing
-        (True, False, "inferred", ""),  # a dropped gate claims nothing, even over config
-    ],
-)
-def test_a_resumed_execution_reports_whose_gate_it_used(
-    configured: bool, has_gate: bool, pinned: str, expected: str
-) -> None:
-    """An operator's config outranks the pinned gate, and the pin outranks re-inference.
-
-    The manifest names which one this execution ran under.
-    """
-    from agent6.app import resume
-
-    assert (
-        resume.execution_gate_origin(configured=configured, has_gate=has_gate, pinned=pinned)
-        == expected
-    )
 
 
 def test_a_known_mode_is_never_reported_as_an_unknown_one(tmp_path: pathlib.Path) -> None:
@@ -595,3 +567,28 @@ def test_a_version_3_manifest_keeps_its_stamp_under_the_old_key(tmp_path: pathli
     )
     stamp = sessions_manifest.read_manifest(tmp_path).harness
     assert (stamp.review_trigger, stamp.preset, stamp.replay_preset) == ("off", "strict", "strict")
+
+
+def test_write_manifest_bytes_coordinator(tmp_path: pathlib.Path) -> None:
+    """The coordinator golden pins group facts without a lane placement."""
+    from agent6.app import stamps
+
+    m = sessions_manifest.SessionManifest(
+        session_id="fan",
+        mode="run",
+        fanout=sessions_manifest.FanoutStamp(lanes=2, spec="2"),
+        comparison=sessions_manifest.ComparisonStamp(
+            group="fan",
+            ranking=("fan-l2", "fan-l1"),
+            ranked_by="judge",
+            rationale="covers the edge case",
+            judge_cost_usd=0.0123,
+            judge_cost_partial=True,
+        ),
+    )
+    path = tmp_path / "manifest.json"
+    stamps.write_manifest(path, m)
+    assert path.read_text(encoding="utf-8") == (
+        _DATA / "golden_manifest_coordinator.json"
+    ).read_text(encoding="utf-8")
+    assert sessions_manifest.read_manifest(tmp_path) == m
