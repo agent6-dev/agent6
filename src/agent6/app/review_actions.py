@@ -357,9 +357,13 @@ def _wait(session_dir: pathlib.Path, request: ActionRequest, wait_s: float) -> A
     deadline = time.monotonic() + wait_s
     while True:
         view = read_review(session_dir)
-        if recorded := _recorded(view, request) or _replied(session_dir, request.action.request_id):
+        recorded = _recorded(view, request) or _replied(session_dir, request.action.request_id)
+        alive = process.worker_is_alive(session_dir)
+        # The worker writes "requested", submits, then writes "submitted": a request seen
+        # between the two is in delivery, not unknown, while the worker lives.
+        if recorded is not None and (recorded.status != "delivery_unknown" or not alive):
             return recorded
-        if time.monotonic() >= deadline or not process.worker_is_alive(session_dir):
+        if time.monotonic() >= deadline or not alive:
             return ActionResult(
                 request_id=request.action.request_id,
                 finding_id=request.finding_id,

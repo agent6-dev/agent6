@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -202,6 +203,51 @@ def test_crash_after_request_never_retries_delivery(
     assert result.status == "delivery_unknown"
     assert "delivery unknown" in result.message
     assert review_actions.read_review(saved.session_dir).findings[0].status == "open"
+
+
+def _alive(_session_dir: pathlib.Path) -> bool:
+    return True
+
+
+def _dead(_session_dir: pathlib.Path) -> bool:
+    return False
+
+
+def test_a_live_fix_in_delivery_reads_queued_not_unknown(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Fix seen between the worker's "requested" and "submitted" records is not unknown."""
+    saved = review_helpers.reviewed_session(tmp_path)
+    view = review_actions.read_review(saved.session_dir)
+    finding = view.findings[0]
+    request = review_actions.ActionRequest(
+        finding_id=finding.finding_id,
+        source="cli",
+        action=review_records.FindingAction(
+            request_id="live", expected_version=view.version, action="fix"
+        ),
+    )
+    events = event_log.EventSink(saved.logs_path)
+    review_actions._emit(  # pyright: ignore[reportPrivateUsage]
+        events,
+        request,
+        "fix.requested",
+        target=dataclasses.asdict(
+            review_actions._target(view, finding)  # pyright: ignore[reportPrivateUsage]
+        ),
+        action="live-steer",
+    )
+    monkeypatch.setattr(process, "worker_is_alive", _alive)
+    result = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
+        saved.session_dir, request, 0.2
+    )
+    assert result.status == "queued"
+    assert "queued" in result.message and "unknown" not in result.message
+    monkeypatch.setattr(process, "worker_is_alive", _dead)
+    dead = review_actions._wait(  # pyright: ignore[reportPrivateUsage]
+        saved.session_dir, request, 0.2
+    )
+    assert dead.status == "delivery_unknown"
 
 
 def test_finished_fix_requires_explicit_resume_and_a_destination(tmp_path: pathlib.Path) -> None:
