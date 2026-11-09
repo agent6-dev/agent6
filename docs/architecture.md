@@ -318,6 +318,7 @@ Commands and verify run jailed; file tools resolve through the workspace boundar
 `tools/dispatch.py` owns routing, approvals, verify and metric events, and the jail-session lifecycle.
 Under `partial` and `none` it gives commands a shared `TMPDIR` in a private `agent6-<session>-*` directory in the system temp dir (short enough for a Unix socket path, which a directory under the session record is not); under `full` the jail's own tmpfs `/tmp` is the run's.
 The start gate, verify tool, foreground commands and background commands use this directory; the dispatcher removes it after stopping commands at teardown.
+`agent6 exec SESSION -- CMD` and `agent6 exec --new` use the same rule, with a fresh directory per exec, removed when the command exits and never shared with a live run.
 Programs that ignore `TMPDIR` are not redirected by this environment setting.
 A killed agent can leave this directory behind; removing the session removes those files too.
 CLI crash reports go beside the active session's log, or to the system temporary directory when no session has been attached.

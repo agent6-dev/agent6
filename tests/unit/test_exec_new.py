@@ -21,6 +21,22 @@ from agent6.ui import cli
 from agent6.ui.cli import exec_cmds
 
 
+@pytest.mark.parametrize("isolation", ["none", "partial", "full"])
+def test_exec_policy_command_temp(tmp_path: pathlib.Path, isolation: kinds.IsolationLevel) -> None:
+    """Exec grants a private command temp directory except with the jail's own /tmp."""
+    with exec_cmds.exec_policy(tmp_path, Config(), isolation, ("true",)) as policy:
+        if isolation == "full":
+            assert "TMPDIR" not in dict(policy.env)
+            return
+        temp = pathlib.Path(dict(policy.env)["TMPDIR"])
+        assert temp.is_dir()
+        assert temp in policy.extra_rw_paths
+        with exec_cmds.exec_policy(tmp_path, Config(), isolation, ("true",)) as other:
+            assert dict(other.env)["TMPDIR"] != str(temp)
+        assert temp.is_dir()
+    assert not temp.exists()
+
+
 @pytest.fixture
 def dispatched(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """Record what the dispatcher hands `exec_new` and `exec_in_session`."""
@@ -71,6 +87,9 @@ def test_disable_sandbox_reaches_the_executed_policy(
     seen: list[kinds.JailPolicy] = []
 
     def attached(policy: kinds.JailPolicy, *_args: object, **_kwargs: object) -> int:
+        temp = pathlib.Path(dict(policy.env)["TMPDIR"])
+        assert temp.is_dir()
+        assert temp in policy.extra_rw_paths
         seen.append(policy)
         return 0
 
@@ -80,6 +99,7 @@ def test_disable_sandbox_reaches_the_executed_policy(
     assert len(seen) == 1
     assert seen[0].isolation == "none"
     assert seen[0].network == "host"
+    assert not pathlib.Path(dict(seen[0].env)["TMPDIR"]).exists()
 
 
 def test_new_takes_the_command_verbatim(dispatched: dict[str, Any]) -> None:
@@ -309,7 +329,11 @@ def test_new_unsandboxed_gets_the_env_an_unsandboxed_command_gets(
     assert exec_cmds.exec_new(cfg, tmp_path, ("true",)) == 5
     plain = tools_policy.jail_policy(tmp_path, cfg, "none", ("true",), timeout_s=0.0)
     want = child_env.without_provider_keys({**os.environ, **dict(plain.env)})
-    assert dict(host["policy"].env) == want
+    got = dict(host["policy"].env)
+    temp = pathlib.Path(got.pop("TMPDIR"))
+    assert temp in host["policy"].extra_rw_paths
+    want.pop("TMPDIR", None)
+    assert got == want
     assert want["EXEC_NEW_PROBE"] == "visible" and "EXEC_NEW_KEY" not in want
 
 

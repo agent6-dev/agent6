@@ -21,6 +21,7 @@ import sys
 import termios
 import tty
 import types
+from collections.abc import Generator
 from typing import Any
 
 from agent6 import child_env, kinds
@@ -108,6 +109,7 @@ def _exit_on_signal(signum: int, _frame: types.FrameType | None) -> None:
     raise SystemExit(128 + signum)
 
 
+@contextlib.contextmanager
 def exec_policy(
     cwd: pathlib.Path,
     cfg: Config,
@@ -116,7 +118,7 @@ def exec_policy(
     network: kinds.NetworkMode | None = None,
     *,
     worktree_git_dir: pathlib.Path | None = None,
-) -> kinds.JailPolicy:
+) -> Generator[kinds.JailPolicy]:
     """Build the policy of the operator's command: a run command's, with no time limit.
 
     Unsandboxed, its environment is the one `run_in_jail` gives a command at that level: this
@@ -131,8 +133,8 @@ def exec_policy(
         worktree_git_dir: The repository git dir recorded for a session whose workspace is
             a linked worktree.
 
-    Returns:
-        The policy.
+    Yields:
+        The policy, with command storage cleaned up on exit.
 
     Raises:
         JailUnavailableError: The workspace is under a hidden path, the jail's HOME is refused
@@ -143,16 +145,18 @@ def exec_policy(
     if (hidden := confine.check_workspace_outside_hidden_paths(cfg, cwd)) is not None:
         raise jail.JailUnavailableError(hidden)
     env_base = child_env.without_provider_keys(dict(os.environ)) if isolation == "none" else None
-    return tools_policy.jail_policy(
-        cwd,
-        cfg,
-        isolation,
-        argv,
-        network=network,
-        timeout_s=0.0,
-        env_base=env_base,
-        worktree_git_dir=worktree_git_dir,
-    )
+    with tools_policy.command_temp(isolation) or contextlib.nullcontext() as temp:
+        yield tools_policy.jail_policy(
+            cwd,
+            cfg,
+            isolation,
+            argv,
+            network=network,
+            timeout_s=0.0,
+            env_base=env_base,
+            temp_dir=pathlib.Path(temp) if temp is not None else None,
+            worktree_git_dir=worktree_git_dir,
+        )
 
 
 def run_attached(policy: kinds.JailPolicy, session_net: jail.SessionNetwork | None = None) -> int:
@@ -237,28 +241,29 @@ def exec_new(cfg: Config, cwd: pathlib.Path, argv: tuple[str, ...]) -> int:
     if not lock.hold_workspace(cwd):
         common.refuse(lock.WORKSPACE_PACKING.format(root=cwd))
         return 2
-    try:
-        env = detect.probed_environment()
-        isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
-        refusal = confine.startup_refusal(cfg, isolation, cwd)
-        if refusal is not None:
-            common.refuse(refusal)
+    with contextlib.ExitStack() as stack:
+        try:
+            env = detect.probed_environment()
+            isolation = detect.resolve_isolation(cfg.sandbox.isolation, env)
+            refusal = confine.startup_refusal(cfg, isolation, cwd)
+            if refusal is not None:
+                common.refuse(refusal)
+                return 2
+            confine.warn_sandbox_gaps(isolation, env, cfg, root=cwd)
+            if not argv:
+                argv = (resolve_shell(),)
+                common.note(f"{argv[0]} in a fresh sandbox, isolation {isolation}.")
+            policy = stack.enter_context(exec_policy(cwd, cfg, isolation, argv))
+            # The network a run opens for its commands, for this one command.
+            session_net = jail.SessionNetwork.open() if policy.network == "session" else None
+        except (jail.JailUnavailableError, detect.IsolationUnavailableError) as exc:
+            common.refuse(f"{exc}")
             return 2
-        confine.warn_sandbox_gaps(isolation, env, cfg, root=cwd)
-        if not argv:
-            argv = (resolve_shell(),)
-            common.note(f"{argv[0]} in a fresh sandbox, isolation {isolation}.")
-        policy = exec_policy(cwd, cfg, isolation, argv)
-        # The network a run opens for its commands, for this one command.
-        session_net = jail.SessionNetwork.open() if policy.network == "session" else None
-    except (jail.JailUnavailableError, detect.IsolationUnavailableError) as exc:
-        common.refuse(f"{exc}")
-        return 2
-    try:
-        return run_attached(policy, session_net)
-    except jail.JailUnavailableError as exc:
-        common.error(f"{exc}")
-        return 2
-    finally:
-        if session_net is not None:
-            session_net.close()
+        try:
+            return run_attached(policy, session_net)
+        except jail.JailUnavailableError as exc:
+            common.error(f"{exc}")
+            return 2
+        finally:
+            if session_net is not None:
+                session_net.close()

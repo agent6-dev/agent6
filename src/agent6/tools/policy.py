@@ -11,6 +11,7 @@ import dataclasses
 import os
 import pathlib
 import stat
+import tempfile
 from collections.abc import Sequence
 from typing import Any, Literal
 
@@ -464,6 +465,22 @@ def _home_for(
     return str(JAIL_TMP_HOME)
 
 
+def command_temp(
+    isolation: kinds.IsolationLevel, name: str = "exec"
+) -> tempfile.TemporaryDirectory[str] | None:
+    """Create caller-owned command storage; full isolation uses the jail's /tmp.
+
+    Args:
+        isolation: The resolved isolation level.
+        name: The session name, or exec for an operator command.
+
+    Returns:
+        A temporary directory to clean up when its commands end, or None under full isolation.
+    """
+    # Keep paths short for Unix sockets, whose paths are capped at 108 bytes.
+    return None if isolation == "full" else tempfile.TemporaryDirectory(prefix=f"agent6-{name}-")
+
+
 def jail_policy(
     root: pathlib.Path,
     config: Config,
@@ -498,7 +515,7 @@ def jail_policy(
         network: A caller's own network answer; see `resolve_network`.
         env_base: The child's env instead of the passthrough set; the jail defaults (PATH, HOME,
             the `[git.commit]` identity, the uv and bytecode settings) apply either way.
-        temp_dir: The dispatcher-owned temporary directory for command files.
+        temp_dir: The caller-owned temporary directory for command files.
         worktree_git_dir: The repository git dir recorded at session start or when agent6
             added the worktree, granted read-only while the `.git` pointer still resolves
             to it. A linked worktree with no record gets no grant.

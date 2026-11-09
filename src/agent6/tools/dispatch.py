@@ -1051,16 +1051,11 @@ class ToolDispatcher:
         extra_rw_paths: tuple[pathlib.Path, ...] = (),
     ) -> kinds.JailPolicy:
         """Return the jail policy for an argv, with this dispatcher's protect paths and git dir."""
-        # Under `full` the jail's own tmpfs /tmp is the run's; elsewhere a short directory in the
-        # system temp dir, named after the session: a Unix socket path is capped at 108 bytes,
-        # which a directory under the session record exceeds.
-        temp_dir: pathlib.Path | None = None
-        if self.isolation != "full":
-            with self._temp_lock:
-                if self._command_tmp is None:
-                    name = self._session_dir.name if self._session_dir is not None else "run"
-                    self._command_tmp = tempfile.TemporaryDirectory(prefix=f"agent6-{name}-")
-                temp_dir = pathlib.Path(self._command_tmp.name)
+        with self._temp_lock:
+            if self._command_tmp is None:
+                name = self._session_dir.name if self._session_dir is not None else "run"
+                self._command_tmp = tools_policy.command_temp(self.isolation, name)
+            temp_dir = pathlib.Path(self._command_tmp.name) if self._command_tmp else None
         return tools_policy.jail_policy(
             self._root,
             self._config,

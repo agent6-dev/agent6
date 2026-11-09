@@ -266,8 +266,8 @@ def test_run_metric_refused_outside_run_mode(
     def fake_run_in_jail(policy: object, **_kw: object) -> None:
         fired.append(policy)
 
-    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, mode=mode)  # type: ignore[arg-type]
+    monkeypatch.setattr("agent6.sandbox.jail.run_in_jail", fake_run_in_jail)
     with pytest.raises(tool_errors.ToolError, match=f"not available in {mode} mode"):
         d.dispatch("run_metric_command", {})
     assert fired == []

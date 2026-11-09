@@ -331,39 +331,42 @@ def exec_in_session(  # noqa: PLR0911  # one refusal per check, in order
     if disable_sandbox:
         common.note("WARNING: --disable-sandbox runs this command on the host without confinement.")
     workspace, git_dir = _recorded_workspace(layout, cwd)
-    try:
-        policy = exec_cmds.exec_policy(
-            workspace, cfg, isolation, argv, network, worktree_git_dir=git_dir
-        )
-    except jail.JailUnavailableError as exc:
-        common.error(f"{exc}")
-        return 2
-    if policy.network == "session" and pid is None:
-        # A session policy with no live holder has no network to join.
-        common.refuse(f"{no_session_network_reason(layout)}")
-        return 2
-    if policy.network == "session":
-        # Borrowed through the holder, which can exit between the read above and this open.
-        userns_fd = -1
+    with contextlib.ExitStack() as stack:
         try:
-            userns_fd = os.open(f"/proc/{pid}/ns/user", os.O_RDONLY)
-            borrowed = jail.SessionNetwork(
-                userns_fd=userns_fd,
-                netns_fd=os.open(f"/proc/{pid}/ns/net", os.O_RDONLY),
-                holder_pid=int(pid or 0),
+            policy = stack.enter_context(
+                exec_cmds.exec_policy(
+                    workspace, cfg, isolation, argv, network, worktree_git_dir=git_dir
+                )
             )
-        except OSError as exc:
-            if userns_fd >= 0:
-                os.close(userns_fd)
-            common.refuse(f"the session's network is gone: {exc}")
+        except jail.JailUnavailableError as exc:
+            common.error(f"{exc}")
             return 2
-    else:
-        borrowed = None
-    try:
-        return exec_cmds.run_attached(policy, borrowed)
-    except jail.JailUnavailableError as exc:
-        common.error(f"{exc}")
-        return 2
-    finally:
-        if borrowed is not None:
-            borrowed.close()
+        if policy.network == "session" and pid is None:
+            # A session policy with no live holder has no network to join.
+            common.refuse(f"{no_session_network_reason(layout)}")
+            return 2
+        if policy.network == "session":
+            # Borrowed through the holder, which can exit between the read above and this open.
+            userns_fd = -1
+            try:
+                userns_fd = os.open(f"/proc/{pid}/ns/user", os.O_RDONLY)
+                borrowed = jail.SessionNetwork(
+                    userns_fd=userns_fd,
+                    netns_fd=os.open(f"/proc/{pid}/ns/net", os.O_RDONLY),
+                    holder_pid=int(pid or 0),
+                )
+            except OSError as exc:
+                if userns_fd >= 0:
+                    os.close(userns_fd)
+                common.refuse(f"the session's network is gone: {exc}")
+                return 2
+        else:
+            borrowed = None
+        try:
+            return exec_cmds.run_attached(policy, borrowed)
+        except jail.JailUnavailableError as exc:
+            common.error(f"{exc}")
+            return 2
+        finally:
+            if borrowed is not None:
+                borrowed.close()
