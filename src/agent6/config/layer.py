@@ -27,7 +27,11 @@ SECTION_ORDER = tuple(config_model.Config.model_fields)
 
 
 def load_effective(
-    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...] = (), *, preset: str = ""
+    repo_root: pathlib.Path,
+    explicit_paths: tuple[pathlib.Path, ...] = (),
+    *,
+    preset: str = "",
+    allow_pack: bool = False,
 ) -> layer_data.EffectiveConfig:
     """Load the effective config of a repo.
 
@@ -35,6 +39,7 @@ def load_effective(
         repo_root: The repo.
         explicit_paths: The `--config FILE` layers in command-line order.
         preset: The `--preset` flag, or "".
+        allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
         The effective config.
@@ -42,7 +47,7 @@ def load_effective(
     Raises:
         ConfigError: A layer is unreadable or the merged config is invalid.
     """
-    layers = layer_data.discover_layers(repo_root, explicit_paths)
+    layers = layer_data.discover_layers(repo_root, explicit_paths, allow_pack=allow_pack)
     presets = layer_presets.preset_names(layers)
     layers = layer_presets.apply_preset(layers, preset)
     return layer_data.effective_from_layers(

@@ -1066,7 +1066,11 @@ def _dispatch_pack(args: argparse.Namespace) -> int:
     """Return the exit code of a state transfer command."""
     from agent6.ui.cli import pack_cmds
 
-    return pack_cmds.cmd_unpack() if args.command == "unpack" else pack_cmds.cmd_pack()
+    return (
+        pack_cmds.cmd_unpack()
+        if args.command == "unpack"
+        else pack_cmds.cmd_pack(repo_config=args.repo_config)
+    )
 
 
 def _dispatch_system(args: argparse.Namespace) -> int:

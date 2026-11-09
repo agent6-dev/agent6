@@ -383,7 +383,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         ),
     )
 
-    common._sub(sub, "pack", help="Copy this home's state into .agent6/ for workspace sync.")
+    pack_p = common._sub(
+        sub, "pack", help="Copy this home's state into .agent6/ for workspace sync."
+    )
+    pack_p.add_argument(
+        "--repo-config",
+        action="store_true",
+        help="Fold global config into repo config; omit global config.toml and ui.toml.",
+    )
     common._sub(sub, "unpack", help="Move .agent6/ state into this home, refusing conflicts.")
 
     init_p = common._sub(

@@ -9,8 +9,11 @@ from agent6.ui.cli import init_wizard
 from agent6.vcs import git_read
 
 
-def cmd_pack() -> int:
+def cmd_pack(*, repo_config: bool = False) -> int:
     """Write a workspace pack and gitignore it.
+
+    Args:
+        repo_config: Fold global settings into repo config and omit global config and UI files.
 
     Returns:
         Zero after writing the pack.
@@ -35,7 +38,11 @@ def cmd_pack() -> int:
         raise errors.PackError(f"{root / '.gitignore'}: {exc}") from exc
     if refusal := git_read.pack_exclusion_error(root):
         raise errors.PackError(refusal)
-    manifest = pack.pack(root)
+    manifest = pack.pack(
+        root,
+        repo_config=repo_config,
+        on_fold=lambda key: print(f"Moved to repo config: {key}"),
+    )
     print(f"Packed {len(manifest.files)} files into {root / '.agent6'}; home copies kept.")
     return 0
 
@@ -49,6 +56,10 @@ def cmd_unpack() -> int:
     root = paths.project_root(pathlib.Path.cwd(), allow_pack=True)
     result = pack.unpack(root)
     print(f"Unpacked: {len(result.moved)} moved, {len(result.kept)} kept.")
+    if not any(
+        paths.global_config_dir() / name in result.moved for name in ("config.toml", "ui.toml")
+    ):
+        print("No global config.toml or ui.toml written.")
     for label, files in (("moved", result.moved), ("kept", result.kept)):
         for file in files:
             print(f"  {label}: {file}")

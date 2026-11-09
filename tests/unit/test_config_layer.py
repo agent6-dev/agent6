@@ -830,14 +830,18 @@ def test_concurrent_rollback_does_not_erase_a_valid_write(
     calls = {"n": 0}
 
     def gated_load(
-        root: pathlib.Path, flag: tuple[pathlib.Path, ...] = (), *, preset: str = ""
+        root: pathlib.Path,
+        flag: tuple[pathlib.Path, ...] = (),
+        *,
+        preset: str = "",
+        allow_pack: bool = False,
     ) -> object:
         calls["n"] += 1
         if calls["n"] == 1:  # A's revalidate: hold the transaction open
             a_in_revalidate.set()
             b_attempted.wait(timeout=5)
             time.sleep(0.4)  # window for B to (old code) land / (fixed) queue
-        return real_load(root, flag, preset=preset)
+        return real_load(root, flag, preset=preset, allow_pack=allow_pack)
 
     monkeypatch.setattr(layer, "load_effective", gated_load)
     results: dict[str, str | None] = {}

@@ -407,9 +407,9 @@ def state_dir(repo_root: pathlib.Path, *, allow_pack: bool = False) -> pathlib.P
     return state_base() / repo_id(project_root(repo_root, allow_pack=allow_pack))
 
 
-def repo_config_path(repo_root: pathlib.Path) -> pathlib.Path:
+def repo_config_path(repo_root: pathlib.Path, *, allow_pack: bool = False) -> pathlib.Path:
     """Return the per-repo config file, `<state_dir>/config.toml`, out of the repo."""
-    return state_dir(repo_root) / "config.toml"
+    return state_dir(repo_root, allow_pack=allow_pack) / "config.toml"
 
 
 def is_root() -> bool:

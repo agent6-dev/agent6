@@ -234,7 +234,11 @@ def provider_field_error(key: str, leaf: str, value: object) -> str | None:
 
 
 def unknown_key_error(
-    key: str, repo_root: pathlib.Path, *, eff: layer_data.EffectiveConfig | None = None
+    key: str,
+    repo_root: pathlib.Path,
+    *,
+    eff: layer_data.EffectiveConfig | None = None,
+    allow_pack: bool = False,
 ) -> str:
     """Return the message for a key the schema forbids, with a did-you-mean.
 
@@ -243,13 +247,16 @@ def unknown_key_error(
         repo_root: The repo whose effective leaves are the did-you-mean pool.
         eff: An effective config to take the pool from instead, when the caller holds one
             whose `--config` or `--machine-file` layers add keys.
+        allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
         The message; the pool falls back to the schema defaults when the merged config no
         longer loads.
     """
     try:
-        pool = layer.leaf_keys(eff if eff is not None else layer.load_effective(repo_root, ()))
+        pool = layer.leaf_keys(
+            eff if eff is not None else layer.load_effective(repo_root, (), allow_pack=allow_pack)
+        )
     except validation.ConfigError:
         pool = sorted(layer_data.flatten_leaves(config_model.Config().model_dump(mode="python")))
     close = difflib.get_close_matches(key, pool, n=2)
@@ -304,6 +311,7 @@ def written_value_error(
     repo_root: pathlib.Path,
     section: dict[str, Any] | None = None,
     to_repo: bool = False,
+    allow_pack: bool = False,
 ) -> str | None:
     """Validate a written `key = value` on its own, independent of the layer merge.
 
@@ -316,6 +324,7 @@ def written_value_error(
         repo_root: The repo, for the did-you-mean pool.
         section: The section's sibling leaves, so a rule spanning two keys sees them.
         to_repo: The write targets the repo layer, so a command in the error keeps `--repo`.
+        allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
         An error at the key, under it, or at a parent of it; None when the value is
@@ -333,6 +342,7 @@ def written_value_error(
                 repo_root=repo_root,
                 section=section,
                 to_repo=to_repo,
+                allow_pack=allow_pack,
             )
         return None
     if parts[0] == "providers" and len(parts) == 3:
@@ -348,7 +358,9 @@ def written_value_error(
         config_model.Config.model_validate(nested)
     except pydantic.ValidationError as exc:
         for err in exc.errors():
-            message = _error_about(err, key, value, repo_root, to_repo=to_repo)
+            message = _error_about(
+                err, key, value, repo_root, to_repo=to_repo, allow_pack=allow_pack
+            )
             if message is not None:
                 return message
     except validation.ConfigError as exc:
@@ -363,6 +375,7 @@ def _error_about(
     repo_root: pathlib.Path,
     *,
     to_repo: bool,
+    allow_pack: bool,
 ) -> str | None:
     """Render one validation error as a message about the key.
 
@@ -372,6 +385,7 @@ def _error_about(
         value: The value written.
         repo_root: The repo, for the did-you-mean pool.
         to_repo: The write targets the repo layer, so a command in the message keeps `--repo`.
+        allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
         The message, or None.
@@ -379,7 +393,7 @@ def _error_about(
     loc = io.render_key(str(x) for x in err["loc"])
     if err["type"] == "extra_forbidden" and (loc == key or key.startswith(loc + ".")):
         # An unknown top-level section errors at the section, not the leaf.
-        return unknown_key_error(key, repo_root)
+        return unknown_key_error(key, repo_root, allow_pack=allow_pack)
     if err["type"] == "value_error" and "." not in loc and key.startswith(loc + "."):
         # A section rule is reported at the section; only a top-level one, since a name-keyed
         # entry is written a leaf at a time and its whole-entry rules would reject each write.
@@ -408,6 +422,7 @@ def revalidate_write(
     held: bool = True,
     written: Sequence[tuple[str, object]] = (),
     to_repo: bool = False,
+    allow_pack: bool = False,
 ) -> str | None:
     """Reload the merged config after an edit and roll the file back when this edit broke it.
 
@@ -425,6 +440,7 @@ def revalidate_write(
             section as the file now holds it, so a value a higher layer masks in the merge
             is caught here.
         to_repo: The target is the repo layer, so a command in the error keeps `--repo`.
+        allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
         The error when this edit broke the config, else None.
@@ -437,16 +453,24 @@ def revalidate_write(
     for wkey, wvalue in written:
         section = _section_leaves(doc, wkey)
         value_err = written_value_error(
-            wkey, wvalue, repo_root=repo_root, section=section, to_repo=to_repo
+            wkey,
+            wvalue,
+            repo_root=repo_root,
+            section=section,
+            to_repo=to_repo,
+            allow_pack=allow_pack,
         )
         if value_err is None:
             continue
         # A section rule can fire over a sibling that was already wrong; the value alone
         # settles whose fault it is, and the merged check below keeps a pre-broken config.
-        if written_value_error(wkey, wvalue, repo_root=repo_root) is not None:
+        if (
+            written_value_error(wkey, wvalue, repo_root=repo_root, allow_pack=allow_pack)
+            is not None
+        ):
             return keep_or_rollback(target, prior, value_err, held=held)
     try:
-        layer.load_effective(repo_root, ())
+        layer.load_effective(repo_root, (), allow_pack=allow_pack)
     except validation.ConfigError as exc:
         err = str(exc) + _whole_table_hint(exc, written, to_repo=to_repo)
     else:

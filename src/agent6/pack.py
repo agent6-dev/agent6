@@ -14,12 +14,13 @@ import shutil
 import socket
 import stat
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Literal
 
 import pydantic
 
 from agent6 import errors, pack_manifest, paths, portable
+from agent6.config import io, layer, layer_data, write
 from agent6.sessions import lock
 
 Outcome = Literal["move", "keep", "conflict"]
@@ -153,11 +154,109 @@ def _copy(source: pathlib.Path, target: pathlib.Path, *, secret: bool) -> None:
         temp.unlink(missing_ok=True)
 
 
-def pack(root: pathlib.Path) -> pack_manifest.Manifest:
+def _fold_global_config(root: pathlib.Path) -> tuple[str, ...]:
+    """Copy inherited global leaves into the repo under one validated config write.
+
+    Args:
+        root: The project whose workspace lease is held exclusively.
+
+    Returns:
+        The copied dotted keys, sorted.
+
+    Raises:
+        PackError: A path is unsafe, the writer lock is unavailable or the write fails.
+        ConfigError: The source or merged config is invalid.
+    """
+    source = paths.global_config_path()
+    target = paths.repo_config_path(root, allow_pack=True)
+    for path in (source, target):
+        pack_manifest.check_path(path, regular=path.exists())
+    paths.mkdir_for_real_user(target.parent)
+    with write.writing_config(target) as held:
+        if not held:
+            raise errors.PackError(f"{target}: cannot take writer lock; nothing folded")
+        prior = errors.read_operator_file(target) if target.is_file() else None
+        merged, sources = layer_data.merge_layers(
+            [
+                layer_data.Layer("global", source, io.read_toml_file(source)),
+                layer_data.Layer("repo", target, io.read_toml_file(target)),
+            ]
+        )
+        leaves = layer_data.flatten_leaves(merged)
+        moved = tuple(sorted(key for key, origin in sources.items() if origin == "global"))
+        layer.load_effective(root, allow_pack=True)
+        try:
+            for key in moved:
+                owner = io.undeclared_table_ancestor(target, key) or key
+                io.upsert_toml_leaf(target, owner, io.read_toml_leaf(merged, owner))
+        except (OSError, errors.OperatorError) as exc:
+            raise errors.PackError(
+                write.keep_or_rollback(target, prior, str(exc), held=held)
+            ) from exc
+        if error := write.revalidate_write(
+            root,
+            target,
+            prior,
+            was_valid=True,
+            held=held,
+            written=[(key, leaves[key]) for key in moved],
+            to_repo=True,
+            allow_pack=True,
+        ):
+            raise errors.PackError(error)
+        return moved
+
+
+def _sources(
+    root: pathlib.Path, *, repo_config: bool, on_fold: Callable[[str], None] | None
+) -> dict[str, pathlib.Path]:
+    """Fold settings when requested and collect the files the snapshot carries.
+
+    Args:
+        root: The resolved project root.
+        repo_config: Fold global settings and omit global config and UI files.
+        on_fold: Report each copied dotted key.
+
+    Returns:
+        The source paths keyed by pack-relative name.
+    """
+    if repo_config:
+        for key in _fold_global_config(root):
+            if on_fold is not None:
+                on_fold(key)
+    sources = {
+        f"config/{name}": paths.global_config_dir() / name
+        for name in pack_manifest.CONFIG_FILES
+        if not repo_config or name == "secrets.toml"
+        if (paths.global_config_dir() / name).exists()
+    }
+    for area, source in (
+        ("skills", paths.data_dir() / "skills"),
+        ("repo", paths.state_dir(root, allow_pack=True)),
+    ):
+        sources.update(
+            {
+                f"{area}/{file.relative_to(source).as_posix()}": file
+                for file in _files(
+                    source, exclude=("locks", "pack-base.json") if area == "repo" else ()
+                )
+            }
+        )
+    return sources
+
+
+def pack(
+    root: pathlib.Path,
+    *,
+    repo_config: bool = False,
+    on_fold: Callable[[str], None] | None = None,
+) -> pack_manifest.Manifest:
     """Copy this home's global and repository state into a private workspace pack.
 
     Args:
         root: The resolved project root.
+        repo_config: Fold global settings into repo config and omit global config and UI files.
+        on_fold: Report each dotted key copied into repo config after the validated write.
 
     Returns:
         The written manifest.
@@ -179,23 +278,7 @@ def pack(root: pathlib.Path) -> pack_manifest.Manifest:
         bases = pydantic.TypeAdapter(
             dict[pack_manifest.PackName, pack_manifest.Hash]
         ).validate_json(base_path.read_bytes() if base_path.exists() else b"{}")
-        sources = {
-            f"config/{name}": paths.global_config_dir() / name
-            for name in pack_manifest.CONFIG_FILES
-            if (paths.global_config_dir() / name).exists()
-        }
-        for area, source in (
-            ("skills", paths.data_dir() / "skills"),
-            ("repo", paths.state_dir(root, allow_pack=True)),
-        ):
-            sources.update(
-                {
-                    f"{area}/{file.relative_to(source).as_posix()}": file
-                    for file in _files(
-                        source, exclude=("locks", "pack-base.json") if area == "repo" else ()
-                    )
-                }
-            )
+        sources = _sources(root, repo_config=repo_config, on_fold=on_fold)
         paths.mkdir_for_real_user(directory)
         directory.chmod(0o700)
         with tempfile.TemporaryDirectory(dir=directory) as stage_name:

@@ -115,13 +115,14 @@ def forbid_layer_preset(layer_name: str, data: dict[str, Any]) -> None:
 
 
 def discover_layers(
-    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...]
+    repo_root: pathlib.Path, explicit_paths: tuple[pathlib.Path, ...], *, allow_pack: bool = False
 ) -> list[Layer]:
     """Read the config files that exist, in precedence order.
 
     Args:
         repo_root: The repo whose state-dir config is the `repo` layer.
         explicit_paths: The `--config FILE` layers in command-line order.
+        allow_pack: Allow config reads while replacing a workspace pack.
 
     Returns:
         The layers, lowest precedence first.
@@ -134,7 +135,7 @@ def discover_layers(
     gpath = paths.global_config_path()
     if gpath.is_file():
         layers.append(Layer("global", gpath, read_toml(gpath)))
-    rpath = paths.repo_config_path(repo_root)
+    rpath = paths.repo_config_path(repo_root, allow_pack=allow_pack)
     if rpath.is_file():
         layers.append(Layer("repo", rpath, read_toml(rpath)))
     for explicit_path in explicit_paths:

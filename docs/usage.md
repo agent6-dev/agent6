@@ -517,6 +517,15 @@ Run `agent6 unpack` in the destination checkout to move the pack into that home'
 It deletes `.agent6/` after a successful import.
 A repeated `pack` replaces a snapshot from the same host and home; a pack from another origin requires `unpack` first.
 
+Use `agent6 pack --repo-config` to carry global settings in the repository config instead of exporting global config files.
+It copies every inherited leaf from global `config.toml` to the same dotted key in the repo config and prints one line per copied leaf.
+Repo values win: mappings merge by key, and a repo list replaces the global list.
+The fold uses the locked, validated config write path and rolls back a failed edit.
+The source global files stay unchanged.
+The pack omits global `config.toml` and `ui.toml`; `secrets.toml` keeps its private handling.
+`unpack` leaves the destination's global settings untouched and reports that it wrote neither global file.
+After unpacking, `agent6 config show` attributes the copied settings to `repo`.
+
 File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `0700` directory.
 Symlinks and special files refuse rather than following a path outside the snapshot.
 **The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
@@ -529,7 +538,7 @@ A command already running in this checkout's sandbox can read the pack.
 The pack contains:
 
 - `pack.json`: version 1, UTC pack time, origin host, home, repo id and workspace, and each file's SHA256, UTC mtime and last shared hash.
-- `config/`: global `config.toml`, `ui.toml` and `secrets.toml`.
+- `config/`: global `config.toml`, `ui.toml` and `secrets.toml`, or only `secrets.toml` with `--repo-config`.
 - `skills/`: installed skills from the data directory.
 - `repo/`: the entire repository state directory, including repo config, sessions, asks, runs, memory, reviews and decisions, except `locks/` and `pack-base.json`.
 
