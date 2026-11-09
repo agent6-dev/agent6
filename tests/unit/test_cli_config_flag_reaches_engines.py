@@ -101,6 +101,8 @@ def test_acp_run_bridge_passes_the_explicit_config_path(
     # The ignore covers the `_Server` stand-in; `config_paths` carries the real tuple shape.
     bridge = acp_runner.RunBridge(server=server, config_paths=(cfg_path,))  # type: ignore[arg-type]
     session = acp_session.Session(acp_id="t", cwd=tmp_path)
+    # The runner moves the process to the session's cwd; the monkeypatch moves it back.
+    monkeypatch.chdir(tmp_path)
     assert bridge.run(session, "task") == "refusal"
     assert seen == [(cfg_path,)]
 
