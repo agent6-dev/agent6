@@ -87,8 +87,8 @@ class ExecutionInputs:
         pins: The pinned notes.
         resuming: Whether this is a resumed execution.
         resume_steer: The steer that started this resumed execution.
-        worktree_git_dir: The repository git dir of a session in its own worktree, the one
-            grant its jail makes beyond the workspace.
+        worktree_git_dir: The recorded repository git dir of a session in a linked worktree,
+            granted to its jail beyond the workspace.
         worker_lock_fd: The lifecycle's held session writer lock, shared with auto-merge.
         base_rules: A review session's base-tree AGENTS.md, in place of the checkout's.
     """

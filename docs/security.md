@@ -184,12 +184,14 @@ Each `--security-opt` flag on this page turns off a protection of the container 
       A refused root keeps the `bin` grant.
       Refused widening: a dir holding a jail PATH directory, a dir at, inside, or containing an agent6 private dir, and `$HOME` or an ancestor of it.
       The row names each refusal
-    - a fork's execution or a `run --worktree` run (cwd is its linked worktree) also grants the repository's `.git`: a read-only bind under `full` `sandbox.isolation`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
+    - a session started in a linked worktree also grants the repository git dir, including its `worktrees/<name>` admin entry with HEAD and index, at their real paths: a read-only bind under `full` `sandbox.isolation`, a Landlock read+exec rule under `partial`, in both cases whatever `protect_git` says.
       The main checkout's `.git` is read-only only under `full` `sandbox.isolation` with `protect_git`, so a worktree's is the more confined of the two.
-    - the granted dir is the one agent6 recorded when it added the worktree (the manifest's `worktree_git_dir`, taken from the repository it ran in).
-      The worktree's own `.git` pointer is never the source: a jailed command can rewrite it under `partial` `sandbox.isolation`.
+      A write grant inside the recorded git dir refuses the start: the jail protects paths under the workspace only, so no grant lifts the bind's read-only mode.
+    - the granted dir is the manifest's `worktree_git_dir`, recorded when agent6 adds a worktree or validates the checkout's pointer at session start, before any model command.
+      A pointer outside a valid repository refuses startup in one line naming `.git`.
+      Resume and same-checkout forks inherit the record rather than creating a grant from the writable pointer.
       The policy builder refuses when the pointer no longer resolves to the record.
-      A linked worktree agent6 did not record gets no grant
+      A policy with no record gets no grant
     - under `partial` `sandbox.isolation`, a `hide_paths` entry inside the recorded dir refuses like any other unmaskable entry
 - Masked last, after every bind (`full` `sandbox.isolation`): the config dir, the state base, the workspace and project roots' `.agent6/` pack directories, `[sandbox].hide_paths`
     - each is masked under its given name and under the path it resolves to, so an entry spelled through a symlink covers the real directory
@@ -246,6 +248,8 @@ It exits 1 when a check fails, 0 otherwise.
 | `jail_blocks_etc_write` | a jailed write to `/etc/agent6-escape` leaves no file on the host |
 
 ### 3. File access
+
+Jailed commands in a linked worktree also receive the recorded [git-directory bind](#2-sandbox), but that grant adds no path to the file tools' boundary.
 
 `read_file`, `list_dir`, `outline`, `find_definition`, `find_references`, `apply_edit`, and `apply_patch` run in the agent process and ask no approval.
 Every path they take resolves through `Workspace`:
@@ -506,6 +510,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 
 **A `git` the model runs through `run_command`** is bounded by the sandbox, and its argv is not screened.
 
+- A linked checkout's recorded repository git dir and its admin entry are bound read-only under `full`, including for user-created worktrees, with the same hidden-path masks as other binds ([Sandbox](#2-sandbox)).
+  `git status` and `git log` can read, but status cannot save refreshed stat data in the index, so later calls may repeat filesystem checks; commits cannot create their locks.
 - `protect_git = "on"` requires `full` `sandbox.isolation` to bind-remount `.git` as read-only; unless `git.control = "model"`, `auto` (the default) binds under `full` and keeps the edit tools' refusal at every level
     - a mount nested under `.git` stays visible and read-only
     - a rewrite fails; `push` has no egress unless `sandbox.network = "host"`

@@ -541,7 +541,7 @@ The planner re-reads it before every turn and is shown it whenever it differs fr
 
 The source run and the operator's checkout are never mutated (except by `/undo`), and one fork edge per line lands in a per-repo `lineage.jsonl`.
 `agent6 resume <new>` runs the execution in that worktree; the repository's state dir and config apply there.
-The jail's rules for the recorded `worktree_git_dir` are in [Security](security.md#2-sandbox).
+The jail's rules for the recorded `worktree_git_dir`, including sessions started in user-created worktrees, are in [Security](security.md#2-sandbox).
 The worktree's checkout lock is removed with the worktree.
 The worktree shares the repository's refs, so `sessions diff|commits|merge <new>` work from the repo like any run's; `sessions prune` removes the worktree once the fork is merged, and `sessions remove <new>` removes it with the record.
 An unstarted fork keeps its branch, chain ref and worktree even when its tip is reachable from the checkout's HEAD.

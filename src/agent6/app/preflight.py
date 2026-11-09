@@ -419,7 +419,10 @@ def git_repo_refusal(cwd: pathlib.Path) -> str | None:
     if not cwd.is_dir():
         # git cannot chdir into a missing directory; the error would read as internal.
         return f"{cwd} is not a directory."
-    if git_read.is_git_repo(cwd):
+    is_repo = git_read.is_git_repo(cwd)
+    if not is_repo and (cwd / ".git").is_file():
+        return f"{cwd / '.git'} is not a valid linked worktree pointer; no git dir is granted."
+    if is_repo:
         return None
     return (
         f"{cwd} is not a git repository.\n"

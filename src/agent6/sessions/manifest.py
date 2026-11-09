@@ -304,9 +304,9 @@ class SessionManifest(pydantic.BaseModel):
         worktree: The absolute path of the linked worktree `agent6 fork` or `run --worktree`
             added; None for a session in the operator's checkout. An `/undo` fork names its
             source's.
-        worktree_git_dir: The repository git dir that worktree points into: the one path its
-            execution's jail grants beyond the workspace. Never read back from the
-            worktree's own `.git` pointer, which a jailed command can rewrite under `partial`.
+        worktree_git_dir: The repository git dir granted to a linked checkout's jail, recorded
+            before any model command, including for an operator-owned checkout. Resume and
+            same-checkout forks inherit it; a writable `.git` pointer cannot replace it.
         workspace_set_up: Whether the setup command ran in the session's own worktree or
             clone; a resume runs it only while this is False. A fork's new worktree starts
             False, and an `/undo` fork carries its source's.

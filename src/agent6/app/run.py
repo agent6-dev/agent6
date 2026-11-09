@@ -120,6 +120,10 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     repo = pathlib.Path.cwd()
     # The run's checkout: the repository, or the worktree `worktree` adds below.
     cwd = repo
+    if (cwd / ".git").is_file() and not preflight.require_git_repo(cwd, reporter=reporter):
+        return 2
+    # A startup grant is recorded before model commands can rewrite the pointer under partial.
+    worktree_git_dir = paths.linked_worktree_git_dir(cwd)
     # A first prompt is a task, not a composer line.
     if (problem := directive.steer_problem(task)) is not None:
         reporter.error(problem)
@@ -201,6 +205,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 cwd=cwd,
                 confirm_unconfined=frontend.confirm_unconfined_autorun,
                 reporter=reporter,
+                worktree_git_dir=worktree_git_dir,
             )
         except preflight.SessionRefusedError as refusal:
             return refusal.rc
@@ -312,7 +317,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 1
         cwd = checkout.worktree
         cfg = cfg.with_hidden_in_checkout(repo, cwd)
-    worktree_git_dir = checkout.git_dir if checkout is not None else None
+        worktree_git_dir = checkout.git_dir
     worker_lock_fd: int | None = None
     try:
         if checkout is not None:

@@ -95,7 +95,7 @@ class ToolDispatcher:
         mcp_manager: The MCP servers; None routes no `mcp__` name.
         extra_protect_paths: Paths every jail re-binds read-only and the edit tools refuse,
             such as a running machine's own bundle; read by the prompt assembly too.
-        worktree_git_dir: The repository git dir recorded for a fork's linked worktree.
+        worktree_git_dir: The repository git dir recorded for the session's linked worktree.
         mode: The mode whose tool surface the dispatcher enforces as its backstop.
         state_dir: The per-repo state dir, for the sessions roster and the memory grant.
         session_dir: The run's dir, for background commands, the file bridge and the

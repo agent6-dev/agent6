@@ -208,6 +208,7 @@ class _ForkPlan:
         gate: The source's pinned verify command and its origin, inherited since an
             inferred or adopted gate has no config to derive from.
         budget: The caps the source's `--max-*` flags set, inherited as a resume replays them.
+        worktree_git_dir: The source's recorded git grant for a fork that keeps its checkout.
     """
 
     src: layout.SessionLayout
@@ -227,6 +228,7 @@ class _ForkPlan:
     cfg: Config
     gate: tuple[Sequence[str], str]
     budget: sessions_manifest.BudgetStamp
+    worktree_git_dir: pathlib.Path | None
 
 
 def _plan_fork(
@@ -362,6 +364,7 @@ def _plan_fork(
         cfg=cfg,
         gate=(sm.harness.verify_command, sm.harness.verify_origin),
         budget=sm.budget,
+        worktree_git_dir=sm.worktree_git_dir,
     )
 
 
@@ -526,7 +529,7 @@ def _materialize_fork(
         budget=plan.budget,
         isolation=detect.resolve_isolation(plan.cfg.sandbox.isolation, detect.probed_environment()),
         worktree=checkout.worktree if checkout is not None else None,
-        worktree_git_dir=checkout.git_dir if checkout is not None else None,
+        worktree_git_dir=checkout.git_dir if checkout is not None else plan.worktree_git_dir,
         workspace_set_up=checkout.set_up if checkout is not None else False,
     )
 

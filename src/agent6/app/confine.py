@@ -676,6 +676,7 @@ def config_refusal(
         # Before `check_hide_paths_support`, so a workspace under an entry gets its own refusal.
         lambda: check_workspace_outside_hidden_paths(cfg, workspace),
         lambda: check_hide_paths_support(cfg, isolation, workspace, worktree_git_dir),
+        lambda: check_write_grants_outside_git_dir(cfg, workspace, worktree_git_dir),
         lambda: check_workspace_outside_private_dirs(workspace),
         lambda: check_protect_git_support(cfg, isolation),
     )
@@ -686,6 +687,35 @@ def config_refusal(
             return str(exc)
         if err is not None:
             return err
+    return None
+
+
+def check_write_grants_outside_git_dir(
+    cfg: Config, workspace: pathlib.Path, worktree_git_dir: pathlib.Path | None
+) -> str | None:
+    """Return the refusal for a write grant at or inside the recorded git dir, else None.
+
+    The jail protects paths under the workspace only, so a write grant inside the read-only
+    git dir would make that part of it writable.
+
+    Args:
+        cfg: The resolved config.
+        workspace: The workspace.
+        worktree_git_dir: The linked worktree's recorded git dir, when the run is in one.
+
+    Returns:
+        The refusal naming the entry and the git dir, or None.
+    """
+    if worktree_git_dir is None:
+        return None
+    git_dir = worktree_git_dir.resolve()
+    for path, real in tools_policy.resolve_grants(cfg, workspace).write:
+        if real == git_dir or git_dir in real.parents:
+            return (
+                f"sandbox.extra_write_paths entry {path} lies inside the repository git dir"
+                f" {worktree_git_dir}, which this linked worktree's jail grants read-only;"
+                " remove the entry, or run from the repository itself."
+            )
     return None
 
 

@@ -374,8 +374,8 @@ def linked_worktree_git_dir(root: pathlib.Path) -> pathlib.Path | None:
     """Return the repository git dir a linked worktree points into, or None for a plain checkout.
 
     Resolved as git does, from the `.git` file and the entry's `commondir`. Both files
-    are writable by a jailed command under `partial`, so the pointer keys state and
-    verifies a recorded grant, and never makes one.
+    are writable by a jailed command under `partial`, so only session startup may record
+    a grant from a validated pointer; later reads key state and verify that grant.
 
     Args:
         root: The checkout whose `.git` is read.

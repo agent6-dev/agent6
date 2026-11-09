@@ -54,6 +54,30 @@ def test_the_recorded_git_dir_is_granted_read_only(tmp_path: pathlib.Path) -> No
     assert regions[git_dir].startswith("the repository's .git")
 
 
+@pytest.mark.parametrize("protect_git", ["auto", "on", "off"])
+def test_a_write_grant_inside_the_recorded_git_dir_refuses_the_start(
+    tmp_path: pathlib.Path, protect_git: str
+) -> None:
+    """The jail protects paths under the workspace only, so such a grant is refused, not covered."""
+    repo, worktree = _repo_and_worktree(tmp_path)
+    git_dir = repo / ".git"
+    admin = git_dir / "worktrees" / worktree.name
+    cfg = Config.model_validate(
+        {
+            "sandbox": {
+                "isolation": "full",
+                "protect_git": protect_git,
+                "extra_write_paths": [str(admin)],
+            }
+        }
+    )
+    refusal = confine.check_write_grants_outside_git_dir(cfg, worktree, git_dir)
+    assert refusal is not None and str(admin) in refusal and str(git_dir) in refusal
+    assert confine.check_write_grants_outside_git_dir(cfg, worktree, None) is None
+    policy = tools_policy.jail_policy(worktree, cfg, "full", ("true",), worktree_git_dir=git_dir)
+    assert git_dir not in policy.extra_protect_paths
+
+
 def test_a_rewritten_pointer_refuses_instead_of_granting(tmp_path: pathlib.Path) -> None:
     """A pointer that no longer resolves to the recorded dir refuses the policy, naming both."""
     repo, worktree = _repo_and_worktree(tmp_path)

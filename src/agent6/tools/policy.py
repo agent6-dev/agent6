@@ -479,9 +479,9 @@ def jail_policy(
         network: A caller's own network answer; see `resolve_network`.
         env_base: The child's env instead of the passthrough set; the jail defaults (PATH, HOME,
             the `[git.commit]` identity, the uv and bytecode settings) apply either way.
-        worktree_git_dir: The repository git dir agent6 recorded when it added the root as a
-            fork's linked worktree, granted read-only once the worktree's own `.git` pointer
-            still resolves to it. A linked worktree with no record gets no grant.
+        worktree_git_dir: The repository git dir recorded at session start or when agent6
+            added the worktree, granted read-only while the `.git` pointer still resolves
+            to it. A linked worktree with no record gets no grant.
         grants: The run's resolved grants, so every launch of the run binds the same
             directories; resolved here when None, for a policy built once.
 

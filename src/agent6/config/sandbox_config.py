@@ -87,7 +87,9 @@ class SandboxConfig(pydantic.BaseModel):
             'with `git.control = "model"`; `sandbox.protect_git = "auto"`: bind under full '
             "isolation, warning below it, off under model git control; `sandbox.protect_git = "
             '"off"`: writable; in-process `.git` writes refused at every isolation level with '
-            '`sandbox.protect_git = "on"` or `"auto"`'
+            '`sandbox.protect_git = "on"` or `"auto"`; a linked worktree\'s recorded repository '
+            "git dir is granted read-only regardless of this setting; a write grant inside "
+            "that dir refuses the start"
         ),
     )
     # The cache dir is paths.jail_cache_home, keyed on the repository.
