@@ -431,6 +431,10 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if rd is None:
                 return None
             if action == "merge_selected":
+                if not viewmodel_listing.session_action_applies(
+                    "merge", fanout=viewmodel_listing.is_fanout(rd)
+                ):
+                    return False
                 with contextlib.suppress(manifest.ManifestError):
                     if manifest.read_manifest(rd).git_control == "model":
                         return None

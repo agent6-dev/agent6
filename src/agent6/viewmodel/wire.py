@@ -154,6 +154,7 @@ def manifest_header(
     paints from cannot drift.
 
     Attributes:
+        session_actions: Whether each session action applies to this session kind.
         git_control: The launch git-control policy.
         base_sha: The run chain's base commit.
         unmerged: Whether the run holds unmerged work, when a repository is supplied.
@@ -198,6 +199,10 @@ def manifest_header(
                 branch_tips=git_read.run_ref_tips(repo) if repo is not None else None,
             )
         ]
+    header["session_actions"] = {
+        action: listing.session_action_applies(action, fanout=m.fanout is not None)
+        for action in ("compact", "fork", "merge", "review")
+    }
     header["git_control"] = m.git_control
     header["base_sha"] = m.base_sha
     lineage = format.format_lineage(m.parent_session_id, m.forked_from_turn, m.forked_from_sha)

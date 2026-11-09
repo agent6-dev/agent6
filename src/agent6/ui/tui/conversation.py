@@ -230,16 +230,16 @@ class ConversationScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, scre
     )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Use the run's policy for the shared Fork menu.
+        """Use the run's policy for the shared Compact and Fork actions.
 
         Args:
             action: The menu or binding action.
             parameters: Arguments passed to the action.
 
         Returns:
-            None to disable a model-controlled fork, otherwise the default availability.
+            False to hide group-only exclusions, None for a disabled fork, else the default.
         """
-        if action == "fork":
+        if action in ("compact", "fork"):
             return cast("tui_app.Agent6TUI", self.app).check_action(action, parameters)
         return super().check_action(action, parameters)
 

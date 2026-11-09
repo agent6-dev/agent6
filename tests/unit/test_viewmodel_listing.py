@@ -1900,3 +1900,13 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_end_turn(
     ]
     (tmp_path / "logs.jsonl").write_text("".join(json.dumps(e) + "\n" for e in journal))
     assert session_log.scan_session_log(tmp_path / "logs.jsonl").turn == 7
+
+
+@pytest.mark.parametrize("action", ["compact", "fork", "merge"])
+def test_fanout_has_no_loop_or_commit_actions(action: str) -> None:
+    assert not listing.session_action_applies(action, fanout=True)
+    assert listing.session_action_applies(action, fanout=False)
+
+
+def test_fanout_record_can_be_reviewed() -> None:
+    assert listing.session_action_applies("review", fanout=True)

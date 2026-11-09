@@ -569,6 +569,19 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
     return ""
 
 
+def session_action_applies(action: str, *, fanout: bool) -> bool:
+    """Hide loop and commit-chain actions on groups; their event records remain reviewable.
+
+    Args:
+        action: The session action name.
+        fanout: Whether the manifest records a fan-out, not an ordinary run with lanes.
+
+    Returns:
+        Whether the action applies, independent of the session's liveness or git policy.
+    """
+    return not (fanout and action in {"compact", "fork", "merge"})
+
+
 def fanout_resume_refusal(session_id: str) -> str:
     """Return the refusal every resume path gives a fan-out coordinator, which has no loop."""
     return (

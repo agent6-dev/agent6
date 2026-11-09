@@ -760,15 +760,19 @@ class Agent6TUI(theme.PlainNotify, theme.MuxPointerShapes, textual_app.App[TuiEx
         )
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        """Disable chain actions when the manifest records model-owned git.
+        """Hide loop actions on groups and disable forks under model-owned git.
 
         Args:
             action: The menu or binding action.
             parameters: Arguments passed to the action.
 
         Returns:
-            None to disable a model-controlled fork, otherwise the default availability.
+            False for group-only exclusions, None for a disabled fork, else the default.
         """
+        if action in ("compact", "fork") and not listing.session_action_applies(
+            action, fanout=listing.is_fanout(self.session_dir)
+        ):
+            return False
         if action == "fork":
             with contextlib.suppress(sessions_manifest.ManifestError):
                 if sessions_manifest.read_manifest(self.session_dir).git_control == "model":

@@ -54,6 +54,7 @@ async function renderRun(id, opts, gen) {
       catch (e) { toast(e.message, true); }
     };
     const compactBtn = el('button', null, 'Compact context');
+    cards._compact_btn = compactBtn;
     compactBtn.onclick = post('compact', 'compaction requested');
     const mergeBtn = el('button', null, 'Merge'); // no glyph: U+2443 was tofu in common fonts
     mergeBtn.onclick = async () => {
@@ -430,6 +431,10 @@ function paintRun(cards, s) {
   // view's: the server refuses the POST, so live-looking Allow/Deny beside
   // a "stale" header could only manufacture a red toast.
   const isDead = notLive(s);
+  for (const action of ['compact', 'fork', 'merge', 'review']) {
+    const button = cards['_' + action + '_btn'];
+    if (button) button.hidden = s.session_actions?.[action] === false;
+  }
   const gitRefusal = s.git_control === 'model' ? 'the model owns git in this run: no agent6 commit chain' : '';
   if (cards._fork_btn) {
     cards._fork_btn.disabled = !!gitRefusal;

@@ -1639,6 +1639,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `commits_ref` | `JSON` | The ref holding the run's commits when available. |
 | `merged_into` | `JSON` | The merge destination while the stamp still covers the run. |
 | `branch_line` | `JSON` | The rendered branch and merge facts. |
+| `session_actions` | `JSON` | Whether each session action applies to this session kind. |
 | `git_control` | `JSON` | The launch git-control policy. |
 | `base_sha` | `JSON` | The run chain's base commit. |
 | `unmerged` | `JSON` | Whether the run holds unmerged work, when a repository is supplied. |
