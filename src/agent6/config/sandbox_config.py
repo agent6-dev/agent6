@@ -93,16 +93,18 @@ class SandboxConfig(pydantic.BaseModel):
         ),
     )
     # The cache dir is paths.jail_cache_home, keyed on the repository.
-    home: Literal["auto", "tmp", "cache"] = pydantic.Field(
+    home: Literal["auto", "tmp", "cache", "host"] = pydantic.Field(
         default="auto",
         description=(
             'home directory (HOME) for jailed commands; `sandbox.home = "tmp"`: '
             "`/tmp/agent6-home` in the run's private tmpfs, removed with the run, requires "
             '`sandbox.isolation = "full"`, startup refused elsewhere; `sandbox.home = "cache"`: '
             "persistent `$XDG_CACHE_HOME/agent6/homes/<repo-id>`, one directory per repo, "
-            "created `0700`, refused if loosened, read-write bind at its real path; "
-            '`sandbox.home = "auto"`: tmp under full isolation, cache under partial or no '
-            "isolation (no private tmpfs); persistent HOME: cross-run channel inside the jail, "
+            "created `0700`, refused if loosened, read-write bind at its real path, under no "
+            'isolation a directory by convention only; `sandbox.home = "host"`: the '
+            'operator\'s own HOME, requires `sandbox.isolation = "none"`, refused under a jail; '
+            '`sandbox.home = "auto"`: tmp under full isolation, cache under partial, host '
+            "under no isolation; persistent HOME: cross-run channel inside the jail, "
             "poisoned caches or `~/.gitconfig` aliases reaching later jailed runs in the same "
             "repo, never other repos or the operator's tools; cached HOME for Go builds: "
             "compiled-package cache retained across runs without a host-cache grant"

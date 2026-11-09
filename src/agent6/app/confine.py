@@ -27,6 +27,37 @@ PARTIAL_SYSTEM_RW = ("/tmp",)  # noqa: S108 - a granted path, never opened
 PARTIAL_DEVICE_NODES = ("/dev/null", "/dev/zero", "/dev/urandom", "/dev/random", "/dev/full")
 
 
+def persistent_home_warning(isolation: kinds.IsolationLevel, persistent: pathlib.Path) -> str:
+    """Return the start-of-run warning for a persistent HOME at this level.
+
+    Args:
+        isolation: The resolved isolation level.
+        persistent: The persistent HOME the commands get.
+
+    Returns:
+        The warning naming the cost at this level.
+    """
+    if isolation == "none":
+        return (
+            f"sandbox.home = 'cache' under sandbox.isolation = 'none': HOME ({persistent}) is a"
+            " private directory by convention only; nothing confines the commands, so a write by"
+            " path reaches your real home. Set sandbox.home = 'auto' for your own HOME there."
+        )
+    cause, fix = (
+        ("sandbox.home = 'cache'", "Set sandbox.home = 'tmp' for a HOME that goes with the run.")
+        if isolation == "full"
+        else (
+            "sandbox.isolation = 'partial' has no private /tmp",
+            "Set sandbox.isolation = 'full' for a HOME that goes with the run.",
+        )
+    )
+    return (
+        f"{cause}: HOME ({persistent}) persists across runs and is executable, so a cache"
+        " poisoned by one run, or a ~/.gitconfig alias, reaches the next jailed run (never your"
+        f" own tools). {fix}"
+    )
+
+
 def warn_sandbox_gaps(
     isolation: kinds.IsolationLevel,
     env: detect.Environment,
@@ -64,7 +95,8 @@ def warn_sandbox_gaps(
         # The one owner of the cause; `check sandbox` prints the same.
         reporter.warn(
             f"running UNSANDBOXED ({session_setup.no_jail_cause(cfg, env)}). "
-            "Every command runs as a plain subprocess with no filesystem, network, "
+            "Every command runs as a plain subprocess, as you and with your HOME, with no "
+            "filesystem, network, "
             "or syscall confinement: the LLM's run_command, the verify command, and "
             "any spawned MCP server. The timeout and sandbox.memory_limit_mib still "
             "apply. Only the "
@@ -100,23 +132,8 @@ def warn_sandbox_gaps(
             " 'off' to accept that silently, or sandbox.isolation = 'full'."
         )
     persistent = tools_policy.persistent_jail_home(cfg, isolation, root, worktree_git_dir)
-    if persistent is not None and isolation != "none":
-        cause, fix = (
-            (
-                "sandbox.home = 'cache'",
-                "Set sandbox.home = 'tmp' for a HOME that goes with the run.",
-            )
-            if isolation == "full"
-            else (
-                "sandbox.isolation = 'partial' has no private /tmp",
-                "Set sandbox.isolation = 'full' for a HOME that goes with the run.",
-            )
-        )
-        reporter.warn(
-            f"{cause}: HOME ({persistent}) persists across runs and is executable, so a "
-            "cache poisoned by one run, or a ~/.gitconfig alias, reaches the next jailed "
-            f"run (never your own tools). {fix}"
-        )
+    if persistent is not None:
+        reporter.warn(persistent_home_warning(isolation, persistent))
     if isolation != "full" and cfg.sandbox.network == "auto":
         reporter.warn(
             "sandbox.network = 'auto' requires sandbox.isolation = 'full' to give the run its own"
@@ -374,7 +391,8 @@ def check_jail_home(
     """Return the refusal when the jail's HOME cannot be what the config says, else None.
 
     `home = "tmp"` requires `full` `sandbox.isolation` to put HOME on a private /tmp and refuses
-    under another level, where `auto` degrades to the repository's cache dir with a warning. A
+    under another level, where `auto` degrades with a warning; `home = "host"` is `none`'s and
+    refuses under a jail. A
     persistent dir the policy builder could not make agent6's own refuses too, without creating
     anything.
 
@@ -387,6 +405,12 @@ def check_jail_home(
     Returns:
         The refusal, or None.
     """
+    if isolation != "none" and cfg.sandbox.home == "host":
+        return (
+            "sandbox.home = 'host' requires sandbox.isolation = 'none': the operator's own HOME"
+            f" has no place inside a jail, but this run resolved to {isolation!r}. Set"
+            " sandbox.home = 'auto' for the level's own HOME."
+        )
     if isolation != "full" and cfg.sandbox.home == "tmp":
         persistent = paths.jail_cache_home(paths.checkout_root(workspace))
         return (

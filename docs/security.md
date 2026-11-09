@@ -32,16 +32,17 @@ Outside its control: the kernel, the agent6 binary, the provider endpoints.
 - `/tmp` is writable at every level
     - `full` `sandbox.isolation`: a private tmpfs discarded with the run
     - `partial` `sandbox.isolation`: the host's `/tmp`
-- `HOME` is a directory of agent6's own, never the operator's
+- `HOME` is a directory of agent6's own under a jail; under `none` `sandbox.isolation` it is the operator's
     - `full` `sandbox.isolation`: `/tmp/agent6-home`, created inside the private tmpfs and gone with the run; `[sandbox].home = "cache"` swaps in the persistent dir below, bind-mounted read-write at its real path
-    - `partial` and `none` `sandbox.isolation`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and, under `partial`, Landlock-granted read-write like the workspace; every other repository's directory stays ungranted
+    - `partial` `sandbox.isolation`: `$XDG_CACHE_HOME/agent6/homes/<repo-id>` (default `~/.cache/agent6/homes/<repo-id>`), one directory per repository, created `0700` by agent6 and, Landlock-granted read-write like the workspace; every other repository's directory stays ungranted
+    - `none` `sandbox.isolation`: the operator's own HOME (`[sandbox].home = "host"`, what `auto` resolves to there); `[sandbox].home = "cache"` gives that persistent directory by convention only, since nothing confines the commands, and the start warning says so
     - a linked worktree (`run --worktree`, a fork) gets its repository's directory, named by the git dir the session recorded and never by the worktree's own `.git` pointer; a lane's clone and a machine state's clone get it too, named by the first directory below the workspace base directory, the owning repository's id
     - a symlink, another user's directory, a mode open to group or others, or a path inside agent6's private dirs at that location refuses the run.
       The mode is checked on every run (a jailed command can `chmod` its own HOME), and the refusal names `chmod 700`; nothing restores it silently
 - agent6's own git never pushes, force-pushes, rewrites history, or `reset --hard` ([Git](#7-git))
     - a `git` the model runs through `run_command` is bounded by the sandbox instead: `protect_git` keeps `.git` unwritable under `full` `sandbox.isolation`, and push needs egress
 - No persistence after the run: no daemon, cron, `.bashrc` write, or setuid binary (one create path stays open, below)
-    - the exception is the jail's persistent `HOME` (`partial`, `none` `sandbox.isolation`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run in that repository, and stays executable.
+    - the exception is the jail's persistent `HOME` (`partial` `sandbox.isolation`, or `[sandbox].home = "cache"`): a file or binary written there reaches the next jailed run in that repository, and stays executable.
       The operator's own shell, tools, and dotfiles never read it
     - chmod-family syscalls (`fchmodat2` included) deny modes carrying `S_ISUID` / `S_ISGID`; ordinary chmod passes
     - so do the create paths that take a mode: `creat`, `mknod`/`mknodat`, and `open`/`openat` with `O_CREAT` or `O_TMPFILE`.

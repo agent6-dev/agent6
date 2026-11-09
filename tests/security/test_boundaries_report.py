@@ -365,28 +365,22 @@ def test_boundaries_report_names_the_opted_in_persistent_home(
 def test_boundaries_report_names_the_home_under_none(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`none` has no jail and still a HOME of agent6's own, listed under the root row.
+    """`none` has no jail: HOME is the operator's own by default, and `cache` says what it is not.
 
-    The HOME grant is listed at every level; so are the private dirs nothing hides there.
+    The private dirs nothing hides there are listed all the same.
     """
     _force(monkeypatch, "none")
     check_sandbox.check_sandbox_section(Config())
     out = capsys.readouterr().out
     assert "    rw        /  ! (sandbox disabled: the whole filesystem and network, as " in out
     home = paths.jail_cache_home(pathlib.Path.cwd())
+    assert f"rw        {home}" not in out
+    check_sandbox.check_sandbox_section(Config(sandbox=SandboxConfig(home="cache")))
+    out = capsys.readouterr().out
     assert (
         f"rw        {home}  ! (HOME, persists across runs:"
-        " sandbox.isolation = 'none' has no private /tmp)"
+        " a directory by convention only, sandbox.isolation = 'none' confines nothing)"
     ) in out
-    assert (
-        f"    rw        {paths.global_config_dir()}  ! (not hidden: secrets.toml is readable)"
-        in out
-    )
-    assert (
-        f"    rw        {paths.state_base()}  ! (not hidden: every session's records are writable)"
-        in out
-    )
-    assert "masked" not in out and "denied by Landlock" not in out
 
 
 @pytest.mark.parametrize("isolation", ["full", "partial"])

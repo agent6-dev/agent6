@@ -51,7 +51,7 @@ def test_full_defaults_to_the_private_tmpfs_home(tmp_path: pathlib.Path) -> None
     ("isolation", "cfg"),
     [
         ("partial", Config()),
-        ("none", Config()),
+        ("none", Config(sandbox=SandboxConfig(home="cache"))),
         ("full", Config(sandbox=SandboxConfig(home="cache"))),
     ],
 )
@@ -190,6 +190,36 @@ def test_an_explicit_tmp_home_refuses_where_there_is_no_private_tmp(
     assert confine.config_refusal(tmp, isolation, tmp_path) == msg  # pyright: ignore[reportArgumentType]
     assert confine.config_refusal(Config(), isolation, tmp_path) is None  # pyright: ignore[reportArgumentType]
     assert confine.config_refusal(tmp, "full", tmp_path) is None
+
+
+def test_no_isolation_gives_the_operators_own_home(tmp_path: pathlib.Path) -> None:
+    """`auto` under `none` is `host`: nothing confines the command, so HOME is the operator's."""
+    policy = policy_module.jail_policy(tmp_path, Config(), "none", ("true",))
+    assert dict(policy.env)["HOME"] == str(pathlib.Path.home())
+    assert not paths.jail_cache_home(tmp_path).exists()
+    assert confine.check_jail_home(Config(), "none", tmp_path) is None
+    assert not any(
+        str(paths.jail_cache_home(tmp_path)) in line for line in _warned("none", Config(), tmp_path)
+    )
+
+
+@pytest.mark.parametrize("isolation", ["partial", "full"])
+def test_an_explicit_host_home_refuses_under_a_jail(tmp_path: pathlib.Path, isolation: str) -> None:
+    """`home = "host"` is `none`'s value: a jail has no place for the operator's HOME."""
+    host = Config(sandbox=SandboxConfig(home="host"))
+    msg = confine.check_jail_home(host, isolation, tmp_path)  # pyright: ignore[reportArgumentType]
+    assert msg is not None and "requires sandbox.isolation = 'none'" in msg
+    assert f"resolved to '{isolation}'" in msg
+    assert confine.config_refusal(host, isolation, tmp_path) == msg  # pyright: ignore[reportArgumentType]
+    assert confine.check_jail_home(host, "none", tmp_path) is None
+
+
+def test_cache_under_no_isolation_warns_that_it_is_by_convention(tmp_path: pathlib.Path) -> None:
+    """An explicit `cache` under `none` runs, and the warning names what it is not: a boundary."""
+    cfg = Config(sandbox=SandboxConfig(home="cache"))
+    lines = [line for line in _warned("none", cfg, tmp_path) if "by convention" in line]
+    assert len(lines) == 1 and str(paths.jail_cache_home(tmp_path)) in lines[0], lines
+    assert "write by path reaches your real home" in lines[0]
 
 
 def test_the_default_degrades_with_a_warning_naming_the_home(tmp_path: pathlib.Path) -> None:

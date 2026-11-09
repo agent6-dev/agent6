@@ -52,20 +52,27 @@ def host_network_reads() -> tuple[pathlib.Path, ...]:
     return tuple(out)
 
 
-def jail_home_kind(config: Config, isolation: kinds.IsolationLevel) -> Literal["tmp", "cache"]:
-    """Return which HOME a jailed command gets: `auto` is `tmp` under `full`, `cache` elsewhere.
+def jail_home_kind(
+    config: Config, isolation: kinds.IsolationLevel
+) -> Literal["tmp", "cache", "host"]:
+    """Return which HOME a command gets: `auto` is each level's own.
+
+    `tmp` is `full`'s private tmpfs, `cache` is `partial`'s persistent directory, `host` is
+    the operator's own HOME where nothing confines the command.
 
     Args:
         config: The run's config.
         isolation: The resolved isolation level.
 
     Returns:
-        `tmp` or `cache`.
+        `tmp`, `cache` or `host`.
     """
     word = config.sandbox.home
-    if word == "auto":
-        return "tmp" if isolation == "full" else "cache"
-    return word
+    if word != "auto":
+        return word
+    if isolation == "full":
+        return "tmp"
+    return "cache" if isolation == "partial" else "host"
 
 
 def persistent_jail_home(
@@ -76,9 +83,9 @@ def persistent_jail_home(
 ) -> pathlib.Path | None:
     """Return the persistent HOME a jailed command gets, or None where `JAIL_TMP_HOME` applies.
 
-    Only `full` has a private /tmp for a throwaway HOME; every other level gets the
-    repository's `agent6.paths.jail_cache_home`, and `full` opts into it with
-    `[sandbox].home = "cache"`. `jail_policy` creates it and grants it read-write at its real
+    `partial` gets the repository's `agent6.paths.jail_cache_home`; `full` (a private /tmp) and
+    `none` (the operator's own HOME) opt into it with `[sandbox].home = "cache"`. `jail_policy`
+    creates it and grants it read-write at its real
     path. A working tree agent6 made for a repository (a worktree, a lane's clone, a machine
     state's clone) gets that repository's HOME, so a warmed tool cache serves all of them.
 
@@ -93,7 +100,7 @@ def persistent_jail_home(
     Returns:
         The repository's persistent HOME, or None.
     """
-    if jail_home_kind(config, isolation) == "tmp":
+    if jail_home_kind(config, isolation) != "cache":
         return None
     if worktree_git_dir is not None and worktree_git_dir.name == ".git":
         return paths.jail_cache_home(worktree_git_dir.parent)
@@ -446,6 +453,17 @@ def resolve_network(
     return "host" if config.sandbox.network == "host" else "session"
 
 
+def _home_for(
+    config: Config, isolation: kinds.IsolationLevel, persistent: pathlib.Path | None
+) -> str:
+    """Return the HOME a command gets: persistent, the operator's own, or the jail's tmpfs."""
+    if persistent is not None:
+        return str(persistent)
+    if jail_home_kind(config, isolation) == "host":
+        return str(pathlib.Path.home())  # nothing confines the command: its HOME is the operator's
+    return str(JAIL_TMP_HOME)
+
+
 def jail_policy(
     root: pathlib.Path,
     config: Config,
@@ -527,7 +545,7 @@ def jail_policy(
             raise jail.JailUnavailableError(refusal)
     if temp_dir is not None:
         env["TMPDIR"] = str(temp_dir)
-    env["HOME"] = str(persistent or JAIL_TMP_HOME)
+    env["HOME"] = _home_for(config, isolation, persistent)
     # That HOME holds no git identity, so a `git commit` the model runs (`git.control = "model"`)
     # carries the operator's `[git.commit]` one; an unset field leaves the identity to git (a
     # repo-local user.name still serves). The trailer stays agent6's, added only where it commits.

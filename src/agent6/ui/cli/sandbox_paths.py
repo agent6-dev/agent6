@@ -95,6 +95,8 @@ def _home_row(
         "sandbox.home = 'cache'"
         if selected == "full"
         else f"sandbox.isolation = '{selected}' has no private /tmp"
+        if selected == "partial"
+        else "a directory by convention only, sandbox.isolation = 'none' confines nothing"
     )
     return Row("rw", persistent, f"HOME, persists across runs: {why}", warning=True)
 
