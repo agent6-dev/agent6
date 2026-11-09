@@ -21,6 +21,7 @@ from typing import Any
 
 from agent6 import kinds
 from agent6.app import preflight, stop
+from agent6.config import ConfigError
 from agent6.sessions import id, ipc, manifest, process
 from agent6.sessions import layout as sessions_layout
 from agent6.ui.acp import rpc, updates
@@ -307,8 +308,12 @@ class Sessions:
             RpcError: The session has an execution in flight.
             RuntimeError: The worker thread could not start.
         """
-        saved = session.layout(self.state_dir_for(session.cwd))
-        if refusal := manifest.group_steer_refusal(saved.session_dir):
+        try:
+            saved = session.layout(self.state_dir_for(session.cwd))
+            refusal = manifest.group_steer_refusal(saved.session_dir)
+        except (ConfigError, manifest.ManifestError):
+            refusal = None  # the run below reports what cannot be read
+        if refusal:
             raise rpc.RpcError(rpc.INVALID_PARAMS, refusal)
         if session.is_running():
             raise rpc.RpcError(rpc.INVALID_PARAMS, "that session already has a prompt in flight")
