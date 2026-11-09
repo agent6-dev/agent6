@@ -142,7 +142,7 @@ def session_policy(
 
     Args:
         session_dir: The session's state dir.
-        targets: A live view's target fold; None reads the journal.
+        targets: A live view's target fold; None reads the journal's tail.
 
     Returns:
         The policy, all-empty when the manifest cannot be read.
@@ -154,7 +154,7 @@ def session_policy(
     target = (
         targets.current
         if targets is not None
-        else session_log.scan_session_log(session_dir / layout.LOGS_NAME).current_target
+        else session_log.current_target(session_dir / layout.LOGS_NAME)
     )
     return manifest_policy(m, target=target)
 

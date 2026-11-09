@@ -9,7 +9,8 @@ import dataclasses
 import json
 import os
 import pathlib
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 from agent6 import budget, evidence, kinds, terminal
 from agent6.viewmodel import events, format, review, session_status
@@ -250,14 +251,14 @@ def tolerant_float(raw: object, last_good: float) -> float:
     return last_good
 
 
-def last_event_epoch(logs: pathlib.Path) -> float | None:
-    """Return the last parseable event time, reading backward from the journal's tail.
+def events_backward(logs: pathlib.Path) -> Iterator[dict[str, Any]]:
+    """Yield the journal's parseable records newest first, reading from the tail.
 
     Args:
         logs: The journal path.
 
-    Returns:
-        The epoch seconds, or None when no timestamp can be read.
+    Yields:
+        Each record that parses as a JSON object; an unreadable journal yields nothing.
     """
     try:
         with logs.open("rb") as fh:
@@ -275,13 +276,73 @@ def last_event_epoch(logs: pathlib.Path) -> float | None:
                     except ValueError:
                         continue
                     if isinstance(ev, dict):
-                        ep = events.event_epoch(ev.get("ts"))
-                        if ep is not None:
-                            return ep
+                        yield ev
                 end = start
     except OSError:
-        return None
+        return
+
+
+def last_event_epoch(logs: pathlib.Path) -> float | None:
+    """Return the last parseable event time, reading backward from the journal's tail.
+
+    Args:
+        logs: The journal path.
+
+    Returns:
+        The epoch seconds, or None when no timestamp can be read.
+    """
+    for ev in events_backward(logs):
+        ep = events.event_epoch(ev.get("ts"))
+        if ep is not None:
+            return ep
     return None
+
+
+# The records that bind or clear the current execution target, read from the tail.
+_TARGET_BOUNDARIES = frozenset(
+    {"execution.target", "session.start", "session.resume", "session.stop"}
+)
+
+
+def current_target(logs: pathlib.Path) -> evidence.ExecutionTargetEvidence | None:
+    """Return the journal's current execution target, reading backward from its tail.
+
+    The same answer as `scan_session_log(logs).current_target`, at the cost of the current
+    execution's records rather than a replay of the journal: the last target stamp binds
+    the current execution unless another execution's boundary follows it or an earlier
+    record of the same target contradicts it.
+
+    Args:
+        logs: The journal path.
+
+    Returns:
+        The current target stamp, or None when the journal proves none.
+    """
+    stamp: evidence.ExecutionTargetEvidence | None = None
+    later_executions: set[object] = set()
+    for ev in events_backward(logs):
+        kind = ev.get("type")
+        if kind not in _TARGET_BOUNDARIES:
+            continue
+        if stamp is None:
+            if kind != "execution.target":
+                later_executions.add(ev.get("execution_id"))
+                continue
+            try:
+                stamp = evidence.TARGET.validate_python(ev)
+            except (ValueError, TypeError):
+                return None
+            if not stamp.execution_id or later_executions - {stamp.execution_id}:
+                return None
+        elif kind == "execution.target":
+            if ev.get("target_id") != stamp.target_id:
+                continue
+            with contextlib.suppress(ValueError, TypeError):
+                if evidence.TARGET.validate_python(ev) != stamp:
+                    return None
+        elif ev.get("execution_id") != stamp.execution_id:
+            break  # an earlier execution's boundary: its stamps are its own
+    return stamp
 
 
 def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type
