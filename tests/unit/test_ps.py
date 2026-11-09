@@ -148,16 +148,15 @@ def test_ps_json_carries_the_row_facts(
 
 
 def test_ps_json_waiting_facts(
-    tmp_path_factory: pytest.TempPathFactory,
+    tmp_path: pathlib.Path,
+    short_repo: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """JSON keeps the absolute directory and separate status and reason of a waiting session."""
-    # Keep the encoded repo id below the irreversible hashed-path threshold.
-    tmp_path = tmp_path_factory.mktemp("ps")
-    home = tmp_path / "home"
+    home = short_repo
     repo = home / "repo"
-    repo.mkdir(parents=True)
+    repo.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))

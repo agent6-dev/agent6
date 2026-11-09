@@ -230,3 +230,12 @@ def _isolate_state(  # pyright: ignore[reportUnusedFunction]
     tree_sitter_language_pack.configure(
         tree_sitter_language_pack.PackConfig(cache_dir=request.config.stash[_SESSION_GRAMMAR_CACHE])
     )
+
+
+@pytest.fixture
+def short_repo() -> Iterator[pathlib.Path]:
+    """Provide a repository path short enough for a reversible repository ID."""
+    with tempfile.TemporaryDirectory(prefix="repo-") as directory:
+        repo = pathlib.Path(directory).resolve()
+        assert len(str(repo).encode()) < 100
+        yield repo

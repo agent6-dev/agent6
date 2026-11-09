@@ -407,7 +407,8 @@ def test_repo_root_of_id_inverts_repo_id() -> None:
 
 
 def test_cmd_ps_lists_live_sessions_with_decoded_directory(
-    tmp_path_factory: pytest.TempPathFactory,
+    tmp_path: pathlib.Path,
+    short_repo: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -421,11 +422,8 @@ def test_cmd_ps_lists_live_sessions_with_decoded_directory(
 
     from agent6.ui.cli import ps_cmd
 
-    # Keep the encoded repo id below the irreversible hashed-path threshold.
-    tmp_path = tmp_path_factory.mktemp("ps")
     base = tmp_path / "state"
-    repo = tmp_path / "proj"
-    repo.mkdir()
+    repo = short_repo
     live = base / paths.repo_id(repo) / "sessions" / "runs" / "brave-fox-AAAAAA"
     live.mkdir(parents=True)
     (live / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
