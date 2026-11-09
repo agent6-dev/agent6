@@ -149,6 +149,6 @@ def test_resume_offers_recorded_model(tour_page: Page) -> None:
 
     tour_page.locator(".item").filter(has_text="merry-fountain-B7XAJS").click()
     model = tour_page.locator(".composer select").nth(1)
-    expect(model.locator("option").filter(has_text="openrouter/openai/gpt-4.1-mini")).to_have_count(
-        1
+    expect(model.locator("option:checked")).to_have_text(
+        "openrouter/openai/gpt-4.1-mini (as recorded)"
     )
