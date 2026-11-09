@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import os
 import pathlib
 import re
 import secrets
+import signal
 import subprocess
 
 import pydantic
@@ -37,6 +39,25 @@ def _runtime(runtime: tuple[str, ...], *argv: str) -> str:
         (*runtime, *argv), check=True, capture_output=True, text=True, timeout=60
     )
     return result.stdout.strip()
+
+
+def _kill_client_tree(runtime: tuple[str, ...], pid: int) -> None:
+    """Kill the runtime client and its descendants, through sudo when the prefix uses it.
+
+    Under a sudo prefix the host client runs as root, so the test's own signals reach sudo
+    alone and the orphaned client keeps the channel open.
+    """
+    pids = [pid]
+    for parent in pids:
+        with contextlib.suppress(OSError):
+            children = pathlib.Path(f"/proc/{parent}/task/{parent}/children").read_text().split()
+            pids.extend(int(child) for child in children)
+    if pathlib.Path(runtime[0]).name == "sudo":
+        subprocess.run((runtime[0], "-n", "kill", "-9", *map(str, pids)), check=True, timeout=30)
+        return
+    for target in reversed(pids):
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(target, signal.SIGKILL)
 
 
 def test_existing_dev_container_then_owned_restart(
@@ -157,7 +178,7 @@ def test_existing_dev_container_then_owned_restart(
         try:
             handle = first.start_background(("/bin/sleep", "60"))
             client = first._proc  # pyright: ignore[reportPrivateUsage]
-            client.kill()
+            _kill_client_tree(runtime, client.pid)
             client.wait(timeout=10)
             with pytest.raises(jail.JailUnavailableError, match="protocol failed"):
                 first.status_background(handle)
