@@ -191,8 +191,8 @@ jobs:
           set -o pipefail
           uv run --no-sync pytest -ra --override-ini=pythonpath= -n 0 \
             tests/sandbox/test_container_runtime.py tests/sandbox/test_container_transport.py \
-            tests/sandbox/test_container_isolation.py | tee container-tests.log
-          ! grep -q '^SKIPPED' container-tests.log
+            tests/sandbox/test_container_isolation.py | tee "$RUNNER_TEMP/container-tests.log"
+          ! grep -q '^SKIPPED' "$RUNNER_TEMP/container-tests.log"
 
       - name: agent6 check sandbox under container isolation
         run: |
