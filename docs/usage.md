@@ -178,7 +178,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 
 ### Unattended chains
 
-Development briefs follow the [unattended-chain rule](../AGENTS.md#dev-environment-and-session-practice).
+Development briefs follow the [unattended-chain rule](https://github.com/agent6-dev/agent6/blob/master/AGENTS.md#dev-environment-and-session-practice).
 `AGENT6_DETACHED_AWAY=approve` grants approvals; it does not answer questions.
 A headless run still waits on `ask_user(wait=true)` unless away mode is `deny`.
 

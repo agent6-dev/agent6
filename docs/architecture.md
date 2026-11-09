@@ -517,7 +517,7 @@ The in-loop review panel returns structured findings over the run's diff.
 
 `viewmodel/review.py` folds panel evidence and finding history for both live `SessionState` updates and `scan_session_log`.
 `SeatReply` and `ReviewVerdict` retain each seat's bounded risk text verbatim; the receipt labels it with the model route and uses no second model summary.
-`prompts.review.panel_prompt` renders both seat scopes; the explicit `AGENT6_REVIEW_RISK=off` environment switch omits the risk instruction for the registered [B14 benchmark](../bench/review/README.md#running-b14), without changing parsing or grounding.
+`prompts.review.panel_prompt` renders both seat scopes; the explicit `AGENT6_REVIEW_RISK=off` environment switch omits the risk instruction for the registered [B14 benchmark](https://github.com/agent6-dev/agent6/blob/master/bench/review/README.md#running-b14), without changing parsing or grounding.
 An observation opens a new finding but does not reopen a resolved one.
 Only resolution and reopening events change that state.
 In the journal fold, a Fix request leaves the finding open and reads as delivery unknown until a submission or failure event arrives.
