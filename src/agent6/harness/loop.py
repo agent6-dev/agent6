@@ -967,11 +967,6 @@ class Harness:
         after = self.chain.tree_sha()
         return bool(after) and after != tree_before
 
-    def _note_background_wait(self, turn: loop_state.TurnState, name: str) -> None:
-        """Flag the turn as waiting when a command of the worker's own still runs."""
-        if name in ("run_command", "read_background") and self.dispatcher.background_running():
-            turn.waited_on_background = True
-
     def _note_tool_effects(
         self,
         state: loop_state.LoopState,
@@ -1030,7 +1025,15 @@ class Harness:
             )
             if turn.verify_just_passed:
                 turn.metric_plateau_finish = self.metrics.plateau_finish(state.metric.history)
-        self._note_background_wait(turn, name)
+        turn.waited_on_background |= (
+            name == "run_command"
+            and isinstance(result, results.ExecResult)
+            and bool(result.background_id)
+        ) or (
+            name == "read_background"
+            and isinstance(result, results.BackgroundResult)
+            and result.running
+        )
         if name in ("apply_edit", "apply_patch") and isinstance(result, results.PreviewResult):
             return  # a dry run writes nothing: no memory write, no tree edit
         if self._note_memory_touch(state, name, result, tool_input):

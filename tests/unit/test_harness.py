@@ -74,10 +74,6 @@ class _StubDispatcher:
     last_verification = None
     verify_withheld = False
 
-    def background_running(self) -> bool:
-        """Return False: a stubbed dispatcher runs no background command."""
-        return False
-
     def available_tool_names(self) -> tuple[str, ...]:
         return ()
 

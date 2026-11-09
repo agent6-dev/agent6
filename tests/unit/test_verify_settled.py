@@ -26,7 +26,7 @@ from agent6.harness import (
     operator_bridge,
     run_chain,
 )
-from agent6.tools import results
+from agent6.tools import background, command_tools, results
 from agent6.viewmodel import session_status
 from tests.unit.turn_context import turn_context
 
@@ -196,6 +196,125 @@ def test_the_settled_nudge_names_the_configured_threshold(
     assert isinstance(nudge, advice.Nudge)
     assert f"at {stop_after} unchanged turns" in nudge.text
     assert "twelve" not in nudge.text
+
+
+@pytest.mark.parametrize(
+    ("returncode", "handle", "operator_stop"),
+    [(0, "", False), (1, "", False), (-15, "", True), (None, "bg1", False)],
+)
+def test_only_the_returned_command_handle_holds_the_settled_streak(
+    tmp_path: pathlib.Path, returncode: int | None, handle: str, operator_stop: bool
+) -> None:
+    """A live sibling cannot make a completed or operator-stopped foreground call neutral."""
+    wf = loop.Harness(
+        chain=run_chain.RunChain(tmp_path),
+        config=config.Config.model_validate({"harness": {"settled_stop_after": 3}}),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        logger=lambda _line: None,
+    )
+    state = _green_state()
+    state.settled = guards.SettledGuard(tree="tree")
+    ctx = dataclasses.replace(
+        wf._turn_context(state, turn=1, execution_start=1), tree_sha=lambda: "tree"
+    )  # pyright: ignore[reportPrivateUsage]
+    outcome = results.ExecResult(
+        returncode=returncode,
+        stdout="",
+        stderr="",
+        duration_s=0.0,
+        exec_failed=False,
+        background_id=handle,
+        stopped_by_operator=operator_stop,
+    )
+    decisions: list[advice.Nudge | advice.Stop | None] = []
+    for number in range(1, 4):
+        turn = _turn(number)
+        wf._note_tool_effects(state, turn, "run_command", outcome, {})  # pyright: ignore[reportPrivateUsage]
+        decisions.append(guards.verify_settled(turn, state, ctx))
+    assert state.settled.idle == (0 if handle else 3)
+    assert isinstance(decisions[-1], advice.Stop) is (not handle)
+
+
+@pytest.mark.parametrize("selected_state", [None, "running", "exited", "stopped"])
+@pytest.mark.parametrize("wait_s", [0, 1])
+def test_a_background_read_counts_only_the_selected_jobs_returned_state(
+    tmp_path: pathlib.Path, selected_state: str | None, wait_s: int
+) -> None:
+    """A roster or ended-job read cannot borrow a live sibling's neutrality."""
+    shells = mock.MagicMock(spec=background.BackgroundShells)
+    selected = background.ShellView(
+        "bg1",
+        "sleep 1",
+        selected_state or "running",
+        None if selected_state in (None, "running") else 0,
+        "",
+    )
+    sibling = background.ShellView("bg2", "sleep 60", "running", None, "")
+    shells.read.return_value = (selected, "output")
+    shells.roster.return_value = [selected, sibling]
+    outcome = command_tools.read_background(
+        {"id": "bg1" if selected_state else "", "wait_s": wait_s},
+        get_background=lambda: shells,
+        checkin=1,
+        interrupted=lambda: False,
+    )
+    wf = loop.Harness(
+        chain=run_chain.RunChain(tmp_path),
+        config=config.Config(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        logger=lambda _line: None,
+    )
+    state = _green_state()
+    state.settled = guards.SettledGuard(tree="tree", idle=1)
+    turn = _turn(3)
+    wf._note_tool_effects(state, turn, "read_background", outcome, {})  # pyright: ignore[reportPrivateUsage]
+    guards.verify_settled(turn, state, turn_context(tree_sha=lambda: "tree"))
+    assert state.settled.idle == (1 if selected_state == "running" else 2)
+    assert outcome.to_wire() == {
+        "shells": [selected.line(), sibling.line()],
+        **({"output": "output"} if selected_state else {}),
+    }
+    assert outcome.summary() == "2 background"
+
+
+@pytest.mark.parametrize("wait_first", [False, True])
+@pytest.mark.parametrize("edited", [False, True])
+def test_waits_accumulate_within_a_turn_but_progress_restarts_the_streak(
+    tmp_path: pathlib.Path, wait_first: bool, edited: bool
+) -> None:
+    wf = loop.Harness(
+        chain=run_chain.RunChain(tmp_path),
+        config=config.Config(),
+        provider=mock.MagicMock(),
+        dispatcher=mock.MagicMock(last_verification=None, verify_withheld=False),
+        logger=lambda _line: None,
+    )
+    state = _green_state()
+    state.settled = guards.SettledGuard(tree="tree", idle=2)
+    turn = _turn(4)
+    live = results.ExecResult(
+        returncode=None,
+        stdout="",
+        stderr="",
+        duration_s=0.0,
+        exec_failed=False,
+        background_id="bg1",
+    )
+    ended = dataclasses.replace(live, returncode=0, background_id="")
+    for outcome in [live, ended] if wait_first else [ended, live]:
+        wf._note_tool_effects(state, turn, "run_command", outcome, {})  # pyright: ignore[reportPrivateUsage]
+    if edited:
+        wf._note_tool_effects(  # pyright: ignore[reportPrivateUsage]
+            state,
+            turn,
+            "apply_edit",
+            results.EditResult(applied=("create",), path="new.txt"),
+            {"path": "new.txt"},
+        )
+    guards.verify_settled(turn, state, turn_context(tree_sha=lambda: "tree"))
+    assert state.settled.idle == (0 if edited else 2)
 
 
 def test_progress_restarts_the_streak_and_a_verify_run_is_neutral() -> None:

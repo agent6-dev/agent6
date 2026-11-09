@@ -323,10 +323,6 @@ class BackgroundShells:
         """Return every background command this run started, live or not."""
         return [self._view(s) for s in self._shells.values()]
 
-    def any_running(self) -> bool:
-        """Return whether a command this run started is still running."""
-        return any(view.state == "running" for view in self.roster())
-
     def settle(self) -> None:
         """Observe every command, which is what writes an ending down.
 

@@ -193,7 +193,7 @@ def read_background(
         return results.BackgroundResult(shells=_roster(shells))
     wait_s = checkin if args.wait_s is None else args.wait_s
     try:
-        _view, output = shells.read(
+        view, output = shells.read(
             args.id,
             tail_lines=args.tail_lines,
             wait_s=wait_s,
@@ -201,7 +201,9 @@ def read_background(
         )
     except background.BackgroundError as exc:
         raise tool_errors.ToolError(str(exc)) from exc
-    return results.BackgroundResult(shells=_roster(shells), output=output)
+    return results.BackgroundResult(
+        shells=_roster(shells), output=output, running=view.state == "running"
+    )
 
 
 def stop_background(

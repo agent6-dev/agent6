@@ -684,10 +684,16 @@ class BackgroundResult(ToolResult):
     """A background command tool's result.
 
     The roster rides on every one, so the model also learns that a command it started has died.
+
+    Attributes:
+        shells: The formatted roster.
+        output: The selected command's output, absent for roster-only and stop responses.
+        running: The selected job was still running when this read returned; off the wire.
     """
 
     shells: tuple[str, ...]
     output: str | None = None
+    running: bool = False
 
     def to_wire(self) -> dict[str, Any]:
         """Return the wire dict."""

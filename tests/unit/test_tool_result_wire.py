@@ -72,6 +72,16 @@ def _dumps(result: object) -> str:
     return json.dumps(_wire(result), ensure_ascii=False)
 
 
+@pytest.mark.parametrize("running", [False, True])
+def test_selected_background_state_stays_off_the_wire_and_summary(running: bool) -> None:
+    result = results.BackgroundResult(
+        shells=("[bg1] running: sleep 60",), output="ready\n", running=running
+    )
+    assert _dumps(result) == '{"shells": ["[bg1] running: sleep 60"], "output": "ready\\n"}'
+    assert result.summary() == "[bg1] running: sleep 60"
+    assert results.BackgroundResult(shells=(), running=running).to_wire() == {"shells": []}
+
+
 # --- content access family ---------------------------------------------------
 
 
