@@ -261,8 +261,14 @@ def _left_no_tree_of_its_own(
 ) -> bool:
     """Return whether the run left no tree of its own to inspect or verify.
 
-    Under harness git control that is no chain commit; under model git control, HEAD at
-    the run's base and no modified tracked file.
+    Args:
+        manifest: The session's manifest, or None when it cannot be read.
+        layout: The session's layout.
+        cwd: The checkout.
+
+    Returns:
+        True with no chain commit under harness git control; under model git control,
+        True with HEAD at the run's base and no modified tracked file.
     """
     if manifest is None or manifest.git_control != "model":
         return git_read.chain_tip(cwd, git_read.chain_ref_for(layout.session_id)) is None

@@ -650,7 +650,11 @@ def test_modified_only_includes_explicit_defaults_and_combines_with_search(
     page.get_by_placeholder("filter settings…").fill("web.")
     expect(page.locator(".cfg tr:visible .key")).to_have_text(["web.port"])
     page.get_by_role("button", name="edit web.port", exact=True).click()
-    page.get_by_role("dialog").get_by_role("button", name="Unset", exact=True).click()
+    with page.expect_response(
+        lambda response: response.request.method == "POST" and response.url.endswith("/api/config")
+    ) as saved:
+        page.get_by_role("dialog").get_by_role("button", name="Unset", exact=True).click()
+    assert saved.value.ok, saved.value.text()
     expect(page.get_by_role("dialog")).to_have_count(0)
     expect(page.locator(".cfg tr:visible .key")).to_have_count(0)
     expect(toggle).to_have_attribute("aria-pressed", "true")
@@ -752,7 +756,11 @@ def test_model_catalog_ignores_a_closed_editors_response(
     page.wait_for_timeout(100)
     expect(dialog.get_by_role("option", name="stale-model", exact=True)).to_have_count(0)
     model.fill("b/custom")
-    dialog.get_by_role("button", name="Save", exact=True).click()
+    with page.expect_response(
+        lambda response: response.request.method == "POST" and response.url.endswith("/api/config")
+    ) as saved:
+        dialog.get_by_role("button", name="Save", exact=True).click()
+    assert saved.value.ok, saved.value.text()
     expect(dialog).to_have_count(0)
     assert 'model = "b/custom"' in cfg.read_text()
     assert not errors

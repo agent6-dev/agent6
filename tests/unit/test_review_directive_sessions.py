@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from agent6 import paths, providers
-from agent6.app import role_providers
+from agent6.app import role_providers, session_runtime
 from agent6.sessions import manifest
 from agent6.ui import directive_actions
 from agent6.ui.cli import cli_main, session_prompt
@@ -342,12 +342,21 @@ def test_review_can_run_an_approved_check_in_the_reviewed_tree(
 def test_review_worktree_keeps_the_model_git_refusal(
     repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Review cannot silently switch model-controlled git to harness-controlled git."""
+    """Review cannot silently switch model-controlled git to harness-controlled git.
+
+    The refusal is the jail's: a confining isolation leaves the repository git dir read-only
+    in the review worktree.
+    """
     world_tests.git(repo, "switch", "-q", "main")
     config = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agent6" / "config.toml"
     config.write_text(config.read_text().replace('dirty_tree = "include"', 'control = "model"'))
     provider = ScriptedReview()
     install(monkeypatch, provider)
+
+    def _full(*_a: object, **_k: object) -> str:
+        return "full"
+
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
     assert cli_main(["run", "--session-id", "review-session", "/review feature-x"]) == 2
     assert '[git].control = "model"' in capsys.readouterr().err
     assert not provider.calls
