@@ -480,7 +480,7 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: path
         shared = {name: value for name, value in payload[key].items() if name != "input"}
         assert shared == shown[key]
         assert payload[key]["adaptive"] is True
-    assert payload["prompt.decompose"]["display"] == "off  (adaptive)"
+    assert payload["prompt.decompose"]["display"] == '"off"  (adaptive)'
     assert isinstance(payload["compaction.drop_at_chars"]["effective"], int)
 
 
@@ -497,7 +497,7 @@ def test_config_payload_carries_round_trippable_editor_values(tmp_path: pathlib.
     assert payload["skills.state.alpha"]["input"] == "always"
     assert payload["skills.state.alpha"]["choices"] == ["enabled", "disabled", "always"]
     assert payload["skills.state.alpha"]["type"] == "choice"
-    assert payload["skills.state.alpha"]["display"] == "always"
+    assert payload["skills.state.alpha"]["display"] == '"always"'
     assert "skills.state" not in payload
 
 
@@ -518,13 +518,8 @@ def test_config_payload_masks_provider_mapping_entries(tmp_path: pathlib.Path) -
         setting = payload[f"providers.demo.{field}.token"]
         assert setting["source"] == f"flag ({cfg})"
         assert setting["type"] == "str"
-        assert (
-            setting["value"]
-            == setting["effective"]
-            == setting["input"]
-            == setting["display"]
-            == "***"
-        )
+        assert setting["value"] == setting["effective"] == setting["input"] == "***"
+        assert setting["display"] == '"***"'
     assert payload["providers.demo.extra_body.nested"]["value"] == "***"
 
 

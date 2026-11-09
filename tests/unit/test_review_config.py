@@ -241,7 +241,7 @@ def test_reviewers_are_one_serializable_config_leaf() -> None:
         layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
     )
     setting = next(s for s in view.settings if s.key == "review.reviewers")
-    assert config_view.display_value(setting) == '[{"focus": "security", "effort": "off"}]'
+    assert config_view.display_value(setting) == '[{ focus = "security", effort = "off" }]'
 
 
 def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:

@@ -160,8 +160,8 @@ def format_toml_value(value: object) -> str:  # noqa: PLR0911
         return str(value)
     if isinstance(value, float):
         return repr(value)
-    if isinstance(value, str):
-        return _toml_value(value)
+    if isinstance(value, (str, pathlib.Path)):
+        return _toml_value(str(value))
     if isinstance(value, (list, tuple)):
         return "[" + ", ".join(format_toml_value(v) for v in value) + "]"
     if isinstance(value, dict):

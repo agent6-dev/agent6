@@ -103,8 +103,7 @@ class EditModal(FormModal[tuple[str, str, bool] | None]):
                 yield textual_widgets.Static(
                     text.Text(config_view.plain_description(s.description)), id="edit-description"
                 )
-            # The table's display form of a list is not valid TOML, so the box is prefilled with
-            # the exact inverse of parse_cli_value; scalars stay bare.
+            # Text controls edit strings without quotes; structured values use TOML.
             raw = s.value if s.value is not None else s.default
             current = (
                 raw

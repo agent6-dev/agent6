@@ -317,24 +317,13 @@ def format_value(val: Any, *, display_safe: bool = False, mask_value: bool = Fal
         mask_value: Hide the whole value of a mapping entry.
 
     Returns:
-        `(unset)` for None, `(empty)` for an empty string, TOML booleans, `[a, b]`
-        lists, JSON-encoded objects for tables, with values masked unless display-safe.
+        TOML literals, with mapping values masked unless display-safe; `(unset)` for None.
     """
     if mask_value:
         val = "***"
     if val is None:
         return "(unset)"
-    if isinstance(val, str):
-        return val or "(empty)"
-    if isinstance(val, bool):
-        return "true" if val else "false"
-    if isinstance(val, (list, tuple)):
-        return "[" + ", ".join(format_value(v, display_safe=display_safe) for v in val) + "]"
-    if isinstance(val, dict):
-        return json.dumps(
-            display_mapping(val, display_safe=display_safe), ensure_ascii=False, default=str
-        )
-    return str(val)
+    return io.format_toml_value(display_mapping(val, display_safe=display_safe))
 
 
 def display_mapping(value: Any, *, display_safe: bool = False) -> Any:
@@ -519,7 +508,7 @@ def render_show(
         """Append one leaf's row, and its meaning when asked."""
         value = display_value(s)
         mark = "*" if s.modified else " "
-        key, val = _truncate(s.key, key_w), _truncate(value, val_w)
+        key, val = _truncate(s.key, key_w), value
         row = f"{mark} {key:<{key_w}} {val:<{val_w}} {s.source}"
         lines.append(f"\x1b[2m{row}\x1b[0m" if color and not s.modified else row)
         if descriptions and s.description:

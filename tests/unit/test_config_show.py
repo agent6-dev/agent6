@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import tomllib
 
 import pytest
 
@@ -14,6 +15,7 @@ from agent6.config import Config, layer, layer_data
 from agent6.models import registry
 from agent6.sandbox import detect
 from agent6.ui.cli import main
+from agent6.ui.web import model
 from agent6.viewmodel import config_view
 
 
@@ -242,9 +244,9 @@ def test_an_empty_string_default_renders_a_visible_token(tmp_path: pathlib.Path)
         eff, resolved=registry.resolved_adaptive_values(eff.config)
     ).splitlines()
     prompt = next(line for line in rows if line.split()[:1] == ["prompt.system_prompt_file"])
-    assert "(empty)" in prompt, prompt
+    assert '""' in prompt, prompt
     preset = next(line for line in rows if line.split()[:1] == ["preset"])
-    assert preset.split()[1:] == ["none", "default"]
+    assert preset.split()[1:] == ['"none"', "default"]
 
 
 def test_the_auto_sandbox_leaves_show_what_this_host_resolves_them_to(
@@ -336,8 +338,8 @@ def test_mapping_entries_show_each_origin(tmp_path: pathlib.Path) -> None:
     eff = layer.load_effective(tmp_path)
 
     rows = [line.split() for line in config_view.render_show(eff).splitlines()]
-    assert ["*", "skills.state.alpha", "enabled", "repo"] in rows
-    assert ["*", "skills.state.beta", "always", "global"] in rows
+    assert ["*", "skills.state.alpha", '"enabled"', "repo"] in rows
+    assert ["*", "skills.state.beta", '"always"', "global"] in rows
     payload = json.loads(config_view.render_show(eff, as_json=True))
     assert "skills.state" not in payload
     for name, source in (("alpha", "repo"), ("beta", "global")):
@@ -389,7 +391,7 @@ def test_json_and_text_mask_tables_inside_lists(display_safe: bool) -> None:
         display_safe=display_safe,
     )
     expected = value if display_safe else [[{"token": "***"}]]
-    assert json.loads(config_view.display_value(setting)) == expected
+    assert tomllib.loads("value = " + config_view.display_value(setting))["value"] == expected
     payload = config_view._leaf_json(setting)
     for key in ("value", "effective", "default"):
         assert payload[key] == expected
@@ -398,7 +400,7 @@ def test_json_and_text_mask_tables_inside_lists(display_safe: bool) -> None:
 def test_mapping_display_handles_non_json_values() -> None:
     """A display-safe mapping stringifies values JSON cannot encode."""
     assert config_view.format_value({"path": pathlib.Path("example")}, display_safe=True) == (
-        '{"path": "example"}'
+        '{ path = "example" }'
     )
 
 
@@ -417,3 +419,53 @@ def test_repeated_config_show_names_each_winning_file(
     lines = capsys.readouterr().out.splitlines()
     assert any("review.interval_turns" in line and str(first) in line for line in lines)
     assert any("budget.max_usd" in line and str(second) in line for line in lines)
+
+
+@pytest.mark.parametrize(
+    "value", ['a "quote"\n', "", 42, 1.5, True, [], ["env", "uv"], {"a.b": ["x"]}]
+)
+def test_config_values_are_toml(value: object) -> None:
+    assert (
+        tomllib.loads("value = " + config_view.format_value(value, display_safe=True))["value"]
+        == value
+    )
+
+
+@pytest.mark.parametrize(
+    ("key", "literal"),
+    [
+        (
+            "prompt.system_prompt_file",
+            '"a long file name with spaces and more than forty characters.md"',
+        ),
+        ("harness.max_turns", "42"),
+        ("budget.max_usd", "1.5"),
+        ("git.branch_per_run", "true"),
+        (
+            "workspace.setup_command",
+            '["env", "AGENT6_SKIP_JAIL_BUILD=1", "uv", "sync", "--group", "dev"]',
+        ),
+        ("review.reviewers", '[{ focus = "security", effort = "off" }]'),
+    ],
+)
+def test_config_surfaces_share_toml(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    key: str,
+    literal: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    if key == "prompt.system_prompt_file":
+        (tmp_path / tomllib.loads("v = " + literal)["v"]).write_text("System prompt")
+    config = tmp_path / "config.toml"
+    config.write_text(f"{key} = {literal}\n")
+    args = ["--config", str(config), "config"]
+    assert main([*args, "get", key]) == 0
+    shown = capsys.readouterr().out.split(" = ", 1)[1].rsplit("  [", 1)[0]
+    assert tomllib.loads("v = " + shown)["v"] == tomllib.loads("v = " + literal)["v"]
+    assert main([*args, "show"]) == 0
+    assert shown in capsys.readouterr().out
+    assert model.config_payload(tmp_path, (config,))[key]["display"] == shown
+    assert main(["config", "set", key, shown, "--repo"]) == 0
+    assert shown in capsys.readouterr().out

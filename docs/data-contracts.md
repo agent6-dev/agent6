@@ -80,7 +80,7 @@ Public fields: [Formats](formats.md#web-api).
 
 - **Written by:** ui/web/server
 - **Read by:** ui/cli/web_cmds, ui/web/{actions, sse}
-- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (9 test files exercise it)
+- **Guarded by:** [test_web_server.py](https://github.com/agent6-dev/agent6/blob/master/tests/web/test_web_server.py) (10 test files exercise it)
 
 ## Review read model
 

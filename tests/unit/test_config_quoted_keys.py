@@ -98,7 +98,7 @@ def test_cli_quoted_skill_round_trip(
     assert cli_main(["config", "show"]) == 0
     assert rendered in capsys.readouterr().out
     assert cli_main(["config", "get", key]) == 0
-    assert f"{rendered} = enabled  [global]" in capsys.readouterr().out
+    assert f'{rendered} = "enabled"  [global]' in capsys.readouterr().out
     assert cli_main(["config", "show", key]) == 0
     assert rendered in capsys.readouterr().out
     assert layer.load_effective(tmp_path).config.skills.state == {"org.some.skill": "enabled"}

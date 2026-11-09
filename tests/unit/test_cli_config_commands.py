@@ -125,7 +125,7 @@ def test_get_default_source_for_unset(
 ) -> None:
     assert _run(["config", "get", "sandbox.protect_git"]) == 0
     out = capsys.readouterr().out
-    assert "sandbox.protect_git = auto" in out
+    assert 'sandbox.protect_git = "auto"' in out
     assert "[default]" in out
 
 
@@ -208,7 +208,7 @@ def test_set_top_level_profile_and_get(
     capsys.readouterr()
     assert _run(["config", "get", "preset"]) == 0
     out = capsys.readouterr().out
-    assert "preset = review" in out
+    assert 'preset = "review"' in out
     assert "[global]" in out
 
 

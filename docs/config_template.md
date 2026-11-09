@@ -29,7 +29,9 @@ It can be empty or absent when the global config supplies a provider and model.
   A model change preserves the target layer's other role settings; only an explicit `--effort` replaces effort.
 - `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
-  `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections) untruncated, meaning included.
+  `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections), meaning included.
+  Text values on the CLI, TUI and web use TOML literals without truncation, including quoted strings and inline tables, so an unmasked value pastes into `config set` unchanged.
+  `(unset)` marks the absence of a value; TOML has no null literal.
   Mapping entry values are masked except for fields marked display-safe (`skills.state`, `review.reviewers`).
 - `agent6 config set|unset|add|remove <dotted.key> [value]` (`--repo`, or `--machine-file FILE` for a machine `[config]` overlay); `agent6 config get <dotted.key>` prints the effective value and its layer.
   A key component that is not a bare TOML key (`[A-Za-z0-9_-]+`) is written quoted, as in `providers.demo.extra_body."a.b"` (keep those quotes inside a shell-quoted argument).
