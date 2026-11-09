@@ -40,7 +40,7 @@ _CONFIG = """
 isolation = "none"
 run_commands = "deny"
 
-[models.worker]
+[models.default]
 model = "p/m"
 
 [models.planner]
@@ -242,7 +242,7 @@ def test_a_parked_resume_with_no_provider_key_refuses_cleanly(
     # OpenAI-compat endpoint legitimately runs keyless, so it would not).
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
-        '[models.worker]\nmodel = "anth/claude-sonnet-4-5"\n'
+        '[models.default]\nmodel = "anth/claude-sonnet-4-5"\n'
         '[providers.anth]\nbackend = "anthropic"\napi_key_env = "ANTH_KEY_UNSET"\n'
         '[review]\ntrigger = "off"\n',
         encoding="utf-8",
@@ -361,7 +361,7 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
     _setup(tmp_path, monkeypatch)
     (tmp_path / "cfg" / "agent6" / "config.toml").write_text(
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n'
-        '[models.worker]\nmodel = "chatgpt/gpt-6-astra"\n'
+        '[models.default]\nmodel = "chatgpt/gpt-6-astra"\n'
         '[providers.chatgpt]\nbackend = "chatgpt"\n'
         '[review]\ntrigger = "off"\n'
         "[harness]\nverify_infer = false\n",

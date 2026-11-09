@@ -321,7 +321,7 @@ def _provider_cfg(model: str = "moonshotai/kimi-k2.6", run_commands: str = "allo
     return Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
-            "models": {"worker": {"model": "o/" + model}},
+            "models": {"default": {"model": "o/" + model}},
             "sandbox": {"run_commands": run_commands},
         }
     )
@@ -1055,7 +1055,7 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
     cfg = Config.model_validate(
         {
             "providers": {"p": {"backend": "openai", "base_url": "http://127.0.0.1:1"}},
-            "models": {"worker": {"model": "p/m"}},
+            "models": {"default": {"model": "p/m"}},
             "sandbox": {
                 "isolation": "none",
                 "home": "cache",
@@ -2723,7 +2723,7 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
                 "o": {"backend": "openai", "base_url": "https://x/v1"},
                 "p": {"backend": "openai", "base_url": "https://p/v1"},
             },
-            "models": {"worker": {"model": "o/base"}},
+            "models": {"default": {"model": "o/base"}},
         }
     )
     spec = subrun.LaneSpec(
@@ -2948,7 +2948,7 @@ def test_the_judge_is_capped_like_a_lane(tmp_path: pathlib.Path) -> None:
         {
             "providers": {"p": {"backend": "openai", "api_key_env": "K"}},
             "models": {
-                "worker": {"model": "p/m"},
+                "default": {"model": "p/m"},
                 "reviewer": {"model": "p/judge"},
             },
             "budget": {"max_usd": 10.0},

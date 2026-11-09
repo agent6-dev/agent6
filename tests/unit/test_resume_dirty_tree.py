@@ -30,7 +30,7 @@ _CONFIG = """
 isolation = "none"
 run_commands = "deny"
 
-[models.worker]
+[models.default]
 model = "p/m"
 
 [providers.p]

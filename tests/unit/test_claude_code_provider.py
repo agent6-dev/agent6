@@ -993,7 +993,7 @@ def test_factory_builds_the_provider_and_refuses_effort_off(tmp_path: pathlib.Pa
         return Config.model_validate(
             {
                 "providers": {"claude": {"backend": "claude_code", "binary": "/opt/claude"}},
-                "models": {"worker": role},
+                "models": {"default": role},
             }
         )
 
@@ -1402,7 +1402,7 @@ def test_the_loop_caps_results_tighter_for_a_claude_code_worker() -> None:
     cc = Config.model_validate(
         {
             "providers": {"claude": {"backend": "claude_code"}},
-            "models": {"worker": {"model": "claude/claude-haiku-4-5"}},
+            "models": {"default": {"model": "claude/claude-haiku-4-5"}},
         }
     )
     cap = session_runtime.tool_result_cap_bytes(cc, "worker")
@@ -1455,7 +1455,7 @@ def test_the_result_cap_follows_the_role_that_drives_the_session() -> None:
                 "anthropic": {"backend": "anthropic"},
             },
             "models": {
-                "worker": {"model": "anthropic/m"},
+                "default": {"model": "anthropic/m"},
                 "planner": {"model": "claude/claude-sonnet-5"},
             },
         }

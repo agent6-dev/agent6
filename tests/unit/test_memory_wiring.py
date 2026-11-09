@@ -81,7 +81,7 @@ def test_readonly_modes_render_only_with_content(tmp_path: pathlib.Path) -> None
 
 
 def test_agent_mode_never_sees_memory(tmp_path: pathlib.Path) -> None:
-    assert "<memory>" not in _build("agent", "- fact: hook", tmp_path)
+    assert "<memory>" not in _build("read_only", "- fact: hook", tmp_path)
 
 
 def _dispatcher(

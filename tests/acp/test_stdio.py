@@ -91,7 +91,7 @@ def test_console_script_splits_the_model_summary_from_the_run_status(
     config.write_text(
         '[providers.recorded]\nbackend = "openai"\nauth_style = "none"\n'
         f'base_url = "http://127.0.0.1:{provider.server_port}/v1"\n'
-        '[models.worker]\nmodel = "recorded/recorded"\n'
+        '[models.default]\nmodel = "recorded/recorded"\n'
         '[sandbox]\nisolation = "none"\nrun_commands = "deny"\n',
         encoding="utf-8",
     )

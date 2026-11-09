@@ -24,7 +24,7 @@ hide_paths = [{hide}]
 [git]
 dirty_tree = "{dirty}"
 
-[models.worker]
+[models.default]
 model = "p/m"
 
 [providers.p]

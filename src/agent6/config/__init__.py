@@ -29,7 +29,7 @@ from agent6.config.model import (  # noqa: ICN003  # re-export
     load_config,
     validate_config,
 )
-from agent6.config.model_roles import ModelsConfig  # re-export
+from agent6.config.model_roles import ModelsConfig  # noqa: ICN003  # re-export
 from agent6.config.oauth_config import OAuthConfig, OAuthExchangeConfig  # noqa: ICN003  # re-export
 from agent6.config.provider_config import (  # noqa: ICN003  # re-export
     AnthropicProviderEntry,

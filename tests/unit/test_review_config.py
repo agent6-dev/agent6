@@ -136,7 +136,7 @@ def test_model_quorum_checks_resolved_routes(role: str) -> None:
 def test_model_quorum_accepts_distinct_resolved_routes() -> None:
     cfg = Config.model_validate(
         {
-            "models": {"reviewer": {"model": "o/m"}},
+            "models": {"default": {"model": "o/d"}, "reviewer": {"model": "o/m"}},
             "review": {
                 "block_on": "model_quorum",
                 "reviewers": [
@@ -178,7 +178,10 @@ def test_reviewer_sampling_reaches_provider_call(
     cfg = Config.model_validate(
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
-            "models": {"reviewer": {**route, "effort": "medium", "temperature": 0.7}},
+            "models": {
+                "default": {"model": "o/d"},
+                "reviewer": {**route, "effort": "medium", "temperature": 0.7},
+            },
             "review": {
                 "scope": scope,
                 "reviewers": [{"focus": "security", **(route if pinned else {}), **overrides}],
@@ -246,7 +249,7 @@ def test_trigger_on_with_no_reviewers_builds_the_one_seat_roster() -> None:
         {
             "providers": {"o": {"backend": "openai", "base_url": "https://x/v1"}},
             "models": {
-                "worker": {"model": "o/m"},
+                "default": {"model": "o/m"},
                 "reviewer": {"model": "o/rm"},
             },
             "review": {"trigger": "before_finish"},

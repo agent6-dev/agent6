@@ -300,7 +300,7 @@ def test_an_unanswerable_run_creates_no_session(
                 "[providers.anthropic]",
                 'backend = "anthropic"',
                 'api_key_env = "ANTHROPIC_API_KEY"',
-                "[models.worker]",
+                "[models.default]",
                 'model = "anthropic/x"',
             )
         ),

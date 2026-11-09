@@ -535,7 +535,7 @@ def test_a_model_answer_with_an_unresolvable_runner_is_not_a_gate(
     (tmp_path / "package.json").write_text('{"scripts": {"check": "x"}}', encoding="utf-8")
     got = verify_infer.infer_verify_command(tmp_path, "", llm_call=lambda _ctx: '["npm", "test"]')
     assert (got.argv, got.source) == ((), "none")
-    assert [source for source, _ in got.passed_over] == ["the reviewer model"]
+    assert [source for source, _ in got.passed_over] == ["the helper model"]
 
 
 def test_a_runner_given_as_a_path_is_not_judged_by_the_jail_path(

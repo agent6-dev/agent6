@@ -537,7 +537,7 @@ def test_fork_stamps_the_child_manifest_from_the_profiled_config(
     (gdir / "config.toml").write_text(
         "[providers.anthropic]\n"
         'backend = "anthropic"\n'
-        "[models.worker]\n"
+        "[models.default]\n"
         'model = "anthropic/claude-base"\n'
         "[presets.fast.models.worker]\n"
         'model = "anthropic/claude-fast"\n',
@@ -1065,7 +1065,7 @@ def test_resume_of_an_undone_run_points_at_its_fork(
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
         '[providers.anthropic]\nbackend = "anthropic"\n'
-        '[models.worker]\nmodel = "anthropic/claude-base"\n',
+        '[models.default]\nmodel = "anthropic/claude-base"\n',
         encoding="utf-8",
     )
     repo = tmp_path / "repo"
@@ -1474,7 +1474,7 @@ def test_resume_of_a_fork_runs_its_execution_in_the_worktree(
     paths.global_config_dir().mkdir(parents=True, exist_ok=True)
     (paths.global_config_dir() / "config.toml").write_text(
         '[providers.anthropic]\nbackend = "anthropic"\n'
-        '[models.worker]\nmodel = "anthropic/claude-x"\n',
+        '[models.default]\nmodel = "anthropic/claude-x"\n',
         encoding="utf-8",
     )
     repo, _turn1, _head = _fork_fixture(tmp_path, monkeypatch)
@@ -1624,7 +1624,7 @@ def _resumable_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     gdir = paths.global_config_dir()
     gdir.mkdir(parents=True, exist_ok=True)
     (gdir / "config.toml").write_text(
-        '[providers.anthropic]\nbackend = "anthropic"\n[models.worker]\nmodel = "anthropic/m"\n',
+        '[providers.anthropic]\nbackend = "anthropic"\n[models.default]\nmodel = "anthropic/m"\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("AGENT6_DETACHED_AWAY", "deny")  # headless under run_commands=ask

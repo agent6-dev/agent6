@@ -29,7 +29,7 @@ def test_live_fix_crosses_the_real_execution_steer_boundary(
     config.write_text(
         '[sandbox]\nisolation = "none"\nrun_commands = "allow"\n'
         '[harness]\nverify_when = "never"\nverify_infer = false\n'
-        '[models.worker]\nmodel = "p/m"\n'
+        '[models.default]\nmodel = "p/m"\n'
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1"\n'
         'api_key_env = "REVIEW_TEST_KEY"\n[review]\ntrigger = "off"\n'
     )

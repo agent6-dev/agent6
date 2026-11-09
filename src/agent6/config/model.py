@@ -581,6 +581,12 @@ class Config(pydantic.BaseModel):
             ConfigError: No provider, no model for the role, or the model's provider is
                 unknown.
         """
+        if not self.providers:
+            raise validation.ConfigError(
+                "No providers configured. Run `agent6 connect` to add one"
+                " (stored in your global config), or add a [providers.*]"
+                " block to the per-repo config."
+            )
         if self.models.default is None or not self.models.default.model:
             legacy = (
                 " [models.worker] is an optional override, not the default;"
@@ -591,12 +597,6 @@ class Config(pydantic.BaseModel):
             raise validation.ConfigError(
                 "No models.default.model configured. Run `agent6 model default PROVIDER/MODEL`"
                 ' or add a [models.default] block with model = "PROVIDER/MODEL".' + legacy
-            )
-        if not self.providers:
-            raise validation.ConfigError(
-                "No providers configured. Run `agent6 connect` to add one"
-                " (stored in your global config), or add a [providers.*]"
-                " block to the per-repo config."
             )
         rm = self.models.resolve(role)
         assert rm is not None  # default supplies every role's route

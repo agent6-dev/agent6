@@ -24,7 +24,7 @@ isolation = "none"
 run_commands = "deny"
 [git]
 dirty_tree = "include"
-[models.worker]
+[models.default]
 model = "p/m"
 [providers.p]
 backend = "openai"

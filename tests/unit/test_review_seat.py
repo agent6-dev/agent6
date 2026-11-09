@@ -307,7 +307,10 @@ def _cfg_with_reviewers(reviewers: tuple[dict[str, str], ...]) -> Any:
     return Config.model_validate(
         {
             "providers": {"anthropic": {"backend": "anthropic", "api_key_env": "FAKE_KEY"}},
-            "models": {"reviewer": {"model": "anthropic/reviewer-default"}},
+            "models": {
+                "default": {"model": "anthropic/default-model"},
+                "reviewer": {"model": "anthropic/reviewer-default"},
+            },
             "review": {"trigger": "before_finish", "reviewers": list(reviewers)},
         }
     )

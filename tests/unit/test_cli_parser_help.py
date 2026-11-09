@@ -480,12 +480,12 @@ def test_option_metavars() -> None:
 
 
 def test_model_header_names_reviewer_fallback(capsys: pytest.CaptureFixture[str]) -> None:
-    # Planner and reviewer fall back to worker.
+    # Every role inherits its unset fields from the default.
     from agent6.ui.cli import main
 
     assert main(["model"]) == 0
     out = capsys.readouterr().out
-    assert "planner/reviewer fall back to worker" in out
+    assert "unset fields inherit models.default" in out
 
 
 def test_the_directories_epilog_offers_no_env_override() -> None:
