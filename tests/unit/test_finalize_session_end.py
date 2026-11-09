@@ -296,6 +296,7 @@ def _end_output(
     result: loop_snapshot.SessionResult,
     capsys: pytest.CaptureFixture[str],
     manifest: dict[str, object] | None = None,
+    cwd: pathlib.Path | None = None,
 ) -> str:
     layout = _layout(
         tmp_path,
@@ -310,7 +311,7 @@ def _end_output(
     _finalize.print_session_end(
         result,
         layout=layout,
-        cwd=tmp_path,
+        cwd=cwd or tmp_path,
         budget=budget.BudgetTracker(max_usd=-1, max_tokens_fallback=-1, max_plan_points=-1),
         console_stream=False,
         reporter=reporter.STDIO_REPORTER,
@@ -352,7 +353,13 @@ def test_the_red_gate_errand_is_only_printed_over_a_real_red(
         tool_calls=1,
         verification="unverified",
     )
-    out = _end_output(tmp_path, "r-unv", unverified, capsys, manifest)
+    # The errand needs a tree of the run's own: a chain commit under harness git control.
+    import subprocess
+
+    repo = _seeded_repo(tmp_path)
+    chain = git_read.chain_ref_for("r-unv")
+    subprocess.run(["git", "update-ref", chain, "HEAD"], cwd=repo, check=True)
+    out = _end_output(tmp_path, "r-unv", unverified, capsys, manifest, cwd=repo)
     assert "the gate is red" not in out
     assert "no verify ran this execution" in out
 
@@ -543,6 +550,7 @@ def _end_footer(
     session_id: str,
     manifest: dict[str, object],
     capsys: pytest.CaptureFixture[str],
+    verification: kinds.Verification = "not_applicable",
 ) -> str:
     layout = _layout(
         tmp_path,
@@ -554,7 +562,12 @@ def _end_footer(
     )
     layout.manifest_path.write_text(json.dumps({"mode": "run", **manifest}), encoding="utf-8")
     result = loop_snapshot.SessionResult(
-        completed=True, reason="finish_session", summary="done", turns=1, tool_calls=1
+        completed=True,
+        reason="finish_session",
+        summary="done",
+        turns=1,
+        tool_calls=1,
+        verification=verification,
     )
     _finalize.print_session_end(
         result,
@@ -1465,3 +1478,35 @@ def test_end_banner_of_a_model_controlled_run_counts_its_uncommitted_files(
     (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
     out = _end_footer(tmp_path, repo, "modelgit2", {**manifest, "session_id": "modelgit2"}, capsys)
     assert "tracked files with uncommitted changes: 1" in out
+
+
+def test_a_run_that_left_no_tree_of_its_own_gets_no_git_footer_and_no_verify_errand(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run that changed nothing has nothing to inspect or verify, whoever controls git."""
+    repo = _seeded_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    head = git_read.status(repo).head_sha
+    model: dict[str, object] = {
+        "session_id": "readonly",
+        "run_branch": None,
+        "base_branch": "main",
+        "git_control": "model",
+        "base_sha": head,
+    }
+    out = _end_footer(tmp_path, repo, "readonly", model, capsys, verification="unverified")
+    assert "git was model-controlled" not in out
+    assert "nothing verified" not in out and "--steer" not in out
+    harness: dict[str, object] = {
+        "session_id": "nochain",
+        "run_branch": None,
+        "base_branch": "main",
+    }
+    out = _end_footer(tmp_path, repo, "nochain", harness, capsys, verification="unverified")
+    assert "nothing verified" not in out and "--steer" not in out
+    # An uncommitted edit is a tree of the run's own: the footer and the errand return.
+    (repo / "seed.txt").write_text("edited\n", encoding="utf-8")
+    edited = {**model, "session_id": "readonly2"}
+    out = _end_footer(tmp_path, repo, "readonly2", edited, capsys, verification="unverified")
+    assert "its work is on main" in out and "tracked files with uncommitted changes: 1" in out
+    assert "nothing verified the final tree" in out and "--steer" in out

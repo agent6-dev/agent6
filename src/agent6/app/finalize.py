@@ -254,6 +254,25 @@ def _print_red_gate(
     reporter.out(f"      && (cd /tmp/agent6-base && {shlex.join(gate)})")
 
 
+def _left_no_tree_of_its_own(
+    manifest: sessions_manifest.SessionManifest | None,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
+) -> bool:
+    """Return whether the run left no tree of its own to inspect or verify.
+
+    Under harness git control that is no chain commit; under model git control, HEAD at
+    the run's base and no modified tracked file.
+    """
+    if manifest is None or manifest.git_control != "model":
+        return git_read.chain_tip(cwd, git_read.chain_ref_for(layout.session_id)) is None
+    try:
+        st = git_read.status(cwd)
+    except errors.GitError:
+        return False
+    return bool(manifest.base_sha) and st.head_sha == manifest.base_sha and not st.modified_count
+
+
 def _print_unverified(
     result: loop_snapshot.SessionResult,
     *,
@@ -263,9 +282,9 @@ def _print_unverified(
 ) -> None:
     """Say what is missing after a gated end nothing observed.
 
-    A run that stopped with nothing committed left no tree of its own to verify. The verify
-    errand is a finished run's: a steer redirects an unfinished one, whose plain resume runs
-    the gate at its end.
+    A run that left no tree of its own has nothing to verify. The verify errand is a
+    finished run's: a steer redirects an unfinished one, whose plain resume runs the gate
+    at its end.
 
     Args:
         result: The session's result.
@@ -275,8 +294,10 @@ def _print_unverified(
     """
     if result.verification != "unverified":
         return
-    chain = git_read.chain_ref_for(layout.session_id)
-    if not result.completed and git_read.chain_tip(cwd, chain) is None:
+    manifest = None
+    with contextlib.suppress(sessions_manifest.ManifestError):
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
+    if _left_no_tree_of_its_own(manifest, layout, cwd):
         return
     reporter.out(
         "\nnothing verified the final tree: no verify ran this execution, or edits landed"
@@ -454,22 +475,7 @@ def _print_run_branch_footer(
         ):
             merged_into = manifest.merged.into or base_branch
     if result.completed and manifest is not None and manifest.git_control == "model":
-        # The model managed git: there is no agent6 branch to merge or diff.
-        current = ""
-        head = ""
-        modified = 0
-        with contextlib.suppress(errors.GitError):
-            st = git_read.status(cwd)
-            current = st.branch
-            head = st.head_sha[:12]
-            modified = st.modified_count
-        where = current or head or "the current checkout"
-        reporter.out(
-            f'\ngit was model-controlled ([git].control = "model"); its work is on {where}'
-        )
-        if modified:
-            reporter.out(f"  tracked files with uncommitted changes: {modified}")
-        reporter.out("  inspect it with plain git (log/diff); sessions merge does not apply")
+        _print_model_git_footer(manifest, layout=layout, cwd=cwd, reporter=reporter)
     elif result.completed and merged_into:
         # auto_merge landed it, and auto_prune may have deleted the branch.
         reporter.out(f"\nchanges merged into {merged_into}")
@@ -513,6 +519,38 @@ def _print_run_branch_footer(
         reporter.out(f"\nresume with:  agent6 resume {layout.session_id}")
     ref = merged_into or (wire.commits_ref(manifest, cwd) if manifest is not None else "")
     _print_left_out(layout, cwd=cwd, ref=ref, reporter=reporter)
+
+
+def _print_model_git_footer(
+    manifest: sessions_manifest.SessionManifest,
+    *,
+    layout: sessions_layout.SessionLayout,
+    cwd: pathlib.Path,
+    reporter: app_reporter.Reporter,
+) -> None:
+    """Say where a model-controlled run's work is: no agent6 branch exists to merge or diff.
+
+    Args:
+        manifest: The session's manifest.
+        layout: The session's layout.
+        cwd: The checkout.
+        reporter: Receives the lines.
+    """
+    if _left_no_tree_of_its_own(manifest, layout, cwd):
+        return
+    current = ""
+    head = ""
+    modified = 0
+    with contextlib.suppress(errors.GitError):
+        st = git_read.status(cwd)
+        current = st.branch
+        head = st.head_sha[:12]
+        modified = st.modified_count
+    where = current or head or "the current checkout"
+    reporter.out(f'\ngit was model-controlled ([git].control = "model"); its work is on {where}')
+    if modified:
+        reporter.out(f"  tracked files with uncommitted changes: {modified}")
+    reporter.out("  inspect it with plain git (log/diff); sessions merge does not apply")
 
 
 def _print_left_out(
