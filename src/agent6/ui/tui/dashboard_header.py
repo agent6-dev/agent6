@@ -29,6 +29,7 @@ from agent6.viewmodel import (
     format,
     manifest_branches,
     manifest_header,
+    policy,
     session_status,
 )
 
@@ -119,7 +120,10 @@ class RunHeader(widgets.Static):
         header = text.Text.from_markup(
             "  ".join(segments) + "\n"
             f"role: {markup.escape(role_line)} · task: {task}"
-            f"{markup.escape(self._lineage_top())}{markup.escape(self._branch_top())}"
+            + "".join(
+                f"\n{markup.escape(line)}" for line in policy.session_policy(tui.session_dir).models
+            )
+            + f"{markup.escape(self._lineage_top())}{markup.escape(self._branch_top())}"
             f"{markup.escape(self._pins_top(s))}{markup.escape(self._serving_top())}"
             f"{markup.escape(self._compare_top())}"
         )

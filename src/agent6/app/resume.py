@@ -356,6 +356,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                 preset=preset,
                 model=route,
                 explicit_leaves=effective.explicit_leaves,
+                config_sources=effective.sources,
                 # The original stamp survives only for a flag-selected preset this resume
                 # does not override; a config-selected one re-derives.
                 preset_stamp=(
@@ -733,7 +734,9 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         else:
             stamps.stamp_continuation(layout.session_dir, steer.strip())
         # This execution's models and policy, for `agent6 exec` and the policy surfaces.
-        stamps.stamp_execution(layout.session_dir, cfg, mode, isolation)
+        stamps.stamp_execution(
+            layout.session_dir, cfg, mode, isolation, config_sources=effective.sources
+        )
         if mode == "run":
             # The next auto-commit takes the previous execution's tail and any operator edit
             # since; the operator's untracked files stay out.

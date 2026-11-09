@@ -102,7 +102,7 @@ def test_the_url_appends_responses_and_the_effort_passes_through() -> None:
             "models": {"worker": {"model": "work/r-1", "effort": "high"}},
         }
     )
-    assert registry.role_effort(cfg, "worker") == "high"
+    assert registry.model_effort(cfg, cfg.models.resolve("worker")) == "high"
 
 
 def test_a_json_call_sends_the_contract_and_parses_the_response_object() -> None:

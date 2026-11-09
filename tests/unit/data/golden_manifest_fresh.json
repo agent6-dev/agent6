@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "agent6_version": "0.1.0",
   "session_id": "r-fresh01",
   "mode": "run",
@@ -14,12 +14,18 @@
   "models": {
     "driver": {
       "provider": "anthropic",
-      "model": "claude-x"
+      "model": "claude-x",
+      "effort": null,
+      "effort_source": ""
     },
     "reviewer": {
       "provider": "anthropic",
-      "model": "claude-y"
+      "model": "claude-y",
+      "effort": null,
+      "effort_source": ""
     },
+    "helper": null,
+    "review_seats": {},
     "driver_from_flag": false
   },
   "harness": {

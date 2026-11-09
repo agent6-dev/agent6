@@ -1483,6 +1483,7 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `continued_task` | `str` | The latest resume steer, whole; empty without a continuation. |
 | `task_line` | `str` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |
 | `model` | `str` | The resolved provider/model route, or ? when unknown. |
+| `models` | `dict[str, Any]` | The recorded driver, reviewer, helper and review seats, with effort and origin. |
 | `model_from_flag` | `bool` | Whether a model flag selected the route. |
 | `preset` | `str \| None` | The launch preset, or null when absent. |
 | `status` | `str` | The lifecycle status word shared with listings. |
@@ -2759,6 +2760,8 @@ Source: [`agent6.sessions.manifest.ModelsBrief`](https://github.com/agent6-dev/a
 | --- | --- | --- |
 | `driver` | `ModelBrief \| None` | The model that drove the run, the worker or a plan's planner; None unset. |
 | `reviewer` | `ModelBrief \| None` | The reviewer; None unset. |
+| `helper` | `ModelBrief \| None` | The helper; None unset. |
+| `review_seats` | `dict[str, ModelBrief]` | Each panel seat's facts, in roster order, labelled by index and focus. |
 | `driver_from_flag` | `bool` | The driver came from a `--model`, the run's or a resume's. |
 
 ### HarnessStamp
@@ -3156,7 +3159,7 @@ Source: [`agent6.review_records.FindingResolution`](https://github.com/agent6-de
 
 ### ModelBrief
 
-**Support: public.** The provider and model of a resolved role.
+**Support: public.** The route and effective effort of a resolved role.
 
 Source: [`agent6.sessions.manifest.ModelBrief`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 
@@ -3164,6 +3167,8 @@ Source: [`agent6.sessions.manifest.ModelBrief`](https://github.com/agent6-dev/ag
 | --- | --- | --- |
 | `provider` | `str` | The configured provider name. |
 | `model` | `str` | The provider's model identifier. |
+| `effort` | `str \| None` | The effective effort; None sends no value. |
+| `effort_source` | `str` | The origin, including inheritance; empty when not recorded. |
 
 ### GateStamp
 

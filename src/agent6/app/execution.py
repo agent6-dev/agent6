@@ -53,7 +53,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.tools import dispatch, operator_prompts
 from agent6.tools import policy as tools_policy
 from agent6.vcs import commit_message, git_read
-from agent6.viewmodel import transcript_text
+from agent6.viewmodel import policy, transcript_text
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -371,6 +371,9 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     session_net: jail.SessionNetwork | None = None
     try:
         reporter.note(f"{'resume ' if inputs.resuming else ''}session id: {inputs.session_id}")
+        if not console_stream and not inputs.tui_enabled:
+            for line in policy.session_policy(layout.session_dir).models:
+                reporter.note(line)
 
         # The session network before its first member; the MCP servers before the harness.
         if session_setup.wants_session_network(cfg, inputs.isolation):

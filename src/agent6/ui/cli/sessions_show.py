@@ -29,6 +29,7 @@ from agent6.viewmodel import (
     existing_run_branch,
     format,
     listing,
+    policy,
     scan_session_log,
     summarize_session_dir,
     tail,
@@ -319,6 +320,7 @@ class StatusJSON(TypedDict):
     continued_task: str
     task_line: str
     model: str
+    models: dict[str, Any]
     model_from_flag: bool
     preset: str | None
     status: str
@@ -375,6 +377,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         task_line: The task clipped to 200 characters, then a newline and `continued: <steer>`,
             clipped the same way, when a resume steer exists.
         model: The resolved provider/model route, or ? when unknown.
+        models: The recorded driver, reviewer, helper and review seats, with effort and origin.
         model_from_flag: Whether a model flag selected the route.
         preset: The launch preset, or null when absent.
         status: The lifecycle status word shared with listings.
@@ -473,6 +476,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "continued_task": summary.task_label.continued_task,
             "task_line": summary.task_label.line(),
             "model": model,
+            "models": manifest.models.model_dump(mode="json"),
             "model_from_flag": model_from_flag,
             "preset": manifest.harness.preset or None,
             "status": status,
@@ -549,6 +553,7 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
     print(
         f"model:      {model}{' (from --model)' if model_from_flag else ''}\n"
         f"preset:     {manifest.harness.preset or '-'}"
+        + "".join(f"\nmodels:     {line}" for line in policy.model_lines(manifest))
     )
     print(f"status:     {state}{pid_note}")
     print(f"turn:       {scan.turn if scan.turn is not None else '-'}")

@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "agent6_version": "0.1.0",
   "session_id": "r-lane02",
   "mode": "run",
@@ -14,9 +14,13 @@
   "models": {
     "driver": {
       "provider": "openai",
-      "model": "gpt-z"
+      "model": "gpt-z",
+      "effort": null,
+      "effort_source": ""
     },
     "reviewer": null,
+    "helper": null,
+    "review_seats": {},
     "driver_from_flag": false
   },
   "harness": {

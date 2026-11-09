@@ -392,4 +392,5 @@ def _cmd_run(  # noqa: PLR0911
         explicit_leaves=explicit_leaves,
         worktree=worktree,
         config_paths=config_paths,
+        config_sources=effective.sources,
     )

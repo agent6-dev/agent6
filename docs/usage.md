@@ -78,6 +78,12 @@ Your branch, HEAD and index stay untouched unless [`git.auto_merge`](config.md#g
 `agent6 run` streams in your terminal; `--tui` opens the full-screen view ([terminal UI](terminal.md)) and `-i` pauses for input after each automatic commit.
 `--tui` without a terminal continues in CLI mode; `-i` requires a foreground terminal and cannot be combined with `--tui`.
 
+The start block names each role's provider/model route and effective effort, including the helper and each review seat.
+It names the effort's config layer and any inheritance; `effort provider default` means no effort value is sent.
+For example: `worker chatgpt/gpt-6-astra effort provider default · reviewer chatgpt/gpt-6-astra effort xhigh (repo)`.
+`sessions show`, the TUI dashboard header and the web run page read these recorded model facts, not the live config; a resume records its execution's values.
+`sessions show --json` exposes them under `models`; an empty `effort_source` means an older record did not capture effort.
+
 ## Tools
 
 `read_file` returns UTF-8 text, a static PNG/JPEG/GIF/WebP image, or a PDF attachment.

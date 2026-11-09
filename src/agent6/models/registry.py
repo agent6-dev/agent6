@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from agent6 import kinds
-from agent6.config import Config
+from agent6.config import Config, RoleModel
 from agent6.models import cache
 from agent6.providers import openai
 
@@ -23,8 +23,8 @@ __all__ = [
     "compaction_thresholds",
     "context_window",
     "decompose_default",
+    "model_effort",
     "resolved_adaptive_values",
-    "role_effort",
 ]
 
 # Context windows in tokens, canonical ids only (`normalize_model_id` strips a date or `:tag`).
@@ -158,20 +158,19 @@ def decompose_default(model_id: str) -> bool:
     return family.startswith(DECOMPOSE_WIN_MODEL_FAMILIES)
 
 
-def role_effort(cfg: Config, role: kinds.RoleName) -> str | None:
-    """Return the reasoning effort a role's calls carry.
+def model_effort(cfg: Config, rm: RoleModel | None) -> str | None:
+    """Return the reasoning effort a resolved role or review seat carries.
 
     The configured `[models.<role>].effort` when set, else each wire's default: `low` for an
     OpenAI-compatible reasoning model, `off` (no thinking) for Anthropic.
 
     Args:
         cfg: The effective config.
-        role: The role.
+        rm: The resolved route and sampling settings.
 
     Returns:
         The effort, or None when agent6 sends none and the provider's default decides.
     """
-    rm = cfg.models.resolve(role)
     if rm is None:
         return None
     entry = cfg.providers.get(rm.provider)
@@ -207,7 +206,7 @@ def resolved_adaptive_values(cfg: Config) -> dict[str, object]:
         role_model = cfg.models.resolve(role)
         if role_model is None or role_model.effort is not None:
             continue
-        if (effort := role_effort(cfg, role)) is not None:
+        if (effort := model_effort(cfg, role_model)) is not None:
             out[f"models.{role}.effort"] = effort
     rm = cfg.models.resolve("worker")
     if rm is None:

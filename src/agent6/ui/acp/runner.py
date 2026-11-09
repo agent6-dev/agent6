@@ -587,6 +587,7 @@ class RunBridge:
                     session_id=session.session_id,
                     config_paths=self.config_paths,
                     explicit_leaves=effective.explicit_leaves,
+                    config_sources=effective.sources,
                     reporter=reporter,
                 )
         finally:

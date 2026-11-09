@@ -29,17 +29,21 @@ class ManifestError(Exception):
 
 
 class ModelBrief(pydantic.BaseModel):
-    """The provider and model of a resolved role.
+    """The route and effective effort of a resolved role.
 
     Attributes:
         provider: The configured provider name.
         model: The provider's model identifier.
+        effort: The effective effort; None sends no value.
+        effort_source: The origin, including inheritance; empty when not recorded.
     """
 
     model_config = _MODEL_CONFIG
 
     provider: str = ""
     model: str = ""
+    effort: str | None = None
+    effort_source: str = ""
 
 
 class ModelsBrief(pydantic.BaseModel):
@@ -48,6 +52,8 @@ class ModelsBrief(pydantic.BaseModel):
     Attributes:
         driver: The model that drove the run, the worker or a plan's planner; None unset.
         reviewer: The reviewer; None unset.
+        helper: The helper; None unset.
+        review_seats: Each panel seat's facts, in roster order, labelled by index and focus.
         driver_from_flag: The driver came from a `--model`, the run's or a resume's.
     """
 
@@ -55,6 +61,8 @@ class ModelsBrief(pydantic.BaseModel):
 
     driver: ModelBrief | None = None
     reviewer: ModelBrief | None = None
+    helper: ModelBrief | None = None
+    review_seats: dict[str, ModelBrief] = pydantic.Field(default_factory=dict)
     driver_from_flag: bool = False
 
     @property
@@ -287,7 +295,7 @@ class ComparisonStamp(pydantic.BaseModel):
 
 
 # Every stamp-rewrite re-stamps it, so the on-disk claim matches the shape on disk.
-MANIFEST_VERSION = 9
+MANIFEST_VERSION = 10
 MANIFEST_NAME = "manifest.json"
 
 

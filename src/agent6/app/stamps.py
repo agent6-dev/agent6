@@ -11,11 +11,13 @@ import contextlib
 import datetime
 import os
 import pathlib
+from collections.abc import Mapping
 from typing import Any
 
 from agent6 import __version__, kinds, portable, task_text
 from agent6.app import reporter as app_reporter
-from agent6.config import Config
+from agent6.config import Config, ReviewerConfig, RoleModel
+from agent6.models import registry
 from agent6.sessions import event_log, manifest
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import policy as tools_policy
@@ -43,11 +45,57 @@ def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
     )
 
 
-def _model_brief(rm: Any) -> manifest.ModelBrief | None:
-    """Return the brief for a resolved role, or None when unset."""
+def _model_brief(cfg: Config, rm: RoleModel | None, source: str) -> manifest.ModelBrief | None:
+    """Return the effective effort and origin, or None without a route."""
     if rm is None:
         return None
-    return manifest.ModelBrief(provider=rm.provider, model=rm.model)
+    effort = registry.model_effort(cfg, rm)
+    return manifest.ModelBrief(
+        provider=rm.provider,
+        model=rm.model,
+        effort=effort,
+        effort_source=(
+            "provider default"
+            if effort is None
+            else "backend default"
+            if rm.effort is None
+            else source
+        ),
+    )
+
+
+def _models_brief(
+    cfg: Config, mode: str, driver_from_flag: bool, sources: Mapping[str, str]
+) -> manifest.ModelsBrief:
+    """Return the execution's roles and seats with each effort's config origin."""
+
+    def role_source(role: kinds.RoleName) -> str:
+        source_role = cfg.models.source_role(role, "effort")
+        key = f"models.{source_role}.effort"
+        origin = sources.get(key, "configured")
+        return f"{key}, {origin}" if source_role != role else origin
+
+    reviewer = cfg.models.resolve("reviewer")
+    seats: dict[str, manifest.ModelBrief] = {}
+    if cfg.review.trigger != "off":
+        roster = cfg.review.reviewers or (ReviewerConfig(focus="security"),)
+        for index, entry in enumerate(roster, 1):
+            source = (
+                sources.get("review.reviewers", "configured")
+                if entry.effort is not None
+                else f"models.reviewer.effort, {role_source('reviewer')}"
+            )
+            brief = _model_brief(cfg, entry.resolve(reviewer), source)
+            if brief is not None:
+                seats[f"review seat {index} ({entry.focus})"] = brief
+    role = kinds.session_kind(mode).role
+    return manifest.ModelsBrief(
+        driver=_model_brief(cfg, cfg.models.resolve(role), role_source(role)),
+        reviewer=_model_brief(cfg, reviewer, role_source("reviewer")),
+        helper=_model_brief(cfg, cfg.models.resolve("helper"), role_source("helper")),
+        review_seats=seats,
+        driver_from_flag=driver_from_flag,
+    )
 
 
 def write_manifest(path: pathlib.Path, m: manifest.SessionManifest) -> None:
@@ -84,6 +132,7 @@ def write_session_manifest(
     base_branch: str,
     run_branch: str | None,
     cfg: Config,
+    config_sources: Mapping[str, str] | None = None,
     mode: str = "run",
     effective_preset: str = "none",
     preset_from_flag: bool = False,
@@ -112,6 +161,7 @@ def write_session_manifest(
         base_branch: The branch the run started from.
         run_branch: The branch the start cut, when one was.
         cfg: The resolved config.
+        config_sources: The layer that supplied each config leaf.
         mode: run, plan or ask.
         effective_preset: The preset the run uses.
         preset_from_flag: The preset came from `--preset`, so a resume replays it.
@@ -149,12 +199,7 @@ def write_session_manifest(
         base_branch=base_branch,
         run_branch=run_branch,
         git_control=cfg.git.control,
-        models=manifest.ModelsBrief(
-            # The role that drives this mode: a plan run's worker never ran.
-            driver=_model_brief(cfg.models.resolve(kinds.session_kind(mode).role)),
-            reviewer=_model_brief(cfg.models.resolve("reviewer")),
-            driver_from_flag=driver_from_flag,
-        ),
+        models=_models_brief(cfg, mode, driver_from_flag, config_sources or {}),
         harness=manifest.HarnessStamp(
             review_trigger=cfg.review.trigger,
             preset=effective_preset,
@@ -272,7 +317,14 @@ def unpark(session_dir: pathlib.Path, *, run_branch: str | None) -> None:
     )
 
 
-def stamp_execution(session_dir: pathlib.Path, cfg: Config, mode: str, isolation: str) -> None:
+def stamp_execution(
+    session_dir: pathlib.Path,
+    cfg: Config,
+    mode: str,
+    isolation: str,
+    *,
+    config_sources: Mapping[str, str] | None = None,
+) -> None:
     """Re-stamp what an execution owns: the models driving it and the policy it runs under.
 
     `agent6 exec` joins the recorded policy's jail and `sessions show` reads the recorded model.
@@ -283,6 +335,7 @@ def stamp_execution(session_dir: pathlib.Path, cfg: Config, mode: str, isolation
             from `--preset`.
         mode: The session mode, which picks the driving role.
         isolation: The resolved isolation level.
+        config_sources: The layer that supplied each config leaf.
     """
     m = manifest.read_manifest(session_dir)
     harness = m.harness
@@ -292,11 +345,7 @@ def stamp_execution(session_dir: pathlib.Path, cfg: Config, mode: str, isolation
         session_dir / manifest.MANIFEST_NAME,
         m.model_copy(
             update={
-                "models": manifest.ModelsBrief(
-                    driver=_model_brief(cfg.models.resolve(kinds.session_kind(mode).role)),
-                    reviewer=_model_brief(cfg.models.resolve("reviewer")),
-                    driver_from_flag=m.models.driver_from_flag,
-                ),
+                "models": _models_brief(cfg, mode, m.models.driver_from_flag, config_sources or {}),
                 "harness": harness,
                 "policy": _policy_stamp(cfg, isolation),
             }

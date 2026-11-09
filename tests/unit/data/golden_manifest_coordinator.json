@@ -1,5 +1,5 @@
 {
-  "version": 9,
+  "version": 10,
   "agent6_version": "",
   "session_id": "fan",
   "mode": "run",
@@ -14,6 +14,8 @@
   "models": {
     "driver": null,
     "reviewer": null,
+    "helper": null,
+    "review_seats": {},
     "driver_from_flag": false
   },
   "harness": {

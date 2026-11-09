@@ -226,6 +226,7 @@ class _ForkPlan:
     preset_from_flag: bool
     driver_from_flag: bool
     cfg: Config
+    config_sources: dict[str, str]
     gate: sessions_manifest.GateStamp
     budget: sessions_manifest.BudgetStamp
     worktree_git_dir: pathlib.Path | None
@@ -300,13 +301,15 @@ def _plan_fork(
 
     try:
         # The child's stamp derives from the same preset-resolved config resume replays.
-        cfg = layer.load_effective(cwd, config_paths, preset=sm.harness.replay_preset).config
+        effective = layer.load_effective(cwd, config_paths, preset=sm.harness.replay_preset)
         recorded = sm.models.replay_driver
         route = (
             kinds.ModelRoute(recorded.provider, recorded.model) if recorded is not None else None
         )
         cfg = session_setup.session_config(
-            cfg.with_model_route(kinds.session_kind(src_mode).role, route) if route else cfg,
+            effective.config.with_model_route(kinds.session_kind(src_mode).role, route)
+            if route
+            else effective.config,
             src_mode,
             sandbox_overrides,
         )
@@ -362,6 +365,7 @@ def _plan_fork(
         preset_from_flag=sm.harness.preset_from_flag,
         driver_from_flag=sm.models.driver_from_flag,
         cfg=cfg,
+        config_sources=effective.sources,
         gate=sm.harness.gate,
         budget=sm.budget,
         worktree_git_dir=sm.worktree_git_dir,
@@ -518,6 +522,7 @@ def _materialize_fork(
         base_branch=plan.base_branch,
         run_branch=run_branch,
         cfg=plan.cfg,
+        config_sources=plan.config_sources,
         mode=plan.mode,
         effective_preset=plan.preset,
         preset_from_flag=plan.preset_from_flag,

@@ -13,7 +13,7 @@ import contextlib
 import os
 import pathlib
 import shutil
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from agent6 import budget as agent6_budget
 from agent6 import directive, errors, kinds, paths
@@ -74,6 +74,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
     explicit_leaves: frozenset[str] = frozenset(),
     worktree: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
+    config_sources: Mapping[str, str] | None = None,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> int:
     """Run one session from preflight to finalize; the sole `agent6 run` path.
@@ -111,6 +112,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         worktree: Whether the run works in its own linked worktree, added at HEAD's
             commit under `[workspace].base_dir`; the checkout is then never touched.
         config_paths: The `--config` files, which an `/undo` fork is stamped under.
+        config_sources: The layer that supplied each config leaf.
         reporter: Receives every refusal and note.
 
     Returns:
@@ -432,6 +434,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             base_branch=base_branch,
             run_branch=run_branch,
             cfg=cfg,
+            config_sources=config_sources,
             mode=mode,
             gate=(
                 sessions_manifest.GateStamp(

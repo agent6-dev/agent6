@@ -12,7 +12,34 @@ import dataclasses
 import pathlib
 import shlex
 
+from agent6 import kinds
 from agent6.sessions import manifest
+from agent6.viewmodel import format
+
+
+def model_lines(m: manifest.SessionManifest) -> tuple[str, ...]:
+    """Return the recorded model lines, never consulting the current config."""
+    driver_role = kinds.SESSION_KINDS[m.mode].role if m.mode in kinds.SESSION_KINDS else "driver"
+    roles = {
+        driver_role: m.models.driver,
+        "reviewer": m.models.reviewer,
+        "helper": m.models.helper,
+        **m.models.review_seats,
+    }
+    lines: list[str] = []
+    for role, brief in roles.items():
+        if brief is None:
+            continue
+        # Old records did not capture effort; absence is not a provider default.
+        effort = "not recorded"
+        if brief.effort_source:
+            effort = (
+                "provider default"
+                if brief.effort is None
+                else f"{brief.effort} ({brief.effort_source})"
+            )
+        lines.append(f"{role} {format.format_model_route(brief)} effort {effort}")
+    return tuple(lines)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -26,6 +53,7 @@ class SessionPolicy:
         network: The network the run's commands join ("session", "host"), "" when unknown.
         verify_gate: The pinned gate, its source and execution availability.
         mode: "run", "plan" or "ask"; an ask has no gate to name.
+        models: The recorded per-role route, effort and origin lines.
     """
 
     model: str
@@ -34,6 +62,7 @@ class SessionPolicy:
     network: str
     verify_gate: manifest.GateStamp
     mode: str = ""
+    models: tuple[str, ...] = ()
 
     def gate(self) -> str:
         """Return the gate and its origin.
@@ -77,7 +106,8 @@ class SessionPolicy:
         )
         if not any(known):
             return ""
-        parts = [p for p in (self.model, self.short()) if p]
+        models = self.models or (self.model,)
+        parts = [p for p in (*models, self.short()) if p]
         if self.mode != "ask":
             parts.append(self.gate())
         return " · ".join(parts)
@@ -132,4 +162,5 @@ def manifest_policy(m: manifest.SessionManifest | None) -> SessionPolicy:
         network=network,
         verify_gate=m.harness.gate,
         mode=m.mode,
+        models=model_lines(m) if m.models.driver and m.models.driver.effort_source else (),
     )
