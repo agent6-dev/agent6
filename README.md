@@ -14,6 +14,7 @@ A coding agent with sandboxed commands, resumable sessions, and editable workflo
     </td>
   </tr>
 </table>
+
 - Runs the model's commands in a [Linux sandbox](#security) with the file and network access you set.
 - Saves conversations, tool activity, and Git checkpoints so you can inspect, resume, or fork a session from an earlier turn.
 - Shows the task graph, token usage and compaction as they happen.
