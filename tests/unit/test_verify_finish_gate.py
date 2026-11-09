@@ -1008,3 +1008,24 @@ def test_scope_paths_passes_hide_set(tmp_path: pathlib.Path) -> None:
         run_chain.RunChain, "diff_since_base", return_value="diff --git a/pkg/mod.py b/pkg/mod.py\n"
     ):
         assert wf.gate.scope_paths(verify_verdict.VerifyVerdict()) == ()
+
+
+def test_edits_made_and_undone_leave_the_verified_tree_green(tmp_path: pathlib.Path) -> None:
+    """The gate's word follows the tree: a restored tree is the one the gate passed.
+
+    An execution whose mutation check edited and restored a file ended "finished · unverified"
+    with its final tree equal to the verified one.
+    """
+    _git_seed(tmp_path)
+    wf = _wf(verify=True, root=tmp_path)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    state.verify.verify_tree = wf.chain.tree_sha()
+    state.verify.note_pass()
+    assert wf.gate.tree_green(state.verify) is True
+    probe = tmp_path / "probe.txt"
+    probe.write_text("probe\n", encoding="utf-8")
+    state.verify.note_edit()
+    assert wf.gate.tree_green(state.verify) is False
+    probe.unlink()
+    assert wf.gate.tree_green(state.verify) is True
+    assert wf.gate.verification(state.verify) == "passed"

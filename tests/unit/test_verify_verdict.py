@@ -56,3 +56,17 @@ def test_a_green_baseline_ends_a_failure_streak() -> None:
     assert v.fail_streak == 0 and v.fail_signature == ""
     v.note_baseline(ok=False)
     assert v.fail_streak == 0 and v.fail_signature == ""
+
+
+def test_the_verified_tree_restored_reads_untouched() -> None:
+    """Edits made and undone leave the verified tree standing: the verdict follows the tree."""
+    v = verify_verdict.VerifyVerdict(verify_tree="t" * 40)
+    v.note_pass()
+    v.note_edit()
+    assert not v.green_and_untouched
+    v.note_tree("u" * 40)
+    assert not v.green_and_untouched
+    v.note_tree("t" * 40)
+    assert v.green_and_untouched
+    v.note_tree("")  # git could not say: the flag stands
+    assert v.green_and_untouched

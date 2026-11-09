@@ -629,8 +629,9 @@ class VerifyGate:
         self.sync_evidence(verdict)
         if not self.command(verdict):
             return None
-        if verdict.verify_tree and verdict.verify_tree != self.chain.tree_sha():
-            verdict.note_edit()
+        if verdict.verify_tree:
+            # Edits made and undone leave the verified tree standing.
+            verdict.note_tree(self.chain.tree_sha())
         return verdict.green_and_untouched
 
     def verification(self, verdict: verify_verdict.VerifyVerdict) -> kinds.Verification:

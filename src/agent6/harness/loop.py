@@ -1744,6 +1744,7 @@ class Harness:
             self._pass_pending_root_tasks()
         verification = self.gate.verification(state.verify)
         if end.reason == "settled" and verification == "passed":
+            # The base's green is not the run's pass: the settled guard says so in its reason.
             verification = "unverified"
         # The tree a run leaves: at its next start, what differs from it changed outside the run.
         tree = self.chain.tree_sha() if end.event and self.mode == "run" else ""

@@ -116,6 +116,15 @@ class VerifyVerdict:
         """Record that the tree changed since the last verdict."""
         self.edited_since = True
 
+    def note_tree(self, tree: str) -> None:
+        """Bind the edit flag to the tree as it stands: the verified tree is untouched.
+
+        Args:
+            tree: The worktree's tree sha; "" when git cannot say, which changes nothing.
+        """
+        if tree and self.verify_tree:
+            self.edited_since = tree != self.verify_tree
+
     @property
     def green_and_untouched(self) -> bool:
         """Whether the tree is verified green and untouched since."""
