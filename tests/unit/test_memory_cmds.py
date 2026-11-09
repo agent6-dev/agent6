@@ -4,13 +4,14 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 
 import pytest
 
 from agent6 import paths
 from agent6.context import memory
-from agent6.ui.cli import memory_cmds
+from agent6.ui.cli import entry, memory_cmds
 
 
 @pytest.fixture(autouse=True)
@@ -179,3 +180,41 @@ def test_format_use_says_each_state_plainly() -> None:
     )
     # A count without a last reader (a hand-edited record) still counts.
     assert memory_cmds.format_use(memory.MemoryUse(reads=2)) == "read 2 times"
+
+
+def test_list_json_command(env: pathlib.Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """JSON lists only facts with the index field names and recorded provenance."""
+    assert entry.cli_main(["memory", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    state = paths.state_dir(env)
+    store = memory.memory_dir(state)
+    store.mkdir(parents=True, exist_ok=True)
+    (store / "fact.md").write_text("\nFirst line.\nDetail.\n")
+    (store / "manual.md").write_text("Manual.\n")
+    (store / "notes.txt").write_text("Ignored.\n")
+    memory.record_use(state, session="writer", wrote=("fact",), created=("fact",), read={}, when=0)
+    memory.record_use(state, session="editor", wrote=("fact",), read={}, when=86400)
+    memory.record_use(state, session="reader", wrote=(), read={"fact": 3}, when=172800)
+    assert entry.cli_main(["memory", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == [
+        dict(
+            name="fact",
+            first_line="First line.",
+            written_by="writer",
+            written_at="1970-01-01 00:00Z",
+            edited_by="editor",
+            edited_at="1970-01-02 00:00Z",
+            reads=3,
+            last_read_by="reader",
+        ),
+        dict(
+            name="manual",
+            first_line="Manual.",
+            written_by=None,
+            written_at=None,
+            edited_by=None,
+            edited_at=None,
+            reads=0,
+            last_read_by=None,
+        ),
+    ]

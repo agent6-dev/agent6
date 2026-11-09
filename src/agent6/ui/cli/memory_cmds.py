@@ -8,6 +8,7 @@ Store refusals (a bad name, an unreadable store) raise `MemoryStoreError`, an
 
 from __future__ import annotations
 
+import json
 import pathlib
 import sys
 
@@ -45,19 +46,43 @@ def _cmd_memory_add(name: str, body: str) -> int:
     return 0
 
 
-def _cmd_memory_list() -> int:
+def _cmd_memory_list(*, as_json: bool = False) -> int:
     """Print the rendered index, each entry's use record, then the store files that are not facts.
 
     A run's prompt gets the index clipped; this prints all of it.
+
+    Args:
+        as_json: Print fact records as a JSON array.
 
     Returns:
         The exit code, 0.
     """
     state = _state()
     entries = memory.index_entries(state)
+    use = memory.read_use(state)
+    if as_json:
+        records: list[dict[str, str | int | None]] = []
+        for name, first in entries:
+            record = use.get(name, memory.MemoryUse())
+            created, edited = record.created, record.updated
+            if edited == created:
+                edited = None
+            records.append(
+                {
+                    "name": name,
+                    "first_line": first,
+                    "written_by": created.session if created else None,
+                    "written_at": created.at if created else None,
+                    "edited_by": edited.session if edited else None,
+                    "edited_at": edited.at if edited else None,
+                    "reads": record.reads,
+                    "last_read_by": record.last_read.session if record.last_read else None,
+                }
+            )
+        print(json.dumps(records))
+        return 0
     if not entries:
         print(f"(no memories; files live under {memory.memory_dir(state)})")
-    use = memory.read_use(state)
     for name, first in entries:
         print(f"- {name}: {first}")
         print(f"    {format_use(use.get(name, memory.MemoryUse()))}")

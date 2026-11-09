@@ -912,7 +912,7 @@ def _dispatch_memory(args: argparse.Namespace) -> int:
     if args.memory_command == "add":
         return memory_cmds._cmd_memory_add(args.name, args.body)
     if args.memory_command == "list":
-        return memory_cmds._cmd_memory_list()
+        return memory_cmds._cmd_memory_list(as_json=args.json)
     if args.memory_command == "show":
         return memory_cmds._cmd_memory_show(args.name)
     if args.memory_command == "remove":
