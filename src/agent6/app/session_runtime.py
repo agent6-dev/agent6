@@ -19,6 +19,7 @@ from agent6 import kinds
 from agent6.app import (
     confine,
     conversation_state,
+    environment_lease,
     frontend,
     preflight,
     review_actions,
@@ -31,7 +32,7 @@ from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
 from agent6.graph import curator as graph_curator
 from agent6.harness import compaction_elision, review_gate
 from agent6.providers import Provider, TranscriptSink
-from agent6.sandbox import detect, jail, jail_session
+from agent6.sandbox import container, detect, jail, jail_session
 from agent6.sessions import event_log
 from agent6.sessions import layout as sessions_layout
 from agent6.tools import command_tools, dispatch, mcp_client, operator_prompts, target_policy
@@ -362,6 +363,79 @@ def prepare_local_execution(
         temp=temp,
         network=session_net,
         owns_network=own_net,
+    )
+
+
+def prepare_container_execution(
+    cfg: Config,
+    root: pathlib.Path,
+    options: container.ContainerOptions,
+    *,
+    state_dir: pathlib.Path,
+    session_id: str,
+    execution_id: str,
+    checkout: pathlib.Path | None = None,
+    worktree_git_dir: pathlib.Path | None = None,
+    controls: tuple[kinds.EffectiveControl, ...] = (),
+) -> command_tools.JailAccess:
+    """Acquire the container, check the checkout's mapping and prepare the transport.
+
+    Internal: nothing in the public config selects this path yet. A failure after the
+    acquisition releases the lease, which stops a container this run started.
+
+    Args:
+        cfg: The resolved config.
+        root: The host workspace the container mounts; a lane's origin, not its clone.
+        options: The operator's container selection, start and stop commands included.
+        state_dir: The repository's state directory, where the lease lives; a lane's origin's.
+        session_id: The acquiring session.
+        execution_id: Its current execution.
+        checkout: The checkout commands run in; None means the workspace itself.
+        worktree_git_dir: The checkout's repository git dir, when it is a linked worktree.
+        controls: Effective controls the caller resolved.
+
+    Returns:
+        The prepared access, whose lifecycle hook releases the lease at close.
+
+    Raises:
+        container.ContainerError: Discovery, start, the mapping check or preparation refused.
+        environment_lease.LeaseError: The lease record is malformed.
+        OSError: The host side of the mapping proof failed.
+    """
+    acquired = environment_lease.acquire(
+        state_dir, root, options, session_id=session_id, execution_id=execution_id
+    )
+    settle = functools.partial(
+        environment_lease.release,
+        state_dir,
+        acquired.ref,
+        session_id=session_id,
+        host_root=root,
+        options=options,
+    )
+    try:
+        container.check_checkout(acquired.discovery, checkout or root, worktree_git_dir)
+        discovery = dataclasses.replace(
+            acquired.discovery,
+            target=dataclasses.replace(acquired.discovery.target, lifecycle_ref=acquired.ref),
+        )
+        session = container.prepare(
+            discovery, memory_limit_mib=cfg.sandbox.memory_limit_mib, controls=controls
+        )
+    except (container.ContainerError, OSError):
+        settle()
+        raise
+    return command_tools.JailAccess(
+        policy=kinds.JailPolicy(
+            cwd=discovery.target.command_root,
+            argv=(),
+            isolation="none",
+            network="host",
+            memory_limit_mib=cfg.sandbox.memory_limit_mib,
+        ),
+        session=session,
+        grants=tools_policy.resolve_grants(cfg, root),
+        lifecycle=settle,
     )
 
 

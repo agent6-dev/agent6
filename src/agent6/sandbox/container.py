@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
 import os
@@ -72,6 +73,10 @@ class ContainerMappingError(ContainerError):
     """The workspace has no unambiguous command-side path."""
 
 
+class ContainerLifecycleError(ContainerError):
+    """An operator start or stop command failed, timed out or exceeded its output bound."""
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ContainerOptions:
     """Hold operator-owned selection inputs, without activating container execution."""
@@ -79,6 +84,8 @@ class ContainerOptions:
     exec: tuple[str, ...] = ()
     runtime: tuple[str, ...] = ()
     workspace: pathlib.Path | None = None
+    start: tuple[str, ...] = ()
+    stop: tuple[str, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -206,18 +213,22 @@ def _query(runtime: tuple[str, ...], args: tuple[str, ...]) -> str:
                 ) from exc
 
 
-def _capture_query(proc: subprocess.Popen[bytes]) -> tuple[bytearray, bytearray]:
+def _capture_query(
+    proc: subprocess.Popen[bytes], timeout_s: float | None = None
+) -> tuple[bytearray, bytearray]:
     assert proc.stdout is not None and proc.stderr is not None
     buffers = {proc.stdout.fileno(): bytearray(), proc.stderr.fileno(): bytearray()}
     total = 0
-    deadline = time.monotonic() + QUERY_TIMEOUT_S
+    if timeout_s is None:
+        timeout_s = QUERY_TIMEOUT_S  # read at call time: tests and operators may change it
+    deadline = time.monotonic() + timeout_s
     with selectors.DefaultSelector() as selector:
         for stream in (proc.stdout, proc.stderr):
             selector.register(stream, selectors.EVENT_READ)
         while selector.get_map():
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise subprocess.TimeoutExpired(proc.args, QUERY_TIMEOUT_S)
+                raise subprocess.TimeoutExpired(proc.args, timeout_s)
             for key, _ in selector.select(remaining):
                 chunk = os.read(key.fd, 65536)
                 if not chunk:
@@ -341,6 +352,79 @@ def _mapped_root(host_root: pathlib.Path, mounts: tuple[_Mount, ...]) -> pathlib
             "to the existing container path (this creates no mount)"
         )
     return valid.pop()
+
+
+LIFECYCLE_TIMEOUT_S = 120.0
+
+
+def run_lifecycle(argv: tuple[str, ...], *, what: str) -> None:
+    """Run an operator's start or stop command: fixed argv, no shell, bounded time and output.
+
+    Args:
+        argv: The operator's command, as configured.
+        what: The setting it came from, for the error.
+
+    Raises:
+        ContainerLifecycleError: The command is missing, failed, timed out or flooded.
+    """
+    env = child_env.without_provider_keys(
+        child_env.curated_env(desktop=False, passthrough=_RUNTIME_ENV)
+    )
+    try:
+        proc = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd="/",
+            env=env,
+            start_new_session=True,
+        )
+    except OSError as exc:
+        raise ContainerLifecycleError(f"{what} {argv!r} did not start: {exc}") from exc
+    assert proc.stdout is not None and proc.stderr is not None
+    try:
+        _, errors = _capture_query(proc, LIFECYCLE_TIMEOUT_S)
+        if proc.returncode:
+            reason = errors.decode("utf-8", errors="replace")[-2000:]
+            raise ContainerLifecycleError(f"{what} failed ({proc.returncode}): {reason}")
+    except subprocess.TimeoutExpired as exc:
+        raise ContainerLifecycleError(f"{what} timed out after {LIFECYCLE_TIMEOUT_S:.0f}s") from exc
+    except ContainerRuntimeError as exc:
+        raise ContainerLifecycleError(f"{what}: {exc}") from exc
+    finally:
+        proc.stdout.close()
+        proc.stderr.close()
+        if proc.returncode is None:
+            jail.signal_group(proc.pid)
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=1)
+
+
+def check_checkout(
+    discovery: ContainerDiscovery, checkout: pathlib.Path, git_dir: pathlib.Path | None
+) -> None:
+    """Refuse a checkout the container cannot reach before any command runs in it.
+
+    A linked worktree, fork, review worktree or machine clone outside the mounted workspace
+    has no path inside the container, and a `.git` pointer to a git dir outside it breaks
+    git inside.
+
+    Args:
+        discovery: The selected container and its host workspace.
+        checkout: The checkout commands would run in.
+        git_dir: The checkout's repository git dir, when it is a linked worktree.
+
+    Raises:
+        ContainerMappingError: The checkout or its git dir lies outside the mounted workspace.
+    """
+    root = discovery.target.host_root.resolve()
+    for label, path in (("checkout", checkout), ("git dir", git_dir)):
+        if path is not None and not path.resolve().is_relative_to(root):
+            raise ContainerMappingError(
+                f"the {label} {path} is outside the mounted workspace {root}; a container"
+                " reaches only paths under the workspace it mounts"
+            )
 
 
 def discover(host_root: pathlib.Path, options: ContainerOptions) -> ContainerDiscovery:

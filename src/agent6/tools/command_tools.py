@@ -27,6 +27,8 @@ class JailAccess:
     network: jail.SessionNetwork | None = None
     temp: tempfile.TemporaryDirectory[str] | None = None
     owns_network: bool = False
+    # Settles the environment's lifecycle after the session closed; None means agent6 manages none.
+    lifecycle: Callable[[], kinds.EnvironmentOutcome] | None = None
 
     def close(self) -> str:
         """Close the session before releasing its local storage and owned network.
@@ -41,6 +43,22 @@ class JailAccess:
                 self.temp.cleanup()
             if self.owns_network and self.network is not None:
                 self.network.close()
+
+    def settle_environment(self) -> kinds.EnvironmentOutcome:
+        """Report the environment's lifecycle once the session is closed.
+
+        Returns:
+            The lifecycle's outcome; `not_applicable` for a local target, `unknown` for a
+            prepared transport whose lifecycle nothing settles.
+        """
+        if self.lifecycle is not None:
+            return self.lifecycle()
+        target = self.session.target if self.session is not None else None
+        if target is None or target.transport == "local":
+            return kinds.EnvironmentOutcome(
+                "not_applicable", "Local host lifecycle is not managed by agent6."
+            )
+        return kinds.EnvironmentOutcome("unknown", "No lifecycle observation recorded.")
 
 
 def _roster(shells: background.BackgroundShells) -> tuple[str, ...]:

@@ -552,16 +552,19 @@ class ToolDispatcher:
                     outcome="unknown" if reason else "settled",
                     reason=reason,
                 )
-                target = self.execution_target
-                local = target is None or target.transport == "local"
+                environment = (
+                    self._command_access.settle_environment()
+                    if self._command_access is not None
+                    else kinds.EnvironmentOutcome(
+                        "not_applicable", "Local host lifecycle is not managed by agent6."
+                    )
+                )
                 self._emit(
                     "execution.environment",
                     execution_id=self.execution_id,
                     target_id=self.target_id,
-                    outcome="not_applicable" if local else "unknown",
-                    reason="Local host lifecycle is not managed by agent6."
-                    if local
-                    else "No lifecycle observation recorded.",
+                    outcome=environment.outcome,
+                    reason=environment.reason,
                 )
 
     def adopt_verify_command(self, argv: tuple[str, ...]) -> bool:

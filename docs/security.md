@@ -770,6 +770,10 @@ The bootstrap uses umask `077` for installation, then restores the target's orig
 Rust opens the installation directory without following symlinks, checks its owner and mode, and compares the installed inode with `/proc/self/exe` before unlinking it.
 An installation interrupted before readiness may retain its directory or partial executable; shutdown removes only an empty installation directory, never a tree of command-created files.
 
+**Start and stop commands are the operator's, run on the host.** A container start or stop command runs as the operator with fixed argv, no shell, a 120-second bound and bounded output; agent6 never derives one, adds sudo or runs a repository's lifecycle definition.
+The host-side lease records what discovery observed before and after a start; only a run whose start made one container appear may stop it, and only after every attached run released.
+A container that ran before the run, an opaque exec prefix, an ambiguous result or a replacement container is attached, never owned.
+
 **Preparation proves shared mapping, not workspace permissions.** Independent random nonces cross the mapping in both directions under the selected user.
 The probe directory permits writes across differing UIDs; success does not establish write permission elsewhere in the workspace.
 The host creates and opens the probe under a host-owned staging directory with 0700 access permissions before publishing it in the workspace.

@@ -754,6 +754,8 @@ These [job states](architecture.md#jail-job-ownership) are separate from the wor
 - Failed host persistence records `unknown` with its reason; a successful close retry can confirm `settled` for the same prepared target and execution.
 - Bare one-shot commands have no session-wide settlement observation and do not claim one.
 - `execution.environment` records `left_running`, `stopped`, `unknown` or `not_applicable`, with its reason and target reference.
+- An environment lease (`app/environment_lease.py`) moves through acquire, attach, settle and lost: a run that started the container becomes its owner; every other run attaches as a borrower; a release settles the session's entry; an owner whose container was replaced, or whose worker died, has lost ownership and the lease says so.
+- The owner's stop runs only when every borrower released, none ended without releasing, and a stop command is set; attaching grants no stop authority.
 - Current local execution records `not_applicable`: agent6 does not manage the host's lifecycle.
 - A job-settlement observation grants no environment stop authority and cannot imply that an environment stopped.
 - `session.stop` ends the workflow; later teardown observations may follow it in the journal.

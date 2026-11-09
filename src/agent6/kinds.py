@@ -358,6 +358,22 @@ class ExecutionEnvironment:
     inherit: bool = False
 
 
+EnvironmentLifecycle = Literal["left_running", "stopped", "unknown", "not_applicable"]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class EnvironmentOutcome:
+    """What became of a prepared environment when its execution ended.
+
+    Attributes:
+        outcome: The observed lifecycle state; `not_applicable` means agent6 manages no lifecycle.
+        reason: The observation's explanation, never an authorization to stop anything.
+    """
+
+    outcome: EnvironmentLifecycle
+    reason: str
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class ExecutionTarget:
     """Immutable execution facts; None means unobserved, never an inferred identity.

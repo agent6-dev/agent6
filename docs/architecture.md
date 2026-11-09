@@ -334,6 +334,23 @@ Verification inference accepts an executable-availability callable: active runs 
 Mid-run gate adoption uses the same lookup.
 Source discovery still reads the host workspace.
 
+## Environment ownership
+
+`app/environment_lease.py` keeps one lease per selected environment under `<state-dir>/environments/<key>.json`, written under a sibling lock so lanes in other processes see one record.
+The key names the selection: the manual exec prefix, or the workspace's discovery under its runtime prefix.
+A replacement of a discovered container keeps the key, so the lease sees the swap.
+
+`acquire` discovers the container; when none runs and the operator set a start command, it runs that command (fixed argv, no shell, 120 seconds, bounded output, the curated environment) and discovers again.
+The run owns the environment only when its own start made one container appear; the lease records what was observed before and after, never an assumed creation.
+A container already running, an opaque exec prefix (whose presence nothing can observe), an ambiguous result and a replacement of an owned container all leave the run a borrower, with the reason recorded.
+A resumed owner keeps ownership of the same container and loses it to a replacement.
+
+`release` removes the session's borrower entry.
+The owner stops the environment through the stop command only when no borrower is live, none ended without releasing, and a stop command is set; the observation afterwards decides `stopped` or `unknown`.
+Every other case is `left_running` with its reason, and a lease whose owner's worker died is reported as orphaned, never inherited.
+`session_runtime.prepare_container_execution` composes acquisition, the checkout mapping check (`container.check_checkout`: a linked worktree, fork, review worktree or machine clone outside the mounted workspace, or a `.git` pointer outside it, refuses before any command), launcher preparation and the lifecycle hook on `JailAccess`; the dispatcher reports the hook's outcome as `execution.environment` after the session closed and its jobs settled.
+No public config selects this path yet.
+
 ## Container discovery
 
 `sandbox/container.py::discover` accepts an internal frozen `ContainerOptions`, not a public config model.

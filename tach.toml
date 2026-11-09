@@ -60,6 +60,7 @@ depends_on = [
   "agent6.providers",
   "agent6.review_records",
   "agent6.sandbox",
+  "agent6.sandbox.container",
   "agent6.sandbox.detect",
   "agent6.sandbox.jail_session",
   "agent6.sessions.event_log",
