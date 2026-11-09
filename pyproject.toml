@@ -164,6 +164,7 @@ banned-from = [
     "agent6.app.compare",
     "agent6.app.confine",
     "agent6.app.conversation_state",
+    "agent6.app.environment_lease",
     "agent6.app.execution",
     "agent6.app.finalize",
     "agent6.app.fork",
