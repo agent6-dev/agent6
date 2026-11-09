@@ -398,6 +398,11 @@ def render(view: ReceiptView, *, include_output: bool = True) -> str:
     )
     for panel in view.review.panels:
         target = panel.target
+        if panel.completion == "skipped":
+            lines.append(
+                f"Panel {panel.panel_id}: skipped: {review_view.skip_reason_text(panel.reason)}"
+            )
+            continue
         lines.append(
             f"Panel {panel.panel_id}: {panel.completion}; "
             f"reviewed head {target.head_tree if target else 'unknown'}"

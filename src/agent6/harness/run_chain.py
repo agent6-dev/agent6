@@ -211,11 +211,11 @@ class RunChain:
         """Return the tree sha of the worktree's content, minus the excluded paths.
 
         Returns:
-            The sha, seeded on the chain tip like a chain commit; "" when git cannot say.
+            The sha, seeded on the record's head like a chain commit; "" when git cannot say.
         """
         try:
             return git_read.worktree_tree(
-                self.root, self.tip() or self.fallback_parent, self.excluded
+                self.root, self.checkpoint_head_sha() or self.fallback_parent, self.excluded
             )
         except (errors.GitError, OSError):
             return ""
@@ -267,15 +267,16 @@ class RunChain:
     def review_target(self) -> review_records.ReviewTarget | None:
         """Return the base and head a panel reviews.
 
-        The head is the chain tip, or the worktree's tree while edits sit uncommitted (a
-        turn the gate failed is not checkpointed), so the panel reads what the model wrote;
-        that tree hangs off no ref, so the target names no snapshot commit and a later
-        reader treats it as gone once pruned.
+        The head is the record's head (the chain tip; the checkout's HEAD under model git
+        control, where the model's commits are the record), or the worktree's tree while
+        edits sit uncommitted (a turn the gate failed is not checkpointed), so the panel
+        reads what the model wrote; that tree hangs off no ref, so the target names no
+        snapshot commit and a later reader treats it as gone once pruned.
 
         Returns:
-            The target; None without a chain tip.
+            The target; None without a recorded head.
         """
-        tip = self.tip()
+        tip = self.checkpoint_head_sha()
         if not tip:
             return None
         committed = git_read.tree_sha(self.root, tip)

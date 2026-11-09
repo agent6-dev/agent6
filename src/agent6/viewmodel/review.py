@@ -136,6 +136,25 @@ class PanelView:
     rules_reason: str | None = None
 
 
+# What a panel's skip reason means, for the receipt and the findings card.
+SKIP_REASONS: dict[str, str] = {
+    "budget": "the budget is spent",
+    "min_remaining_budget_fraction": (
+        "the remaining budget is below review.min_remaining_budget_fraction"
+    ),
+    "no_diff": "nothing changed since the base",
+    "no_target": "no commit or tree to review",
+    "target_unreadable": "the target could not be read",
+}
+
+
+def skip_reason_text(reason: str | None) -> str:
+    """Return a skip reason in the operator's words; an unlisted reason reads as recorded."""
+    if not reason:
+        return "no reason recorded"
+    return SKIP_REASONS.get(reason, reason)
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class SeverityCounts:
     """Count open findings by their grounded severity.
@@ -199,6 +218,9 @@ class ReviewView:
             return "unknown · freshness: unknown"
         if not self.panels:
             return "no panel ran"
+        if self.completion == "skipped":
+            skipped = next(p for p in reversed(self.panels) if p.completion == "skipped")
+            return f"skipped: {skip_reason_text(skipped.reason)}"
         return f"{self.completion} · freshness: {self.freshness}"
 
     @property

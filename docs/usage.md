@@ -354,6 +354,7 @@ agent6 ask "how does the task-graph curator work?"
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
 In-loop panels record their findings and reviewed tree IDs in the session journal.
+Under `git.control = "model"` a panel compares the base recorded at the start with the checkout's HEAD and its uncommitted edits, since the model's commits are the record.
 An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
 The worker receives each finding once unless the feedback notice cut it.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.

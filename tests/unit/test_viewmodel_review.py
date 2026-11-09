@@ -489,3 +489,16 @@ def test_start_and_seat_keep_the_roster_and_full_verdict() -> None:
     finished = state.fold_session([start, seat, panel]).review
     assert finished.panels[0].seats[0].summary == "leak"
     assert finished.panels[0].seats[0].findings[0].title == "leak"
+
+
+def test_a_skipped_panel_says_why_in_words() -> None:
+    """The receipt and the findings card read the skip's reason, not "reviewed head unknown"."""
+    skipped = {
+        "type": "loop.review.skipped",
+        "panel_id": "p1",
+        "execution_id": "exec",
+        "reason": "no_diff",
+    }
+    assert state.fold_session([skipped]).review.summary == "skipped: nothing changed since the base"
+    unlisted = {**skipped, "reason": "review rules incomplete"}
+    assert state.fold_session([unlisted]).review.summary == "skipped: review rules incomplete"

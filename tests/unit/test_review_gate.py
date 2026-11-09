@@ -12,6 +12,7 @@ the `Reviewer.critique` seam.
 
 from __future__ import annotations
 
+import json
 import pathlib
 import types
 from typing import Any
@@ -19,6 +20,7 @@ from unittest import mock
 
 from agent6.harness import loop, loop_conversation, provider_call, review_gate, run_chain
 from agent6.providers import ProviderResponse
+from agent6.sessions import event_log
 from agent6.tools import results
 
 # The `[git]` surface the loop reads: the checkpoint message and the commit
@@ -737,3 +739,58 @@ def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     assert ended is not None and ended.reason == "silent_finish"
     assert ended.verification == "failed"
     assert panel.calls == 1
+
+
+def test_before_finish_panel_reviews_a_model_controlled_run(tmp_path: pathlib.Path) -> None:
+    """A model-controlled run gets its panel: the checkout, not a missing chain, is the target.
+
+    The panel skipped with `no_target`, and the receipt read "reviewed head unknown".
+    """
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for args in (
+        ("init", "-q", "-b", "main"),
+        ("config", "user.email", "t@t"),
+        ("config", "user.name", "t"),
+    ):
+        subprocess.run(["git", "-C", str(repo), *args], check=True)
+    (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "seed"], check=True)
+    base = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    (repo / "seed.txt").write_text("the model's edit\n", encoding="utf-8")
+    worker = mock.MagicMock()
+    worker.call.side_effect = [
+        _resp_with_tool_use("done", _finish_tool_use("tu1", "wrap up")),
+        _resp("ok"),
+    ]
+    dispatcher = mock.MagicMock(
+        last_verification=None, verify_withheld=False, execution_id="e" * 32
+    )
+    dispatcher.dispatch.return_value = results.RawResult({"ok": True})
+    panel = _PanelScript([review_gate.CritiqueResult(text="* fine", satisfied=True)])
+    log = tmp_path / "events.jsonl"
+    wf = _wf(
+        repo,
+        ref=None,
+        fallback_parent=base,
+        base_sha=base,
+        provider=worker,
+        dispatcher=dispatcher,
+        review=review_gate.ReviewSettings(trigger="before_finish", reviewers=[mock.MagicMock()]),
+        events=event_log.EventSink(log),
+    )
+    with mock.patch.object(review_gate.Reviewer, "critique", panel):
+        wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
+            system="S",
+            conversation=loop_conversation.Conversation.from_wire(_MSGS),
+            tool_calls=0,
+            start_turn=1,
+            root_task_id=None,
+            original_task="t",
+        )
+    assert panel.calls == 1
+    rows = [json.loads(line) for line in log.read_text().splitlines()]
+    assert [row["reason"] for row in rows if row["type"] == "loop.review.skipped"] == []
