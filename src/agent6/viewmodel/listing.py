@@ -23,9 +23,9 @@ from agent6.viewmodel import comparison, events, format, review_queue, session_l
 
 def session_mtime(session_dir: pathlib.Path) -> float:
     """Return the last recorded event time, or the manifest start time without events."""
-    scan = session_log.scan_session_log(session_dir / layout.LOGS_NAME)
-    if scan.last_ep is not None:
-        return scan.last_ep
+    last_ep = session_log.last_event_epoch(session_dir / layout.LOGS_NAME)
+    if last_ep is not None:
+        return last_ep
     with contextlib.suppress(sessions_manifest.ManifestError):
         if started := events.event_epoch(sessions_manifest.read_manifest(session_dir).start_ts):
             return started

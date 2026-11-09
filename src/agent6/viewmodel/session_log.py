@@ -7,6 +7,7 @@ from __future__ import annotations
 import contextlib
 import dataclasses
 import json
+import os
 import pathlib
 from collections.abc import Mapping
 
@@ -237,6 +238,40 @@ def tolerant_float(raw: object, last_good: float) -> float:
         with contextlib.suppress(ValueError):
             return float(raw)
     return last_good
+
+
+def last_event_epoch(logs: pathlib.Path) -> float | None:
+    """Return the last parseable event time, reading backward from the journal's tail.
+
+    Args:
+        logs: The journal path.
+
+    Returns:
+        The epoch seconds, or None when no timestamp can be read.
+    """
+    try:
+        with logs.open("rb") as fh:
+            end = fh.seek(0, os.SEEK_END)
+            pending = b""
+            while end:
+                # Grow with a spanning record so assembling a large line stays linear.
+                start = max(0, end - max(8192, len(pending)))
+                fh.seek(start)
+                lines = (fh.read(end - start) + pending).split(b"\n")
+                pending = lines.pop(0) if start else b""
+                for line in reversed(lines):
+                    try:
+                        ev = json.loads(line.decode("utf-8", errors="replace"))
+                    except ValueError:
+                        continue
+                    if isinstance(ev, dict):
+                        ep = events.event_epoch(ev.get("ts"))
+                        if ep is not None:
+                            return ep
+                end = start
+    except OSError:
+        return None
+    return None
 
 
 def scan_session_log(logs: pathlib.Path) -> LogScan:  # noqa: C901, PLR0912, PLR0915  # one branch per event type

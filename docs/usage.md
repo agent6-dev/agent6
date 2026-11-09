@@ -544,7 +544,8 @@ The pack omits global `config.toml` and `ui.toml`; `secrets.toml` keeps its priv
 After unpacking, `agent6 config show` attributes the copied settings to `repo`.
 
 File modes and mtimes are kept; `secrets.toml` is created at `0600` inside a `0700` directory.
-Session listings use the last journal event's time, falling back to the manifest's start time (filesystem metadata only for legacy state with neither recorded time).
+Session activity ordering and no-id session selection use the last readable journal timestamp, falling back to the manifest's start time (filesystem metadata only for legacy state with neither recorded time).
+Ordering reads backward from each journal's tail until it finds a timestamp; full session summaries still read the journal's history.
 Linked worktrees are not packed: listings, session details and resume name a missing worktree rather than treating its recorded path as a local checkout.
 Symlinks and special files refuse rather than following a path outside the snapshot.
 **The pack contains credentials.** Use a trusted workspace sync and see [hidden paths](security.md#2-sandbox).
