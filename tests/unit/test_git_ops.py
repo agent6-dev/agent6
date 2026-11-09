@@ -148,6 +148,15 @@ def test_status_handles_unborn_head(tmp_path: pathlib.Path) -> None:
     assert st.untracked_count == 1
 
 
+def test_status_names_no_branch_on_a_detached_head(tmp_path: pathlib.Path) -> None:
+    """A detached checkout has no branch; the word HEAD names a revision, not a place."""
+    _init_repo(tmp_path)
+    subprocess.run(["git", "-C", str(tmp_path), "checkout", "-q", "--detach"], check=True)
+    st = git_read.status(tmp_path)
+    assert st.branch == ""
+    assert st.head_sha
+
+
 def test_git_ops_neutralizes_repo_fsmonitor(tmp_path: pathlib.Path) -> None:
     """A repo-controlled core.fsmonitor never executes on the host when agent6 runs git."""
     _init_repo(tmp_path)

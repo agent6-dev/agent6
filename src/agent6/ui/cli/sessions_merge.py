@@ -138,7 +138,7 @@ def _plan_merge(  # noqa: PLR0911
     target = into or manifest.base_branch
     if not target or target == run_branch:
         common.error(
-            "no target branch (manifest has no base_branch); pass --into <branch>."
+            "no base branch (the run started on a detached HEAD); pass --into <existing-branch>."
             if not target
             else f"target {target!r} is the run branch itself; pass --into <other-branch>."
         )
@@ -171,12 +171,7 @@ def _plan_merge(  # noqa: PLR0911
         )
         return 2
     if not git_read.branch_exists(cwd, target):
-        why = (
-            "the run started on a detached HEAD, so it has no base branch"
-            if not into and target == git_read.DETACHED_HEAD
-            else f"target branch {target!r} does not exist"
-        )
-        common.error(f"{why}; pass --into <existing-branch>.")
+        common.error(f"target branch {target!r} does not exist; pass --into <existing-branch>.")
         return 2
     identity = git_read.CommitIdentity(
         name=cfg.git.commit.name,

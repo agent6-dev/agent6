@@ -151,7 +151,7 @@ def import_run(
             head = git_read.status(lane_repo)
             chain = git_read.chain_ref_for(lane_session_dir.name)
             git_ops.fetch_branch(origin, lane_repo, f"HEAD:{chain}")
-            if head.branch != "HEAD" and not git_read.branch_exists(origin, head.branch):
+            if head.branch and not git_read.branch_exists(origin, head.branch):
                 git_ops.create_branch_at(origin, head.branch, head.head_sha)
         except errors.GitError as exc:
             raise SubrunError(f"import HEAD from {lane_repo} failed: {exc}") from exc

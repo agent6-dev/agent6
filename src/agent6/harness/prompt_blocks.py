@@ -171,7 +171,7 @@ def repo_priors_block(repo: kinds.RepoSummary) -> str:
 
     if repo.is_git:
         repo_line = (
-            f"Repository: branch={repo.branch},"
+            f"Repository: branch={repo.branch or '(detached HEAD)'},"
             f" head={repo.head_sha[:12] or '(no commits yet)'}, files={repo.file_count}"
         )
     else:

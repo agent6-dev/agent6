@@ -570,24 +570,35 @@ def _print_model_git_footer(
     """
     if _left_no_tree_of_its_own(manifest, layout, cwd, hidden):
         return
-    current = ""
-    head = ""
-    modified = 0
-    untracked = 0
+    st: git_read.GitStatus | None = None
     with contextlib.suppress(errors.GitError):
         exclude = sessions_layout.read_untracked_at_start(layout.session_dir) | hidden
         st = git_read.status(cwd, exclude=exclude)
-        current = st.branch
-        head = st.head_sha[:12]
-        modified = st.modified_count
-        untracked = st.untracked_count
-    where = wire.commits_ref(manifest, cwd) or current or head or "the current checkout"
+    where = wire.commits_ref(manifest, cwd) or _checkout_name(st, manifest.worktree)
     reporter.out(f'\ngit was model-controlled ([git].control = "model"); its work is on {where}')
-    if modified:
-        reporter.out(f"  tracked files with uncommitted changes: {modified}")
-    if untracked:
-        reporter.out(f"  new untracked files: {untracked}")
+    if st is not None and st.modified_count:
+        reporter.out(f"  tracked files with uncommitted changes: {st.modified_count}")
+    if st is not None and st.untracked_count:
+        reporter.out(f"  new untracked files: {st.untracked_count}")
     reporter.out("  inspect it with plain git (status/log/diff); sessions merge does not apply")
+
+
+def _checkout_name(st: git_read.GitStatus | None, worktree: pathlib.Path | None) -> str:
+    """Name a checkout by its branch, else by its detached commit and its worktree.
+
+    Args:
+        st: The checkout's status, or None when git could not read it.
+        worktree: The run's worktree, when it has one.
+
+    Returns:
+        The name the footer prints after "its work is on".
+    """
+    if st is None or not st.head_sha:
+        return "the current checkout"
+    if st.branch:
+        return st.branch
+    commit = f"commit {st.head_sha[:12]} (detached HEAD)"
+    return f"{commit} in {worktree}" if worktree else commit
 
 
 def _print_left_out(

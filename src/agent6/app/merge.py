@@ -494,12 +494,12 @@ def merge_command(session_id: str, base_branch: str) -> str:
 
     Args:
         session_id: The run to land.
-        base_branch: The run's base branch; `git_read.DETACHED_HEAD` for a detached HEAD.
+        base_branch: The run's base branch; "" for a detached HEAD.
 
     Returns:
         The command; on a detached HEAD it ends in `--into BRANCH` for the operator to fill in.
     """
-    into = " --into BRANCH" if base_branch == git_read.DETACHED_HEAD else ""
+    into = " --into BRANCH" if not base_branch else ""
     return f"agent6 sessions merge {session_id}{into}"
 
 

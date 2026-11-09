@@ -1520,3 +1520,35 @@ def test_a_run_that_left_no_tree_of_its_own_gets_no_git_footer_and_no_verify_err
     out = _end_footer(tmp_path, repo, "readonly2", edited, capsys, verification="unverified")
     assert "its work is on main" in out and "tracked files with uncommitted changes: 1" in out
     assert "nothing verified the final tree" in out and "--steer" in out
+
+
+def test_model_git_footer_names_the_detached_commit_and_its_worktree(
+    tmp_path: pathlib.Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A model-controlled worktree run that committed on a detached HEAD is placed by commit.
+
+    The footer read "its work is on HEAD": the word git prints for a detached checkout.
+    """
+    import subprocess
+
+    repo = _seeded_repo(tmp_path)
+    worktree = tmp_path / "wt"
+    subprocess.run(
+        ["git", "worktree", "add", "-q", "--detach", str(worktree), "HEAD"], cwd=repo, check=True
+    )
+    base = git_read.status(worktree).head_sha
+    (worktree / "seed.txt").write_text("model\n", encoding="utf-8")
+    subprocess.run(["git", "commit", "-qam", "model commit"], cwd=worktree, check=True)
+    head = git_read.status(worktree).head_sha
+    monkeypatch.chdir(worktree)
+    manifest: dict[str, object] = {
+        "session_id": "detwt",
+        "run_branch": None,
+        "base_branch": git_read.status(worktree).branch,
+        "git_control": "model",
+        "base_sha": base,
+        "worktree": str(worktree),
+    }
+    out = _end_footer(tmp_path, worktree, "detwt", manifest, capsys)
+    assert f"its work is on commit {head[:12]} (detached HEAD) in {worktree}\n" in out
+    assert "on HEAD" not in out

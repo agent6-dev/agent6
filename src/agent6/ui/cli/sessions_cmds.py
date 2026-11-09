@@ -194,10 +194,8 @@ def _cmd_diff(*, session_id: str, stat: bool, paths: tuple[str, ...], paginate: 
     if paths:
         args.append("--")
         args.extend(paths)
-    print(
-        f"[agent6] git {' '.join(args)}  (base branch {manifest.base_branch})",
-        file=sys.stderr,
-    )
+    base = f"base branch {manifest.base_branch}" if manifest.base_branch else "detached HEAD"
+    print(f"[agent6] git {' '.join(args)}  ({base})", file=sys.stderr)
     # Probe first so a zero-commit run says so; a probe error falls through to git's message.
     probe_args = [
         "diff",

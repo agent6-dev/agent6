@@ -18,16 +18,13 @@ from agent6.vcs import commit_message, git_command
 # A name handed to git as a pathspec is the file, never a glob: `a*.txt` matches only itself.
 LITERAL_PATHSPECS = {"GIT_LITERAL_PATHSPECS": "1"}
 
-# What `git rev-parse --abbrev-ref HEAD` prints on a detached HEAD, where no branch is checked out.
-DETACHED_HEAD = "HEAD"
-
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class GitStatus:
     """The worktree against HEAD.
 
     Attributes:
-        branch: The checked-out branch; `DETACHED_HEAD` when HEAD is detached.
+        branch: The checked-out branch; "" when HEAD is detached.
         head_sha: HEAD's sha; "" on an unborn branch.
         is_clean: No tracked file is modified and no untracked file exists outside the
             caller's exclude set.
@@ -271,12 +268,8 @@ def status(path: pathlib.Path, *, exclude: Collection[str] = ()) -> GitStatus:
     """
     if not is_git_repo(path):
         raise errors.GitError(f"Not a git repository: {path}")
-    branch_res = git_command.run(path, "rev-parse", "--abbrev-ref", "HEAD", check=False)
-    if branch_res.ok:
-        branch = branch_res.stdout.strip()
-    else:
-        # An unborn HEAD fails rev-parse, but `branch --show-current` still names the branch.
-        branch = git_command.run(path, "branch", "--show-current", check=False).stdout.strip()
+    # `branch --show-current` names an unborn branch and prints nothing on a detached HEAD.
+    branch = git_command.run(path, "branch", "--show-current", check=False).stdout.strip()
     head_res = git_command.run(path, "rev-parse", "HEAD", check=False)
     head_sha = head_res.stdout.strip() if head_res.ok else ""
     untracked = 0
