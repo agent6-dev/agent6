@@ -152,8 +152,6 @@ class SessionFrontend:
         confirm_unconfined_autorun: Confirms running commands unconfined.
         confirm_run_on_run_branch: Confirms starting on a run branch.
         prompt_detach_away_mode: Asks the away mode when the run detaches.
-        select_revised_prompt: Runs the revise choice; None when the surface cannot, and the
-            execution then skips revision instead of reading a selector's None as a quit.
         build_repl_hook: Builds the `run -i` / `ask -i` hook.
         run_ask_repl: Runs the ask REPL.
         save_ask_transcript: Saves an ask's transcript.
@@ -178,7 +176,6 @@ class SessionFrontend:
     confirm_unconfined_autorun: Callable[[kinds.IsolationLevel, Config], bool]
     confirm_run_on_run_branch: Callable[[str], bool]
     prompt_detach_away_mode: Callable[[pathlib.Path, tuple[str, ...]], None]
-    select_revised_prompt: Callable[[str, str, tuple[str, ...]], str | None] | None
     build_repl_hook: Callable[
         [pathlib.Path, budget.BudgetTracker, str, mcp_client.MCPManager | None],
         Callable[[int, str], kinds.AutoCommitDirective],

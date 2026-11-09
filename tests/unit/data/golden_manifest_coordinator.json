@@ -18,7 +18,6 @@
   },
   "harness": {
     "review_trigger": "",
-    "revise_prompt": "",
     "preset": "none",
     "gate": {
       "command": [],

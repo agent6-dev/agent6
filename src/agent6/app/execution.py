@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """Drive the one execution body a fresh run and a resumed execution share.
 
-From the provider session to the end block: prompt revision, providers, the gate step, steer
+From the provider session to the end block: providers, the gate step, steer
 state, the session network and MCP servers, the tool set, the Harness, its teardown, the
 auto-merge and the end report. `run.py` and `resume.py` keep what differs before and after it
 and hand the body its `ExecutionInputs`, so a knob wired into one lifecycle cannot be missing
@@ -41,12 +41,11 @@ from agent6.harness import (
     loop,
     loop_snapshot,
     operator_bridge,
-    prompt_revision,
     provider_call,
     review_gate,
     run_chain,
 )
-from agent6.providers import Provider, TranscriptSink
+from agent6.providers import TranscriptSink
 from agent6.sandbox import jail
 from agent6.sessions import event_log, ipc, process
 from agent6.sessions import layout as sessions_layout
@@ -318,20 +317,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
     mode, role = inputs.mode, inputs.role
     label = "resume" if inputs.resuming else "run"
     session: session_runtime.SessionProviders | None = None
-    prompt_reviser_provider: Provider | None = None
     hidden = git_read.hidden_in_repo(cwd, cfg.sandbox.hide_paths)
     try:
-        # The interactive revision prompt reads the terminal, which the TUI may own.
-        effective_revise_prompt = cfg.prompt.revise_prompt
-        if effective_revise_prompt == "interactive" and (
-            inputs.tui_enabled or frontend.select_revised_prompt is None
-        ):
-            owner = "the TUI owns it" if inputs.tui_enabled else "this surface has none"
-            reporter.note(
-                f"prompt.revise_prompt='interactive' needs the terminal; {owner}."
-                " Skipping prompt revision for this execution."
-            )
-            effective_revise_prompt = "off"
         stream_text, console_stream = frontend.stream_modes(inputs.tui_enabled)
         if console_stream:
             frontend.attach_console_view(events)
@@ -349,13 +336,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             conversations=conversations,
         )
         budget = session.budget
-        prompt_reviser_provider = role_providers.build_prompt_reviser_provider(
-            cfg,
-            transcript_sink=transcript_sink,
-            budget=budget,
-            events=events,
-            conversations=conversations,
-        )
         cfg = inputs.gate(cfg, budget)
 
         steer_state = frontend.make_steer_state(
@@ -377,11 +357,8 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             tree = _tree_left_before_the_loop(cwd, inputs, hidden)
             reason = _journal_escape(events, exc, execution_id=execution_id, turns=0, tree=tree)
             reporter.err(f"\n[agent6] {label} {reason}")
-        with contextlib.ExitStack() as cleanup:
-            if prompt_reviser_provider is not None:
-                cleanup.callback(role_providers.close_provider, prompt_reviser_provider)
-            if session is not None:
-                cleanup.callback(session.close)
+        if session is not None:
+            session.close()
         raise
 
     interrupted = False
@@ -552,16 +529,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 concurrency=cfg.review.concurrency,
                 repo_max_turns=cfg.review.repo_max_turns,
             ),
-            revision=prompt_revision.RevisionSettings(
-                reviser=prompt_reviser_provider,
-                mode=effective_revise_prompt,
-                temperature=role_providers.role_temperature(cfg, "helper"),
-                selector=(
-                    frontend.select_revised_prompt
-                    if effective_revise_prompt == "interactive"
-                    else None
-                ),
-            ),
             call=provider_call.CallSettings(temperature=role_providers.role_temperature(cfg, role)),
             compaction=compaction_window.CompactionSettings(
                 drop_at_chars=tools.compact_drop_at_chars,
@@ -666,8 +633,6 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 cleanup.callback(_close_mcp)
                 if dispatcher is not None:
                     cleanup.callback(dispatcher.close)
-                if prompt_reviser_provider is not None:
-                    cleanup.callback(role_providers.close_provider, prompt_reviser_provider)
                 cleanup.callback(session.close)
                 cleanup.callback(steer_state.restore)
                 # A stop never read at a boundary would stop the next execution at its first.

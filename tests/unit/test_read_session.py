@@ -100,15 +100,12 @@ def test_a_side_calls_answer_is_not_read_as_the_assistants_own_words(
 ) -> None:
     """A side call's answer is not read as the assistant's own words.
 
-    Every side call made during a session (a review seat, the verify inferer, a squash pass, the
-    summariser, the prompt reviser) emits its own `role.result` onto the session's log; folded in as
-    "assistant", a reviewer's critique or a compaction summary reads as the session's own reply. A
-    denylist of side roles misses two of the five.
+    Side calls emit `role.result` too; only the worker's answer belongs in the assistant's reply.
     """
     d = _session(tmp_path, "runs", "brave-elk-BBBBBB", "run", "t", [])
     lines = (d / "logs.jsonl").read_text(encoding="utf-8").splitlines()
     lines.append(json.dumps({"type": "role.result", "role": "worker", "text": "use ffmpeg"}))
-    side = ("review:security", "verify_inferer", "squash", "summariser", "prompt_reviser")
+    side = ("review:security", "verify_inferer", "squash", "summariser")
     for role in side:
         lines.append(json.dumps({"type": "role.result", "role": role, "text": f"FROM {role}"}))
     (d / "logs.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")

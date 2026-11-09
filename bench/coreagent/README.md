@@ -26,7 +26,7 @@ run's `logs.jsonl` + the grader):
   earlier `(name,args)`. The primary compaction-quality signal.
 - `iterations` (loop turns), `usd`, `tokens_in/out`, `wall_s`, `stop_reason`, `tampered`.
 - `verification`: the final `session.stop.verification` word, not a guess from the grader.
-- `task_rewritten`: whether `loop.prompt_revision.result` was recorded (the rewrite is used automatically in `revise_auto`).
+- `task_rewritten`: whether `loop.prompt_revision.result` was recorded (historical `revise_auto` runs used the rewrite automatically).
   A started or failed revision alone does not count.
 
 ## Tasks (`tasks/<name>/`)
@@ -91,9 +91,9 @@ Dry runs print each config path and do not append result rows.
 
 | Condition | Setting | Comparison |
 |-----------|---------|------------|
-| `baseline` | Shipped defaults: `harness.verify_when = "never"`, `prompt.revise_prompt = "off"` | G12 and B15 control |
+| `baseline` | Shipped defaults: `harness.verify_when = "never"` | G12 and B15 control |
 | `verify_finish` | `harness.verify_when = "finish"` | G12 treatment: harness runs the finish gate; both arms retain the same tools and verify command |
-| `revise_auto` | `prompt.revise_prompt = "auto"` | B15 treatment: helper rewrites the task before the worker loop |
+| `revise_auto` (retired) | Prompt revision, removed from config | B15 treatment: helper rewrote the task before the worker loop |
 | `decompose` | `prompt.decompose = "on"` | Front-loaded decomposition |
 | `compact_tight` | Lower compaction thresholds | Force compaction on moderate tasks |
 

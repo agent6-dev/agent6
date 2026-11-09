@@ -579,32 +579,6 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `path` | `str` | The plan's file path. |
 | `bytes` | `int` | UTF-8 text length in bytes. |
 
-### loop.prompt_revision.call
-
-**Support: public.** Task prompt revision started.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `mode` | `str` | The execution or prompt-revision mode. |
-
-### loop.prompt_revision.failed
-
-**Support: public.** Task prompt revision failed.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `error` | `str` | The failure diagnostic. |
-
-### loop.prompt_revision.result
-
-**Support: public.** Task prompt revision returned.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `raw_chars` | `int` | Original task length in characters. |
-| `revised_chars` | `int` | Revised task length in characters. |
-| `questions` | `int` | Questions presented, or their count for prompt revision. |
-
 ### loop.provider.empty_tool_call_retry
 
 **Support: public.** A provider response with empty tool calls was retried.
@@ -1174,7 +1148,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `id` | `str` | Prompt, task or background-job identifier. |
-| `questions` | `list` | Questions presented, or their count for prompt revision. |
+| `questions` | `list` | The questions presented. |
 | `call_id` | `int, optional` | The tool call correlated with this event. |
 | `wait` | `bool` | Whether the call waits for answers. |
 
@@ -1240,7 +1214,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `session_id` | `str` | Session identifier. |
 | `user_task` | `str` | The displayed task text. |
 | `steer` | `str` | The instruction supplied when resuming. |
-| `mode` | `str` | The execution or prompt-revision mode. |
+| `mode` | `str` | The execution mode. |
 | `turn` | `int` | The execution's turn number. |
 | `messages` | `int` | Number of conversation messages. |
 | `execution_id` | `str` | Execution identifier. |
@@ -1253,7 +1227,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `session_id` | `str, optional` | Session identifier. |
 | `user_task` | `str` | The displayed task text. |
-| `mode` | `str` | The execution or prompt-revision mode. |
+| `mode` | `str` | The execution mode. |
 | `execution_id` | `str` | Execution identifier. |
 
 ### session.steer_requested
@@ -2796,7 +2770,6 @@ Source: [`agent6.sessions.manifest.HarnessStamp`](https://github.com/agent6-dev/
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `review_trigger` | `str` | `[review].trigger` at launch. |
-| `revise_prompt` | `str` | `[prompt].revise_prompt` at launch. |
 | `preset` | `str` | The preset in force at launch. |
 | `gate` | `GateStamp` | The pinned gate, its source and this execution's availability. |
 | `preset_from_flag` | `bool` | The preset came from `--preset` rather than a config file. |

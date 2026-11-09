@@ -99,7 +99,6 @@ CONDITIONS: dict[str, str] = {
     "baseline": "",
     # G12 extends the base config's trailing [harness] table.
     "verify_finish": 'verify_when = "finish"\n',
-    "revise_auto": '[prompt]\nrevise_prompt = "auto"\n',
     # Thrust 2: front-loaded decomposition.
     "decompose": '[prompt]\ndecompose = "on"\n',
     # The tail must fit below the tier-2 trigger; zero selects a hard restart.

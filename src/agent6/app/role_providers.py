@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Construct role/reviser/summariser/review-seat providers for CLI commands."""
+"""Construct role/summariser/review-seat providers for CLI commands."""
 
 from __future__ import annotations
 
@@ -602,7 +602,7 @@ def helper_seat_provider(
 
     Args:
         cfg: The run's config.
-        seat: The seat stamp: the prompt reviser or the summariser.
+        seat: The seat stamp: the summariser.
         transcript_sink: The recorder the provider's round-trips go to.
         budget: The tracker the provider bills.
         events: The sink the role and budget events go to.
@@ -702,35 +702,3 @@ def build_review_seats(
             )
         )
     return seats
-
-
-def build_prompt_reviser_provider(
-    cfg: Config,
-    *,
-    transcript_sink: TranscriptSink,
-    budget: agent6_budget.BudgetTracker,
-    events: event_log.EventSink,
-    conversations: conversation_state.Conversations | None = None,
-) -> Provider | None:
-    """Route the helper role as a one-shot prompt reviser.
-
-    Args:
-        cfg: The run's config.
-        transcript_sink: The recorder the reviser's round-trips go to.
-        budget: The tracker the reviser bills.
-        events: The sink the role and budget events go to.
-        conversations: The session's conversation state; None holds one for the reviser.
-
-    Returns:
-        The instrumented provider, or None when `prompt.revise_prompt` is off.
-    """
-    if cfg.prompt.revise_prompt == "off":
-        return None
-    return helper_seat_provider(
-        cfg,
-        "prompt_reviser",
-        transcript_sink=transcript_sink,
-        budget=budget,
-        events=events,
-        conversations=conversations,
-    )

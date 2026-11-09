@@ -298,7 +298,7 @@ Role routing:
 | Field | Default | Meaning |
 |---|---|---|
 | `default` | none | required route for every model call; set with `agent6 model default PROVIDER/MODEL`; the only fallback for each role's unset model, effort and temperature |
-| `helper` | none | model for the context summariser, gister (`compaction.elision_gists`), verify-command inference and prompt reviser; unset fields take `models.default` |
+| `helper` | none | model for the context summariser, gister (`compaction.elision_gists`), and verify-command inference; unset fields take `models.default` |
 | `worker` | none | model for `agent6 run`, `agent6 ask`, their resumes, machine agent states and the model-written squash message; unset fields take `models.default` |
 | `reviewer` | none | model for in-loop review panel seats without a route, the `sessions compare` and `--parallel` judge, and `sessions review`; unset fields take `models.default` |
 | `planner` | none | model for `agent6 plan` and plan resumes; unset fields take `models.default` |
@@ -514,7 +514,6 @@ Tiered context compaction (approximate chars; tokens ≈ chars/4).
 | Field | Default | Meaning |
 |---|---|---|
 | `system_prompt_file` | `""` | file path replacing run mode's built-in base system prompt; dynamic blocks still appended; tool contracts supplied by the operator; startup warning for missing core tool names; empty: built-in base; assembled prompt, tool definitions and first message shown by `agent6 prompt show` |
-| `revise_prompt` | `"off"` | One task rewrite by the helper model before the loop; interactive revision requires a terminal and is skipped under TUI, ACP or a spawned lane; a queued `/task` uses the same pass automatically.<ul><li><code>off</code>: Keep the original task</li><li><code>auto</code>: Use helper revision without confirmation</li><li><code>interactive</code>: Ask to accept, edit, keep or quit</li></ul> |
 | `decompose` | `"auto"` | Ordered DAG subtasks worked one at a time before editing in run mode; required decomposition helps small models under-finishing multi-part tasks (measured on mistral-small), with 2-4x overhead for capable models; `config show` prints the resolved value; `--decompose` forces it for one run.<ul><li><code>auto</code>: Choose from worker model capability registry</li><li><code>on</code>: Require ordered task decomposition before editing</li><li><code>off</code>: Do not require task decomposition</li></ul> |
 
 ## `[skills]`

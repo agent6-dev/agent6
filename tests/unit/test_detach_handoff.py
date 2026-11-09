@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from agent6.app import execution, frontend, reporter, role_providers, session_runtime, session_setup
+from agent6.app import execution, frontend, reporter, session_runtime, session_setup
 from agent6.config import Config
 from agent6.harness import loop as harness_loop
 from agent6.harness import loop_snapshot
@@ -240,7 +240,6 @@ def _stub_execution_internals(
         cfg=Config(),
     )
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
-    monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
@@ -443,67 +442,6 @@ def test_an_undone_ask_execution_names_the_fork_instead_of_answering_with_it(
     assert saved == []
     assert any("continue as fork-two-BBBBBB" in s for s in said)
     assert not any("operator undid" in s for s in said)
-
-
-def test_a_surface_without_the_revise_choice_skips_revision(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A surface with no selector skips the revise_prompt choice; None is not a quit."""
-    built: dict[str, Any] = {}
-    _stub_execution_internals(
-        monkeypatch,
-        loop_snapshot.SessionResult(
-            completed=True, reason="finish_session", summary="ok", turns=1, tool_calls=0
-        ),
-        built,
-    )
-    layout = sessions_layout.SessionLayout(
-        state_dir=tmp_path / "state", session_id="acp-one-AAAAAA"
-    )
-    layout.ensure()
-    said: list[str] = []
-    front = acp_frontend.acp_frontend(
-        ask=lambda _p, _o, _s, _c, _u=None: None,
-        capabilities=frontend.FrontendCapabilities(),
-        agent6_exe=lambda: "agent6",
-        spawn_detached_resume=lambda _cwd, _sid, _flags: "",
-    )
-    assert front.select_revised_prompt is None
-    cwd = tmp_path / "repo"
-    cwd.mkdir()
-
-    end = execution.run_execution(
-        Config.model_validate({"prompt": {"revise_prompt": "interactive"}}),
-        layout,
-        execution.ExecutionInputs(
-            explicit_leaves=frozenset(),
-            session_id=layout.session_id,
-            mode="run",
-            role="worker",
-            isolation="partial",
-            tui_enabled=False,
-            interactive=False,
-            task="do the thing",
-            gate=lambda cfg, _b: cfg,
-            chain_branch=None,
-            base_sha="",
-            untracked_at_start=frozenset(),
-            resume_state_path=layout.session_dir / "loop_state.json",
-            undo_forker=lambda: None,
-            prompts=operator_prompts.OperatorPrompts(session_dir=layout.session_dir),
-            ask_transcript_task=None,
-        ),
-        frontend=front,
-        reporter=reporter.Reporter(out=said.append, err=said.append),
-        events=event_log.EventSink(layout.logs_path),
-        transcript_sink=None,  # type: ignore[arg-type]
-        cwd=cwd,
-        state_dir=tmp_path / "state",
-    )
-
-    assert end.rc == 0
-    assert built["revision"].mode == "off"
-    assert any("this surface has none" in s for s in said)
 
 
 @pytest.mark.parametrize(

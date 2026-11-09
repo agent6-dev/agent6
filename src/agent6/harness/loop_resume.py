@@ -15,7 +15,7 @@ from agent6.harness import (
     metric_rules,
     operator_bridge,
 )
-from agent6.prompts import revision as prompts_revision
+from agent6.prompts import compaction as prompts_compaction
 
 if TYPE_CHECKING:
     from agent6.harness import loop
@@ -103,7 +103,7 @@ def seed_carryover(
                 )
         harness.emit("loop.pin.restored", pins=list(state.pins), count=len(state.pins))
         if state.pins:
-            conversation.notice(prompts_revision.pinned_block(state.pins))
+            conversation.notice(prompts_compaction.pinned_block(state.pins))
 
 
 def carry_adopted_gate(

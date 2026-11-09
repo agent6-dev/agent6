@@ -152,7 +152,6 @@ verify_timeout_s = 240
 ${AGENT6_SB_STAGNATION_S:+stagnation_notice_after_s = $AGENT6_SB_STAGNATION_S}
 
 [prompt]
-revise_prompt = "off"
 $PROMPT_FILE_LINE
 
 $REVIEW_LINES

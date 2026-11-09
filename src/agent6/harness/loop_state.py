@@ -38,7 +38,7 @@ class LoopState:
     its pin.
 
     Attributes:
-        original_task: The task text the run started with, revised when `revise_prompt` is on.
+        original_task: The task text the run started with.
         operator_task: The operator's words as given; "" in a state built without them.
         tool_calls: Dispatches so far.
         ok_tool_calls: Dispatches that executed without a ToolError; the standing

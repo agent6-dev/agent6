@@ -194,9 +194,6 @@ verify_command = [
 # ~10 min per failed step and 30+ min per step that exhausted retries.
 verify_timeout_s = 30.0
 
-[prompt]
-revise_prompt = "${AGENT6_PERF_REVISE_PROMPT:-off}"
-
 # Continuous-score metric: after every passing step, agent6 runs this
 # command in the jail, parses the captured group out of stdout+stderr
 # with \`\`pattern\`\`, and feeds the trajectory back to the worker on the

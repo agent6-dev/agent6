@@ -20,7 +20,6 @@
   },
   "workflow": {
     "critic": "off",
-    "revise_prompt": "off",
     "preset": "none"
   }
 }

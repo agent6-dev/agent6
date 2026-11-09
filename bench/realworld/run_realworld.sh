@@ -72,8 +72,6 @@ verify_command = $verify_cmd_json
 # premature-finish task variants. Default: "off".
 trigger = "${AGENT6_REALWORLD_CRITIC:-off}"
 
-[prompt]
-revise_prompt = "${AGENT6_REALWORLD_REVISE_PROMPT:-off}"
 ${metric_block}
 
 [budget]

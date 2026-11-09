@@ -263,36 +263,6 @@ def test_system_prompt_names_non_git_directory(tmp_path: pathlib.Path) -> None:
     assert "branch=" not in prompt  # no fake repo header
 
 
-def test_prompt_revision_context_names_non_git_directory(tmp_path: pathlib.Path) -> None:
-    """Outside git the reviser context names the situation instead of a fake empty repo header."""
-    from agent6 import kinds
-    from agent6.harness import prompt_revision
-
-    repo = kinds.RepoSummary(
-        root=tmp_path,
-        branch="",
-        head_sha="",
-        file_count=0,
-        top_level=("notes.txt",),
-        agents_md="",
-        recent_log="",
-        is_git=False,
-    )
-    ctx = prompt_revision.format_prompt_revision_context(repo)
-    assert "not a git repository" in ctx
-    assert "branch=" not in ctx  # no fake repo header
-    git_repo = kinds.RepoSummary(
-        root=tmp_path,
-        branch="main",
-        head_sha="a" * 40,
-        file_count=3,
-        top_level=("x.py",),
-        agents_md="",
-        recent_log="",
-    )
-    assert "branch=main" in prompt_revision.format_prompt_revision_context(git_repo)
-
-
 def test_ask_repl_prompt_uses_default_sigint(monkeypatch: pytest.MonkeyPatch) -> None:
     """The idle ask> prompt runs under the default SIGINT handler, so one Ctrl-C exits.
 

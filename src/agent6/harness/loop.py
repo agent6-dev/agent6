@@ -49,7 +49,6 @@ from agent6.harness import (
     operator_tasks,
     parallel_dispatch,
     prompt_blocks,
-    prompt_revision,
     provider_call,
     quiet_turns,
     repo_context,
@@ -112,7 +111,6 @@ class Harness:
         call: The worker call's knobs: retries, temperature, output caps.
         compaction: The compaction tiers' thresholds, the tail kept, the summariser.
         review: The in-loop review panel's trigger, seats and decision rule.
-        revision: The one-shot prompt revision before the first worker call.
         initial_pins: Pins seeded before the first turn (a lane inherits the coordinator's);
             fresh runs only, a resume restores pins from the snapshot.
         resume_state_path: Where the provider-agnostic resume snapshot is written before
@@ -153,9 +151,6 @@ class Harness:
     )
     review: review_gate.ReviewSettings = dataclasses.field(
         default_factory=review_gate.ReviewSettings
-    )
-    revision: prompt_revision.RevisionSettings = dataclasses.field(
-        default_factory=prompt_revision.RevisionSettings
     )
     media_input: media.InputCapabilities = dataclasses.field(
         default_factory=media.InputCapabilities
@@ -225,39 +220,15 @@ class Harness:
             dag_available=self.dispatcher.dag_available,
         )
 
-        try:
-            effective_task = prompt_revision.revise_prompt(
-                self.revision, user_task, repo, log=self.log, emit=self.emit
-            )
-        except prompt_revision.PromptRevisionError as exc:
-            declined = isinstance(exc, prompt_revision.PromptRevisionDeclined)
-            stop_reason: loop_snapshot.SessionEndReason = (
-                "steer_abort" if declined else "prompt_revision_failed"
-            )
-            self.log(f"LOOP: prompt revision {'declined' if declined else 'failed'}: {exc}")
-            self.emit(
-                "session.stop",
-                execution_id=self.execution_id,
-                reason=stop_reason,
-                summary=str(exc),
-                turns=0,
-                verification=None,
-            )
-            return loop_snapshot.SessionResult(
-                completed=False, reason=stop_reason, summary=str(exc), turns=0, tool_calls=0
-            )
-
         # The root task is what `add_task` with `parent_id=None` attaches under.
-        root_id = self.operator_tasks.seed_root(effective_task)
+        root_id = self.operator_tasks.seed_root(user_task)
         if root_id is not None:
             self.dispatcher.set_run_root_node_id(root_id)
             self.log(f"LOOP: DAG root task seeded: {root_id}")
             self.operator_tasks.seed_standing(root_id, self.standing_goal)
             self._emit_graph_snapshot()  # show the root in the live task view
 
-        self.log(
-            f"LOOP: mode={self.mode} system={len(system)} chars, task={len(effective_task)} chars"
-        )
+        self.log(f"LOOP: mode={self.mode} system={len(system)} chars, task={len(user_task)} chars")
 
         dag_hint = dag_focus.initial_dag_hint(
             root_id, self.mode, self.config.prompt.decompose == "on"
@@ -269,7 +240,7 @@ class Harness:
                 verify_verdict.VerifyVerdict()
             ),  # the start: nothing adopted or denied
         )
-        initial_user = f"TASK:\n{effective_task}\n\n{instructions}{dag_hint}"
+        initial_user = f"TASK:\n{user_task}\n\n{instructions}{dag_hint}"
         conversation = loop_conversation.Conversation()
         conversation.notice(initial_user, origin="operator")
 
@@ -279,7 +250,7 @@ class Harness:
             tool_calls=0,
             start_turn=1,
             root_task_id=root_id,
-            original_task=effective_task,
+            original_task=user_task,
             operator_task=operator_task,
         )
 
@@ -419,7 +390,7 @@ class Harness:
             start_turn: The first turn of this execution.
             root_task_id: The root task the graph's nodes attach under.
             original_task: The task verbatim; the review panel grounds on it.
-            operator_task: The operator's words before any revision; "" when the same.
+            operator_task: The operator's words before composition; "" when the same.
             resume_from: The snapshot a resumed execution restores; None for a fresh run.
 
         Returns:
@@ -2067,9 +2038,6 @@ class Harness:
         return operator_tasks.OperatorTasks(
             curator=self.curator,
             take_requests=self.bridge.take_requests,
-            revision=self.revision,
-            root=self.chain.root,
-            hide=self.config.sandbox.hide_paths,
             log=self.log,
             emit=self.emit,
             emit_graph_snapshot=self._emit_graph_snapshot,

@@ -1,38 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The loop's auxiliary prompts.
-
-The prompt-revision pass, the context summariser, the per-file gist distiller and the
-post-compaction restart notice. The loop runs each call.
-"""
+"""The context summariser, per-file gist distiller and post-compaction restart notice."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Literal
-
-PROMPT_REVISION_SYSTEM_PROMPT = """\
-You revise raw coding-agent tasks before the main worker loop starts.
-
-Goal: transform a terse, vague, or under-specified task into a clear task
-specification the worker can act on immediately. Preserve every explicit
-constraint from the raw task. Do not invent requirements. Use repo context only
-to name likely files, conventions, verification commands, and success criteria.
-
-If the raw task is already crisp, still restate it compactly rather than adding
-new scope. If important ambiguity remains, list at most 3 clarifying questions;
-the downstream worker may have to proceed under conservative assumptions, so the
-revised task must remain actionable without answers.
-
-Output exactly this shape, with no preamble:
-<revised_task>
-...plain text revised task...
-</revised_task>
-<clarifying_questions>
-- question, or "none"
-</clarifying_questions>
-"""
-
 
 CONTEXT_SUMMARY_SYSTEM_PROMPT = (
     "You are compacting a long autonomous-coding-agent transcript so the agent"

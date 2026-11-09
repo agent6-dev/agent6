@@ -29,7 +29,7 @@ from agent6.harness import (
     compaction_window,
     loop_conversation,
 )
-from agent6.prompts import revision
+from agent6.prompts import compaction
 from agent6.providers import Provider, ProviderError
 
 if TYPE_CHECKING:
@@ -176,7 +176,7 @@ class Compactor:
         self.emit("loop.compact.gist.call", files=len(requests))
         try:
             resp = provider.call(
-                system=revision.GIST_DISTILL_SYSTEM_PROMPT,
+                system=compaction.GIST_DISTILL_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": files}],
                 tools=[],
                 max_tokens=self.settings.summary_max_tokens,
@@ -251,14 +251,14 @@ class Compactor:
         pins_req = ""
         if state.pins:
             pin_lines = "\n".join(f"{i}. {p}" for i, p in enumerate(state.pins, start=1))
-            pins_req = revision.PINS_NO_RESTATE_CLAUSE + pin_lines
+            pins_req = compaction.PINS_NO_RESTATE_CLAUSE + pin_lines
         # The previous summary heads the history, which the clipped transcript drops
         # first, so it is carried out-of-band like pins.
         prior_req = ""
         for message in conversation.messages:
             for item in getattr(message, "items", ()):
                 if isinstance(item, loop_conversation.Notice) and (
-                    prior := revision.progress_summary_from_notice(item.text)
+                    prior := compaction.progress_summary_from_notice(item.text)
                 ):
                     prior_req = (
                         "\n\nThis conversation was ALREADY compacted; the summary from"
@@ -276,7 +276,7 @@ class Compactor:
         self.emit("loop.compact.summarise.call", messages=len(conversation))
         try:
             resp = provider.call(
-                system=revision.CONTEXT_SUMMARY_SYSTEM_PROMPT,
+                system=compaction.CONTEXT_SUMMARY_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_msg}],
                 tools=[],
                 max_tokens=self.settings.summary_max_tokens,
@@ -298,7 +298,7 @@ class Compactor:
                 raw, valid_ids={tid for tid, _ in open_tasks}, root_id=state.root_task_id
             )
         conversation.restart(
-            revision.context_restart_notice(
+            compaction.context_restart_notice(
                 self.mode,
                 pins=state.pins,
                 decisions=self.decisions(),

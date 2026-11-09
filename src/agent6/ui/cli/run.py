@@ -177,16 +177,6 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         confirm_unconfined_autorun=preflight_prompts.confirm_unconfined_autorun,
         confirm_run_on_run_branch=preflight_prompts.confirm_run_on_run_branch,
         prompt_detach_away_mode=interact.prompt_detach_away_mode,
-        # The choice reads stdin: with it redirected nobody can answer.
-        select_revised_prompt=(
-            (
-                lambda original, revised, questions: steer_tty.select_revised_prompt(
-                    original, revised, questions, console_cell[0]
-                )
-            )
-            if sys.stdin.isatty()
-            else None
-        ),
         build_repl_hook=lambda cwd, budget, session_id, mcp_manager: repl.build_repl_hook(
             cwd,
             budget,

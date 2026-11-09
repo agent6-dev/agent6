@@ -157,7 +157,6 @@ def write_session_manifest(
         ),
         harness=manifest.HarnessStamp(
             review_trigger=cfg.review.trigger,
-            revise_prompt=cfg.prompt.revise_prompt,
             preset=effective_preset,
             preset_from_flag=preset_from_flag,
             gate=gate,

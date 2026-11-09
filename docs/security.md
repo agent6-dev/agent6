@@ -690,7 +690,7 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `ui/notify.py`: `notify-send` with fixed argv (exe, `--`, two positional data args, no shell) for the device-present machine notification.
 - `ui/cli/` helpers:
     - `connect_oauth.py`: the platform's URL opener (`xdg-open`, `open`) for a sign-in URL built from the operator's configuration, with the curated environment; never `$BROWSER`'s command template
-    - `plan_watch.py` and `steer_tty.py`: `$EDITOR` for plan and steer editing
+    - `plan_watch.py`: `$EDITOR` for plan editing
     - `sessions_cmds.py` and `ask.py`: `git diff` / `log` for the `sessions` / `ask` diff views, with argv from the run manifest the CLI wrote outside the jail
     - `history_cmds.py`: `rg` for history search
     - `live.py`: the fixed-argv `python -m agent6.ui.tui` co-process behind `run --tui`

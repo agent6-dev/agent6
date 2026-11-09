@@ -12,7 +12,6 @@ from __future__ import annotations
 import datetime
 import json
 import pathlib
-import types
 from typing import Any
 from unittest import mock
 
@@ -24,10 +23,8 @@ from agent6.harness import (
     loop_state,
     loop_steer,
     operator_bridge,
-    prompt_revision,
     run_chain,
 )
-from agent6.providers import provider_types
 from agent6.sessions import event_log, ipc
 from agent6.sessions import layout as sessions_layout
 
@@ -156,41 +153,6 @@ def test_the_banner_leaves_the_models_own_tasks_alone(tmp_path: pathlib.Path) ->
 
     assert "The operator queued this task" not in banner
     assert "my own note" not in banner
-
-
-def test_a_queued_task_inherits_prompt_revision(tmp_path: pathlib.Path) -> None:
-    """`[prompt].revise_prompt` covers a queued task, with the operator's words authoritative."""
-    curator, sink, root = _run_dir(tmp_path)
-    ipc.queue_request(sink.path.parent, "task", SPEC)
-    reviser = mock.MagicMock()
-    reviser.call.return_value = types.SimpleNamespace(
-        text="<revised_task>Add --json to `stats`, same fields as the table.</revised_task>"
-    )
-    wf = _workflow(curator, sink)
-    wf.revision = prompt_revision.RevisionSettings(reviser=reviser, mode="interactive")
-
-    wf.operator_tasks.take(root)
-
-    node = curator.nodes()[curator.get(root).children[0]]
-    assert node.title == "Add a --json flag"  # the tree keeps the operator's words
-    assert "Add --json to `stats`" in node.rationale
-    assert "Original user task (authoritative if anything conflicts)" in node.rationale
-    assert SPEC in node.rationale
-
-
-def test_a_failed_revision_keeps_the_task_as_written(tmp_path: pathlib.Path) -> None:
-    """A queued task is never lost to a reviser that could not answer."""
-    curator, sink, root = _run_dir(tmp_path)
-    ipc.queue_request(sink.path.parent, "task", SPEC)
-    reviser = mock.MagicMock()
-    reviser.call.side_effect = provider_types.ProviderError("reviser down")
-    wf = _workflow(curator, sink)
-    wf.revision = prompt_revision.RevisionSettings(reviser=reviser, mode="auto")
-
-    wf.operator_tasks.take(root)
-
-    node = curator.nodes()[curator.get(root).children[0]]
-    assert node.rationale == SPEC
 
 
 def test_a_parked_run_takes_a_queued_task_and_continues(tmp_path: pathlib.Path) -> None:

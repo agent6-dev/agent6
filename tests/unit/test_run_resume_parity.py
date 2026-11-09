@@ -1,13 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Fresh and resumed executions run the SAME execution body.
+"""Fresh and resumed executions share one execution body.
 
-The two lifecycles once each constructed the Harness and drifted (resume
-silently dropped state_dir, the interactive REPL hook, and the prompt-revision
-wiring). Now neither constructs one: both hand `ExecutionInputs` to `execution.run_execution`,
-the one place the Harness is built, so an input added to one lifecycle cannot
-be missing from the other. Pinned structurally: a `Harness(...)` call in
-either lifecycle module is the drift returning.
+Both hand `ExecutionInputs` to `execution.run_execution`, the one place the Harness is built.
+A `Harness(...)` call in either lifecycle module would let their wiring drift apart.
 """
 
 from __future__ import annotations

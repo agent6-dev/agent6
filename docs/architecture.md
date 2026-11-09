@@ -164,7 +164,7 @@ What the turn leans on sits beside it, one module each:
 - `run_checkpoint` (the per-turn commit and the final one)
 - `compaction_driver` (the compaction driver over `compaction_rules`'s tier-1 rules, `compaction_elision`'s markers and caps, and `compaction_window`'s sizing and restart rules)
 - `memory_touch` (what a tool call did to the memory store)
-- the settings each sibling owns (`review_gate`, `compaction_window`, `provider_call`, `prompt_revision`)
+- the settings each sibling owns (`review_gate`, `compaction_window`, `provider_call`)
 
 The loop runs the advisors and the gates in a declared order and applies each answer; a heuristic is one function and one test file.
 After stop checks, a `finish_session` turn polls for queued answers before ending.
@@ -648,7 +648,7 @@ Every other approval publishes as `approval.prompt` before its answer.
 | Tool surface | [tools/schema.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/schema.py) |
 | Tool dispatch | [tools/dispatch.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/tools/dispatch.py) |
 | Agent loop | [harness/loop.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/harness/loop.py) |
-| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (templates and seat renderers the loop, review, judge, and machine assemble; `revision.py` holds the loop's prompt-revision, summariser, gist and restart-notice prompts) |
+| Prompt text | [prompts/](https://github.com/agent6-dev/agent6/tree/master/src/agent6/prompts) (templates and seat renderers the loop, review, judge, and machine assemble; `compaction.py` holds the summariser, gist and restart-notice prompts) |
 | Review panel | `harness/review_panel.py`, `harness/review_seat.py` and `harness/review_gate.py` |
 | Jail sessions and detached jobs | [sandbox/jail_session.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_session.py), [sandbox/jail_jobs.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail_jobs.py) |
 | Jail launcher | [sandbox/jail.py](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sandbox/jail.py) (Python), [jail/src/main.rs](https://github.com/agent6-dev/agent6/blob/master/src/agent6/jail/src/main.rs) (Rust) |

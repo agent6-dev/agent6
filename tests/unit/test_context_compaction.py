@@ -336,10 +336,10 @@ def test_compact_can_elide_the_last_result_batch_after_it_was_consumed() -> None
 
 def test_restart_notice_is_dag_aware() -> None:
     """The tier-2 restart notice points the worker at its durable task DAG."""
-    from agent6.prompts import revision
+    from agent6.prompts import compaction
 
     for mode in ("run", "plan"):
-        notice = revision.context_restart_notice(mode)
+        notice = compaction.context_restart_notice(mode)
         # The real tool is `list_tasks`; a `dag_` prefix in the notice would 404 the recovery call.
         assert "list_tasks" in notice
         assert "dag_list_tasks" not in notice
@@ -350,7 +350,7 @@ def test_restart_notice_is_dag_aware() -> None:
         assert "the task continues from it" in notice
     # ask, machine and agent have no DAG tools, so the DAG paragraph is absent.
     for mode in ("ask", "read_only"):
-        notice = revision.context_restart_notice(mode)
+        notice = compaction.context_restart_notice(mode)
         assert "list_tasks" not in notice
         assert "the task continues from it" in notice
         assert notice.endswith("PROGRESS SUMMARY:\n")
@@ -361,9 +361,9 @@ def test_restart_notice_is_dag_aware() -> None:
 
 def test_restart_notice_omits_dag_recovery_without_a_curator() -> None:
     """Without a curator the restart notice does not tell the worker to call list_tasks."""
-    from agent6.prompts import revision
+    from agent6.prompts import compaction
 
-    notice = revision.context_restart_notice("run", dag_available=False)
+    notice = compaction.context_restart_notice("run", dag_available=False)
     assert "list_tasks" not in notice
     assert "DAG" not in notice
     assert "the task continues from it" in notice
@@ -861,24 +861,26 @@ def test_strip_thinking_preserves_tool_use_pairing() -> None:
 
 def test_restart_summary_parser_ignores_marker_text_inside_a_pin() -> None:
     """The restart summary parser ignores the restart label inside a verbatim operator pin."""
-    from agent6.prompts import revision
+    from agent6.prompts import compaction
 
-    notice = revision.context_restart_notice("run", pins=("Preserve PROGRESS SUMMARY:\nverbatim",))
+    notice = compaction.context_restart_notice(
+        "run", pins=("Preserve PROGRESS SUMMARY:\nverbatim",)
+    )
     summary = "actual prior progress"
-    assert revision.progress_summary_from_notice(notice + summary) == summary
+    assert compaction.progress_summary_from_notice(notice + summary) == summary
 
 
 def test_restart_notice_re_shows_the_operator_rulings() -> None:
     """A compaction restart re-shows decisions.md between the pins and the summary."""
-    from agent6.prompts import revision
+    from agent6.prompts import compaction
 
-    notice = revision.context_restart_notice(
+    notice = compaction.context_restart_notice(
         "run", pins=("pin one",), decisions="- Q: modal?\n  A: no"
     )
     head, rulings, summary = notice.partition("OPERATOR RULINGS (recorded, still binding):")
     assert "pin one" in head and rulings and "- Q: modal?\n  A: no" in summary
     assert summary.index("A: no") < summary.index("PROGRESS SUMMARY")
-    assert "OPERATOR RULINGS" not in revision.context_restart_notice("run")
+    assert "OPERATOR RULINGS" not in compaction.context_restart_notice("run")
 
 
 def test_a_refused_checkoff_id_does_not_drop_the_rest(tmp_path: pathlib.Path) -> None:

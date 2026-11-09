@@ -109,7 +109,6 @@ class HarnessStamp(pydantic.BaseModel):
 
     Attributes:
         review_trigger: `[review].trigger` at launch.
-        revise_prompt: `[prompt].revise_prompt` at launch.
         preset: The preset in force at launch.
         gate: The pinned gate, its source and this execution's availability.
         preset_from_flag: The preset came from `--preset` rather than a config file.
@@ -118,7 +117,6 @@ class HarnessStamp(pydantic.BaseModel):
     model_config = _MODEL_CONFIG
 
     review_trigger: str = ""
-    revise_prompt: str = ""
     preset: str = "none"
     gate: GateStamp = GateStamp(availability="pending")
     preset_from_flag: bool = False

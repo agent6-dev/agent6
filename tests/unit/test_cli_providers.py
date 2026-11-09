@@ -117,7 +117,7 @@ def test_side_call_and_review_builders_stamp_their_own_seats() -> None:
 
     A transcript tells which actor made a call, even when routes are shared.
     """
-    from agent6.config import PromptConfig, ReviewConfig, ReviewerConfig
+    from agent6.config import ReviewConfig, ReviewerConfig
 
     cfg = Config(
         providers={"o": OpenAIProviderEntry(backend="openai", base_url="https://x/v1")},
@@ -128,14 +128,7 @@ def test_side_call_and_review_builders_stamp_their_own_seats() -> None:
         review=ReviewConfig(
             trigger="on_verify_fail", reviewers=(ReviewerConfig(focus="security"),)
         ),
-        prompt=PromptConfig(revise_prompt="auto"),
     )
-
-    sink = mock.MagicMock()
-    role_providers.build_prompt_reviser_provider(
-        cfg, transcript_sink=sink, budget=mock.MagicMock(), events=mock.MagicMock()
-    )
-    assert sink.for_seat.call_args == mock.call("prompt_reviser")
 
     sink = mock.MagicMock()
     role_providers.helper_seat_provider(

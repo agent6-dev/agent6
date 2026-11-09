@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Mid-run steering: the escalating Ctrl-C handler, the /dev/tty writers and the prompt review."""
+"""Mid-run steering: the escalating Ctrl-C handler, the /dev/tty writers."""
 
 from __future__ import annotations
 
@@ -9,9 +9,7 @@ import io
 import os
 import pathlib
 import signal
-import subprocess
 import sys
-import tempfile
 import termios
 from collections.abc import Callable, Generator
 from typing import Any
@@ -20,7 +18,7 @@ from agent6 import budget, portable, terminal
 from agent6.app import frontend
 from agent6.sessions import event_log, ipc, process
 from agent6.ui import keymap, steer
-from agent6.ui.cli import common, console_render, menu_input, steer_menu
+from agent6.ui.cli import console_render, menu_input, steer_menu
 from agent6.viewmodel import policy
 
 
@@ -40,115 +38,6 @@ def idle_prompt_sigint() -> Generator[None]:
         yield
     finally:
         signal.signal(signal.SIGINT, prev)
-
-
-def select_revised_prompt(
-    original: str,
-    revised: str,
-    questions: tuple[str, ...],
-    console_view: console_render.ConsoleView | None = None,
-) -> str | None:
-    """Ask the operator to accept, keep, edit or quit a revised prompt.
-
-    Args:
-        original: The prompt as typed.
-        revised: The model's revision.
-        questions: The model's open questions about the task.
-        console_view: The live view, paused for the exchange.
-
-    Returns:
-        The prompt to run; None (quit, Ctrl-C, Ctrl-D) stops the run.
-    """
-    pause = console_view.pause if console_view is not None else contextlib.nullcontext
-    with pause():
-        return _select_revised_prompt(original, revised, questions)
-
-
-def _select_revised_prompt(
-    original: str,
-    revised: str,
-    questions: tuple[str, ...],
-) -> str | None:
-    """Return the chosen prompt; see `select_revised_prompt`."""
-    print("\n[agent6] prompt revision proposed:", file=sys.stderr)
-    print("\n--- revised ---", file=sys.stderr)
-    print(revised, file=sys.stderr)
-    if questions:
-        print("\n--- clarifying questions ---", file=sys.stderr)
-        for question in questions:
-            print(f"- {question}", file=sys.stderr)
-    print("\n--- original ---", file=sys.stderr)
-    print(original, file=sys.stderr)
-    while True:
-        try:
-            with idle_prompt_sigint():
-                choice = (
-                    input("[agent6] revise_prompt: [a]ccept, [o]riginal, [e]dit, [q]uit? ")
-                    .strip()
-                    .lower()
-                )
-        except (EOFError, KeyboardInterrupt):
-            return None
-        if choice in {"", "a", "accept", "y", "yes"}:
-            return revised
-        if choice in {"o", "orig", "original", "s", "skip"}:
-            return original
-        if choice in {"q", "quit", "abort"}:
-            return None
-        if choice in {"e", "edit"}:
-            edited = _edit_in_editor(revised)
-            if edited is not None:
-                return edited
-            continue
-        print("[agent6] choose accept, original, edit, or quit.", file=sys.stderr)
-
-
-def _edit_in_editor(revised: str) -> str | None:
-    """Return the text after one `$EDITOR` round trip.
-
-    Args:
-        revised: The text to edit.
-
-    Returns:
-        The saved text, or None with the reason on stderr for an operator-fixable
-        failure: a missing editor, a non-zero exit, a non-UTF-8 or empty save.
-    """
-    argv = common.editor_argv()
-    if argv is None:
-        print("[agent6] choose again.", file=sys.stderr)
-        return None
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        prefix="agent6-revised-task-",
-        suffix=".md",
-        delete=False,
-    ) as tmp:
-        tmp_path = pathlib.Path(tmp.name)
-        tmp.write(revised.rstrip() + "\n")
-    try:
-        try:
-            result = subprocess.run([*argv, str(tmp_path)], check=False)
-        except OSError as exc:
-            print(
-                f"[agent6] cannot run $EDITOR ({argv[0]!r}): {exc}; choose again.", file=sys.stderr
-            )
-            return None
-        if result.returncode != 0:
-            print(f"[agent6] editor exited {result.returncode}; choose again.", file=sys.stderr)
-            return None
-        try:
-            edited = tmp_path.read_text(encoding="utf-8").strip()
-        except UnicodeDecodeError as exc:
-            print(f"[agent6] edited prompt is not UTF-8: {exc}; choose again.", file=sys.stderr)
-            return None
-    finally:
-        with contextlib.suppress(OSError):
-            tmp_path.unlink()
-    if edited:
-        return edited
-    print("[agent6] edited prompt was empty; choose again.", file=sys.stderr)
-    return None
 
 
 # The controlling terminal, which the writers below reach past a TUI's stream redirect.

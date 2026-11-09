@@ -414,23 +414,6 @@ def test_the_plans_original_task_is_the_operators_text(tmp_path: pathlib.Path) -
     assert plan_path.read_text(encoding="utf-8") == "# Plan: Y\n\n1. a"
 
 
-def test_the_plans_original_task_is_the_operators_words_before_revision(
-    tmp_path: pathlib.Path,
-) -> None:
-    """Under `revise_prompt` the loop runs the reviser's task; the section holds the operator's."""
-    plan_path = tmp_path / "plan.md"
-    wf = _wf(mode="plan", plan_output_path=plan_path)
-    state = _state(original_task="Add a --count flag to the CLI that prints the word count.")
-    state.operator_task = "Add a --count flag."
-    plan = "# Plan: X\n\n## Original task\n\n## Tasks\n1. real step\n"
-    wf._capture_finish(  # pyright: ignore[reportPrivateUsage]
-        state, _turn(), "finish_planning", {"summary": "s", "plan_markdown": plan}
-    )
-    text = plan_path.read_text(encoding="utf-8")
-    assert "## Original task\nAdd a --count flag.\n\n## Tasks\n1. real step\n" in text
-    assert "word count" not in text
-
-
 def test_finish_planning_keeps_a_real_plan_markdown(tmp_path: pathlib.Path) -> None:
     # A proper plan_markdown is written verbatim; the summary is NOT appended.
     plan_path = tmp_path / "plan.md"
@@ -7585,7 +7568,7 @@ def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: pathli
 
 def test_a_second_restart_carries_the_first_summary_forward() -> None:
     """The prior restart's summary reaches the summariser out-of-band, surviving the tail clip."""
-    from agent6.prompts import revision
+    from agent6.prompts import compaction
 
     summariser = mock.MagicMock()
     summariser.call.return_value = _resp("second summary")
@@ -7596,7 +7579,7 @@ def test_a_second_restart_carries_the_first_summary_forward() -> None:
         bridge=operator_bridge.OperatorBridge(compact_requested=lambda: ""),
     )
     # One restart already, then enough new work for the tail clip to prefer over the notice.
-    restart = revision.context_restart_notice("run") + "SUMMARY-1: found the parser bug in a.md"
+    restart = compaction.context_restart_notice("run") + "SUMMARY-1: found the parser bug in a.md"
     history: list[dict[str, Any]] = [
         {"role": "user", "content": [{"type": "text", "text": "TASK:\noptimize"}]},
         {"role": "user", "content": [{"type": "text", "text": restart}]},

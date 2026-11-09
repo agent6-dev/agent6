@@ -10,7 +10,6 @@ sees a queued request, and the next turn's focus banner names the work.
 from __future__ import annotations
 
 import dataclasses
-import pathlib
 from collections.abc import Callable
 
 import pydantic
@@ -18,7 +17,6 @@ import pydantic
 from agent6 import task_text
 from agent6.graph import curator as graph_curator
 from agent6.graph import models, order
-from agent6.harness import prompt_revision, repo_context
 from agent6.sessions import ipc
 
 
@@ -30,10 +28,6 @@ class OperatorTasks:
         curator: The graph, or None for a run without one.
         take_requests: The bridge's queue: `/task`, `/standing`, `/retire`, or `agent6 steer`
             with the same words.
-        revision: The `[prompt].revise_prompt` settings, applied to a queued task as to the
-            initial one.
-        root: The repository.
-        hide: `[sandbox].hide_paths`, which no AGENTS.md is read from.
         log: The run's text logger.
         emit: The run's event sink.
         emit_graph_snapshot: Publishes the graph after a write.
@@ -41,9 +35,6 @@ class OperatorTasks:
 
     curator: graph_curator.GraphCurator | None
     take_requests: Callable[[], list[ipc.OperatorRequest]]
-    revision: prompt_revision.RevisionSettings
-    root: pathlib.Path
-    hide: tuple[str, ...]
     log: Callable[[str], None]
     emit: Callable[..., None]
     emit_graph_snapshot: Callable[[], None]
@@ -133,21 +124,19 @@ class OperatorTasks:
     def queue(self, root_id: str, text: str) -> None:
         """Queue a task as the root's last ordinary child, reached once the open work drains.
 
-        The title stays the operator's own first line even when the revision rewrites the body,
-        so the task tree reads in their words; the whole text is the rationale.
+        The title is the operator's first line; the whole text is the rationale.
 
         Args:
             root_id: The run's root task.
             text: The task as the operator typed it.
         """
         title = task_text.clip_title(task_text.task_headline(text) or text.strip())
-        spec = self._revised(text)
         node = self._graph.add_subtask(
             models.AddSubtaskIntent(
                 parent_id=root_id,
                 draft=models.TaskNodeDraft(
                     title=title,
-                    rationale=spec if spec.strip() != title else "",
+                    rationale=text if text.strip() != title else "",
                     created_by="user",
                 ),
             )
@@ -210,30 +199,3 @@ class OperatorTasks:
         if self.curator is None:
             raise graph_curator.CuratorError("this run has no task graph")
         return self.curator
-
-    def _revised(self, text: str) -> str:
-        """Run a queued task through `[prompt].revise_prompt` when the operator turned it on.
-
-        The same one-shot pass the initial task gets. Nobody is at a terminal at a turn
-        boundary, so `interactive` revises the way `auto` does; a failed pass keeps the text as
-        written.
-
-        Args:
-            text: The task as the operator typed it.
-
-        Returns:
-            The revised text folded with the original, or the text unchanged.
-        """
-        if self.revision.mode == "off":
-            return text
-        try:
-            return prompt_revision.revise_prompt(
-                dataclasses.replace(self.revision, mode="auto"),
-                text,
-                repo_context.load_repo_summary(self.root, self.hide),
-                log=self.log,
-                emit=self.emit,
-            )
-        except prompt_revision.PromptRevisionError as exc:
-            self.log(f"LOOP: queued task kept as written: {exc}")
-            return text

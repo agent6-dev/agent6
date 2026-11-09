@@ -206,6 +206,24 @@ def test_loader_refuses_the_old_settled_stop_key(repo: pathlib.Path, layered: bo
     assert "extra_forbidden" in str(exc.value)
 
 
+@pytest.mark.parametrize("layered", [False, True])
+@pytest.mark.parametrize("mode", ["off", "auto", "interactive"])
+def test_loader_refuses_removed_prompt_revision(
+    repo: pathlib.Path, layered: bool, mode: str
+) -> None:
+    """Both loaders reject the removed prompt revision key, even when disabled."""
+    path = paths_mod.repo_config_path(repo)
+    path.write_text(f'[prompt]\nrevise_prompt = "{mode}"\n', encoding="utf-8")
+    with pytest.raises(ConfigError) as exc:
+        if layered:
+            layer.load_effective(repo)
+        else:
+            load_config(path)
+    assert "prompt.revise_prompt" in str(exc.value)
+    assert "removed" in str(exc.value)
+    assert "extra_forbidden" in str(exc.value)
+
+
 def test_render_show_json(repo: pathlib.Path) -> None:
     eff = layer.load_effective(repo)
     import json

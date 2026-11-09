@@ -512,7 +512,7 @@ class CompactionConfig(pydantic.BaseModel):
 
 
 class PromptConfig(pydantic.BaseModel):
-    """The `[prompt]` table: the system-prompt override, task revision and decomposition."""
+    """The `[prompt]` table: the system-prompt override and task decomposition."""
 
     model_config = validation.MODEL_CONFIG
 
@@ -523,22 +523,6 @@ class PromptConfig(pydantic.BaseModel):
             "appended; tool contracts supplied by the operator; startup warning for missing "
             "core tool names; empty: built-in base; assembled prompt, tool definitions and "
             "first message shown by `agent6 prompt show`"
-        ),
-    )
-    # The revision call takes no tools and counts against the budget like any provider call.
-    revise_prompt: Literal["off", "auto", "interactive"] = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "off": "Keep the original task",
-                "auto": "Use helper revision without confirmation",
-                "interactive": "Ask to accept, edit, keep or quit",
-            }
-        },
-        default="off",
-        description=(
-            "One task rewrite by the helper model before the loop; interactive revision "
-            "requires a terminal and is skipped under TUI, ACP or a spawned lane; a queued "
-            "`/task` uses the same pass automatically."
         ),
     )
     # `auto` resolves per model in models.registry.decompose_default; the engine reads only `on`.

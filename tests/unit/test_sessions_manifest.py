@@ -53,7 +53,7 @@ def test_legacy_version_1_and_missing_profile(tmp_path: pathlib.Path) -> None:
             "version": 1,
             "mode": "run",
             "user_task": "do a thing",
-            "harness": {"critic": "off", "revise_prompt": "off"},
+            "harness": {"critic": "off"},
         },
     )
     m = sessions_manifest.read_manifest(tmp_path)
@@ -158,9 +158,7 @@ def test_write_manifest_bytes_fresh(tmp_path: pathlib.Path) -> None:
             driver=sessions_manifest.ModelBrief(provider="anthropic", model="claude-x"),
             reviewer=sessions_manifest.ModelBrief(provider="anthropic", model="claude-y"),
         ),
-        harness=sessions_manifest.HarnessStamp(
-            review_trigger="off", revise_prompt="on", preset="strict"
-        ),
+        harness=sessions_manifest.HarnessStamp(review_trigger="off", preset="strict"),
     )
     path = tmp_path / "manifest.json"
     stamps.write_manifest(path, m)
@@ -187,9 +185,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
         models=sessions_manifest.ModelsBrief(
             driver=sessions_manifest.ModelBrief(provider="openai", model="gpt-z")
         ),
-        harness=sessions_manifest.HarnessStamp(
-            review_trigger="on", revise_prompt="off", preset="none"
-        ),
+        harness=sessions_manifest.HarnessStamp(review_trigger="on", preset="none"),
         parent_session_id="r-parent",
         forked_from_turn=7,
         forked_from_sha="2" * 40,

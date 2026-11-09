@@ -680,7 +680,6 @@ _DONE_LABELS = {
     "steer_exit": "stopped",
     "undone": "undone",
     "detached": "failed · detached",
-    "prompt_revision_failed": "failed · prompt revision failed",
     "plan_unreadable": "failed · plan unreadable",
     "max_turns": "failed · max turns",
     "ask_repl_empty": "failed · ask repl empty",

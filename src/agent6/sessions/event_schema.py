@@ -552,27 +552,6 @@ EVENTS: tuple[EventSpec, ...] = (
         ),
     ),
     EventSpec(
-        "loop.prompt_revision.call",
-        "Task prompt revision started.",
-        (FieldSpec("mode", "str", True, "The execution or prompt-revision mode."),),
-    ),
-    EventSpec(
-        "loop.prompt_revision.failed",
-        "Task prompt revision failed.",
-        (FieldSpec("error", "str", True, "The failure diagnostic."),),
-    ),
-    EventSpec(
-        "loop.prompt_revision.result",
-        "Task prompt revision returned.",
-        (
-            FieldSpec("raw_chars", "int", True, "Original task length in characters."),
-            FieldSpec("revised_chars", "int", True, "Revised task length in characters."),
-            FieldSpec(
-                "questions", "int", True, "Questions presented, or their count for prompt revision."
-            ),
-        ),
-    ),
-    EventSpec(
         "loop.provider.empty_tool_call_retry",
         "A provider response with empty tool calls was retried.",
         (
@@ -1141,7 +1120,7 @@ EVENTS: tuple[EventSpec, ...] = (
                 "questions",
                 "list",
                 True,
-                "Questions presented, or their count for prompt revision.",
+                "The questions presented.",
             ),
             FieldSpec("call_id", "int", False, "The tool call correlated with this event."),
             FieldSpec("wait", "bool", True, "Whether the call waits for answers."),
@@ -1214,7 +1193,7 @@ EVENTS: tuple[EventSpec, ...] = (
             FieldSpec("session_id", "str", True, "Session identifier."),
             FieldSpec("user_task", "str", True, "The displayed task text."),
             FieldSpec("steer", "str", True, "The instruction supplied when resuming."),
-            FieldSpec("mode", "str", True, "The execution or prompt-revision mode."),
+            FieldSpec("mode", "str", True, "The execution mode."),
             FieldSpec("turn", "int", True, "The execution's turn number."),
             FieldSpec("messages", "int", True, "Number of conversation messages."),
             FieldSpec("execution_id", "str", True, "Execution identifier."),
@@ -1226,7 +1205,7 @@ EVENTS: tuple[EventSpec, ...] = (
         (
             FieldSpec("session_id", "str", False, "Session identifier."),
             FieldSpec("user_task", "str", True, "The displayed task text."),
-            FieldSpec("mode", "str", True, "The execution or prompt-revision mode."),
+            FieldSpec("mode", "str", True, "The execution mode."),
             FieldSpec("execution_id", "str", True, "Execution identifier."),
         ),
     ),

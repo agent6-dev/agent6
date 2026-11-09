@@ -30,9 +30,7 @@ from agent6.vcs import git_ops, git_read
 
 _CREATE_TIMEOUT_S = 900.0
 
-_CREATE_STOP_REASONS = frozenset(
-    {"budget_exhausted", "timeout", "provider_error", "prompt_revision_failed", "steer_abort"}
-)
+_CREATE_STOP_REASONS = frozenset({"budget_exhausted", "timeout", "provider_error", "steer_abort"})
 
 
 def _write_scripts(base_dir: pathlib.Path, scripts: dict[str, str]) -> None:

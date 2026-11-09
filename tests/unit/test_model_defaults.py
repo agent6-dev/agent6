@@ -229,7 +229,6 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
                 "helper": {"model": "p/help"},
                 "reviewer": {"model": "p/review"},
             },
-            "prompt": {"revise_prompt": "auto"},
             "review": {"trigger": "off"},
         }
     )
@@ -274,11 +273,8 @@ def test_helper_jobs_do_not_use_the_reviewer_route(
     )
     compactor.distill_gists((compaction_elision.GistRequest(path="a.py", content="print(1)"),))
     assert provider.call.call_count == 1
-    role_providers.build_prompt_reviser_provider(
-        cfg, transcript_sink=sink, budget=budget, events=events
-    )
     (tmp_path / "AGENTS.md").write_text("Tests use the project's custom runner.\n")
     preflight.infer_verify_if_unset(
         cfg, tmp_path, mode="run", events=events, transcript_sink=sink, budget=budget
     )
-    assert built == [("worker", "base"), ("helper", "help"), ("helper", "help"), ("helper", "help")]
+    assert built == [("worker", "base"), ("helper", "help"), ("helper", "help")]

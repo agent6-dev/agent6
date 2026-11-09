@@ -140,9 +140,6 @@ verify_command = [
 ]
 verify_timeout_s = 30.0
 
-[prompt]
-revise_prompt = "${AGENT6_PERF_REVISE_PROMPT:-off}"
-
 [harness.metric]
 command = ["/usr/bin/python3", "tests/submission_tests.py"]
 pattern = 'CYCLES:\s*(\d+)'

@@ -22,7 +22,6 @@
   },
   "harness": {
     "review_trigger": "before_finish",
-    "revise_prompt": "off",
     "preset": "none",
     "gate": {
       "command": [

@@ -52,7 +52,6 @@ ALLOWED = {
     "ui/cli/ask.py",
     "ui/cli/live.py",
     "ui/cli/connect_oauth.py",
-    "ui/cli/steer_tty.py",
     "ui/cli/completions_cmd.py",
     "ui/cli/history_cmds.py",
     "ui/cli/plan_watch.py",

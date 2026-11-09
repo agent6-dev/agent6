@@ -43,7 +43,7 @@ For example, `models.planner.effort = "max"` changes only the planner's effort.
 | `worker` | `[models.worker]` | `agent6 run`, `agent6 ask`, their resumes, machine agent states, and model-written squash messages |
 | `planner` | `[models.planner]` | `agent6 plan` and plan resumes |
 | `reviewer` | `[models.reviewer]` | in-loop review panel seats without a route, the `sessions compare` and `--parallel` judge, and `sessions review` |
-| `helper` | `[models.helper]` | context summarising, gisting (`compaction.elision_gists`), verify-command inference, and prompt revision |
+| `helper` | `[models.helper]` | context summarising, gisting (`compaction.elision_gists`), and verify-command inference |
 
 ```sh
 agent6 model default anthropic/claude-sonnet-5
@@ -275,7 +275,6 @@ Every end has one reason (`stop_reason` in `agent6 sessions show --json` and `se
 | `steer_exit` | `stopped` | `130` |
 | `undone` | `undone` | `0` |
 | `detached` | none: no end is recorded | `0` |
-| `prompt_revision_failed` | `failed · prompt revision failed` | `1` |
 | `plan_unreadable` | `failed · plan unreadable` | `1` |
 | `max_turns` | `failed · max turns` | `1` |
 | `ask_repl_empty` | none: no end is recorded | `0` |

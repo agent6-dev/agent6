@@ -416,24 +416,6 @@ def test_verify_timeout_s_must_be_positive(tmp_path: pathlib.Path) -> None:
         load_config(_write(tmp_path, body))
 
 
-def test_revise_prompt_defaults_off(tmp_path: pathlib.Path) -> None:
-    cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.prompt.revise_prompt == "off"
-
-
-@pytest.mark.parametrize("mode", ["off", "auto", "interactive"])
-def test_revise_prompt_modes_load(tmp_path: pathlib.Path, mode: str) -> None:
-    body = _VALID_TOML + f'\n[prompt]\nrevise_prompt = "{mode}"\n'
-    cfg = load_config(_write(tmp_path, body))
-    assert cfg.prompt.revise_prompt == mode
-
-
-def test_revise_prompt_invalid_mode_rejected(tmp_path: pathlib.Path) -> None:
-    body = _VALID_TOML + '\n[prompt]\nrevise_prompt = "always"\n'
-    with pytest.raises(ConfigError):
-        load_config(_write(tmp_path, body))
-
-
 def test_role_routes_to_unconfigured_provider_rejected(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
         '[models.reviewer]\nmodel = "anthropic/claude-x"',

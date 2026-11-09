@@ -218,41 +218,6 @@ def test_prompt_pauses_the_console_spinner(
     assert calls == ["pause", "prompt", "resume"]
 
 
-def test_revision_selector_pauses_the_console_spinner(monkeypatch: pytest.MonkeyPatch) -> None:
-    """select_revised_prompt runs inside ConsoleView.pause().
-
-    It blocks on input() while the operator reads the proposal; the heartbeat erased the choice
-    prompt and the typed echo every 0.5s.
-    """
-    import contextlib
-    from collections.abc import Generator
-    from typing import cast
-
-    from agent6.ui.cli import console_render
-
-    calls: list[str] = []
-
-    class FakeView:
-        @contextlib.contextmanager
-        def pause(self) -> Generator[None]:
-            calls.append("pause")
-            yield
-            calls.append("resume")
-
-    def fake_input(prompt: str = "") -> str:
-        calls.append("prompt")
-        return "a"
-
-    monkeypatch.setattr("builtins.input", fake_input)
-    out = steer_tty.select_revised_prompt(
-        "orig", "rev", (), cast("console_render.ConsoleView", FakeView())
-    )
-    assert out == "rev"
-    assert calls == ["pause", "prompt", "resume"]
-    # And the bare (console_view=None) path still works.
-    assert steer_tty.select_revised_prompt("orig", "rev", ()) == "rev"
-
-
 def test_reset_stage_disarms_without_touching_the_markers(tmp_path: pathlib.Path) -> None:
     """reset_stage zeroes only the SIGINT stage; the steer marker files stay.
 
@@ -459,91 +424,6 @@ def test_the_fallback_pause_prompt_takes_a_steer_written_while_it_waits(
         steer.clear()
     finally:
         steer.restore()
-
-
-def test_edit_survives_an_unparsable_editor(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """An $EDITOR with unbalanced quoting is a choose-again, like a missing binary.
-
-    shlex.split's ValueError escaped every guard and ended the run as crashed.
-    """
-    import io
-    import sys
-
-    monkeypatch.setenv("EDITOR", 'code --wait "')
-    monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
-    assert steer_tty._select_revised_prompt("orig", "revised", ()) == "revised"
-    assert "$EDITOR" in capsys.readouterr().err
-
-
-def test_edit_survives_a_non_utf8_save(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """An editor that writes back non-UTF-8 bytes is a choose-again, not a crashed run."""
-    import io
-    import sys
-
-    script = tmp_path / "fake_editor.sh"
-    script.write_text("#!/bin/sh\nprintf '\\377\\376x' > \"$1\"\n", encoding="utf-8")
-    script.chmod(0o755)
-    monkeypatch.setenv("EDITOR", str(script))
-    monkeypatch.setattr(sys, "stdin", io.StringIO("e\na\n"))
-    assert steer_tty._select_revised_prompt("orig", "revised", ()) == "revised"
-    assert "not UTF-8" in capsys.readouterr().err
-
-
-def test_one_ctrl_c_at_the_revise_prompt_leaves_it(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """One Ctrl-C leaves the revise_prompt choice, as at every other idle CLI prompt.
-
-    The execution installs the run's escalating steer handler before the loop reaches this prompt,
-    so without `idle_prompt_sigint` the press was absorbed by the retried input(): three presses to
-    leave, a "pausing after this turn" line with no step in flight, and an armed stage that opened a
-    pause menu at the run's first boundary.
-    """
-    import contextlib
-    import os
-    import signal
-    import sys
-    import threading
-    import time
-    from typing import Any
-
-    read_fd, write_fd = os.pipe()
-    reader = os.fdopen(read_fd, encoding="utf-8")
-    blocked = threading.Event()
-
-    class NotifyingStdin:
-        def readline(self) -> str:
-            blocked.set()
-            return reader.readline()
-
-        def __getattr__(self, name: str) -> Any:
-            return getattr(reader, name)
-
-    monkeypatch.setattr(sys, "stdin", NotifyingStdin())
-    steer = steer_tty.install_steer_sigint(mock.MagicMock(), tmp_path)
-
-    def press_then_rescue() -> None:
-        blocked.wait(10.0)
-        os.kill(os.getpid(), signal.SIGINT)
-        # A swallowed press leaves the prompt blocked: answer it so the test
-        # reports the wrong result instead of hanging the suite.
-        time.sleep(1.0)
-        with contextlib.suppress(OSError):
-            os.write(write_fd, b"a\n")
-
-    presser = threading.Thread(target=press_then_rescue)
-    presser.start()
-    try:
-        assert steer_tty.select_revised_prompt("original", "revised", ()) is None
-        assert steer.armed() is False
-    finally:
-        steer.restore()
-        presser.join()
-        os.close(write_fd)
 
 
 @pytest.mark.parametrize("terminal", [True, False])

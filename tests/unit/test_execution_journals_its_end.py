@@ -20,7 +20,7 @@ from unittest import mock
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import execution, finalize, reporter, role_providers, session_runtime, session_setup
+from agent6.app import execution, finalize, reporter, session_runtime, session_setup
 from agent6.app import frontend as app_frontend
 from agent6.config import Config
 from agent6.harness import loop as harness_loop
@@ -134,13 +134,11 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
         review_seats=[],
         close=lambda: closed.append("session"),
     )
-    reviser = types.SimpleNamespace(close=lambda: closed.append("reviser"))
 
     def _fail_gate(_cfg: Config, _budget: object) -> Config:
         raise RuntimeError("gate setup failed")
 
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
-    monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(reviser))
     frontend = mock.MagicMock()
     frontend.stream_modes.return_value = (False, False)
     inputs = execution.ExecutionInputs(
@@ -175,7 +173,7 @@ def test_gate_setup_failure_closes_the_providers_it_already_built(
             state_dir=state,
         )
 
-    assert closed == ["session", "reviser"]
+    assert closed == ["session"]
 
 
 def test_mcp_setup_failure_journals_session_end(
@@ -210,7 +208,6 @@ def test_mcp_setup_failure_journals_session_end(
         )
 
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
-    monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _fail)
     monkeypatch.setattr(paths, "chown_to_real_user", _returning(None))
@@ -277,7 +274,6 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         review_seats=[],
         close=_session_close,
     )
-    reviser = types.SimpleNamespace(close=lambda: closed.append("reviser"))
     dispatcher = types.SimpleNamespace(
         settle_background=lambda: None,
         close=lambda: closed.append("dispatcher"),
@@ -328,7 +324,6 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
         )
 
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
-    monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(reviser))
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(mcp))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
@@ -382,7 +377,7 @@ def test_a_cleanup_failure_does_not_skip_the_rest_of_the_execution_teardown(
             state_dir=state,
         )
 
-    assert closed == ["steer", "session", "reviser", "dispatcher", "mcp", "chown"]
+    assert closed == ["steer", "session", "dispatcher", "mcp", "chown"]
 
 
 def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
@@ -457,7 +452,6 @@ def test_a_resume_error_journals_session_end_before_the_tui_is_waited_on(
         cfg=Config(),
     )
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
-    monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))
@@ -530,7 +524,6 @@ def _wired_frontend(
         cfg=cfg,
     )
     monkeypatch.setattr(session_runtime, "build_session_providers", _returning(session))
-    monkeypatch.setattr(role_providers, "build_prompt_reviser_provider", _returning(None))
     monkeypatch.setattr(session_runtime, "build_session_tools", _returning(tools))
     monkeypatch.setattr(session_setup, "start_mcp_manager_if_enabled", _returning(None))
     monkeypatch.setattr(session_setup, "wants_session_network", _returning(False))

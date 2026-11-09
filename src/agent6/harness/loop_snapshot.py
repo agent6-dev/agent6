@@ -45,7 +45,6 @@ SessionEndReason = Literal[
     "steer_exit",
     "undone",
     "detached",
-    "prompt_revision_failed",
     "plan_unreadable",
     "max_turns",
     "ask_repl_empty",
@@ -86,7 +85,6 @@ class SessionResult:
         steer_abort: the operator stopped the run, mid-call, at a turn boundary or while parked.
         undone: the operator sent /undo; a child was forked at the state before their message.
         detached: the operator chose detach; the CLI respawns a detached resume.
-        prompt_revision_failed: revise_prompt failed before the worker loop.
         plan_unreadable: plan mode could not re-read plan.md (resumable).
         max_turns: the turn cap was hit without a finish.
         ask_repl_empty: an interactive ask session ended with no question (the CLI).
@@ -178,8 +176,8 @@ class SessionSnapshot(pydantic.BaseModel):
         tool_calls: The tool calls made so far.
         next_turn: The turn the snapshot's provider call runs.
         root_task_id: The task graph's root, when the run has one.
-        original_task: The composed task, revised when prompt revision is enabled.
-        operator_task: The words before composition or revision; absent in old snapshots.
+        original_task: The composed task.
+        operator_task: The words before composition; absent in old snapshots.
         base_sha: The base the run's work starts from, which `baseline_ok` describes; a resume
             whose work landed moves it.
         verify_command: The gate the run resolved, () when gateless; a resume reuses it rather
