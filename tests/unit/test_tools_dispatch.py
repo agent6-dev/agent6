@@ -8,6 +8,7 @@ import dataclasses
 import json
 import os
 import pathlib
+import socket
 from unittest import mock
 
 import pydantic
@@ -3033,23 +3034,45 @@ def test_read_file_bounds_media_before_validation(
     assert media.DOCUMENT_MAX_BYTES + 1 in seen
 
 
-@pytest.mark.parametrize("isolation", ["none", "partial", "full"])
+@pytest.mark.parametrize("isolation", ["none", "partial"])
 def test_command_temp_files_belong_to_session(
     tmp_path: pathlib.Path, isolation: kinds.IsolationLevel
 ) -> None:
+    """A short per-session temp dir, granted and removed with the dispatcher.
+
+    A directory under the session record is longer than a Unix socket path allows (108 bytes),
+    so the directory lives in the system temp dir and carries the session's name.
+    """
     root = tmp_path / "repo"
     root.mkdir()
-    session = tmp_path / "state" / "sessions" / "runs" / "test"
+    session = tmp_path / "state" / "sessions" / "runs" / ("t" * 60)
     session.mkdir(parents=True)
     runner = dispatch.ToolDispatcher(
         root=root, config=Config(), isolation=isolation, session_dir=session
     )
     policy = runner._jail_policy(("true",))
     temp = pathlib.Path(dict(policy.env)["TMPDIR"])
-    assert temp.is_relative_to(session)
+    assert temp.name.startswith("agent6-" + "t" * 60) and not temp.is_relative_to(session)
     assert temp in policy.extra_rw_paths
     assert dict(runner._jail_policy(("true",)).env)["TMPDIR"] == str(temp)
+    sock = socket.socket(socket.AF_UNIX)
+    sock.bind(str(temp / "s.sock"))  # the path fits a Unix socket
+    sock.close()
     (temp / "leftover").write_text("test")
     runner.close()
     assert not temp.exists()
+    runner.close()
+
+
+def test_full_isolation_leaves_tmpdir_to_the_jail(tmp_path: pathlib.Path) -> None:
+    """Under `full` the jail's private tmpfs is the run's /tmp: no host directory, no TMPDIR."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    session = tmp_path / "state" / "sessions" / "runs" / "test"
+    session.mkdir(parents=True)
+    runner = dispatch.ToolDispatcher(
+        root=root, config=Config(), isolation="full", session_dir=session
+    )
+    policy = runner._jail_policy(("true",))
+    assert "TMPDIR" not in dict(policy.env)
     runner.close()
