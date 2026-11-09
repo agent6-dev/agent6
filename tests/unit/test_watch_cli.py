@@ -83,10 +83,14 @@ def test_watch_run_json_snapshot(
     assert out["tool_calls"][0]["name"] == "grep"
 
 
+@pytest.mark.parametrize("resumed", [False, True])
 def test_headless_approve_exposes_a_blocking_question_without_answering_it(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    resumed: bool,
 ) -> None:
-    """The driver's public JSON distinguishes queued, blocking and answered real prompts."""
+    """Only current unanswered waiting questions trigger the driver's public JSON predicate."""
     import threading
 
     from agent6 import portable
@@ -106,12 +110,34 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
     events.emit(
         "session.start", session_id=session_id, user_task="t", mode="run", execution_id="e1"
     )
+    if resumed:
+        # Replay a worker that died with its waiting question unanswered.
+        events.emit(
+            "question.prompt",
+            id="question-1",
+            questions=[{"question": "old?", "options": []}],
+            call_id=1,
+            wait=True,
+        )
+        events.emit(
+            "session.resume",
+            session_id=session_id,
+            user_task="t",
+            steer="continue",
+            mode="run",
+            turn=1,
+            messages=2,
+            execution_id="e2",
+        )
+    first_question = 2 if resumed else 1
+    blocking_id = f"question-{first_question + 1}"
     frontend.apply_spawned_away_default(session_dir, (ipc.COMMAND_SCOPE,))
     prompts = operator_prompts.OperatorPrompts(
         approver=interact.build_approver(session_dir),
         questioner=interact.build_questioner(session_dir),
         journal=events.emit,
         session_dir=session_dir,
+        first_question=first_question,
     )
     assert prompts.approve("command?", scope=ipc.COMMAND_SCOPE)
     question = (schema.UserQuestion(question="which?", options=("a", "b")),)
@@ -119,9 +145,13 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
     assert queued.status == "pending"
     assert main(["attach", session_id, "--json"]) == 0
     snapshot = json.loads(capsys.readouterr().out)
-    assert snapshot["live"] and not snapshot["operator_blocked"]
+    assert snapshot["live"]
+    assert not any(not q["answered"] and q["blocking"] for q in snapshot["questions"])
+    assert not snapshot["operator_blocked"]
+    expected = [(True, False, False)] if resumed else []
     assert [(q["wait"], q["answered"], q["blocking"]) for q in snapshot["questions"]] == [
-        (False, False, False)
+        *expected,
+        (False, False, False),
     ]
 
     entered = threading.Event()
@@ -143,9 +173,13 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
         snapshot = json.loads(capsys.readouterr().out)
         assert snapshot["live"] and snapshot["operator_blocked"]
         assert [q["id"] for q in snapshot["questions"] if not q["answered"] and q["blocking"]] == [
-            "question-2"
+            blocking_id
         ]
-        assert main(["answer", session_id, "--question", "question-2", "b"]) == 0
+        if resumed:
+            old = snapshot["questions"][0]
+            assert old["id"] == "question-1" and old["wait"] and not old["answered"]
+            assert not old["blocking"]
+        assert main(["answer", session_id, "--question", blocking_id, "b"]) == 0
         capsys.readouterr()
         worker.join(timeout=10)
         assert not worker.is_alive()
@@ -153,7 +187,8 @@ def test_headless_approve_exposes_a_blocking_question_without_answering_it(
         assert main(["attach", session_id, "--json"]) == 0
         snapshot = json.loads(capsys.readouterr().out)
         assert snapshot["live"] and not snapshot["operator_blocked"]
-        assert snapshot["questions"][1]["answered"]
+        assert snapshot["questions"][-1]["id"] == blocking_id
+        assert snapshot["questions"][-1]["answered"]
         assert not any(not q["answered"] and q["blocking"] for q in snapshot["questions"])
     finally:
         ipc.request_stop(session_dir, now=True)
