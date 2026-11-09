@@ -154,14 +154,6 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             return 2
         worktree = worktree or review_world.needs_worktree
         task = review_world.message
-    if worktree and cfg.git.control == "model":
-        reporter.refuse(
-            "--worktree runs in a linked worktree whose .git is read-only in the jail; under"
-            ' [git].control = "model" the model could not commit there. Set [git].control ='
-            ' "agent6" (`agent6 config set --repo git.control agent6`), or run without'
-            " --worktree."
-        )
-        return 2
     if worktree and (top := paths.checkout_root(repo)) != repo.resolve():
         reporter.refuse(
             f"--worktree starts at the repository's top level, and this is a subdirectory of"
@@ -333,6 +325,15 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
                 reporter=reporter,
                 worktree_git_dir=worktree_git_dir,
             )
+            if cfg.git.control == "model" and isolation != "none":
+                # The repository git dir lies outside the worktree: read-only to jailed commands.
+                reporter.refuse(
+                    "--worktree runs in a linked worktree whose .git is read-only to commands"
+                    f' under sandbox.isolation = {isolation!r}; under [git].control = "model"'
+                    ' the model could not commit there. Set [git].control = "agent6"'
+                    " (`agent6 config set --repo git.control agent6`), or run without --worktree."
+                )
+                return 2
         assert isolation is not None  # selected before the git preflight, or on the worktree
         layout.ensure()
         # One writer per session dir, taken before any shared state is touched.

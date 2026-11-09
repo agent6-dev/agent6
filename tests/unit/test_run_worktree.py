@@ -606,21 +606,47 @@ def test_parallel_and_worktree_together_refuse(
     assert _worktrees(repo) == [str(repo)]
 
 
-def test_model_controlled_git_refuses(
+def test_model_controlled_git_refuses_where_the_jail_confines_the_git_dir(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A linked worktree's `.git` is read-only in the jail, so the model could not commit there."""
+    """Under a confining isolation the repository git dir is read-only to the model's commands.
+
+    The refusal comes after the isolation is resolved, so the worktree it added is removed.
+    """
     model_git = _CONFIG.replace(
         'run_commands = "deny"', 'run_commands = "deny"\nprotect_git = "off"'
     )
     repo = _repo(tmp_path, monkeypatch, config=model_git + '\n[git]\ncontrol = "model"\n')
+    added: list[pathlib.Path] = []
+
+    def _full(_cfg: Any, **kw: Any) -> Any:
+        added.append(kw["cwd"])
+        return "full"
+
+    monkeypatch.setattr(session_runtime, "select_isolation", _full)
 
     assert cli_main(["run", "--worktree", "--session-id", "wt-MODL01", "task"]) == 2
     err = capsys.readouterr().err
     assert "REFUSING: --worktree runs in a linked worktree" in err
-    assert '[git].control = "model"' in err and "without --worktree" in err
-    assert "agent6 config set --repo git.control agent6" in err and "for this run" not in err
+    assert "sandbox.isolation = 'full'" in err and '[git].control = "model"' in err
+    assert "agent6 config set --repo git.control agent6" in err and "without --worktree" in err
+    assert added and not added[0].exists()
     assert _nothing_was_created(repo, "wt-MODL01")
+
+
+def test_model_controlled_git_runs_in_a_worktree_where_nothing_confines_it(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """With `sandbox.isolation = "none"` the model can commit in the worktree: no refusal."""
+    model_git = _CONFIG.replace(
+        'run_commands = "deny"', 'run_commands = "deny"\nprotect_git = "off"'
+    )
+    _repo(tmp_path, monkeypatch, config=model_git + '\n[git]\ncontrol = "model"\n')
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-MODL02", "add new.txt"]) == 0
+    err = capsys.readouterr().err
+    assert "REFUSING" not in err and "working in the worktree" in err
 
 
 def test_a_failed_worktree_add_leaves_nothing_behind(
