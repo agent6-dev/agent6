@@ -14,6 +14,8 @@ from agent6.sessions import layout as sessions_layout
 from agent6.ui.cli import history_transcripts, sessions_transcript
 from agent6.viewmodel import transcript_render
 
+_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
 
 def _reference(value: Any, directory: pathlib.Path) -> dict[str, str]:
     text = json.dumps(value, sort_keys=True, separators=(",", ":"))
@@ -133,7 +135,7 @@ def test_bench_cost_reader_uses_materialized_records(
 
     from agent6.sessions import objects
 
-    script = pathlib.Path("bench/swebench/in_container.sh").read_text()
+    script = (_ROOT / "bench" / "swebench" / "in_container.sh").read_text()
     code = script.split(" > /out/cost.json", 1)[1].split("\n", 1)[1].split("\nPYEOF", 1)[0]
     path = provider_types.TranscriptSink(tmp_path / "transcripts").record(
         url="https://example.com/api",
