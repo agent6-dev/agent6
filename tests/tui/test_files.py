@@ -381,3 +381,30 @@ def test_a_newly_selected_file_opens_at_its_top(repo: pathlib.Path) -> None:
             assert source.scroll_y == 0
 
     asyncio.run(scenario())
+
+
+def test_markdown_choice_survives_file_selection(repo: pathlib.Path) -> None:
+    """The Files screen keeps its source choice across Markdown and plain files."""
+    for name in ("one.md", "two.md", "plain.txt"):
+        (repo / name).write_text(f"# {name}\n", encoding="utf-8")
+
+    async def scenario() -> None:
+        app = home.Agent6HomeApp(repo.parent / "state", repo)
+        async with app.run_test(size=(120, 36)) as pilot:
+            await pilot.press("F")
+            await _select(pilot, "one.md")
+            switcher = app.screen.query_one(widgets.ContentSwitcher)
+            assert switcher.current == "files-markdown"
+            await pilot.press("s")
+            await pilot.pause()
+            assert switcher.current == "files-source"
+            for name in ("two.md", "plain.txt", "one.md"):
+                await _select(pilot, name)
+                assert switcher.current == "files-source"
+            await pilot.press("s")
+            await pilot.pause()
+            assert switcher.current == "files-markdown"
+            await _select(pilot, "two.md")
+            assert switcher.current == "files-markdown"
+
+    asyncio.run(scenario())

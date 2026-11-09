@@ -67,6 +67,7 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         self._root = (git_read.toplevel(root) or root).resolve()
         self._ignored = git_files.ignored_paths(self._root)
         self._is_markdown = False
+        self._show_source = False
 
     def compose(self) -> app.ComposeResult:
         """Yield the tree beside the file preview, with the shared screen chrome."""
@@ -151,7 +152,9 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
             viewer = self.query_one(widgets.MarkdownViewer)
             await viewer.document.update(body)
             viewer.scroll_home(animate=False)
-        switcher.current = "files-markdown" if self._is_markdown else "files-source"
+        switcher.current = (
+            "files-markdown" if self._is_markdown and not self._show_source else "files-source"
+        )
         self.refresh_bindings()
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
@@ -165,7 +168,8 @@ class FilesScreen(screen_chrome.ScreenChrome, screen.Screen[None]):
         if not self._is_markdown:
             return
         switcher = self.query_one(widgets.ContentSwitcher)
-        if switcher.current == "files-markdown":
+        self._show_source = not self._show_source
+        if self._show_source:
             switcher.current = "files-source"
             self.query_one(widgets.RichLog).focus()
         else:
