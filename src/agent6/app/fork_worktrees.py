@@ -169,7 +169,7 @@ def _still_needs_worktree(
 ) -> str:
     """Return why the session still needs its worktree, or "".
 
-    HEAD's commits must reach the base branch, regardless of who controls git.
+    HEAD's commits must reach the base branch or be covered by the session's merge stamp.
     A chain also needs a merge stamp that still holds; a fork's chain starts at its fork point.
 
     Args:
@@ -182,20 +182,27 @@ def _still_needs_worktree(
     """
     if process.worker_is_alive(session_dir):
         return "live"
+    stamp = manifest.merged
+    merged = stamp is not None and git_read.merge_stamp_holds(
+        repo, session_dir.name, manifest.run_branch or "", stamp.tip
+    )
     if manifest.worktree is not None and manifest.worktree.is_dir():
         head = git_read.status(manifest.worktree)
         base = git_read.branch_tip_sha(repo, manifest.base_branch) or manifest.base_sha
         if base and head.head_sha:
             count = len(git_read.list_run_commits(repo, base, head.head_sha))
-            if count:
+            # Squash and task merges cover the fork point without making it reachable from the base.
+            if count and not (
+                merged
+                and stamp is not None
+                and stamp.tip
+                and git_read.is_ancestor(repo, head.head_sha, stamp.tip)
+            ):
                 name = terminal.printable_name(head.branch or "detached HEAD")
                 return f"{count} unmerged commit{'s' if count != 1 else ''} on {name}"
     chain = git_read.chain_ref_for(session_dir.name)
-    if manifest.merged is None and git_read.chain_tip(repo, chain) is None:
+    if stamp is None and git_read.chain_tip(repo, chain) is None:
         return ""
-    merged = manifest.merged is not None and git_read.merge_stamp_holds(
-        repo, session_dir.name, manifest.run_branch or "", manifest.merged.tip
-    )
     return "" if merged else "unmerged"
 
 
