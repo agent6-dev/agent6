@@ -424,6 +424,30 @@ def model_git_refusal(manifest: SessionManifest, verb: str) -> str | None:
     )
 
 
+def group_steer_refusal(session_dir: pathlib.Path) -> str | None:
+    """Name the lanes to steer when the session has no model loop.
+
+    Args:
+        session_dir: The target session.
+
+    Returns:
+        The refusal for a fan-out, otherwise None.
+
+    Raises:
+        ManifestError: The manifest cannot be read.
+    """
+    if not (session_dir / MANIFEST_NAME).is_file():
+        return None
+    manifest = read_manifest(session_dir)
+    if manifest.fanout is None:
+        return None
+    count = manifest.fanout.lanes
+    lanes = ", ".join(f"{session_dir.name}-l{i}" for i in range(1, count + 1))
+    return (
+        f"{session_dir.name} is a fan-out of {count} lanes and runs no model; steer a lane: {lanes}"
+    )
+
+
 def read_manifest(session_dir: pathlib.Path) -> SessionManifest:
     """Parse a session's manifest.json.
 

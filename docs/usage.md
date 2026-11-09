@@ -186,6 +186,11 @@ Repeat the `/parallel` token to batch tasks in one message.
 Each segment has its own optional spec and separator.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
 
+A fan-out group has no model loop: steer one of its lanes instead.
+The refusal names the lane session IDs.
+While a steer waits on disk, `sessions show`, the TUI header and the web session status show `steer queued, not yet delivered` with its text.
+The pending label clears when the worker consumes the steer.
+
 ## Answer a parked prompt
 
 Every front-end answers a prompt by writing one file in the session directory, and so can a script.

@@ -475,3 +475,25 @@ def test_a_saved_answer_reads_as_saved_not_pending(tmp_path: pathlib.Path) -> No
     assert queue.group != "needs_answer" and queue.reason.endswith(
         "1 answer saved; the resume delivers it"
     )
+
+
+def test_pending_steer_is_visible_until_consumed(tmp_path: pathlib.Path) -> None:
+    """A verify can be silent while a steer waits on disk, without a new log event."""
+    events: list[dict[str, object]] = [_START, {"type": "verify.start", "cmd": ["pytest"]}]
+    d = _mk(tmp_path, "steer-AAAA11", events, pid=LIVE)
+    fold = viewmodel_state.fold_session(events)
+    assert ipc.submit_steer(d, "Please finish the tests")
+    expected = "steer queued, not yet delivered: Please finish the tests"
+    for facts in (
+        status_facts(fold),
+        session_log.scan_session_log(d / "logs.jsonl").status_facts(),
+    ):
+        assert session_status.status_for_session_dir(d, facts) == ("running", expected)
+    assert expected in str(session_state_as_dict(fold, d)["status_label"])
+    assert listing.summarize_session_dir(d).detail == expected
+    assert ipc.take_steer_answer(d) == "Please finish the tests"
+    ipc.clear_steer_request(d)
+    events.append({"type": "loop.steer.injected", "text": "Please finish the tests"})
+    assert session_status.status_for_session_dir(
+        d, status_facts(viewmodel_state.fold_session(events))
+    ) == ("running", "")

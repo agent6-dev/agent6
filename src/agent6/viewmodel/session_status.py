@@ -338,6 +338,14 @@ def status_for_session_dir(session_dir: pathlib.Path, facts: StatusFacts) -> tup
     ):
         note = "stopping after this turn"
         reason = f"{reason} · {note}" if reason else note
+    if ipc.steer_request_pending(session_dir):
+        try:
+            steer = (session_dir / ipc.STEER_ANSWER_FILE).read_text(encoding="utf-8").strip()
+        except (OSError, ValueError):
+            steer = ""
+        if steer and steer.lower() not in {"abort", "detach", "exit", "undo"}:
+            note = f"steer queued, not yet delivered: {steer}"
+            reason = f"{reason} · {note}" if reason else note
     return word, reason
 
 
