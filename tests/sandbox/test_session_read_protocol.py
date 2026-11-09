@@ -34,6 +34,7 @@ def test_invalid_read_response_abandons_the_peer(
     """Read validation rejects hostile offsets, bytes and frames and reaps the peer."""
     answer = {
         "id": 1,
+        "instance": "a" * 32,
         "offset": 0,
         "next_offset": 1,
         "size": 1,
@@ -45,7 +46,7 @@ def test_invalid_read_response_abandons_the_peer(
     peer.write_text(
         "#!/usr/bin/python3\nimport json, signal, sys\nsignal.alarm(10)\n"
         "sys.stdin.readline()\n"
-        "print(json.dumps({'ready': True, 'protocol': 3}), flush=True)\n"
+        "print(json.dumps({'ready': True, 'protocol': 4, 'instance': 'a'*32}), flush=True)\n"
         "request = json.loads(sys.stdin.readline())\nassert request['kind'] == 'read'\n"
         f"sys.stdout.write(json.dumps({answer!r}) + ' ' * {padding} + '\\n')\n"
         "sys.stdout.flush()\nsys.stdin.read()\n"
@@ -75,7 +76,7 @@ def test_invalid_read_keeps_its_reason_after_status_and_stop_fail(
     peer.write_text(
         "#!/usr/bin/python3\nimport json, signal, sys\nsignal.alarm(10)\n"
         "sys.stdin.readline()\n"
-        "print(json.dumps({'ready': True, 'protocol': 3}), flush=True)\n"
+        "print(json.dumps({'ready': True, 'protocol': 4, 'instance': 'a'*32}), flush=True)\n"
         "reads = 0\n"
         "for line in sys.stdin:\n"
         " request = json.loads(line)\n"
@@ -90,7 +91,7 @@ def test_invalid_read_keeps_its_reason_after_status_and_stop_fail(
         "  answer = {'offset': offset if reads == 1 else offset + 1,\n"
         "   'next_offset': offset + len(data), 'size': 5, 'data': data, 'capture_error': ''}\n"
         " else: raise AssertionError(request)\n"
-        " print(json.dumps({'id': request['id'], **answer}), flush=True)\n"
+        " print(json.dumps({'id': request['id'], 'instance': 'a'*32, **answer}), flush=True)\n"
     )
     peer.chmod(0o755)
     monkeypatch.setenv("AGENT6_JAIL_BIN", str(peer))

@@ -129,9 +129,9 @@ def test_preparation_precedes_work_and_all_commands_share_it(
         target = d.execution_target
         assert target is not None and target.transport == "local"
         assert target.host_root == target.command_root == tmp_path
-        assert target.protocol_version == 3
+        assert target.protocol_version == 4
         assert target.runtime_id is None and target.container_id is None
-        assert target.launcher_instance is None  # readiness does not advertise one yet
+        assert target.launcher_instance is not None and len(target.launcher_instance) == 32
         assert target.home == dict(target.environment.variables)["HOME"]
         # A shell could drop privileges before reporting them, so invoke id directly.
         for flag in ("-ru", "-u"):

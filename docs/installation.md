@@ -84,3 +84,37 @@ uv run agent6 --help
 ```
 
 `AGENT6_JAIL_BIN=/path/to/agent6-jail` overrides the bundled jail binary.
+
+## Static launcher for the internal container transport
+
+Container transfer requires a static Linux launcher matching the host and target architecture, x86-64 or aarch64.
+Published Linux wheels bundle their architecture's static-musl binary.
+A native editable build may be dynamically linked and is valid for local execution, but container preparation refuses it.
+To build the transferable binary from source on Linux:
+
+```sh
+target="$(uname -m)-unknown-linux-musl"
+rustup target add "$target"
+AGENT6_JAIL_TARGET="$target" uv sync --reinstall-package agent6
+```
+
+The target needs `/bin/sh`, `uname`, `mktemp`, `head -c`, `chmod`, executable writable `/tmp` and readable `/proc/self`.
+It needs no Python, Node or Rust toolchain.
+Preparation never installs dependencies, downloads a launcher or falls back to the host.
+The transport is internal; application config does not activate it.
+See the [installation trust boundary](security.md#container-transport-boundary).
+
+The opt-in runtime test first attaches to this repository's existing labelled dev container with a non-root user and a different workspace path.
+It inspects target evidence and copied logs, then creates a disposable container from the same local image for runtime-client loss and restart checks.
+Only that test-created container receives lifecycle commands; the existing dev container stays running.
+Set `AGENT6_CONTAINER_TEST_ROOT` if its host checkout differs from the test checkout.
+The runtime prefix is explicit and must follow the host's approved CLI policy; agent6 never adds sudo.
+
+```sh
+AGENT6_JAIL_BIN=/absolute/path/to/static/agent6-jail \
+  AGENT6_CONTAINER_TEST_RUNTIME='["sudo", "-n", "docker"]' \
+  uv run pytest -q -s tests/sandbox/test_container_runtime.py
+```
+
+Use `["podman"]` instead on a host whose approved runtime is rootless Podman.
+An absent matching dev container fails the opted-in test rather than substituting another image.

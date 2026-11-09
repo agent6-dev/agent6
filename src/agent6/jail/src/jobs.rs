@@ -131,7 +131,7 @@ impl Job {
             .write(true)
             .custom_flags(libc::O_TMPFILE | libc::O_CLOEXEC)
             .mode(0o600)
-            .open("/tmp")?;
+            .open(crate::probe::temp_dir())?;
         let (parent, child) = UnixStream::pair()?;
         match unsafe { fork() }.map_err(crate::io_err)? {
             ForkResult::Parent { child: pid } => {

@@ -259,7 +259,8 @@ Each `--security-opt` flag on this page turns off a protection of the container 
 
 ### Captured output
 
-The launcher opens each capture with `O_TMPFILE | O_CLOEXEC` in its `/tmp`, before applying the job's Landlock ruleset.
+The launcher opens each capture with `O_TMPFILE | O_CLOEXEC` in its own temp directory (`/tmp` locally, the private installation directory for a container transport), before applying the job's Landlock ruleset.
+Installation state selects that directory; inherited `TMPDIR` cannot redirect capture storage.
 Commands inherit only their output pipes, not the capture descriptor; there is no log pathname to replace or symlink.
 The supervisor reads only its owned capture by handle and bounds each response to 64 KiB of raw bytes.
 Host persistence uses descriptors opened with exclusive creation and no symlink following, outside command grants.
@@ -724,7 +725,8 @@ A machine can keep agents on the provider API while one reviewed, fixed-argv `to
 
 ### Container discovery boundary
 
-`sandbox/container.py` is an internal, read-only discovery boundary, not an activated execution transport.
+`sandbox/container.py::discover` is an internal, read-only discovery boundary.
+The separate `prepare` entry point opens the [container transport](#container-transport-boundary); neither is activated by application config.
 Its host runtime CLI has the operator's authority, including daemon socket access and any privilege wrapper the operator supplies.
 Discovery never adds `sudo -n`; a refused socket query names `container.runtime` and the docker group rather than retrying with more privilege.
 The operator must trust the runtime executable, its context and its configuration; a remote daemon's mount paths do not prove a shared host tree.
@@ -744,6 +746,53 @@ Repository definition files are checked only for existence, never read or parsed
 A nonempty manual exec prefix is returned byte-for-byte without invoking it or discovery, and confers no identity, mapping proof or stop authority.
 There is no launcher transfer, model-command execution, mount creation, container start or container stop in discovery.
 
+### Container transport boundary
+
+**Host jail bypass is deliberate.** `container.prepare` launches the existing Rust `none` branch inside the selected container, not inside the host jail.
+The runtime and container configuration are the command boundary: agent6 adds no namespaces, Landlock rules, seccomp filters, mounts or `/dev` nodes there.
+The launcher still enforces per-command memory limits, owns job handles, captures output and cleans up its descendants.
+It neither starts nor stops the container, and attaching grants no ownership.
+The application must resolve or refuse configured restrictions before composing this internal transport.
+
+**Container access includes its host exposures.** Commands can reach writable host mounts, runtime sockets and credentials exposed by the container or its environment.
+Sharing the container also shares its network and HOME.
+A mount inventory is an observation, not confinement or a complete credential scan.
+The host file tools and session records remain outside this transport.
+A same-user process or container administrator can tamper with the environment; protocol identity detects accidental replacement, not a hostile runtime.
+
+**Installation trusts the selected binary and target utilities.** The selected `AGENT6_JAIL_BIN`, bundled launcher or PATH launcher must be a native x86-64 or aarch64 static Linux ELF without an interpreter or shared-library dependencies.
+No runtime download, build, cross-architecture fallback or host execution fallback occurs.
+The fixed `/bin/sh` bootstrap requires `uname`, `mktemp`, `head -c` and `chmod`; absent utilities refuse by name.
+Only the byte count and architecture are bootstrap arguments, never model argv or interpolated operator paths.
+The host sends policy bytes only after the bootstrap acknowledges installation; buffered utility reads cannot consume them.
+The selected user creates a fresh private directory under target `/tmp`; exclusive creation refuses an existing launcher or symlink.
+The bootstrap uses umask `077` for installation, then restores the target's original mask before executing the launcher and its commands.
+Rust opens the installation directory without following symlinks, checks its owner and mode, and compares the installed inode with `/proc/self/exe` before unlinking it.
+An installation interrupted before readiness may retain its directory or partial executable; shutdown removes only an empty installation directory, never a tree of command-created files.
+
+**Preparation proves shared mapping, not workspace permissions.** Independent random nonces cross the mapping in both directions under the selected user.
+The probe directory permits writes across differing UIDs; success does not establish write permission elsewhere in the workspace.
+The host creates and opens the probe under a host-owned staging directory with 0700 access permissions before publishing it in the workspace.
+Inherited setgid is allowed because it grants no group access.
+The host never changes the staging directory's permissions or deletes its existing entries, even if that directory was substituted before opening.
+Retained no-follow descriptors anchor nonce reads, writes and cleanup; symlinks and non-regular nonce files refuse.
+The host checks the target nonce with `O_PATH | O_NOFOLLOW` before any I/O open, so substituted devices cannot run open handlers on the host.
+It then reopens the verified regular inode through `/proc/self/fd`, not the mutable pathname.
+Directory traversal needs search permission, not read permission on ancestors.
+Probe files contain no secrets and are readable across differing UIDs.
+Read-only or mismatched mappings refuse before commands; successful proof is not protection against later remounts or tampering.
+The target's inherited HOME and PATH remain target values, and TMPDIR is short and target-local.
+Bootstrap scratch state does not overwrite inherited target variables.
+`${containerEnv:NAME}` substitutions read only the observed target environment; host and unsupported substitutions refuse by name.
+Substituted target values remain literal data.
+Non-UTF-8 environment names or values refuse with an error that discloses neither.
+Probe validation errors omit environment values from their tracebacks.
+
+The raw JSON channel uses no tty and drains runtime stderr with bounded retention.
+Protocol version, request ID and launcher-instance checks bind every response to its prepared session.
+A dead runtime client or restarted container loses unconfirmed outcomes; no container file or replacement launcher can settle an old job handle.
+The [supervisor](architecture.md#jail-job-ownership) owns command completion; client exit alone proves neither completion nor cleanup.
+
 ### 12. Host-side subprocess allowlist
 
 Every child process whose argv depends on model output runs through `run_in_jail`, `spawn_in_jail` or the prepared `JailSession` supervisor channel ([Sandbox](#2-sandbox)).
@@ -758,10 +807,12 @@ A fixed set of modules also shells out directly with `subprocess.run` / `Popen`,
 - `vcs/git_command.py` and `vcs/git_ops.py`: agent6's own git operations ([Git](#7-git)); the other `vcs` modules run git through `git_command`, except the config query the next line names.
 - `vcs/git_policy.py`: shared hardening flags and hook/driver policy; its fixed git config query enumerates repo content drivers.
 - `sandbox/detect.py`: probes the host's sandboxing capabilities.
-- `sandbox/container.py`: bounded, read-only `ps` and `inspect` queries through an operator-owned runtime prefix ([Container discovery boundary](#container-discovery-boundary)); no exemption for container command execution.
+- `sandbox/container.py`: bounded `ps`/`inspect` discovery and the fixed installation bootstrap through operator-owned prefixes ([Container transport boundary](#container-transport-boundary)).
+  Model argv travels only through the prepared `JailSession` channel, never through a host subprocess argv.
 - `sandbox/jail.py`: the jail launcher, and the plain spawn under `sandbox.isolation = "none"`.
   An MCP server spawns through the same launcher and `JailPolicy` a jailed command gets (`spawn_in_jail`); one the operator opted out takes the `none` `sandbox.isolation` level.
 - `sandbox/jail_session.py`: the serving launcher transport at every local isolation level; `sandbox/jail_jobs.py` persists its responses without spawning command processes.
+- `sandbox/jail_protocol.py`: process type annotations match the audit; a separate pin forbids process-spawning references outside annotations and calls even inside annotations.
 - `providers/token_command.py`: the `[providers.*].token_command` that mints a provider bearer.
 - `providers/claude_code.py` and `providers/claude_code_session.py`: the `backend = "claude_code"` provider and its session lifecycle helpers run the Claude Code binary the operator connected with fixed argv from operator configuration, never model output (binary, model, effort, literal flags, the path of a 0600 system-prompt file in a private empty directory).
   Prompts, tool results, and notices travel on stdin, so model- or repo-derived text never becomes an argv element.

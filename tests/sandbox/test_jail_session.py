@@ -464,10 +464,10 @@ def _peer(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, body: str) ->
         "not json",
         "[]",
         '{"ready":true}',
-        '{"ready":false,"protocol":3}',
+        '{"ready":false,"protocol":4,"instance":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}',
         '{"ready":true,"protocol":1}',
         '{"ready":true,"protocol":true}',
-        '{"ready":true,"protocol":3,"extra":0}',
+        '{"ready":true,"protocol":4,"instance":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","extra":0}',
         pytest.param("x" * 4097, id="oversized"),
     ],
 )
@@ -498,8 +498,9 @@ def test_session_rejects_an_uncorrelated_answer(
     _peer(
         tmp_path,
         monkeypatch,
-        'print(\'{"ready":true,"protocol":3}\', flush=True)\n'
-        f"sys.stdin.readline()\nprint({json.dumps(answer)!r}, flush=True)\n",
+        "print(json.dumps({'ready':True,'protocol':4,'instance':'a'*32}), flush=True)\n"
+        "sys.stdin.readline()\n"
+        f"print({json.dumps({'instance': 'a' * 32, **answer})!r}, flush=True)\n",
     )
     session = jail_session.JailSession.open(
         kinds.JailPolicy(cwd=tmp_path, argv=(), isolation="none")
@@ -517,14 +518,14 @@ def test_session_drains_runtime_stderr_independently(
 ) -> None:
     """A transport's stderr cannot fill its pipe while Python waits for protocol stdout."""
     flood = "sys.stderr.write('x' * 1048576 + 'diagnostic tail\\n'); sys.stderr.flush()\n"
-    ready = 'print(\'{"ready":true,"protocol":3}\', flush=True)\n'
+    ready = "print(json.dumps({'ready':True,'protocol':4,'instance':'a'*32}), flush=True)\n"
     request = "request = json.loads(sys.stdin.readline())\n"
     _peer(
         tmp_path,
         monkeypatch,
         (flood + ready + request if phase == "setup" else ready + request + flood)
         + "print(json.dumps({'id': request.get('id'), 'returncode': 0, "
-        "'stdout': 'answered', 'stderr': ''}), flush=True)\n",
+        "'stdout': 'answered', 'stderr': '', 'instance': 'a'*32}), flush=True)\n",
     )
     session = jail_session.JailSession.open(
         kinds.JailPolicy(cwd=tmp_path, argv=(), isolation="none")
@@ -559,7 +560,7 @@ def test_session_bounds_response_frames(
     _peer(
         tmp_path,
         monkeypatch,
-        'print(\'{"ready":true,"protocol":3}\', flush=True)\n'
+        "print(json.dumps({'ready':True,'protocol':4,'instance':'a'*32}), flush=True)\n"
         "sys.stdin.readline()\n"
         'sys.stdout.write(\'{"id":1,"stdout":"\' + \'x\' * (128 * 1024 * 1024) '
         '+ \'","returncode":0}\\n\'); sys.stdout.flush()\n',

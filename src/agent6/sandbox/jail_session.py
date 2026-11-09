@@ -6,25 +6,20 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import json
 import os
 import select
 import subprocess
-import threading
 import time
 from collections.abc import Callable
-from typing import IO, cast
+from typing import cast
 
 import pydantic
 
 from agent6 import kinds
-from agent6.sandbox import jail
+from agent6.sandbox import jail, jail_protocol
 
-# The answer wait's poll interval: an operator Stop reads as immediate at this cost.
-_ANSWER_POLL_S = 0.2
-_PROTOCOL_VERSION = 3
+_PROTOCOL_VERSION = 4
 READ_LIMIT = 65536
-_REQUEST_LIMIT = 1024 * 1024
 _READY_LIMIT = 4096
 _ANSWER_LIMIT = 128 * 1024 * 1024
 # Direct argv needs a file, not a shell builtin; empty PATH entries denote the command cwd.
@@ -57,11 +52,13 @@ class _Ready(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="forbid", strict=True)
     ready: bool
     protocol: int
+    instance: str = pydantic.Field(pattern=r"^[0-9a-f]{32}$")
 
 
 class _Answer(pydantic.BaseModel):
     model_config = pydantic.ConfigDict(extra="allow", strict=True)
     id: int = pydantic.Field(gt=0)
+    instance: str = pydantic.Field(pattern=r"^[0-9a-f]{32}$")
 
 
 class _ReadAnswer(pydantic.BaseModel):
@@ -74,6 +71,17 @@ class _ReadAnswer(pydantic.BaseModel):
     capture_error: str
 
 
+class LauncherProbe(pydantic.BaseModel):
+    """Observe target facts without copying environment secrets to disk."""
+
+    model_config = pydantic.ConfigDict(extra="forbid", strict=True, frozen=True)
+    uid: int = pydantic.Field(ge=0)
+    gid: int = pydantic.Field(ge=0)
+    architecture: str
+    environment: dict[str, str]
+    mounts: str
+
+
 @dataclasses.dataclass(frozen=True, slots=True)
 class BackgroundRead:
     """Raw captured bytes and the next byte offset in one size snapshot."""
@@ -82,114 +90,6 @@ class BackgroundRead:
     next_offset: int
     size: int
     capture_error: str = ""
-
-
-@dataclasses.dataclass(slots=True)
-class _Stderr:
-    """Drain transport diagnostics independently, retaining a bounded tail."""
-
-    pipe: IO[bytes]
-    _tail: bytearray = dataclasses.field(default_factory=bytearray)
-    _lock: threading.Lock = dataclasses.field(default_factory=threading.Lock)
-    _done: threading.Event = dataclasses.field(default_factory=threading.Event)
-    _thread: threading.Thread | None = None
-    _truncated: bool = False
-
-    def start(self) -> None:
-        os.set_blocking(self.pipe.fileno(), False)
-        self._thread = threading.Thread(target=self._drain, daemon=True)
-        self._thread.start()
-
-    def _read_available(self) -> bool:
-        for _ in range(128):
-            try:
-                chunk = os.read(self.pipe.fileno(), 8192)
-            except BlockingIOError:
-                return True
-            if not chunk:
-                return False
-            self._tail.extend(chunk)
-            if len(self._tail) > 65536:
-                del self._tail[:-65536]
-                self._truncated = True
-        return True
-
-    def _drain(self) -> None:
-        while not self._done.is_set():
-            if select.select([self.pipe], [], [], 0.1)[0]:
-                with self._lock:
-                    if not self._read_available():
-                        return
-
-    def text(self) -> str:
-        with self._lock:
-            if not self.pipe.closed:
-                self._read_available()
-            prefix = "[jail stderr truncated]\n" if self._truncated else ""
-            return prefix + jail.lossy_text(bytes(self._tail)).strip()
-
-    def close(self) -> None:
-        self._done.set()
-        if self._thread is not None:
-            self._thread.join(timeout=1)
-
-
-def _frame(request: dict[str, object]) -> bytes:
-    try:
-        data = (json.dumps(request, allow_nan=False) + "\n").encode()
-    except (TypeError, ValueError) as exc:
-        raise jail.JailUnavailableError(f"jail session request is not valid JSON: {exc}") from exc
-    if len(data) > _REQUEST_LIMIT:
-        raise jail.JailUnavailableError(f"jail protocol frame exceeds {_REQUEST_LIMIT} bytes")
-    return data
-
-
-def _read_frame(
-    proc: subprocess.Popen[bytes],
-    limit: int,
-    *,
-    request_id: int = 0,
-    interrupted: Callable[[], bool] | None = None,
-    deadline: float | None = None,
-) -> bytes:
-    """Read one bounded frame without blocking cancellation on a partial line.
-
-    Args:
-        proc: The protocol peer.
-        limit: Maximum frame bytes, including the newline.
-        request_id: The active request, or zero during readiness.
-        interrupted: Polled while reading; true sends one cancellation frame.
-        deadline: The readiness deadline, or None for a command response.
-
-    Returns:
-        The complete frame, including its newline.
-
-    Raises:
-        EOFError: The peer closed stdout before a complete frame.
-        jail.JailUnavailableError: The frame is oversized, malformed or late.
-    """
-    assert proc.stdout is not None and proc.stdin is not None
-    line = bytearray()
-    asked = False
-    while True:
-        if deadline is not None and time.monotonic() > deadline:
-            raise jail.JailUnavailableError("jail session handshake timed out")
-        if not asked and interrupted is not None and interrupted():
-            proc.stdin.write(_frame({"kind": "cancel", "id": request_id}))
-            proc.stdin.flush()
-            asked = True
-        if not select.select([proc.stdout], [], [], _ANSWER_POLL_S)[0]:
-            continue
-        chunk = os.read(proc.stdout.fileno(), min(65536, limit + 1 - len(line)))
-        if not chunk:
-            raise EOFError("jail session ended before a complete protocol frame")
-        line.extend(chunk)
-        if len(line) > limit:
-            raise jail.JailUnavailableError(f"jail protocol frame exceeds {limit} bytes")
-        if b"\n" in chunk:
-            if line.find(b"\n") != len(line) - 1:
-                raise jail.JailUnavailableError("jail session sent data after a protocol frame")
-            return bytes(line)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -226,7 +126,7 @@ class Stopped:
     capture_error: str = ""
 
 
-def _abandon_launcher(proc: subprocess.Popen[bytes], stderr: _Stderr | None) -> None:
+def _abandon_launcher(proc: subprocess.Popen[bytes], stderr: jail_protocol.Stderr | None) -> None:
     """Kill, unregister and reap a launcher whose protocol cannot be trusted."""
     if proc.poll() is None:
         with contextlib.suppress(OSError):
@@ -266,7 +166,7 @@ class JailSession:
     _memory_limit_mib: int
     startup_stderr: str = ""
     target: kinds.ExecutionTarget | None = None
-    _stderr: _Stderr | None = None
+    _stderr: jail_protocol.Stderr | None = None
     _request_id: int = 0
     _close_error: str | None = None
 
@@ -321,6 +221,7 @@ class JailSession:
         policy: kinds.JailPolicy,
         *,
         target: kinds.ExecutionTarget,
+        bootstrap: bytes = b"",
     ) -> JailSession:
         """Own a process transport and prepare its supervisor before returning.
 
@@ -331,6 +232,7 @@ class JailSession:
             proc: The process carrying the supervisor channel.
             policy: The local launcher confinement policy.
             target: Prepared transport and environment facts.
+            bootstrap: Validated launcher bytes; nonempty requires installation acknowledgment.
 
         Returns:
             The ready session, owning the transport.
@@ -339,15 +241,21 @@ class JailSession:
             jail.JailUnavailableError: The supervisor handshake failed.
         """
         assert proc.stdin is not None and proc.stdout is not None and proc.stderr is not None
-        stderr = _Stderr(proc.stderr)
+        stderr = jail_protocol.Stderr(proc.stderr)
         stderr.start()
         try:
             spec = jail.policy_spec(policy)
             spec["mode"] = "serve"
-            proc.stdin.write(_frame(spec))
-            proc.stdin.flush()
+            deadline = time.monotonic() + 10
+            if bootstrap:
+                jail_protocol.write_startup(proc, bootstrap, deadline)
+                # Buffered installers must exit before any policy bytes enter their stdin.
+                installed = jail_protocol.read_frame(proc, _READY_LIMIT, deadline=deadline)
+                if installed != b'{"installed":true}\n':
+                    raise jail.JailUnavailableError("invalid launcher installation acknowledgment")
+            jail_protocol.write_startup(proc, jail_protocol.frame(spec), deadline)
             ready = _Ready.model_validate_json(
-                _read_frame(proc, _READY_LIMIT, deadline=time.monotonic() + 10)
+                jail_protocol.read_frame(proc, _READY_LIMIT, deadline=deadline)
             )
             if not ready.ready or ready.protocol != _PROTOCOL_VERSION:
                 raise jail.JailUnavailableError(
@@ -369,8 +277,46 @@ class JailSession:
             _stderr=stderr,
             _memory_limit_mib=policy.memory_limit_mib,
             startup_stderr=startup_stderr,
-            target=dataclasses.replace(target, protocol_version=ready.protocol),
+            target=dataclasses.replace(
+                target, protocol_version=ready.protocol, launcher_instance=ready.instance
+            ),
         )
+
+    def probe(self) -> LauncherProbe:
+        """Read the launcher's identity, inherited environment and mount inventory.
+
+        Returns:
+            The observed target facts, including potentially secret environment values.
+
+        Raises:
+            jail.JailUnavailableError: The peer returned an invalid probe.
+        """
+        answer = self._request({"kind": "probe"})
+        try:
+            return LauncherProbe.model_validate(answer.get("probe"))
+        except ValueError:
+            raise jail.JailUnavailableError("invalid launcher probe") from None
+
+    def prove_mapping(self, name: str, nonce: str) -> str:
+        """Read the host nonce and write a target nonce through no-follow directory fds.
+
+        Args:
+            name: The fresh probe directory's basename.
+            nonce: The independent host nonce.
+
+        Returns:
+            The independent target nonce written into the shared directory.
+
+        Raises:
+            jail.JailUnavailableError: The mapping proof failed.
+        """
+        answer = self._request({"kind": "mapping", "name": name, "nonce": nonce})
+        value = answer.get("nonce")
+        if not isinstance(value, str) or len(value) != 64 or answer.get("error"):
+            raise jail.JailUnavailableError(
+                f"workspace mapping proof failed: {answer.get('error')}"
+            )
+        return value
 
     def executable_available(self, executable: str) -> bool:
         """Look up a bare executable inside the prepared target's command environment.
@@ -436,6 +382,8 @@ class JailSession:
                 process the command left behind could not be killed.
         """
         start = time.monotonic()
+        if self.target is not None and self.target.environment.inherit:
+            env = tuple((dict(self.target.environment.variables) | dict(env)).items())
         answer = self._request(
             {
                 "kind": "run",
@@ -480,6 +428,8 @@ class JailSession:
         Raises:
             jail.JailUnavailableError: The launcher started no command.
         """
+        if self.target is not None and self.target.environment.inherit:
+            env = tuple((dict(self.target.environment.variables) | dict(env)).items())
         answer = self._request(
             {
                 "kind": "background",
@@ -614,11 +564,11 @@ class JailSession:
         """
         assert self._proc.stdin is not None and self._proc.stdout is not None
         self._request_id += 1
-        data = _frame({**request, "id": self._request_id})
+        data = jail_protocol.frame({**request, "id": self._request_id})
         try:
             self._proc.stdin.write(data)
             self._proc.stdin.flush()
-            line = _read_frame(
+            line = jail_protocol.read_frame(
                 self._proc, answer_limit, request_id=self._request_id, interrupted=interrupted
             )
             try:
@@ -627,12 +577,14 @@ class JailSession:
                 raise jail.JailUnavailableError(
                     "jail session answered with an invalid request ID or JSON: "
                     + str(exc.errors(include_input=False, include_url=False)[0]["msg"])
-                ) from exc
+                ) from None
             if answer.id != self._request_id:
                 raise jail.JailUnavailableError(
                     f"jail session answered request ID {answer.id}, expected {self._request_id}"
                 )
-            return answer.model_dump()
+            if self.target is None or answer.instance != self.target.launcher_instance:
+                raise jail.JailUnavailableError("jail session launcher instance changed")
+            return answer.model_dump(exclude={"instance"})
         except (EOFError, OSError, ValueError, jail.JailUnavailableError) as exc:
             err = self._stderr.text() if self._stderr is not None else ""
             _abandon_launcher(self._proc, self._stderr)
@@ -660,7 +612,7 @@ class JailSession:
                     if remaining <= 0:
                         break
                     readable, _, _ = select.select(
-                        [self._proc.stdout], [], [], min(remaining, _ANSWER_POLL_S)
+                        [self._proc.stdout], [], [], min(remaining, jail_protocol.ANSWER_POLL_S)
                     )
                     if readable and not os.read(self._proc.stdout.fileno(), 65536):
                         break

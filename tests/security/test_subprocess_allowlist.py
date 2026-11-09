@@ -12,8 +12,10 @@ all spawn children too, and a regex for run|Popen alone would wave them through.
 
 from __future__ import annotations
 
+import ast
 import pathlib
 import re
+from unittest import mock
 
 import pytest
 
@@ -43,9 +45,10 @@ ALLOWED = {
     "providers/claude_code_session.py",
     "providers/claude_code.py",
     "providers/token_command.py",
-    "sandbox/container.py",  # bounded ps/inspect discovery, never model-command execution
+    "sandbox/container.py",  # discovery and fixed bootstrap; model argv uses JailSession
     "sandbox/detect.py",
     "sandbox/jail.py",
+    "sandbox/jail_protocol.py",  # Popen annotations only, pinned below
     "sandbox/jail_session.py",
     "sessions/process.py",
     "ui/btw.py",
@@ -66,6 +69,45 @@ ALLOWED = {
     "ui/tui/clipboard.py",
     "ui/tui/conversation.py",
 }
+
+
+def test_protocol_framing_never_spawns_a_process() -> None:
+    path = pathlib.Path(agent6.__file__).resolve().parent / "sandbox/jail_protocol.py"
+    tree = ast.parse(path.read_text())
+    imports: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.asname or alias.name.split(".")[0]
+                origin = alias.name if alias.asname else name
+                imports.setdefault(name, set()).add(origin)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            for alias in node.names:
+                imports.setdefault(alias.asname or alias.name, set()).add(
+                    f"{node.module}.{alias.name}"
+                )
+    annotations = {
+        part
+        for node in ast.walk(tree)
+        for field, value in ast.iter_fields(node)
+        if field in {"annotation", "returns"} and isinstance(value, ast.AST)
+        for part in ast.walk(value)
+    }
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            reference = node.func
+        elif isinstance(node, (ast.Attribute, ast.Name)) and node not in annotations:
+            reference = node
+        else:
+            continue
+        while isinstance(reference, ast.Subscript):
+            reference = reference.value
+        name, dot, rest = ast.unparse(reference).partition(".")
+        for origin in imports.get(name, {name}):
+            qualified = origin + dot + rest
+            assert not _PATTERN.search(qualified), (
+                f"protocol framing references a process-spawning API: {qualified}"
+            )
 
 
 def test_direct_subprocess_stays_on_the_allowlist() -> None:
@@ -113,3 +155,63 @@ def test_the_scan_catches_every_way_to_run_something(form: str) -> None:
     file green, the one test standing between a new execution site and the release.
     """
     assert _PATTERN.search(form), f"a new execution site written as {form!r} would pass unnoticed"
+
+
+@pytest.mark.parametrize(
+    "form",
+    (
+        *(form for form in _EXECUTING_FORMS if not form.startswith(("from ", "import "))),
+        "callbacks = [os.system]; callbacks[0](cmd)",
+        "def launch(factory=subprocess.Popen):\n    return factory(argv)",
+        "def transport(proc: subprocess.Popen(argv)):\n    pass",
+        "from asyncio import create_subprocess_exec as spawn\nspawn(*argv)",
+        "from os import posix_spawn as spawn\nspawn(exe, argv, env)",
+        "from os import system\nsystem(cmd)",
+        "from pty import spawn\nspawn(argv)",
+        "from subprocess import Popen\nPopen(argv)",
+        "from subprocess import Popen as spawn\nlaunch = spawn\nlaunch(argv)",
+        "from subprocess import Popen as spawn\nspawn(argv)\nfrom os import read as spawn",
+        "from subprocess import Popen as spawn\nspawn[bytes](argv)",
+        "from subprocess import run as spawn\nspawn(argv)",
+        "import asyncio as aio\naio.create_subprocess_shell(cmd)",
+        "import os as operating_system\noperating_system.system(cmd)",
+        "import pty as terminal\nterminal.spawn(argv)",
+        "import subprocess as sp\nlaunch = sp.Popen[bytes]\nlaunch(argv)",
+        "import subprocess as sp\nsp.Popen(argv)",
+        "launch = subprocess.Popen; launch(argv)",
+        "launch: object = subprocess.Popen; launch(argv)",
+        "subprocess.Popen[bytes](argv)",
+    ),
+)
+def test_protocol_audit_rejects_execution_forms(form: str) -> None:
+    """The protocol's annotation exemption must not admit executable references."""
+    source = "import asyncio\nimport os\nimport pty\nimport subprocess\n" + form
+    with (
+        mock.patch.object(pathlib.Path, "read_text", return_value=source),
+        pytest.raises(AssertionError),
+    ):
+        test_protocol_framing_never_spawns_a_process()
+
+
+@pytest.mark.parametrize(
+    ("imports", "annotation"),
+    [
+        ("from subprocess import Popen", "Popen[bytes]"),
+        ("import subprocess", "subprocess.Popen[bytes]"),
+        ("import subprocess as sp", "sp.Popen[bytes]"),
+    ],
+)
+@pytest.mark.parametrize(
+    "template",
+    [
+        "async def transport(proc: {annotation}) -> {annotation}:\n    return proc\n",
+        "def transport(proc: {annotation}) -> {annotation}:\n    return proc\n",
+        "proc: {annotation}\nproc = None\n",
+    ],
+)
+def test_protocol_audit_allows_process_annotations(
+    imports: str, annotation: str, template: str
+) -> None:
+    source = imports + "\n" + template.format(annotation=annotation)
+    with mock.patch.object(pathlib.Path, "read_text", return_value=source):
+        test_protocol_framing_never_spawns_a_process()

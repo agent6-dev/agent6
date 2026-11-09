@@ -14,7 +14,7 @@ use serde::Deserialize;
 
 use crate::{default_memory_limit_mb, default_timeout, ChildSpec};
 
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 pub const FRAME_LIMIT: usize = 1024 * 1024;
 // Two 8 MiB captures, each byte escaped to at most six JSON bytes, plus metadata.
 pub const ANSWER_LIMIT: usize = 128 * 1024 * 1024;
@@ -71,6 +71,14 @@ enum Request {
     },
     /// Stop the job and its owned descendants, retaining the result.
     Stop { id: NonZeroU64, handle: String },
+    /// Observe the environment and mounts without running target utilities.
+    Probe { id: NonZeroU64 },
+    /// Prove shared mapping with independent host and target nonces.
+    Mapping {
+        id: NonZeroU64,
+        name: String,
+        nonce: String,
+    },
     /// End the wait for this request; it has no separate answer.
     Cancel { id: NonZeroU64 },
 }
@@ -79,7 +87,9 @@ impl Request {
     fn id(&self) -> u64 {
         match self {
             Self::Run(child) | Self::Background(child) => child.id.get(),
-            Self::Read { id, .. }
+            Self::Probe { id }
+            | Self::Mapping { id, .. }
+            | Self::Read { id, .. }
             | Self::Status { id, .. }
             | Self::Stop { id, .. }
             | Self::Cancel { id } => id.get(),
@@ -212,6 +222,7 @@ pub fn serve(cwd: &Path, ruleset: Option<RulesetCreated>, required: bool) -> ! {
     }
     drop(jobs);
     let cleanup = children.stop();
+    crate::probe::cleanup_installation();
     if let Err(e) = outcome {
         crate::die(format!("serve: {e}"));
     }
@@ -240,13 +251,10 @@ fn serve_requests(
         closed: false,
         error: None,
     };
-    let mut nonce = [0u8; 16];
-    if unsafe { libc::getrandom(nonce.as_mut_ptr().cast(), nonce.len(), 0) } != nonce.len() as isize
-    {
-        return Err(io::Error::last_os_error());
-    }
-    let instance: String = nonce.iter().map(|b| format!("{b:02x}")).collect();
-    write_answer(&serde_json::json!({"ready": true, "protocol": PROTOCOL_VERSION}))?;
+    let instance = crate::probe::random_hex(16)?;
+    write_answer(
+        &serde_json::json!({"ready": true, "protocol": PROTOCOL_VERSION, "instance": instance}),
+    )?;
     let mut last_id = 0;
     loop {
         let Some(request) = input.next()? else {
@@ -311,6 +319,12 @@ fn serve_requests(
                 Some(job) => job.stop(),
                 None => serde_json::json!({"stopped": false, "error": "unknown job handle"}),
             },
+            Request::Probe { .. } => serde_json::json!({"probe": crate::probe::facts()?}),
+            Request::Mapping { name, nonce, .. } => match crate::probe::mapping(cwd, &name, &nonce)
+            {
+                Ok(nonce) => serde_json::json!({"nonce": nonce}),
+                Err(e) => serde_json::json!({"error": e.to_string()}),
+            },
             Request::Cancel { .. } => unreachable!(),
         };
         if let Some(e) = input.error.take() {
@@ -320,6 +334,7 @@ fn serve_requests(
             return Ok(());
         }
         answer["id"] = id.into();
+        answer["instance"] = instance.clone().into();
         write_answer(&answer)?;
     }
 }

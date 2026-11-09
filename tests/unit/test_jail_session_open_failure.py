@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import pathlib
 import subprocess
+from collections.abc import Buffer
 from typing import Any, cast
 
 import pytest
 
 from agent6 import kinds
-from agent6.sandbox import jail, jail_session
+from agent6.sandbox import jail, jail_protocol, jail_session
 
 
 def _fake_binary(tmp_path: pathlib.Path, script: str) -> pathlib.Path:
@@ -56,35 +57,23 @@ def test_a_spec_write_failure_is_the_same_setup_death(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """EPIPE at the spec write is JailUnavailableError like the EOF case; the child is reaped."""
-    monkeypatch.setattr(jail, "require_jail_binary", lambda: _fake_binary(tmp_path, "exit 7"))
+    monkeypatch.setattr(jail, "require_jail_binary", lambda: _fake_binary(tmp_path, "read policy"))
     seen = _recording_popen(monkeypatch)
+    real_write = jail_protocol.os.write
 
-    class BoomWriter:
-        closed = False
-
-        def write(self, b: bytes) -> int:
-            return len(b)
-
-        def flush(self) -> None:
+    def write(fd: int, data: Buffer) -> int:
+        if seen and seen[0].stdin is not None and fd == seen[0].stdin.fileno():
             raise BrokenPipeError(32, "Broken pipe")
+        return real_write(fd, data)
 
-        def close(self) -> None:
-            self.closed = True
-
-    real = jail.subprocess.Popen
-
-    def boom(*args: Any, **kwargs: Any) -> subprocess.Popen[bytes]:
-        p = cast("subprocess.Popen[bytes]", real(*args, **kwargs))
-        assert p.stdin is not None
-        p.stdin.close()
-        p.stdin = BoomWriter()  # pyright: ignore[reportAttributeAccessIssue]
-        return p
-
-    monkeypatch.setattr(jail.subprocess, "Popen", boom)
+    monkeypatch.setattr(jail_protocol.os, "write", write)
     with pytest.raises(jail.JailUnavailableError, match="died during setup"):
         jail_session.JailSession.open(kinds.JailPolicy(cwd=tmp_path, argv=("/usr/bin/true",)))
     (proc,) = seen
     assert proc.returncode is not None
+    assert proc.stdin is not None and proc.stdin.closed
+    assert proc.stdout is not None and proc.stdout.closed
+    assert proc.stderr is not None and proc.stderr.closed
 
 
 def test_the_launchers_setup_error_is_the_error_both_transports_raise(

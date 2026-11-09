@@ -39,6 +39,7 @@ use serde::Deserialize;
 
 mod capture;
 mod jobs;
+mod probe;
 mod session;
 
 // deny_unknown_fields: a policy field this binary does not know (version skew
@@ -150,6 +151,7 @@ fn default_memory_limit_mb() -> u64 {
 
 fn die(msg: impl AsRef<str>) -> ! {
     eprintln!("agent6-jail: {}", msg.as_ref());
+    probe::cleanup_installation();
     std::process::exit(2);
 }
 
@@ -197,6 +199,9 @@ fn main() {
     // stream: in serve mode the same pipe then carries one request per line.
     let mut input = Vec::new();
     let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--installed") {
+        probe::installed().unwrap_or_else(|e| die(format!("installation: {e}")));
+    }
     if args.iter().any(|a| a == "--hold-netns") {
         hold_netns();
     }
@@ -232,6 +237,10 @@ fn main() {
     // The workspace is mounted, granted and entered at its real path: under a
     // symlinked name, a grant on its real parent shows the same tree without
     // the read-only protect binds.
+    if args.iter().any(|a| a == "--installed") {
+        probe::open_directory(&policy.cwd)
+            .unwrap_or_else(|e| die(format!("workspace mapping directory: {e}")));
+    }
     policy.cwd = match policy.cwd.canonicalize() {
         Ok(real) => real,
         Err(e) => die(format!(

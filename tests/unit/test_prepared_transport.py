@@ -118,7 +118,11 @@ def test_injected_transport_serves_setup_commands_and_verification(
         ).dispatcher
         cleanup.callback(dispatcher.close)
         assert dispatcher.execution_target is session.target
-        assert session.target == dataclasses.replace(target, protocol_version=3)
+        assert session.target is not None and session.target.launcher_instance is not None
+        assert len(session.target.launcher_instance) == 32
+        assert session.target == dataclasses.replace(
+            target, protocol_version=4, launcher_instance=session.target.launcher_instance
+        )
         assert session._proc is transport
         setup_result = dispatcher.run_setup(cfg.workspace.setup_command)
         baseline = dispatcher.run_verify()

@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Discover labelled containers through bounded, read-only runtime queries."""
+"""Discover containers and prepare their launcher transport without acquiring ownership."""
 
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import os
 import pathlib
 import re
@@ -17,7 +18,7 @@ from typing import Annotated, Self
 import pydantic
 
 from agent6 import child_env, kinds
-from agent6.sandbox import jail
+from agent6.sandbox import container_install, jail, jail_session
 
 QUERY_TIMEOUT_S = 10.0
 MAX_QUERY_BYTES = 1024 * 1024
@@ -44,7 +45,7 @@ _EnvValue = Annotated[str, pydantic.StringConstraints(pattern=r"^[^\x00]*$")]
 
 
 class ContainerError(jail.JailUnavailableError):
-    """Container selection refused before any command session was prepared."""
+    """Container discovery or preparation refused execution."""
 
 
 class ContainerRuntimeUnavailableError(ContainerError):
@@ -418,3 +419,122 @@ def discover(host_root: pathlib.Path, options: ContainerOptions) -> ContainerDis
             environment=kinds.ExecutionEnvironment(variables=(), inherit=True),
         ),
     )
+
+
+def _environment(
+    inherited: dict[str, str], remote: tuple[tuple[str, str | None], ...]
+) -> tuple[tuple[str, str], ...]:
+    resolved = inherited.copy()
+    substitutions = re.compile(r"\$\{([^}]*)\}")
+
+    def substitute(match: re.Match[str]) -> str:
+        expression = match[1]
+        if not expression.startswith("containerEnv:"):
+            raise ContainerMetadataError(f"unsupported remoteEnv substitution ${{{expression}}}")
+        name = expression.removeprefix("containerEnv:")
+        if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", name):
+            raise ContainerMetadataError(f"unsupported remoteEnv substitution ${{{expression}}}")
+        return inherited.get(name, "")
+
+    for name, value in remote:
+        if value is None:
+            resolved.pop(name, None)
+        else:
+            if "${" in substitutions.sub("", value):
+                raise ContainerMetadataError(f"unsupported remoteEnv substitution in {name}")
+            resolved[name] = substitutions.sub(substitute, value)
+    # Temp and capture storage belong to the installation, never metadata or the host.
+    resolved["TMPDIR"] = inherited["TMPDIR"]
+    if not resolved.get("HOME", "").startswith("/") or "PATH" not in resolved:
+        raise ContainerMetadataError("container user needs an absolute HOME and a PATH")
+    return tuple(sorted(resolved.items()))
+
+
+def prepare(
+    discovery: ContainerDiscovery,
+    *,
+    memory_limit_mib: int = 0,
+    controls: tuple[kinds.EffectiveControl, ...] = (),
+) -> jail_session.JailSession:
+    """Install one static launcher and prove its target before handing over the session.
+
+    This deliberately bypasses the host jail. No model argv enters the bootstrap,
+    no mounts are created, and attachment grants no container lifecycle authority.
+
+    Args:
+        discovery: Operator-selected exec prefix and unprepared facts.
+        memory_limit_mib: The per-command memory cap enforced by the launcher.
+        controls: Effective controls resolved by the caller, not local confinement policy.
+
+    Returns:
+        The ready command-session owner, with target facts and environment populated.
+
+    Raises:
+        ContainerError: Installation, compatibility or mount proof failed.
+    """
+    session: jail_session.JailSession | None = None
+    try:
+        binary, architecture = container_install.launcher()
+        # A terminal corrupts the framed JSON channel; opaque prefixes are never rewritten.
+        if any(arg in ("-t", "-it", "-ti", "--tty", "--tty=true") for arg in discovery.exec):
+            raise ContainerError("container.exec must not allocate a tty (-t) for the JSON channel")
+        if not discovery.exec:
+            raise ContainerError("container.exec is empty after selection")
+        executable = shutil.which(discovery.exec[0])
+        if executable is None:
+            raise ContainerError(f"container.exec executable {discovery.exec[0]!r} is missing")
+        env = child_env.without_provider_keys(
+            child_env.curated_env(desktop=False, passthrough=_RUNTIME_ENV)
+        )
+        proc = subprocess.Popen(
+            (
+                str(pathlib.Path(executable).absolute()),
+                *discovery.exec[1:],
+                "/bin/sh",
+                "-c",
+                container_install.BOOTSTRAP,
+                "agent6-bootstrap",
+                str(len(binary)),
+                architecture,
+            ),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd="/",
+            env=env,
+            start_new_session=True,
+        )
+        target = dataclasses.replace(
+            discovery.target,
+            controls=controls,
+            launcher_version="sha256:" + hashlib.sha256(binary).hexdigest(),
+        )
+        session = jail_session.JailSession.connect(
+            proc,
+            kinds.JailPolicy(
+                cwd=target.command_root,
+                argv=(),
+                isolation="none",
+                network="host",
+                memory_limit_mib=memory_limit_mib,
+            ),
+            target=target,
+            bootstrap=binary,
+        )
+        probe = session.probe()
+        if probe.architecture != architecture:
+            raise ContainerError("launcher probe architecture differs from the installed ELF")
+        environment = _environment(probe.environment, discovery.remote_env)
+        assert session.target is not None
+        session.target = dataclasses.replace(
+            session.target,
+            user=f"{probe.uid}:{probe.gid}",
+            home=dict(environment)["HOME"],
+            environment=kinds.ExecutionEnvironment(environment, inherit=True),
+        )
+        container_install.prove_mapping(session, target.host_root)
+        return session
+    except (OSError, jail.JailUnavailableError) as exc:
+        if session is not None:
+            session.close()
+        raise ContainerError(f"container preparation refused: {exc}") from exc

@@ -149,8 +149,11 @@ def test_setup_baseline_and_repeated_executions_keep_their_target(
             isolation
         ]
         assert stamp.target.transport == "local"
-        assert stamp.target.protocol_version == 3
-        assert stamp.target.launcher_instance is None
+        assert stamp.target.protocol_version == 4
+        assert (
+            stamp.target.launcher_instance is not None and len(stamp.target.launcher_instance) == 32
+        )
+    assert len({stamp.target.launcher_instance for stamp in view.targets}) == 2
     recorded = manifest.read_manifest(saved.session_dir)
     assert recorded.execution_targets == {stamp.target_id: stamp.target for stamp in view.targets}
     assert [job.outcome for job in view.jobs] == ["settled", "settled"]

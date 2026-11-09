@@ -713,7 +713,15 @@ depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.landlock"]
 
 [[modules]]
 path = "agent6.sandbox.container"
-depends_on = ["agent6.child_env", "agent6.kinds", "agent6.sandbox"]
+depends_on = ["agent6.child_env", "agent6.kinds", "agent6.sandbox", "agent6.sandbox.container_install", "agent6.sandbox.jail_session"]
+
+[[modules]]
+path = "agent6.sandbox.container_install"
+depends_on = ["agent6.sandbox", "agent6.sandbox.jail_session"]
+
+[[modules]]
+path = "agent6.sandbox.jail_protocol"
+depends_on = ["agent6.sandbox"]
 
 [[modules]]
 path = "agent6.journal_tail"
@@ -906,7 +914,7 @@ depends_on = ["agent6.kinds", "agent6.paths", "agent6.sandbox", "agent6.sandbox.
 
 [[modules]]
 path = "agent6.sandbox.jail_session"
-depends_on = ["agent6.kinds", "agent6.sandbox"]
+depends_on = ["agent6.kinds", "agent6.sandbox", "agent6.sandbox.jail_protocol"]
 
 [[modules]]
 # The start-family emitter records the worker pid before emitting the event.

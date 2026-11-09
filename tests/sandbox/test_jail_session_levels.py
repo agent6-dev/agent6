@@ -414,7 +414,9 @@ def _serve_raw(cwd: pathlib.Path) -> subprocess.Popen[bytes]:
     spec = {"cwd": str(cwd), "argv": ["true"], "isolation": "none", "mode": "serve"}
     proc.stdin.write((json.dumps(spec) + "\n").encode())
     proc.stdin.flush()
-    assert json.loads(proc.stdout.readline()) == {"ready": True, "protocol": 3}
+    ready = json.loads(proc.stdout.readline())
+    assert ready["ready"] and ready["protocol"] == 4
+    assert len(ready["instance"]) == 32
     return proc
 
 

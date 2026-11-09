@@ -72,6 +72,36 @@ jobs:
           AGENT6_JAIL_TARGET: ${{ matrix.rust_target }}
         run: uv build --wheel ${{ matrix.sdist && '--sdist' || '' }} --out-dir dist/
 
+      - name: Execute the bundled static launcher outside the checkout
+        run: |
+          uv venv "$RUNNER_TEMP/wheel-smoke"
+          uv pip install --python "$RUNNER_TEMP/wheel-smoke/bin/python" dist/*.whl
+          cd "$RUNNER_TEMP"
+          env -u AGENT6_JAIL_BIN "$RUNNER_TEMP/wheel-smoke/bin/python" - <<'PY'
+          import hashlib
+          import pathlib
+          import tempfile
+          from agent6 import kinds
+          from agent6.sandbox import container, jail
+          bundled = pathlib.Path(jail.__file__).resolve().parent / "_bin" / "agent6-jail"
+          assert jail.require_jail_binary() == bundled, "wheel did not supply the selected launcher"
+          expected_version = "sha256:" + hashlib.sha256(bundled.read_bytes()).hexdigest()
+          with tempfile.TemporaryDirectory() as directory:
+              root = pathlib.Path(directory)
+              selected = container.discover(root, container.ContainerOptions(
+                  exec=("/usr/bin/env", "-i", "HOME=/tmp", "PATH=/usr/bin:/bin"),
+              ))
+              session = container.prepare(selected)
+              try:
+                  result = session.run(("/bin/echo", "bundled-launcher"))
+                  assert isinstance(result, kinds.CommandResult), result
+                  assert result.returncode == 0 and result.stdout == "bundled-launcher\n", result
+                  assert session.target.launcher_instance
+                  assert session.target.launcher_version == expected_version
+              finally:
+                  assert not session.close()
+          PY
+
       - name: Re-tag wheel for PyPI
         # `uv build` tags the wheel `py3-none-linux_<arch>` (set by
         # hatch_build.py: the only native artifact is the bundled agent6-jail

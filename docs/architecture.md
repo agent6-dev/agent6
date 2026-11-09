@@ -322,7 +322,8 @@ Bare dispatchers explicitly retain the local one-shot path.
 
 `kinds.ExecutionTarget` holds immutable transport, workspace roots, user, HOME, environment policy, effective controls and observed protocol identity.
 Unobserved runtime, container, launcher-instance, launcher-version and lifecycle identities are `None`.
-The readiness protocol advertises its version, not the launcher's instance identifier or binary version.
+Readiness advertises the protocol version and a random launcher-instance identifier.
+Container installation records the transferred binary's SHA-256 as `launcher_version`; local binary version remains unobserved.
 The record is separate from live job state and resource cleanup.
 
 `tools/policy.py` owns permission and grant assembly; `tools/target_policy.py` resolves local control descriptions, networking and HOME selection.
@@ -365,14 +366,45 @@ The derived prefix is `<runtime> exec -i --user <selected-user> <id>`, never a t
 Discovery does not execute it, install a launcher, prove a live shared-tree mapping, observe HOME or acquire lifecycle ownership.
 The [security boundary](security.md#container-discovery-boundary) defines query bounds and runtime authority.
 
+## Container transport
+
+`sandbox/container.py::prepare` installs a validated static Linux launcher through the selected exec prefix, then hands its raw stdin/stdout channel to `JailSession.connect`.
+This internal transport has no application activation or container lifecycle authority.
+The application remains responsible for selecting transports and resolving effective controls.
+`sandbox/container_install.py` owns ELF validation, fixed bootstrap code and the host half of the mount proof; `jail_session` imports neither container module.
+
+The bootstrap requires `/bin/sh`, `uname`, `mktemp`, `head -c` and `chmod` inside the target.
+Its only positional inputs are the validated binary's byte count and architecture; model commands, workspace paths and metadata are not shell text.
+It transfers the bytes once into a fresh selected-user-owned mode-0700 `/tmp/a6.XXXXXXXX` directory, then replaces itself with the launcher without a tty.
+The host withholds the policy until the bootstrap acknowledges installation, so buffered reads cannot consume policy bytes.
+Transfer and readiness share a 10-second deadline; stderr drains independently throughout.
+The launcher checks its installed file identity and unlinks the executable before accepting commands.
+The directory supplies target-local `TMPDIR` and anonymous capture storage.
+Clean shutdown removes the directory only if empty; command-created files or abrupt transport loss may leave it behind.
+Cleanup never recursively deletes target files.
+
+A protocol probe observes effective UID/GID, architecture, the inherited environment and `/proc/self/mountinfo`.
+Preparation resolves `${containerEnv:NAME}` against that environment, supports null removals, and refuses other substitutions by name.
+Host HOME, PATH and TMPDIR are not copied into target commands; TMPDIR always belongs to the installation.
+Environment values remain in memory; existing target stamps persist policy and variable names, not values.
+Executable lookup uses this same prepared command environment.
+
+The host creates and opens a random probe directory under a private staging directory, publishes it in the workspace, and writes a random nonce through its retained descriptor.
+The selected user reads it through the command root and writes an independent nonce for the host to check.
+Both sides use no-follow directory descriptors, exclusive file creation and bounded reads; cleanup unlinks only the probe entries through retained descriptors.
+The probe contains no secrets and permits differing host and target UIDs.
+Its writable directory proves shared visibility and rejects read-only mounts, not permission to write elsewhere in the workspace.
+A mismatched, read-only or symlinked mapping refuses before model commands run.
+The proof creates no mount, translates no argv strings and does not establish linked-worktree git-dir visibility.
+
 ## Jail supervisor protocol
 
-`sandbox/jail_session.py` owns one serving launcher per run at every local isolation level.
+`sandbox/jail_session.py` owns one serving launcher per run over local and prepared container process transports.
 `jail/src/session.rs` owns its newline-delimited JSON protocol on stdin and stdout.
-The initial policy selects `mode = "serve"`; after confinement setup, the launcher sends `{"ready":true,"protocol":3}`.
+The initial policy selects `mode = "serve"`; after confinement setup, the launcher sends `{"ready":true,"protocol":4,"instance":"<32 hex digits>"}`.
 Python refuses malformed readiness or a different protocol version before sending any command.
 
-- Each `run`, `background`, `status`, `read` or `stop` request carries a positive, increasing `id`; its single response carries the same `id`.
+- Each `run`, `background`, `status`, `read`, `stop`, `probe` or `mapping` request carries a positive, increasing `id`; its single response carries the same `id` and the readiness `instance`.
 - Only one request may be active; Python is the command-channel writer, and the Rust serve loop is the response writer.
 - `{"kind":"cancel","id":N}` has no response of its own and applies only to the active request with that ID.
   Cancellation requests early hand-back when `checkin_s > 0`; otherwise it stops the active job and returns its exit result.
@@ -383,10 +415,10 @@ Python refuses malformed readiness or a different protocol version before sendin
   Malformed input also closes the session after command cleanup.
 
 Policy and request frames are capped at 1 MiB, including the newline.
-Python caps readiness at 4 KiB and waits at most 10 seconds for it after writing the policy.
+Python caps readiness at 4 KiB and gives startup writes and readiness a shared 10-second deadline.
 Responses are capped at 128 MiB, enough for JSON escaping of the retained command output (4 MiB head and 4 MiB tail per stream).
-Python rejects a response with the wrong ID and closes that session rather than using it for another request.
-A separate Python reader drains launcher stderr throughout setup and execution, retaining its last 64 KiB with a truncation marker.
+Python rejects a response with the wrong request ID or launcher instance and closes that session rather than using it for another request.
+`sandbox/jail_protocol.py` frames requests and responses and drains launcher stderr throughout setup and execution, retaining its last 64 KiB with a truncation marker.
 Startup diagnostics are surfaced once; the retained tail accompanies later protocol failures.
 Command stdout and stderr are captured separately from these protocol streams.
 Closing the session shuts stdin and discards pending response bytes while stderr keeps draining.
@@ -753,7 +785,7 @@ The CLI `sessions receipt`, web receipt route, TUI screen and ACP `/receipt` rea
 
 `execution.target` owns the immutable environment evidence for an execution; `app/stamps.py` mirrors its persistence-safe `kinds.ExecutionTargetStamp` into the manifest as history, not a current-target pointer.
 The stamp retains both roots, user, HOME, effective controls, environment inheritance policy and variable names, never environment values.
-Its host-issued `target_id` distinguishes observations without claiming a launcher instance or build version the protocol did not report.
+Its host-issued `target_id` distinguishes observations; the target also carries the observed launcher instance and any installation build identity.
 The dispatcher assigns `execution_id` before setup; setup, the baseline and later verification retain their own target references across resumes.
 A bare one-shot attempt has no target reference while approval is pending; its result names the target selected after approval.
 `evidence.ExecutionObservations` folds target, setup, job-settlement and environment-lifecycle records for `scan_session_log` and the receipt.

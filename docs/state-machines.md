@@ -749,6 +749,7 @@ These [job states](architecture.md#jail-job-ownership) are separate from the wor
 
 - `execution.target` records immutable environment facts separately from job and environment lifecycles.
 - The journal's target fold clears the current environment at an execution boundary without matching evidence; the manifest's history cannot supply it.
+- Every supervisor response must match the prepared launcher instance and request ID; reconnecting after transport loss creates a new instance, never a continuation of old job ownership.
 - `execution.jobs` records `settled` only after the prepared supervisor confirms cleanup; a lost launcher or failed settlement records `unknown`.
 - Failed host persistence records `unknown` with its reason; a successful close retry can confirm `settled` for the same prepared target and execution.
 - Bare one-shot commands have no session-wide settlement observation and do not claim one.
