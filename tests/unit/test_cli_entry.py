@@ -17,7 +17,39 @@ import pytest
 
 from agent6 import errors
 from agent6.config import ConfigError
-from agent6.ui.cli import cli_main, entry
+from agent6.ui.cli import cli_main, entry, run
+
+
+@pytest.mark.parametrize(
+    ("prompt", "expected"),
+    [
+        ("/parallel 2 -- fix the parser", [("fix the parser", "2")]),
+        ("/parallel fix the parser", [("fix the parser", "1")]),
+        ("/parallel 2 -- first /parallel 3 -- second", [("first", "2"), ("second", "3")]),
+        ("/parallel 2 --", []),
+        ("/parallel 2 -- first /parallel 3 --", []),
+        ("ordinary task", [("ordinary task", "")]),
+        ("/parallel provider/model,other -- task", [("task", "provider/model,other")]),
+    ],
+)
+def test_run_parallel_first_prompt(
+    monkeypatch: pytest.MonkeyPatch, prompt: str, expected: list[tuple[str, str]]
+) -> None:
+    """A first-prompt directive reaches the same adapter as the explicit flag."""
+    calls: list[tuple[str, str]] = []
+
+    def cmd_run(*args: object, **kwargs: object) -> int:
+        calls.append((str(args[1]), str(kwargs["parallel_spec"])))
+        return 3
+
+    def next_input(*_a: object) -> int:
+        return 3
+
+    monkeypatch.setattr(run, "_cmd_run", cmd_run)
+    monkeypatch.setattr(entry, "_prompt_for_the_next_input", next_input)
+    assert entry.main(["run", prompt]) == (3 if expected else 2)
+    assert calls == expected
+
 
 _CRASH_MARKERS = ("unexpected", "full traceback", "report this")
 

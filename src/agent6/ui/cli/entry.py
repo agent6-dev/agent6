@@ -172,7 +172,30 @@ def cli_main(argv: list[str] | None = None) -> int:
             return 1
 
 
-def _dispatch_run(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
+def _dispatch_run(args: argparse.Namespace) -> int:
+    """Return the exit code, routing first-prompt fan-outs through `--parallel`."""
+    from agent6 import directive
+
+    if args.task and not getattr(args, "parallel", ""):
+        try:
+            segments = directive.parse_directive(args.task)
+        except directive.DirectiveError as exc:
+            common.error(str(exc))
+            return 2
+        if segments is not None:
+            codes = [
+                _dispatch_run_task(
+                    argparse.Namespace(
+                        **(vars(args) | {"task": seg.task, "parallel": seg.spec or "1"})
+                    )
+                )
+                for seg in segments
+            ]
+            return next((code for code in codes if code), 0)
+    return _dispatch_run_task(args)
+
+
+def _dispatch_run_task(args: argparse.Namespace) -> int:  # noqa: PLR0911, PLR0912
     """Return the exit code of `agent6 run`: the task, a plan to execute, or the REPL."""
     from agent6.app import session_setup
     from agent6.ui.cli import plan_watch, run, session_prompt

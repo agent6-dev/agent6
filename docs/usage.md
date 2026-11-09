@@ -169,7 +169,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 
 ### Parallel directive
 
-`/parallel [SPEC --] TASK` runs a task in isolated lanes.
+`/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same fan-out as `run --parallel SPEC TASK`.
 `SPEC` is a positive lane count or a comma-separated list of `[provider/]model` entries, the same as `run --parallel`.
 The spec ends at a whitespace-delimited `--` token.
 Without `--`, the whole segment is task text for one default lane, even if it starts with a path, a number or a model name.
