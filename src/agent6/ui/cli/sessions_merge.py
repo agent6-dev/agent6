@@ -543,7 +543,7 @@ def _cmd_prune(
             f" ({why})" if why else ""
         )
     print(
-        f"\n[agent6] deleted {total_deleted}{squashed_note}; kept {kept} "
+        f"\n[agent6] branches: deleted {total_deleted}{squashed_note}; kept {kept} "
         f"({merged_kept} merged, {unmerged_kept} unmerged{live_note}){refs_note}{clones_note}",
     )
     return 0
@@ -585,7 +585,9 @@ def _sweep_workdirs(
         if clones_swept or clones_kept
         else ""
     )
-    return note, bool(clones_swept or clones_kept or worktrees_removed)
+    if worktrees_removed or worktrees_kept:
+        note += f"; worktrees: removed {len(worktrees_removed)}, kept {len(worktrees_kept)}"
+    return note, bool(clones_swept or clones_kept or worktrees_removed or worktrees_kept)
 
 
 def _prune_chain_refs(

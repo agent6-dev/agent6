@@ -97,22 +97,22 @@ def remove_fork_worktree(
 
 
 def uncommitted_in_worktree(worktree: pathlib.Path, tips: tuple[str, ...]) -> str:
-    """Return what the worktree holds that none of the tips does, as one phrase.
+    """Return what the worktree holds that neither HEAD nor any tip does, as one phrase.
 
     A fork's worktree stays detached at its fork point while its run commits to the chain,
     so `git status` there reports the whole run as dirt: the comparison is against the run's
-    own tips (HEAD when it has none).
+    own tips and HEAD.
 
     Args:
         worktree: The worktree to inspect.
         tips: The commits its sessions landed.
 
     Returns:
-        The keep-line phrase, or "" when a tip covers it or it is unreadable.
+        The keep-line phrase, or "" when HEAD or a tip covers it or it is unreadable.
     """
     if not worktree.is_dir():
         return ""
-    tips = tips or ("HEAD",)
+    tips = (*tips, "HEAD")
     try:
         for tip in tips:
             if not git_read.chain_dirty(worktree, tip, None):
@@ -167,11 +167,10 @@ def sweep_checkout(cwd: pathlib.Path) -> pathlib.Path:
 def _still_needs_worktree(
     repo: pathlib.Path, session_dir: pathlib.Path, manifest: sessions_manifest.SessionManifest
 ) -> str:
-    """Return why the session still needs its worktree ("live", "unmerged"), or "".
+    """Return why the session still needs its worktree, or "".
 
-    The merge stamp is the test of "merged": the branch still points where the merge left it.
-    A session with no chain committed nothing and has no merge to wait for; a fork's chain is
-    cut at its fork point, so a fork always has one.
+    HEAD's commits must reach the base branch, regardless of who controls git.
+    A chain also needs a merge stamp that still holds; a fork's chain starts at its fork point.
 
     Args:
         repo: The repository the worktree is linked to.
@@ -179,10 +178,18 @@ def _still_needs_worktree(
         manifest: The session's manifest.
 
     Returns:
-        "live" while its worker runs, "unmerged" until its merge stamp holds, else "".
+        "live", HEAD's unmerged commit count, "unmerged" for an unlanded chain, or "".
     """
     if process.worker_is_alive(session_dir):
         return "live"
+    if manifest.worktree is not None and manifest.worktree.is_dir():
+        head = git_read.status(manifest.worktree)
+        base = git_read.branch_tip_sha(repo, manifest.base_branch) or manifest.base_sha
+        if base and head.head_sha:
+            count = len(git_read.list_run_commits(repo, base, head.head_sha))
+            if count:
+                name = terminal.printable_name(head.branch or "detached HEAD")
+                return f"{count} unmerged commit{'s' if count != 1 else ''} on {name}"
     chain = git_read.chain_ref_for(session_dir.name)
     if manifest.merged is None and git_read.chain_tip(repo, chain) is None:
         return ""
@@ -239,10 +246,12 @@ def sweep_fork_worktrees(
             first = next(iter(needs))
             kept.extend((d.name, needs.get(d.name, f"shared with {first}")) for d, _ in sessions)
             continue
+        head = git_read.status(worktree).head_sha
         gone, note = remove_fork_worktree(repo, worktree, _landed_tips(repo, sessions))
         if gone:
             removed.extend(
-                (d.name, "merged" if m.merged else "committed nothing") for d, m in sessions
+                (d.name, "merged" if m.merged or head != m.base_sha else "committed nothing")
+                for d, m in sessions
             )
         elif note:
             # Merged, but the tree holds work no commit has or would not delete: keep it, say why.

@@ -766,6 +766,46 @@ def test_prune_removes_the_worktree_of_a_run_that_committed_nothing(
     assert _worktrees(repo) == [str(repo)]
 
 
+@pytest.mark.parametrize("git_control", ["agent6", "model"])
+def test_prune_worktree_uses_head_and_counts_worktrees(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    git_control: str,
+) -> None:
+    """A branch keeps its worktree until its commit reaches the base, under either control."""
+    repo = _repo(tmp_path, monkeypatch)
+    _script(monkeypatch)
+    sid = "wt-MODL01"
+    assert cli_main(["run", "--worktree", "--session-id", sid, "look around"]) == 0
+    # Historical model-owned worktrees remain prunable even though new runs refuse them.
+    manifest_path = _run_dir(repo, sid) / "manifest.json"
+    data = json.loads(manifest_path.read_text())
+    data["git_control"] = git_control
+    manifest_path.write_text(json.dumps(data))
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, sid)).worktree
+    assert worktree is not None
+    _git(worktree, "switch", "-c", sid)
+    (worktree / "model.txt").write_text("committed by the model\n")
+    _git(worktree, "add", "model.txt")
+    _git(worktree, "commit", "-m", "model work")
+    assert git_read.chain_tip(repo, git_read.chain_ref_for(sid)) is None
+    capsys.readouterr()
+
+    assert cli_main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert f"kept {sid}'s worktree (1 unmerged commit on {sid})" in out
+    assert "worktrees: removed 0, kept 1" in out
+    assert worktree.exists()
+
+    _git(repo, "merge", "--ff-only", sid)
+    assert cli_main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert f"removed {sid}'s worktree (merged)" in out
+    assert "worktrees: removed 1, kept 0" in out
+    assert not worktree.exists()
+
+
 def test_uncommitted_edits_are_named_in_the_worktree_and_survive_prune(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
