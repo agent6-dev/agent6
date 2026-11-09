@@ -302,10 +302,16 @@ mod tests {
         let first = job.lost(io::Error::from_raw_os_error(libc::ECONNRESET));
         let second = job.lost(io::Error::from_raw_os_error(libc::EPIPE));
         assert_eq!(first["error"], second["error"]);
-        assert!(first["error"].as_str().unwrap().contains("Connection reset"));
+        assert!(first["error"]
+            .as_str()
+            .unwrap()
+            .contains("Connection reset"));
         assert_eq!(job.status()["error"], first["error"]);
         assert_eq!(job.stop()["error"], first["error"]);
-        assert_eq!(job.status()["capture_error"], "output capture failed: File too large");
+        assert_eq!(
+            job.status()["capture_error"],
+            "output capture failed: File too large"
+        );
     }
 }
 
