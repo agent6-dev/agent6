@@ -3,6 +3,7 @@ from __future__ import annotations
 import pathlib
 from unittest import mock
 
+from agent6 import review_records
 from agent6.harness import loop_state, review_gate, run_chain
 from agent6.sessions import event_log
 from agent6.vcs import git_read
@@ -68,6 +69,77 @@ def test_panel_records_the_chain_tree_without_mutating_git(tmp_path: pathlib.Pat
     assert seat_row["findings"] == []
     assert seat_row["seat_index"] == 0
     assert panel["completion"] == "complete"
+
+
+def test_a_panel_over_unchanged_trees_is_reused_not_sat_again(tmp_path: pathlib.Path) -> None:
+    """The same trees, paths and seats reuse the complete panel; a changed tree sits a new one."""
+    git = review_helpers.git
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    (repo / "foo.py").write_text("x = 1\n")
+    git(repo, "add", "foo.py")
+    git(repo, "commit", "-qm", "base")
+    base = git(repo, "rev-parse", "HEAD").strip()
+    chain = run_chain.RunChain(
+        repo, ref="refs/agent6/reuse/head", fallback_parent=base, base_sha=base
+    )
+    (repo / "foo.py").write_text("x = 2\n")
+    chain.commit("edit")
+    rows: list[dict[str, object]] = []
+    sink = event_log.EventSink(tmp_path / "logs.jsonl")  # outside the repo: the tree stays put
+    sink.subscribe(rows.append)
+    provider = mock.MagicMock()
+    provider.call.return_value = test_review_gate._resp(
+        '{"verdict":"block","summary":"leak","findings":[{"category":"security",'
+        '"severity":"block","title":"leak","detail":"a secret","location":{"path":"foo.py",'
+        '"side":"head","start_line":1,"end_line":1}}]}'
+    )
+    reviewer = review_gate.Reviewer(
+        settings=review_gate.ReviewSettings(
+            reviewers=[review_gate.ReviewSeat("s", "m", provider)], block_on="any"
+        ),
+        chain=chain,
+        hide=(),
+        review_tools=lambda: ([], mock.MagicMock()),
+        budget_remaining=lambda: None,
+        log=lambda _s: None,
+        emit=sink.emit,
+    )
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    first = reviewer.critique(state, trigger="periodic", turn=1)
+    assert first is not None and provider.call.call_count == 1
+    (panel,) = [row for row in rows if row["type"] == "loop.review.panel"]
+    assert panel["roster"] == [
+        dict(seat_index=0, model_route="m", focus="s", scope="diff", temperature=0.0)
+    ]
+    again = reviewer.critique(state, trigger="periodic", turn=2)
+    assert again is not None and provider.call.call_count == 1
+    (reused,) = [row for row in rows if row["type"] == "loop.review.reused"]
+    assert reused["reused_panel_id"] == panel["panel_id"] != reused["panel_id"]
+    assert reused["turn"] == 2 and reused["findings"] == 1
+    assert again.text == (
+        "Review panel reused: the reviewed trees are unchanged since panel"
+        f" {str(panel['panel_id'])[:12]} sat at turn 1; its 1 recorded finding stands, and"
+        " nothing new was raised."
+    )
+    assert "leak" not in again.text  # a finding reaches the worker once
+    assert len([row for row in rows if row["type"] == "loop.review.start"]) == 1
+    # An end on the same trees: a fresh panel's repeat would neither reject nor inject.
+    ended = reviewer.critique(state, trigger="before_finish", turn=3)
+    assert ended is not None and ended.satisfied and provider.call.call_count == 1
+    assert len([row for row in rows if row["type"] == "loop.review.reused"]) == 2
+    # A changed tree sits a new panel.
+    (repo / "foo.py").write_text("x = 3\n")
+    chain.commit("edit again")
+    assert reviewer.critique(state, trigger="periodic", turn=4) is not None
+    assert provider.call.call_count == 2
+    # A record written before rosters were kept is never reused.
+    legacy = state.review_panels[0].model_copy(update={"roster": ()})
+    target = chain.review_target()
+    assert target is not None
+    roster = (review_records.SeatAssignment(0, "m", "s", "diff", 0.0),)
+    assert review_gate.reusable_panel((legacy,), target, roster) is None
 
 
 def test_unborn_panel_records_empty_base_and_no_base_rules(tmp_path: pathlib.Path) -> None:

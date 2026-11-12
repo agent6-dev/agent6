@@ -15,8 +15,10 @@ from agent6 import review_records, terminal
 from agent6.sessions import event_log
 from agent6.viewmodel import events
 
-Completion = Literal["unknown", "running", "complete", "inconclusive", "skipped"]
+Completion = Literal["unknown", "running", "complete", "inconclusive", "skipped", "reused"]
 Freshness = Literal["unknown", "current", "stale"]
+# The completions whose verdict covers the panel's trees.
+_COVERING: frozenset[str] = frozenset({"complete", "reused"})
 
 
 class ReviewReadError(Exception):
@@ -87,25 +89,6 @@ class FindingView:
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
-class SeatAssignment:
-    """Identify the resolved route and settings of one panel seat.
-
-    Attributes:
-        seat_index: The seat's zero-based position in the roster.
-        model_route: The resolved provider/model route.
-        focus: The seat's assigned review focus.
-        scope: Whether the seat reviews the diff or the repository.
-        temperature: The configured sampling temperature, or null for the provider default.
-    """
-
-    seat_index: int
-    model_route: str
-    focus: str
-    scope: Literal["diff", "repo"] = "diff"
-    temperature: float | None = None
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
 class PanelView:
     """Keep a panel's roster, grounded verdicts and completion evidence.
 
@@ -126,7 +109,7 @@ class PanelView:
     panel_id: str
     execution_id: str
     target: review_records.ReviewTarget | None = None
-    roster: tuple[SeatAssignment, ...] = ()
+    roster: tuple[review_records.SeatAssignment, ...] = ()
     seats: tuple[review_records.ReviewVerdict, ...] = ()
     result: review_records.ReviewPanel | None = None
     completion: Completion = "running"
@@ -248,9 +231,9 @@ class ReviewView:
     def for_comparison(self, target: review_records.ReviewTarget) -> ReviewView:
         """Return freshness and anchor states for the requested trees and path coverage."""
         freshness: Freshness = "unknown"
-        if self.panels and self.completion == "complete" and not self.read_failure:
+        if self.panels and self.completion in _COVERING and not self.read_failure:
             last = self.panels[-1]
-            if last.target is not None and last.completion == "complete":
+            if last.target is not None and last.completion in _COVERING:
                 covers = not last.target.paths or (
                     bool(target.paths) and set(target.paths) <= set(last.target.paths)
                 )
@@ -285,10 +268,19 @@ class _Start(pydantic.BaseModel):
     panel_id: review_records.Identifier
     execution_id: review_records.Identifier
     target: review_records.ReviewTarget
-    seats: tuple[SeatAssignment, ...]
+    seats: tuple[review_records.SeatAssignment, ...]
     rule_sources: tuple[review_records.RuleSource, ...] = ()
     rules_complete: bool | None = None
     rules_reason: str | None = None
+
+
+class _Reused(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(frozen=True)
+
+    panel_id: review_records.Identifier
+    execution_id: review_records.Identifier
+    reused_panel_id: review_records.Identifier
+    target: review_records.ReviewTarget
 
 
 class _Skipped(pydantic.BaseModel):
@@ -305,6 +297,7 @@ _PANEL_EVENTS = frozenset(
         "loop.review.seat",
         "loop.review.panel",
         "loop.review.skipped",
+        "loop.review.reused",
     }
 )
 _ACTION_EVENTS = frozenset(
@@ -376,6 +369,20 @@ def _panel_event(view: ReviewView, event: Mapping[str, Any]) -> ReviewView:
             old or PanelView(skipped.panel_id, skipped.execution_id),
             completion="skipped",
             reason=skipped.reason,
+        )
+    elif kind == "loop.review.reused":
+        reused = _Reused.model_validate(event)
+        prior = next((p for p in view.panels if p.panel_id == reused.reused_panel_id), None)
+        if prior is None or prior.target != reused.target:
+            raise ReviewReadError("reused panel is unknown or reviewed other trees")
+        panel = dataclasses.replace(
+            prior,
+            panel_id=reused.panel_id,
+            execution_id=reused.execution_id,
+            seats=(),
+            result=None,
+            completion="reused",
+            reason=f"panel {prior.panel_id[:12]} reviewed the same trees",
         )
     elif kind == "loop.review.seat":
         if old is None:
@@ -529,6 +536,18 @@ def panel_text(panel: review_records.ReviewPanel) -> str:
     )
 
 
+def _panel_fate_text(kind: str, event: Mapping[str, Any]) -> str:
+    """Return the notice for a panel that did not sit: skipped with its reason, or reused."""
+    if kind == "loop.review.skipped":
+        skipped = _Skipped.model_validate(event)
+        return f"Review {skipped.panel_id[:12]} skipped: {skipped.reason}"
+    reused = _Reused.model_validate(event)
+    return (
+        f"Review {reused.panel_id[:12]} reused panel {reused.reused_panel_id[:12]}:"
+        " the reviewed trees are unchanged"
+    )
+
+
 def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
     """Render review evidence and dispositions as shared transcript notices.
 
@@ -551,9 +570,8 @@ def notice_texts(event: Mapping[str, Any]) -> tuple[str, ...]:
                 for o in panel.findings
             )
             return tuple(lines)
-        if kind == "loop.review.skipped":
-            skipped = _Skipped.model_validate(event)
-            return (f"Review {skipped.panel_id[:12]} skipped: {skipped.reason}",)
+        if kind in ("loop.review.skipped", "loop.review.reused"):
+            return (_panel_fate_text(kind, event),)
         if kind not in _ACTION_EVENTS:
             return ()
         action = ActionRecord.model_validate(event)

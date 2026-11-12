@@ -746,6 +746,12 @@ EVENTS: tuple[EventSpec, ...] = (
                 "injected_finding_ids", "list", True, "Finding identifiers supplied to the worker."
             ),
             FieldSpec("block_on", "str", True, "The configured panel blocking rule."),
+            FieldSpec(
+                "roster",
+                "list",
+                False,
+                "The seats that sat: index, model route, focus, scope and temperature.",
+            ),
             FieldSpec("raw_blocked", "bool", True, "Whether the verdicts meet the blocking rule."),
             FieldSpec("blocked", "bool", True, "Whether the armed gate blocks the finish."),
             FieldSpec(
@@ -772,6 +778,19 @@ EVENTS: tuple[EventSpec, ...] = (
         (
             FieldSpec("turn", "int", True, "The execution's turn number."),
             FieldSpec("rejections", "int", True, "Number of review rejections."),
+        ),
+    ),
+    EventSpec(
+        "loop.review.reused",
+        "A complete panel over the same trees, paths, seats and rule stood in for a new one.",
+        (
+            FieldSpec("panel_id", "str", True, "Review panel identifier."),
+            FieldSpec("execution_id", "str", True, "Execution identifier."),
+            FieldSpec("turn", "int", True, "The execution's turn number."),
+            FieldSpec("trigger", "str", True, "The action that triggered the gate or panel."),
+            FieldSpec("reused_panel_id", "str", True, "The complete panel whose verdict stood in."),
+            FieldSpec("target", "object", True, "The immutable review target both panels share."),
+            FieldSpec("findings", "int", True, "How many findings the reused panel recorded."),
         ),
     ),
     EventSpec(

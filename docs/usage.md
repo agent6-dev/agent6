@@ -240,6 +240,7 @@ Under `git.control = "model"` a panel compares the base recorded at the start wi
 An exact repeat on the same cited blob keeps its finding ID across rounds and resumes.
 The worker receives each finding once unless the feedback notice cut it.
 A later pass, a skipped panel, or the rejection cap does not erase recorded findings.
+A panel asked to review trees a complete panel already reviewed with the same paths and seats is not sat again: the journal records `loop.review.reused` naming that panel, whose findings stand, and the worker hears that nothing new was raised.
 `agent6 attach --json` includes structured review evidence, open counts, action history and completion state.
 
 ### Code-review rules

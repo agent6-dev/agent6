@@ -228,6 +228,25 @@ class FindingObservation:
     line_origin: LineOrigin = dataclasses.field(default_factory=LineOrigin)
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class SeatAssignment:
+    """Identify the resolved route and settings of one panel seat.
+
+    Attributes:
+        seat_index: The seat's zero-based position in the roster.
+        model_route: The resolved provider/model route.
+        focus: The seat's assigned review focus.
+        scope: Whether the seat reviews the diff or the repository.
+        temperature: The configured sampling temperature, or null for the provider default.
+    """
+
+    seat_index: int
+    model_route: str
+    focus: str
+    scope: Literal["diff", "repo"] = "diff"
+    temperature: float | None = None
+
+
 class ReviewPanel(pydantic.BaseModel):
     """Validate a completed panel's durable evidence, including its worker feedback.
 
@@ -239,6 +258,7 @@ class ReviewPanel(pydantic.BaseModel):
         turn: The turn that triggered the panel.
         trigger: The review trigger.
         target: The immutable reviewed comparison.
+        roster: The seats that sat; empty on a record written before rosters were kept.
         findings: The panel's grounded finding observations.
         injected_finding_ids: Findings supplied to the worker as feedback.
         block_on: The configured worker-finish blocking rule.
@@ -257,6 +277,7 @@ class ReviewPanel(pydantic.BaseModel):
     turn: int
     trigger: str
     target: ReviewTarget
+    roster: tuple[SeatAssignment, ...] = ()
     findings: tuple[FindingObservation, ...]
     injected_finding_ids: tuple[str, ...]
     block_on: Literal["none", "any", "all", "model_quorum"]

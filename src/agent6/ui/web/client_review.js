@@ -196,6 +196,7 @@ function paintFindings(cards, state) {
     const result = panel.result;
     host.appendChild(reviewRules(panel));
     host.appendChild(el('div', 'muted', 'Panel ' + panel.panel_id + ': ' + panel.completion
+      + (panel.reason ? ' (' + panel.reason + ')' : '')
       + (result ? ' · worker finish ' + (result.blocked ? 'rejected' : 'not rejected') + ' (review.block_on=' + result.block_on + (result.disarmed ? ', rejection cap reached' : '') + ')' : '')));
   }
   const filters = el('div', 'row wrap'); host.appendChild(filters);

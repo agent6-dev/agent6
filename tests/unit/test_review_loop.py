@@ -77,14 +77,22 @@ _NONGATING = (  # grounded but a non-block-eligible category -> downgraded, neve
 
 @pytest.fixture
 def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Give scheduling tests a fixed diff and blob without masking the real-repository test."""
-    target = review_records.ReviewTarget(
-        "base", "base-tree", "tip", "head-tree", "tip", (), "revisions"
-    )
+    """Give scheduling tests a fixed diff and blob without masking the real-repository test.
+
+    Each panel sees a new head tree, as it would after the worker's edits, so no panel is a
+    reuse of the one before.
+    """
+    trees = iter(range(1, 1000))
+
+    def moving_target(_self: run_chain.RunChain) -> review_records.ReviewTarget:
+        return review_records.ReviewTarget(
+            "base", "base-tree", "tip", f"head-tree-{next(trees)}", "tip", (), "revisions"
+        )
+
     monkeypatch.setattr(
         repo_context, "review_rules", mock.Mock(return_value=review_records.ReviewRules())
     )
-    monkeypatch.setattr(run_chain.RunChain, "review_target", mock.Mock(return_value=target))
+    monkeypatch.setattr(run_chain.RunChain, "review_target", moving_target)
     monkeypatch.setattr(run_chain.RunChain, "diff_since_base", mock.Mock(return_value=_DIFF))
     monkeypatch.setattr(git_read, "diff_range", mock.Mock(return_value=_DIFF))
     monkeypatch.setattr(git_read, "tree_entry", mock.Mock(return_value="100644 blob cited-blob"))
@@ -235,7 +243,10 @@ def test_panels_count_and_inject_each_finding_once(
 
 
 def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) -> None:
-    """Keep a finding known across unrelated edits, but count it again on a changed blob."""
+    """Keep a finding known across unrelated edits, count it again on a changed blob.
+
+    A finish retried on the rejected tree reuses the panel, so three panels sit over five ends.
+    """
     git = review_helpers.git
     root = tmp_path / "repo"
     root.mkdir()
@@ -299,21 +310,27 @@ def test_resumes_match_findings_by_the_cited_git_blob(tmp_path: pathlib.Path) ->
         for line in events.path.read_text().splitlines()
         if (row := json.loads(line))["type"] == "loop.review.panel"
     ]
-    assert len(panels) == 5
+    assert len(panels) == 3
     assert all(len(panel["findings"]) == 1 for panel in panels)
     ids = [panel["findings"][0]["finding_id"] for panel in panels]
-    assert ids[0] == ids[1] == ids[2]
-    assert ids[3] == ids[4] and ids[3] != ids[0]
-    assert panels[0]["findings"][0]["finding"] == panels[3]["findings"][0]["finding"]
-    assert [panel["n_block"] for panel in panels] == [1, 0, 0, 1, 0]
-    assert [panel["blocked"] for panel in panels] == [True, False, False, True, False]
-    assert [panel["injected_finding_ids"] for panel in panels] == [[ids[0]], [], [], [ids[3]], []]
+    assert ids[0] == ids[1] != ids[2]
+    assert panels[0]["findings"][0]["finding"] == panels[2]["findings"][0]["finding"]
+    assert [panel["n_block"] for panel in panels] == [1, 0, 1]
+    assert [panel["blocked"] for panel in panels] == [True, False, True]
+    assert [panel["injected_finding_ids"] for panel in panels] == [[ids[0]], [], [ids[2]]]
     assert [panel["target"]["head_commit"] for panel in panels] == [
-        first_tip,
         first_tip,
         second_tip,
         third_tip,
-        third_tip,
+    ]
+    reused = [
+        row
+        for line in events.path.read_text().splitlines()
+        if (row := json.loads(line))["type"] == "loop.review.reused"
+    ]
+    assert [row["reused_panel_id"] for row in reused] == [
+        panels[0]["panel_id"],
+        panels[2]["panel_id"],
     ]
 
 
@@ -338,6 +355,51 @@ def test_second_panel_prompt_names_prior_finding() -> None:
     _drive(wf, _begin())
     prompt = seat_provider.call.call_args_list[1].kwargs["messages"][0]["content"]
     assert "ALREADY RAISED (do not repeat): foo.py:11 security" in prompt
+
+
+@pytest.mark.usefixtures("immutable_target")
+def test_a_finish_retried_on_unchanged_trees_reuses_the_panel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path
+) -> None:
+    """The second finish on the trees a panel rejected sits no seat; the finish stands."""
+    target = review_records.ReviewTarget(
+        "base", "base-tree", "tip", "head-tree", "tip", (), "revisions"
+    )
+    monkeypatch.setattr(run_chain.RunChain, "review_target", mock.Mock(return_value=target))
+    worker = mock.MagicMock()
+    worker.call.side_effect = [
+        _resp_with_tool_use(f"f{i}", _finish_tool_use(str(i), "done")) for i in range(2)
+    ]
+    seat_provider = mock.MagicMock()
+    seat_provider.call.side_effect = [_resp(_BLOCK)]  # a second seat call would raise
+    events = event_log.EventSink(tmp_path / "logs.jsonl")
+    wf = _wf(
+        provider=worker,
+        dispatcher=_disp(),
+        review=review_gate.ReviewSettings(
+            reviewers=[_seat(seat_provider)], block_on="any", trigger="before_finish"
+        ),
+        base_sha="b",
+        events=events,
+    )
+    messages = _begin()
+    result = _drive(wf, messages)
+    assert result.reason == "finish_session" and result.turns == 2
+    assert seat_provider.call.call_count == 1
+    rows = [json.loads(line) for line in events.path.read_text().splitlines()]
+    kinds = [row["type"] for row in rows if row["type"].startswith("loop.review.")]
+    assert kinds.count("loop.review.start") == 1 and kinds.count("loop.review.reused") == 1
+    assert kinds.index("loop.review.rejected_finish") < kinds.index("loop.review.reused")
+    reused = next(row for row in rows if row["type"] == "loop.review.reused")
+    panel = next(row for row in rows if row["type"] == "loop.review.panel")
+    assert reused["reused_panel_id"] == panel["panel_id"] and reused["findings"] == 1
+    feedback = [
+        b["text"]
+        for m in messages
+        for b in m.get("content", [])
+        if b.get("type") == "text" and b["text"].startswith("[review]")
+    ]
+    assert len(feedback) == 1 and "hardcoded key" in feedback[0]
 
 
 @pytest.mark.parametrize("trigger", ["periodic", "on_verify_fail"])

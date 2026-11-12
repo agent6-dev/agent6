@@ -759,6 +759,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `findings` | `list` | Grounded findings or panel observations. |
 | `injected_finding_ids` | `list` | Finding identifiers supplied to the worker. |
 | `block_on` | `str` | The configured panel blocking rule. |
+| `roster` | `list, optional` | The seats that sat: index, model route, focus, scope and temperature. |
 | `raw_blocked` | `bool` | Whether the verdicts meet the blocking rule. |
 | `blocked` | `bool` | Whether the armed gate blocks the finish. |
 | `disarmed` | `bool` | Whether the review gate's rejection cap disarmed it. |
@@ -783,6 +784,20 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | --- | --- | --- |
 | `turn` | `int` | The execution's turn number. |
 | `rejections` | `int` | Number of review rejections. |
+
+### loop.review.reused
+
+**Support: public.** A complete panel over the same trees, paths, seats and rule stood in for a new one.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `panel_id` | `str` | Review panel identifier. |
+| `execution_id` | `str` | Execution identifier. |
+| `turn` | `int` | The execution's turn number. |
+| `trigger` | `str` | The action that triggered the gate or panel. |
+| `reused_panel_id` | `str` | The complete panel whose verdict stood in. |
+| `target` | `object` | The immutable review target both panels share. |
+| `findings` | `int` | How many findings the reused panel recorded. |
 
 ### loop.review.seat
 
@@ -3069,7 +3084,7 @@ Source: [`agent6.viewmodel.review.ReviewView`](https://github.com/agent6-dev/age
 | `findings` | `tuple[FindingView, ...]` | Findings with their observations and action history. |
 | `version` | `int` | The concurrency version for finding actions. |
 | `open_counts` | `SeverityCounts` | Counts of open grounded findings by severity. |
-| `completion` | `Literal['unknown', 'running', 'complete', 'inconclusive', 'skipped']` | The latest panel's completion state. |
+| `completion` | `Literal['unknown', 'running', 'complete', 'inconclusive', 'skipped', 'reused']` | The latest panel's completion state. |
 | `freshness` | `Literal['unknown', 'current', 'stale']` | Whether the evidence matches the compared trees and paths. |
 | `legacy_notice` | `str` | The notice for review data without structured evidence. |
 | `read_failure` | `str \| None` | The evidence-read diagnostic, or null. |
@@ -3399,7 +3414,7 @@ Source: [`agent6.viewmodel.review.PanelView`](https://github.com/agent6-dev/agen
 | `roster` | `tuple[SeatAssignment, ...]` | The resolved seat assignments. |
 | `seats` | `tuple[ReviewVerdict, ...]` | The recorded verdicts from individual seats. |
 | `result` | `ReviewPanel \| None` | The completed panel result, or null while unavailable. |
-| `completion` | `Literal['unknown', 'running', 'complete', 'inconclusive', 'skipped']` | The panel's completion state. |
+| `completion` | `Literal['unknown', 'running', 'complete', 'inconclusive', 'skipped', 'reused']` | The panel's completion state. |
 | `reason` | `str \| None` | The explanation for a skipped or incomplete panel, or null. |
 | `rule_sources` | `tuple[RuleSource, ...]` | The base-tree rule sources supplied to the panel. |
 | `rules_complete` | `bool \| None` | Whether all rule sources were supplied, or null when unrecorded. |
@@ -3466,7 +3481,7 @@ Source: [`agent6.viewmodel.state_types.Question`](https://github.com/agent6-dev/
 
 **Support: public.** Identify the resolved route and settings of one panel seat.
 
-Source: [`agent6.viewmodel.review.SeatAssignment`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/review.py).
+Source: [`agent6.review_records.SeatAssignment`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/review_records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3507,6 +3522,7 @@ Source: [`agent6.review_records.ReviewPanel`](https://github.com/agent6-dev/agen
 | `turn` | `int` | The turn that triggered the panel. |
 | `trigger` | `str` | The review trigger. |
 | `target` | `ReviewTarget` | The immutable reviewed comparison. |
+| `roster` | `tuple[SeatAssignment, ...]` | The seats that sat; empty on a record written before rosters were kept. |
 | `findings` | `tuple[FindingObservation, ...]` | The panel's grounded finding observations. |
 | `injected_finding_ids` | `tuple[str, ...]` | Findings supplied to the worker as feedback. |
 | `block_on` | `Literal['none', 'any', 'all', 'model_quorum']` | The configured worker-finish blocking rule. |

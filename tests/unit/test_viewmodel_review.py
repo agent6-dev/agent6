@@ -53,6 +53,20 @@ def _panel(
     return {"type": "loop.review.panel", "event_id": panel_id, **record.model_dump(mode="json")}
 
 
+def _reused(panel_id: str = "p2", reused: str = "p1") -> dict[str, Any]:
+    return {
+        "type": "loop.review.reused",
+        "event_id": panel_id,
+        "panel_id": panel_id,
+        "execution_id": "exec",
+        "turn": 2,
+        "trigger": "before_finish",
+        "reused_panel_id": reused,
+        "target": dataclasses.asdict(_target()),
+        "findings": 1,
+    }
+
+
 def _action(
     kind: str,
     *,
@@ -83,6 +97,7 @@ def _action(
             "reason": "budget",
         },
         {"type": "loop.review.rejection_cap_reached", "rejections": 4},
+        _reused(),
         _panel("p2", findings=False),
         _panel("p2", findings=False, completion="inconclusive"),
     ],
@@ -489,6 +504,23 @@ def test_start_and_seat_keep_the_roster_and_full_verdict() -> None:
     finished = state.fold_session([start, seat, panel]).review
     assert finished.panels[0].seats[0].summary == "leak"
     assert finished.panels[0].seats[0].findings[0].title == "leak"
+
+
+def test_a_reused_panel_covers_the_trees_of_the_panel_it_names() -> None:
+    """A reuse is current over the named panel's trees and keeps its rules; a stranger fails."""
+    view = state.fold_session([_panel(), _reused()]).review
+    assert view.completion == "reused" and view.panels[-1].panel_id == "p2"
+    assert view.panels[-1].target == _target() and view.panels[-1].result is None
+    assert view.panels[-1].reason == "panel p1 reviewed the same trees"
+    compared = view.for_comparison(_target())
+    assert compared.freshness == "current"
+    assert compared.summary == "reused · freshness: current"
+    assert compared.findings[0].anchor_state == "current"
+    assert review.notice_texts(_reused()) == (
+        "Review p2 reused panel p1: the reviewed trees are unchanged",
+    )
+    stranger = state.fold_session([_panel(), _reused(reused="p9")]).review
+    assert stranger.read_failure and "unknown" in stranger.read_failure
 
 
 def test_a_skipped_panel_says_why_in_words() -> None:

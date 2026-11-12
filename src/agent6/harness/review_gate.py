@@ -8,7 +8,7 @@ import dataclasses
 import threading
 import uuid
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 
@@ -230,6 +230,37 @@ def _run_seats_concurrently(
 # Room in the review notice for a rejection prefix and the "more findings" line.
 _NOTICE_ROOM = 256
 
+
+def reusable_panel(
+    panels: tuple[review_records.ReviewPanel, ...],
+    target: review_records.ReviewTarget,
+    roster: tuple[review_records.SeatAssignment, ...],
+) -> review_records.ReviewPanel | None:
+    """Return the latest complete panel that reviewed this target with these seats.
+
+    The rules follow the base tree and the hidden paths, so the same trees carry the same
+    rules; a record written without a roster is never reused.
+
+    Args:
+        panels: The run's durable panel records, prior executions included.
+        target: The trees and path coverage about to be reviewed.
+        roster: The seats that would sit.
+
+    Returns:
+        The panel to reuse, or None when every record differs in trees, paths or seats.
+    """
+    for panel in reversed(panels):
+        same_target = (
+            panel.target.base_tree == target.base_tree
+            and panel.target.head_tree == target.head_tree
+            and panel.target.paths == target.paths
+            and panel.target.hidden_paths == target.hidden_paths
+        )
+        if panel.completion == "complete" and same_target and panel.roster == roster != ():
+            return panel
+    return None
+
+
 REVIEW_REJECTED = {
     "finish_session": (
         "The review panel rejected your finish_session call. Address the"
@@ -357,6 +388,65 @@ class Reviewer:
         """Return whether the panel has seats; every in-loop trigger gates on it."""
         return bool(self.settings.reviewers)
 
+    def _reviewable(
+        self, identity: dict[str, Any]
+    ) -> tuple[review_records.ReviewTarget, str] | None:
+        """Return the run's review target and diff, recording a skip when there is none."""
+        try:
+            target = self.chain.review_target()
+            diff = (
+                git_read.diff_range(self.chain.root, target.base_tree, target.head_tree)
+                if target
+                else ""
+            )
+        except (errors.GitError, OSError) as exc:
+            self.emit("loop.review.skipped", **identity, reason="target_unreadable", error=str(exc))
+            return None
+        if target is None or not diff.strip():
+            self.emit(
+                "loop.review.skipped",
+                **identity,
+                reason="no_target" if target is None else "no_diff",
+            )
+            return None
+        return target, diff
+
+    def _reuse(self, prior: review_records.ReviewPanel, identity: dict[str, Any]) -> CritiqueResult:
+        """Record the prior panel over the unchanged target instead of sitting seats.
+
+        A fresh panel would raise nothing new: its seats are told the recorded findings and
+        a repeat neither rejects nor reaches the worker again. The reuse says the same.
+
+        Args:
+            prior: The complete panel that reviewed these trees.
+            identity: The new panel's identity fields for the event.
+
+        Returns:
+            A satisfied critique naming the panel whose findings stand.
+        """
+        self.emit(
+            "loop.review.reused",
+            **identity,
+            reused_panel_id=prior.panel_id,
+            target=pydantic.TypeAdapter(review_records.ReviewTarget).dump_python(
+                prior.target, mode="json"
+            ),
+            findings=len(prior.findings),
+        )
+        self.log(f"  review panel {prior.panel_id[:12]} reused: the reviewed trees are unchanged")
+        count = len(prior.findings)
+        noun, verb = ("finding", "stands") if count == 1 else ("findings", "stand")
+        stand = f"its {count} recorded {noun} {verb}" if count else "it recorded no findings"
+        return CritiqueResult(
+            text=(
+                "Review panel reused: the reviewed trees are unchanged since panel"
+                f" {prior.panel_id[:12]} sat at turn {prior.turn}; {stand}, and nothing new"
+                " was raised."
+            ),
+            satisfied=True,
+            capped=False,
+        )
+
     def critique(
         self, state: loop_state.LoopState, *, trigger: str, turn: int
     ) -> CritiqueResult | None:
@@ -379,23 +469,21 @@ class Reviewer:
         identity = dict(
             panel_id=panel_id, execution_id=state.execution_id, turn=turn, trigger=trigger
         )
-        try:
-            target = self.chain.review_target()
-            diff = (
-                git_read.diff_range(self.chain.root, target.base_tree, target.head_tree)
-                if target
-                else ""
-            )
-        except (errors.GitError, OSError) as exc:
-            self.emit("loop.review.skipped", **identity, reason="target_unreadable", error=str(exc))
+        reviewable = self._reviewable(identity)
+        if reviewable is None:
             return None
-        if target is None or not diff.strip():
-            self.emit(
-                "loop.review.skipped",
-                **identity,
-                reason="no_target" if target is None else "no_diff",
-            )
-            return None
+        target, diff = reviewable
+        # Only the before-finish panel gates.
+        block_on: review_panel.ReviewBlockOn = (
+            self.settings.block_on if trigger == "before_finish" else "none"
+        )
+        roster = tuple(
+            review_records.SeatAssignment(i, s.model, s.focus, s.scope, s.temperature)
+            for i, s in enumerate(self.settings.reviewers)
+        )
+        prior = reusable_panel(state.review_panels, target, roster)
+        if prior is not None:
+            return self._reuse(prior, identity)
         remaining = self.budget_remaining()
         if remaining is not None and remaining < self.settings.min_remaining_budget_fraction:
             self.emit(
@@ -405,11 +493,7 @@ class Reviewer:
                 remaining=round(remaining, 3),
             )
             return None
-        # Only the before-finish panel gates.
-        block_on: review_panel.ReviewBlockOn = (
-            self.settings.block_on if trigger == "before_finish" else "none"
-        )
-        known, prior = review_history.matching_findings(
+        known, prior_findings = review_history.matching_findings(
             self.chain.root, target, state.review_panels
         )
         ctx = review_panel.ReviewContext(
@@ -424,7 +508,7 @@ class Reviewer:
                 else None
             ),
             verify_output=state.verify.last_tail,
-            prior_findings=prior,
+            prior_findings=prior_findings,
         )
         self.emit(
             "loop.review.start",
@@ -435,16 +519,7 @@ class Reviewer:
             rule_sources=[dataclasses.asdict(s) for s in ctx.rules.sources],
             rules_complete=ctx.rules.complete,
             rules_reason=ctx.rules.reason,
-            seats=[
-                dict(
-                    seat_index=i,
-                    focus=s.focus,
-                    model_route=s.model,
-                    scope=s.scope,
-                    temperature=s.temperature,
-                )
-                for i, s in enumerate(self.settings.reviewers)
-            ],
+            seats=[dataclasses.asdict(seat) for seat in roster],
         )
         if not ctx.rules.complete:
             self.log(terminal.printable_name(ctx.rules.reason or "review rules incomplete"))
@@ -499,6 +574,7 @@ class Reviewer:
             turn=turn,
             trigger=trigger,
             target=target,
+            roster=roster,
             findings=observations,
             injected_finding_ids=tuple(
                 o.finding_id

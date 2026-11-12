@@ -381,6 +381,14 @@ class TelemetryFold:
             execution.log(now, severity, body, {"agent6.panel.id": key}, panel.span_id)
         )
 
+    def _review_reused(self, step: telemetry_records.Step) -> None:
+        execution, event, now = step.execution, step.event, step.now
+        fields: dict[str, telemetry_records.AttributeValue | None] = {
+            "agent6.panel.id": str(event.get("panel_id") or "") or None,
+            "agent6.panel.reused": str(event.get("reused_panel_id") or "") or None,
+        }
+        step.logs.append(execution.log(now, "INFO", "review reused", fields, ""))
+
     def _review_skipped(self, step: telemetry_records.Step) -> None:
         execution, event, now = step.execution, step.event, step.now
         key = str(event.get("panel_id") or "")
@@ -559,6 +567,7 @@ class TelemetryFold:
         "loop.review.start": _review_start,
         "loop.review.seat": _review_seat,
         "loop.review.panel": _review_panel,
+        "loop.review.reused": _review_reused,
         "loop.review.skipped": _review_skipped,
         "approval.prompt": _prompt,
         "question.prompt": _prompt,
