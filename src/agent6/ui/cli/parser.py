@@ -399,6 +399,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
         help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",
     )
     init_p.add_argument(
+        "-y",
         "--yes",
         action="store_true",
         help="Skip the interactive prompts and accept the defaults for every step"
