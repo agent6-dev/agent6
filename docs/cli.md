@@ -126,6 +126,9 @@ agent6 sessions remove [<id>] # delete one run's history; asks [y/N] on a contro
 ```
 
 `sessions prune` removes merged worktrees, including squash and task merges (`tasks` is the default), but keeps worktrees holding work no commit has.
+A run you landed by hand (a squash, a cherry-pick, a rebase) has no merge record: prune records it as merged when its base branch already holds its content, and says so (`<ref>: main already has its content; recorded as merged into main`).
+When that base branch is gone, prune checks the checked-out branch.
+A later change of the same lines on the base hides the landing: such a run stays unmerged until you delete its ref.
 Only deletion of their unreachable branches and chain refs needs `--delete-squashed`.
 
 `sessions prune --history --older-than DAYS` removes `transcripts/`, `checkpoints/` and `objects/` together from finished sessions whose last execution ended more than DAYS ago, prints each session's id and file counts, and leaves a `pruned.json` receipt; the manifest, logs, receipt, recovery state and graph store stay.

@@ -583,6 +583,8 @@ Below `full` `sandbox.isolation` there is no network namespace: `auto` degrades 
 - The web Git page's writes go through the same package, under the sign-in: stage and unstage by file, restore one tracked file from the index after a confirm, commit the index under the repository's own identity, create a branch at HEAD, switch branches.
   Each is refused while a session is live in the checkout; the page never deletes an untracked file, pushes, pulls, fetches, rebases, amends or resets.
 - One operator-only exception: `sessions prune --delete-squashed` force-deletes a run branch or chain ref the manifest confirms was squash-merged.
+  The base must still hold the recorded commit or the run's content (landing the ref on the base would change no file).
+  Prune writes that record itself for a run landed by hand, on the same content check.
   A branch's or chain ref's line carries the sha to undelete it.
 - Host-side git calls use `git_policy.git_environment` to remove configured `api_key_env` names, so credential helpers and content drivers never inherit them.
     - Of the shell's `GIT_*` variables, only `GIT_ASKPASS`, `GIT_AUTHOR_*`, `GIT_COMMITTER_*`, `GIT_EDITOR`, `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_SSH_VARIANT` and `GIT_TRACE*` pass through; agent6 can still supply explicit settings such as `GIT_INDEX_FILE`.

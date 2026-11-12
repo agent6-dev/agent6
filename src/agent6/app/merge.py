@@ -340,6 +340,57 @@ def landed_base(
     return None
 
 
+def record_if_landed(
+    cwd: pathlib.Path, layout: sessions_layout.SessionLayout, tip: str, *, fallback: str
+) -> sessions_manifest.MergeStamp | None:
+    """Record an unrecorded run as merged when a branch already holds its content.
+
+    Work landed by hand (a squash, a cherry-pick, a rebase, a merge of the ref) leaves no
+    record, so every listing reads it unmerged. The record is the one a `sessions merge`
+    that adds nothing writes.
+
+    Args:
+        cwd: The repository.
+        layout: The run's directory layout.
+        tip: The run's chain or branch tip.
+        fallback: The branch to check when the run's base branch is gone.
+
+    Returns:
+        The record written; None when the run holds a record or committed nothing, no
+        branch holds the content, a worker holds the session, or the write failed.
+    """
+    fd = lock.acquire_single_writer(layout.session_dir)
+    try:
+        if fd is None or process.worker_is_alive(layout.session_dir):
+            return None
+        manifest = sessions_manifest.read_manifest(layout.session_dir)
+        base = manifest.base_branch
+        target = base if base and git_read.branch_exists(cwd, base) else fallback
+        target_tip = git_read.branch_tip_sha(cwd, target) if target else None
+        held = (
+            manifest.merged is None
+            and tip != manifest.base_sha
+            and target_tip is not None
+            and git_ops.holds_content(
+                cwd, target_tip, tip, merge_base=landed_base(cwd, layout, manifest, target, tip)
+            )
+        )
+        if not held or record_merge_in_manifest(
+            layout,
+            merged_into=target,
+            merged_sha=sessions_manifest.NO_MERGE_COMMIT,
+            merged_tip=tip,
+            into_tip=target_tip or "",
+            target_before=target_tip,
+        ):
+            return None
+        return sessions_manifest.read_manifest(layout.session_dir).merged
+    except (errors.GitError, sessions_manifest.ManifestError):
+        return None
+    finally:
+        lock.release_single_writer(fd)
+
+
 NO_BASE_SHA = "the manifest records no base_sha; nothing to merge from"
 
 

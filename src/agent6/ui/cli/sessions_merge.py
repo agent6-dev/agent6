@@ -357,6 +357,40 @@ def _session_stamp(
     return manifest.merged, ""
 
 
+def _stamp_or_record(
+    cwd: pathlib.Path,
+    layout: sessions_layout.SessionLayout | None,
+    ref: str,
+    tip: str | None,
+    current: str,
+) -> tuple[sessions_manifest.MergeStamp | None, str]:
+    """Return a session's merge record, writing one first for a run landed by hand.
+
+    A run with no record whose base branch already holds its content is recorded as merged,
+    and a line says so.
+
+    Args:
+        cwd: The repo.
+        layout: The run; None when it has no session record.
+        ref: The branch or chain ref holding the run's commits, for the line.
+        tip: Its sha; None when it is gone.
+        current: The checked-out branch, checked when the run's base branch is gone.
+
+    Returns:
+        `_session_stamp`'s pair, the stamp being the record just written when one was.
+    """
+    stamp, why = _session_stamp(layout)
+    if layout is None or stamp is not None or why or tip is None:
+        return stamp, why
+    stamp = merge.record_if_landed(cwd, layout, tip, fallback=current)
+    if stamp is not None:
+        print(
+            f"[agent6] {ref}: {stamp.into} already has its content;"
+            f" recorded as merged into {stamp.into}"
+        )
+    return stamp, why
+
+
 def _base_gone(into: str) -> str:
     """Return the keep reason for a merge base that no longer exists."""
     return f"base {into} is gone"
@@ -367,7 +401,8 @@ def _squash_unconfirmed(cwd: pathlib.Path, stamp: sessions_manifest.MergeStamp) 
 
     The merged tip must be recorded, and the base must still hold the commit the record
     names (the merge commit, or for a merge that added nothing, the base tip that already
-    held the content): a reset or rewrite of the base leaves the branch as the content's
+    held the content) or the content itself: a base rewritten with the content kept
+    (a reword, a rebase, a signing pass) still holds it; a reset leaves the branch as its
     only holder.
 
     Args:
@@ -375,18 +410,22 @@ def _squash_unconfirmed(cwd: pathlib.Path, stamp: sessions_manifest.MergeStamp) 
         stamp: The merge stamp.
 
     Returns:
-        The keep reason; "" when both checks pass.
+        The keep reason; "" when the checks pass.
     """
     if not stamp.tip:
         return "no merge tip was recorded"
     if stamp.sha == sessions_manifest.NO_MERGE_COMMIT:
         if not stamp.into_tip:
             return "the record names no commit to check"
-        if not git_read.is_ancestor(cwd, stamp.into_tip, stamp.into):
-            return f"{stamp.into} no longer holds its content"
-    elif not git_read.is_ancestor(cwd, stamp.sha, stamp.into):
-        return f"{stamp.into} no longer holds the merge commit"
-    return ""
+        named, lost = stamp.into_tip, f"{stamp.into} no longer holds its content"
+    else:
+        named, lost = stamp.sha, f"{stamp.into} no longer holds the merge commit"
+    if git_read.is_ancestor(cwd, named, stamp.into):
+        return ""
+    with contextlib.suppress(errors.GitError):
+        if git_ops.holds_content(cwd, stamp.into, stamp.tip):
+            return ""
+    return lost
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -528,7 +567,7 @@ def _cmd_prune(
             live_kept += 1
             print(f"[agent6] kept {br} (live)")
             continue
-        stamp, why = _session_stamp(layout)
+        stamp, why = _stamp_or_record(cwd, layout, br, git_read.branch_tip_sha(cwd, br), current)
         if why != _UNSTARTED_FORK and git_ops.delete_branch_if_merged(cwd, br):
             deleted += 1
             print(f"[agent6] deleted {br} (merged)")
@@ -546,7 +585,9 @@ def _cmd_prune(
         else:
             merged_kept += 1
     # Chain refs are pruned whether or not a run branch survives: `branch_per_run` off has none.
-    refs_deleted, refs_kept = _prune_chain_refs(cwd, repo_state, delete_squashed=delete_squashed)
+    refs_deleted, refs_kept = _prune_chain_refs(
+        cwd, repo_state, current, delete_squashed=delete_squashed
+    )
     clones_note, swept_any = _sweep_workdirs(cwd, repo_state, config_paths)
     if not branches and not (refs_deleted or refs_kept or swept_any):
         print("[agent6] nothing to prune: no agent6/* run branches, no chain refs.")
@@ -615,7 +656,7 @@ def _sweep_workdirs(
 
 
 def _prune_chain_refs(
-    cwd: pathlib.Path, repo_state: pathlib.Path, *, delete_squashed: bool
+    cwd: pathlib.Path, repo_state: pathlib.Path, current: str, *, delete_squashed: bool
 ) -> tuple[int, collections.Counter[str]]:
     """Drop the `refs/agent6/<id>/head` chain refs whose manifest confirms the run merged.
 
@@ -627,6 +668,7 @@ def _prune_chain_refs(
     Args:
         cwd: The repo.
         repo_state: The repo's state dir.
+        current: The checked-out branch.
         delete_squashed: Force-delete proven squash merges.
 
     Returns:
@@ -643,7 +685,7 @@ def _prune_chain_refs(
         if process.worker_is_alive(layout.session_dir):
             kept["live"] += 1
             continue
-        stamp, why = _session_stamp(layout)
+        stamp, why = _stamp_or_record(cwd, layout, git_read.chain_ref_for(sid), sha, current)
         if why:
             kept[why] += 1
             continue

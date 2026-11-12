@@ -293,8 +293,10 @@ def _add_prune_parser(sessions_sub: argparse._SubParsersAction[argparse.Argument
             "Clean up merged session git data. Delete safe-to-remove agent6/* branches,"
             " internal commit references whose recorded targets contain their work, parallel"
             " clones whose commits are present, and the worktrees of sessions that are merged"
-            " or hold no work. Keep unstarted forks. Report kept clones with their paths and"
-            " reasons. With --history --older-than DAYS, prune session history instead."
+            " or hold no work. First record as merged each session with no merge record whose"
+            " base branch already holds its content. Keep unstarted forks. Report kept clones"
+            " with their paths and reasons. With --history --older-than DAYS, prune session"
+            " history instead."
         ),
     )
     sessions_prune.add_argument(

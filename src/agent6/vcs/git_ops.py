@@ -841,6 +841,37 @@ def _merge_tree(path: pathlib.Path, ours: str, theirs: str, merge_base: str | No
     return MergedTree(lines[0].strip(), False)
 
 
+def _landed_tree(path: pathlib.Path, ours: str, theirs: str, merge_base: str | None) -> MergedTree:
+    """Return the tree that landing one commit on another makes; a fast-forward is theirs."""
+    if git_read.is_ancestor(path, ours, theirs):
+        return MergedTree(git_read.tree_sha(path, theirs), False)
+    return _merge_tree(path, ours, theirs, merge_base)
+
+
+def holds_content(
+    path: pathlib.Path, target: str, rev: str, *, merge_base: str | None = None
+) -> bool:
+    """Return whether landing a rev on a commit would leave that commit's tree as it is.
+
+    True for a rev the target contains, and for work the target took in by hand (a squash,
+    a cherry-pick, a rebase). A later change of the same lines on the target conflicts.
+
+    Args:
+        path: The repository.
+        target: The commit that may hold the content.
+        rev: The commit whose changes are looked for.
+        merge_base: The base instead of the one git would find.
+
+    Returns:
+        False on a conflict and when the landing would change a file.
+
+    Raises:
+        GitError: A commit is missing, or git cannot merge trees.
+    """
+    merged = _landed_tree(path, target, rev, merge_base)
+    return not merged.conflicted and merged.tree == git_read.tree_sha(path, target)
+
+
 def plumb_merge(
     path: pathlib.Path,
     target: str,
@@ -934,13 +965,10 @@ def merge_commit(
         The new commit as `merged_sha`; `ours` when theirs adds nothing to it; or the
         conflict, which lists its paths.
     """
-    if git_read.is_ancestor(path, ours, theirs):
-        tree = git_read.tree_sha(path, theirs)
-    else:
-        merged = _merge_tree(path, ours, theirs, merge_base)
-        if merged.conflicted:
-            return MergeResult("", True, merged.paths)
-        tree = merged.tree
+    merged = _landed_tree(path, ours, theirs, merge_base)
+    if merged.conflicted:
+        return MergeResult("", True, merged.paths)
+    tree = merged.tree
     if tree == git_read.tree_sha(path, ours):
         return MergeResult(ours, False, ())  # content-identical: nothing to land
     text = message

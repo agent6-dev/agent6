@@ -550,6 +550,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "Runs `agent6 sessions prune`: deletes run branches git can remove as merged"
                 " (reachable from the checked-out branch), merged runs' chain refs, the"
                 " worktrees of merged forks and fan-out clone dirs whose lanes are all here."
+                " A run whose base branch already holds its work is recorded as merged first."
                 " Squash-merged branches and ones merged elsewhere are kept and named;"
                 " unmerged ones are never touched.",
                 confirm_label="Prune",

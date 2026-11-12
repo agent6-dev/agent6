@@ -1493,3 +1493,145 @@ def test_prune_counts_a_branch_without_a_record_apart_from_the_unmerged(
     out = capsys.readouterr().out
     assert "kept agent6/norec11 (no session record; review, then: git branch -D" in out
     assert "kept 1 (0 merged, 0 unmerged, 1 without a record)" in out
+
+
+def _repo_with_base(repo: pathlib.Path) -> str:
+    """Init a repo on main with one commit; return its sha."""
+    _git(repo, "init", "-q", "-b", "main")
+    _git(repo, "config", "user.email", "t@t")
+    _git(repo, "config", "user.name", "t")
+    (repo / "README.md").write_text("base\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "init")
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _recorded_merge(repo: pathlib.Path, session_id: str) -> dict[str, str] | None:
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id=session_id)
+    return json.loads(layout.manifest_path.read_text(encoding="utf-8")).get("merged")
+
+
+def test_prune_records_a_run_landed_by_hand_as_merged(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run whose base already holds its content is recorded as merged, then pruned as one.
+
+    A squash or a cherry-pick by hand left no record: the run read unmerged on every listing
+    and prune kept its branch and chain ref for good. A run the base holds part of, or
+    changed another way, stays unmerged.
+    """
+    monkeypatch.chdir(tmp_path)
+    base = _repo_with_base(tmp_path)
+    _make_branch(tmp_path, "pick11", "p.txt")
+    pick_tip = _git(tmp_path, "rev-parse", "agent6/pick11")
+    # Squashed onto main by hand; the branch holds it.
+    _make_branch(tmp_path, "hand11", "h.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/hand11")
+    _git(tmp_path, "commit", "-q", "-m", "hand11, by hand")
+    _manifest(tmp_path, "hand11", base, merged=False)
+    hand_tip = _git(tmp_path, "rev-parse", "agent6/hand11")
+    # Cherry-picked onto the moved main; only the chain ref holds it.
+    _git(tmp_path, "update-ref", git_read.chain_ref_for("pick11"), pick_tip)
+    _git(tmp_path, "branch", "-D", "agent6/pick11")
+    _git(tmp_path, "cherry-pick", pick_tip)
+    assert _git(tmp_path, "rev-parse", "HEAD") != pick_tip
+    _manifest(tmp_path, "pick11", base, merged=False)
+    # Two files, one of them taken by hand.
+    _make_branch(tmp_path, "part11", "one.txt")
+    _git(tmp_path, "checkout", "-q", "agent6/part11")
+    (tmp_path / "two.txt").write_text("x\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "part11 two")
+    _git(tmp_path, "checkout", "-q", "main")
+    (tmp_path / "one.txt").write_text("x\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "one, by hand")
+    _manifest(tmp_path, "part11", base, merged=False)
+    # The same file, written another way on main.
+    _make_branch(tmp_path, "diff11", "d.txt")
+    (tmp_path / "d.txt").write_text("another way\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-q", "-m", "d, another way")
+    _manifest(tmp_path, "diff11", base, merged=False)
+    main_tip = _git(tmp_path, "rev-parse", "main")
+
+    assert main(["sessions", "prune"]) == 0
+    out = capsys.readouterr().out
+    assert (
+        "[agent6] agent6/hand11: main already has its content; recorded as merged into main" in out
+    ), out
+    pick_ref = git_read.chain_ref_for("pick11")
+    assert f"[agent6] {pick_ref}: main already has its content; recorded as merged" in out
+    assert _recorded_merge(tmp_path, "hand11") == {
+        "into": "main",
+        "sha": "0" * 40,
+        "tip": hand_tip,
+        "into_tip": main_tip,
+        "via": "",
+        "method": None,
+        "target_before": main_tip,
+        "ts": _recorded_merge(tmp_path, "hand11")["ts"],  # type: ignore[index]
+    }
+    assert _recorded_merge(tmp_path, "part11") is None
+    assert _recorded_merge(tmp_path, "diff11") is None
+    # Recorded, the two fall under the squash rule: kept until the flag asks.
+    assert _branch_exists(tmp_path, "agent6/hand11") and _chain_ref_exists(tmp_path, "pick11")
+    assert "kept agent6/hand11 (squash-merged into main, unreachable" in out
+    assert "kept 3 (1 merged, 2 unmerged)" in out
+    assert "chain refs: deleted 0, kept 1 (1 squash-merged)" in out
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert not _branch_exists(tmp_path, "agent6/hand11")
+    assert not _chain_ref_exists(tmp_path, "pick11")
+    assert _branch_exists(tmp_path, "agent6/part11") and _branch_exists(tmp_path, "agent6/diff11")
+    assert "recorded as merged" not in out  # the record is written once
+
+
+def test_prune_checks_the_checked_out_branch_when_the_runs_base_is_gone(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run cut from a branch since deleted is recorded against the checked-out branch.
+
+    Its work reached main through the branch it was cut from, which was then deleted.
+    """
+    monkeypatch.chdir(tmp_path)
+    base = _repo_with_base(tmp_path)
+    _make_branch(tmp_path, "gone11", "g.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/gone11")
+    _git(tmp_path, "commit", "-q", "-m", "gone11, through its feature branch")
+    _manifest(tmp_path, "gone11", base, merged=False)
+    layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(tmp_path), session_id="gone11")
+    data = json.loads(layout.manifest_path.read_text(encoding="utf-8"))
+    layout.manifest_path.write_text(json.dumps({**data, "base_branch": "feature"}) + "\n")
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert "agent6/gone11: main already has its content; recorded as merged into main" in out
+    merged = _recorded_merge(tmp_path, "gone11")
+    assert merged is not None and merged["into"] == "main"
+    assert not _branch_exists(tmp_path, "agent6/gone11")
+
+
+def test_delete_squashed_follows_the_content_through_a_rewritten_base(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A recorded squash is proven by the base's content when a rewrite replaced its commit.
+
+    A reword, a rebase or a signing pass gave the merge commit a new sha: the record named a
+    commit the base no longer held, and prune kept every merged run for good.
+    """
+    monkeypatch.chdir(tmp_path)
+    base = _repo_with_base(tmp_path)
+    _make_branch(tmp_path, "sign11", "s.txt")
+    _git(tmp_path, "merge", "--squash", "agent6/sign11")
+    _git(tmp_path, "commit", "-q", "-m", "squash sign11")
+    squash = _git(tmp_path, "rev-parse", "HEAD")
+    _manifest(tmp_path, "sign11", base, merged=True, merged_sha=squash)
+    _git(tmp_path, "commit", "-q", "--amend", "-m", "squash sign11, reworded")
+    assert _git(tmp_path, "rev-parse", "HEAD") != squash
+
+    assert main(["sessions", "prune", "--delete-squashed"]) == 0
+    out = capsys.readouterr().out
+    assert not _branch_exists(tmp_path, "agent6/sign11"), out
+    assert "deleted agent6/sign11 (squash-merged into main)" in out
