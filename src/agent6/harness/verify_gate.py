@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Run the verify gate the harness owes a turn, per `[harness].verify_when`.
+"""Run the verify gate the harness owes a turn, per `[harness.verify].when`.
 
 `finish` certifies the tree a run ends on; `turn` also judges every editing turn; `never`
 leaves every gate run to the model. Under `finish` and `turn` a fresh run also runs the gate once
@@ -48,7 +48,7 @@ def harness_verify_due(
     """Return why the harness runs the gate after this turn, or None.
 
     Args:
-        when: `[harness].verify_when`.
+        when: `[harness.verify].when`.
         gate_present: Whether a gate can judge the run.
         tree_judged: Whether the run holds a verdict, green or red, for the tree as it stands.
         changed_this_turn: Whether the turn edited the tree.
@@ -177,8 +177,8 @@ class VerifyGate:
 
     Attributes:
         configured: The configured command, () when none.
-        when: `[harness].verify_when`.
-        at_start: `[harness].verify_at_start`: a fresh run's gate runs once before its first turn.
+        when: `[harness.verify].when`.
+        at_start: `[harness.verify].at_start`: a fresh run's gate runs once before its first turn.
         retries: The red finishes allowed.
         timeout_s: The gate's budget.
         infer: Whether a gateless run adopts an inferred command at a commit.
@@ -348,7 +348,7 @@ class VerifyGate:
 
         The deterministic inference tiers (an AGENTS.md fence, repo signals; never the model
         tier) run at each gateless commit until one lands; the model is told of the adoption.
-        `verify_infer = false` pins gatelessness.
+        `harness.verify.infer = false` pins gatelessness.
 
         Args:
             state: The execution's state.

@@ -243,7 +243,7 @@ Each `--security-opt` flag on this page turns off a protection of the container 
       Argument-conditional rules `EPERM` two more cases on syscalls that stay allowed: a mode carrying `S_ISUID` / `S_ISGID` on `chmod` and the create family (above), and a `mknod` / `mknodat` naming a character or block device (`/dev` above)
     - anything else is allowed; the list itself is the source (`jail/src/main.rs`)
 - Capabilities: cleared between fork and exec.
-- Timeout: the policy's `timeout_s` (verify and metric gates set it from `[harness].verify_timeout_s`, default 600), then SIGKILL of the process group, rc=124 and `timed_out=true`.
+- Timeout: the policy's `timeout_s` (verify and metric gates set it from `[harness.verify].timeout_s`, default 600), then SIGKILL of the process group, rc=124 and `timed_out=true`.
   A command's own exit 124 is a nonzero failure, not a timeout.
     - a model's `run_command` in a run is not wall-clock killed: at `[harness].command_checkin_s` it is handed back as a background job ([config](config.md#harness)).
       Under `agent6 plan` and `agent6 ask`, in a machine state, without a jail session, or with `command_checkin_s = 0`, it is killed after 600 s

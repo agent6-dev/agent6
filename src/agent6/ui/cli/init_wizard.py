@@ -4,7 +4,7 @@
 
 Each step says what it will do, warns before overriding anything set, and can
 be skipped; nothing existing is overwritten. In order: the per-repo config
-file, `harness.verify_command` inferred from the repo, the secret and
+file, `harness.verify.command` inferred from the repo, the secret and
 build-artifact `.gitignore` entries, and AGENTS.md or its verify section (a new
 AGENTS.md also states the setup command a lockfile makes obvious).
 """
@@ -45,7 +45,7 @@ change a project convention, build command, dependency, or security invariant.
 ## Verify command
 
 The command agent6 runs to decide whether a step succeeded.
-agent6 reads this section to infer its verify_command when one is not configured.
+agent6 reads this section to infer its verify command when one is not configured.
 Keep it a real pass/fail command (build + tests).
 It runs in the configured sandbox with its own HOME.
 Install toolchains and dependencies before the run; the default network under
@@ -92,7 +92,7 @@ _VERIFY_SECTION = """\
 ## Verify command
 
 The command agent6 runs to decide whether a step "succeeded" (agent6 reads this
-to infer its verify_command when one is not configured).
+to infer its verify command when one is not configured).
 
 ```bash
 {verify}
@@ -214,14 +214,14 @@ def append_gitignore(root: pathlib.Path, missing: list[str]) -> str:
 def _setup_verify_command(
     root: pathlib.Path, *, ask: _Ask, config_paths: tuple[pathlib.Path, ...] = ()
 ) -> None:
-    """Set `harness.verify_command` from the repo when unset, asking before an override."""
+    """Set `harness.verify.command` from the repo when unset, asking before an override."""
     effective = layer.load_effective(root, config_paths)
     hide = effective.config.sandbox.hide_paths
-    leaf = layer.effective_leaf(effective, "harness.verify_command")
+    leaf = layer.effective_leaf(effective, "harness.verify.command")
     value, source = leaf or ((), "default")
     already = bool(value)
     if already:
-        print(f"  verify_command already set ({source}): {' '.join(value)}")
+        print(f"  harness.verify.command already set ({source}): {' '.join(value)}")
         if not ask("  Re-infer and replace it?", False):
             return
     inferred = verify_infer.infer_verify_command(
@@ -233,24 +233,24 @@ def _setup_verify_command(
         print(
             "  no verify command could be inferred from this repo. `agent6 run`"
             " will infer one (LLM) at run time or run gateless; set"
-            " harness.verify_command later to pin one."
+            " harness.verify.command later to pin one."
         )
         return
     shown = shlex.join(inferred.argv)
     warn = " (OVERRIDES the current value)" if already else ""
-    if not ask(f"  Set harness.verify_command to `{shown}` (from {inferred.label}){warn}?", True):
-        print("  skipped verify_command.")
+    if not ask(f"  Set harness.verify.command to `{shown}` (from {inferred.label}){warn}?", True):
+        print("  skipped harness.verify.command.")
         return
     try:
         err = write.set_config_value(
-            root, "harness.verify_command", json.dumps(list(inferred.argv)), to_repo=True
+            root, "harness.verify.command", json.dumps(list(inferred.argv)), to_repo=True
         )
     except errors.OperatorError as exc:
         err = str(exc)  # an unwritable repo config skips this step, never the whole init
     if err:
-        print(f"  ERROR setting verify_command: {err}")
+        print(f"  ERROR setting harness.verify.command: {err}")
     else:
-        print(f"  set harness.verify_command = {list(inferred.argv)}")
+        print(f"  set harness.verify.command = {list(inferred.argv)}")
 
 
 def _setup_agents_md(
@@ -334,7 +334,7 @@ def init_workspace(
     else:
         print("  skipped; using the global config + built-in defaults.")
 
-    # 2. verify_command (optional; inferred).
+    # 2. harness.verify.command (optional; inferred).
     _setup_verify_command(root, ask=ask, config_paths=config_paths)
 
     # 3. .gitignore: the question names the entries it would add.

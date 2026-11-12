@@ -27,7 +27,9 @@ def _dispatcher(
 ) -> dispatch.ToolDispatcher:
     config = Config.model_validate(
         {
-            "harness": {"verify_command": ["true"]},
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
             "sandbox": {"run_commands": policy, "network": "host"},
         }
     )
@@ -214,7 +216,13 @@ def test_a_verifying_command_cannot_certify_its_own_edit(
     dispatcher = _dispatcher(build_dispatcher, repo, tmp_path / "logs.jsonl")
     harness = loop.Harness(
         chain=run_chain.RunChain(repo),
-        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["true"]},
+                }
+            }
+        ),
         dispatcher=dispatcher,
         provider=mock.MagicMock(),
         logger=lambda _: None,
@@ -322,7 +330,13 @@ def test_unsuccessful_retry_replaces_an_earlier_final_pass(
     dispatcher = _dispatcher(build_dispatcher, repo, journal, "ask")
     harness = loop.Harness(
         chain=run_chain.RunChain(repo),
-        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["true"]},
+                }
+            }
+        ),
         dispatcher=dispatcher,
         provider=mock.MagicMock(),
         logger=lambda _: None,

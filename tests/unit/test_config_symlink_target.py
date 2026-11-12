@@ -141,17 +141,17 @@ def test_a_symlink_whose_target_does_not_exist_yet_is_created(
     ("command", "expected"),
     [
         (
-            ("set", "harness.verify_timeout_s", "8"),
-            {"verify_timeout_s": 8, "verify_command": ["tests"]},
+            ("set", "harness.verify.timeout_s", "8"),
+            {"timeout_s": 8, "command": ["tests"]},
         ),
-        (("unset", "harness.verify_timeout_s"), {"verify_command": ["tests"]}),
+        (("unset", "harness.verify.timeout_s"), {"command": ["tests"]}),
         (
-            ("add", "harness.verify_command", "security"),
-            {"verify_timeout_s": 7, "verify_command": ["tests", "security"]},
+            ("add", "harness.verify.command", "security"),
+            {"timeout_s": 7, "command": ["tests", "security"]},
         ),
         (
-            ("remove", "harness.verify_command", "tests"),
-            {"verify_timeout_s": 7, "verify_command": []},
+            ("remove", "harness.verify.command", "tests"),
+            {"timeout_s": 7, "command": []},
         ),
     ],
 )
@@ -170,7 +170,7 @@ def test_machine_overlay_writers_keep_a_symlinked_machine_file(
     target = tmp_path / "machines" / "real.asm.toml"
     target.parent.mkdir()
     target.write_text(
-        '[config.harness]\nverify_timeout_s = 7\nverify_command = ["tests"]\n', encoding="utf-8"
+        '[config.harness.verify]\ntimeout_s = 7\ncommand = ["tests"]\n', encoding="utf-8"
     )
     link = tmp_path / "linked.asm.toml"
     link.symlink_to(target)
@@ -178,4 +178,6 @@ def test_machine_overlay_writers_keep_a_symlinked_machine_file(
     assert main(["config", *command, "--machine-file", str(link)]) == 0
 
     assert link.is_symlink(), f"`config {command[0]} --machine-file` replaced the symlink"
-    assert tomllib.loads(target.read_text(encoding="utf-8"))["config"]["harness"] == expected
+    assert (
+        tomllib.loads(target.read_text(encoding="utf-8"))["config"]["harness"]["verify"] == expected
+    )

@@ -62,7 +62,7 @@ def test_injected_transport_serves_setup_commands_and_verification(
     cfg = Config.model_validate(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
-            "harness": {"verify_command": gate, "command_checkin_s": 0},
+            "harness": {"verify": {"command": gate}, "command_checkin_s": 0},
             "workspace": {"setup_command": setup},
         }
     )

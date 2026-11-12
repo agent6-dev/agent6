@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The verify finish gate: no 'passed' over a red or stale verify; `verify_when` runs it.
+"""The verify finish gate: no 'passed' over a red or stale verify; `harness.verify.when` runs it.
 
-A red finish returns `verify_retries` times; both ground on VerifyGate.tree_green.
+A red finish returns `harness.verify.retries` times; both ground on VerifyGate.tree_green.
 """
 
 from __future__ import annotations
@@ -36,7 +36,15 @@ def _wf(
     mode: Literal["run", "plan", "ask", "read_only"] = "run",
     root: pathlib.Path = pathlib.Path("/tmp"),
 ) -> loop.Harness:
-    data: dict[str, Any] = {"harness": {"verify_command": ["true"]}} if verify else {}
+    data: dict[str, Any] = (
+        {
+            "harness": {
+                "verify": {"command": ["true"]},
+            }
+        }
+        if verify
+        else {}
+    )
     return loop.Harness(
         chain=run_chain.RunChain(root),
         config=Config.model_validate(data),
@@ -74,8 +82,8 @@ def test_green_only_when_last_verify_passed_and_tree_unedited() -> None:
 
 def test_the_harness_gate_defaults_to_never_with_two_returns_when_on() -> None:
     """The harness runs no gate of its own by default; `finish` and `turn` are opt-in."""
-    wf = Config().harness
-    assert (wf.verify_when, wf.verify_at_start, wf.verify_retries) == ("never", False, 2)
+    verify = Config().harness.verify
+    assert (verify.when, verify.at_start, verify.retries) == ("never", False, 2)
 
 
 def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> None:
@@ -86,8 +94,8 @@ def test_a_red_gate_at_the_untouched_base_is_not_returned_to_the_worker() -> Non
         verify=verify_verdict.VerifyVerdict(last_ok=False, baseline_ok=False),
     )
     assert not finish_gates.red_gate_returns(
-        wf.config.harness.verify_when,
-        wf.config.harness.verify_retries,
+        wf.config.harness.verify.when,
+        wf.config.harness.verify.retries,
         state.verify,
         state.gates.verify_retries_used,
         gate_present=wf.gate.present(state.verify),
@@ -409,7 +417,7 @@ def test_a_resumed_execution_carries_the_scoped_gate(tmp_path: pathlib.Path) -> 
     assert state.verify.last_ok is None
 
 
-# ---- the harness-run gate (`[harness].verify_when`) -------------------------
+# ---- the harness-run gate (`[harness.verify].when`) -------------------------
 
 
 def _exec(rc: int, out: str = "", *, timed_out: bool = False) -> Any:
@@ -425,7 +433,9 @@ def _harness_wf(
 ) -> tuple[loop.Harness, mock.MagicMock]:
     """A run-mode loop over a gate, and the mock dispatcher that owns `run_verify`."""
     data: dict[str, Any] = {
-        "harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": retries}
+        "harness": {
+            "verify": {"command": ["true"], "when": when, "retries": retries},
+        }
     }
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
@@ -465,7 +475,7 @@ def _notices(turn: Any) -> list[str]:
 
 
 def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree() -> None:
-    """`verify_when = "finish"` runs the gate on finish_session, and a green run certifies the tree.
+    """`harness.verify.when = "finish"` runs the gate on finish_session; green certifies the tree.
 
     The verdict's own bookkeeping, so the finish gate sees green and auto-commit sees a pass.
     """
@@ -484,7 +494,7 @@ def test_finish_mode_runs_the_gate_when_a_finish_arrives_over_an_unverified_tree
 
 
 def test_a_red_finish_certification_returns_to_the_model_verify_retries_times() -> None:
-    """A red gate at finish returns the finish `verify_retries` times; the next red stands."""
+    """A red gate at finish returns it `harness.verify.retries` times; the next red stands."""
     wf, dispatcher = _harness_wf("finish", retries=2)
     dispatcher.run_verify.return_value = _exec(1, "1 failed")
     state = loop_state.LoopState(original_task="t", tool_calls=0)
@@ -584,9 +594,7 @@ def test_denied_verify_is_withheld_from_harness_and_model(
         {
             "sandbox": {"run_commands": "ask"},
             "harness": {
-                "verify_command": ["pytest"],
-                "verify_when": "finish",
-                "verify_at_start": True,
+                "verify": {"command": ["pytest"], "when": "finish", "at_start": True},
             },
         }
     )
@@ -674,7 +682,11 @@ def test_the_prompt_states_when_the_harness_runs_the_gate() -> None:
 
     def block(when: str, mode: Literal["run", "plan"] = "run") -> str:
         cfg = Config.model_validate(
-            {"harness": {"verify_command": ["true"], "verify_when": when, "verify_retries": 1}}
+            {
+                "harness": {
+                    "verify": {"command": ["true"], "when": when, "retries": 1},
+                }
+            }
         )
         return prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode=mode, skills=None)
 
@@ -709,7 +721,11 @@ def _scoped_wf(
     for rel in ("pkg/mod.py", "tests/test_mod.py"):
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text("")
-    data: dict[str, Any] = {"harness": {"verify_command": command, "verify_when": when}}
+    data: dict[str, Any] = {
+        "harness": {
+            "verify": {"command": command, "when": when},
+        }
+    }
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
@@ -867,7 +883,7 @@ def test_a_models_own_timed_out_gate_gets_the_scoped_followup(
 def test_never_mode_gives_the_models_timed_out_gate_the_same_scoped_followup(
     tmp_path: pathlib.Path, monkeypatch: Any
 ) -> None:
-    """The scoped re-run belongs to the model's own verify call, whatever `verify_when` says.
+    """The scoped re-run belongs to the model's own verify call, whatever `harness.verify.when` is.
 
     Under `never` a timeout in the model's run_verify_command got no re-run, so the only gate
     policy without a harness run also lost the fallback for a slow pytest gate.
@@ -946,7 +962,11 @@ def test_a_silent_finish_over_a_standing_red_is_handed_back() -> None:
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate(
-            {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
+            {
+                "harness": {
+                    "verify": {"command": ["true"], "when": "finish", "retries": 2},
+                }
+            }
         ),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
@@ -986,7 +1006,11 @@ def test_a_silent_end_is_not_handed_back_over_a_gate_the_model_cannot_run(
     wf = loop.Harness(
         chain=run_chain.RunChain(pathlib.Path("/tmp")),
         config=Config.model_validate(
-            {"harness": {"verify_command": ["true"], "verify_when": "turn", "verify_retries": 2}}
+            {
+                "harness": {
+                    "verify": {"command": ["true"], "when": "turn", "retries": 2},
+                }
+            }
         ),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,

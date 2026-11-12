@@ -79,13 +79,13 @@ fi
 CONDA_PY=$(ls /opt/miniconda3/envs/*/bin/python /opt/conda/envs/*/bin/python 2>/dev/null | head -1)
 CONDA_PY="${CONDA_PY:-python3}"
 # AGENT6_SB_VERIFY=none: a PINNED-GATELESS arm; the model self-verifies with
-# targeted run_command tests. verify_infer = false is required: with only an
-# unset verify_command, mid-run adoption armed the inferred `python3 -m
+# targeted run_command tests. verify.infer = false is required: with only an
+# unset harness.verify.command, mid-run adoption armed the inferred `python3 -m
 # pytest` whose interpreter lacks pytest, an always-red 0.0s no-op gate.
 # Needs a wheel that carries the knob (0.0.27 rejects unknown keys).
 if [ "${AGENT6_SB_VERIFY:-}" = "none" ]; then
   AGENT6_SB_VERIFY=""
-  VERIFY_TOML="verify_infer = false"
+  VERIFY_TOML="verify.infer = false"
 elif [ -z "${AGENT6_SB_VERIFY:-}" ]; then
   if [ -f /testbed/tests/runtests.py ]; then
     AGENT6_SB_VERIFY="$CONDA_PY tests/runtests.py --verbosity 1 --parallel 2"
@@ -105,7 +105,7 @@ fi
 if [ -n "${AGENT6_SB_VERIFY:-}" ]; then
   VARR=""
   for w in $AGENT6_SB_VERIFY; do VARR="${VARR}\"${w}\", "; done
-  VERIFY_TOML="verify_command = [${VARR%, }]"
+  VERIFY_TOML="verify.command = [${VARR%, }]"
 fi
 
 # A/B arm: the orchestrator mounts a replacement run-mode base prompt.
@@ -146,9 +146,9 @@ branch_per_run = false
 
 [harness]
 $VERIFY_TOML
-${AGENT6_SB_VERIFY_WHEN:+verify_when = \"$AGENT6_SB_VERIFY_WHEN\"}
+${AGENT6_SB_VERIFY_WHEN:+verify.when = \"$AGENT6_SB_VERIFY_WHEN\"}
 # Half a 1200s run died in ONE 600s full-suite verify; fast signal wins.
-verify_timeout_s = 240
+verify.timeout_s = 240
 ${AGENT6_SB_STAGNATION_S:+stagnation_notice_after_s = $AGENT6_SB_STAGNATION_S}
 
 [harness.prompt]

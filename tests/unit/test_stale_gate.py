@@ -94,7 +94,7 @@ def test_the_proposal_is_printed_for_the_operator_to_set() -> None:
     text = out.getvalue()
     assert "  it says: uv run pytest tests/unit\n" in text
     assert "nothing changed" in text
-    assert "agent6 config set --repo harness.verify_command" in text
+    assert "agent6 config set --repo harness.verify.command" in text
     assert json.dumps(["uv", "run", "pytest", "tests/unit"]) not in text
 
 
@@ -285,7 +285,11 @@ def _red_gated_run(tmp_path: pathlib.Path) -> tuple[loop.Harness, loop_state.Loo
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
         config=Config.model_validate(
-            {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
+            {
+                "harness": {
+                    "verify": {"command": ["true"], "when": "finish", "retries": 2},
+                }
+            }
         ),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,

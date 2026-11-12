@@ -47,7 +47,7 @@ def test_initial_inference_uses_the_prepared_target_through_run_task(
             "harness": {"command_checkin_s": 0},
         }
     )
-    assert not cfg.harness.verify_command
+    assert not cfg.harness.verify.command
     providers = session_runtime.SessionProviders(
         budget=session_setup.budget_tracker(cfg),
         rm_role=RoleModel(provider="test", model="test"),
@@ -78,13 +78,13 @@ def test_initial_inference_uses_the_prepared_target_through_run_task(
     def check_gate(
         harness: loop.Harness, _task: str, *, operator_task: str | None = None
     ) -> loop_snapshot.SessionResult:
-        assert harness.config.harness.verify_command == expected
+        assert harness.config.harness.verify.command == expected
         assert len(accesses) == 1 and accesses[0].session is not None
         assert harness.dispatcher.execution_target is accesses[0].session.target
         result = harness.dispatcher.run_verify()
         assert result.returncode == 0
         assert result.stdout == ("target gate\n" if target_has_tool else "fallback gate\n")
-        observed.append(harness.config.harness.verify_command)
+        observed.append(harness.config.harness.verify.command)
         raise RuntimeError("initial gate checked")
 
     monkeypatch.setattr(session_runtime, "prepare_local_execution", prepare)

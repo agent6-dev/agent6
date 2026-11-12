@@ -184,7 +184,7 @@ branch_per_run = true
 # `/usr/bin/python3 tests/submission_tests.py` directly.
 # Absolute paths because the agent6 sandbox only bind-mounts /usr —
 # a bare "python"/"pytest" is not on PATH inside the jail.
-verify_command = [
+verify.command = [
   "/usr/bin/pytest",
   "-q",
   "tests/submission_tests.py::CorrectnessTests",
@@ -192,7 +192,7 @@ verify_command = [
 # Cap verify at 30s (baseline runs in ~2s). Infinite-loop /
 # quadratic edits previously hung for the jail's 600s default, wasting
 # ~10 min per failed step and 30+ min per step that exhausted retries.
-verify_timeout_s = 30.0
+verify.timeout_s = 30.0
 
 # Continuous-score metric: after every passing step, agent6 runs this
 # command in the jail, parses the captured group out of stdout+stderr

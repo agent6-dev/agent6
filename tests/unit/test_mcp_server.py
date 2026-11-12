@@ -39,7 +39,7 @@ protect_git = "on"
 dirty_tree = "ask"
 branch_per_run = true
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
 """
@@ -153,7 +153,7 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
     p = tmp_path / "agent6.toml"
     p.write_text(
         _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"').replace(
-            'verify_command = ["true"]', ""
+            'verify.command = ["true"]', ""
         ),
         encoding="utf-8",
     )
@@ -176,7 +176,7 @@ def test_the_gate_tools_are_withdrawn_when_the_workspace_has_no_gate(
     names = {t["name"] for t in resps[0]["result"]["tools"]}
     assert names == {"run_in_sandbox", "get_task_graph", "list_sessions"}
     err = resps[1]["error"]["message"]
-    assert "withdrawn" in err and "verify_command" in err
+    assert "withdrawn" in err and "harness.verify.command" in err
 
 
 def test_unknown_method_returns_rpc_error(tmp_path: pathlib.Path) -> None:
@@ -644,7 +644,12 @@ def test_no_one_to_ask_withdraws_rather_than_breaks(configured: str, offered: bo
     from agent6.config import Config
 
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": configured}, "harness": {"verify_command": ["true"]}}
+        {
+            "sandbox": {"run_commands": configured},
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
+        }
     )
     assert (ui_mcp_server._no_one_to_ask(cfg).sandbox.run_commands == "allow") is offered
 

@@ -55,7 +55,12 @@ def _dispatcher(
 ) -> dispatch.ToolDispatcher:
     """A run's wiring: the gate and the dispatcher journal to the one sink."""
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
+        {
+            "sandbox": {"run_commands": "ask"},
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
+        }
     )
     return dispatch.ToolDispatcher(
         root=session_dir.parent, config=cfg, prompts=prompts, events=events, session_dir=session_dir

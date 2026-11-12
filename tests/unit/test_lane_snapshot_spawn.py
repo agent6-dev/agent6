@@ -50,7 +50,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
             "providers": {"p": {"backend": "openai", "base_url": base_url}},
             "models": {"default": {"model": "p/base", "effort": "high", "temperature": 0.7}},
             "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "deny"},
-            "harness": {"verify_when": "never", "max_turns": 3},
+            "harness": {"verify": {"when": "never"}, "max_turns": 3},
             "review": {"when": "never"},
         }
     )

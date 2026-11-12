@@ -62,7 +62,13 @@ Emitted = list[tuple[str, dict[str, Any]]]
 def _wf(root: pathlib.Path) -> tuple[loop.Harness, Emitted]:
     wf = loop.Harness(
         chain=run_chain.RunChain(root),
-        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["true"]},
+                }
+            }
+        ),
         provider=mock.MagicMock(),
         dispatcher=mock.MagicMock(
             last_verification=None, execution_id="execution", verify_withheld=False

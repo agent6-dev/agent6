@@ -176,8 +176,8 @@ def write_session_manifest(
     lineage = parallel_lineage()
     if gate is None:
         gate = manifest.GateStamp(
-            command=cfg.harness.verify_command,
-            source="configured" if cfg.harness.verify_command else "",
+            command=cfg.harness.verify.command,
+            source="configured" if cfg.harness.verify.command else "",
             availability="pending" if mode in ("run", "plan") else "ready",
         )
     m = manifest.SessionManifest(

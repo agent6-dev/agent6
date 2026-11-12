@@ -58,7 +58,7 @@ def _config(base_url: str) -> Config:
             "providers": {"p": {"backend": "openai", "base_url": base_url}},
             "models": {"default": {"model": "p/base"}},
             "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "ask"},
-            "harness": {"verify_when": "never", "max_turns": 3},
+            "harness": {"verify": {"when": "never"}, "max_turns": 3},
             "review": {"when": "never"},
         }
     )

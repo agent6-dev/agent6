@@ -195,7 +195,7 @@ class MCPServer:
             raise
         # Absent from tools/list either way; `_call_tool` names the reason to a client anyway.
         self._commands_withdrawn = config.sandbox.run_commands in ("ask", "deny")
-        self._gate_missing = not config.harness.verify_command
+        self._gate_missing = not config.harness.verify.command
         specs = self._build_tools()
         if self._commands_withdrawn:
             specs = [t for t in specs if t.name not in _COMMAND_TOOLS]
@@ -397,8 +397,8 @@ class MCPServer:
             if isinstance(name, str) and name in _GATE_TOOLS and self._gate_missing:
                 raise _RpcError(
                     -32601,
-                    f"{name} is withdrawn: this workspace has no [harness]"
-                    " verify_command, so there is no gate to run",
+                    f"{name} is withdrawn: this workspace has no"
+                    " harness.verify.command, so there is no gate to run",
                 )
             raise _RpcError(-32601, f"unknown tool: {name!r}")
         if raw_args is not None and not isinstance(raw_args, dict):

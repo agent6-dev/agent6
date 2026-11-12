@@ -57,7 +57,7 @@ max_usd = 10.0
 max_tokens_fallback = 2000000
 
 [harness]
-verify_command = ["uv", "run", "pytest", "-x"]
+verify.command = ["uv", "run", "pytest", "-x"]
 
 [providers.anthropic]
 backend = "anthropic"

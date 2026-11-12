@@ -834,7 +834,7 @@ def build_lane_spawner(
 
         # The coordinator's manifest pins the gate the lanes' config carries.
         gate_source = ""
-        if cfg.harness.verify_command:
+        if cfg.harness.verify.command:
             try:
                 gate_source = sessions_manifest.read_manifest(coord_dir).harness.gate.source
             except sessions_manifest.ManifestError:

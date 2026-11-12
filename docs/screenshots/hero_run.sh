@@ -59,9 +59,9 @@ max_usd = 0.50
 max_tokens_fallback = 2000000
 [harness]
 # The tape's first beat is the baseline approval.
-verify_at_start = true
-verify_command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
-verify_when = "finish"
+verify.at_start = true
+verify.command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
+verify.when = "finish"
 [providers.openrouter]
 backend = "openai"
 base_url = "http://127.0.0.1:${PORT}/api/v1"

@@ -1828,14 +1828,14 @@ class Harness:
     @functools.cached_property
     def gate(self) -> verify_gate.VerifyGate:
         """Return the verify gate over the config's command."""
-        wf = self.config.harness
+        verify = self.config.harness.verify
         return verify_gate.VerifyGate(
-            configured=tuple(wf.verify_command),
-            when=wf.verify_when,
-            at_start=wf.verify_at_start,
-            retries=wf.verify_retries,
-            timeout_s=wf.verify_timeout_s,
-            infer=wf.verify_infer,
+            configured=tuple(verify.command),
+            when=verify.when,
+            at_start=verify.at_start,
+            retries=verify.retries,
+            timeout_s=verify.timeout_s,
+            infer=verify.infer,
             hide=self.config.sandbox.hide_paths,
             mode=self.mode,
             chain=self.chain,

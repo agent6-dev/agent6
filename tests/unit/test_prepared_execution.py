@@ -32,7 +32,7 @@ def _config(**sandbox: object) -> Config:
     return Config.model_validate(
         {
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow", **sandbox},
-            "harness": {"verify_command": ["sh", "-c", "echo gate"], "command_checkin_s": 0},
+            "harness": {"verify": {"command": ["sh", "-c", "echo gate"]}, "command_checkin_s": 0},
         }
     )
 

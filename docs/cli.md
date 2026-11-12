@@ -177,7 +177,7 @@ Exit codes for `agent6 run`, `ask` and `resume`, for scripts to branch on:
 | `1` | ended unfinished: out of turns, stuck, a provider error, a crash |
 | `2` | operator error (bad flag or config, a refusal before anything ran) |
 | `3` | budget exhausted, including a `run --parallel` fan-out whose every lane stopped at its cap |
-| `4` | finished over a red or timed-out verify gate, or a never-run gate under `verify_when = "finish"` or `"turn"` |
+| `4` | finished over a red or timed-out verify gate, or a never-run gate under `harness.verify.when = "finish"` or `"turn"` |
 | `5` | finished, but no commit landed and the edits sit uncommitted (a run that changed nothing, or one with `[git].commit_per_turn = false`, stays `0`) |
 | `130` | interrupted, or stopped by the operator: Ctrl-C, SIGTERM to a run, ask, plan or fan-out (`timeout`, CI, the kill `agent6 stop` falls back to), `agent6 stop`, abort or exit at the pause menu, stop after a commit |
 | `141` | the output pipe closed (`agent6 ... \| head`) |
@@ -269,7 +269,7 @@ agent6 config show telemetry            # every key with its origin
 
 ```sh
 agent6 check [section]                               # sandbox (isolation, boundaries, probes), config (provider keys), MCP, verify
-agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md
+agent6 init [--yes] [--ecosystem E]                  # the setup wizard: per-repo config, verify command, .gitignore, AGENTS.md
 agent6 memory add|list|show|remove                   # the index renders each fact's first non-empty line
 agent6 memory list --json                           # prints a JSON array with name, first_line, written_by, written_at, edited_by, edited_at, reads and last_read_by (unknown provenance is null).
 agent6 memory show NAME --json                      # prints that fact’s object from memory list --json.

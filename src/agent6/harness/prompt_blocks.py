@@ -311,7 +311,7 @@ def build_system_prompt(
         else ""
     )
     base = base.replace("__CONTAINER_RULE__", container_rule)
-    has_gate = bool(config.harness.verify_command) and allowed
+    has_gate = bool(config.harness.verify.command) and allowed
     base = base.replace("__PLAN_VERIFY_RULE__", loop.PLAN_VERIFY_RULE if has_gate else "")
     base = base.replace("__READONLY_COMMAND_RULE__", loop.READONLY_COMMAND_RULE if allowed else "")
     base = base.replace(
@@ -342,16 +342,16 @@ def build_system_prompt(
         )
         return "\n".join(parts)
 
-    verify_argv = list(config.harness.verify_command) if has_gate else []
+    verify_argv = list(config.harness.verify.command) if has_gate else []
     if verify_argv:
         parts.append(
             loop.V2_VERIFY_BLOCK_TEMPLATE.format(
                 argv=json.dumps(verify_argv),
-                timeout_s=config.harness.verify_timeout_s,
+                timeout_s=config.harness.verify.timeout_s,
                 # The harness runs the gate in run mode only.
                 when=loop.V2_VERIFY_WHEN[
-                    config.harness.verify_when if mode == "run" else "never"
-                ].format(retries=config.harness.verify_retries),
+                    config.harness.verify.when if mode == "run" else "never"
+                ].format(retries=config.harness.verify.retries),
                 stale=loop.V2_STALE_GATE if mode == "run" else "",
             )
         )

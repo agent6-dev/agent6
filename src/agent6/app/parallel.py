@@ -167,7 +167,7 @@ def run_parallel(
     events.emit(
         journal.ParallelDispatched(group=fanout_id, lanes=len(lanes), tasks=[operator_task])
     )
-    configured_gate = bool(cfg.harness.verify_command)
+    configured_gate = bool(cfg.harness.verify.command)
     if spawner is None:
         # A clone lacks the untracked signals verify inference reads in the origin.
         cfg = preflight.infer_verify_if_unset(
@@ -180,12 +180,12 @@ def run_parallel(
             reporter=reporter,
         )
     gate_source = ""
-    if cfg.harness.verify_command:
+    if cfg.harness.verify.command:
         gate_source = "configured" if configured_gate else "inferred"
     # The gate every lane runs, pinned on the coordinator as a run pins its own.
     stamps.stamp_verify_gate(
         layout.session_dir,
-        sessions_manifest.GateStamp(command=cfg.harness.verify_command, source=gate_source),
+        sessions_manifest.GateStamp(command=cfg.harness.verify.command, source=gate_source),
     )
     if spawner is None:
         spawner = functools.partial(

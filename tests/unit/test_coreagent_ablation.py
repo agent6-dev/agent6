@@ -25,8 +25,8 @@ def test_every_condition_loads_with_a_default_route(tmp_path: pathlib.Path, cond
     assert cfg.models.default.effort == "high"
     assert cfg.models.worker is None
     assert cfg.models.helper is None
-    assert cfg.harness.verify_command == ("bash", "verify.sh")
-    assert cfg.harness.verify_when == ("finish" if condition == "verify_finish" else "never")
+    assert cfg.harness.verify.command == ("bash", "verify.sh")
+    assert cfg.harness.verify.when == ("finish" if condition == "verify_finish" else "never")
 
 
 def test_dry_run_builds_config_without_agent_or_grader(
@@ -48,7 +48,7 @@ def test_dry_run_builds_config_without_agent_or_grader(
     )
     assert row["dry_run"] is True
     cfg = pathlib.Path(row["config"])
-    assert config.load_config(cfg).harness.verify_when == "finish"
+    assert config.load_config(cfg).harness.verify.when == "finish"
     assert (cfg.parent / ".git").is_dir()
     assert not (cfg.parent / "agent.log").exists()
     assert "score" not in row

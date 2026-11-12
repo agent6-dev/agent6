@@ -38,7 +38,7 @@ run_commands = "ask"
 
 _REPO = """\
 [harness]
-verify_command = ["pytest", "-q"]
+verify.command = ["pytest", "-q"]
 
 [sandbox]
 run_commands = "allow"
@@ -66,7 +66,7 @@ def test_layering_merges_global_and_repo(repo: pathlib.Path) -> None:
     assert cfg.models.worker is not None
     assert cfg.models.worker.model == "claude-sonnet-4-5"
     # From repo:
-    assert cfg.harness.verify_command == ("pytest", "-q")
+    assert cfg.harness.verify.command == ("pytest", "-q")
     # Repo overrides global on the same field:
     assert cfg.sandbox.run_commands == "allow"
 
@@ -88,7 +88,7 @@ def test_an_unknown_key_points_at_config_fix(repo: pathlib.Path) -> None:
 def test_source_map_attribution(repo: pathlib.Path) -> None:
     eff = layer.load_effective(repo)
     assert eff.sources["models.worker.model"] == "global"
-    assert eff.sources["harness.verify_command"] == "repo"
+    assert eff.sources["harness.verify.command"] == "repo"
     assert eff.sources["sandbox.run_commands"] == "repo"  # repo wins
     # Untouched secure default:
     assert eff.sources["git.run_repo_hooks"] == "default"
@@ -214,7 +214,7 @@ def test_render_show_json(repo: pathlib.Path) -> None:
     import json
 
     data = json.loads(config_view.render_show(eff, as_json=True))
-    assert data["harness.verify_command"]["source"] == "repo"
+    assert data["harness.verify.command"]["source"] == "repo"
 
 
 # --- the UI-agnostic config view-model (shared by config show / TUI / web) ---
@@ -414,11 +414,11 @@ def test_a_scalar_written_to_a_list_leaf_names_both_ways_to_write_one(
 ) -> None:
     """A scalar written to a list leaf names the array form and `config add`."""
     err = write.written_value_error(
-        "harness.verify_command", "python -m pytest", repo_root=tmp_path
+        "harness.verify.command", "python -m pytest", repo_root=tmp_path
     )
     assert err is not None
     assert "expected a list" in err
-    assert "config add harness.verify_command" in err
+    assert "config add harness.verify.command" in err
 
 
 def test_setting_a_section_keeps_its_other_leaves_and_comments(
@@ -565,7 +565,7 @@ def test_overlay_is_highest_layer(repo: pathlib.Path) -> None:
     assert eff.config.review.when == "periodic"
     assert eff.sources["review.when"] == "machine"
     # Lower layers still read through where the overlay is silent.
-    assert eff.config.harness.verify_command == ("pytest", "-q")
+    assert eff.config.harness.verify.command == ("pytest", "-q")
 
 
 def test_empty_overlay_matches_load_effective(repo: pathlib.Path) -> None:
@@ -643,7 +643,7 @@ def test_materialize_roundtrips(repo: pathlib.Path, tmp_path: pathlib.Path) -> N
     out.write_text(text, encoding="utf-8")
     # The materialized file must be a complete, valid config on its own.
     reloaded = load_config(out)
-    assert reloaded.harness.verify_command == ("pytest", "-q")
+    assert reloaded.harness.verify.command == ("pytest", "-q")
     assert reloaded.sandbox.run_commands == "allow"
     assert reloaded.providers["anthropic"].backend == "anthropic"
 
@@ -808,11 +808,17 @@ def test_materialize_escapes_control_chars_in_values(
     """A control char in a config string value serializes to valid TOML."""
     from agent6.config import Config, load_config
 
-    cfg = Config.model_validate({"harness": {"verify_command": ["echo", "a\x01b\nc"]}})
+    cfg = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"command": ["echo", "a\x01b\nc"]},
+            }
+        }
+    )
     out = tmp_path / "materialized.toml"
     out.write_text(layer.materialize(cfg), encoding="utf-8")
     reloaded = load_config(out)
-    assert list(reloaded.harness.verify_command) == ["echo", "a\x01b\nc"]
+    assert list(reloaded.harness.verify.command) == ["echo", "a\x01b\nc"]
 
 
 def test_concurrent_rollback_does_not_erase_a_valid_write(

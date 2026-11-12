@@ -82,7 +82,7 @@ class TurnContext:
     loop_guard_kill_threshold: int
     settled_stop_after: int
     stagnation_notice_after_s: float
-    # `[harness].verify_when` and `verify_retries`, read by the red-gate return rule.
+    # `[harness.verify].when` and `.retries`, read by the red-gate return rule.
     verify_when: Literal["finish", "turn", "never"]
     verify_retries: int
     # A machine agent state's finish contract: the problems with a payload; None gates nothing.

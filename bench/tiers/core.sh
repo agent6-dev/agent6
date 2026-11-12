@@ -31,7 +31,7 @@ dirty_tree = "ask"
 branch_per_run = true
 
 [harness]
-verify_command = ["python3", "-m", "unittest", "-v"]
+verify.command = ["python3", "-m", "unittest", "-v"]
 
 [budget]
 max_usd = 10.0

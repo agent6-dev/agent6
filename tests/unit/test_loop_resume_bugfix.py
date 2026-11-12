@@ -80,10 +80,7 @@ def _wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -125,13 +122,10 @@ def test_snapshot_persists_completion_scalars(tmp_path: pathlib.Path) -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -165,13 +159,10 @@ def test_snapshot_preserves_run_lifetime_memory_state(tmp_path: pathlib.Path) ->
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -249,13 +240,10 @@ def test_snapshot_persists_and_restores_parallel_group_counter(tmp_path: pathlib
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -284,13 +272,10 @@ def test_snapshot_persists_and_restores_pins(tmp_path: pathlib.Path) -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -381,13 +366,10 @@ def test_resume_seeds_state_from_snapshot_scalars(monkeypatch: pytest.MonkeyPatc
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     provider = mock.MagicMock()
@@ -476,13 +458,10 @@ def test_resume_reannounces_restored_pins_for_the_read_model() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     provider = mock.MagicMock()
@@ -562,13 +541,10 @@ def test_resume_start_carries_the_execution_identity(tmp_path: pathlib.Path) -> 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     provider = mock.MagicMock()
@@ -625,13 +601,10 @@ def test_resume_with_no_pins_still_corrects_a_stale_pin_added() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     provider = mock.MagicMock()
@@ -703,13 +676,10 @@ def test_snapshot_written_after_tool_dispatch_advances_turn(tmp_path: pathlib.Pa
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     provider = mock.MagicMock()
@@ -856,13 +826,15 @@ def test_final_checkpoint_commits_dirty_worktree_on_gated_run(tmp_path: pathlib.
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("pytest", "-q"),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("pytest", "-q"),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     emitted: list[tuple[str, dict[str, Any]]] = []
@@ -927,13 +899,15 @@ def test_final_checkpoint_noop_when_clean_or_not_run_mode(tmp_path: pathlib.Path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("pytest",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("pytest",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     head = subprocess.run(
@@ -973,13 +947,10 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
         ),
     )
     provider = mock.MagicMock()
@@ -1107,10 +1078,7 @@ def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_command=(),
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
+            verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
             prompt=mock.MagicMock(system_prompt_file=""),
         ),
     )
@@ -1180,10 +1148,7 @@ def test_initial_pins_honor_the_cap_and_skip_empties() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_command=(),
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
+            verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
             prompt=mock.MagicMock(system_prompt_file=""),
         ),
     )
@@ -1247,13 +1212,15 @@ def test_a_gate_swapped_between_executions_is_announced_to_the_worker(
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("make", "check"),  # the operator pinned one since
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("make", "check"),
+                timeout_s=60.0,
+                infer=True,
+            ),  # the operator pinned one since
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     provider = mock.MagicMock()
@@ -1324,13 +1291,10 @@ def test_an_adopted_gate_carries_into_the_next_execution(tmp_path: pathlib.Path)
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     provider = mock.MagicMock()
@@ -1400,7 +1364,13 @@ def test_a_green_verdict_survives_a_resume_after_the_run_committed(tmp_path: pat
     chain = "refs/agent6/run1/head"
     wf = _wf(
         root=repo,
-        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["true"]},
+                }
+            }
+        ),
         ref=chain,
         fallback_parent=base,
     )
@@ -1441,7 +1411,13 @@ def test_a_resume_onto_another_tree_keeps_the_verified_tree_as_a_fact(
     ev = _EventCapture()
     wf = _wf(
         root=repo,
-        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["true"]},
+                }
+            }
+        ),
         events=ev,
     )
     snap = loop_snapshot.SessionSnapshot.model_validate(
@@ -1498,7 +1474,16 @@ def test_a_baseline_verdict_carries_only_onto_the_base_it_describes(
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
-    wf = _wf(root=repo, config=Config.model_validate({"harness": {"verify_command": ["true"]}}))
+    wf = _wf(
+        root=repo,
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["true"]},
+                }
+            }
+        ),
+    )
     wf.chain = dataclasses.replace(wf.chain, base_sha="a" * 40)
     fields = {
         "system": "s",
@@ -1564,13 +1549,10 @@ def test_a_gate_withheld_between_executions_is_no_swap_for_the_worker(
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),  # dropped at execution start: commands are withheld
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),  # dropped at execution start: commands are withheld
             metric=types.SimpleNamespace(goal="maximize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     provider = mock.MagicMock()
@@ -1649,9 +1631,7 @@ def test_resume_restates_execution_local_gate_availability(
         {
             "sandbox": {"run_commands": policy},
             "harness": {
-                "verify_command": ["true"],
-                "verify_when": "finish",
-                "verify_at_start": True,
+                "verify": {"command": ["true"], "when": "finish", "at_start": True},
             },
         }
     )
@@ -1717,9 +1697,7 @@ def test_baseline_denial_is_saved_as_execution_local_withholding(tmp_path: pathl
         config=Config.model_validate(
             {
                 "harness": {
-                    "verify_command": ["true"],
-                    "verify_when": "finish",
-                    "verify_at_start": True,
+                    "verify": {"command": ["true"], "when": "finish", "at_start": True},
                 }
             }
         ),

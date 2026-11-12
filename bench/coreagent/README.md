@@ -57,7 +57,7 @@ python3 stats.py results/myrun.jsonl          # per-cell mean+/-se + treatment d
 ```
 
 Providers and secrets come from the layered global `~/.config/agent6` config.
-The harness writes `[models.default]` with `model = "<provider>/<model>"` and the optional `effort` pin, plus `harness.verify_command = ["bash", "verify.sh"]`.
+The harness writes `[models.default]` with `model = "<provider>/<model>"` and the optional `effort` pin, plus `harness.verify.command = ["bash", "verify.sh"]`.
 Keep global role overrides unset and other experiment settings at their defaults so every role inherits the tested route and only the condition changes.
 Each live run checks its merged config with `agent6 config show` before spending.
 Anthropic models (unpriced) get token caps instead of `--max-usd`.
@@ -91,8 +91,8 @@ Dry runs print each config path and do not append result rows.
 
 | Condition | Setting | Comparison |
 |-----------|---------|------------|
-| `baseline` | Shipped defaults: `harness.verify_when = "never"` | G12 and B15 control |
-| `verify_finish` | `harness.verify_when = "finish"` | G12 treatment: harness runs the finish gate; both arms retain the same tools and verify command |
+| `baseline` | Shipped defaults: `harness.verify.when = "never"` | G12 and B15 control |
+| `verify_finish` | `harness.verify.when = "finish"` | G12 treatment: harness runs the finish gate; both arms retain the same tools and verify command |
 | `revise_auto` (retired) | Prompt revision, removed from config | B15 treatment: helper rewrote the task before the worker loop |
 | `decompose` | `harness.prompt.decompose = "on"` | Front-loaded decomposition |
 | `compact_tight` | Lower compaction thresholds | Force compaction on moderate tasks |

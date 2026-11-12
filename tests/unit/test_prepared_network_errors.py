@@ -32,7 +32,7 @@ def _config() -> Config:
         {
             "sandbox": {"isolation": "full", "network": "session", "run_commands": "allow"},
             "harness": {
-                "verify_command": ["/bin/sh", "-c", "printf ran > work"],
+                "verify": {"command": ["/bin/sh", "-c", "printf ran > work"]},
                 "command_checkin_s": 0,
             },
         }

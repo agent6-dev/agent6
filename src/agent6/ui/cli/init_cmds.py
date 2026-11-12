@@ -152,7 +152,7 @@ def _print_next_steps(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...])
     if cfg is None or cfg.models.resolve("default") is None:
         print("  agent6 model default <provider>/<model>  # set the required default")
     print("  agent6 config show             # audit the effective config")
-    gated = cfg is not None and bool(cfg.harness.verify_command)
+    gated = cfg is not None and bool(cfg.harness.verify.command)
     print('  agent6 run "<task>"' + ("" if gated else "            # verify is inferred per run"))
 
 

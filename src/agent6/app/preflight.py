@@ -603,10 +603,10 @@ def drop_gate_if_unrunnable(
     """
     if ipc.effective_run_commands(cfg.sandbox.run_commands, session_dir) != "deny":
         return cfg
-    if cfg.harness.verify_command:
+    if cfg.harness.verify.command:
         reporter.note(
             "commands are withheld, and the verify gate is a command"
-            f" ({gate_text(cfg.harness.verify_command)}): running gateless, with no green gate."
+            f" ({gate_text(cfg.harness.verify.command)}): running gateless, with no green gate."
         )
     return cfg.with_verify_command(())
 
@@ -642,14 +642,14 @@ def infer_verify_if_unset(
     Returns:
         The config with the verify command set, or unchanged.
     """
-    if mode not in ("run", "plan") or cfg.harness.verify_command:
+    if mode not in ("run", "plan") or cfg.harness.verify.command:
         return cfg
-    if not cfg.harness.verify_infer:
+    if not cfg.harness.verify.infer:
         # Pinned gateless: mid-run adoption reads the same knob and stays off too.
         events.emit(journal.VerifyInferred(command=[], source="disabled"))
         if mode == "run":
             reporter.note(
-                "verify_infer = false: running gateless"
+                "harness.verify.infer = false: running gateless"
                 " (per-turn commits, no green gate; nothing is inferred or adopted)."
             )
         return cfg
@@ -692,15 +692,15 @@ def infer_verify_if_unset(
     if not inferred.argv:
         if mode == "run":
             reporter.note(
-                "no verify_command set and none could be inferred; running"
+                "no verify command set and none could be inferred; running"
                 " gateless\n         (per-turn commits, no green gate). If the run"
                 " creates a recognizable project, a verify\n         command is"
-                f" adopted mid-run; pin one with harness.verify_command.{passed_line}"
+                f" adopted mid-run; pin one with harness.verify.command.{passed_line}"
             )
         return cfg
     reporter.note(
-        f"verify_command not set; inferred from {inferred.label}:"
+        f"verify command not set; inferred from {inferred.label}:"
         f" {shlex.join(inferred.argv)}\n         (this run only; pin it with"
-        f" harness.verify_command in your per-repo config){passed_line}"
+        f" harness.verify.command in your per-repo config){passed_line}"
     )
     return cfg.with_verify_command(inferred.argv)

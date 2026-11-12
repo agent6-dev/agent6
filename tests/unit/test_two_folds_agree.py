@@ -302,7 +302,7 @@ def test_exit_124_without_a_timeout_fact_stays_red(tmp_path: pathlib.Path, recor
 
 
 def test_both_folds_tell_a_timed_out_gate_from_a_red_one(tmp_path: pathlib.Path) -> None:
-    """A verify killed at `verify_timeout_s` read "gate red", as if the suite had failed."""
+    """A verify killed at `harness.verify.timeout_s` read "gate red", as if the suite had failed."""
     from agent6.viewmodel import transcript
 
     timed_out = [_START, _verify_end(124, timeout_s=300.0, outcome="timed_out"), _END_RED]

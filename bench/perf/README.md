@@ -79,7 +79,7 @@ the run via the `BudgetExceeded` exit-3 path.
 ## Why both agents will spend the full budget
 
 - claude-code is open-ended by design: it iterates until the budget cap.
-- agent6's `verify_command` is `python tests/submission_tests.py`. That
+- agent6's `harness.verify.command` is `python tests/submission_tests.py`. That
   exits 0 only when ALL speed tiers (including the < 1363 tier) pass,
   which is effectively unreachable, so agent6's per-step retry loop
   keeps spending tokens on optimization attempts until the budget cap

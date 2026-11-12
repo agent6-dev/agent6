@@ -74,7 +74,7 @@ def test_idle_turns_draw_one_nudge_then_a_soft_declared_stop() -> None:
 def test_a_red_gate_draws_no_settled_nudge_but_the_stop_still_comes() -> None:
     """The nudge says `finish_session ends the run`; over a red gate that finish is refused.
 
-    A gated run under `verify_when = "finish"` arms on an unjudged edit, so an idle model
+    A gated run under `harness.verify.when = "finish"` arms on an unjudged edit, so an idle model
     was invited to a finish the gate then bounced.
     """
     state = loop_state.LoopState(original_task="t", tool_calls=0)
@@ -118,7 +118,7 @@ def test_a_gate_red_at_start_still_draws_the_settled_nudge() -> None:
     """
     state = loop_state.LoopState(original_task="t", tool_calls=0)
     state.verify.note_baseline(ok=False)
-    # Under `verify_when = "finish"` the model's unjudged edit arms the guard.
+    # Under `harness.verify.when = "finish"` the model's unjudged edit arms the guard.
     state.verify.note_edit()
     state.settled.gateless_ever_edited = True
     ctx = turn_context(tree_sha=lambda: "tree", gate_present=lambda: True)

@@ -20,7 +20,7 @@ _AGENTS_PIPELINE = """\
 
 ## Verify command
 
-Also what `verify_command` should be in this repo's agent6 config:
+Also what `harness.verify.command` should be in this repo's agent6 config:
 
 ```bash
 uv run ruff check && uv run ruff format --check && \\

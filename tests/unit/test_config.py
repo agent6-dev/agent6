@@ -50,7 +50,7 @@ dirty_tree = "ask"
 branch_per_run = true
 
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 [budget]
 max_tokens_fallback = 100000
 """
@@ -67,7 +67,7 @@ def test_loads_valid_config(tmp_path: pathlib.Path) -> None:
     cfg = load_config(_write(tmp_path, _VALID_TOML))
     assert cfg.agent6.config_version == 1
     assert cfg.sandbox.isolation == "auto"
-    assert cfg.harness.verify_command == ("true",)
+    assert cfg.harness.verify.command == ("true",)
 
 
 @pytest.mark.parametrize("extra", ["", 'backend = "anthropic"\n'])
@@ -93,7 +93,7 @@ def test_extra_key_forbidden(tmp_path: pathlib.Path) -> None:
     ("body", "field"),
     [
         ("[git]\ncommit_per_step = false\n", r"git\.commit_per_step"),
-        ('[harness]\nverify_when = "step"\n', r"harness\.verify_when"),
+        ('[harness]\nverify.when = "step"\n', r"harness\.verify\.when"),
     ],
 )
 def test_turn_boundary_config_refuses_step_spellings(
@@ -103,10 +103,10 @@ def test_turn_boundary_config_refuses_step_spellings(
     with pytest.raises(ConfigError, match=field):
         load_config(_write(tmp_path, body))
     cfg = load_config(
-        _write(tmp_path, '[git]\ncommit_per_turn = false\n[harness]\nverify_when = "turn"\n')
+        _write(tmp_path, '[git]\ncommit_per_turn = false\n[harness]\nverify.when = "turn"\n')
     )
     assert cfg.git.commit_per_turn is False
-    assert cfg.harness.verify_when == "turn"
+    assert cfg.harness.verify.when == "turn"
 
 
 def test_telemetry_is_off_by_default_and_a_selected_signal_needs_its_destination() -> None:
@@ -370,43 +370,43 @@ def test_role_temperature_out_of_range(tmp_path: pathlib.Path) -> None:
 
 def test_empty_verify_command_loads_and_is_runnable(tmp_path: pathlib.Path) -> None:
     # verify_command is optional: `run` and `plan` infer one, so require_runnable allows empty.
-    body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
+    body = _VALID_TOML.replace('verify.command = ["true"]', "verify.command = []")
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.harness.verify_command == ()
+    assert cfg.harness.verify.command == ()
     cfg.require_runnable("worker")  # does not raise
 
 
 def test_with_verify_command_injects_in_memory(tmp_path: pathlib.Path) -> None:
     # An inferred verify command is injected in memory for one run, never mutating the config.
-    body = _VALID_TOML.replace('verify_command = ["true"]', "verify_command = []")
+    body = _VALID_TOML.replace('verify.command = ["true"]', "verify.command = []")
     cfg = load_config(_write(tmp_path, body))
     injected = cfg.with_verify_command(("pytest", "-q"))
-    assert injected.harness.verify_command == ("pytest", "-q")
-    assert cfg.harness.verify_command == ()  # original untouched
-    assert cfg.with_verify_command(()).harness.verify_command == ()
+    assert injected.harness.verify.command == ("pytest", "-q")
+    assert cfg.harness.verify.command == ()  # original untouched
+    assert cfg.with_verify_command(()).harness.verify.command == ()
 
 
 def test_verify_timeout_s_defaults_to_600(tmp_path: pathlib.Path) -> None:
     """Default verify_timeout_s matches jail default (600s)."""
     cfg = load_config(_write(tmp_path, _VALID_TOML))
-    assert cfg.harness.verify_timeout_s == 600.0
+    assert cfg.harness.verify.timeout_s == 600.0
 
 
 def test_verify_timeout_s_overridable(tmp_path: pathlib.Path) -> None:
-    """Bench configs set verify_timeout_s = 30 for fast failure on infinite-loop edits."""
+    """Bench configs set verify.timeout_s = 30 for fast failure on infinite-loop edits."""
     body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\nverify_timeout_s = 30.0',
+        'verify.command = ["true"]',
+        'verify.command = ["true"]\nverify.timeout_s = 30.0',
     )
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.harness.verify_timeout_s == 30.0
+    assert cfg.harness.verify.timeout_s == 30.0
 
 
 def test_verify_timeout_s_must_be_positive(tmp_path: pathlib.Path) -> None:
     """0 or negative timeout is rejected (gt=0.0 constraint)."""
     body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\nverify_timeout_s = 0.0',
+        'verify.command = ["true"]',
+        'verify.command = ["true"]\nverify.timeout_s = 0.0',
     )
     with pytest.raises(ConfigError):
         load_config(_write(tmp_path, body))
@@ -602,7 +602,7 @@ protect_git = "on"
 [git]
 
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 
 [budget]
 max_tokens_fallback = 100000
@@ -613,7 +613,7 @@ max_tokens_fallback = 100000
     assert cfg.git.dirty_tree == "ask"
     assert cfg.git.branch_per_run is True
     assert cfg.git.merge_method == "tasks"
-    assert cfg.harness.verify_timeout_s == 600.0
+    assert cfg.harness.verify.timeout_s == 600.0
     anthro = cfg.providers["anthropic"]
     from agent6.config import AnthropicProviderEntry
 
@@ -784,10 +784,10 @@ def test_extra_body_rejects_nested_non_finite_floats(tmp_path: pathlib.Path, lit
 
 def test_argv_rejects_blank_element(tmp_path: pathlib.Path) -> None:
     for literal in (
-        'verify_command = ["uv", " "]',
+        'verify.command = ["uv", " "]',
         '[notify]\non_event = ["notify-send", ""]',
     ):
-        body = _VALID_TOML.replace('verify_command = ["true"]', literal)
+        body = _VALID_TOML.replace('verify.command = ["true"]', literal)
         with pytest.raises(ConfigError, match="argv elements"):
             load_config(_write(tmp_path, body))
 
@@ -1105,8 +1105,8 @@ def test_max_turns_defaults_to_200(tmp_path: pathlib.Path) -> None:
 
 def test_max_turns_unlimited_is_minus_one(tmp_path: pathlib.Path) -> None:
     body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\nmax_turns = -1',
+        'verify.command = ["true"]',
+        'verify.command = ["true"]\nmax_turns = -1',
     )
     assert load_config(_write(tmp_path, body)).harness.max_turns == -1
 
@@ -1114,8 +1114,8 @@ def test_max_turns_unlimited_is_minus_one(tmp_path: pathlib.Path) -> None:
 def test_max_turns_zero_is_rejected(tmp_path: pathlib.Path) -> None:
     """0 would end every execution before its first call; the sentinel is exactly -1."""
     body = _VALID_TOML.replace(
-        'verify_command = ["true"]',
-        'verify_command = ["true"]\nmax_turns = 0',
+        'verify.command = ["true"]',
+        'verify.command = ["true"]\nmax_turns = 0',
     )
     with pytest.raises(ConfigError, match="exactly -1 for unlimited"):
         load_config(_write(tmp_path, body))

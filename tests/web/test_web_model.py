@@ -496,13 +496,13 @@ def test_config_payload_resolves_adaptive_leaves_like_config_show(tmp_path: path
 def test_config_payload_carries_round_trippable_editor_values(tmp_path: pathlib.Path) -> None:
     cfg = tmp_path / "c.toml"
     cfg.write_text(
-        '[harness]\nverify_command = ["uv", "run", "pytest"]\n[skills.state]\nalpha = "always"\n',
+        '[harness]\nverify.command = ["uv", "run", "pytest"]\n[skills.state]\nalpha = "always"\n',
         encoding="utf-8",
     )
 
     payload = model.config_payload(tmp_path, (cfg,))
 
-    assert payload["harness.verify_command"]["input"] == '["uv", "run", "pytest"]'
+    assert payload["harness.verify.command"]["input"] == '["uv", "run", "pytest"]'
     assert payload["skills.state.alpha"]["input"] == "always"
     assert payload["skills.state.alpha"]["choices"] == ["enabled", "disabled", "always"]
     assert payload["skills.state.alpha"]["type"] == "choice"
@@ -729,7 +729,13 @@ def test_a_parked_runs_policy_names_the_configured_gates_origin(tmp_path: pathli
         base_sha="0" * 40,
         base_branch="main",
         run_branch=None,
-        cfg=Config.model_validate({"harness": {"verify_command": ["python3", "-m", "pytest"]}}),
+        cfg=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["python3", "-m", "pytest"]},
+                }
+            }
+        ),
     )
     stamps.stamp_parked(layout.session_dir, task="t", reason="checkout busy")
     snap = session_snapshot(layout.session_dir)

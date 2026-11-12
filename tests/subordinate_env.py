@@ -70,7 +70,7 @@ def config(url: str = "http://127.0.0.1:1/v1", *, tool: bool = False) -> Config:
             "providers": {"p": {"backend": "openai", "base_url": url}},
             "models": {"default": {"model": "p/base"}},
             "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "allow"},
-            "harness": {"verify_when": "never", "parallel": {"tool": tool}},
+            "harness": {"verify": {"when": "never"}, "parallel": {"tool": tool}},
             "review": {"when": "verify_fail"},
         }
     )

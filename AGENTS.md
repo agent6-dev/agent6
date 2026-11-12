@@ -168,7 +168,7 @@
 
 ### Verify command
 
-- The repo's `verify_command`; agent6 infers it from this fenced block when none is configured (a pipeline is wrapped as `sh -c`):
+- The repo's `harness.verify.command`; agent6 infers it from this fenced block when none is configured (a pipeline is wrapped as `sh -c`):
 
 ```bash
 uv run ruff check && uv run ruff format --check && \

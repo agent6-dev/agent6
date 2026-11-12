@@ -253,7 +253,7 @@ def test_cli_records_unverified_work_and_prints_its_guidance(
         '[models.default]\nmodel = "p/m"\n[models.worker]\nmodel = "p/m"\n'
         '[providers.p]\nbackend = "openai"\nbase_url = "http://127.0.0.1:1"\n'
         'api_key_env = "PROBE_KEY"\n[review]\nwhen = "never"\n'
-        '[harness]\nverify_command = ["true"]\nverify_at_start = false\nverify_when = "never"\n'
+        '[harness]\nverify.command = ["true"]\nverify.at_start = false\nverify.when = "never"\n'
         + {
             "model": '[git]\ncontrol = "model"\n',
             "no_commit": "[git]\ncommit_per_turn = false\n",

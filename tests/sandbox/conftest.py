@@ -126,9 +126,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
             "sandbox": {"isolation": "none", "network": "host", "run_commands": "allow"},
             "workspace": {"setup_command": (*observe, "setup")},
             "harness": {
-                "verify_command": (*observe, "verify"),
-                "verify_at_start": True,
-                "verify_when": "finish",
+                "verify": {"command": (*observe, "verify"), "at_start": True, "when": "finish"},
                 "command_checkin_s": 0,
                 "max_turns": 3,
                 "prompt": {"decompose": "off"},
@@ -225,7 +223,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
         assert record.exit_code == 0
         assert record.stdout_tail.splitlines() == [record.command[-1], *expected]
     assert view.setups[0].command == cfg.workspace.setup_command
-    assert all(record.command == cfg.harness.verify_command for record in view.verifications)
+    assert all(record.command == cfg.harness.verify.command for record in view.verifications)
     assert all(record.certifies(view.end_tree) for record in view.verifications)
     assert view.final_verify_id == view.verifications[-1].verify_id
     assert len(view.jobs) == len(view.environments) == 1

@@ -250,7 +250,7 @@ V2_STALE_GATE = """
 finish_session's stale_gate field records a replacement-gate proposal
 for the operator; the gate itself does not move."""
 
-# The `[harness].verify_when` fact for the block above, by mode; {retries} is `verify_retries`.
+# The `[harness.verify].when` fact for the block above, by mode; {retries} is `.retries`.
 V2_VERIFY_WHEN = {
     "finish": (
         "The harness runs it when finish_session is called over a tree no"

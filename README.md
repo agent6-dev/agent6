@@ -92,7 +92,7 @@ To give a finished run more work, use `agent6 resume <id> --steer "next task"`.
 Changes are global unless you add `--repo` for a repository override, for example:
 
 ```sh
-agent6 config set --repo harness.verify_command '["uv", "run", "pytest"]'
+agent6 config set --repo harness.verify.command '["uv", "run", "pytest"]'
 ```
 
 The worker, planner, reviewer, and helper inherit each unset model, effort, and temperature from the required `models.default`.

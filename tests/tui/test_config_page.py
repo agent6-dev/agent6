@@ -549,7 +549,7 @@ def test_list_setting_prefill_saves_back_unchanged(
     gdir = tmp_path / "g"
     (gdir / "agent6").mkdir(parents=True, exist_ok=True)
     (gdir / "agent6" / "config.toml").write_text(
-        _GLOBAL + '\n[harness]\nverify_command = ["uv", "run", "pytest"]\n',
+        _GLOBAL + '\n[harness.verify]\ncommand = ["uv", "run", "pytest"]\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("XDG_CONFIG_HOME", str(gdir))
@@ -569,7 +569,7 @@ def test_list_setting_prefill_saves_back_unchanged(
             ridx = next(
                 r
                 for r in range(tbl.row_count)
-                if str(tbl.get_row_at(r)[0]).strip() == "verify_command"
+                if str(tbl.get_row_at(r)[0]).strip() == "verify.command"
             )
             tbl.move_cursor(row=ridx)
             await pilot.pause()
@@ -584,7 +584,7 @@ def test_list_setting_prefill_saves_back_unchanged(
             assert isinstance(app.screen, config_page.ConfigScreen)
 
     asyncio.run(scenario())
-    saved = layer.load_effective(repo_root, ()).config.harness.verify_command
+    saved = layer.load_effective(repo_root, ()).config.harness.verify.command
     assert saved == ("uv", "run", "pytest")  # unchanged, not corrupted to a str
 
 

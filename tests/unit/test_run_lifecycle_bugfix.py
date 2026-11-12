@@ -376,7 +376,7 @@ def test_a_plan_budget_stop_uses_one_label_and_prints_its_reason_once(
         '[models.default]\nmodel = "chatgpt/gpt-6-astra"\n'
         '[providers.chatgpt]\nbackend = "chatgpt"\n'
         '[review]\nwhen = "never"\n'
-        "[harness]\nverify_infer = false\n",
+        "[harness]\nverify.infer = false\n",
         encoding="utf-8",
     )
     from agent6.config import ChatGPTProviderEntry

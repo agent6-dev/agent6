@@ -29,7 +29,7 @@ test suite** passes. The default subset spans a difficulty gradient:
 | `url-rfc3986` | self-contained | RFC 3986 URL parsing |
 
 Success is **not** the agent's self-report: after each run the harness
-re-executes the task's `verify_command` out-of-band and uses its exit code as
+re-executes the task's `harness.verify.command` out-of-band and uses its exit code as
 ground truth. A run "passes" only if the upstream tests pass on the code the
 agent left behind.
 

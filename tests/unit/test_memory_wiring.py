@@ -35,7 +35,13 @@ def _repo(root: pathlib.Path) -> kinds.RepoSummary:
 
 def _build(mode: str, index: str, tmp_path: pathlib.Path) -> str:
     return prompt_blocks.build_system_prompt(
-        config=Config.model_validate({"harness": {"verify_command": ["true"]}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["true"]},
+                }
+            }
+        ),
         repo=_repo(tmp_path),
         mode=mode,  # pyright: ignore[reportArgumentType]
         memory_index=index,

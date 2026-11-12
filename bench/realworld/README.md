@@ -30,7 +30,7 @@ bench/realworld/
 | `install` | optional list of argv lists to bootstrap the project's venv |
 | `break` | optional list of `{path, find, replace}` text substitutions |
 | `task_md` | the prompt written to `TASK.md` |
-| `verify_command` | argv list for `[harness] verify_command` |
+| `harness.verify.command` | argv list for `[harness] verify_command` |
 | `metric` | optional `{command: argv, pattern: regex, goal: "minimize" or "maximize"}` for `[harness.metric]` and independent scoring |
 | `description` | short label printed before the task runs |
 

@@ -51,7 +51,7 @@ def session_exit_code(
     """Map a finished run to its process exit code.
 
     A non-zero exit says something went wrong. A red gate is wrong; an unverified finish is
-    wrong only under a harness gate (`harness.verify_when` other than `never`), where the
+    wrong only under a harness gate (`harness.verify.when` other than `never`), where the
     harness promised a verdict it could not give; with the harness gate off, the model's own
     verification is its business and an unverified finish exits 0, still labelled
     `unverified`. A red gate outranks stranded edits. An operator stop exits 130 whatever
@@ -59,7 +59,7 @@ def session_exit_code(
 
     Args:
         result: The session's result.
-        harness_gate: Whether the harness runs the gate itself (`verify_when` is not `never`).
+        harness_gate: Whether the harness runs the gate (`harness.verify.when` is not `never`).
         stranded: Whether the edits sit uncommitted with no commit landed.
 
     Returns:
@@ -213,11 +213,11 @@ def _print_red_gate(
     scan = scan_session_log(layout.logs_path)
     if limit := scan.verify_timeout_s:
         reporter.out(
-            f"\nthe verify gate ran out its {limit:.0f}s limit (harness.verify_timeout_s),"
+            f"\nthe verify gate ran out its {limit:.0f}s limit (harness.verify.timeout_s),"
             " so it gave no verdict on the final tree."
         )
         reporter.out(
-            "  raise the limit:  agent6 config set --repo harness.verify_timeout_s <seconds>"
+            "  raise the limit:  agent6 config set --repo harness.verify.timeout_s <seconds>"
         )
         return
     gate = ()
@@ -341,7 +341,7 @@ def _print_stale_gate(
     reporter.out(f"  it says: {note[:STALE_GATE_NOTE_MAX_CHARS]}{clipped}")
     reporter.out(
         "  nothing changed; if it is right, set the gate yourself:"
-        ' agent6 config set --repo harness.verify_command \'["<runner>", "<arg>"]\''
+        ' agent6 config set --repo harness.verify.command \'["<runner>", "<arg>"]\''
     )
 
 

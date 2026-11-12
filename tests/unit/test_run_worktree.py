@@ -929,7 +929,7 @@ def test_a_worktree_the_cleanup_cannot_remove_is_named(
 
 _COMMANDS = _CONFIG.replace('run_commands = "deny"', 'run_commands = "allow"')
 # The harness runs the gate at the finish, as the gate-carrying tests below need.
-_FINISH_GATE = _COMMANDS + '\n[harness]\nverify_when = "finish"\n'
+_FINISH_GATE = _COMMANDS + '\n[harness]\nverify.when = "finish"\n'
 
 
 def _with_setup(repo: pathlib.Path, argv: str) -> None:
@@ -1262,7 +1262,7 @@ def _pin_gate(repo: pathlib.Path, extra: str = "") -> None:
     path = paths.state_dir(repo) / "config.toml"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        f'[harness]\nverify_command = [".venv/bin/python", "-m", "pytest", "-q"]\n{extra}',
+        f'[harness]\nverify.command = [".venv/bin/python", "-m", "pytest", "-q"]\n{extra}',
         encoding="utf-8",
     )
 
@@ -1272,7 +1272,7 @@ def test_a_default_run_whose_gate_the_model_never_ran_exits_zero_and_reads_unver
 ) -> None:
     """With the harness gate off (the default), nothing judged the tree, so nothing is wrong."""
     in_checkout = _COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]')
-    _repo(tmp_path, monkeypatch, config=in_checkout + '\n[harness]\nverify_command = ["true"]\n')
+    _repo(tmp_path, monkeypatch, config=in_checkout + '\n[harness]\nverify.command = ["true"]\n')
     _script(monkeypatch, _edit("new.txt", "one\n"))
 
     assert cli_main(["run", "--session-id", "wt-UNJ01", "add new.txt"]) == 0
@@ -1327,7 +1327,7 @@ def test_a_lane_stamps_the_gate_origin_its_coordinator_resolved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The lane's config carries the gate the coordinator inferred; `(configured)` was a lie."""
-    repo = _repo(tmp_path, monkeypatch, config=_FINISH_GATE + 'verify_command = ["true"]\n')
+    repo = _repo(tmp_path, monkeypatch, config=_FINISH_GATE + 'verify.command = ["true"]\n')
     _git(repo, "commit", "-qam", "the operator's edit")
     _script(monkeypatch)
     snapshot = _lane_snapshot(repo, tmp_path, monkeypatch, gate_source="inferred")
@@ -1503,7 +1503,11 @@ def test_the_no_setup_refusal_says_the_command_runs_in_the_sandbox(
 ) -> None:
     """The refusal's example was `uv sync`, which fails under the default network."""
     cfg = Config.model_validate(
-        {"harness": {"verify_command": [".venv/bin/python", "-m", "pytest"]}}
+        {
+            "harness": {
+                "verify": {"command": [".venv/bin/python", "-m", "pytest"]},
+            }
+        }
     )
     dispatcher = _FailingSetup("full")
 

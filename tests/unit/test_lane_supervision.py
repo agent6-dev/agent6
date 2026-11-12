@@ -325,7 +325,7 @@ def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pa
                 "providers": {"p": {"backend": "openai", "base_url": base_url}},
                 "models": {"default": {"model": "p/base"}},
                 "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "allow"},
-                "harness": {"verify_when": "never", "max_turns": 50},
+                "harness": {"verify": {"when": "never"}, "max_turns": 50},
                 "review": {"when": "never"},
             }
         )

@@ -56,10 +56,12 @@ def _tools(
         {
             "sandbox": {"isolation": isolation, "network": "auto", "run_commands": "allow"},
             "harness": {
-                "verify_command": verify_command,
-                "verify_retries": verify_retries,
-                "verify_at_start": True,
-                "verify_when": "finish",
+                "verify": {
+                    "command": verify_command,
+                    "retries": verify_retries,
+                    "at_start": True,
+                    "when": "finish",
+                },
                 "command_checkin_s": 0,
                 "max_turns": 2,
             },
@@ -191,9 +193,7 @@ def resumed(
             "workspace": {"setup_command": ["/bin/true"]},
             "git": {"commit_per_turn": False, "auto_merge": False},
             "harness": {
-                "verify_command": ["/bin/true"],
-                "verify_at_start": True,
-                "verify_when": "finish",
+                "verify": {"command": ["/bin/true"], "at_start": True, "when": "finish"},
                 "command_checkin_s": 0,
                 "max_turns": 6,
                 "prompt": {"decompose": "off"},

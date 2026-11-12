@@ -11,7 +11,7 @@ Numbers are stated with their split, n and date; a sample is never the full set.
 - The container is the isolation: runs use `sandbox.isolation = "none"` inside SWE-bench's own Docker images (the jail has its own tests).
 - Splits: `sample_50.json` (Verified, seed 20260623, held out, never tuned on); `dev_slice_25.json` (25 of the 450 non-eval instances, the tuning slice); random draws by registered seed for coverage; SWE-rebench 2026_03 (110 instances, `fetch_rebench.py`, prebuilt images).
 - Caps: $1 of tokens per instance at list price, 1200 s wall, effort medium, concurrency 1 to 6 on 4 to 16 cores.
-- Verify is auto-detected per repo (pytest `-q -x`; django `runtests.py --parallel 2`), `verify_timeout_s = 240`; `AGENT6_SB_VERIFY=none` runs gateless through `[workflow].verify_infer = false` (without it, adoption re-arms an inferred gate).
+- Verify is auto-detected per repo (pytest `-q -x`; django `runtests.py --parallel 2`), `harness.verify.timeout_s = 240`; `AGENT6_SB_VERIFY=none` runs gateless through `[workflow].verify_infer = false` (without it, adoption re-arms an inferred gate).
 - Every instance gets the same four-line AGENTS.md steering derivation over upstream-fix recall; the same file is planted for every agent compared.
 - `AGENT6_DETACHED_AWAY=deny`: an approval nobody can answer is denied instead of parking the run until the wall.
 - The patch is `git add -A` minus the files untracked at the base commit and agent6's own files, so a module the run created is submitted (four of the rebench 110 need one).
@@ -42,7 +42,7 @@ The first n=6 pilot ran with verify broken (the jail binary could not exec in th
 | change | measurement | result |
 |---|---|---|
 | a working verify | Verified, 18 per arm | +2/18, django wins recovered |
-| the finish gate (`verify_when = finish`, `verify_retries = 2`) | rebench 110, one run per side | 48/110 gateless -> 53/110; empties 7 -> 12 (11 of them wall timeouts) |
+| the finish gate (`harness.verify.when = finish`, `harness.verify.retries = 2`) | rebench 110, one run per side | 48/110 gateless -> 53/110; empties 7 -> 12 (11 of them wall timeouts) |
 | the finish gate | Verified 77 paired, and the cert30 subset | resolve-neutral (58/77 both; 17/30 vs 16/30); PASS_TO_PASS regressions 4 vs 6 and 5 vs 14; 1.3 to 1.5x the calls, 2 to 2.5x the wall |
 | headless approvals deny instead of parking | rebench, the 12 ids that had parked on an off-list `fetch` approval | 6/12 resolved on rerun; the same-config total 53 -> 56/110, empties 12 -> 5 |
 | the patch carries created files | rebench 110 | 61/110 -> 63/110; the five ids needing a new module all resolve |

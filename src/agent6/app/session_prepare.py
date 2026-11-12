@@ -252,9 +252,9 @@ def settle_gate(
     Returns:
         The config, and whether a set gate was withheld because commands are.
     """
-    gate_before = cfg.harness.verify_command
+    gate_before = cfg.harness.verify.command
     cfg = preflight.drop_gate_if_unrunnable(cfg, session_dir=layout.session_dir, reporter=reporter)
-    withheld = bool(gate_before) and not cfg.harness.verify_command
+    withheld = bool(gate_before) and not cfg.harness.verify.command
     stamps.pin_gate(
         layout.session_dir,
         sessions_manifest.GateStamp(

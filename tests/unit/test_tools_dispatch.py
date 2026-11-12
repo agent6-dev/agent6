@@ -43,7 +43,7 @@ protect_git = "on"
 dirty_tree = "ask"
 branch_per_run = true
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
 """
@@ -86,7 +86,7 @@ def test_verify_command_unexecutable_raises_loud(
     operator config, so this fails loudly.
     """
     # run_commands = "allow": this exercises verify EXECUTION, not the gate.
-    cfg = _config_with_run_commands(tmp_path, "allow")  # verify_command = ["true"]
+    cfg = _config_with_run_commands(tmp_path, "allow")  # verify.command = ["true"]
     d = build_dispatcher(root=tmp_path, config=cfg)
     unexecutable = kinds.CommandResult(
         argv=("true",),
@@ -1393,13 +1393,13 @@ def test_run_metric_command_honors_verify_timeout(
     body = _VALID_TOML.replace('run_commands = "deny"', 'run_commands = "allow"') + (
         '\n[harness.metric]\ncommand = ["/usr/bin/true"]\npattern = "(\\\\d+)"\ngoal = "minimize"\n'
     )
-    body = body.replace("[harness]\n", "[harness]\nverify_timeout_s = 7.0\n")
+    body = body.replace("[harness]\n", "[harness]\nverify.timeout_s = 7.0\n")
     p = tmp_path / "agent6.toml"
     p.write_text(body, encoding="utf-8")
     from agent6.config import load_config
 
     cfg = load_config(p)
-    assert cfg.harness.verify_timeout_s == 7.0  # the override reached the config
+    assert cfg.harness.verify.timeout_s == 7.0  # the override reached the config
 
     captured: dict[str, object] = {}
 

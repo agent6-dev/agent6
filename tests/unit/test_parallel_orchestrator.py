@@ -1098,7 +1098,11 @@ def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
     (origin / ".venv" / "bin").mkdir(parents=True)
     (origin / ".venv" / "bin" / "python").write_text("#!/bin/sh\n", encoding="utf-8")
     cfg = Config.model_validate(
-        {"harness": {"verify_command": [".venv/bin/python", "-m", "pytest", "-q"]}}
+        {
+            "harness": {
+                "verify": {"command": [".venv/bin/python", "-m", "pytest", "-q"]},
+            }
+        }
     )
     lanes = _specs(tmp_path, cfg, "fan", "2")
     spawned: list[str] = []
@@ -1179,7 +1183,9 @@ def test_lane_setup_output_survives_import_and_reaches_the_fanout_operator(
                 "network": "host",
                 "run_commands": "allow",
             },
-            "harness": {"verify_infer": False},
+            "harness": {
+                "verify": {"infer": False},
+            },
             "review": {"when": "never"},
             "workspace": {"setup_command": ["sh", "-c", command]},
         }
@@ -1333,7 +1339,7 @@ def test_run_parallel_settles_the_gate_and_the_setup_command_in_the_origin(
     )
 
     (lane_cfg,) = carried
-    assert lane_cfg.harness.verify_command == (".venv/bin/python", "-m", "pytest", "-q")
+    assert lane_cfg.harness.verify.command == (".venv/bin/python", "-m", "pytest", "-q")
     assert lane_cfg.workspace.setup_command == ("uv", "sync", "--offline")
 
 
@@ -1362,7 +1368,13 @@ def test_fanout_setup_is_inferred_from_its_commit_not_the_dirty_agents_md(
         return lane_records.LaneResult(spec, spec.workdir, "b", False, task)
 
     monkeypatch.setattr(app_lanes, "bridge_spawner", spawn)
-    cfg = Config.model_validate({"harness": {"verify_infer": False}})
+    cfg = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"infer": False},
+            }
+        }
+    )
     assert (
         parallel.run_parallel(
             "task",
@@ -4102,7 +4114,9 @@ def test_model_parallel_import_keeps_lane_commits(
                 "network": "host",
                 "run_commands": "allow",
             },
-            "harness": {"verify_infer": False},
+            "harness": {
+                "verify": {"infer": False},
+            },
             "review": {"when": "never"},
             "workspace": {"base_dir": str(tmp_path / "clones")},
         }

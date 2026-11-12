@@ -38,12 +38,14 @@ def _wf(*, head: str = _BASE, clean: bool = True) -> loop.Harness:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_command=("pytest",),
-            verify_when="finish",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_timeout_s=60.0,
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                command=("pytest",),
+                when="finish",
+                at_start=True,
+                retries=2,
+                timeout_s=60.0,
+                infer=True,
+            ),
         ),
     )
     # Gate presence reads the command policy first: a gate someone may run.
@@ -108,7 +110,7 @@ def _start_wf(
 ) -> tuple[loop.Harness, mock.MagicMock]:
     wf = _wf()
     wf.mode = "run"
-    wf.config.harness.verify_when = when  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config.harness.verify.when = when  # pyright: ignore[reportAttributeAccessIssue]
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
@@ -152,7 +154,7 @@ def test_the_gate_runs_before_the_first_turn_and_records_the_baseline(
 def test_no_gate_runs_at_start_when_the_harness_may_not_run_one(
     policy: str, when: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`verify_when = "never"` and `run_commands = "deny"` keep the harness off the gate."""
+    """`harness.verify.when = "never"` and `run_commands = "deny"` keep the harness off the gate."""
     state, (wf, dispatcher) = _state(), _start_wf(1, policy=policy, when=when)
     _patch_git(monkeypatch, wf)
     assert wf.gate.start_baseline(state) == []
@@ -171,7 +173,7 @@ def test_a_red_start_gate_past_the_base_reaches_the_model_and_records_no_baselin
     state = _state()
     wf = _wf(clean=False)
     wf.mode = "run"
-    wf.config.harness.verify_when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config.harness.verify.when = "finish"  # pyright: ignore[reportAttributeAccessIssue]
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
     )
@@ -253,8 +255,8 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
         last_verification=None, execution_id="execution", verify_withheld=False
     )
     wf.dispatcher.command_policy.return_value = "ask"
-    wf.config.harness.verify_when = "finish"
-    wf.config.harness.verify_retries = 2
+    wf.config.harness.verify.when = "finish"
+    wf.config.harness.verify.retries = 2
     state = _state()
     state.verify.baseline_ok = False
     state.verify.ever_passed = True
@@ -262,8 +264,8 @@ def test_a_recovered_red_baseline_does_not_exempt_a_later_regression() -> None:
     finish = finish_gates.FinishCall("finish_session", "done")
 
     assert finish_gates.red_gate_returns(
-        wf.config.harness.verify_when,
-        wf.config.harness.verify_retries,
+        wf.config.harness.verify.when,
+        wf.config.harness.verify.retries,
         state.verify,
         state.gates.verify_retries_used,
         gate_present=wf.gate.present(state.verify),
@@ -325,12 +327,14 @@ def test_a_plan_pass_is_not_reported_as_a_red_gate() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_command=("pytest",),
-            verify_when="finish",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_timeout_s=60.0,
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                command=("pytest",),
+                when="finish",
+                at_start=True,
+                retries=2,
+                timeout_s=60.0,
+                infer=True,
+            ),
         ),
     )
     wf.dispatcher = types.SimpleNamespace(
@@ -395,12 +399,14 @@ def test_green_is_not_demanded_of_a_run_that_inherited_a_red_gate(tmp_path: path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_command=("pytest",),
-            verify_when="finish",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_timeout_s=60.0,
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                command=("pytest",),
+                when="finish",
+                at_start=True,
+                retries=2,
+                timeout_s=60.0,
+                infer=True,
+            ),
         ),
     )
     state = loop_state.LoopState(original_task="t", tool_calls=0)
@@ -468,9 +474,9 @@ def test_a_red_start_gate_is_not_the_runs_own_failure(monkeypatch: pytest.Monkey
 
 
 def test_verify_at_start_off_runs_no_start_gate(monkeypatch: pytest.MonkeyPatch) -> None:
-    """`verify_at_start = false` keeps a slow gate from running before the first turn."""
+    """`harness.verify.at_start = false` keeps a slow gate from running before the first turn."""
     state, (wf, dispatcher) = _state(), _start_wf(1)
-    wf.config.harness.verify_at_start = False  # pyright: ignore[reportAttributeAccessIssue]
+    wf.config.harness.verify.at_start = False  # pyright: ignore[reportAttributeAccessIssue]
     _patch_git(monkeypatch, wf)
     assert wf.gate.start_baseline(state) == []
     dispatcher.run_verify.assert_not_called()

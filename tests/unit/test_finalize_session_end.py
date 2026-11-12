@@ -285,8 +285,8 @@ def test_a_timed_out_gate_names_the_timeout_key_not_the_base_commit_check(
     )
     out = capsys.readouterr().out
     assert out.split("\n")[1] == "finished · gate timed out"
-    assert "the verify gate ran out its 300s limit (harness.verify_timeout_s)" in out
-    assert "agent6 config set --repo harness.verify_timeout_s <seconds>" in out
+    assert "the verify gate ran out its 300s limit (harness.verify.timeout_s)" in out
+    assert "agent6 config set --repo harness.verify.timeout_s <seconds>" in out
     assert "check out the base commit" not in out
     assert _finalize.session_exit_code(result, harness_gate=True) == 4
 

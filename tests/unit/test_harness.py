@@ -169,10 +169,7 @@ def _wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
                 parallel=types.SimpleNamespace(max_lanes=4),
             ),
@@ -286,10 +283,7 @@ def _cfg_with_verify() -> Any:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_command=("true",),
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
+            verify=mock.MagicMock(command=("true",), when="never", at_start=True, retries=2),
             metric=types.SimpleNamespace(goal=None),
             prompt=mock.MagicMock(system_prompt_file=""),
         ),
@@ -925,13 +919,10 @@ def test_the_metric_is_sampled_once_per_state_of_the_tree(tmp_path: pathlib.Path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(root=repo, config=config, dispatcher=_Dispatcher(), per_turn=False)
@@ -1017,13 +1008,15 @@ def test_drive_loop_auto_runs_metric_after_verify_pass(
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -1101,13 +1094,15 @@ def test_drive_loop_tracks_turns_reached(tmp_path: pathlib.Path) -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -1222,13 +1217,15 @@ def test_provider_error_summary_is_concise_not_the_raw_body(tmp_path: pathlib.Pa
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     logs: list[str] = []
@@ -1282,13 +1279,15 @@ def test_fatal_provider_error_ends_the_run_with_its_text(tmp_path: pathlib.Path)
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     provider = ProviderStub()
@@ -1376,7 +1375,7 @@ def test_the_first_model_call_carries_the_red_start_gate(
         dispatcher=dispatcher,
         call=provider_call.CallSettings(retry_count=0, retry_delay_s=0),
     )
-    _knobs(wf.config, verify_command=("pytest",), verify_when="finish")
+    wf.config.harness.verify.command, wf.config.harness.verify.when = ("pytest",), "finish"
 
     result = wf._drive_loop(  # pyright: ignore[reportPrivateUsage]
         system="system",
@@ -1515,13 +1514,10 @@ def test_resume_seeded_steer_drives_a_finished_run(tmp_path: pathlib.Path) -> No
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -1578,13 +1574,10 @@ def test_resume_without_steer_does_not_poll_up_front(tmp_path: pathlib.Path) -> 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     # No steer callables: steer_requested() is False, so the up-front check is a no-op.
@@ -1662,13 +1655,15 @@ def test_drive_loop_auto_metric_unexecutable_aborts_gracefully(tmp_path: pathlib
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(root=tmp_path, config=config, provider=provider, dispatcher=dispatcher, max_turns=5)
@@ -1727,13 +1722,15 @@ def test_a_denied_auto_metric_is_withheld_for_the_rest_of_the_run(tmp_path: path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     ev = _EventCapture(tmp_path / "logs.jsonl")
@@ -1827,13 +1824,15 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -1870,9 +1869,9 @@ def test_drive_loop_no_verified_commit_when_edit_follows_verify_in_turn(
 
 
 def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.Path) -> None:
-    """Per-turn checkpoints do not depend on `verify_when`.
+    """Per-turn checkpoints do not depend on `harness.verify.when`.
 
-    With a gate configured and `verify_when = "never"`, an editing turn the model did not verify
+    With a gate and `harness.verify.when = "never"`, an editing turn the model did not verify
     committed nothing until the final checkpoint, so `/undo` and `fork --at-turn` had no turn to
     cut at and the settled stop never armed.
     """
@@ -1910,13 +1909,15 @@ def test_an_editing_turn_checkpoints_whatever_the_gate_policy(tmp_path: pathlib.
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=False,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=False,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -1961,13 +1962,15 @@ def test_worker_max_tokens_starvation_backoff() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         )
     )
     wf = _wf(config=metric_cfg)
@@ -1997,13 +2000,15 @@ def test_worker_max_tokens_starvation_backoff() -> None:
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
-                verify_command=("true",),
+                verify=types.SimpleNamespace(
+                    when="never",
+                    at_start=True,
+                    retries=2,
+                    command=("true",),
+                    timeout_s=60.0,
+                    infer=True,
+                ),
                 metric=None,
-                verify_timeout_s=60.0,
-                verify_infer=True,
             ),
         )
     )
@@ -2068,13 +2073,15 @@ def test_drive_loop_starvation_backoff_breaks_the_spiral(tmp_path: pathlib.Path)
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2151,13 +2158,15 @@ def test_drive_loop_finishes_on_metric_plateau(tmp_path: pathlib.Path) -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2246,13 +2255,15 @@ def test_drive_loop_plateau_nudges_before_stopping(tmp_path: pathlib.Path) -> No
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2343,13 +2354,15 @@ def test_drive_loop_plateau_final_nudge_fires_in_final_budget_slice(tmp_path: pa
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2566,13 +2579,15 @@ def test_drive_loop_verify_settled_nudges_then_stops(tmp_path: pathlib.Path) -> 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2638,13 +2653,15 @@ def test_drive_loop_settle_after_unreverified_edits_is_not_passed(tmp_path: path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -2776,13 +2793,15 @@ def test_drive_loop_verify_settled_does_not_fire_before_first_verify(
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2832,13 +2851,15 @@ def test_drive_loop_verify_settled_neutral_on_reverify(tmp_path: pathlib.Path) -
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -2907,13 +2928,15 @@ def test_drive_loop_verify_settled_dormant_on_metric_runs(tmp_path: pathlib.Path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -3000,13 +3023,15 @@ def test_drive_loop_plateau_keeps_nudging_while_budget_high(tmp_path: pathlib.Pa
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, so the plateau never becomes terminal.
@@ -3080,13 +3105,15 @@ def test_drive_loop_rejects_early_finish_while_budget_high(tmp_path: pathlib.Pat
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0, well above the final slice.
@@ -3150,13 +3177,15 @@ def test_drive_loop_honors_finish_without_budget_signal(tmp_path: pathlib.Path) 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -3232,13 +3261,15 @@ def test_tool_calls_after_finish_session_are_not_executed(tmp_path: pathlib.Path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -3360,13 +3391,15 @@ def test_drive_loop_honors_finish_at_metric_ceiling(tmp_path: pathlib.Path) -> N
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="maximize", pattern=r"SCORE:\s*([\d.]+)"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     # Huge ceilings keep fraction_remaining ~1.0: without the ceiling guard the finish is rejected.
@@ -3480,13 +3513,15 @@ def test_worker_max_tokens_lifts_cap_on_metric_runs() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -3510,13 +3545,15 @@ def test_worker_max_tokens_keeps_default_without_metric() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -3540,13 +3577,15 @@ def test_worker_max_tokens_keeps_default_in_plan_mode() -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -4513,13 +4552,15 @@ def test_stop_request_ends_the_run_at_the_step_boundary(tmp_path: pathlib.Path) 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -4617,13 +4658,15 @@ def test_drive_loop_resurfaces_current_task_after_compaction(tmp_path: pathlib.P
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -5114,7 +5157,7 @@ def test_a_commands_disabled_resume_keeps_the_withheld_gate_correction_pending(
     dispatcher.set_run_root_node_id = mock.MagicMock()
     dispatcher.command_policy.return_value = "deny"
     wf = _wf(provider=provider, dispatcher=dispatcher, resume_state_path=snap_path)
-    wf.config.harness.verify_command = ("true",)
+    wf.config.harness.verify.command = ("true",)
     wf.resume()
     assert json.loads(snap_path.read_text(encoding="utf-8"))["verify_withheld"] is True
 
@@ -5391,13 +5434,15 @@ def test_drive_loop_summarises_midrun_then_completes(tmp_path: pathlib.Path) -> 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
             prompt=types.SimpleNamespace(decompose=False),
         ),
     )
@@ -5513,13 +5558,10 @@ def test_drive_loop_gateless_settles_after_commit(tmp_path: pathlib.Path) -> Non
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -5562,13 +5604,15 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("pytest", "-q"),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("pytest", "-q"),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config)
@@ -5580,7 +5624,7 @@ def test_resume_snapshot_carries_verify_command(tmp_path: pathlib.Path) -> None:
     )
     assert loop_snapshot.load_session_snapshot(snap).verify_command == ("pytest", "-q")
 
-    config.harness.verify_command = ()  # gateless run -> stored as [] -> loads as ()
+    config.harness.verify.command = ()  # gateless run -> stored as [] -> loads as ()
     wf = _wf(resume_state_path=snap, config=config)
     loop_resume.save_resume_snapshot(
         wf,
@@ -5622,13 +5666,10 @@ def test_save_resume_snapshot_degrades_on_unwritable_state_dir(tmp_path: pathlib
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(resume_state_path=snap, config=config, logger=logs.append)
@@ -5722,13 +5763,10 @@ def test_question_nudge_then_accept(tmp_path: pathlib.Path) -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5829,13 +5867,15 @@ def test_drive_loop_no_progress_nudges_on_identical_failures(tmp_path: pathlib.P
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5907,13 +5947,15 @@ def test_drive_loop_no_progress_silent_when_failures_differ(tmp_path: pathlib.Pa
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -5994,13 +6036,15 @@ def test_drive_loop_no_progress_stops_after_unheeded_interventions(tmp_path: pat
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6055,13 +6099,15 @@ def test_drive_loop_silent_finish_on_untouched_tree_is_nudged(tmp_path: pathlib.
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6127,13 +6173,15 @@ def test_drive_loop_silent_finish_after_real_work_is_honored(tmp_path: pathlib.P
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6219,13 +6267,15 @@ def test_drive_loop_no_progress_defers_to_metric_runs(tmp_path: pathlib.Path) ->
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6287,13 +6337,15 @@ def test_drive_loop_dedupes_identical_back_to_back_tool_results(tmp_path: pathli
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6371,13 +6423,15 @@ def test_drive_loop_tool_error_ladder_nudges_then_stops(tmp_path: pathlib.Path) 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6467,13 +6521,15 @@ def test_drive_loop_denial_streak_gets_policy_nudge_not_malformed(tmp_path: path
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6541,13 +6597,15 @@ def test_drive_loop_tool_error_streak_resets_on_success(tmp_path: pathlib.Path) 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6733,13 +6791,15 @@ def test_tool_error_spiral_stops_without_blaming_the_sandbox(tmp_path: pathlib.P
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -6801,13 +6861,10 @@ def test_drive_loop_gateless_settle_never_claims_verify_passed(tmp_path: pathlib
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),  # GATELESS
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),  # GATELESS
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -6874,13 +6931,10 @@ def test_drive_loop_interactive_stop_never_ends_passed(tmp_path: pathlib.Path) -
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -6950,13 +7004,10 @@ def test_drive_loop_interactive_exit_ends_steer_exit(tmp_path: pathlib.Path) -> 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -7026,13 +7077,10 @@ def test_drive_loop_repl_undo_takes_the_steer_undo_path(tmp_path: pathlib.Path) 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     events: list[dict[str, Any]] = []
@@ -7135,7 +7183,13 @@ def test_drive_loop_gateless_run_adopts_verify_when_the_repo_materializes(
     wf = _wf(
         root=tmp_path,
         # A real config, gateless; `finish` so the settled end runs the gate it adopts.
-        config=Config.model_validate({"harness": {"verify_when": "finish"}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"when": "finish"},
+                }
+            }
+        ),
         mode="run",
         provider=provider,
         dispatcher=dispatcher,
@@ -7220,7 +7274,7 @@ def test_drive_loop_gateless_adoption_declines_an_unexecutable_verify(
             root_task_id=None,
             original_task="t",
         )
-    assert tuple(wf.config.harness.verify_command) == ()  # still gateless
+    assert tuple(wf.config.harness.verify.command) == ()  # still gateless
     assert provider.adoption_notices == 0  # no false gate-flip message
     assert result.reason == "settled"
     assert "no verify command existed" in result.summary
@@ -7285,13 +7339,10 @@ def test_reachability_note_fires_on_repeated_jail_exec_failure(tmp_path: pathlib
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -7352,13 +7403,10 @@ def test_reachability_note_never_fires_on_a_validation_error(tmp_path: pathlib.P
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), infer=True, timeout_s=60.0
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -7489,13 +7537,15 @@ def test_stop_request_honored_after_a_prose_turn(tmp_path: pathlib.Path) -> None
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -7607,10 +7657,7 @@ def test_a_red_verify_finish_still_passes_its_root_tasks() -> None:
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=("false",),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=("false",), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -8188,13 +8235,15 @@ def _loop_config() -> Any:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=None,
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
 
@@ -8639,7 +8688,7 @@ def test_an_adopted_gate_that_cannot_run_is_un_adopted(tmp_path: pathlib.Path) -
             exec_failed=False,
         ),
     )
-    assert wf2.config.harness.verify_command == argv and st2.verify.broken_warned
+    assert wf2.config.harness.verify.command == argv and st2.verify.broken_warned
 
 
 def test_operator_answers_become_recorded_rulings(tmp_path: pathlib.Path) -> None:
@@ -8776,7 +8825,7 @@ def _metric_wf(
         config=Config.model_validate(
             {
                 "harness": {
-                    "verify_command": [],
+                    "verify": {"command": []},
                     "metric": {
                         "command": ["score.sh"],
                         "pattern": r"SCORE: ([0-9.]+)",
@@ -8924,7 +8973,11 @@ def test_the_settled_stop_still_fires_without_per_turn_commits(
                 per_turn=commit_per_turn,
             ),
             config=Config.model_validate(
-                {"harness": {"verify_command": ["true"] if gated else []}}
+                {
+                    "harness": {
+                        "verify": {"command": ["true"] if gated else []},
+                    }
+                }
             ),
             provider=mock.MagicMock(),
             dispatcher=mock.MagicMock(
@@ -9301,13 +9354,15 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
+            verify=types.SimpleNamespace(
+                when="never",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                timeout_s=60.0,
+                infer=True,
+            ),
             metric=types.SimpleNamespace(goal="minimize"),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(
@@ -9352,7 +9407,7 @@ def test_a_turn_declaring_two_ends_seats_the_panel_once(tmp_path: pathlib.Path) 
 def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pathlib.Path) -> None:
     """`run_commands = "deny"` withholds the verify gate from the harness and the model alike.
 
-    Gate presence has one owner, so under `verify_when = "turn"` editing turns still commit.
+    Gate presence has one owner, so under `harness.verify.when = "turn"` editing turns still commit.
     """
 
     class ProviderStub:
@@ -9391,13 +9446,15 @@ def test_a_gate_nobody_may_run_leaves_the_run_gateless_for_commits(tmp_path: pat
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="turn",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=("true",),
-            verify_infer=False,
+            verify=types.SimpleNamespace(
+                when="turn",
+                at_start=True,
+                retries=2,
+                command=("true",),
+                infer=False,
+                timeout_s=60.0,
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
         ),
     )
     wf = _wf(
@@ -9470,9 +9527,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
     cfg = Config.model_validate(
         {
             "harness": {
-                "verify_command": ["configured-gate"],
-                "verify_when": "turn",
-                "verify_infer": True,
+                "verify": {"command": ["configured-gate"], "when": "turn", "infer": True},
             }
         }
     )
@@ -9504,7 +9559,7 @@ def test_a_denied_gate_is_never_replaced_by_an_adopted_one(tmp_path: pathlib.Pat
         )
     assert result.reason == "finish_session"
     assert dispatcher.adopted == []
-    assert wf.config.harness.verify_command == ("configured-gate",)
+    assert wf.config.harness.verify.command == ("configured-gate",)
     assert "verify.inferred" not in events_path.read_text(encoding="utf-8")
 
 

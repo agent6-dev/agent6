@@ -51,7 +51,7 @@ protect_git = "on"
 dirty_tree = "ask"
 branch_per_run = true
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
 """
@@ -433,7 +433,7 @@ def test_wire_run_verify_timeout_names_the_cap(
     SWE-bench runs re-called the 240s gate back to back.
     """
     toml = _VALID_TOML.replace(
-        'verify_command = ["true"]', 'verify_command = ["true"]\nverify_timeout_s = 240'
+        'verify.command = ["true"]', 'verify.command = ["true"]\nverify.timeout_s = 240'
     )
     p = tmp_path / "agent6.toml"
     p.write_text(toml, encoding="utf-8")

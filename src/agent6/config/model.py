@@ -574,7 +574,7 @@ class Config(pydantic.BaseModel):
         return Config.model_validate(data)
 
     def with_verify_command(self, argv: tuple[str, ...]) -> Config:
-        """Return a copy whose `harness.verify_command` is the argv, `()` for a gateless run.
+        """Return a copy whose `harness.verify.command` is the argv, `()` for a gateless run.
 
         Runs never write config: the operator is shown what was picked and can pin it.
 
@@ -585,7 +585,7 @@ class Config(pydantic.BaseModel):
             The config with the gate set.
         """
         data = self.model_dump(mode="python")
-        data.setdefault("harness", {})["verify_command"] = list(argv)
+        data["harness"]["verify"]["command"] = list(argv)
         return Config.model_validate(data)
 
     def with_setup_command(self, argv: tuple[str, ...]) -> Config:
@@ -734,9 +734,15 @@ _REPLACED_KEYS = {
     "context": "rename the context table to [compaction]; keep its keys and values",
     "git.commit.checkpoint": "moved config key; use git.commit.checkpoint_message",
     "git.commit.squash": "moved config key; use git.commit.squash_message",
+    "harness.verify_at_start": "moved config key; use harness.verify.at_start",
+    "harness.verify_command": "moved config key; use harness.verify.command",
+    "harness.verify_infer": "moved config key; use harness.verify.infer",
+    "harness.verify_retries": "moved config key; use harness.verify.retries",
     "harness.verify_settled_stop_after": (
         "unknown config key; use harness.settled_stop_after with the same value"
     ),
+    "harness.verify_timeout_s": "moved config key; use harness.verify.timeout_s",
+    "harness.verify_when": "moved config key; use harness.verify.when",
     "parallel": "moved config table; use [harness.parallel]",
     "prompt": "moved config table; use [harness.prompt]",
     "machine.snapshot_keep": "renamed config key; use machine.keep_snapshots",

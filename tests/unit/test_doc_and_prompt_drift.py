@@ -220,7 +220,7 @@ def test_bench_container_config_template_validates() -> None:
     # The two shell-computed blocks run ahead of the heredoc; a stub validates the stub.
     review = re.search(r'^REVIEW_LINES=""\n.*?^fi\n', script, re.S | re.M)
     verify = re.search(
-        r'^if \[ "\$\{AGENT6_SB_VERIFY:-\}" = "none" \].*?^  VERIFY_TOML="verify_command.*?\nfi\n',
+        r'^if \[ "\$\{AGENT6_SB_VERIFY:-\}" = "none" \].*?^  VERIFY_TOML="verify\.command.*?\nfi\n',
         script,
         re.S | re.M,
     )
@@ -275,7 +275,7 @@ def test_bench_container_config_template_validates() -> None:
         if env.get("AGENT6_SB_EFFORT"):
             assert data["models"]["worker"]["effort"] == "medium"
         if env.get("AGENT6_SB_VERIFY_WHEN"):
-            assert data["harness"]["verify_when"] == "turn"
+            assert data["harness"]["verify"]["when"] == "turn"
         if env.get("AGENT6_SB_MAX_PLAN_POINTS"):
             assert data["budget"]["max_plan_points"] == 40
         if env.get("AGENT6_SB_REVIEWERS"):
@@ -284,10 +284,10 @@ def test_bench_container_config_template_validates() -> None:
                 {"focus": "tests", "model": "openrouter/b"},
             ]
         if env.get("AGENT6_SB_VERIFY") == "none":
-            assert data["harness"]["verify_infer"] is False
-            assert "verify_command" not in data["harness"]
+            assert data["harness"]["verify"]["infer"] is False
+            assert "command" not in data["harness"]["verify"]
         else:
-            assert data["harness"]["verify_command"][0] == "python3"
+            assert data["harness"]["verify"]["command"][0] == "python3"
 
 
 def test_architecture_event_table_has_one_generated_owner() -> None:

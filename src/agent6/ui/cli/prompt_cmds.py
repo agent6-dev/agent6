@@ -37,7 +37,7 @@ def _cmd_prompt_show(
     cwd = pathlib.Path.cwd()
     eff = layer.load_effective(cwd, config_paths)
     cfg = eff.config
-    if mode in ("run", "plan") and not cfg.harness.verify_command and cfg.harness.verify_infer:
+    if mode in ("run", "plan") and not cfg.harness.verify.command and cfg.harness.verify.infer:
         # The gate shapes the prompt, so infer it as a run does; the LLM tier spends, so not here.
         hide = cfg.sandbox.hide_paths
         inferred = verify_infer.infer_verify_command(

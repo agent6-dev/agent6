@@ -142,9 +142,9 @@ class FinishGates:
 
     Attributes:
         task_nudges_used: Open-task refusals sent; `TASK_FINISH_PATIENCE` caps them.
-        verify_retries_used: Red finish certifications returned; `verify_retries`
+        verify_retries_used: Red finish certifications returned; `harness.verify.retries`
             caps them.
-        settled_returns_used: Settled stops returned over a red gate; `verify_retries`
+        settled_returns_used: Settled stops returned over a red gate; `harness.verify.retries`
             caps them apart from the model's own finishes.
         review_rejections: The ends the before-finish panel rejected in the run, persisted
             and never decremented; past `max_rejections` the panel advises.
@@ -201,8 +201,8 @@ def red_gate_returns(
     hands back a gate the model cannot run.
 
     Args:
-        verify_when: `[harness].verify_when`.
-        verify_retries: `[harness].verify_retries`.
+        verify_when: `[harness.verify].when`.
+        verify_retries: `[harness.verify].retries`.
         verify: The run's verify verdict.
         used: The returns this kind of end already took.
         gate_present: A gate exists and the harness must run it.
@@ -348,7 +348,7 @@ def verify_finish(
 ) -> advice.Refusal | None:
     """Return a run's end over a tree the gate did not certify.
 
-    The end returns `verify_retries` times, then stands: reported finished,
+    The end returns `harness.verify.retries` times, then stands: reported finished,
     never passed. The settled stop counts its own returns, since the model
     asked for none of them. The model need not fix a gate that was red before the run
     touched anything, so it is never returned.

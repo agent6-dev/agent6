@@ -235,7 +235,7 @@ def _doctor_check_verify(cfg: Config) -> list[kinds.DoctorCheck]:
     Returns:
         The rows.
     """
-    argv = list(cfg.harness.verify_command)
+    argv = list(cfg.harness.verify.command)
     if not argv:
         # A run infers one from the deterministic tiers or goes gateless; say what this repo infers.
         cwd, hide = pathlib.Path.cwd(), cfg.sandbox.hide_paths
@@ -264,7 +264,7 @@ def _doctor_check_verify(cfg: Config) -> list[kinds.DoctorCheck]:
     detail = f"resolves to {resolved}" if resolved else f"not found on the command PATH: {head!r}"
     print(f"  {head}: {detail}")
     print(f"  argv = {argv}")
-    print(f"  timeout = {cfg.harness.verify_timeout_s}s")
+    print(f"  timeout = {cfg.harness.verify.timeout_s}s")
     return [kinds.DoctorCheck(name="verify.head", status="PASS" if ok else "FAIL", detail=detail)]
 
 

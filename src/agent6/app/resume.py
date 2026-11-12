@@ -540,7 +540,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
             replay_gate = (
                 pinned.command if pinned.availability != "pending" else snapshot.verify_command
             )
-            execution_configured = bool(cfg.harness.verify_command)
+            execution_configured = bool(cfg.harness.verify.command)
             reused = not execution_configured and bool(replay_gate)
             if reused:
                 cfg = cfg.with_verify_command(replay_gate)
@@ -558,12 +558,12 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
                     f"reusing this run's verify command: {preflight.gate_text(replay_gate)}"
                 )
             # The manifest says which gate this execution used.
-            if pinned.command != cfg.harness.verify_command and not withheld:
+            if pinned.command != cfg.harness.verify.command and not withheld:
                 # Both directions: the frozen system prompt names the old gate either way.
                 reporter.note(
                     "this run's verify gate changed:"
                     f" was {preflight.gate_text(pinned.command)},"
-                    f" now {preflight.gate_text(cfg.harness.verify_command)}"
+                    f" now {preflight.gate_text(cfg.harness.verify.command)}"
                 )
             return cfg
 

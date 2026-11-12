@@ -64,7 +64,7 @@ dirty_tree = "ask"
 branch_per_run = true
 
 [harness]
-verify_command = $verify_cmd_json
+verify.command = $verify_cmd_json
 
 [review]
 # Optional critic-in-loop. Set AGENT6_REALWORLD_CRITIC=finish (or

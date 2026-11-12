@@ -372,8 +372,8 @@ when = "verify_fail"
 [harness.prompt]
 decompose = "off"
 [harness]
-verify_infer = false
-verify_when = "never"
+verify.infer = false
+verify.when = "never"
 ''')
         rc = cli_main(["--config", str(config), "ask", "/review"])
     assert rc == 0

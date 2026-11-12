@@ -2,7 +2,8 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-behaviour models.
 
-`[harness]` with its metric, parallel and prompt tables, `[review]`, `[compaction]` and `[budget]`.
+`[harness]` with its metric, parallel, prompt and verify tables, `[review]`, `[compaction]`
+and `[budget]`.
 """
 
 from __future__ import annotations
@@ -164,7 +165,7 @@ ReviewScope = Literal["diff", "repo"]
 class MetricConfig(pydantic.BaseModel):
     """The `[harness.metric]` table: a continuous score beside the pass/fail gate.
 
-    `run_metric_command` runs `command` in the jail with `verify_command`'s environment and
+    `run_metric_command` runs `command` in the jail with `harness.verify.command`'s environment and
     parses `pattern`'s first capture group as a base-10 number; no match in the combined
     stdout and stderr reads as a missing metric.
     """
@@ -279,13 +280,13 @@ class PromptConfig(pydantic.BaseModel):
         return self
 
 
-class HarnessConfig(pydantic.BaseModel):
-    """The `[harness]` table."""
+class VerifyConfig(pydantic.BaseModel):
+    """The `[harness.verify]` table: the gate command and when the harness runs it."""
 
     model_config = validation.MODEL_CONFIG
 
     # Repo-specific, so no global default; the inference lives in agent6.tools.verify_infer.
-    verify_command: validation.Argv = pydantic.Field(
+    command: validation.Argv = pydantic.Field(
         default=(),
         description=(
             'step-success command as argv, no shell (pipeline form: `["sh", "-c", "a && b"]`); '
@@ -302,23 +303,23 @@ class HarnessConfig(pydantic.BaseModel):
             "continuations treated as commands"
         ),
     )
-    verify_infer: bool = pydantic.Field(
+    infer: bool = pydantic.Field(
         default=True,
         description=(
-            "verify-command inference when `harness.verify_command` is unset (AGENTS.md fence, "
+            "verify-command inference when `harness.verify.command` is unset (AGENTS.md fence, "
             "repo signals, model call); mid-run adoption for a gateless run creating a "
             "recognizable project; adopted gate dropped and never re-adopted if unable to run "
-            "(exit 127 or missing module named by `-m`); `harness.verify_infer = false`: no "
-            "inference or adoption, run stays gateless; explicit `harness.verify_command` "
+            "(exit 127 or missing module named by `-m`); `harness.verify.infer = false`: no "
+            "inference or adoption, run stays gateless; explicit `harness.verify.command` "
             "unaffected"
         ),
     )
     # Matches the jail's general 600s; a bench with a 2s gate detects a runaway edit sooner at 30.
-    verify_timeout_s: float = pydantic.Field(
+    timeout_s: float = pydantic.Field(
         gt=0.0,
         default=600.0,
         description=(
-            "seconds per `harness.verify_command` or `harness.metric.command` call before kill "
+            "seconds per `harness.verify.command` or `harness.metric.command` call before kill "
             "and failure; run ending over a gate killed here: `finished · gate timed out`; "
             "pathless pytest gate over budget (harness call or model's `run_verify_command`): "
             "retry on test files nearest the run's diff, harness gates scoped until a full gate "
@@ -328,6 +329,50 @@ class HarnessConfig(pydantic.BaseModel):
             "`run_command`; Go test cache disabled by `go test -count=1`"
         ),
     )
+    when: Literal["finish", "turn", "never"] = pydantic.Field(
+        json_schema_extra={
+            "choice_meanings": {
+                "finish": "Verify uncovered final tree at finish",
+                "turn": "Also verify after each editing turn",
+                "never": "Verify only when model calls tool",
+            }
+        },
+        default="never",
+        description=(
+            "When the harness runs `harness.verify.command` itself; the tool remains available "
+            "in every mode; no gate runs without a command; an uncovered final tree reads "
+            "unverified; finish-time failures return to the model up to "
+            "`harness.verify.retries` times."
+        ),
+    )
+    at_start: bool = pydantic.Field(
+        default=False,
+        description=(
+            "one `harness.verify.command` call before a fresh run's first turn to record "
+            "pre-existing gate failure; red output in the first request; a red finish over a "
+            "red base: `finished · gate red at base` (red at the start and at the finish, the "
+            "failures not compared); cost: one gate call per fresh run, worth it for a fast gate "
+            'beside a suite that is already red; needs `harness.verify.when = "finish"` or '
+            '`"turn"` and `sandbox.run_commands` other than `"deny"`; recorded baseline kept '
+            "on resume"
+        ),
+    )
+    retries: int = pydantic.Field(
+        ge=0,
+        default=2,
+        description=(
+            "red finish certifications returned to the model with gate output before the finish "
+            "stands as `finished · gate red`, never passed; `harness.verify.retries = 0`: end "
+            "on the first red; pre-existing red not returned unless made green during this run"
+        ),
+    )
+
+
+class HarnessConfig(pydantic.BaseModel):
+    """The `[harness]` table."""
+
+    model_config = validation.MODEL_CONFIG
+
     # Per execution: a standing run is not capped by the sum of its executions.
     max_turns: int = pydantic.Field(
         default=200,
@@ -429,43 +474,6 @@ class HarnessConfig(pydantic.BaseModel):
             "round landing work"
         ),
     )
-    verify_when: Literal["finish", "turn", "never"] = pydantic.Field(
-        json_schema_extra={
-            "choice_meanings": {
-                "finish": "Verify uncovered final tree at finish",
-                "turn": "Also verify after each editing turn",
-                "never": "Verify only when model calls tool",
-            }
-        },
-        default="never",
-        description=(
-            "When the harness runs `harness.verify_command` itself; the tool remains available "
-            "in every mode; no gate runs without a command; an uncovered final tree reads "
-            "unverified; finish-time failures return to the model up to "
-            "`harness.verify_retries` times."
-        ),
-    )
-    verify_at_start: bool = pydantic.Field(
-        default=False,
-        description=(
-            "one `harness.verify_command` call before a fresh run's first turn to record "
-            "pre-existing gate failure; red output in the first request; a red finish over a "
-            "red base: `finished · gate red at base` (red at the start and at the finish, the "
-            "failures not compared); cost: one gate call per fresh run, worth it for a fast gate "
-            'beside a suite that is already red; needs `harness.verify_when = "finish"` or '
-            '`"turn"` and `sandbox.run_commands` other than `"deny"`; recorded baseline kept '
-            "on resume"
-        ),
-    )
-    verify_retries: int = pydantic.Field(
-        ge=0,
-        default=2,
-        description=(
-            "red finish certifications returned to the model with gate output before the finish "
-            "stands as `finished · gate red`, never passed; `harness.verify_retries = 0`: end "
-            "on the first red; pre-existing red not returned unless made green during this run"
-        ),
-    )
     metric: MetricConfig | None = pydantic.Field(
         default=None,
         description=(
@@ -476,6 +484,7 @@ class HarnessConfig(pydantic.BaseModel):
     )
     parallel: ParallelConfig = pydantic.Field(default_factory=ParallelConfig)
     prompt: PromptConfig = pydantic.Field(default_factory=PromptConfig)
+    verify: VerifyConfig = pydantic.Field(default_factory=VerifyConfig)
 
 
 class CompactionConfig(pydantic.BaseModel):

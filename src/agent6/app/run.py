@@ -261,7 +261,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         gate_refusal := workspace_setup.gate_refusal(
             cfg,
             repo,
-            cfg.harness.verify_command
+            cfg.harness.verify.command
             if review_world is not None
             else workspace_setup.origin_gate(cfg, repo),
             workspace="a new worktree",
@@ -402,7 +402,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             mode=mode,
             gate=(
                 sessions_manifest.GateStamp(
-                    command=cfg.harness.verify_command,
+                    command=cfg.harness.verify.command,
                     source=lane_gate_source,
                     availability="pending",
                 )
@@ -527,7 +527,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             cfg: Config, budget: agent6_budget.BudgetTracker, available: Callable[[str], bool]
         ) -> Config:
             # Infer an unset gate, then drop it last when commands are withheld.
-            configured_gate = bool(cfg.harness.verify_command)
+            configured_gate = bool(cfg.harness.verify.command)
             # In the repository, never the run's worktree: a signal such as `.venv` is absent
             # there until the setup command builds it, and the gate is carried.
             cfg = preflight.infer_verify_if_unset(

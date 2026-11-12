@@ -59,7 +59,7 @@ case "$AGENT" in
     A6_CFG="$(dirname "$RUN")/$(basename "$RUN")_config.toml"
     cat > "$A6_CFG" <<CFG
 [harness]
-verify_command = ["bash", "verify.sh"]
+verify.command = ["bash", "verify.sh"]
 [sandbox]
 run_commands = "allow"
 [git]

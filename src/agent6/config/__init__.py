@@ -22,6 +22,7 @@ from agent6.config.harness_config import (  # re-export
     ReviewerConfig,
     ReviewScope,
     RoleModel,
+    VerifyConfig,
 )
 from agent6.config.header_config import HeaderTemplate  # re-export
 from agent6.config.model import (  # re-export
@@ -98,6 +99,7 @@ __all__ = [
     "RoleName",
     "SandboxConfig",
     "TelemetryConfig",
+    "VerifyConfig",
     "WebConfig",
     "WorkspaceConfig",
     "is_cleartext_url",

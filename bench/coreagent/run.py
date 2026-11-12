@@ -98,7 +98,7 @@ def task_prompt(task: str, module: str) -> str:
 CONDITIONS: dict[str, str] = {
     "baseline": "",
     # G12 extends the base config's trailing [harness] table.
-    "verify_finish": 'verify_when = "finish"\n',
+    "verify_finish": 'verify.when = "finish"\n',
     # Thrust 2: front-loaded decomposition.
     "decompose": '[harness.prompt]\ndecompose = "on"\n',
     # The tail must fit below the tier-2 trigger; zero selects a hard restart.
@@ -180,8 +180,8 @@ def _provider_block(provider: str, model: str, verify: list[str], effort: str = 
     # second [harness] header would be invalid TOML (cannot declare twice).
     return (
         f'{route}\n[sandbox]\nrun_commands = "allow"\n\n'
-        f"[harness]\nverify_command = {verify_toml}\n"
-        f"verify_timeout_s = 60.0\n"
+        f"[harness]\nverify.command = {verify_toml}\n"
+        f"verify.timeout_s = 60.0\n"
     )
 
 

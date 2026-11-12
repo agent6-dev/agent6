@@ -90,7 +90,12 @@ def test_withdrawn_tools_leave_the_model_s_surface(tmp_path: pathlib.Path) -> No
     """
     # A gate must be configured, or run_verify_command is hidden for its own reason.
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
+        {
+            "sandbox": {"run_commands": "ask"},
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
+        }
     )
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=tmp_path)
     assert set(d.available_tool_names()) >= _COMMAND_TOOLS
@@ -136,7 +141,12 @@ def test_a_single_no_refuses_one_call_and_withdraws_nothing(
     from agent6 import kinds
 
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
+        {
+            "sandbox": {"run_commands": "ask"},
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
+        }
     )
     answers = iter(["no", "no", "yes"])
 
@@ -188,7 +198,7 @@ def test_every_ask_command_tool_uses_the_command_scope(
         {
             "sandbox": {"run_commands": "ask", "network": "host"},
             "harness": {
-                "verify_command": ["true"],
+                "verify": {"command": ["true"]},
                 "metric": {"command": ["true"], "pattern": "(true)", "goal": "minimize"},
             },
         }
@@ -209,7 +219,12 @@ def test_every_ask_command_tool_uses_the_command_scope(
 def test_a_stop_during_the_approval_wait_is_named_as_such(tmp_path: pathlib.Path) -> None:
     """A stop during the approval wait is named as a stop, not as a policy refusal."""
     cfg = Config.model_validate(
-        {"sandbox": {"run_commands": "ask"}, "harness": {"verify_command": ["true"]}}
+        {
+            "sandbox": {"run_commands": "ask"},
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
+        }
     )
 
     def _wait_broken(

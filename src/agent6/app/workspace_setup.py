@@ -101,8 +101,8 @@ def _no_setup_text(path: str, workspace: str) -> str:
 
 def origin_gate(cfg: Config, origin: pathlib.Path) -> tuple[str, ...]:
     """Return the gate the config pins or the origin's own files give, with no model call."""
-    if cfg.harness.verify_command or not cfg.harness.verify_infer:
-        return cfg.harness.verify_command
+    if cfg.harness.verify.command or not cfg.harness.verify.infer:
+        return cfg.harness.verify.command
     hide = cfg.sandbox.hide_paths
     agents_md = verify_infer.read_agents_md(origin, hide)
     return verify_infer.infer_verify_command(
@@ -222,7 +222,7 @@ def prepare(
         return prepared
     argv = cfg.workspace.setup_command
     result = prepared.result
-    gate = cfg.harness.verify_command
+    gate = cfg.harness.verify.command
     path = _gate_path(gate)
     if not path or (root / path).exists():
         return prepared

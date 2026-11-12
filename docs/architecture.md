@@ -197,7 +197,7 @@ The same turn with its decisions, also by hand, against `harness/loop.py`'s `_dr
 flowchart TD
     pre["pre-call: snapshot,<br/>nudge, compact"] --> model["provider call, streamed<br/>steer interrupts"]
     model --> tools["tool calls<br/>(commands jailed)"]
-    tools --> hgate["harness gate run<br/>(verify_when)"]
+    tools --> hgate["harness gate run<br/>(harness.verify.when)"]
     hgate --> commit["auto-commit + metric"]
     commit --> review["review triggers"]
     review --> gates{"finish<br/>requested?"}
@@ -215,15 +215,15 @@ With the per-call transcripts, an interrupted run replays deterministically up t
 A turn's tool calls and each result that returned are recorded in `turn_in_flight.json` while they dispatch.
 A resume after a death there runs none of the turn's calls again: the model gets the results that returned, and one line for each other call saying it was interrupted and not re-run.
 
-**The harness runs the gate only when asked** (`[harness].verify_when`, default `never`: the model's own `run_verify_command` calls are the verification, and an end no run of the gate covers reads `unverified` and exits 0).
+**The harness runs the gate only when asked** (`[harness.verify].when`, default `never`: the model's own `run_verify_command` calls are the verification, and an end no run of the gate covers reads `unverified` and exits 0).
 
-- Under `finish`, when `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `verify_command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
+- Under `finish`, when `finish_session` arrives over a tree no verify verdict covers (green or red, nothing edited since), the loop runs `harness.verify.command` itself, through the same dispatcher path as the model's `run_verify_command`, approvals included.
 - A denied approval withholds the gate for the rest of the execution, and the execution ends unverified.
 - `turn` also runs it after every editing turn.
-- A pytest gate naming no paths that overruns `verify_timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff.
+- A pytest gate naming no paths that overruns `harness.verify.timeout_s` (the harness's run or the model's own) re-runs scoped to the tests nearest the run's diff.
   It stays scoped until a full run of the gate passes.
   The notice lists the selected files, `session.stop` carries `scoped`, and a `finish_session` over a scoped green reads `passed · scoped gate` on every surface.
-- A red finish certification returns to the model with the gate's output `verify_retries` times (default 2), then the finish stands and the run is reported finished, never passed.
+- A red finish certification returns to the model with the gate's output `harness.verify.retries` times (default 2), then the finish stands and the run is reported finished, never passed.
 - The settled stop ends a plain run after `harness.settled_stop_after` consecutive idle turns (default 12) following a green verify of the run's own edits or an editing step no gate judged.
     - A green on the untouched base tree, from the start gate or the model's own call, is the baseline's verdict and arms nothing.
     - A verify run is neutral, as is a command start or selected-job read whose result says that command is still running.

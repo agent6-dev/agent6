@@ -84,7 +84,7 @@ model = "anthropic/claude-sonnet-4-5"
 model = "anthropic/claude-opus-4-5"
 
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 
 [notify]
 on_event = ["python3", "-c", "PLACEHOLDER"]

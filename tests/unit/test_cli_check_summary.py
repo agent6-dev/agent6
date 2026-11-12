@@ -159,7 +159,13 @@ def test_check_verify_uses_the_jail_path_not_the_ambient_path(
     executable.write_text("#!/bin/sh\n", encoding="utf-8")
     executable.chmod(0o755)
     monkeypatch.setenv("PATH", str(host_bin))
-    cfg = Config.model_validate({"harness": {"verify_command": ["host-only"]}})
+    cfg = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"command": ["host-only"]},
+            }
+        }
+    )
 
     checks = check_cmds._doctor_check_verify(cfg)  # pyright: ignore[reportPrivateUsage]
 
@@ -243,8 +249,8 @@ def test_run_header_prints_the_inferred_gate_as_check_verify_does(
         ),
     )
     header = capsys.readouterr().err
-    assert f"verify_command not set; inferred from AGENTS.md: {command}\n" in header
-    assert shlex.split(command) == list(cfg.harness.verify_command)
+    assert f"verify command not set; inferred from AGENTS.md: {command}\n" in header
+    assert shlex.split(command) == list(cfg.harness.verify.command)
 
 
 def test_check_verify_and_the_run_header_say_why_a_manifest_was_passed_over(
@@ -287,8 +293,8 @@ def test_check_verify_and_the_run_header_say_why_a_manifest_was_passed_over(
         ),
     )
     header = capsys.readouterr().err
-    assert cfg.harness.verify_command == ("make", "test")
-    assert "verify_command not set; inferred from Makefile:test: make test\n" in header
+    assert cfg.harness.verify.command == ("make", "test")
+    assert "verify command not set; inferred from Makefile:test: make test\n" in header
     assert f"\n         {why}\n" in header
 
 
@@ -322,8 +328,8 @@ def test_check_verify_and_the_run_header_name_the_manifests_the_gate_leaves_out(
         ),
     )
     header = capsys.readouterr().err
-    assert cfg.harness.verify_command == ("npm", "test", "--silent")
-    assert "verify_command not set; inferred from package.json: npm test --silent\n" in header
+    assert cfg.harness.verify.command == ("npm", "test", "--silent")
+    assert "verify command not set; inferred from package.json: npm test --silent\n" in header
     assert f"\n         {left_out}\n" in header
 
 

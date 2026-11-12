@@ -255,7 +255,9 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
                 "models": {"default": {"model": "p/base"}},
                 "sandbox": {"isolation": "none", "protect_git": "off", "run_commands": "allow"},
                 "workspace": {"setup_command": ["touch", str(marker)]},
-                "harness": {"verify_when": "never"},
+                "harness": {
+                    "verify": {"when": "never"},
+                },
                 "review": {"when": "never"},
                 "notify": {"on_event": ["touch", str(tmp_path / "hook-ran")]},
             }

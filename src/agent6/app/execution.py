@@ -763,7 +763,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         # The caller releases the worker lock, then hands the run to `detach_to_background`.
         return ExecutionEnd(0, detach_requested=True)
 
-    harness_gate = cfg.harness.verify_when != "never"
+    harness_gate = cfg.harness.verify.when != "never"
     if mode == "ask":
         # stdout gets the answer alone, for a pipe; when the stream (on stderr) and stdout are
         # the one terminal, the stream showed it. The REPL already printed and saved each turn.

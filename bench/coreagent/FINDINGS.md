@@ -62,7 +62,7 @@ The task set is ad hoc; its scripts and raw rows are outside the tree.
 - At 6 idle turns the stop ends every steered run in the middle of the operator's seven steps, on a green gate.
 - Restarting the count at the steer moves each event one turn later and changes no outcome.
 - With no steer no run reached 6 idle turns in any arm (longest 4), so the control shows no side effect of any arm.
-- The stop at 12 ships: it keeps the net for a worker that re-runs read-only commands after its work is done, which arming on a green verify alone would remove under `verify_when = "finish"`.
+- The stop at 12 ships: it keeps the net for a worker that re-runs read-only commands after its work is done, which arming on a green verify alone would remove under `harness.verify.when = "finish"`.
 
 ## Compaction
 
@@ -157,7 +157,7 @@ The gate is `python3 -m unittest` over 21 tests, 0.5 s.
 - The start gate adds one gate run to a run on a green base; a slow gate was not measured.
 - Two defects in the measured arm: a green start gate armed the settled count from the first turn, and a red one made every fix a red-to-green flip, so the memory advisory fired in 8 of 8 fix runs against 2 of 8.
 
-The fixed arm records the start gate's verdict as the baseline's, not as a pass or a failure of the run's own, and sits behind `harness.verify_at_start`.
+The fixed arm records the start gate's verdict as the baseline's, not as a pass or a failure of the run's own, and sits behind `harness.verify.at_start`.
 gpt-6.1-sol, the same six tasks, the key off against on, n=2 per task and arm (24 runs, n=4 per family and arm):
 
 | family | measure | key off | key on |
@@ -173,9 +173,9 @@ gpt-6.1-sol, the same six tasks, the key off against on, n=2 per task and arm (2
 - Beside an unrelated red test turns and tokens out fall by more than twice the standard error (1.1 and 66); nothing else differs beyond it.
 - Hidden checks pass in 4 of 4 runs in every cell.
 - With the key on no fix run verified red itself before editing, so the advisory, which waits for a red of the run's own, fired in none.
-- Adopted: `harness.verify_at_start`, default on.
+- Adopted: `harness.verify.at_start`, default on.
   A slow gate was not measured; the key turns the start gate off.
-- The shipped default is off, and `harness.verify_when` defaults to `never` (a product decision on cost and prior art); the measurement above stands for a fast gate beside a red suite, the case the key is for.
+- The shipped default is off, and `harness.verify.when` defaults to `never` (a product decision on cost and prior art); the measurement above stands for a fast gate beside a red suite, the case the key is for.
 
 ## A notice for an edit the run's commits leave out
 
@@ -214,7 +214,7 @@ The hidden check: a fresh clone of the run's branch passes the gate and the task
 | terse rules on capable models | kimi-k2.7-code and glm-5.2, textkit, n=4 | scores 1.0 in every arm; kimi output tokens 3901 ± 2851 vs 2566 ± 1997 (overlapping) | no action |
 | the base-red notice's last clause ("those failures predate the task") | gpt-6-astra, two fix-the-failing-test tasks and two add-a-feature tasks beside an unrelated red test, n=4 per task and arm (32 runs); every task asks for one verify before the first edit, so the notice fired in 32 of 32 (without that sentence, 0 of 2 smoke runs: both edited before their first verify); a second batch of the fix tasks, 16 runs | hidden checks 8 of 8 in every cell with and without the clause; 0 of 16 feature runs edited the unrelated red test; feature-task turns 10.2 ± 0.9 with the clause, 9.4 ± 1.5 without (twice the standard error is 1.2); fix-task turns 8.5 ± 1.5 with, 6.6 ± 0.7 without in the first batch (lower by 1.9, twice the standard error is 1.2) and 7.1 ± 1.6 with, 7.0 ± 1.3 without in the second (twice the standard error is 1.5) | the clause is removed: no measured regression |
 | a sentence in `machine create`'s authoring prompt saying how an offline test script is run (`python3 <file>`, no test discovery, a unittest file calls `unittest.main()`) | gpt-6.1-sol at effort high, two authoring tasks that each need a script with an external seam, n=4 per task and arm (16 creates); every written test file run in the jail under a hook that counts the `test_*` functions called | 7 of 8 creates succeeded in each arm; 0 of 7 wrote a test file that ran none of its tests, with and without the sentence (19 test files, every `test_*` they define was called); attempts per create 2.25 without, 2.4 with | not shipped |
-| the harness-run finish gate (`verify_when = "finish"`) against model-only verification with the same tools | gpt-6-astra at high and claude-haiku-4-5, textkit, rpn, ledger, bugs, n=3 per arm | every run scores 1.0 in both arms on both models; the gate adds about one turn and two to seven seconds | no action: the tasks have no headroom left on these models |
+| the harness-run finish gate (`harness.verify.when = "finish"`) against model-only verification with the same tools | gpt-6-astra at high and claude-haiku-4-5, textkit, rpn, ledger, bugs, n=3 per arm | every run scores 1.0 in both arms on both models; the gate adds about one turn and two to seven seconds | no action: the tasks have no headroom left on these models |
 | prompt revision (`revise_prompt = "auto"`) | the same two models and tasks, n=3 per arm | the task was rewritten in every treatment run; every run scores 1.0 in both arms; ten to thirty seconds per run on astra, a turn saved or added on Haiku | no action: the same ceiling |
 
 The ledger loss under the brief has a tool-shape cause: qwen rewrites the stub whole with `apply_edit kind="create"` on an existing file (refused), then narrates the fix without calling anything until the went-quiet guard ends the run; mistral thrashes small edits into a syntax error.

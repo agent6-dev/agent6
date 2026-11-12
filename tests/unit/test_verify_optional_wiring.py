@@ -33,7 +33,15 @@ from agent6.vcs import git_read
 
 
 def _cfg(*, verify: bool) -> Config:
-    data = {"harness": {"verify_command": ["true"]}} if verify else {}
+    data = (
+        {
+            "harness": {
+                "verify": {"command": ["true"]},
+            }
+        }
+        if verify
+        else {}
+    )
     return Config.model_validate(data)
 
 
@@ -91,7 +99,13 @@ def test_system_prompt_switches_verify_block(tmp_path: pathlib.Path) -> None:
     assert "run project tests only through" not in gateless.lower()
     assert "stale_gate" in with_verify and "commits each editing turn" in with_verify
     # One commit rule whatever the gate policy: every editing turn is checkpointed.
-    turn = Config.model_validate({"harness": {"verify_command": ["true"], "verify_when": "turn"}})
+    turn = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"command": ["true"], "when": "turn"},
+            }
+        }
+    )
     assert "commits each editing turn" in prompt_blocks.build_system_prompt(
         config=turn, repo=repo, mode="run", skills=None
     )
@@ -140,21 +154,32 @@ def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
     session_dir.mkdir()
     said: list[str] = []
     reporter = app_reporter.Reporter(out=said.append, err=said.append)
-    gated = Config.model_validate({"harness": {"verify_command": ["pytest", "-q"]}})
+    gated = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"command": ["pytest", "-q"]},
+            }
+        }
+    )
 
     assert preflight.drop_gate_if_unrunnable(
         gated, session_dir=session_dir, reporter=reporter
-    ).harness.verify_command == (
+    ).harness.verify.command == (
         "pytest",
         "-q",
     )
     withheld = Config.model_validate(
-        {"harness": {"verify_command": ["pytest", "-q"]}, "sandbox": {"run_commands": "deny"}}
+        {
+            "harness": {
+                "verify": {"command": ["pytest", "-q"]},
+            },
+            "sandbox": {"run_commands": "deny"},
+        }
     )
     assert (
         preflight.drop_gate_if_unrunnable(
             withheld, session_dir=session_dir, reporter=reporter
-        ).harness.verify_command
+        ).harness.verify.command
         == ()
     )
     assert any("running gateless" in line for line in said)
@@ -165,7 +190,7 @@ def test_a_execution_that_cannot_run_commands_is_gateless_wherever_it_starts(
     assert (
         preflight.drop_gate_if_unrunnable(
             gated, session_dir=session_dir, reporter=reporter
-        ).harness.verify_command
+        ).harness.verify.command
         == ()
     )
 
@@ -190,12 +215,14 @@ def test_a_deny_after_a_red_gate_does_not_turn_the_run_green(tmp_path: pathlib.P
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_command=("pytest", "-q"),
-            verify_when="finish",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_timeout_s=60.0,
-            verify_infer=True,
+            verify=types.SimpleNamespace(
+                command=("pytest", "-q"),
+                when="finish",
+                at_start=True,
+                retries=2,
+                timeout_s=60.0,
+                infer=True,
+            ),
         ),
     )
     wf.dispatcher = mock.MagicMock()
@@ -216,7 +243,13 @@ def test_a_deny_mid_run_takes_the_gate_with_it(tmp_path: pathlib.Path) -> None:
 
     session_dir = tmp_path / "run"
     session_dir.mkdir()
-    cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
+    cfg = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"command": ["true"]},
+            }
+        }
+    )
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert "run_verify_command" in d.available_tool_names()
     ipc.set_away_mode(session_dir, "deny")
@@ -233,7 +266,7 @@ def test_a_gate_is_never_adopted_when_the_worker_cannot_run_one(tmp_path: pathli
     cfg = Config.model_validate({"sandbox": {"run_commands": "deny"}})
     d = dispatch.ToolDispatcher(root=tmp_path, config=cfg, session_dir=session_dir)
     assert d.adopt_verify_command(("/bin/true",)) is False
-    assert d._config.harness.verify_command == ()  # pyright: ignore[reportPrivateUsage]
+    assert d._config.harness.verify.command == ()  # pyright: ignore[reportPrivateUsage]
 
 
 def test_the_worker_gets_the_tool_for_a_gate_adopted_mid_run(tmp_path: pathlib.Path) -> None:
@@ -363,7 +396,9 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     cfg = _role_cfg(
         {
             "sandbox": {"run_commands": run_commands},
-            "harness": {"verify_command": ["configured-gate"] if configured else []},
+            "harness": {
+                "verify": {"command": ["configured-gate"] if configured else []},
+            },
         }
     )
     effective = layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
@@ -386,7 +421,7 @@ def test_resume_uses_the_gate_pin_newer_than_a_crash_snapshot(
     def _execution(
         _cfg: Config, _layout: object, inputs: execution.ExecutionInputs, **_kw: object
     ) -> execution.ExecutionEnd:
-        used.append(inputs.gate(_cfg, mock.MagicMock(), lambda _exe: True).harness.verify_command)
+        used.append(inputs.gate(_cfg, mock.MagicMock(), lambda _exe: True).harness.verify.command)
         return execution.ExecutionEnd(0)
 
     monkeypatch.setattr(execution, "run_execution", _execution)
@@ -516,7 +551,9 @@ def test_a_withheld_fresh_execution_is_not_regated_by_inference(
     cfg = _role_cfg(
         {
             "sandbox": {"run_commands": "deny"},
-            "harness": {"verify_command": ["pytest", "-q"]},
+            "harness": {
+                "verify": {"command": ["pytest", "-q"]},
+            },
             "git": {"branch_per_run": False},
         }
     )
@@ -582,7 +619,12 @@ def test_git_protect_rule_renders_only_when_the_bind_exists(tmp_path: pathlib.Pa
     repo = _repo(tmp_path)
     on = _cfg(verify=True)
     off = Config.model_validate(
-        {"harness": {"verify_command": ["true"]}, "sandbox": {"protect_git": "off"}}
+        {
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
+            "sandbox": {"protect_git": "off"},
+        }
     )
     marker = ".git/` is read-only inside the jail"
     for isolation, cfg, expect in (
@@ -615,10 +657,18 @@ def test_agents_md_section_absent_when_repo_has_none(tmp_path: pathlib.Path) -> 
 def test_prompt_git_rules_match_git_control(tmp_path: pathlib.Path) -> None:
     """Under [git].control = "model" the prompt never claims the harness commits automatically."""
     repo = _repo(tmp_path)
-    agent6_cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
+    agent6_cfg = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"command": ["true"]},
+            }
+        }
+    )
     model_cfg = Config.model_validate(
         {
-            "harness": {"verify_command": ["true"]},
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
             "git": {"control": "model"},
             "sandbox": {"protect_git": "off"},
         }
@@ -696,7 +746,7 @@ def test_budget_block_names_the_plan_meter_for_subscription_runs(tmp_path: pathl
 
 
 def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Path) -> None:
-    """verify_infer = false skips every inference tier, so a run can be gateless on purpose."""
+    """verify.infer = false skips every inference tier, so a run can be gateless on purpose."""
     import json
 
     from agent6 import budget as agent6_budget
@@ -716,18 +766,24 @@ def test_verify_infer_false_pins_gatelessness_at_preflight(tmp_path: pathlib.Pat
         transcript_sink=mock.MagicMock(),
         budget=budget,
     )
-    assert cfg_on.harness.verify_command, "the fence must infer when the knob is on"
+    assert cfg_on.harness.verify.command, "the fence must infer when the knob is on"
 
     off_log = tmp_path / "off.jsonl"
     cfg_off = preflight.infer_verify_if_unset(
-        Config.model_validate({"harness": {"verify_infer": False}}),
+        Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"infer": False},
+                }
+            }
+        ),
         tmp_path,
         mode="run",
         events=event_log.EventSink(off_log),
         transcript_sink=mock.MagicMock(),
         budget=budget,
     )
-    assert cfg_off.harness.verify_command == ()
+    assert cfg_off.harness.verify.command == ()
     rows = [json.loads(line) for line in off_log.read_text(encoding="utf-8").splitlines()]
     assert any(r["type"] == "verify.inferred" and r["source"] == "disabled" for r in rows)
 
@@ -748,7 +804,13 @@ def test_verify_infer_false_pins_gatelessness_at_adoption(tmp_path: pathlib.Path
     )
     wf = loop.Harness(
         chain=run_chain.RunChain(tmp_path),
-        config=Config.model_validate({"harness": {"verify_infer": False}}),
+        config=Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"infer": False},
+                }
+            }
+        ),
         provider=mock.MagicMock(),
         dispatcher=dispatcher,
         logger=lambda _line: None,
@@ -802,7 +864,12 @@ def test_prompt_says_nothing_commits_under_commit_per_turn_off(tmp_path: pathlib
     """With `[git].commit_per_turn = false` the prompt never promises a commit after a green."""
     repo = _repo(tmp_path)
     cfg = Config.model_validate(
-        {"harness": {"verify_command": ["true"]}, "git": {"commit_per_turn": False}}
+        {
+            "harness": {
+                "verify": {"command": ["true"]},
+            },
+            "git": {"commit_per_turn": False},
+        }
     )
     out = prompt_blocks.build_system_prompt(config=cfg, repo=repo, mode="run", skills=None)
     assert "Nothing commits automatically" in out
@@ -818,7 +885,13 @@ def test_partial_rule_renders_only_where_the_jail_carries_protect_paths(
     never needed.
     """
     repo = _repo(tmp_path)
-    cfg = Config.model_validate({"harness": {"verify_command": ["true"]}})
+    cfg = Config.model_validate(
+        {
+            "harness": {
+                "verify": {"command": ["true"]},
+            }
+        }
+    )
     plain = prompt_blocks.build_system_prompt(
         config=cfg, repo=repo, mode="run", skills=None, isolation="partial"
     )
@@ -975,7 +1048,7 @@ def test_a_gate_withheld_on_resume_is_one_clipped_line(
         ),
         encoding="utf-8",
     )
-    harness = {"verify_command": list(gate)} if configured else {}
+    harness = {"verify": {"command": list(gate)}} if configured else {}
     cfg = _role_cfg({"sandbox": {"run_commands": "deny"}, "harness": harness})
     effective = layer_data.EffectiveConfig(config=cfg, sources={}, layers=())
 

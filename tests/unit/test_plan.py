@@ -39,7 +39,7 @@ protect_git = "on"
 dirty_tree = "ask"
 branch_per_run = true
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 [budget]
 max_tokens_fallback = 2000000
 """
@@ -370,7 +370,7 @@ def test_run_commands_deny_withholds_the_command_tools_and_every_rule_about_them
     p = tmp_path / "agent6.toml"
     p.write_text(
         _VALID_TOML.replace(  # carries run_commands = "deny" and a verify_command
-            'verify_command = ["true"]', 'verify_command = ["true"]\nverify_when = "turn"'
+            'verify.command = ["true"]', 'verify.command = ["true"]\nverify.when = "turn"'
         )
         + '\n[harness.metric]\ncommand = ["python3", "bench.py"]\n'
         + 'pattern = "CYCLES: (\\\\d+)"\ngoal = "minimize"\n',
@@ -609,10 +609,7 @@ def _wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -679,10 +676,7 @@ def _plan_wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file="", decompose="off"),
             ),
         ),

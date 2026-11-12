@@ -298,7 +298,7 @@ Where a run state's work lands:
 - grant per invocation with `--auto-approve` or `AGENT6_AUTO_APPROVE=1` (ask upgrades to allow; a configured `deny` stays deny), or set `sandbox.run_commands = "allow"` in the repo config
 - `--no-commands` or `AGENT6_NO_COMMANDS=1` withholds every command tool
 - an overlay cannot grant it: a `sandbox` key is never wider than your own config ([Machine config overlay](#machine-config-overlay-config))
-- edits and the auto-commit need no approval; `run_verify_command` and the `verify_when` certification share the same gate: prefer `tool` states over shelling out
+- edits and the auto-commit need no approval; `run_verify_command` and the `harness.verify.when` certification share the same gate: prefer `tool` states over shelling out
 
 The state's `config` table tunes how that loop runs.
 
@@ -589,8 +589,8 @@ A machine file may carry a top-level `[config]` table, and each `agent` or `tool
 - a list replaces the list beneath it, as in every config layer
 
 ```toml
-[config.harness]
-verify_command = ["uv", "run", "pytest", "-q"]
+[config.harness.verify]
+command = ["uv", "run", "pytest", "-q"]
 
 [config.budget]
 max_usd = 50.0

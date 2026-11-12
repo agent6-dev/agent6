@@ -484,7 +484,9 @@ def test_tool_setup_routes_its_outcome_without_checking_a_session_gate(
         {
             "sandbox": {"run_commands": "allow"},
             "workspace": {"setup_command": ["setup"]},
-            "harness": {"verify_command": [".missing-gate"]},
+            "harness": {
+                "verify": {"command": [".missing-gate"]},
+            },
         }
     )
     calls: list[tuple[str, ...]] = []

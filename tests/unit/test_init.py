@@ -93,7 +93,7 @@ def test_init_infers_verify_for_python_repo(tmp_path: pathlib.Path) -> None:
     init_wizard.init_workspace(repo)
     cfg = layer.load_effective(repo).config
     # No .venv in this fresh repo, so python3 on PATH (see verify_infer).
-    assert cfg.harness.verify_command == ("python3", "-m", "pytest", "-q")
+    assert cfg.harness.verify.command == ("python3", "-m", "pytest", "-q")
 
 
 @pytest.mark.usefixtures("jail_bin")
@@ -110,7 +110,7 @@ def test_init_go_uses_go_advice_and_artifacts(
 
     assert main(["init", "--yes", *flags]) == 0
 
-    assert layer.load_effective(repo).config.harness.verify_command == ("go", "test", "./...")
+    assert layer.load_effective(repo).config.harness.verify.command == ("go", "test", "./...")
     text = (repo / "AGENTS.md").read_text(encoding="utf-8")
     assert "Go toolchain" in text
     assert "go test ./..." in text
@@ -140,7 +140,7 @@ def test_init_verify_from_agents_md(tmp_path: pathlib.Path) -> None:
     repo = _repo(tmp_path)
     (repo / "AGENTS.md").write_text("## Verify\n\n```bash\nmake test\n```\n", encoding="utf-8")
     init_wizard.init_workspace(repo)
-    assert layer.load_effective(repo).config.harness.verify_command == ("make", "test")
+    assert layer.load_effective(repo).config.harness.verify.command == ("make", "test")
 
 
 def test_init_saves_no_gate_the_sandbox_cannot_run(
@@ -154,7 +154,7 @@ def test_init_saves_no_gate_the_sandbox_cannot_run(
     repo = _repo(tmp_path)
     (repo / "package.json").write_text('{"scripts": {"test": "jest"}}', encoding="utf-8")
     init_wizard.init_workspace(repo)
-    assert layer.load_effective(repo).config.harness.verify_command == ()
+    assert layer.load_effective(repo).config.harness.verify.command == ()
     out = capsys.readouterr().out
     assert (
         "passed over: package.json names `npm test --silent`, and the sandbox has no `npm`" in out
@@ -185,7 +185,7 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: pathlib.Path) -> No
     (repo / "pyproject.toml").write_text("[project]\nname='x'\n", encoding="utf-8")
     cfgp = paths.repo_config_path(repo)
     cfgp.parent.mkdir(parents=True, exist_ok=True)
-    cfgp.write_text('[harness]\nverify_command = ["my-test"]\n', encoding="utf-8")
+    cfgp.write_text('[harness]\nverify.command = ["my-test"]\n', encoding="utf-8")
     (repo / "AGENTS.md").write_text("# mine\n", encoding="utf-8")
 
     init_wizard.init_workspace(repo)
@@ -194,7 +194,7 @@ def test_init_never_overwrites_or_writes_suggested(tmp_path: pathlib.Path) -> No
     assert (repo / "AGENTS.md").read_text(encoding="utf-8") == "# mine\n"
     assert not cfgp.with_name("config.toml.suggested").is_file()
     assert not (repo / "AGENTS.md.suggested").is_file()
-    assert layer.load_effective(repo).config.harness.verify_command == ("my-test",)
+    assert layer.load_effective(repo).config.harness.verify.command == ("my-test",)
 
 
 def test_init_gitignore_is_idempotent(tmp_path: pathlib.Path) -> None:
@@ -276,7 +276,7 @@ def test_init_next_steps_name_only_what_is_still_missing(
         '[providers.openrouter]\nbackend = "openai"\n'
         'base_url = "https://openrouter.ai/api/v1"\n'
         '[models.default]\nmodel = "openrouter/m"\n'
-        "[harness]\nverify_command = ['true']\n",
+        "[harness]\nverify.command = ['true']\n",
         encoding="utf-8",
     )
     monkeypatch.setenv("OPENROUTER_API_KEY", "k")

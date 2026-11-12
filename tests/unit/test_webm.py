@@ -139,9 +139,9 @@ def test_hero_run_enables_the_tapes_baseline_approval() -> None:
     """The hero config requests the baseline approval that opens the tape."""
     script = (_SCREENSHOTS / "hero_run.sh").read_text(encoding="utf-8")
     config_text = script.split('cat > "$XDG_CONFIG_HOME/agent6/config.toml" <<EOF\n', 1)[1]
-    harness = tomllib.loads(config_text.split("\nEOF\n", 1)[0])["harness"]
-    assert harness.get("verify_at_start") is True
-    assert harness.get("verify_when") == "finish"
+    verify = tomllib.loads(config_text.split("\nEOF\n", 1)[0])["harness"]["verify"]
+    assert verify.get("at_start") is True
+    assert verify.get("when") == "finish"
 
 
 def _run_hero(

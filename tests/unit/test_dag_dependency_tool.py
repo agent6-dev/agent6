@@ -31,7 +31,7 @@ model = "anthropic/x"
 [models.reviewer]
 model = "anthropic/x"
 [harness]
-verify_command = ["true"]
+verify.command = ["true"]
 """
 
 _B = "01" + "B" * 24

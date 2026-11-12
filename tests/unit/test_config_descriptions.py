@@ -22,8 +22,8 @@ _ROOT = pathlib.Path(__file__).resolve().parents[2]
             ),
         ),
         (
-            harness_config.HarnessConfig,
-            "verify_timeout_s",
+            harness_config.VerifyConfig,
+            "timeout_s",
             ("`run_command` handed back by `harness.command_checkin_s`",),
         ),
         (
@@ -132,16 +132,16 @@ def test_settled_descriptions_arm_on_editing_progress() -> None:
 
 def test_timeout_description_keeps_model_scoping_independent_of_gate_policy() -> None:
     """The scoped retry belongs to the model's timed-out call even under `never`."""
-    description = harness_config.HarnessConfig.model_fields["verify_timeout_s"].description or ""
+    description = harness_config.VerifyConfig.model_fields["timeout_s"].description or ""
     assert "harness call or model's `run_verify_command`" in description
     assert "verify_when" not in description
 
 
 def test_finish_description_uses_any_verdict_not_only_a_green_one() -> None:
-    description = harness_config.HarnessConfig.model_fields["verify_when"].description or ""
-    assert harness_config.HarnessConfig().verify_when == "never"
+    description = harness_config.VerifyConfig.model_fields["when"].description or ""
+    assert harness_config.VerifyConfig().when == "never"
     assert "uncovered final tree" in description
-    extra = harness_config.HarnessConfig.model_fields["verify_when"].json_schema_extra
+    extra = harness_config.VerifyConfig.model_fields["when"].json_schema_extra
     assert isinstance(extra, dict)
     meanings = extra["choice_meanings"]
     assert isinstance(meanings, dict)

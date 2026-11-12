@@ -345,7 +345,7 @@ class ToolDispatcher:
             cls.TOOL_NAME for cls in schema.ALL_TOOLS if self._tool_refusal(cls.TOOL_NAME) is None
         ]
         # A gateless run hides run_verify_command rather than offer a tool that would error.
-        if not self._config.harness.verify_command:
+        if not self._config.harness.verify.command:
             names = [n for n in names if n != schema.RunVerifyInput.TOOL_NAME]
         names.extend(d.qualified_name for d in self.mcp_descriptors())
         return tuple(sorted(names))
@@ -713,8 +713,8 @@ class ToolDispatcher:
             ToolDeniedError: The operator did not approve.
             OperatorCommandUnexecutableError: The command cannot run in the jail.
         """
-        argv = self._config.harness.verify_command + extra_argv
-        timeout_s = self._config.harness.verify_timeout_s
+        argv = self._config.harness.verify.command + extra_argv
+        timeout_s = self._config.harness.verify.timeout_s
         record = evidence.VerificationEvidence(
             verify_id=uuid.uuid4().hex,
             execution_id=self.execution_id,
@@ -751,7 +751,7 @@ class ToolDispatcher:
         try:
             if refusal := self._tool_refusal(schema.RunVerifyInput.TOOL_NAME):
                 raise tool_errors.ToolDeniedError(refusal)
-            if not self._config.harness.verify_command:
+            if not self._config.harness.verify.command:
                 raise tool_errors.ToolError("no verify command configured")
             self._approve_command("run_verify_command", argv)
             access = self._jail_access("verify_command")
@@ -1138,7 +1138,7 @@ class ToolDispatcher:
         outcome, timeout_s = command_tools.run_argv_raw(
             argv,
             label="metric_command",
-            timeout_s=self._config.harness.verify_timeout_s,
+            timeout_s=self._config.harness.verify.timeout_s,
             access=self._jail_access("metric_command"),
         )
         if outcome.exec_failed:

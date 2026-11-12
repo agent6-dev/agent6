@@ -396,7 +396,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915
     init_p = common._sub(
         sub,
         "init",
-        help="Optional setup wizard: per-repo config, verify_command, .gitignore, AGENTS.md.",
+        help="Optional setup wizard: per-repo config, verify command, .gitignore, AGENTS.md.",
     )
     init_p.add_argument(
         "-y",

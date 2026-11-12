@@ -133,12 +133,12 @@ dirty_tree = "ask"
 branch_per_run = true
 
 [harness]
-verify_command = [
+verify.command = [
   "/usr/bin/pytest",
   "-q",
   "tests/submission_tests.py::CorrectnessTests",
 ]
-verify_timeout_s = 30.0
+verify.timeout_s = 30.0
 
 [harness.metric]
 command = ["/usr/bin/python3", "tests/submission_tests.py"]

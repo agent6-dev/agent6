@@ -73,10 +73,7 @@ def _wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -626,14 +623,18 @@ def test_a_rejected_plateau_end_is_named_as_one() -> None:
 def test_a_settled_end_is_certified_by_the_harness_gate() -> None:
     """A settled end is certified by the harness gate.
 
-    Under `verify_when = "finish"` a settled end over an unverified tree runs the gate like a
+    Under `harness.verify.when = "finish"` a settled end over an unverified tree runs the gate as a
     finish: red returns to the model with the output (bounded by verify_retries), green lets the end
     stand.
     """
     from agent6.config import Config
 
     cfg = Config.model_validate(
-        {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
+        {
+            "harness": {
+                "verify": {"command": ["true"], "when": "finish", "retries": 1},
+            }
+        }
     )
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
@@ -681,13 +682,17 @@ class _Events:
 def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
     """The settled stop over a red gate told the model "finish_session not honoured".
 
-    The model had called no finish, and the return came out of its own `verify_retries`.
+    The model had called no finish, and the return came out of its own `harness.verify.retries`.
     """
     from agent6.config import Config
     from agent6.harness import finish_gates
 
     cfg = Config.model_validate(
-        {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 2}}
+        {
+            "harness": {
+                "verify": {"command": ["true"], "when": "finish", "retries": 2},
+            }
+        }
     )
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False
@@ -734,15 +739,19 @@ def test_a_red_settled_stop_names_itself_and_spends_no_finish_return() -> None:
 def test_a_silent_finish_is_certified_and_reviewed_like_a_finish() -> None:
     """A prose turn with no tool call is an end too.
 
-    Under `verify_when = "finish"` the harness runs the gate first (red returns the worker to work
-    with the output, in the conversation since there are no tool results), then the before-finish
-    panel judges it.
+    Under `harness.verify.when = "finish"` the harness runs the gate first (red returns the worker
+    to work with the output, in the conversation since there are no tool results), then the
+    before-finish panel judges it.
     """
     from agent6.config import Config
     from agent6.harness import loop_state
 
     cfg = Config.model_validate(
-        {"harness": {"verify_command": ["true"], "verify_when": "finish", "verify_retries": 1}}
+        {
+            "harness": {
+                "verify": {"command": ["true"], "when": "finish", "retries": 1},
+            }
+        }
     )
     dispatcher = mock.MagicMock(
         last_verification=None, execution_id="execution", verify_withheld=False

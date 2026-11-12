@@ -100,7 +100,7 @@ def model_exchange_for(
     )
     tools = tuple(toolset.tool_definitions(dispatcher, mode=mode))
     header = prompt_blocks.initial_instructions(
-        mode, config.sandbox.run_commands, has_gate=bool(config.harness.verify_command)
+        mode, config.sandbox.run_commands, has_gate=bool(config.harness.verify.command)
     )
     hint = dag_focus.initial_dag_hint(
         "<root task id>", mode, config.harness.prompt.decompose == "on"

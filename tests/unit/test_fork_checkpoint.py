@@ -92,10 +92,7 @@ def _wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -133,13 +130,10 @@ def test_save_snapshot_writes_per_turn_checkpoint(tmp_path: pathlib.Path, with_i
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap, curator=curator)
@@ -200,13 +194,10 @@ def test_checkpoints_are_append_only(tmp_path: pathlib.Path) -> None:
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)
@@ -246,13 +237,10 @@ def test_only_the_pre_call_save_writes_the_numbered_checkpoint(tmp_path: pathlib
             loop_guard_kill_threshold=10,
             settled_stop_after=12,
             stagnation_notice_after_s=300.0,
-            verify_when="never",
-            verify_at_start=True,
-            verify_retries=2,
-            verify_command=(),
+            verify=types.SimpleNamespace(
+                when="never", at_start=True, retries=2, command=(), timeout_s=60.0, infer=True
+            ),
             metric=types.SimpleNamespace(goal=None),
-            verify_timeout_s=60.0,
-            verify_infer=True,
         ),
     )
     wf = _wf(root=repo, config=config, resume_state_path=snap)

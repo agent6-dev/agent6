@@ -27,7 +27,7 @@ It can be empty or absent when the global config supplies a provider and model.
   An existing block's format wins over a preset's.
 - `agent6 model <role> [provider/]model [--effort off|low|medium|high|xhigh|max]`: a model id alone keeps the role's provider; a configured provider name alone opens a model picker on a terminal, or lists its models without one.
   A model change preserves the target layer's other role settings; only an explicit `--effort` replaces effort.
-- `agent6 init`: optional setup wizard (per-repo config, inferred `verify_command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
+- `agent6 init`: optional setup wizard (per-repo config, inferred `harness.verify.command`, `.gitignore`, `AGENTS.md`); every step asks first unless `--yes` skips the prompts.
 - `agent6 config show`: every effective value and which layer set it.
   `--descriptions` adds each value's meaning under its row; `config show <key>...` prints the named keys (or sections), meaning included.
   Text values on the CLI, TUI and web use TOML literals without truncation, including quoted strings and inline tables, so an unmasked value pastes into `config set` unchanged.
@@ -338,7 +338,7 @@ The first write under a built-in's name (`agent6 config set presets.review.sandb
 
 ### `[harness.metric]` (optional)
 
-A continuous score for measurable goals; `command` runs in the jail like `verify_command`.
+A continuous score for measurable goals; `command` runs in the jail like `harness.verify.command`.
 Set its required fields together: `agent6 config set --repo harness.metric '{ command = ["python3", "bench.py"], pattern = "score: ([0-9.]+)", goal = "minimize" }'`.
 
 <!-- config-table: harness.metric -->
@@ -358,6 +358,10 @@ Headless surfaces without a dispatcher answer "not available".
 ### `[harness.prompt]`
 
 <!-- config-table: harness.prompt -->
+
+### `[harness.verify]`
+
+<!-- config-table: harness.verify -->
 
 ## `[review]`
 

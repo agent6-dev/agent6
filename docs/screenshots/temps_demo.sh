@@ -60,7 +60,7 @@ email = "demo@agent6.dev"
 max_usd = 0.50
 max_tokens_fallback = 2000000
 [harness]
-verify_command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
+verify.command = ["python3", "-m", "unittest", "discover", "-s", "tests", "-t", "."]
 [providers.openrouter]
 backend = "openai"
 base_url = "http://127.0.0.1:${PORT}/api/v1"

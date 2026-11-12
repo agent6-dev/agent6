@@ -437,7 +437,7 @@ def create_fork(
             plan.cfg,
             cwd,
             # Config outranks the source's pin on the fork's first execution.
-            plan.cfg.harness.verify_command or plan.gate.command,
+            plan.cfg.harness.verify.command or plan.gate.command,
             workspace="a fork's new worktree",
             at=plan.forked_from_sha or None,
         )

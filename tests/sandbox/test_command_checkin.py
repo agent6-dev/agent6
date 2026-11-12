@@ -127,8 +127,10 @@ def test_the_verify_gate_is_never_handed_back(tmp_path: pathlib.Path) -> None:
             "sandbox": {"run_commands": "allow"},
             "harness": {
                 "command_checkin_s": 0.5,
-                "verify_command": ["/bin/sh", "-c", "sleep 2; echo verified"],
-                "verify_timeout_s": 30.0,
+                "verify": {
+                    "command": ["/bin/sh", "-c", "sleep 2; echo verified"],
+                    "timeout_s": 30.0,
+                },
             },
         }
     )

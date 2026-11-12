@@ -173,7 +173,7 @@ def test_a_withheld_tool_gets_no_block_and_no_offer(tmp_path: pathlib.Path) -> N
         {
             "sandbox": {"run_commands": "deny"},
             "harness": {
-                "verify_command": ["pytest", "-q"],
+                "verify": {"command": ["pytest", "-q"]},
                 "metric": {"command": ["m"], "pattern": r"x:(\d+)", "goal": "minimize"},
             },
         }
@@ -205,7 +205,13 @@ def test_plan_mode_does_not_name_a_gate_it_says_is_absent(tmp_path: pathlib.Path
     assert "run_verify_command runs the operator's gate" not in gateless
 
     gated = prompt_preview.model_exchange_for(
-        Config.model_validate({"harness": {"verify_command": ["pytest", "-q"]}}),
+        Config.model_validate(
+            {
+                "harness": {
+                    "verify": {"command": ["pytest", "-q"]},
+                }
+            }
+        ),
         tmp_path,
         "plan",
         state_dir=tmp_path,

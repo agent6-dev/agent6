@@ -84,10 +84,7 @@ def _build_wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -295,10 +292,7 @@ def test_loop_guard_kills_run_when_streak_passes_threshold(tmp_path: pathlib.Pat
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -345,10 +339,7 @@ def test_loop_guard_kill_disabled_when_threshold_zero(tmp_path: pathlib.Path) ->
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=(),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=(), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -375,7 +366,7 @@ def _knobs(cfg: Any, **knobs: Any) -> Any:
 def _gated_wf(
     repo: pathlib.Path, provider: mock.MagicMock, dispatcher: mock.MagicMock, **kw: Any
 ) -> loop.Harness:
-    """Return a harness with a gate it never runs itself (`verify_when = "never"`).
+    """Return a harness with a gate it never runs itself (`harness.verify.when = "never"`).
 
     An editing turn is checkpointed on the chain whatever the gate policy, so a run_command-authored
     edit reaches git at its turn, and an abnormal end checkpoints whatever is left.
@@ -406,10 +397,7 @@ def _gated_wf(
                 loop_guard_kill_threshold=10,
                 settled_stop_after=12,
                 stagnation_notice_after_s=300.0,
-                verify_command=("true",),
-                verify_when="never",
-                verify_at_start=True,
-                verify_retries=2,
+                verify=mock.MagicMock(command=("true",), when="never", at_start=True, retries=2),
                 prompt=mock.MagicMock(system_prompt_file=""),
             ),
         ),
@@ -656,7 +644,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: pathlib.Path) -
     no_commands.dispatch.return_value = results.RawResult({"content": "x"})
     no_commands.command_policy.return_value = "deny"
     wf3 = _build_wf(repo, denied, no_commands)
-    wf3.config.harness.verify_command = ("true",)
+    wf3.config.harness.verify.command = ("true",)
     wf3.config = _knobs(wf3.config, stagnation_notice_after_s=1e-9)
     wf3.run("investigate")
     assert "nothing edited yet" in _stagnation_blocks(_final_messages(denied))[0]
@@ -668,7 +656,7 @@ def test_stagnation_notice_fires_once_without_attempts(tmp_path: pathlib.Path) -
         itertools.repeat(_resp_text("ok")),
     )
     wf2 = _build_wf(repo, gated, dispatcher)
-    wf2.config.harness.verify_command = ("true",)
+    wf2.config.harness.verify.command = ("true",)
     wf2.config = _knobs(wf2.config, stagnation_notice_after_s=1e-9)
     wf2.run("investigate")
     assert "no edit and no verify" in _stagnation_blocks(_final_messages(gated))[0]
@@ -765,8 +753,9 @@ def test_stagnation_ignores_the_start_gates_time(
     dispatcher.command_policy.return_value = "allow"
     dispatcher.run_verify.side_effect = run_verify
     wf = _build_wf(repo, provider, dispatcher)
-    wf.config.harness.verify_command = ("true",)
-    wf.config = _knobs(wf.config, verify_when="finish", stagnation_notice_after_s=0.9)
+    wf.config.harness.verify.command = ("true",)
+    wf.config.harness.verify.when = "finish"
+    wf.config = _knobs(wf.config, stagnation_notice_after_s=0.9)
     wf.run("investigate")
     assert gates[0] == 124
     assert _stagnation_blocks(_final_messages(provider)) == []
@@ -813,14 +802,9 @@ def test_stagnation_ignores_the_finish_gates_time(
         ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True, check=True
     ).stdout.strip()
     wf.chain = dataclasses.replace(wf.chain, base_sha=head)
-    wf.config.harness.verify_command = ("true",)
-    wf.config = _knobs(
-        wf.config,
-        verify_when="finish",
-        verify_at_start=False,
-        verify_retries=1,
-        stagnation_notice_after_s=0.9,
-    )
+    verify = wf.config.harness.verify
+    verify.command, verify.when, verify.at_start, verify.retries = ("true",), "finish", False, 1
+    wf.config = _knobs(wf.config, stagnation_notice_after_s=0.9)
     logged: list[str] = []
     wf.logger = logged.append
     result = wf.run("check the gate")
