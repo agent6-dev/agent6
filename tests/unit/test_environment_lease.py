@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import pathlib
@@ -222,6 +223,42 @@ def test_a_prepared_run_journals_its_start_and_its_lease(
     )
     assert notes[0].endswith(f"container: starting: {options.start[0]}")
     assert notes[1].endswith("container: started by this run; owned")
+
+
+def test_commands_run_in_the_sessions_own_checkout_under_the_mount(
+    fake: Fake, workspace: pathlib.Path, state_dir: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lane's or a worktree run's commands ran in the mounted workspace's root.
+
+    The file tools worked in the session's checkout while its commands ran in the operator's.
+    """
+    fake.running(_ID)
+    for name in ("exposures", "check_hidden_paths"):
+        monkeypatch.setattr(container, name, mock.Mock(return_value=()))
+    prepared: list[container.ContainerDiscovery] = []
+
+    def prepare(found: container.ContainerDiscovery, **_kw: object) -> mock.Mock:
+        prepared.append(found)
+        return mock.Mock()
+
+    monkeypatch.setattr(container, "prepare", prepare)
+    lane = workspace / ".agent6/worktrees/repo-1/run-p1/lane-1"
+    lane.mkdir(parents=True)
+    mounted = container.discover(workspace, fake.options()).target
+    access = session_runtime.prepare_container_execution(
+        Config(),
+        workspace,
+        fake.options(),
+        state_dir=state_dir,
+        session_id="lane",
+        execution_id="e1",
+        checkout=lane,
+        reporter=app_reporter.Reporter(out=lambda _s: None, err=lambda _s: None),
+    )
+    below = ".agent6/worktrees/repo-1/run-p1/lane-1"
+    assert prepared[0].target.host_root == mounted.host_root / below
+    assert prepared[0].target.command_root == mounted.command_root / below
+    assert access.policy.cwd == mounted.command_root / below
 
 
 def test_a_command_that_cannot_reach_the_container_says_whether_it_runs(
@@ -505,10 +542,28 @@ def test_a_checkout_outside_the_mounted_workspace_refuses(
     found = container.discover(workspace, fake.options())
     inside = workspace / "wt"
     inside.mkdir()
-    container.check_checkout(found, inside, workspace / ".git")
+    same_path = dataclasses.replace(
+        found, target=dataclasses.replace(found.target, command_root=found.target.host_root)
+    )
+    container.check_checkout(same_path, inside, workspace / ".git")
+    container.check_checkout(found, inside, None)  # a clone holds its own git data
     outside = tmp_path / "elsewhere"
     outside.mkdir()
     with pytest.raises(container.ContainerMappingError, match=r"checkout .* is outside"):
         container.check_checkout(found, outside, None)
     with pytest.raises(container.ContainerMappingError, match=r"git dir .* is outside"):
         container.check_checkout(found, inside, outside / ".git")
+
+
+def test_a_linked_worktree_refuses_where_the_container_mounts_another_path(
+    fake: Fake, workspace: pathlib.Path
+) -> None:
+    """Its `.git` names the repository by a host path git cannot follow inside the container."""
+    fake.running(_ID)
+    found = container.discover(workspace, fake.options())
+    assert found.target.command_root != found.target.host_root
+    inside = workspace / "wt"
+    inside.mkdir()
+    with pytest.raises(container.ContainerMappingError, match="names its repository") as refused:
+        container.check_checkout(found, inside, workspace / ".git")
+    assert "--parallel 1" in str(refused.value) and "\n" not in str(refused.value)

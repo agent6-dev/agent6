@@ -1129,37 +1129,15 @@ def test_run_parallel_refuses_a_gate_on_an_untracked_path_before_any_clone(
     assert "the verify gate runs `.venv/bin/python`" in err and "a lane's clone" in err
 
 
-def test_run_parallel_refuses_under_container_isolation(
+def test_a_fan_out_under_a_container_puts_its_lanes_inside_the_mounted_workspace(
     origin: pathlib.Path,
-    tmp_path: pathlib.Path,
-    runtime: app_lanes.LaneRuntime,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A fan-out's lanes are clones outside the mounted workspace: no lane is cloned."""
-    origin_state = paths.state_dir(origin)
+    """A lane cloned into the cache had no path inside the container that mounts the workspace."""
     cfg = Config.model_validate({"sandbox": {"isolation": "container"}})
-    lanes = _specs(tmp_path, cfg, "fan", "2")
-    spawned: list[str] = []
-
-    def spawner(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
-        spawned.append(f"{spec.session_id}: {task}")
-        raise AssertionError("no lane may be cloned")
-
-    rc = parallel.run_parallel(
-        "do the task",
-        lanes,
-        explicit_leaves=frozenset(),
-        cfg=cfg,
-        origin=origin,
-        origin_state=origin_state,
-        runtime=runtime,
-        spawner=spawner,
-        fanout_id="fan",
-    )
-
-    assert rc == 2 and not spawned
-    err = capsys.readouterr().err
-    assert "lanes are clones outside it" in err and "--worktree" in err
+    lanes = app_lanes.build_lane_specs("2", cfg=cfg, origin=origin, fanout_id="fan")
+    base = origin.resolve() / ".agent6/worktrees" / paths.repo_id(origin) / "fan"
+    assert [lane.workdir for lane in lanes] == [base / "lane-1", base / "lane-2"]
+    assert "/.agent6/worktrees/" in (origin / ".git/info/exclude").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("exit_code", [0, 3])

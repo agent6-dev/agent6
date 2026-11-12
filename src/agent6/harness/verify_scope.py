@@ -16,7 +16,7 @@ from agent6 import path_safety
 
 _TEST_DIR_NAMES = ("tests", "test")
 # Vendored trees and envs are large and judge nothing.
-_SKIP_DIRS = {".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", ".eggs"}
+_SKIP_DIRS = {".agent6", ".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", ".eggs"}
 _SCAN_CAP = 4000
 
 

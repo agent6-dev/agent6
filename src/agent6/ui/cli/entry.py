@@ -22,6 +22,7 @@ from collections.abc import Callable
 import argcomplete
 
 from agent6 import errors, paths
+from agent6.sandbox import jail
 from agent6.sessions import event_log, process
 from agent6.ui.cli import common, terminal_guard
 from agent6.ui.cli import parser as cli_parser
@@ -159,7 +160,8 @@ def run_guarded(body: Callable[[], int]) -> int:
         except KeyboardInterrupt:
             print("\nagent6: interrupted.", file=sys.stderr)
             return 130
-        except errors.OperatorError as exc:
+        except (errors.OperatorError, jail.JailUnavailableError) as exc:
+            # A sandbox or container that refuses names its own fix: no traceback, no report.
             common.error(f"{exc}")
             return 2
         except BrokenPipeError:

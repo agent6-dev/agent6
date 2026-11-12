@@ -356,11 +356,13 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
             session_net = jail.SessionNetwork.open()
             process.write_session_netns_pid(layout.session_dir, session_net.holder_pid)
         if cfg.sandbox.isolation == "container":
+            mounted = session_runtime.mounted_root(cfg, cwd, inputs.worktree_git_dir)
             access = session_runtime.prepare_container_execution(
                 cfg,
-                session_runtime.mounted_root(cwd, inputs.worktree_git_dir),
+                mounted,
                 session_runtime.container_options(cfg),
-                state_dir=state_dir,
+                # The lease lives with the mounted workspace, where its runs meet on it.
+                state_dir=state_dir if mounted == cwd.resolve() else paths.state_dir(mounted),
                 session_id=layout.session_id,
                 execution_id=execution_id,
                 checkout=cwd,

@@ -35,6 +35,35 @@ def _container_path(value: str) -> str:
 ContainerPath = Annotated[str, pydantic.AfterValidator(_container_path)]
 
 
+def _project_path(value: str) -> str:
+    """Validate a directory given relative to the project root.
+
+    Args:
+        value: The configured path.
+
+    Returns:
+        The path unchanged.
+
+    Raises:
+        ValueError: The path is empty, absolute, holds `..` or a control character.
+    """
+    path = pathlib.PurePosixPath(value)
+    if (
+        not path.parts
+        or path.is_absolute()
+        or ".." in path.parts
+        or any(ord(c) < 32 for c in value)
+    ):
+        raise ValueError(
+            "container.worktree_base_dir must be a path under the project root, such as"
+            ' ".agent6/worktrees": the container reaches only the workspace it mounts'
+        )
+    return value
+
+
+ProjectPath = Annotated[str, pydantic.AfterValidator(_project_path)]
+
+
 class ContainerConfig(pydantic.BaseModel):
     """The `[container]` table; `sandbox.isolation = "container"` selects it."""
 
@@ -64,6 +93,15 @@ class ContainerConfig(pydantic.BaseModel):
         description=(
             "workspace path inside the container; empty: the discovered bind mount's path, or "
             "the host path under `container.exec`; set: that path, which creates no mount"
+        ),
+    )
+    worktree_base_dir: ProjectPath = pydantic.Field(
+        default=".agent6/worktrees",
+        description=(
+            "base directory, under the project root, for the worktrees agent6 makes while "
+            "commands run in the container, in place of `git.worktree.base_dir`; kept out of "
+            "git through the repository's `.git/info/exclude`; an absolute path or one with "
+            "`..` is refused"
         ),
     )
     start: validation.Argv = pydantic.Field(

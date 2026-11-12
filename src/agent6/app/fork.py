@@ -445,12 +445,15 @@ def create_fork(
         reporter.refuse(gate_refusal)
         return "", 2
     if added:
-        path = workdirs.subordinate_workdir_root(plan.cfg, cwd, plan.dst.session_id)
         try:
+            path = workdirs.place(plan.cfg, cwd, plan.dst.session_id)
             checkout = fork_worktrees.add_session_worktree(cwd, path, plan.forked_from_sha)
-        except errors.GitError as exc:
-            reporter.error(f"could not add the fork's worktree at {path}: {exc}")
-            return "", 1
+        except (errors.OperatorError, errors.GitError, OSError) as exc:
+            if isinstance(exc, errors.OperatorError):
+                reporter.refuse(str(exc))
+            else:
+                reporter.error(f"could not add the fork's worktree: {exc}")
+            return "", 2 if isinstance(exc, errors.OperatorError) else 1
     rc = _materialize_fork(
         plan,
         cwd=cwd,

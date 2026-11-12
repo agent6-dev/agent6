@@ -140,7 +140,24 @@ def pack_is_ignored(path: pathlib.Path) -> bool:
     Raises:
         GitError: Git cannot inspect the repository.
     """
-    args = ("check-ignore", "-q", "--", ".agent6/pack.json")
+    return is_ignored(path, ".agent6/pack.json")
+
+
+def is_ignored(path: pathlib.Path, name: str) -> bool:
+    """Return whether git would ignore an untracked path of the repository.
+
+    Args:
+        path: The repository.
+        name: The path, relative to the repository root.
+
+    Returns:
+        Git's decision over every ignore source: `.gitignore` files, the repository's own
+        exclude file and the user's global one.
+
+    Raises:
+        GitError: Git cannot inspect the repository.
+    """
+    args = ("check-ignore", "-q", "--", name)
     result = git_command.run(path, *args, check=False)
     if result.returncode not in (0, 1):
         error = git_command.failure(args, result.returncode, result.stdout, result.stderr)

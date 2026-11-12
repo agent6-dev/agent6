@@ -27,6 +27,7 @@ from agent6.app import (
     session_prepare,
     session_setup,
     stamps,
+    workdirs,
     workspace_setup,
 )
 from agent6.app import frontend as app_frontend
@@ -463,8 +464,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         # A lane's record is imported into the origin's state with its branch; its tree is no
         # checkout's. Only its own clone, under the workspace base directory, may continue it.
         lane = manifest.parallel
-        workdir = agent6_paths.worktree_base(cfg.git.worktree.base_dir).resolve()
-        if lane is not None and not cwd.resolve().is_relative_to(workdir):
+        if lane is not None and not workdirs.holds(cfg, cwd):
             reporter.refuse(
                 f"{session_id} is a lane of the fan-out {lane.coordinator}: its work is on its"
                 " own branch, and this checkout holds another tree, so it cannot continue here."

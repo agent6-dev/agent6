@@ -27,6 +27,7 @@ from agent6.app import (
     role_providers,
     session_setup,
     stamps,
+    workdirs,
 )
 from agent6.app import reporter as app_reporter
 from agent6.config import ClaudeCodeProviderEntry, Config, RoleModel, RoleName
@@ -115,7 +116,9 @@ def select_isolation(
         reporter.refuse(str(exc))
         raise preflight.SessionRefusedError(2) from exc
     selected = resolve_isolation_or_refuse(cfg, env, reporter=reporter)
-    cfg_err = confine.startup_refusal(cfg, selected, cwd, worktree_git_dir=worktree_git_dir)
+    cfg_err = confine.startup_refusal(
+        cfg, selected, cwd, worktree_git_dir=worktree_git_dir
+    ) or _container_checkout_refusal(cfg, cwd, worktree_git_dir)
     if cfg_err is not None:
         reporter.refuse(cfg_err)
         raise preflight.SessionRefusedError(2)
@@ -379,10 +382,41 @@ def container_options(cfg: Config) -> container.ContainerOptions:
     )
 
 
-def mounted_root(cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None) -> pathlib.Path:
-    """Return the workspace a dev container mounts: the repository of a linked worktree, else cwd.
+def _container_checkout_refusal(
+    cfg: Config, cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None
+) -> str | None:
+    """Return why a running container cannot hold a linked worktree, before the session starts.
 
     Args:
+        cfg: The resolved config.
+        cwd: The checkout commands would run in.
+        worktree_git_dir: The checkout's repository git dir, when it is a linked worktree.
+
+    Returns:
+        The mapping refusal; None for another checkout or isolation, and while no container
+        runs or discovery fails, which the acquisition reports itself.
+    """
+    if cfg.sandbox.isolation != "container" or worktree_git_dir is None:
+        return None
+    try:
+        found = container.discover(mounted_root(cfg, cwd, worktree_git_dir), container_options(cfg))
+        container.check_checkout(found, cwd, worktree_git_dir)
+    except container.ContainerMappingError as exc:
+        return str(exc)
+    except container.ContainerError:
+        return None
+    return None
+
+
+def mounted_root(
+    cfg: Config, cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None
+) -> pathlib.Path:
+    """Return the workspace a dev container mounts for a checkout.
+
+    A linked worktree's is its repository's; a lane's clone's is the checkout its base sits in.
+
+    Args:
+        cfg: The resolved config.
         cwd: The checkout commands run in.
         worktree_git_dir: The repository's `.git` recorded for a linked worktree, or None.
 
@@ -390,8 +424,8 @@ def mounted_root(cwd: pathlib.Path, worktree_git_dir: pathlib.Path | None) -> pa
         The host root discovery looks up by label.
     """
     if worktree_git_dir is not None and worktree_git_dir.name == ".git":
-        return worktree_git_dir.parent
-    return cwd
+        cwd = worktree_git_dir.parent
+    return workdirs.mounted_workspace(cfg, cwd)
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -511,9 +545,17 @@ def prepare_container_execution(
     try:
         container.check_checkout(acquired.discovery, checkout or root, worktree_git_dir)
         container.check_hidden_paths(acquired.discovery, cfg.sandbox.hide_paths)
+        # Commands run in the session's own checkout, at its path under the mounted workspace.
+        mounted = acquired.discovery.target
+        below = (checkout or root).resolve().relative_to(mounted.host_root.resolve())
         discovery = dataclasses.replace(
             acquired.discovery,
-            target=dataclasses.replace(acquired.discovery.target, lifecycle_ref=acquired.ref),
+            target=dataclasses.replace(
+                mounted,
+                lifecycle_ref=acquired.ref,
+                host_root=mounted.host_root / below,
+                command_root=mounted.command_root / below,
+            ),
         )
         session = container.prepare(
             discovery, memory_limit_mib=cfg.sandbox.memory_limit_mib, controls=controls
@@ -530,7 +572,7 @@ def prepare_container_execution(
             memory_limit_mib=cfg.sandbox.memory_limit_mib,
         ),
         session=session,
-        grants=tools_policy.resolve_grants(cfg, root),
+        grants=tools_policy.resolve_grants(cfg, checkout or root),
         lifecycle=settle,
         environment_state=lambda: environment_lease.presence(root, options)[1],
     )

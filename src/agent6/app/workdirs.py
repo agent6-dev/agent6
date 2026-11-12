@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Resolve subordinate workdirs and manage a lane's files from config to cleanup."""
+"""Place subordinate worktrees and manage a lane's files from config to cleanup."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import lineage, process
 from agent6.sessions import manifest as sessions_manifest
-from agent6.vcs import git_read
+from agent6.vcs import git_ops, git_read
 
 
 def subordinate_workdir_root(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
@@ -47,10 +47,97 @@ def workdir_base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
         origin: The repository.
 
     Returns:
-        `[git.worktree].base_dir` as an absolute path, or the cache's `worktrees` dir, plus
-        the repo id.
+        The base plus the repo id. The base is `[git.worktree].base_dir` as an absolute path,
+        or the cache's `worktrees` dir; under `sandbox.isolation = "container"` it is
+        `[container].worktree_base_dir` under the origin's checkout, which the container mounts.
     """
-    return paths.worktree_base(cfg.git.worktree.base_dir) / paths.repo_id(origin)
+    return _base(cfg, origin) / paths.repo_id(origin)
+
+
+def _base(cfg: Config, origin: pathlib.Path) -> pathlib.Path:
+    """Return the directory that holds every repository's worktrees for this run."""
+    if cfg.sandbox.isolation == "container":
+        return paths.checkout_root(origin) / cfg.container.worktree_base_dir
+    return paths.worktree_base(cfg.git.worktree.base_dir)
+
+
+def place(cfg: Config, origin: pathlib.Path, group: str) -> pathlib.Path:
+    """Return where a new group's worktrees go, kept out of the origin's git when inside it.
+
+    A base inside the repository is written to its `.git/info/exclude`, never to a
+    `.gitignore`: left visible, the run's own commits would take the worktrees in.
+
+    Args:
+        cfg: The run's config.
+        origin: The repository.
+        group: The group's name.
+
+    Returns:
+        `<base>/<repo id>/<group>`.
+
+    Raises:
+        OperatorError: A `.gitignore` rule un-ignores the base.
+        GitError: Git cannot inspect the repository.
+        OSError: The exclude file cannot be written.
+    """
+    base, root = _base(cfg, origin).resolve(), paths.checkout_root(origin)
+    if base != root and base.is_relative_to(root) and git_read.is_git_repo(root):
+        name = base.relative_to(root).as_posix()
+        probe = f"{name}/worktree"
+        if not git_read.is_ignored(root, probe):
+            git_ops.exclude_locally(root, f"/{name}/")
+            if not git_read.is_ignored(root, probe):
+                key = (
+                    "[container].worktree_base_dir"
+                    if cfg.sandbox.isolation == "container"
+                    else "[git.worktree].base_dir"
+                )
+                raise errors.OperatorError(
+                    f"{base} is inside this repository and a .gitignore rule un-ignores it, so"
+                    " the run's commits would take the worktrees in. `git check-ignore -v"
+                    f" --no-index {probe}` names the rule; remove it, or set {key} to a"
+                    " directory git ignores."
+                )
+    return subordinate_workdir_root(cfg, origin, group)
+
+
+def holds(cfg: Config, tree: pathlib.Path) -> bool:
+    """Return whether a directory lies under a base agent6 puts worktrees in.
+
+    Args:
+        cfg: The run's config.
+        tree: The directory.
+
+    Returns:
+        True under `[git.worktree].base_dir`, or, under a container, below a
+        `[container].worktree_base_dir` of any checkout above it.
+    """
+    if cfg.sandbox.isolation == "container":
+        return mounted_workspace(cfg, tree) != tree.resolve()
+    return tree.resolve().is_relative_to(paths.worktree_base(cfg.git.worktree.base_dir).resolve())
+
+
+def mounted_workspace(cfg: Config, tree: pathlib.Path) -> pathlib.Path:
+    """Return the workspace a container mounts for a tree: the checkout above every base.
+
+    A lane's clone sits under `[container].worktree_base_dir` of its origin, and a lane of
+    that lane under the clone's own; the container mounts the outermost checkout.
+
+    Args:
+        cfg: The run's config.
+        tree: A checkout commands run in.
+
+    Returns:
+        The directory above the first `[container].worktree_base_dir` in the tree's path, or
+        the tree itself when its path holds none.
+    """
+    tree = tree.resolve()
+    base = pathlib.PurePosixPath(cfg.container.worktree_base_dir).parts
+    parts = tree.parts
+    for i in range(1, len(parts) - len(base)):
+        if parts[i : i + len(base)] == base:
+            return pathlib.Path(*parts[:i])
+    return tree
 
 
 def adopt_orphan_lane(

@@ -419,7 +419,8 @@ def check_checkout(
         git_dir: The checkout's repository git dir, when it is a linked worktree.
 
     Raises:
-        ContainerMappingError: The checkout or its git dir lies outside the mounted workspace.
+        ContainerMappingError: The checkout or its git dir lies outside the mounted workspace,
+            or a linked worktree's workspace is mounted at another path than the host's.
     """
     root = discovery.target.host_root.resolve()
     for label, path in (("checkout", checkout), ("git dir", git_dir)):
@@ -428,6 +429,14 @@ def check_checkout(
                 f"the {label} {path} is outside the mounted workspace {root}; a container"
                 " reaches only paths under the workspace it mounts"
             )
+    inside = discovery.target.command_root
+    if git_dir is not None and pathlib.Path(inside) != root:
+        raise ContainerMappingError(
+            f"the linked worktree {checkout} names its repository by the host path {git_dir},"
+            f" and the container mounts the workspace at {inside}: git cannot run there. Mount"
+            " the workspace at its host path, or run the task as a lane (`--parallel 1`), whose"
+            " clone holds its own git data."
+        )
 
 
 def check_hidden_paths(discovery: ContainerDiscovery, hide_paths: tuple[str, ...]) -> None:

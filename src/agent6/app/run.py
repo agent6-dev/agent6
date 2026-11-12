@@ -288,18 +288,14 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
             )
 
     if worktree:
-        path = workdirs.subordinate_workdir_root(cfg, repo, effective_session_id)
-        if path.is_relative_to(repo.resolve()):
-            reporter.refuse(
-                f"[git.worktree].base_dir puts the worktree inside this checkout ({path}), where it"
-                " would show as an untracked change. Set [git.worktree].base_dir to a directory"
-                " outside the repository, or run without --worktree."
-            )
-            return 2
         try:
+            path = workdirs.place(cfg, repo, effective_session_id)
             checkout = fork_worktrees.add_session_worktree(repo, path, base_sha)
-        except errors.GitError as exc:
-            reporter.error(f"could not add the run's worktree at {path}: {exc}")
+        except errors.OperatorError as exc:
+            reporter.refuse(str(exc))
+            return 2
+        except (errors.GitError, OSError) as exc:
+            reporter.error(f"could not add the run's worktree: {exc}")
             return 1
         cwd = checkout.worktree
         cfg = cfg.with_hidden_in_checkout(repo, cwd)

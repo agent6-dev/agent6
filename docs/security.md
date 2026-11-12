@@ -794,6 +794,7 @@ The application must resolve or refuse configured restrictions before composing 
 
 **Container access includes its host exposures.** Commands can reach writable host mounts, runtime sockets and credentials exposed by the container or its environment.
 Sharing the container also shares its network and HOME.
+Every session's worktree lies under `container.worktree_base_dir` inside the mounted workspace, so one session's commands reach the worktrees of the others.
 A mount inventory is an observation, not confinement or a complete credential scan.
 The host file tools and session records remain outside this transport.
 A same-user process or container administrator can tamper with the environment; protocol identity detects accidental replacement, not a hostile runtime.

@@ -771,17 +771,40 @@ def test_from_a_subdirectory_refuses(
     assert _nothing_was_created(repo, "wt-SUBD01")
 
 
-def test_a_workdir_inside_the_checkout_refuses(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_a_base_inside_the_checkout_stays_out_of_its_git(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A worktree under the checkout would show up in its `git status`."""
+    """A worktree under the checkout showed in its `git status`, and a run's commit took it in.
+
+    The base goes into the repository's own exclude file; the project's `.gitignore` is not
+    written.
+    """
     repo = _repo(tmp_path, monkeypatch, config=_CONFIG + '\n[git.worktree]\nbase_dir = "wt"\n')
     before = _checkout_facts(repo)
+    _script(monkeypatch, _edit("new.txt", "made by the run\n"))
 
-    assert cli_main(["run", "--worktree", "--session-id", "wt-RELW01", "task"]) == 2
-    assert "[git.worktree].base_dir" in capsys.readouterr().err
+    assert cli_main(["run", "--worktree", "--session-id", "wt-RELW01", "add new.txt"]) == 0
+
+    worktree = sessions_manifest.read_manifest(_run_dir(repo, "wt-RELW01")).worktree
+    assert worktree is not None and worktree.is_relative_to(repo / "wt")
     assert _checkout_facts(repo) == before
-    assert _nothing_was_created(repo, "wt-RELW01")
+    assert "/wt/" in (repo / ".git/info/exclude").read_text(encoding="utf-8").splitlines()
+    assert not (repo / ".gitignore").exists()
+
+
+def test_a_base_a_gitignore_rule_un_ignores_refuses_before_any_worktree(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A `.gitignore` rule outranks the exclude file: the worktree would be committed."""
+    repo = _repo(tmp_path, monkeypatch, config=_CONFIG + '\n[git.worktree]\nbase_dir = "wt"\n')
+    (repo / ".gitignore").write_text("!/wt/\n!/wt/**\n", encoding="utf-8")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "un-ignore wt")
+
+    assert cli_main(["run", "--worktree", "--session-id", "wt-UNIG01", "task"]) == 2
+    err = capsys.readouterr().err
+    assert "un-ignores it" in err and "[git.worktree].base_dir" in err
+    assert _nothing_was_created(repo, "wt-UNIG01")
 
 
 def test_prune_removes_the_worktree_of_a_run_that_committed_nothing(

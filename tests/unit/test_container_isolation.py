@@ -233,8 +233,14 @@ def test_exposures_name_host_paths_and_sockets_outside_the_workspace() -> None:
 def test_the_mounted_root_is_the_repository_of_a_linked_worktree(tmp_path: pathlib.Path) -> None:
     """Discovery looks up the workspace the container mounts, not the worktree under it."""
     repo = tmp_path / "repo"
-    assert session_runtime.mounted_root(repo / "wt", repo / ".git") == repo
-    assert session_runtime.mounted_root(repo, None) == repo
+    cfg = Config.model_validate({"sandbox": {"isolation": "container"}})
+    assert session_runtime.mounted_root(cfg, repo / "wt", repo / ".git") == repo
+    assert session_runtime.mounted_root(cfg, repo, None) == repo
+    lane = repo / ".agent6/worktrees/repo-1/run-p1/lane-1"
+    assert session_runtime.mounted_root(cfg, lane, None) == repo
+    assert (
+        session_runtime.mounted_root(cfg, lane / ".agent6/worktrees/x/panel/lane-2", None) == repo
+    )
 
 
 def test_the_prompt_tells_the_model_both_roots() -> None:

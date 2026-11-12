@@ -108,9 +108,13 @@ def build_lane_specs(
 
     Raises:
         ConfigError: A lane's model names nothing.
+        ParallelError: The lanes' worktrees cannot be placed.
     """
     if workdir_root is None:
-        workdir_root = workdirs.subordinate_workdir_root(cfg, origin, fanout_id)
+        try:
+            workdir_root = workdirs.place(cfg, origin, fanout_id)
+        except (errors.OperatorError, errors.GitError, OSError) as exc:
+            raise ParallelError(str(exc)) from exc
     settings = lane_settings(cfg, directive.parse_spec(spec, limit=cfg.harness.parallel.max_lanes))
     return [
         lane_records.LaneSpec(
@@ -798,7 +802,10 @@ def build_lane_spawner(
         # One name for the workdir, the lane ids and the stamped lineage: the sweeps derive
         # the clone path from it.
         group_id = f"{coordinator_session_id}-{group}"
-        workdir_root = workdirs.subordinate_workdir_root(cfg, origin, group_id)
+        try:
+            workdir_root = workdirs.place(cfg, origin, group_id)
+        except (errors.OperatorError, errors.GitError, OSError) as exc:
+            raise ParallelError(str(exc)) from exc
         specs = [
             lane_records.LaneSpec(
                 lane=i,
