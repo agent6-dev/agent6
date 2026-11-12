@@ -173,7 +173,7 @@ function paintFindings(cards, state) {
   const counts = review.open_counts || {};
   host.appendChild(el('div', 'finding-counts', ['block', 'warn', 'nit'].map(s => (counts[s] || 0) + ' ' + s).join(' · ')));
   host.appendChild(el('div', 'muted', 'Review: ' + (review.summary || 'unknown')));
-  if (!cards._readOnly && review.findings.some(f => f.status === 'open')) {
+  if (!cards._readOnly && (review.findings || []).some(f => f.status === 'open')) {
     // One steer for every open finding without a queued Fix; the per-finding Fix stays below.
     const dead = notLive(state), all = el('button', 'mini', dead ? 'Resume to fix all open' : 'Fix all open');
     all.onclick = async () => {
@@ -279,7 +279,7 @@ function drawReceipt(host, receipt) {
   }
   const ask = el('button', 'mini', 'Ask a run to revert'); host.appendChild(ask);
   ask.onclick = () => {
-    window.pendingNewWork = receipt.revert_request;
+    handToNewWork({ task: receipt.revert_request });
     location.hash = '#/';
   };
 }
