@@ -47,7 +47,7 @@ from tests import lane_env, subordinate_env
 def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
     short_repo: pathlib.Path, monkeypatch: pytest.MonkeyPatch, panel_cost: float | None
 ) -> None:
-    """A private worker launch authorizes only panel leaves, independent of parallel.tool."""
+    """A private worker launch authorizes only panel leaves, whatever harness.parallel.tool is."""
     repo = short_repo / "origin"
     subordinate_env.init_repo(repo)
     subordinate_env.create_record(repo, "parent")

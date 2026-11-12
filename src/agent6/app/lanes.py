@@ -111,7 +111,7 @@ def build_lane_specs(
     """
     if workdir_root is None:
         workdir_root = workdirs.subordinate_workdir_root(cfg, origin, fanout_id)
-    settings = lane_settings(cfg, directive.parse_spec(spec, limit=cfg.parallel.max_lanes))
+    settings = lane_settings(cfg, directive.parse_spec(spec, limit=cfg.harness.parallel.max_lanes))
     return [
         lane_records.LaneSpec(
             lane=i,
@@ -777,10 +777,11 @@ def build_lane_spawner(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
     ) -> list[lane_records.LaneResult]:
         # The lane cap binds before any clone; the refusal reaches the coordinator as feedback.
-        if len(lanes) > cfg.parallel.max_lanes:
+        if len(lanes) > cfg.harness.parallel.max_lanes:
             raise ParallelError(
-                f"/parallel requests {len(lanes)} lanes but [parallel].max_lanes ="
-                f" {cfg.parallel.max_lanes}. Request fewer, or raise [parallel].max_lanes."
+                f"/parallel requests {len(lanes)} lanes but [harness.parallel].max_lanes ="
+                f" {cfg.harness.parallel.max_lanes}. Request fewer, or raise"
+                " [harness.parallel].max_lanes."
             )
         # The routes are validated before any clone; no model cache warns and proceeds.
         try:

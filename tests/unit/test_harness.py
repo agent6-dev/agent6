@@ -163,7 +163,6 @@ def _wf(
         "config": mock.MagicMock(
             git=_GIT_STUB,
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
-            parallel=types.SimpleNamespace(max_lanes=4),
             harness=mock.MagicMock(
                 standing_patience=-1,
                 went_quiet_max_nudges=4,
@@ -175,6 +174,7 @@ def _wf(
                 verify_at_start=True,
                 verify_retries=2,
                 prompt=mock.MagicMock(system_prompt_file=""),
+                parallel=types.SimpleNamespace(max_lanes=4),
             ),
         ),
         "provider": mock.MagicMock(),
@@ -7761,7 +7761,7 @@ def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib
         [directive.Segment(spec="3", task="a"), directive.Segment(spec="3", task="b")],
     )
     assert not refused.dispatched and refused.lanes == ()
-    assert "request 6 lanes together but [parallel].max_lanes = 4" in refused.message
+    assert "request 6 lanes together but [harness.parallel].max_lanes = 4" in refused.message
     assert len(conversation.messages) == before
 
 

@@ -326,7 +326,7 @@ def test_build_lane_specs_refuses_an_entry_naming_no_model(tmp_path: pathlib.Pat
 
 
 def test_build_lane_specs_over_cap_refused(tmp_path: pathlib.Path) -> None:
-    cfg = Config.model_validate({"parallel": {"max_lanes": 2}})
+    cfg = Config.model_validate({"harness": {"parallel": {"max_lanes": 2}}})
     with pytest.raises(directive.DirectiveError, match="max_lanes"):
         _specs(tmp_path, cfg, "fan", "5")
 
@@ -2479,12 +2479,12 @@ def test_a_crashed_lane_never_joins_the_coordinator(
 def test_build_lane_spawner_over_cap_refused(
     origin: pathlib.Path, monkeypatch: pytest.MonkeyPatch, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """A `/parallel` steer over `[parallel].max_lanes` is refused before any clone or spawn.
+    """A `/parallel` steer over `[harness.parallel].max_lanes` is refused before any clone or spawn.
 
     The cap is a hard cap per fan-out, exactly as `run --parallel` enforces it in build_lane_specs;
     the loop turns the raise into 'group dispatch failed' coordinator feedback.
     """
-    cfg = Config.model_validate({"parallel": {"max_lanes": 2}})
+    cfg = Config.model_validate({"harness": {"parallel": {"max_lanes": 2}}})
     called: list[str] = []
 
     def fake_rltc(spec: lane_records.LaneSpec, task: str, **kw: object) -> lane_records.LaneResult:

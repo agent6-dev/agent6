@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The loop-behaviour models.
 
-`[harness]` with its metric and prompt, `[review]`, `[compaction]` and `[budget]`.
+`[harness]` with its metric, parallel and prompt tables, `[review]`, `[compaction]` and `[budget]`.
 """
 
 from __future__ import annotations
@@ -195,6 +195,37 @@ class MetricConfig(pydantic.BaseModel):
         description=(
             "Score direction; trajectory is reported; finish is allowed once a verified edit "
             "only ties the best."
+        ),
+    )
+
+
+class ParallelConfig(pydantic.BaseModel):
+    """The `[harness.parallel]` table: the lane limit and the model's `parallel` tool."""
+
+    model_config = validation.MODEL_CONFIG
+
+    tool: bool = pydantic.Field(
+        default=False,
+        description=(
+            "offer a run's model the `parallel` tool, which dispatches a task to isolated "
+            "lanes (fresh clones of the committed tree, each an ordinary run that may edit) "
+            "and joins their commits back in order; each lane runs under 200 turns, 30 minutes "
+            "and the run's remaining budget, which the lanes share; `harness.parallel.tool = "
+            "false`: no run is offered it; neither value changes `run --parallel`, the "
+            "`/parallel` steer or the review panel"
+        ),
+    )
+
+    # `le` bounds the cap itself, or a huge max_lanes re-opens the allocation parse_spec refuses.
+    # Static, not CPU-derived: lanes are I/O-bound and the same config must load on every box.
+    max_lanes: int = pydantic.Field(
+        ge=1,
+        le=1024,
+        default=4,
+        description=(
+            "The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for "
+            "more is refused before anything is cloned; a review roster longer than this "
+            "runs in batches of this width, with no seat dropped."
         ),
     )
 
@@ -443,6 +474,7 @@ class HarnessConfig(pydantic.BaseModel):
             "listed, calls refused with `harness.metric` named"
         ),
     )
+    parallel: ParallelConfig = pydantic.Field(default_factory=ParallelConfig)
     prompt: PromptConfig = pydantic.Field(default_factory=PromptConfig)
 
 
@@ -633,8 +665,8 @@ class ReviewConfig(pydantic.BaseModel):
         ge=1,
         default=1,
         description=(
-            "simultaneous panel seats, at most `parallel.max_lanes`; a longer roster runs in "
-            "batches, in roster order; `review.concurrency = 1`: one after another"
+            "simultaneous panel seats, at most `harness.parallel.max_lanes`; a longer roster "
+            "runs in batches, in roster order; `review.concurrency = 1`: one after another"
         ),
     )
     scope: ReviewScope = pydantic.Field(

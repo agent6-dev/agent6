@@ -115,7 +115,7 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             " temperature; provider/model, or a model id on the worker's provider, runs"
             " with the worker's effort and temperature. Each lane clones the repo, runs"
             " independently, and lands its own branch; results are auto-compared"
-            " and ranked (nothing is merged). Capped by [parallel].max_lanes;"
+            " and ranked (nothing is merged). Capped by [harness.parallel].max_lanes;"
             " combine with --max-usd for a per-lane budget."
         ),
     )

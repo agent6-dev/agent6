@@ -17,7 +17,7 @@ This page is the reference for the command-line surface; the patterns behind the
 - `--model [provider/]model`: the model for the mode's role, over every config layer; a bare id keeps the role's provider, and a resume keeps the recorded route unless it sets its own
   The web and TUI resume composers default to that route and offer the config's routes as choices.
   A resume that changes the route prints both the chosen and recorded routes.
-- `--parallel 3` (or `reviewer,provider/model-a`: a role name brings its model, effort and temperature; a `[provider/]model` runs with the worker's): isolated lanes, auto-compared into a ranked report; the fan-out is a session of its own that `attach`, `stop` and `sessions show` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#parallel))
+- `--parallel 3` (or `reviewer,provider/model-a`: a role name brings its model, effort and temperature; a `[provider/]model` runs with the worker's): isolated lanes, auto-compared into a ranked report; the fan-out is a session of its own that `attach`, `stop` and `sessions show` address, its lanes folded under it (`--lanes` expands them) ([parallel](config.md#harnessparallel))
 - `--worktree`: from the repository's top level, the run works in its own git worktree at HEAD's commit, under `[workspace].base_dir`
     - your checkout and its uncommitted changes stay as they are and are not carried, and neither is anything git does not track ([isolated workspaces](usage.md#isolated-workspaces)), so you can keep working there or start more runs
     - `sessions merge` lands the work and `sessions prune` then removes the worktree, as it does for a run that committed nothing and left no edits

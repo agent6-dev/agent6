@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The `[parallel]` and `[workspace]` config sections: defaults and repo overrides."""
+"""The `[harness.parallel]` and `[workspace]` config sections: defaults and repo overrides."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ def repo(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.Pat
 
 def test_parallel_and_workspace_defaults() -> None:
     cfg = Config()
-    assert cfg.parallel.max_lanes == 4
+    assert cfg.harness.parallel.max_lanes == 4
     assert cfg.workspace.base_dir == ""
 
 
@@ -45,9 +45,11 @@ def test_parallel_max_lanes_bounds() -> None:
 
 
 def test_parallel_and_workspace_override_via_repo_config(repo: pathlib.Path) -> None:
-    _write_repo_config(repo, '[parallel]\nmax_lanes = 8\n[workspace]\nbase_dir = "/tmp/lanes"\n')
+    _write_repo_config(
+        repo, '[harness.parallel]\nmax_lanes = 8\n[workspace]\nbase_dir = "/tmp/lanes"\n'
+    )
     cfg = layer.load_effective(repo).config
-    assert cfg.parallel.max_lanes == 8
+    assert cfg.harness.parallel.max_lanes == 8
     assert cfg.workspace.base_dir == "/tmp/lanes"
 
 

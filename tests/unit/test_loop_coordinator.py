@@ -306,9 +306,9 @@ def _build_wf(
                 verify_at_start=True,
                 verify_retries=2,
                 prompt=mock.MagicMock(system_prompt_file=""),
+                parallel=types.SimpleNamespace(max_lanes=4),
             ),
             # A real int, not a Mock: segment_lanes compares the lane count against this cap.
-            parallel=types.SimpleNamespace(max_lanes=4),
         ),
         provider=provider,
         dispatcher=disp,
@@ -727,7 +727,8 @@ def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> No
     assert not [n for n in graph.entries.values() if n.created_by == "steering"]
     texts = _user_texts(_final_messages(provider))
     assert any(
-        "request 6 lanes together but [parallel].max_lanes = 4" in t and "nothing dispatched" in t
+        "request 6 lanes together but [harness.parallel].max_lanes = 4" in t
+        and "nothing dispatched" in t
         for t in texts
     )
 
@@ -827,7 +828,7 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
         ("/parallel", "needs a task"),
         ("/parallel -- task", "needs a spec before --"),
         ("/parallel 2 --", "needs a task after --"),
-        ("/parallel 5 -- task", "requests 5 lanes but [parallel].max_lanes = 4"),
+        ("/parallel 5 -- task", "requests 5 lanes but [harness.parallel].max_lanes = 4"),
     ],
 )
 def test_invalid_parallel_directive_dispatches_nothing_and_names_the_reason(

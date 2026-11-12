@@ -2,7 +2,7 @@
 # Copyright 2026 Eric Lesiuta
 """The surface models.
 
-`[skills]`, `[machine]`, `[web]`, `[telemetry]`, `[notify]`, `[parallel]` and `[workspace]`.
+`[skills]`, `[machine]`, `[web]`, `[telemetry]`, `[notify]` and `[workspace]`.
 """
 
 from __future__ import annotations
@@ -357,38 +357,6 @@ class NotifyConfig(pydantic.BaseModel):
         gt=0.0,
         default=30.0,
         description="Seconds the hook may run before it is killed.",
-    )
-
-
-class ParallelConfig(pydantic.BaseModel):
-    """The `[parallel]` table: the lane limit for a fan-out and the model's `parallel` tool."""
-
-    model_config = validation.MODEL_CONFIG
-
-    tool: bool = pydantic.Field(
-        default=False,
-        description=(
-            "offer a run's model the `parallel` tool, which dispatches a task to isolated "
-            "lanes (fresh clones of the committed tree, each an ordinary run that may edit) "
-            "and joins their commits back in order; each lane runs under 200 turns, 30 minutes "
-            "and the run's remaining budget, which the lanes share; `parallel.tool = false`: no "
-            "run is "
-            "offered it; neither value changes `run --parallel`, the `/parallel` steer or the "
-            "review panel"
-        ),
-    )
-
-    # `le` bounds the cap itself, or a huge max_lanes re-opens the allocation parse_spec refuses.
-    # Static, not CPU-derived: lanes are I/O-bound and the same config must load on every box.
-    max_lanes: int = pydantic.Field(
-        ge=1,
-        le=1024,
-        default=4,
-        description=(
-            "The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for "
-            "more is refused before anything is cloned; a review roster longer than this "
-            "runs in batches of this width, with no seat dropped."
-        ),
     )
 
 

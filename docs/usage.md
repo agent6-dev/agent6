@@ -122,7 +122,7 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 - `/task <text>` adds work to the task graph (the turn in flight never sees it); `/retire <id>` drops a task, by the number `sessions graph` prints
 - `/standing <text>` sets the goal the run returns to whenever its queue drains, replacing any it had
 - `/pin <text>` survives every compaction; `/compact [focus]` compacts now; `/now <text>` interrupts the call in flight
-- `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` fans out lanes ([parallel](config.md#parallel))
+- `/btw <question>` asks a side question; `/parallel [SPEC --] TASK` fans out lanes ([parallel](config.md#harnessparallel))
 - `/review [TARGET]` reviews changes in the session ([targets and worktrees](#plan-review-and-ask))
 - `/undo` is available in the TUI, web, a `run -i` prompt, or a live run's pause menu (Ctrl-C), so `agent6 steer` refuses it:
   - it takes back the last message
@@ -140,7 +140,7 @@ The two land differently: `run --parallel` imports and ranks the lanes and merge
 A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `[provider/]model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
 The spec ends at a whitespace-delimited `--` token.
 Without `--`, the whole segment is task text for one default lane, even if it starts with a path, a number or a model name.
-A bare `--`, a missing task, or more lanes than `[parallel].max_lanes` across the message's segments is refused with the reason.
+A bare `--`, a missing task, or more lanes than `[harness.parallel].max_lanes` across the message's segments is refused with the reason.
 
 ```text
 /parallel src/x.py: add a test
@@ -159,7 +159,7 @@ A lane the run ended at its deadline or at its budget says so on its line (`stop
 
 ### The parallel tool
 
-With `parallel.tool = true` ([parallel](config.md#parallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default lane).
+With `harness.parallel.tool = true` ([parallel](config.md#harnessparallel)), a run's model is offered the `parallel` tool: `task` (required) and `spec` (the same grammar as `--parallel`, empty for one default lane).
 The call dispatches through the `/parallel` path: a checkpoint, fresh clones of the committed tree, the lanes joined back in dispatch order, each lane starting under the run's remaining budget, which the lanes share; the result returns as the tool's answer, naming each lane's join.
 Each lane is an ordinary run with the same tools as the parent: it may edit its clone, and its commits land on the parent's chain when it joins; a lane runs under 200 turns, 30 minutes and the run's remaining budget.
 The run counts its lanes' spend while they run and ends them once the sum reaches a cap, so the total can pass the cap by what was in flight.
@@ -266,7 +266,7 @@ agent6 ask "how does the task-graph curator work?"
 - `ask` runs in any directory; `run` and `plan` need a git repository
 
 In-loop panels run each seat as a read-only lane with its own session, and record their findings and reviewed tree IDs in the session journal.
-Each batch's seats start under what the run has left; batches use at most `review.concurrency` and `parallel.max_lanes` seats, without truncating the roster.
+Each batch's seats start under what the run has left; batches use at most `review.concurrency` and `harness.parallel.max_lanes` seats, without truncating the roster.
 Results keep roster order even when seats finish in another order.
 Diff seats make one call without tools, capped at 1,500 output tokens; repo seats read the retained snapshot with a 2,000-token per-call cap and `review.repo_max_turns` calls.
 Each seat has a session of its own, named on the receipt and the findings card; no listing counts it among the run's lanes.

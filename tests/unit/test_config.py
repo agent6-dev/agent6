@@ -109,14 +109,6 @@ def test_turn_boundary_config_refuses_step_spellings(
     assert cfg.harness.verify_when == "turn"
 
 
-def test_workspace_base_dir_replaces_parallel_workdir() -> None:
-    """Workspace placement accepts the workspace key and refuses the parallel key."""
-    with pytest.raises(pydantic.ValidationError, match=r"parallel\.workdir") as exc:
-        Config.model_validate({"parallel": {"workdir": "/x"}})
-    assert exc.value.errors()[0]["type"] == "extra_forbidden"
-    assert Config.model_validate({"workspace": {"base_dir": "/x"}}).workspace.base_dir == "/x"
-
-
 def test_telemetry_is_off_by_default_and_a_selected_signal_needs_its_destination() -> None:
     """Nothing is exported unless a signal is selected; a selection names a safe destination."""
     telemetry = Config().telemetry

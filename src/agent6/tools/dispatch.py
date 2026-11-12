@@ -311,8 +311,8 @@ class ToolDispatcher:
 
     def _parallel_refusal(self) -> str | None:
         """Return why the `parallel` tool is withheld: the knob, the depth, the dispatcher."""
-        if not self._config.parallel.tool:
-            return "not available (parallel.tool is off)"
+        if not self._config.harness.parallel.tool:
+            return "not available (harness.parallel.tool is off)"
         if os.environ.get("AGENT6_SUBRUN"):
             return "not available inside a lane (parallel dispatch is depth 1)"
         if self.parallel_handler is None:

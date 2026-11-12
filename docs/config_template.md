@@ -343,6 +343,18 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 
 <!-- config-table: harness.metric -->
 
+### `[harness.parallel]`
+
+Lane limit for `run --parallel N|selector,...`.
+Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
+`--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
+A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
+`harness.parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
+A subordinate model or steer cannot dispatch work; its configured harness panel may create bounded read-only leaves.
+Headless surfaces without a dispatcher answer "not available".
+
+<!-- config-table: harness.parallel -->
+
 ### `[harness.prompt]`
 
 <!-- config-table: harness.prompt -->
@@ -449,18 +461,6 @@ Header values live in `secrets.toml` under `[telemetry.headers]`, never in confi
 The [`--secret` target](#creating-and-inspecting) writes and removes them; `[telemetry].headers` selects which names the exporter sends.
 
 <!-- config-table: telemetry -->
-
-## `[parallel]`
-
-Lane limit for `run --parallel N|selector,...`.
-Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
-`--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
-A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
-`parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
-A subordinate model or steer cannot dispatch work; its configured harness panel may create bounded read-only leaves.
-Headless surfaces without a dispatcher answer "not available".
-
-<!-- config-table: parallel -->
 
 ## `[workspace]`
 

@@ -44,7 +44,7 @@ def segment_lanes(
     Args:
         seg: The segment.
         pins: The operator's pins.
-        limit: `[parallel].max_lanes`.
+        limit: `[harness.parallel].max_lanes`.
 
     Returns:
         The lanes; a model of None is the worker model.
@@ -61,7 +61,7 @@ class ParallelDispatcher:
     Attributes:
         chain: The run's commit chain.
         curator: The DAG, or None.
-        max_lanes: `[parallel].max_lanes`.
+        max_lanes: `[harness.parallel].max_lanes`.
         lane_spawner: The group spawner; None where dispatch is unavailable.
         save_snapshot: Writes the resume snapshot.
         log: The run's text logger.
@@ -145,8 +145,8 @@ class ParallelDispatcher:
         if len(lanes) > lanes_cap:
             return self.refusal(
                 f"the /parallel segments request {len(lanes)} lanes together but"
-                f" [parallel].max_lanes = {lanes_cap}; nothing dispatched. Request fewer, or"
-                " raise [parallel].max_lanes."
+                f" [harness.parallel].max_lanes = {lanes_cap}; nothing dispatched. Request fewer,"
+                " or raise [harness.parallel].max_lanes."
             )
         # Lanes cut from the chain tip only: commit a changed tree first, or refuse stale work.
         if not self.ensure_clean(turn):
@@ -232,7 +232,7 @@ class ParallelDispatcher:
             panel_id: The harness's stable panel/batch id.
             at: The retained immutable target commit.
             turn: The owning worker's completed turn.
-            concurrency: The policy's concurrency cap; None uses parallel.max_lanes.
+            concurrency: The policy's concurrency cap; None uses harness.parallel.max_lanes.
 
         Returns:
             The record-only joins, or a refusal before launch.

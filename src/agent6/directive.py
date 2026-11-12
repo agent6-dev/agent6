@@ -49,7 +49,7 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     Args:
         spec: A positive lane count, a comma-separated selector list (an exact role name
             or `[provider/]model`), or "".
-        limit: The caller's `[parallel].max_lanes`; an over-limit count refuses before
+        limit: The caller's `[harness.parallel].max_lanes`; an over-limit count refuses before
             the list is built.
 
     Returns:
@@ -82,8 +82,8 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
 def _over_limit(requested: int, limit: int) -> str:
     """Return the refusal for a lane count over the limit."""
     return (
-        f"parallel spec requests {requested} lanes but [parallel].max_lanes = {limit}."
-        " Request fewer, or raise [parallel].max_lanes."
+        f"parallel spec requests {requested} lanes but [harness.parallel].max_lanes = {limit}."
+        " Request fewer, or raise [harness.parallel].max_lanes."
     )
 
 

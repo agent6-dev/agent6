@@ -112,9 +112,6 @@ class Config(pydantic.BaseModel):
     telemetry: surface_config.TelemetryConfig = pydantic.Field(
         default_factory=surface_config.TelemetryConfig
     )
-    parallel: surface_config.ParallelConfig = pydantic.Field(
-        default_factory=surface_config.ParallelConfig
-    )
     workspace: surface_config.WorkspaceConfig = pydantic.Field(
         default_factory=surface_config.WorkspaceConfig
     )
@@ -740,6 +737,7 @@ _REPLACED_KEYS = {
     "harness.verify_settled_stop_after": (
         "unknown config key; use harness.settled_stop_after with the same value"
     ),
+    "parallel": "moved config table; use [harness.parallel]",
     "prompt": "moved config table; use [harness.prompt]",
     "machine.snapshot_keep": "renamed config key; use machine.keep_snapshots",
     "machine.state_log_keep": "renamed config key; use machine.keep_state_logs",

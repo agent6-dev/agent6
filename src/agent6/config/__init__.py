@@ -16,6 +16,7 @@ from agent6.config.harness_config import (  # re-export
     CompactionConfig,
     HarnessConfig,
     MetricConfig,
+    ParallelConfig,
     PromptConfig,
     ReviewConfig,
     ReviewerConfig,
@@ -53,7 +54,6 @@ from agent6.config.sandbox_config import (  # re-export
 from agent6.config.surface_config import (  # re-export
     MachineConfig,
     NotifyConfig,
-    ParallelConfig,
     TelemetryConfig,
     WebConfig,
     WorkspaceConfig,

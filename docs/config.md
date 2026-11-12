@@ -457,6 +457,21 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 | `pattern` | *(required)* | A regular expression over the command's output; its first capture group is the number, e.g. `"score: ([0-9.]+)"`. |
 | `goal` | *(required)* | Score direction; trajectory is reported; finish is allowed once a verified edit only ties the best.<ul><li><code>minimize</code>: Smaller scores are better</li><li><code>maximize</code>: Larger scores are better</li></ul> |
 
+### `[harness.parallel]`
+
+Lane limit for `run --parallel N|selector,...`.
+Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
+`--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
+A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
+`harness.parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
+A subordinate model or steer cannot dispatch work; its configured harness panel may create bounded read-only leaves.
+Headless surfaces without a dispatcher answer "not available".
+
+| Field | Default | Meaning |
+|---|---|---|
+| `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated lanes (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each lane runs under 200 turns, 30 minutes and the run's remaining budget, which the lanes share; `harness.parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
+| `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no seat dropped. |
+
 ### `[harness.prompt]`
 
 | Field | Default | Meaning |
@@ -475,7 +490,7 @@ Set its required fields together: `agent6 config set --repo harness.metric '{ co
 | `max_rejections` | `4` | ends rejectable by a gating panel per run (`finish_session`, silent finish, settled or plateau stop); count preserved across resumes, never reset; at the cap: panels and findings retained, every end accepted, no indefinite panel stall |
 | `min_remaining_budget_fraction` | `0.25` | remaining-budget fraction below which the panel is skipped and the finish accepted; `review.min_remaining_budget_fraction = 0.25`: no panel in the last quarter |
 | `reviewers` | `[]` | ordered panel roster of tables with `focus` and optional `model`, `temperature` and `effort`; every omitted field inherits the resolved `[models.reviewer]`, `model` pinned or not; `model` is a provider/model route; empty roster: one `security` seat unless `review.when = "never"` |
-| `concurrency` | `1` | simultaneous panel seats, at most `parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
+| `concurrency` | `1` | simultaneous panel seats, at most `harness.parallel.max_lanes`; a longer roster runs in batches, in roster order; `review.concurrency = 1`: one after another |
 | `scope` | `"diff"` | How much a review seat reads; a diff seat makes one call without tools; a repo seat reads the reviewed snapshot with read-only tools over several calls, never the working tree as it changes later.<ul><li><code>diff</code>: One review call over diff, task and verification</li><li><code>repo</code>: Read-only tool review of surrounding repository</li></ul> |
 | `repo_max_turns` | `20` | provider-call cap for a `review.scope = "repo"` seat, tool calls included; no verdict within the cap: abstention, reported by the panel |
 
@@ -618,21 +633,6 @@ The [`--secret` target](#creating-and-inspecting) writes and removes them; `[tel
 | `headers` | `[]` | Header names sent with every export; each value comes from `[telemetry.headers]` in `secrets.toml`, written by `agent6 config set --secret telemetry.headers.<name> <value>`. |
 | `capture` | `"metadata"` | Export detail; content excerpts cover the task, steers, tool arguments, gate command, model errors, finding titles and degradation details.<ul><li><code>metadata</code>: Export outcomes, counts, timings and identifiers</li><li><code>content</code>: Also export capped content excerpts</li></ul> |
 | `prometheus_file` | `""` | The absolute path `metrics = "prometheus"` writes atomically, in a directory node_exporter's textfile collector reads. |
-
-## `[parallel]`
-
-Lane limit for `run --parallel N|selector,...`.
-Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
-`--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
-A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).
-`parallel.tool = true` offers a run's model the `parallel` tool, which dispatches a task through the same path ([the parallel tool](usage.md#the-parallel-tool)); it changes nothing for `run --parallel`, the steer or the review panel.
-A subordinate model or steer cannot dispatch work; its configured harness panel may create bounded read-only leaves.
-Headless surfaces without a dispatcher answer "not available".
-
-| Field | Default | Meaning |
-|---|---|---|
-| `tool` | `false` | offer a run's model the `parallel` tool, which dispatches a task to isolated lanes (fresh clones of the committed tree, each an ordinary run that may edit) and joins their commits back in order; each lane runs under 200 turns, 30 minutes and the run's remaining budget, which the lanes share; `parallel.tool = false`: no run is offered it; neither value changes `run --parallel`, the `/parallel` steer or the review panel |
-| `max_lanes` | `4` | The most lanes one `--parallel` fan-out may run, `1` to `1024`; a spec asking for more is refused before anything is cloned; a review roster longer than this runs in batches of this width, with no seat dropped. |
 
 ## `[workspace]`
 

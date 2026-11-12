@@ -1959,7 +1959,7 @@ class Harness:
         return parallel_dispatch.ParallelDispatcher(
             chain=self.chain,
             curator=self.curator,
-            max_lanes=self.config.parallel.max_lanes,
+            max_lanes=self.config.harness.parallel.max_lanes,
             lane_spawner=self.bridge.lane_spawner,
             authority=self.bridge.lane_authority,
             save_snapshot=lambda *args, **kwargs: loop_resume.save_resume_snapshot(

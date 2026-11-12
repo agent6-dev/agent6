@@ -64,7 +64,7 @@ def _config(*, tool: bool, extra: dict[str, Any] | None = None) -> Config:
                 "default": {"model": "p/base", "effort": "high", "temperature": 0.7},
                 "reviewer": {"model": "q/critic", "effort": "max"},
             },
-            "parallel": {"tool": tool},
+            "harness": {"parallel": {"tool": tool}},
             **(extra or {}),
         }
     )
@@ -96,7 +96,7 @@ def _handler(raw: dict[str, Any], origin: Any) -> tools_results.ToolResult:
 
 
 def test_the_tool_is_off_by_default_for_exposure_and_execution(tmp_path: pathlib.Path) -> None:
-    """`parallel.tool = false` offers nothing; a hallucinated call refuses naming the knob."""
+    """`harness.parallel.tool = false` offers nothing; a hallucinated call refuses, naming it."""
     d = _dispatcher(tmp_path, _config(tool=False), handler=_handler)
     assert "parallel" not in _names(d)
     with pytest.raises(tool_errors.ToolError, match=r"parallel\.tool"):

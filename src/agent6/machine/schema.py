@@ -474,7 +474,7 @@ PROTECTED_OVERLAY_LEAVES: dict[str, str] = {
     "budget.allow_plan_overage": "it lets purchased credits or extra usage be spent",
 }
 # The supervisor reads these once for the whole machine, so one state cannot change them.
-STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "machine", "parallel", "workspace")
+STATE_OVERLAY_KEYS: tuple[str, ...] = ("git.commit", "harness.parallel", "machine", "workspace")
 
 
 def protected_overlay_key_error(key: str, state: str = "") -> str | None:

@@ -321,7 +321,7 @@ def directive_model_refusal(
     except ConfigError:
         return None  # a broken config is its own error elsewhere
     try:
-        cap = cfg.parallel.max_lanes
+        cap = cfg.harness.parallel.max_lanes
         routes = [
             chosen.route if (chosen := cfg.lane_settings(m)) is not None else None
             for seg in segments

@@ -119,7 +119,7 @@ def run_panel(
         min_blocking_models: The distinct blocking routes needed for quorum.
         panel_id: The parent-assigned panel identity.
         repo_max_turns: The repo-seat call ceiling.
-        concurrency: The maximum simultaneous seats, also bounded by parallel.max_lanes.
+        concurrency: The maximum simultaneous seats, also bounded by harness.parallel.max_lanes.
         turn: The owning worker's turn.
 
     Returns:

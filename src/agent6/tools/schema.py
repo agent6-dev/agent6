@@ -642,7 +642,7 @@ LOOP_EXTRA_TOOLS: tuple[type[_ToolInput], ...] = (
     FinishSessionInput,
     AskUserInput,
     ListFindingsInput,
-    # Offered only under `[parallel].tool` in a run that has a lane dispatcher.
+    # Offered only under `[harness.parallel].tool` in a run that has a lane dispatcher.
     ParallelInput,
     DagAddTaskInput,
     DagUpdateTaskInput,
