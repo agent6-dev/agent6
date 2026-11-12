@@ -36,7 +36,6 @@ _NON_CONFIG = {
     ("cli/completions_cmd.py", "agent6.xsh"),
     ("cli/live.py", "agent6.ui.tui"),
     ("cli/machine_cmds.py", "machine.asm.toml"),
-    ("cli/sessions_review.py", "-review.md"),
     ("cli/watch.py", "machine.asm.toml"),
     ("telemetry/export.py", "agent6.export.scope"),
     ("telemetry/export.py", "agent6.repo"),

@@ -196,6 +196,7 @@ banned-from = [
     "agent6.app.resume_tree",
     "agent6.app.review_actions",
     "agent6.app.review_directive",
+    "agent6.app.review_recap",
     "agent6.app.role_providers",
     "agent6.app.run",
     "agent6.app.session_prune",

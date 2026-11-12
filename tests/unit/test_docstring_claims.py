@@ -48,15 +48,13 @@ def test_btw_docstrings_describe_detached_launch_without_namespace_escape() -> N
 
 
 def test_save_review_owns_rendered_reviews_not_every_file() -> None:
-    text = _doc("ui/cli/sessions_review.py")
+    text = _doc("app/review_recap.py")
     assert "`save_review` writes the rendered reviews" in text
     assert "one writer" not in text
 
 
 def test_review_lookup_docstring_names_the_operator() -> None:
-    assert "The operator finds a session's review" in _doc(
-        "ui/cli/sessions_review.py", "save_review"
-    )
+    assert "The operator finds a session's review" in _doc("app/review_recap.py", "save_review")
 
 
 def test_web_docstring_distinguishes_cli_and_config_bind_opt_ins() -> None:
