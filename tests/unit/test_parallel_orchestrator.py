@@ -953,6 +953,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
             judge_cost_usd=0.0123,
             judge_cost_partial=True,
         ),
+        winner="fan-l1",
         origin_state=origin_state,
         coordinator_dir=coordinator_dir,
         group="fan",
@@ -1122,6 +1123,7 @@ def test_a_stamp_that_cannot_be_written_is_noted_and_the_others_still_land(
             for res in results
         ],
         compare.RankOutcome(("fan-l1", "fan-l2"), "", "mechanical"),
+        winner="fan-l1",
         origin_state=origin_state,
         coordinator_dir=coordinator_dir,
         group="fan",

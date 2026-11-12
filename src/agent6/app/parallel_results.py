@@ -63,6 +63,7 @@ def stamp_compare_outcomes(
     candidates: list[judge.CandidateBrief],
     outcome: app_compare.RankOutcome,
     *,
+    winner: str,
     origin_state: pathlib.Path,
     coordinator_dir: pathlib.Path,
     group: str,
@@ -70,11 +71,10 @@ def stamp_compare_outcomes(
 ) -> None:
     """Stamp the group on its coordinator and each lane's placement on the lane.
 
-    Rank 1 wins unless every gate ran red, and only a verified lane wins when any verified.
-
     Args:
         candidates: The ranked lanes.
         outcome: The ranking.
+        winner: The lane the ranking crowns (`ranked_winner`), or "".
         origin_state: The origin's state dir.
         coordinator_dir: The manifest owner for the group's ranking and judge spend.
         group: The comparison group id.
@@ -92,10 +92,9 @@ def stamp_compare_outcomes(
     if err is not None:
         reporter.note(f"group [{group}]: the comparison stamp failed: {err}")
     of = len(candidates)
-    crowned = ranked_winner(candidates, outcome.ranking)
     for rank_pos, session_id in enumerate(outcome.ranking, start=1):
         placement = sessions_manifest.PlacementStamp(
-            rank=rank_pos, of=of, winner=session_id == crowned, group=group
+            rank=rank_pos, of=of, winner=session_id == winner, group=group
         )
         # A judged fan-out ranks run lanes.
         err = stamp(lane_watch.lane_link(origin_state, session_id, mode="run"), placement=placement)
@@ -103,15 +102,19 @@ def stamp_compare_outcomes(
             reporter.note(f"lane [{session_id}]: imported, but the placement stamp failed: {err}")
 
 
-def ranked_winner(candidates: list[judge.CandidateBrief], ranking: Sequence[str]) -> str:
+def ranked_winner(
+    candidates: list[judge.CandidateBrief], ranking: Sequence[str], *, harness_gate: bool
+) -> str:
     """Return the lane a ranking crowns, or "" when it crowns none.
 
-    The judge's order is model output: rank 1 wins unless every gate ran red, and only a
-    verified lane wins when any verified.
+    The judge's order is model output: rank 1 wins unless a gate ran red and none passed, and
+    only a verified lane wins when any verified. An unverified finish counts as red only under
+    a harness gate, the rule one run's exit code follows.
 
     Args:
         candidates: The ranked lanes.
         ranking: Their ids, best first.
+        harness_gate: Whether the harness runs the gate (`harness.verify.when` is not `never`).
 
     Returns:
         The winner's session id, or "".
@@ -122,7 +125,8 @@ def ranked_winner(candidates: list[judge.CandidateBrief], ranking: Sequence[str]
     verdicts = {c.verification for c in candidates}
     if "passed" in verdicts:
         return first.session_id if first.verification == "passed" else ""
-    return "" if verdicts & {"failed", "unverified"} else first.session_id
+    red = {"failed", "unverified"} if harness_gate else {"failed"}
+    return "" if verdicts & red else first.session_id
 
 
 def carry_back(

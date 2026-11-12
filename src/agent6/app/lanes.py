@@ -776,9 +776,13 @@ def build_lane_ranker(
             events=events,
             reporter=reporter,
         )
+        winner = parallel_results.ranked_winner(
+            candidates, outcome.ranking, harness_gate=cfg.harness.verify.when != "never"
+        )
         parallel_results.stamp_compare_outcomes(
             candidates,
             outcome,
+            winner=winner,
             origin_state=origin_state,
             coordinator_dir=coordinator_dir,
             group=group,
@@ -822,7 +826,7 @@ def build_lane_ranker(
             order=outcome.ranking,
             ranked_by=outcome.ranked_by,
             rationale=outcome.rationale,
-            winner=parallel_results.ranked_winner(candidates, outcome.ranking),
+            winner=winner,
         )
 
     return rank

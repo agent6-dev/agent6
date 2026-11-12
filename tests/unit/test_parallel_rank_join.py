@@ -267,21 +267,27 @@ def test_a_ranking_that_crowns_no_lane_joins_none(repo: pathlib.Path) -> None:
 
 
 @pytest.mark.parametrize(
-    ("gates", "ranking", "winner"),
+    ("gates", "ranking", "harness_gate", "winner"),
     [
-        (("passed", "passed"), ("a", "b"), "a"),
-        (("not_applicable", "not_applicable"), ("b", "a"), "b"),
+        (("passed", "passed"), ("a", "b"), True, "a"),
+        (("not_applicable", "not_applicable"), ("b", "a"), True, "b"),
         # A lane that did not verify, ranked over one that did, is not crowned.
-        (("failed", "passed"), ("a", "b"), ""),
-        (("unverified", "passed"), ("a", "b"), ""),
-        (("failed", "passed"), ("b", "a"), "b"),
+        (("failed", "passed"), ("a", "b"), True, ""),
+        (("unverified", "passed"), ("a", "b"), True, ""),
+        (("failed", "passed"), ("b", "a"), True, "b"),
         # Every gate ran red: nobody wins.
-        (("failed", "failed"), ("a", "b"), ""),
-        (("unverified", "unverified"), ("a", "b"), ""),
+        (("failed", "failed"), ("a", "b"), True, ""),
+        (("unverified", "unverified"), ("a", "b"), True, ""),
+        # `harness.verify.when = "never"`: an unverified finish is no failure, as for one run.
+        (("unverified", "unverified"), ("a", "b"), False, "a"),
+        (("failed", "unverified"), ("b", "a"), False, ""),
     ],
 )
 def test_the_winner_is_a_verified_lane_or_nobody(
-    gates: tuple[kinds.Verification, kinds.Verification], ranking: tuple[str, ...], winner: str
+    gates: tuple[kinds.Verification, kinds.Verification],
+    ranking: tuple[str, ...],
+    harness_gate: bool,
+    winner: str,
 ) -> None:
     """The judge's order is model output: it cannot crown a red lane over a green one."""
     candidates = [
@@ -291,8 +297,9 @@ def test_the_winner_is_a_verified_lane_or_nobody(
         for sid, gate in zip(("a", "b"), gates, strict=True)
     ]
 
-    assert parallel_results.ranked_winner(candidates, ranking) == winner
-    assert parallel_results.ranked_winner(candidates, ()) == ""
+    crowned = parallel_results.ranked_winner(candidates, ranking, harness_gate=harness_gate)
+    assert crowned == winner
+    assert parallel_results.ranked_winner(candidates, (), harness_gate=harness_gate) == ""
 
 
 def test_a_rank_join_without_a_ranker_is_refused_before_any_clone(repo: pathlib.Path) -> None:
