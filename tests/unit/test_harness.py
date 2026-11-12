@@ -38,10 +38,10 @@ from agent6.harness import (
     quiet_turns,
     run_chain,
     tool_effects,
-    verify_verdict,
 )
 from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
+from agent6.harness.verify import verdict as verify_verdict
 from agent6.providers import ProviderError, ProviderResponse
 from agent6.sandbox import tool_paths
 from agent6.sessions import event_log, ipc, journal, process

@@ -14,7 +14,8 @@ from agent6 import kinds, providers
 from agent6.app import execution, session_runtime, stamps, workspace_setup
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, RoleModel
-from agent6.harness import loop_conversation, loop_state, run_chain, verify_gate
+from agent6.harness import loop_conversation, loop_state, run_chain
+from agent6.harness.verify import gate as verify_gate
 from agent6.sandbox import jail, jail_session, tool_paths
 from agent6.sessions import event_log, layout, manifest
 from agent6.tools import (

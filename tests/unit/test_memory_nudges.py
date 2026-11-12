@@ -23,8 +23,8 @@ from agent6.harness import (
     nudges,
     run_chain,
     tool_effects,
-    verify_verdict,
 )
+from agent6.harness.verify import verdict as verify_verdict
 from agent6.tools import results
 
 

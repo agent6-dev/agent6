@@ -23,8 +23,8 @@ from agent6.harness import (
     loop_state,
     run_chain,
     tool_effects,
-    verify_verdict,
 )
+from agent6.harness.verify import verdict as verify_verdict
 from agent6.prompts import loop as prompts_loop
 from agent6.sessions import journal
 from agent6.viewmodel import session_status

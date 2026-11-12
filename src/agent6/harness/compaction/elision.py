@@ -10,8 +10,8 @@ import shlex
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final
 
-from agent6.harness import verify_gate
 from agent6.harness.review import panel as review_panel
+from agent6.harness.verify import gate as verify_gate
 from agent6.providers import CLAUDE_CODE_PERSIST_BYTES
 
 # Every placeholder variant shares the prefix: idempotency checks and tests key on it.

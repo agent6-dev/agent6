@@ -15,7 +15,9 @@ import json
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Literal
 
-from agent6.harness import advice, loop_snapshot, metric_rules, nudges, verify_gate, verify_verdict
+from agent6.harness import advice, loop_snapshot, metric_rules, nudges
+from agent6.harness.verify import gate as verify_gate
+from agent6.harness.verify import verdict as verify_verdict
 from agent6.sessions import journal
 from agent6.tools import schema
 

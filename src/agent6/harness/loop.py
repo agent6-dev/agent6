@@ -63,8 +63,6 @@ from agent6.harness import (
     standing_goal,
     tool_effects,
     toolset,
-    verify_gate,
-    verify_verdict,
 )
 from agent6.harness.compaction import driver as compaction_driver
 from agent6.harness.compaction import elision as compaction_elision
@@ -72,6 +70,8 @@ from agent6.harness.compaction import window as compaction_window
 from agent6.harness.review import gate as review_gate
 from agent6.harness.review import history as review_history
 from agent6.harness.review import panel as review_panel
+from agent6.harness.verify import gate as verify_gate
+from agent6.harness.verify import verdict as verify_verdict
 from agent6.providers import (
     Provider,
     ProviderAborted,

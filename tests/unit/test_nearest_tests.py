@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from agent6.harness import verify_scope
+from agent6.harness.verify import scope as verify_scope
 
 DIFF = """\
 diff --git a/pkg/mod.py b/pkg/mod.py
@@ -117,7 +117,7 @@ def test_the_scan_examines_every_entry_within_its_cap(
     With three entries under tests/ and a cap of three, the last one (the nested test file) is still
     seen.
     """
-    monkeypatch.setattr("agent6.harness.verify_scope._SCAN_CAP", 3)
+    monkeypatch.setattr("agent6.harness.verify.scope._SCAN_CAP", 3)
     _touch(tmp_path, "pkg/mod.py", "tests/test_a.py", "tests/unit/test_mod.py")
     assert verify_scope.nearest_test_paths(tmp_path, ("pkg/mod.py",)) == ("tests/unit/test_mod.py",)
 

@@ -24,8 +24,8 @@ from agent6.harness import (
     metric_rules,
     quiet_turns,
     spiral,
-    verify_verdict,
 )
+from agent6.harness.verify import verdict as verify_verdict
 from agent6.providers import ProviderResponse
 
 

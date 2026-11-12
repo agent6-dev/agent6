@@ -229,7 +229,8 @@ def test_nothing_is_printed_without_a_declaration() -> None:
 def test_a_declaration_names_the_end_only_over_a_red_tree(
     declared: str, green: bool | None, expected: str
 ) -> None:
-    from agent6.harness import finish_gates, verify_verdict
+    from agent6.harness import finish_gates
+    from agent6.harness.verify import verdict as verify_verdict
 
     reason = finish_gates.finish_reason(
         "finish_session",

@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from agent6.harness import verify_verdict
+from agent6.harness.verify import verdict as verify_verdict
 
 
 def test_pass_resets_streak_and_covers_earlier_edits() -> None:

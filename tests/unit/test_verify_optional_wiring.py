@@ -26,7 +26,8 @@ from agent6.app import (
     stamps,
 )
 from agent6.config import Config, layer, layer_data
-from agent6.harness import loop_snapshot, prompt_blocks, run_chain, verify_verdict
+from agent6.harness import loop_snapshot, prompt_blocks, run_chain
+from agent6.harness.verify import verdict as verify_verdict
 from agent6.sandbox import detect, tool_paths
 from agent6.tools import dispatch
 from agent6.vcs import git_read
