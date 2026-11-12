@@ -17,7 +17,7 @@ import pydantic
 
 from agent6 import budget_reservations, lane_records, portable
 
-RECORD_VERSION = 2
+RECORD_VERSION = 3
 DIR_NAME = "dispatch"
 DispatchState = Literal["prepared", "running", "settling", "joining", "complete"]
 
@@ -87,6 +87,8 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
         share: Its share of the parent's allowance, None when nothing was reserved.
         limits: Its turn cap and deadline, None for the config's own.
         join: How it joined, None until it did.
+        report: What it said at its end, its finish summary; "" until it joined or when it
+            gave none.
         usage: What it used, None until settled with known usage.
         settled: Whether its usage was charged and its share released.
         outstanding: Whether its usage is unknown and its share stays held.
@@ -99,6 +101,7 @@ class ChildRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
     share: budget_reservations.BudgetAllowance | None = None
     limits: lane_records.LaneLimits | None = None
     join: JoinRecord | None = None
+    report: str = ""
     usage: UsageRecord | None = None
     settled: bool = False
     outstanding: bool = False

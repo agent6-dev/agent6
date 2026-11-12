@@ -3129,6 +3129,7 @@ Source: [`agent6.sessions.lane_dispatch.ChildRecord`](https://github.com/agent6-
 | `share` | `BudgetAllowance \| None` | Its share of the parent's allowance, None when nothing was reserved. |
 | `limits` | `LaneLimits \| None` | Its turn cap and deadline, None for the config's own. |
 | `join` | `JoinRecord \| None` | How it joined, None until it did. |
+| `report` | `str` | What it said at its end, its finish summary; "" until it joined or when it gave none. |
 | `usage` | `UsageRecord \| None` | What it used, None until settled with known usage. |
 | `settled` | `bool` | Whether its usage was charged and its share released. |
 | `outstanding` | `bool` | Whether its usage is unknown and its share stays held. |

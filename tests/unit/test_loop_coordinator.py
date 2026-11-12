@@ -24,7 +24,7 @@ from agent6.config import Config
 from agent6.graph import curator, models
 from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.providers import ProviderResponse
-from agent6.sessions import journal
+from agent6.sessions import journal, lane_dispatch
 from agent6.tools import results as tools_results
 from agent6.ui.cli import parallel as cli_parallel
 from agent6.vcs import git_ops
@@ -228,7 +228,12 @@ class _FakeGroupSpawner:
                 # Ended with a result and committed nothing: the import landed only its record.
                 results.append(
                     lane_records.LaneResult(
-                        spec=spec, session_dir=spec.workdir, branch=branch, ok=True, error=""
+                        spec=spec,
+                        session_dir=spec.workdir,
+                        branch=branch,
+                        ok=True,
+                        error="",
+                        report=f"lane {i} found nothing to change",
                     )
                 )
                 continue
@@ -650,6 +655,15 @@ def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Pat
     assert all(not n.commit_sha for n in steering)
     summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
     assert summary.count("finished with no changes to join") == 2
+    # Each lane's finish summary reaches the conversation, and the record a resume delivers.
+    assert "    summary: lane 1 found nothing to change" in summary
+    assert "    summary: lane 2 found nothing to change" in summary
+    (record,) = lane_dispatch.read_records(tmp_path / coord_id)
+    assert [child.report for child in record.children] == [
+        "lane 1 found nothing to change",
+        "lane 2 found nothing to change",
+    ]
+    assert record.message == summary
     assert "FAILED" not in summary and "CONFLICT" not in summary
 
 

@@ -98,7 +98,16 @@ def lane_note(j: lane_records.LaneJoin) -> str:
 
 
 def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
-    """Return the one user message summarizing every lane's outcome."""
+    """Return the one message that gives every lane's outcome and what the lane said.
+
+    Args:
+        group: The dispatch's group id.
+        lanes: Each lane's join, in dispatch order.
+
+    Returns:
+        One line per lane, with the lane's finish summary under it as its journal holds it
+        (2,000 characters at most).
+    """
     lines = [f"[parallel] group {group} complete ({len(lanes)} lane(s)):"]
     for j in lanes:
         if j.status == "joined":
@@ -114,6 +123,8 @@ def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
             )
         else:
             lines.append(f"  - {j.session_id} ({j.branch}): FAILED -- {j.detail}; nothing joined.")
+        if report := j.report.strip():
+            lines.append("    summary: " + report.replace("\n", "\n      "))
     lines.append("Review what landed and continue.")
     return "\n".join(lines)
 
@@ -123,7 +134,9 @@ def join_of(child: lane_dispatch.ChildRecord) -> lane_records.LaneJoin:
     join = child.join
     if join is None:
         return lane_records.LaneJoin(child.session_id, "", "failed", "", "not joined")
-    return lane_records.LaneJoin(child.session_id, join.branch, join.status, join.sha, join.detail)
+    return lane_records.LaneJoin(
+        child.session_id, join.branch, join.status, join.sha, join.detail, child.report
+    )
 
 
 def parallel_parent_id(

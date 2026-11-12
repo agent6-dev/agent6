@@ -29,6 +29,7 @@ from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import (
     events,
+    fold_session,
     format,
     produced_result,
     session_is_live,
@@ -533,6 +534,9 @@ def recorded_result(
         imported_tip=imported.tip,
         has_commits=lane_has_commits(dest, imported),
         usage=usage,
+        report=fold_session(
+            tail_events(dest / sessions_layout.LOGS_NAME, follow=False)
+        ).finish_summary,
     )
 
 

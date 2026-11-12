@@ -143,6 +143,8 @@ class LaneResult:
             reported its session dir is stopped through it.
         usage: What the lane used, read from its imported record; None when no record
             came back.
+        report: What the lane said at its end, its finish summary; "" when it ended another
+            way.
     """
 
     spec: LaneSpec
@@ -155,6 +157,7 @@ class LaneResult:
     has_commits: bool = False
     pid: int = 0
     usage: budget.UsageSettlement | None = None
+    report: str = ""
 
 
 class LaneSpawner(Protocol):
@@ -201,6 +204,7 @@ class LaneJoin:
             the ref exists locally) or `failed` (no result or nothing importable).
         sha: The merge commit, or "".
         detail: The failure's reason, or "".
+        report: What the lane said at its end, its finish summary; "" when it gave none.
     """
 
     session_id: str
@@ -208,6 +212,7 @@ class LaneJoin:
     status: JoinStatus
     sha: str
     detail: str
+    report: str = ""
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

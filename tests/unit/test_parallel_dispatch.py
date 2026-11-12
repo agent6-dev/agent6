@@ -4,13 +4,15 @@
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import pathlib
 from typing import Any
 
 import pytest
 
 from agent6 import directive, errors, lane_records
-from agent6.app import parallel, preflight
+from agent6.app import lanes, parallel, preflight
 from agent6.harness import parallel_dispatch, parallel_join
 from agent6.vcs import git_ops, git_read
 
@@ -285,6 +287,32 @@ def test_a_fan_out_prints_the_sandbox_degrades_a_run_prints(
     assert "running UNSANDBOXED (sandbox.isolation = none)" in capsys.readouterr().err
 
 
+def test_summary_text_gives_each_lanes_finish_summary() -> None:
+    """What a lane said at its end reaches its parent under the lane's line.
+
+    The parent read only "finished with no changes to join." for a lane sent to find
+    something out, and went through the lane's transcript for the answer.
+    """
+    said = "The suite passes as it is.\n3 tests, exit 0."
+    text = parallel_join.summary_text(
+        "p1",
+        [
+            dataclasses.replace(_join("no_changes", "a"), report=said),
+            _join("joined", "b", sha="abc123def4567"),
+            dataclasses.replace(_join("failed", "c"), report="  "),
+        ],
+    )
+    assert text.splitlines() == [
+        "[parallel] group p1 complete (3 lane(s)):",
+        "  - a (agent6/a): finished with no changes to join.",
+        "    summary: The suite passes as it is.",
+        "      3 tests, exit 0.",
+        "  - b (agent6/b): joined at abc123def456",
+        "  - c (agent6/c): FAILED -- boom; nothing joined.",
+        "Review what landed and continue.",
+    ]
+
+
 def test_summary_hands_a_conflicted_lane_to_the_operator() -> None:
     """The summary hands a conflicted lane to the operator.
 
@@ -332,3 +360,32 @@ def test_the_coordinator_takes_sigterm_as_a_ctrl_c_stop(
             Config.model_validate({}), "t", "2", explicit_leaves=frozenset(), cwd=tmp_path
         )
     assert signal.getsignal(signal.SIGTERM) is before
+
+
+def _ended_lane(dest: pathlib.Path, *, reason: str, verification: str) -> None:
+    dest.mkdir()
+    (dest / "manifest.json").write_text(json.dumps({"mode": "run", "session_id": dest.name}))
+    rows = [
+        {"type": "session.start", "mode": "run", "user_task": "t"},
+        {
+            "type": "tool.call",
+            "name": "finish_session",
+            "args_preview": {"summary": "The suite passes: 3 tests, exit 0."},
+        },
+        {"type": "session.stop", "reason": reason, "verification": verification},
+    ]
+    (dest / "logs.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+
+def test_a_lanes_result_carries_its_finish_summary(tmp_path: pathlib.Path) -> None:
+    """A lane that finished hands its parent the summary it finished with; another end, none."""
+    spec = lane_records.LaneSpec(lane=1, session_id="done", workdir=tmp_path, settings=None)
+    done = tmp_path / "done"
+    _ended_lane(done, reason="finish_session", verification="not_applicable")
+    res = lanes.recorded_result(spec, "", done, lane_records.Imported(done), origin=tmp_path)
+    assert res.ok and res.report == "The suite passes: 3 tests, exit 0."
+
+    cut = tmp_path / "cut"
+    _ended_lane(cut, reason="max_turns", verification="unverified")
+    res = lanes.recorded_result(spec, "", cut, lane_records.Imported(cut), origin=tmp_path)
+    assert not res.ok and res.report == ""

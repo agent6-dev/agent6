@@ -522,7 +522,8 @@ class ParallelDispatcher:
                             detail=join.detail,
                             target_before=before,
                             target_after=self.chain.tip() or "",
-                        )
+                        ),
+                        "report": res.report if res is not None else "",
                     }
                 )
             )

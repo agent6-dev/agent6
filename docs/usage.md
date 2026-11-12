@@ -154,6 +154,7 @@ Each segment has its own optional spec and separator.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
 
 When the lanes return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the lane ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
+Under a lane's line the notice gives the summary the lane finished with (`summary: ...`), so a lane sent to find something out answers its parent without a commit.
 
 ### The parallel tool
 

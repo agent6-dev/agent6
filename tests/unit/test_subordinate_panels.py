@@ -104,7 +104,7 @@ def test_worker_panel_uses_shared_executor_with_inherited_limits_and_one_charge(
         assert result.lanes[0].status == "no_changes"
         record = lane_dispatch.read_records(worker_dir)[0]
         assert record.source == "panel" and record.join_policy == "record_only"
-        assert record.version == 2
+        assert record.version == 3
         child = record.children[0]
         assert child.limits is not None and launch.limits is not None
         assert child.limits.deadline_at == launch.limits.deadline_at
