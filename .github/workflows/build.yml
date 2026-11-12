@@ -85,7 +85,7 @@ jobs:
           from agent6.sandbox import container, jail
           bundled = pathlib.Path(jail.__file__).resolve().parent / "_bin" / "agent6-jail"
           assert jail.require_jail_binary() == bundled, "wheel did not supply the selected launcher"
-          expected_version = "sha256:" + hashlib.sha256(bundled.read_bytes()).hexdigest()
+          expected_digest = "sha256:" + hashlib.sha256(bundled.read_bytes()).hexdigest()
           with tempfile.TemporaryDirectory() as directory:
               root = pathlib.Path(directory)
               selected = container.discover(root, container.ContainerOptions(
@@ -97,7 +97,7 @@ jobs:
                   assert isinstance(result, kinds.CommandResult), result
                   assert result.returncode == 0 and result.stdout == "bundled-launcher\n", result
                   assert session.target.launcher_instance
-                  assert session.target.launcher_version == expected_version
+                  assert session.target.launcher_digest == expected_digest
               finally:
                   assert not session.close()
           PY
