@@ -712,7 +712,7 @@ The [workspace transfer flow](usage.md#carry-your-state-with-the-workspace) expl
     - a worker lane retains its configured harness-panel authority, independent of `parallel.tool`; the internal record-only dispatch seam uses the same executor, never a tool-supplied purpose or authority argument
     - authority comes from the private launch's session id, checkout and conversation contract, checked against the execution; `AGENT6_SUBRUN` without a matching worker launch grants no panel authority, including in unrelated machine states
     - a read-only review lane has neither work nor panel authority, so the allowed structure ends at that leaf
-    - panel costs sub-reserve the owning worker's remaining allowance; deadlines take the minimum of the panel bound and its ancestor's deadline
+    - panel costs sub-reserve the owning worker's remaining allowance; a seat's deadline is the earlier of its batch's 30 minutes and its ancestor's deadline
 - Import retains descendant session directories, dispatch records, objects, lineage and hidden target refs before worker-clone cleanup; stop follows live links across state directories and session buckets, including through a dead worker.
     - ancestor settlement keeps the allowance held until cumulative `budget.update` rows confirm every panel child's charge through `settled_lanes`; importing descendant records does not charge that inclusive spend again
     - child evidence binds only the child's retained review target, never the top-level checkout after a merge or later edit

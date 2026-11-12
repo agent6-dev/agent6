@@ -263,7 +263,8 @@ In-loop panels run each seat as a read-only lane with its own session, and recor
 The full roster's allowance is reserved before launch; batches use at most `review.concurrency` and `parallel.max_lanes` seats, without truncating the roster.
 Results keep roster order even when seats finish in another order.
 Diff seats make one call without tools, capped at 1,500 output tokens; repo seats read the retained snapshot with a 2,000-token per-call cap and `review.repo_max_turns` calls.
-Each seat has a real session linked from the parent, including panels beneath worker lanes.
+Each seat has a session of its own, named on the receipt and the findings card; no listing counts it among the run's lanes.
+A seat still running 30 minutes after its batch started is stopped and abstains; batches run one after another, each with its own 30 minutes.
 Failed or unparseable seats remain abstentions with their diagnostics; an all-abstain panel is inconclusive, not a clean review.
 Child review does not certify a later or different parent tree.
 Session-owned panels retain a cloneable snapshot of the exact comparison, including uncommitted work after failed verification and with `git.commit_per_turn = false`.

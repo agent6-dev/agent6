@@ -281,9 +281,11 @@ class ParallelDispatcher:
             except agent6_budget.BudgetExceededError as exc:
                 return self.refusal(f"the panel budget is exhausted ({exc}); nothing dispatched.")
         bounded: list[lane_records.LaneTask] = []
-        for lane, child in zip(lanes, children, strict=True):
+        start = self.clock()
+        for i, (lane, child) in enumerate(zip(lanes, children, strict=True)):
             assert lane.contract is not None
-            deadlines = [self.clock() + MODEL_LANE_DEADLINE_S]
+            # Batches run one after another: each gets its own window, fixed before launch.
+            deadlines = [start + MODEL_LANE_DEADLINE_S * (i // width + 1)]
             if self.authority.deadline_at is not None:
                 deadlines.append(self.authority.deadline_at)
             if lane.limits is not None and lane.limits.deadline_at is not None:

@@ -7,7 +7,7 @@ import pytest
 
 from agent6 import budget, kinds, lane_records, review_records
 from agent6.app import role_providers
-from agent6.harness import review_gate, review_seat, toolset
+from agent6.harness import parallel_dispatch, review_gate, review_seat, toolset
 from agent6.sessions import completion
 from tests import review_traces, subordinate_env
 
@@ -45,13 +45,16 @@ def test_roster_reserves_before_width_and_concurrency_batches(
     meter = budget.BudgetTracker(max_usd=10, max_tokens_fallback=1000, max_plan_points=20)
     executor = subordinate_env.dispatcher(repo, directory, subordinate_env.config(), meter)
     executor.max_lanes = 2
+    executor.clock = lambda: 1000.0
     observed: list[tuple[int, int, float]] = []
+    deadlines: list[float | None] = []
 
     def spawn(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
     ) -> list[lane_records.LaneResult]:
         assert lanes[0].allowance is not None
         observed.append((len(lanes), meter.snapshot().reserved.tokens, lanes[0].allowance.usd))
+        deadlines.extend(lane.limits.deadline_at if lane.limits else None for lane in lanes)
         return [
             lane_records.LaneResult(
                 lane_records.LaneSpec(i, f"parent-{group}-l{i}", repo, lane.settings),
@@ -78,6 +81,9 @@ def test_roster_reserves_before_width_and_concurrency_batches(
     assert observed[0][1] == 1000
     assert [x[2] for x in observed] == [2, 2, 2]
     assert [j.detail for j in result.lanes] == ["scripted failure"] * 5
+    # A later batch waits for the earlier ones: its window starts where theirs ends.
+    window = parallel_dispatch.MODEL_LANE_DEADLINE_S
+    assert deadlines == [1000 + window] * 2 + [1000 + 2 * window] * 2 + [1000 + 3 * window]
 
 
 @pytest.mark.parametrize("scope", ["diff", "repo"])
