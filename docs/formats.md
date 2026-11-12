@@ -2804,7 +2804,6 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 | `key` | `str` | The dotted config key. |
 | `value` | `str` | The string value parsed by the config writer. |
 | `repo` | `bool` | Whether to write repo config rather than global config. |
-| `preset` | `str` | The preset the page edits; the key lands under `[presets.<name>]`. |
 | `unset` | `bool` | Whether to remove the setting instead of assigning value. |
 
 ### ModelsBrief

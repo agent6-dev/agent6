@@ -809,7 +809,7 @@ def reviewer_choices() -> dict[str, list[str]]:
 
 
 def add_reviewer(
-    repo_root: pathlib.Path, fields: dict[str, str], *, to_repo: bool = False
+    repo_root: pathlib.Path, fields: dict[str, str], *, to_repo: bool = False, preset: str = ""
 ) -> str | None:
     """Append a reviewer to the chosen layer's effective roster.
 
@@ -817,6 +817,8 @@ def add_reviewer(
         repo_root: The repo.
         fields: Form values; focus is required and blank optional fields are omitted.
         to_repo: The repo resolution instead of defaults plus the global config.
+        preset: The selected preset; the roster shown under it grows and is written to its
+            `[presets.<name>]` table.
 
     Returns:
         The input or validation error, else None.
@@ -834,21 +836,28 @@ def add_reviewer(
     }
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target):
-        eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
+        eff = layer.load_effective(repo_root) if to_repo or preset else layer.load_global_only()
         roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
         roster.append(values)
         return set_config_value(
-            repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
+            repo_root,
+            preset_key(preset, "review.reviewers"),
+            io.format_toml_value(roster),
+            to_repo=to_repo,
         )
 
 
-def remove_reviewer(repo_root: pathlib.Path, index: int, *, to_repo: bool = False) -> str | None:
+def remove_reviewer(
+    repo_root: pathlib.Path, index: int, *, to_repo: bool = False, preset: str = ""
+) -> str | None:
     """Remove a zero-based position, writing an explicit empty list after the last seat.
 
     Args:
         repo_root: The repo.
         index: The reviewer's zero-based position, never its focus.
         to_repo: The repo resolution instead of defaults plus the global config.
+        preset: The selected preset; the roster shown under it shrinks and is written to
+            its `[presets.<name>]` table.
 
     Returns:
         The input or validation error, else None.
@@ -859,13 +868,16 @@ def remove_reviewer(repo_root: pathlib.Path, index: int, *, to_repo: bool = Fals
     """
     target = _prepare_write_target(repo_root, to_repo=to_repo)
     with writing_config(target):
-        eff = layer.load_effective(repo_root) if to_repo else layer.load_global_only()
+        eff = layer.load_effective(repo_root) if to_repo or preset else layer.load_global_only()
         roster = [entry.model_dump(exclude_none=True) for entry in eff.config.review.reviewers]
         if not 0 <= index < len(roster):
             return f"reviewer index {index} is out of range (roster has {len(roster)} reviewers)"
         del roster[index]
         return set_config_value(
-            repo_root, "review.reviewers", io.format_toml_value(roster), to_repo=to_repo
+            repo_root,
+            preset_key(preset, "review.reviewers"),
+            io.format_toml_value(roster),
+            to_repo=to_repo,
         )
 
 
@@ -876,6 +888,7 @@ def add_entry(
     fields: dict[str, str],
     *,
     to_repo: bool = False,
+    preset: str = "",
 ) -> str | None:
     """Add or update a named entry, preserving fields left blank.
 
@@ -885,6 +898,7 @@ def add_entry(
         name: The entry name, stripped; blank is refused.
         fields: Form values; a command line is split into argv with shell quoting.
         to_repo: The repo layer instead of the global one.
+        preset: The selected preset; the entry lands under `[presets.<name>]`.
 
     Returns:
         The input or write error, else None.
@@ -915,15 +929,22 @@ def add_entry(
             values[field] = value
     if table.leaf:
         return set_config_leaves(
-            repo_root, table.path, {name: values.get(table.fields[0])}, to_repo=to_repo
+            repo_root,
+            preset_key(preset, table.path),
+            {name: values.get(table.fields[0])},
+            to_repo=to_repo,
         )
-    return set_config_leaves(
-        repo_root, io.render_key((*io.split_key(table.path), name)), values, to_repo=to_repo
-    )
+    key = preset_key(preset, io.render_key((*io.split_key(table.path), name)))
+    return set_config_leaves(repo_root, key, values, to_repo=to_repo)
 
 
 def remove_entry(
-    repo_root: pathlib.Path, table: EntryTable, name: str, *, to_repo: bool = False
+    repo_root: pathlib.Path,
+    table: EntryTable,
+    name: str,
+    *,
+    to_repo: bool = False,
+    preset: str = "",
 ) -> UnsetResult:
     """Remove a whole named entry from the chosen layer.
 
@@ -932,19 +953,23 @@ def remove_entry(
         table: The entry table.
         name: The entry name.
         to_repo: The repo layer instead of the global one.
+        preset: The selected preset; the entry is read under `[presets.<name>]`.
 
     Returns:
         Whether the entry was present and any revalidation error.
     """
     if table.path == "providers" and (refusal := provider_config.provider_name_refusal(name)):
         return UnsetResult(removed=False, error=refusal)
-    key = io.render_key((*io.split_key(table.path), name))
+    key = preset_key(preset, io.render_key((*io.split_key(table.path), name)))
     unset = unset_config_value if table.leaf else unset_config_table
     return unset(repo_root, key, to_repo=to_repo)
 
 
 def preset_key(preset: str, key: str) -> str:
-    """Return the key an edit under a selected preset writes: `presets.<name>.<key>`.
+    """Return the key an edit under the selected preset writes: `presets.<name>.<key>`.
+
+    The selector and the preset tables never nest: `preset` and `presets.*` are written as
+    given.
 
     Args:
         preset: The selected preset; "" writes the key itself.
@@ -953,11 +978,47 @@ def preset_key(preset: str, key: str) -> str:
     Returns:
         The key to write.
     """
-    return io.render_key(("presets", preset, *io.split_key(key))) if preset else key
+    parts = io.split_key(key)
+    if not preset or parts[0] in ("preset", "presets"):
+        return key
+    return io.render_key(("presets", preset, *parts))
+
+
+def selected_preset(eff: layer_data.EffectiveConfig) -> str:
+    """Return the preset the config pages edit: the effective `preset`, "" for `none`.
+
+    Args:
+        eff: The effective config a page shows.
+
+    Returns:
+        The preset whose `[presets.<name>]` table a page write lands in, or "" for the
+        global and repo config themselves.
+    """
+    return "" if eff.config.preset == "none" else eff.config.preset
+
+
+def preset_layer(repo_root: pathlib.Path, name: str) -> bool | None:
+    """Return whether `[presets.<name>]` is in the repo config (True) or the global one (False).
+
+    Args:
+        repo_root: The repo.
+        name: The preset name.
+
+    Returns:
+        The repo layer when both hold it; None when neither does (a built-in, or no table).
+    """
+    for to_repo in (True, False):
+        target = _write_target(repo_root, to_repo=to_repo)
+        tables = io.read_toml_file(target).get("presets") if target.is_file() else None
+        if isinstance(tables, dict) and name in tables:
+            return to_repo
+    return None
 
 
 def add_preset(repo_root: pathlib.Path, name: str, *, to_repo: bool = False) -> str | None:
-    """Create an empty `[presets.<name>]` table in the chosen layer; an existing one is kept.
+    """Create an empty `[presets.<name>]` table in the chosen layer and select it there.
+
+    An existing table is kept; `preset = "<name>"` is written either way.
 
     Args:
         repo_root: The repo.
@@ -976,25 +1037,40 @@ def add_preset(repo_root: pathlib.Path, name: str, *, to_repo: bool = False) -> 
         return "preset name is required"
     if name == "none":
         return '"none" is reserved for selecting no preset'
-    target = _write_target(repo_root, to_repo=to_repo)
-    tables = io.read_toml_file(target).get("presets") if target.is_file() else None
-    if isinstance(tables, dict) and name in tables:
-        return None
-    return set_config_table(repo_root, io.render_key(("presets", name)), {}, to_repo=to_repo)
+    if preset_layer(repo_root, name) is not to_repo:
+        err = set_config_table(repo_root, io.render_key(("presets", name)), {}, to_repo=to_repo)
+        if err:
+            return err
+    return set_config_value(repo_root, "preset", io.format_toml_value(name), to_repo=to_repo)
 
 
-def remove_preset(repo_root: pathlib.Path, name: str, *, to_repo: bool = False) -> UnsetResult:
-    """Remove a `[presets.<name>]` table with everything under it from the chosen layer.
+def remove_preset(repo_root: pathlib.Path, name: str) -> UnsetResult:
+    """Remove `[presets.<name>]` from both config layers and unset every `preset` naming it.
+
+    The selectors go first, so no layer is left selecting a table that is gone; a selected
+    built-in, which has no table, is deselected the same way.
 
     Args:
         repo_root: The repo.
         name: The preset name.
-        to_repo: The repo layer instead of the global one.
 
     Returns:
-        Whether the table was present and any revalidation error.
+        Whether a table or a selector was present, and the first revalidation error.
     """
-    return unset_config_table(repo_root, io.render_key(("presets", name)), to_repo=to_repo)
+    removed = False
+    for to_repo in (True, False):
+        target = _write_target(repo_root, to_repo=to_repo)
+        if target.is_file() and io.read_toml_file(target).get("preset") == name:
+            reset = unset_config_value(repo_root, "preset", to_repo=to_repo)
+            if reset.error:
+                return reset
+            removed = removed or reset.removed
+    for to_repo in (True, False):
+        result = unset_config_table(repo_root, io.render_key(("presets", name)), to_repo=to_repo)
+        if result.error:
+            return result
+        removed = removed or result.removed
+    return UnsetResult(removed=removed)
 
 
 def entry_of(key: str) -> tuple[EntryTable, str] | None:

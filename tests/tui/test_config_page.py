@@ -2024,8 +2024,8 @@ def test_the_edit_popup_offers_add_and_remove_for_an_entrys_table(repo: pathlib.
     asyncio.run(scenario())
 
 
-def test_the_page_shows_and_edits_the_picked_preset(repo: pathlib.Path) -> None:
-    """Preset… relayers the rows; a save writes [presets.<name>]; Remove preset drops the table."""
+def test_the_page_shows_and_edits_the_selected_preset(repo: pathlib.Path) -> None:
+    """Preset… sets `preset`; the rows relayer; a save writes [presets.<name>]; Remove resets it."""
     cfg = paths.global_config_path()
     cfg.write_text(
         cfg.read_text(encoding="utf-8") + '\n[presets.fast.sandbox]\nrun_commands = "deny"\n'
@@ -2046,11 +2046,12 @@ def test_the_page_shows_and_edits_the_picked_preset(repo: pathlib.Path) -> None:
             screen.action_choose_preset()
             await pilot.pause()
             picker = app.screen
-            assert isinstance(picker, config_forms.PresetModal)
-            picker.query_one("#preset-name", forms.ChoiceField).select_value("fast")
-            picker.action_use()
+            assert isinstance(picker, config_forms.EditModal)
+            picker.query_one("#edit-value", forms.ChoiceField).select_value("fast")
+            picker.action_save()
             await pilot.pause()
             assert app.screen is screen
+            assert io.read_toml_file(cfg)["preset"] == "fast"
             assert value_of(screen, "sandbox", "run_commands") == '"deny"'
             status = str(screen.query_one("#status", widgets.Static).render())
             assert "preset fast" in status
@@ -2077,7 +2078,8 @@ def test_the_page_shows_and_edits_the_picked_preset(repo: pathlib.Path) -> None:
             assert isinstance(app.screen, modals.ConfirmModal)
             await pilot.press("y")
             await pilot.pause()
-            assert "presets" not in io.read_toml_file(cfg)
+            saved = io.read_toml_file(cfg)
+            assert "presets" not in saved and "preset" not in saved
             assert value_of(screen, "sandbox", "run_commands") == '"allow"'
 
     asyncio.run(scenario())

@@ -222,11 +222,16 @@ class ReviewerModal(FormModal[None]):
     )
 
     def __init__(
-        self, repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
+        self,
+        repo_root: pathlib.Path,
+        config_paths: tuple[pathlib.Path, ...] = (),
+        *,
+        preset: str = "",
     ) -> None:
         super().__init__()
         self._repo = repo_root
         self._config_paths = config_paths
+        self._preset = preset
 
     def compose(self) -> app.ComposeResult:
         """Yield the reviewer fields and the save target."""
@@ -273,7 +278,7 @@ class ReviewerModal(FormModal[None]):
                 fields[field] = control.value
         to_repo = self.query_one("#reviewer-target", forms.ChoiceField).index == 1
         try:
-            err = write.add_reviewer(self._repo, fields, to_repo=to_repo)
+            err = write.add_reviewer(self._repo, fields, to_repo=to_repo, preset=self._preset)
         except errors.OperatorError as exc:
             err = str(exc)
         if err:
@@ -282,7 +287,7 @@ class ReviewerModal(FormModal[None]):
         self.notify(
             notices.write_message(
                 self._repo,
-                ["review.reviewers"],
+                [write.preset_key(self._preset, "review.reviewers")],
                 "Added reviewer.",
                 to_repo=to_repo,
                 config_paths=self._config_paths,
@@ -308,12 +313,14 @@ class RemoveReviewerModal(FormModal[None]):
         *,
         to_repo: bool,
         config_paths: tuple[pathlib.Path, ...] = (),
+        preset: str = "",
     ) -> None:
         super().__init__()
         self._repo = repo_root
         self._config_paths = config_paths
         self._positions = tuple(f"{index + 1}: {focus}" for index, focus in enumerate(focuses))
         self._to_repo = to_repo
+        self._preset = preset
 
     def compose(self) -> app.ComposeResult:
         """Yield the positional chooser and removal action."""
@@ -333,7 +340,9 @@ class RemoveReviewerModal(FormModal[None]):
             if not confirmed:
                 return
             try:
-                err = write.remove_reviewer(self._repo, index, to_repo=self._to_repo)
+                err = write.remove_reviewer(
+                    self._repo, index, to_repo=self._to_repo, preset=self._preset
+                )
             except errors.OperatorError as exc:
                 err = str(exc)
             if err:
@@ -342,7 +351,7 @@ class RemoveReviewerModal(FormModal[None]):
             self.notify(
                 notices.write_message(
                     self._repo,
-                    ["review.reviewers"],
+                    [write.preset_key(self._preset, "review.reviewers")],
                     f"Removed reviewer {index + 1} from {source} config.",
                     to_repo=self._to_repo,
                     config_paths=self._config_paths,
@@ -393,11 +402,14 @@ class EntryModal(FormModal[None]):
         repo_root: pathlib.Path,
         table: write.EntryTable,
         config_paths: tuple[pathlib.Path, ...] = (),
+        *,
+        preset: str = "",
     ) -> None:
         super().__init__()
         self._repo = repo_root
         self._config_paths = config_paths
         self._table = table
+        self._preset = preset
         self._autofilled_baseurl = ""  # the last prefilled base_url; a typed one is never replaced
 
     def on_mount(self) -> None:
@@ -488,13 +500,15 @@ class EntryModal(FormModal[None]):
                 fields[field] = control.value
         to_repo = self.query_one("#entry-target", forms.ChoiceField).index == 1
         try:
-            err = write.add_entry(self._repo, self._table, name, fields, to_repo=to_repo)
+            err = write.add_entry(
+                self._repo, self._table, name, fields, to_repo=to_repo, preset=self._preset
+            )
         except errors.OperatorError as exc:
             err = str(exc)  # an unwritable config file is a form error, not a crash
         if err:
             self.notify(f"Invalid: {err}", severity="error", timeout=8.0)
             return
-        key = io.render_key((*io.split_key(self._table.path), name))
+        key = write.preset_key(self._preset, io.render_key((*io.split_key(self._table.path), name)))
         keys = (
             [key]
             if self._table.leaf
@@ -523,60 +537,8 @@ class EntryModal(FormModal[None]):
             self.action_cancel()
 
 
-class PresetModal(FormModal[str | None]):
-    """Pick the preset the config page shows and edits; `none` is the plain config."""
-
-    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
-    CSS = (
-        forms.FORM_CSS
-        + """
-    PresetModal { align: center middle; }
-    #preset-box {
-        width: 70; height: auto;
-        border: round $accent; padding: 1 2; background: $surface;
-    }
-    #preset-title { text-style: bold; }
-    #preset-actions { padding-top: 1; height: auto; }
-    """
-    )
-
-    def __init__(self, names: tuple[str, ...], current: str) -> None:
-        super().__init__()
-        self._names = names
-        self._current = current
-
-    def on_mount(self) -> None:
-        """Focus the chooser."""
-        self.query_one("#preset-name").focus()
-
-    def compose(self) -> app.ComposeResult:
-        """Yield the title, the explanation, the chooser and the actions."""
-        with containers.VerticalScroll(id="preset-box"):
-            yield textual_widgets.Static("Preset the page shows and edits", id="preset-title")
-            yield textual_widgets.Static(
-                text.Text(
-                    "The rows are the effective config under the preset, and a save writes"
-                    " [presets.<name>] in the chosen layer.\n"
-                    "none: the rows and the saves are the global and repo config.",
-                    style="dim",
-                )
-            )
-            yield forms.ChoiceField(self._names, self._current, id="preset-name")
-            with containers.Horizontal(id="preset-actions"):
-                yield forms.ActionItem("Use", "use")
-                yield forms.ActionItem("Cancel", "cancel")
-
-    def action_use(self) -> None:
-        """Return the chosen name."""
-        self.dismiss(self.query_one("#preset-name", forms.ChoiceField).value)
-
-    def action_cancel(self) -> None:
-        """Close the chooser."""
-        self.dismiss(None)
-
-
 class AddPresetModal(FormModal[str | None]):
-    """Create an empty `[presets.<name>]` table; the name comes back on success."""
+    """Create an empty `[presets.<name>]` table and select it; the name comes back on success."""
 
     BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
     CSS = (
@@ -609,8 +571,8 @@ class AddPresetModal(FormModal[str | None]):
             yield textual_widgets.Static("Add preset", id="addpreset-title")
             yield textual_widgets.Static(
                 text.Text(
-                    "An empty [presets.<name>] table; pick it with Preset… and edit the rows"
-                    " to fill it.",
+                    "An empty [presets.<name>] table, selected as preset in the chosen layer;"
+                    " edit the rows to fill it.",
                     style="dim",
                 )
             )
@@ -642,7 +604,8 @@ class AddPresetModal(FormModal[str | None]):
         if err:
             self.notify(err, severity="error", timeout=8.0)
             return
-        self.notify(f"Created [presets.{name}] in the {'repo' if to_repo else 'global'} config.")
+        layer = "repo" if to_repo else "global"
+        self.notify(f"Created [presets.{name}] in the {layer} config and selected it there.")
         self.dismiss(name)
 
     def action_cancel(self) -> None:

@@ -65,9 +65,13 @@ CONFIG_ACTIONS: tuple[Action, ...] = (
         for table in write.ENTRY_TABLES
     ),
     Action("add_reviewer", "Add reviewer…", "Append a reviewer to the ordered panel roster"),
-    Action("add_preset", "Add preset…", "Create an empty [presets.<name>] table"),
-    Action("remove_preset", "Remove preset", "Remove the shown preset's table from both layers"),
-    Action("choose_preset", "Preset…", "Choose the preset the page shows and edits"),
+    Action("add_preset", "Add preset…", "Create an empty [presets.<name>] table and select it"),
+    Action(
+        "remove_preset",
+        "Remove preset",
+        "Remove the selected preset's table from both layers and reset preset",
+    ),
+    Action("choose_preset", "Preset…", "Set preset; the page shows and edits the selected preset"),
     Action(
         "remove_entry",
         "Remove entry",
@@ -229,8 +233,6 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         super().__init__()
         self.repo_root = repo_root
         self.config_paths = config_paths
-        # The preset the page shows and edits; "" is the plain global and repo config.
-        self._preset = ""
         self._eff: layer_data.EffectiveConfig | None = None
         self._view: config_view.ConfigView | None = None
         self._table_rows: dict[
@@ -276,9 +278,14 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         """Return the view's sections, in order."""
         return self._view.sections if self._view is not None else ()
 
+    @property
+    def _selected_preset(self) -> str:
+        """The preset the page edits: the effective `preset`, "" for `none`."""
+        return write.selected_preset(self._eff) if self._eff is not None else ""
+
     def _rebuild_view(self) -> None:
         """Load the effective config and build the view over it."""
-        eff = layer.load_effective(self.repo_root, self.config_paths, preset=self._preset)
+        eff = layer.load_effective(self.repo_root, self.config_paths)
         self._eff = eff
         self._view = config_view.build_config_view(
             eff, resolved=confine.resolved_config_values(eff.config)
@@ -382,11 +389,8 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             self.query_one(f"#sec-{section}", textual_widgets.Collapsible).display = bool(rows)
             shown += len(rows)
         flt = "   ·   modified only" if self._modified_only else ""
-        under = (
-            f"   ·   preset {self._preset}: saves write [presets.{self._preset}]"
-            if self._preset
-            else ""
-        )
+        selected = self._selected_preset
+        under = f"   ·   preset {selected}: saves write [presets.{selected}]" if selected else ""
         self.query_one("#status", textual_widgets.Static).update(
             f"{shown} setting{'' if shown == 1 else 's'}{flt}{under}"
         )
@@ -568,69 +572,56 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self.dismiss(None)
 
     def action_choose_preset(self) -> None:
-        """Pick the preset the page shows and edits."""
-        if self._eff is None:
-            return
-        names = ("none", *(n for n in self._eff.presets if n != "none"))
-        self.app.push_screen(
-            config_forms.PresetModal(names, self._preset or "none"), self._preset_chosen
-        )
-
-    def _preset_chosen(self, name: str | None) -> None:
-        """Show and edit the chosen preset; None keeps the current one."""
-        if name is None:
-            return
-        self._preset = "" if name == "none" else name
-        self._reload()
+        """Open the `preset` setting: the page shows and edits the selected preset."""
+        if self._view is not None:
+            self._edit(next(s for s in self._view.settings if s.key == "preset"))
 
     def action_add_preset(self) -> None:
-        """Create an empty preset table, then show it."""
+        """Create an empty preset table and select it; the page then shows it."""
         self.app.push_screen(
-            config_forms.AddPresetModal(self.repo_root, self.config_paths), self._preset_chosen
+            config_forms.AddPresetModal(self.repo_root, self.config_paths), self._form_closed
         )
 
     def action_remove_preset(self) -> None:
-        """Remove the shown preset's table from the global and repo config, after a confirm."""
-        name = self._preset
+        """Remove the selected preset's table from both layers and reset `preset`, on confirm."""
+        name = self._selected_preset
         if not name:
-            self.notify("Choose a preset first (Preset…).", severity="warning")
+            self.notify("No preset is selected (preset = none).", severity="warning")
             return
+        had_table = write.preset_layer(self.repo_root, name) is not None
 
         def remove(confirmed: bool | None) -> None:
             if not confirmed:
                 return
-            removed = False
-            for to_repo in (True, False):
-                try:
-                    result = write.remove_preset(self.repo_root, name, to_repo=to_repo)
-                except errors.OperatorError as exc:
-                    self.notify(str(exc), severity="error", timeout=8.0)
-                    return
-                if result.error:
-                    self.notify(result.error, severity="error", timeout=8.0)
-                    return
-                removed = removed or result.removed
-            self.notify(
-                f"Removed [presets.{name}]."
-                if removed
-                else f"[presets.{name}] is not in the global or repo config."
-            )
-            self._preset = ""
+            try:
+                result = write.remove_preset(self.repo_root, name)
+            except errors.OperatorError as exc:
+                self.notify(str(exc), severity="error", timeout=8.0)
+                return
+            if result.error:
+                self.notify(result.error, severity="error", timeout=8.0)
+                return
+            if not result.removed:
+                self.notify(f"[presets.{name}] is not in the global or repo config.")
+            elif had_table:
+                self.notify(f"Removed [presets.{name}]; preset is none.")
+            else:
+                self.notify(f"preset is none; {name} is a built-in preset and has no table.")
             self._reload()
 
         self.app.push_screen(
             modals.ConfirmModal(
                 "Remove preset?",
                 f"Remove [presets.{name}] and every value under it from the global and repo"
-                " config.",
+                " config, and reset preset to none.",
                 confirm_label="Remove",
             ),
             remove,
         )
 
     def _unset_in_preset(self, setting: config_view.ConfigSetting) -> None:
-        """Remove the leaf from the shown preset's table, in the repo layer then the global one."""
-        key = write.preset_key(self._preset, setting.key)
+        """Remove the leaf from the selected preset's table, in the repo layer then the global."""
+        key = write.preset_key(self._selected_preset, setting.key)
         for to_repo in (True, False):
             try:
                 result = write.unset_config_value(self.repo_root, key, to_repo=to_repo)
@@ -665,39 +656,27 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         elif (entry := write.entry_of(setting.key)) is not None:
             self._add_entry(entry[0].path)
 
-    def _entries_locked(self) -> bool:
-        """Refuse an entry edit while a preset is shown, and say why.
-
-        Returns:
-            Whether a preset is shown, so the entry forms stay closed.
-        """
-        if not self._preset:
-            return False
-        self.notify(
-            "Entries are edited with no preset selected (Preset… → none).", severity="warning"
-        )
-        return True
-
     def _add_entry(self, path: str) -> None:
         """Open the entry form and reload after it."""
-        if self._entries_locked():
-            return
         table = next(t for t in write.ENTRY_TABLES if t.path == path)
-
         self.app.push_screen(
-            config_forms.EntryModal(self.repo_root, table, self.config_paths), self._form_closed
+            config_forms.EntryModal(
+                self.repo_root, table, self.config_paths, preset=self._selected_preset
+            ),
+            self._form_closed,
         )
 
-    def _form_closed(self, _: None) -> None:
+    def _form_closed(self, _: object) -> None:
         """Refresh the roster or entries after a form closes."""
         self._reload()
 
     def action_add_reviewer(self) -> None:
         """Open the reviewer form and reload after it."""
-        if self._entries_locked():
-            return
         self.app.push_screen(
-            config_forms.ReviewerModal(self.repo_root, self.config_paths), self._form_closed
+            config_forms.ReviewerModal(
+                self.repo_root, self.config_paths, preset=self._selected_preset
+            ),
+            self._form_closed,
         )
 
     def _remove_reviewer(self, setting: config_view.ConfigSetting) -> None:
@@ -708,7 +687,12 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         if not roster:
             self.notify("The reviewer roster is empty.")
             return
-        if setting.source not in ("global", "repo"):
+        selected = self._selected_preset
+        if selected:
+            to_repo = bool(write.preset_layer(self.repo_root, selected))
+        elif setting.source in ("global", "repo"):
+            to_repo = setting.source == "repo"
+        else:
             self.notify(
                 f"The roster comes from the {setting.source} layer;"
                 " Remove reviewer edits only the global and repo config.",
@@ -719,8 +703,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             config_forms.RemoveReviewerModal(
                 self.repo_root,
                 tuple(seat.focus for seat in roster),
-                to_repo=setting.source == "repo",
+                to_repo=to_repo,
                 config_paths=self.config_paths,
+                preset=selected,
             ),
             self._form_closed,
         )
@@ -731,8 +716,6 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         On the reviewer roster the entry is a seat, chosen by position.
         """
         setting = self._current_setting()
-        if self._entries_locked():
-            return
         if setting is not None and setting.key == "review.reviewers":
             self._remove_reviewer(setting)
             return
@@ -744,8 +727,12 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             )
             return
         table, name = entry
-        key = io.render_key((*io.split_key(table.path), name))
-        source = self._entry_source(key)
+        selected = self._selected_preset
+        key = write.preset_key(selected, io.render_key((*io.split_key(table.path), name)))
+        if selected:
+            source = "repo" if write.preset_layer(self.repo_root, selected) else "global"
+        else:
+            source = self._entry_source(key)
         if source not in ("global", "repo"):
             self.notify(
                 f"{key} comes from the {source} layer;"
@@ -758,7 +745,9 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if not confirmed:
                 return
             try:
-                result = write.remove_entry(self.repo_root, table, name, to_repo=source == "repo")
+                result = write.remove_entry(
+                    self.repo_root, table, name, to_repo=source == "repo", preset=selected
+                )
             except errors.OperatorError as exc:
                 self.notify(str(exc), severity="error", timeout=8.0)
                 return
@@ -803,11 +792,19 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "Select a setting first (click a row or Tab into a table).", severity="warning"
             )
             return
+        self._edit(setting)
 
+    def _edit(self, setting: config_view.ConfigSetting) -> None:
+        """Open the editor on a setting; its result is written under the selected preset."""
         if setting.model_role and self._eff is not None:
             self.app.push_screen(
                 config_model.ModelModal(
-                    self.repo_root, self._eff, setting.model_role, setting.source, self.config_paths
+                    self.repo_root,
+                    self._eff,
+                    setting.model_role,
+                    setting.source,
+                    self.config_paths,
+                    preset=self._selected_preset,
                 ),
                 self._form_closed,
             )
@@ -826,7 +823,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
             if action == "remove_entry":
                 self.action_remove_entry()
                 return
-            key = write.preset_key(self._preset, setting.key)
+            key = write.preset_key(self._selected_preset, setting.key)
             try:
                 err = write.set_config_value(self.repo_root, key, raw, to_repo=to_repo)
             except errors.OperatorError as exc:
@@ -869,7 +866,7 @@ class ConfigScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         if not setting.modified:
             self.notify(f"{setting.key} is already at its default.")
             return
-        if self._preset:
+        if self._selected_preset:
             self._unset_in_preset(setting)
             return
         if setting.source not in ("global", "repo"):

@@ -17,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+import tomllib
 import types
 from collections.abc import Callable, Iterator
 from typing import Any, cast
@@ -1777,39 +1778,46 @@ def test_config_payload_names_the_model_picker_role_for_every_role(
     assert payload["sandbox.isolation"]["model_role"] == ""
 
 
-def test_config_page_shows_and_edits_one_preset(server: tuple[web_server.WebServer, int]) -> None:
-    """`?preset=` shows the effective config under a preset; a write with `preset` lands in it."""
+def test_config_page_edits_the_selected_preset(server: tuple[web_server.WebServer, int]) -> None:
+    """A write lands under the selected preset; Add preset selects one; Remove preset resets it."""
     _srv, port = server
     cfg = paths.global_config_path()
     cfg.parent.mkdir(parents=True, exist_ok=True)
     cfg.write_text('[presets.fast.sandbox]\nrun_commands = "deny"\n')
-    st, body, _ = _get(port, "/api/config/presets")
-    assert st == 200
-    names = json.loads(body)["names"]
-    assert names[0] == "none" and "fast" in names and "review" in names
     plain = json.loads(_get(port, "/api/config")[1])
-    under = json.loads(_get(port, "/api/config?preset=fast")[1])
     assert plain["sandbox.run_commands"]["value"] == "ask"
+    assert {"none", "fast", "review"} <= set(plain["preset"]["choices"])
+    status, _ = _post(port, "/api/config", {"key": "preset", "value": '"fast"'})
+    assert status == 200
+    under = json.loads(_get(port, "/api/config")[1])
     assert (under["sandbox.run_commands"]["value"], under["sandbox.run_commands"]["source"]) == (
         "deny",
         "preset",
     )
-    status, _ = _post(
-        port, "/api/config", {"key": "sandbox.network", "value": '"host"', "preset": "fast"}
-    )
+    status, _ = _post(port, "/api/config", {"key": "sandbox.network", "value": '"host"'})
     assert status == 200
     assert io.read_toml_file(cfg)["presets"]["fast"]["sandbox"]["network"] == "host"
+    assert "sandbox" not in io.read_toml_file(cfg)
+    entry = {"backend": "openai", "base_url": "https://acme.example/v1", "api_key_env": "ACME"}
     status, _ = _post(
-        port, "/api/config", {"key": "sandbox.network", "unset": True, "preset": "fast"}
+        port, "/api/config/entry", {"table": "providers", "name": "acme", "fields": entry}
     )
+    assert status == 200
+    assert io.read_toml_file(cfg)["presets"]["fast"]["providers"]["acme"]["backend"] == "openai"
+    assert json.loads(_get(port, "/api/config")[1])["providers.acme.backend"]["source"] == "preset"
+    status, _ = _post(port, "/api/config/entry/remove", {"table": "providers", "name": "acme"})
+    assert status == 200
+    assert "providers" not in io.read_toml_file(cfg)["presets"]["fast"]
+    status, _ = _post(port, "/api/config", {"key": "sandbox.network", "unset": True})
     assert status == 200
     assert "network" not in io.read_toml_file(cfg)["presets"]["fast"]["sandbox"]
     status, answer = _post(port, "/api/config/preset", {"name": "slow"})
-    assert status == 200 and "[presets.slow]" in str(answer["message"])
-    assert "slow" in json.loads(_get(port, "/api/config/presets")[1])["names"]
+    assert status == 200 and "selected" in str(answer["message"])
+    assert io.read_toml_file(cfg)["preset"] == "slow"
     status, _ = _post(port, "/api/config/preset/remove", {"name": "slow"})
     assert status == 200
-    assert "slow" not in io.read_toml_file(cfg).get("presets", {})
+    saved = io.read_toml_file(cfg)
+    assert "slow" not in saved.get("presets", {}) and "preset" not in saved
     status, answer = _post(port, "/api/config/preset", {"name": "none"})
     assert status != 200 and "reserved" in str(answer.get("error", answer))
 
@@ -2610,7 +2618,10 @@ def test_config_writes_report_shadowing_layers(
     body: dict[str, object],
     key: str,
 ) -> None:
-    """Every editor route names the layer masking the leaf it wrote or removed."""
+    """Every editor route names the layer masking the leaf it wrote or removed.
+
+    A selected preset masks nothing: the write lands in its table and the plain tables stay.
+    """
     srv, port = server
     target = paths.global_config_path()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -2644,6 +2655,14 @@ def test_config_writes_report_shadowing_layers(
         described = "the repo config" if source == "repo" else f"--config {higher}"
     status, data = _post(port, "/api/config" + route, body)
     assert status == 200, data
+    if source == "preset":
+        saved = io.read_toml_file(target)
+        assert "overrides" not in str(data["message"])
+        assert saved["presets"]["mask"] != tomllib.loads(overlay)
+        assert {k: v for k, v in saved.items() if k not in ("preset", "presets")} == tomllib.loads(
+            initial
+        )
+        return
     tail = " while that flag is used." if source == "flag" else "; a run here reads its value."
     assert f"note: {described} overrides {key}{tail}" in str(data["message"])
 

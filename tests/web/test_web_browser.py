@@ -279,7 +279,6 @@ def test_config_model_editor_saves_one_qualified_leaf(
         "key": "models.worker.model",
         "value": '"p/vendor/new"',
         "repo": False,
-        "preset": "",
     }
     expect(page.get_by_role("button", name="edit models.worker.model", exact=True)).to_contain_text(
         "p/vendor/new"

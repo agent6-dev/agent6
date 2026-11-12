@@ -678,17 +678,18 @@ def set_config(
     value: str,
     *,
     repo: bool = False,
-    preset: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Set a config leaf or update a section through the validated `agent6 config set` writer.
+
+    Under a selected preset the key lands in its `[presets.<name>]` table, as the page shows
+    the config.
 
     Args:
         cwd: The repository.
         key: The setting's dotted name, such as `sandbox.network`.
         value: The value as typed.
         repo: Write to the per-repo config instead of the global one.
-        preset: The preset the page edits; the key lands under `[presets.<name>]`.
         config_paths: The `--config` files in command-line order.
 
     Returns:
@@ -697,12 +698,12 @@ def set_config(
     argv = [*spawn.agent6_argv(config_paths), "config", "set"]
     if repo:
         argv.append("--repo")
-    argv += ["--", write.preset_key(preset, key), value]
+    argv += ["--", write.preset_key(model.selected_preset(cwd, config_paths), key), value]
     return spawn.run_cli_capture(argv, cwd)
 
 
 def add_preset(cwd: pathlib.Path, name: str, *, repo: bool = False) -> tuple[bool, str]:
-    """Create an empty `[presets.<name>]` table in the chosen layer.
+    """Create an empty `[presets.<name>]` table in the chosen layer and select it there.
 
     Args:
         cwd: The repository.
@@ -710,7 +711,7 @@ def add_preset(cwd: pathlib.Path, name: str, *, repo: bool = False) -> tuple[boo
         repo: The repo layer instead of the global one.
 
     Returns:
-        Whether the table exists now, and the note or the refusal.
+        Whether the table exists and is selected now, and the note or the refusal.
     """
     try:
         err = write.add_preset(cwd, name, to_repo=repo)
@@ -718,11 +719,12 @@ def add_preset(cwd: pathlib.Path, name: str, *, repo: bool = False) -> tuple[boo
         return False, str(exc)
     if err:
         return False, err
-    return True, f"[presets.{name.strip()}] is in the {'repo' if repo else 'global'} config."
+    layer = "repo" if repo else "global"
+    return True, f"[presets.{name.strip()}] is in the {layer} config and selected there."
 
 
 def remove_preset(cwd: pathlib.Path, name: str) -> tuple[bool, str]:
-    """Remove a `[presets.<name>]` table from the global and repo config.
+    """Remove a `[presets.<name>]` table from the global and repo config and reset `preset`.
 
     Args:
         cwd: The repository.
@@ -731,18 +733,18 @@ def remove_preset(cwd: pathlib.Path, name: str) -> tuple[bool, str]:
     Returns:
         Whether anything was removed, and the note or the refusal.
     """
-    removed = False
-    for to_repo in (True, False):
-        try:
-            result = write.remove_preset(cwd, name, to_repo=to_repo)
-        except (ConfigError, errors.OperatorError) as exc:
-            return False, str(exc)
-        if result.error:
-            return False, result.error
-        removed = removed or result.removed
-    if not removed:
-        return False, f"[presets.{name}] is not in the global or repo config."
-    return True, f"Removed [presets.{name}]."
+    had_table = write.preset_layer(cwd, name) is not None
+    try:
+        result = write.remove_preset(cwd, name)
+    except (ConfigError, errors.OperatorError) as exc:
+        return False, str(exc)
+    if result.error:
+        return False, result.error
+    if not result.removed:
+        return False, f"[presets.{name}] is not in the global or repo config, and not selected."
+    if had_table:
+        return True, f"Removed [presets.{name}]; preset is none."
+    return True, f"preset is none; {name} is a built-in preset and has no table."
 
 
 def add_entry(
@@ -772,13 +774,14 @@ def add_entry(
         return False, f"unknown entry table: {table}"
     if unknown := fields.keys() - set(entry_table.fields):
         return False, f"unknown fields for {table}: {', '.join(sorted(unknown))}"
+    preset = model.selected_preset(cwd, config_paths)
     try:
-        err = write.add_entry(cwd, entry_table, name, fields, to_repo=repo)
+        err = write.add_entry(cwd, entry_table, name, fields, to_repo=repo, preset=preset)
     except (ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if err:
         return False, err
-    key = io.render_key((*io.split_key(table), name.strip()))
+    key = write.preset_key(preset, io.render_key((*io.split_key(table), name.strip())))
     keys = (
         [key]
         if entry_table.leaf
@@ -803,6 +806,9 @@ def remove_entry(
 ) -> tuple[bool, str]:
     """Remove a whole named entry from the chosen config layer.
 
+    Under a selected preset the entry is read in its `[presets.<name>]` table, in the layer
+    holding that table.
+
     Args:
         cwd: The repository.
         table: The registry table's path.
@@ -819,13 +825,17 @@ def remove_entry(
     name = name.strip()
     if not name:
         return False, f"{entry_table.label} name is required"
+    preset = model.selected_preset(cwd, config_paths)
+    if preset:
+        repo = bool(write.preset_layer(cwd, preset))
     try:
-        result = write.remove_entry(cwd, entry_table, name, to_repo=repo)
+        result = write.remove_entry(cwd, entry_table, name, to_repo=repo, preset=preset)
     except (ConfigError, errors.OperatorError) as exc:
         return False, str(exc)
     if result.error:
         return False, result.error
-    key, source = io.render_key((*io.split_key(table), name)), "repo" if repo else "global"
+    key = write.preset_key(preset, io.render_key((*io.split_key(table), name)))
+    source = "repo" if repo else "global"
     message = (
         f"removed {key} from {source} config"
         if result.removed
@@ -841,7 +851,7 @@ def add_reviewer(
     repo: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
-    """Append the form's reviewer.
+    """Append the form's reviewer, to the selected preset's roster when one is selected.
 
     Args:
         cwd: The repository.
@@ -852,14 +862,19 @@ def add_reviewer(
     Returns:
         Whether the write landed, and the confirmation or validation error.
     """
+    preset = model.selected_preset(cwd, config_paths)
     try:
-        err = write.add_reviewer(cwd, fields, to_repo=repo)
+        err = write.add_reviewer(cwd, fields, to_repo=repo, preset=preset)
     except errors.OperatorError as exc:
         return False, str(exc)
     if err:
         return False, err
     return True, notices.write_message(
-        cwd, ["review.reviewers"], "added reviewer", to_repo=repo, config_paths=config_paths
+        cwd,
+        [write.preset_key(preset, "review.reviewers")],
+        "added reviewer",
+        to_repo=repo,
+        config_paths=config_paths,
     )
 
 
@@ -870,7 +885,7 @@ def remove_reviewer(
     repo: bool = False,
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
-    """Remove a zero-based reviewer position.
+    """Remove a zero-based reviewer position; a selected preset's roster when one is selected.
 
     Args:
         cwd: The repository.
@@ -881,15 +896,18 @@ def remove_reviewer(
     Returns:
         Whether the write landed, and the confirmation or validation error.
     """
+    preset = model.selected_preset(cwd, config_paths)
+    if preset:
+        repo = bool(write.preset_layer(cwd, preset))
     try:
-        err = write.remove_reviewer(cwd, index, to_repo=repo)
+        err = write.remove_reviewer(cwd, index, to_repo=repo, preset=preset)
     except errors.OperatorError as exc:
         return False, str(exc)
     if err:
         return False, err
     return True, notices.write_message(
         cwd,
-        ["review.reviewers"],
+        [write.preset_key(preset, "review.reviewers")],
         f"removed reviewer {index + 1}",
         to_repo=repo,
         config_paths=config_paths,
@@ -901,16 +919,16 @@ def unset_config(
     key: str,
     *,
     repo: bool = False,
-    preset: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Unset one config leaf through `agent6 config unset`.
+
+    Under a selected preset the key is read in its `[presets.<name>]` table.
 
     Args:
         cwd: The repository.
         key: The setting's dotted name, such as `sandbox.network`.
         repo: Remove it from the per-repo config instead of the global one.
-        preset: The preset the page edits; the key is read under `[presets.<name>]`.
         config_paths: The `--config` files in command-line order.
 
     Returns:
@@ -919,5 +937,5 @@ def unset_config(
     argv = [*spawn.agent6_argv(config_paths), "config", "unset"]
     if repo:
         argv.append("--repo")
-    argv += ["--", write.preset_key(preset, key)]
+    argv += ["--", write.preset_key(model.selected_preset(cwd, config_paths), key)]
     return spawn.run_cli_capture(argv, cwd)

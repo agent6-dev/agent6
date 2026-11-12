@@ -37,6 +37,8 @@ class ModelModal(config_forms.FormModal[None]):
         role: str,
         source: str,
         config_paths: tuple[pathlib.Path, ...] = (),
+        *,
+        preset: str = "",
     ) -> None:
         super().__init__()
         self._repo = repo_root
@@ -44,6 +46,7 @@ class ModelModal(config_forms.FormModal[None]):
         self._role = role
         self._source = source
         self._config_paths = config_paths
+        self._preset = preset
         route = eff.config.models.configured().get(role)
         self._model = f"{route.provider}/{route.model}" if route else ""
 
@@ -94,7 +97,7 @@ class ModelModal(config_forms.FormModal[None]):
         """Save the route, keeping an invalid form open with the writer's reason."""
         model = self.query_one("#model-name", forms.TypeaheadField).value
         to_repo = self.query_one("#model-target", forms.ChoiceField).index == 1
-        section = f"models.{self._role}"
+        section = write.preset_key(self._preset, f"models.{self._role}")
         try:
             err = write.set_config_leaves(self._repo, section, {"model": model}, to_repo=to_repo)
         except errors.OperatorError as exc:

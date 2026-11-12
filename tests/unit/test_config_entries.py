@@ -332,19 +332,28 @@ def test_entry_of(key: str, expected: tuple[str, str] | None) -> None:
 
 
 def test_preset_key_prefixes_the_table_only_under_a_preset() -> None:
-    """An edit under a shown preset writes `presets.<name>.<key>`; none writes the key itself."""
+    """An edit under the selected preset writes `presets.<name>.<key>`; none writes the key.
+
+    The selector and the preset tables never nest under the selected preset.
+    """
     assert write.preset_key("fast", "sandbox.run_commands") == "presets.fast.sandbox.run_commands"
     assert write.preset_key("", "sandbox.run_commands") == "sandbox.run_commands"
+    assert write.preset_key("fast", "preset") == "preset"
+    assert (
+        write.preset_key("fast", "presets.slow.sandbox.network") == "presets.slow.sandbox.network"
+    )
 
 
 @pytest.mark.parametrize("to_repo", [False, True])
-def test_add_preset_creates_an_empty_table_and_keeps_an_existing_one(
+def test_add_preset_creates_a_table_and_selects_it(
     tmp_path: pathlib.Path, *, to_repo: bool
 ) -> None:
-    """Add preset writes `[presets.<name>]` once; a second add leaves the filled table alone."""
+    """Add preset writes `[presets.<name>]` once and `preset`; Remove preset drops both."""
     assert write.add_preset(tmp_path, "fast", to_repo=to_repo) is None
     target = paths.repo_config_path(tmp_path) if to_repo else paths.global_config_path()
     assert "[presets.fast]" in target.read_text(encoding="utf-8")
+    assert io.read_toml_file(target)["preset"] == "fast"
+    assert write.preset_layer(tmp_path, "fast") is to_repo
     assert (
         write.set_config_value(tmp_path, "presets.fast.sandbox.network", "host", to_repo=to_repo)
         is None
@@ -356,6 +365,31 @@ def test_add_preset_creates_an_empty_table_and_keeps_an_existing_one(
         write.add_preset(tmp_path, "none", to_repo=to_repo)
         == '"none" is reserved for selecting no preset'
     )
-    assert write.remove_preset(tmp_path, "fast", to_repo=to_repo).removed is True
-    assert "presets" not in io.read_toml_file(target)
-    assert write.remove_preset(tmp_path, "fast", to_repo=to_repo).removed is False
+    assert write.remove_preset(tmp_path, "fast").removed is True
+    saved = io.read_toml_file(target)
+    assert "presets" not in saved and "preset" not in saved
+    assert write.preset_layer(tmp_path, "fast") is None
+    assert write.remove_preset(tmp_path, "fast").removed is False
+    # A selected built-in has no table: Remove preset still resets the selector.
+    assert write.set_config_value(tmp_path, "preset", "review", to_repo=to_repo) is None
+    assert write.remove_preset(tmp_path, "review").removed is True
+    assert "preset" not in io.read_toml_file(target)
+
+
+def test_entries_and_reviewers_land_under_the_selected_preset(tmp_path: pathlib.Path) -> None:
+    """An entry or a seat added under a preset writes its table, and is removed from it."""
+    assert write.add_preset(tmp_path, "fast") is None
+    provider = next(t for t in write.ENTRY_TABLES if t.path == "providers")
+    fields = {"backend": "openai", "base_url": "https://acme.example/v1", "api_key_env": "ACME"}
+    assert write.add_entry(tmp_path, provider, "acme", fields, preset="fast") is None
+    target = paths.global_config_path()
+    assert io.read_toml_file(target)["presets"]["fast"]["providers"]["acme"]["backend"] == "openai"
+    assert "providers" not in io.read_toml_file(target)
+    assert write.add_reviewer(tmp_path, {"focus": "tests"}, preset="fast") is None
+    assert io.read_toml_file(target)["presets"]["fast"]["review"]["reviewers"] == [
+        {"focus": "tests"}
+    ]
+    assert write.remove_reviewer(tmp_path, 0, preset="fast") is None
+    assert io.read_toml_file(target)["presets"]["fast"]["review"]["reviewers"] == []
+    assert write.remove_entry(tmp_path, provider, "acme", preset="fast").removed is True
+    assert "providers" not in io.read_toml_file(target)["presets"]["fast"]
