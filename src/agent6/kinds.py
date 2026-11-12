@@ -394,7 +394,7 @@ class ExecutionTarget:
     container_id: str | None = None
     launcher_instance: str | None = None
     protocol_version: int | None = None
-    launcher_version: str | None = None
+    launcher_digest: str | None = None
     lifecycle_ref: str | None = None
 
 
@@ -427,7 +427,8 @@ class ExecutionTargetStamp:
         container_id: Observed container identity, or None when unknown.
         launcher_instance: Supervisor-reported instance identity, or None when unknown.
         protocol_version: Observed supervisor protocol version, or None without a handshake.
-        launcher_version: Observed launcher build version, or None when unknown.
+        launcher_digest: The launcher binary's `sha256:<hex>` where it was transferred, or None
+            when unobserved.
         lifecycle_ref: Recorded lifecycle ownership reference, or None when unknown.
     """
 
@@ -442,8 +443,25 @@ class ExecutionTargetStamp:
     container_id: str | None = None
     launcher_instance: str | None = None
     protocol_version: int | None = None
-    launcher_version: str | None = None
+    launcher_digest: str | None = None
     lifecycle_ref: str | None = None
+
+
+def read_target_stamp(data: object) -> object:
+    """Read a stamp record written before `launcher_version` became `launcher_digest`.
+
+    Args:
+        data: The record as persisted.
+
+    Returns:
+        The record under the current field names; any other input unchanged.
+    """
+    if isinstance(data, dict) and "launcher_version" in data:
+        renamed = dict(data)
+        version = renamed.pop("launcher_version")
+        renamed.setdefault("launcher_digest", version)
+        return renamed
+    return data
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

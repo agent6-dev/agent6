@@ -649,7 +649,7 @@ def prepare(
         target = dataclasses.replace(
             discovery.target,
             controls=controls,
-            launcher_version="sha256:" + hashlib.sha256(binary).hexdigest(),
+            launcher_digest="sha256:" + hashlib.sha256(binary).hexdigest(),
         )
         session = jail_session.JailSession.connect(
             proc,

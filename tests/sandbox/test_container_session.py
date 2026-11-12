@@ -58,7 +58,7 @@ def test_nonroot_environment_installation_and_capture(
         assert session.target.home == str(target.home)
         assert session.target.lifecycle_ref is None
         assert session.target.launcher_instance
-        assert session.target.launcher_version == expected_version
+        assert session.target.launcher_digest == expected_version
         assert session.executable_available("inside-only")
         assert not session.executable_available("not-a-real-executable")
         result = session.run(
@@ -88,7 +88,7 @@ def test_nonroot_environment_installation_and_capture(
     assert not list(target.discovery.target.host_root.glob(".agent6-probe-*"))
 
 
-def test_launcher_version_tracks_payload_changes_at_the_same_path(
+def test_launcher_digest_tracks_payload_changes_at_the_same_path(
     target: conftest.Target,
     static_launcher: pathlib.Path,
     tmp_path: pathlib.Path,
@@ -109,7 +109,7 @@ def test_launcher_version_tracks_payload_changes_at_the_same_path(
             assert isinstance(result, kinds.CommandResult)
             assert result.returncode == 0 and result.stdout == "payload-ran\n", result
             assert session.target is not None
-            version = session.target.launcher_version
+            version = session.target.launcher_digest
             assert version == "sha256:" + hashlib.sha256(payload).hexdigest()
             versions.add(version)
     assert len(versions) == 2

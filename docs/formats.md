@@ -2881,7 +2881,7 @@ Source: [`agent6.kinds.ExecutionTargetStamp`](https://github.com/agent6-dev/agen
 | `container_id` | `str \| None` | Observed container identity, or None when unknown. |
 | `launcher_instance` | `str \| None` | Supervisor-reported instance identity, or None when unknown. |
 | `protocol_version` | `int \| None` | Observed supervisor protocol version, or None without a handshake. |
-| `launcher_version` | `str \| None` | Observed launcher build version, or None when unknown. |
+| `launcher_digest` | `str \| None` | The launcher binary's `sha256:<hex>` where it was transferred, or None when unobserved. |
 | `lifecycle_ref` | `str \| None` | Recorded lifecycle ownership reference, or None when unknown. |
 
 ### BudgetStamp

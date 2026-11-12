@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import pathlib
-from typing import Literal, cast
+from typing import Annotated, Literal, cast
 
 import pydantic
 
@@ -374,7 +374,10 @@ class SessionManifest(pydantic.BaseModel):
     models: ModelsBrief = ModelsBrief()
     harness: HarnessStamp = HarnessStamp()
     policy: PolicyStamp = PolicyStamp()
-    execution_targets: dict[str, kinds.ExecutionTargetStamp] = pydantic.Field(default_factory=dict)
+    execution_targets: dict[
+        str,
+        Annotated[kinds.ExecutionTargetStamp, pydantic.BeforeValidator(kinds.read_target_stamp)],
+    ] = pydantic.Field(default_factory=dict)
     budget: BudgetStamp = BudgetStamp()
     parked_task: str = ""
     parked_operator_task: str | None = None

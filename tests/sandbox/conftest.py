@@ -114,7 +114,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
     """Run an injected session and replay its journal-derived receipt after launcher closure."""
     target = session.target
     assert target is not None and target.transport == "container"
-    assert target.user and target.home and target.launcher_instance and target.launcher_version
+    assert target.user and target.home and target.launcher_instance and target.launcher_digest
     observe = (
         "/bin/sh",
         "-c",
@@ -204,7 +204,7 @@ def assert_execution_receipt(session: jail_session.JailSession) -> str:
         "home",
         "host_root",
         "launcher_instance",
-        "launcher_version",
+        "launcher_digest",
         "lifecycle_ref",
         "protocol_version",
         "transport",

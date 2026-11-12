@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import pydantic
 
@@ -84,7 +84,7 @@ class ExecutionTargetEvidence:
 
     target_id: str
     execution_id: str | None = None
-    target: kinds.ExecutionTargetStamp
+    target: Annotated[kinds.ExecutionTargetStamp, pydantic.BeforeValidator(kinds.read_target_stamp)]
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -268,7 +268,7 @@ def target_record(
             container_id=target.container_id,
             launcher_instance=target.launcher_instance,
             protocol_version=target.protocol_version,
-            launcher_version=target.launcher_version,
+            launcher_digest=target.launcher_digest,
             lifecycle_ref=target.lifecycle_ref,
         ),
     )
@@ -289,7 +289,7 @@ def target_lines(target_id: str, target: kinds.ExecutionTargetStamp) -> tuple[st
         f"Roots: host {target.host_root}; commands {target.command_root}",
         f"User: {target.user or 'unknown'}; HOME: {target.home or 'unknown'}",
         f"Launcher: {target.launcher_instance or 'unknown'}; "
-        f"version: {target.launcher_version or 'unknown'}; "
+        f"digest: {target.launcher_digest or 'unknown'}; "
         "protocol: "
         + str(target.protocol_version if target.protocol_version is not None else "unknown"),
         f"Environment policy: {'inherited' if target.environment.inherit else 'explicit'}; "

@@ -321,9 +321,10 @@ A failed preparation propagates before dispatch exists.
 A dispatcher without a prepared session serves the file and navigation tools; its command tools refuse.
 
 `kinds.ExecutionTarget` holds immutable transport, workspace roots, user, HOME, environment policy, effective controls and observed protocol identity.
-Unobserved runtime, container, launcher-instance, launcher-version and lifecycle identities are `None`.
+Unobserved runtime, container, launcher-instance, launcher-digest and lifecycle identities are `None`.
 Readiness advertises the protocol version and a random launcher-instance identifier.
-Container installation records the transferred binary's SHA-256 as `launcher_version`; local binary version remains unobserved.
+Container installation records the transferred binary's SHA-256 as `launcher_digest`; a local launcher's digest stays unobserved.
+A record written as `launcher_version` reads as the digest (`kinds.read_target_stamp`).
 The record is separate from live job state and resource cleanup.
 
 `tools/policy.py` owns permission and grant assembly; `tools/target_policy.py` resolves local control descriptions, networking and HOME selection.

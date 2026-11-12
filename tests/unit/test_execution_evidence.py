@@ -8,7 +8,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds, paths
+from agent6 import evidence, kinds, paths
 from agent6.app import session_runtime, stamps
 from agent6.config import Config, RoleModel
 from agent6.harness import loop, run_chain
@@ -572,3 +572,23 @@ def test_tui_header_reads_recorded_environment(resumed: layout.SessionLayout) ->
             assert f"Environment: local (target {first})" not in screenshot
 
     asyncio.run(scenario())
+
+
+def test_a_target_record_written_as_launcher_version_reads_as_the_digest() -> None:
+    """The field was renamed; records from before the rename keep their value."""
+    stamp = {
+        "transport": "container",
+        "host_root": "/w",
+        "command_root": "/w",
+        "user": "1000",
+        "home": "/home/u",
+        "environment": {"inherit": False, "variable_names": []},
+        "launcher_version": "sha256:ab",
+    }
+    record = evidence.TARGET.validate_python(
+        {"target_id": "t1", "execution_id": "e1", "target": stamp}
+    )
+    assert record.target.launcher_digest == "sha256:ab"
+    assert (
+        evidence.TARGET.dump_python(record, mode="json")["target"]["launcher_digest"] == "sha256:ab"
+    )
