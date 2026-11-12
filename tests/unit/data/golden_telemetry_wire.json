@@ -1550,6 +1550,12 @@
                     "value": {
                       "boolValue": true
                     }
+                  },
+                  {
+                    "key": "agent6.tool.exit_code",
+                    "value": {
+                      "intValue": "0"
+                    }
                   }
                 ],
                 "endTimeUnixNano": "1792922410000000000",

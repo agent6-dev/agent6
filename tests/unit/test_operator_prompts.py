@@ -135,7 +135,9 @@ def test_concurrent_seats_each_name_their_own_call(tmp_path: pathlib.Path) -> No
         for seat in seats:
             with pytest.raises(tool_errors.ToolDeniedError):
                 seat.result(timeout=30)
-    stamped = {" ".join(e["args"]["argv"]): e["call_id"] for e in _of(session_dir, "tool.call")}
+    stamped = {
+        " ".join(e["args_preview"]["argv"]): e["call_id"] for e in _of(session_dir, "tool.call")
+    }
     assert named == {f"Allow run_command: {argv}": cid for argv, cid in stamped.items()}
     assert len(set(named.values())) == 2
 
