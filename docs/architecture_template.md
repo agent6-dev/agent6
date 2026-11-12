@@ -206,7 +206,7 @@ A resume after a death there runs none of the turn's calls again: the model gets
 
 - tier 1, `drop_at_chars`: the oldest tool results become placeholders naming the elided call; reads of recently-edited files elide last
 - a large `read_file` decays in two stages: a model-written gist first, the bare marker under continued pressure (oldest gists first); files changing under edits are never gisted
-- tier 2, `summarise_at_chars`: the elided history is summarised by the `helper` model; the conversation restarts from the task, that summary, the pins and decisions block, and the last `keep_recent_chars` (default 80000) of history verbatim
+- tier 2, `summarise_at_chars`: the elided history is summarised by the `helper` model; the conversation restarts from the task, that summary, the pins and decisions block, the verify fact (the last full verification's command, verdict and tree, and whether the tree changed since), and the last `keep_recent_chars` (default 80000) of history verbatim
 - the DAG survives the restart: the current task re-surfaces, the summariser reports finished/new tasks (finished marked `passed`, new queued)
 - `/compact [focus]` compacts on demand
 - `/pin <text>` survives every restart verbatim and persists in the snapshot; over the 4000-char total cap the pinning is refused loudly and the text still lands as an ordinary steer
