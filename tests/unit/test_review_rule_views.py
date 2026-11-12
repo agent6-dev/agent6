@@ -10,7 +10,8 @@ from agent6 import review_records
 from agent6.ui.acp import updates
 from agent6.ui.cli import console_render
 from agent6.ui.tui import conversation
-from agent6.viewmodel import log_line, review, state, transcript
+from agent6.viewmodel import log_line, review, transcript
+from agent6.viewmodel.session import state
 
 
 def start_event(**changes: Any) -> dict[str, Any]:

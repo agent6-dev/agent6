@@ -16,8 +16,9 @@ from typing import Any
 from agent6 import terminal
 from agent6.graph import models
 from agent6.sessions import journal, layout, process
-from agent6.viewmodel import events, format, log_line, review, state_types
+from agent6.viewmodel import events, format, log_line, review
 from agent6.viewmodel.session import core as session_core
+from agent6.viewmodel.session import records as state_types
 
 
 def initial_state() -> state_types.SessionState:

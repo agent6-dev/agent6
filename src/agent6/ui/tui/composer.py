@@ -25,7 +25,7 @@ from agent6.sessions import ipc
 from agent6.ui import keymap
 from agent6.ui.tui import forms, menubar, modals
 from agent6.viewmodel import ApprovalPrompt, SessionState, approval_parts, tail, transcript
-from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel.session import state as viewmodel_state
 
 if TYPE_CHECKING:
     from agent6.ui.tui import prompts as tui_prompts

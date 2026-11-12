@@ -3,7 +3,7 @@
 """The two folds over one session log agree on the facts they share.
 
 `viewmodel.session.log.scan_session_log` folds `logs.jsonl` for the listings and
-`viewmodel.state.fold_session` folds the same log for the viewers; the lifecycle and the
+`viewmodel.session.state.fold_session` folds the same log for the viewers; the lifecycle and the
 usage fold once, in `viewmodel.session.core`, and each keeps its own projection. This folds
 every fixture both ways and pins the two projections against the core they share.
 """
@@ -16,9 +16,9 @@ from typing import Any
 
 import pytest
 
-from agent6.viewmodel import state as viewmodel_state
 from agent6.viewmodel import status_facts
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import state as viewmodel_state
 
 _GOLDEN = pathlib.Path(__file__).parent / "data" / "golden_session_logs.jsonl"
 

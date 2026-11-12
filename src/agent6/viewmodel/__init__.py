@@ -47,26 +47,7 @@ from agent6.viewmodel.session.log import (  # re-export
     LogScan,
     scan_session_log,
 )
-from agent6.viewmodel.session.status import (  # re-export
-    LIVE_STATUS_WORDS,
-    StatusFacts,
-    died_without_end,
-    produced_result,
-    status_for_session_dir,
-    status_word,
-    task_snippet,
-)
-from agent6.viewmodel.state import (  # re-export
-    MAX_LOG_TAIL,
-    apply_event,
-    fold_session,
-    initial_state,
-    open_approval,
-    open_approval_of,
-    pending_questions,
-    task_tree_views,
-)
-from agent6.viewmodel.state_types import (  # re-export
+from agent6.viewmodel.session.records import (  # re-export
     ApprovalPrompt,
     BudgetView,
     ModelCallView,
@@ -78,7 +59,26 @@ from agent6.viewmodel.state_types import (  # re-export
     ToolCallView,
     approval_parts,
 )
-from agent6.viewmodel.state_view import (  # re-export
+from agent6.viewmodel.session.state import (  # re-export
+    MAX_LOG_TAIL,
+    apply_event,
+    fold_session,
+    initial_state,
+    open_approval,
+    open_approval_of,
+    pending_questions,
+    task_tree_views,
+)
+from agent6.viewmodel.session.status import (  # re-export
+    LIVE_STATUS_WORDS,
+    StatusFacts,
+    died_without_end,
+    produced_result,
+    status_for_session_dir,
+    status_word,
+    task_snippet,
+)
+from agent6.viewmodel.session.view import (  # re-export
     context_fill,
     session_state_as_dict,
     status_facts,

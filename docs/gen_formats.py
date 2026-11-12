@@ -16,7 +16,7 @@ import pydantic
 
 from agent6.providers import provider_types
 from agent6.sessions import journal, retention
-from agent6.viewmodel import state_view
+from agent6.viewmodel.session import view as state_view
 
 _ROOT = pathlib.Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src/agent6"
@@ -350,9 +350,9 @@ CLI = (
     Producer("ui.cli.sessions_show", "_cmd_status", "`sessions show --json`"),
 )
 SESSION = (
-    Producer("viewmodel.state_view", "session_state_as_dict", "`attach --json` snapshot", "d"),
+    Producer("viewmodel.session.view", "session_state_as_dict", "`attach --json` snapshot", "d"),
     Producer(
-        "viewmodel.state_view",
+        "viewmodel.session.view",
         "session_state_as_dict",
         "`attach --json` approval and commit fields",
         "row",
@@ -361,7 +361,7 @@ SESSION = (
     Producer("viewmodel.wire", "manifest_header", "`attach --json` header fields", "header"),
     Producer("viewmodel.wire", "session_snapshot", "`/api/session/<id>` snapshot", "snap"),
 )
-BUDGET = Producer("viewmodel.state_view", "budget_dict", "`budget` rendered fields", "d")
+BUDGET = Producer("viewmodel.session.view", "budget_dict", "`budget` rendered fields", "d")
 MACHINE = (
     Producer(
         "viewmodel.machine.state", "machine_state_as_dict", "`attach --json` machine snapshot", "d"
@@ -452,7 +452,7 @@ MODELS = (
     ("sessions.lane_dispatch", "DispatchRecord"),
     ("sessions.manifest", "SessionManifest"),
     ("ui.cli.ps_cmd", "_Row"),
-    ("viewmodel.state_types", "SessionState"),
+    ("viewmodel.session.records", "SessionState"),
     ("viewmodel.machine.state", "MachineState"),
     ("viewmodel.review", "MergeReviewGuard"),
     ("viewmodel.receipt", "ReceiptView"),
@@ -672,7 +672,7 @@ def build_markdown() -> str:
         "The serializer removes `task_label` and renders `log_tail` as strings.\n"
         "The `row` additions belong to approvals and commits, not the snapshot root."
     )
-    session_cls = importlib.import_module("agent6.viewmodel.state_types").SessionState
+    session_cls = importlib.import_module("agent6.viewmodel.session.records").SessionState
     sections.append(_table(composed_fields(session_cls, SESSION[:1] + SESSION[2:])))
     sections.append(
         "Sources: "

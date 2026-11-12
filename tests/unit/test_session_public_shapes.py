@@ -9,7 +9,9 @@ import pytest
 from agent6 import kinds, paths
 from agent6.sessions import layout as sessions_layout
 from agent6.ui import cli
-from agent6.viewmodel import format, listing, state, state_view
+from agent6.viewmodel import format, listing
+from agent6.viewmodel.session import state
+from agent6.viewmodel.session import view as state_view
 
 
 @pytest.mark.parametrize("surface", ["listing", "status", "live"])

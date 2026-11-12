@@ -1756,13 +1756,13 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `as_of.turn` | `JSON` | The selected commit's turn number. |
 | `as_of.sha` | `JSON` | The selected commit identifier. |
 
-Sources: [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py), [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py), [`branch_facts`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`manifest_header`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`session_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py).
+Sources: [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/view.py), [`session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/view.py), [`branch_facts`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`manifest_header`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py), [`session_snapshot`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/wire.py).
 
 ### `attach --json` approval and commit fields
 
 **Support: public.** Return the wire form of a `SessionState`, what `attach --json` and the web serialize.
 
-Source: [`viewmodel.state_view.session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py).
+Source: [`viewmodel.session.view.session_state_as_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/view.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -1774,7 +1774,7 @@ Source: [`viewmodel.state_view.session_state_as_dict`](https://github.com/agent6
 
 **Support: public.** Return the wire form of a `BudgetView`, the one `attach --json` and `sessions show` share.
 
-Source: [`viewmodel.state_view.budget_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_view.py).
+Source: [`viewmodel.session.view.budget_dict`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/view.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3329,7 +3329,7 @@ Source: [`agent6.sessions.manifest.FanoutStamp`](https://github.com/agent6-dev/a
 
 **Support: public.** The facts both folds share: the lifecycle and the usage.
 
-Source: [`agent6.viewmodel.state_types.SessionCore`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.SessionCore`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3340,7 +3340,7 @@ Source: [`agent6.viewmodel.state_types.SessionCore`](https://github.com/agent6-d
 
 **Support: public.** One node of the live task tree, flattened in DFS pre-order with its depth.
 
-Source: [`agent6.viewmodel.state_types.TaskNodeView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.TaskNodeView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3359,7 +3359,7 @@ Source: [`agent6.viewmodel.state_types.TaskNodeView`](https://github.com/agent6-
 
 **Support: public.** The last model call and what it streamed.
 
-Source: [`agent6.viewmodel.state_types.ModelCallView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.ModelCallView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3375,7 +3375,7 @@ Source: [`agent6.viewmodel.state_types.ModelCallView`](https://github.com/agent6
 
 **Support: public.** One tool call in the bounded history.
 
-Source: [`agent6.viewmodel.state_types.ToolCallView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.ToolCallView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3391,7 +3391,7 @@ Source: [`agent6.viewmodel.state_types.ToolCallView`](https://github.com/agent6-
 
 **Support: public.** The last verify gate run.
 
-Source: [`agent6.viewmodel.state_types.VerifyView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.VerifyView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3427,7 +3427,7 @@ Source: [`agent6.viewmodel.review.ReviewView`](https://github.com/agent6-dev/age
 
 **Support: public.** The run's container as the journal tells it: a start in progress, then the lease held.
 
-Source: [`agent6.viewmodel.state_types.EnvironmentView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.EnvironmentView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3455,7 +3455,7 @@ Source: [`agent6.evidence.ExecutionTargets`](https://github.com/agent6-dev/agent
 
 **Support: public.** The run's usage as every surface shows it, each amount with one lifetime.
 
-Source: [`agent6.viewmodel.state_types.BudgetView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.BudgetView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3467,7 +3467,7 @@ Source: [`agent6.viewmodel.state_types.BudgetView`](https://github.com/agent6-de
 
 **Support: public.** One approval the run asked for.
 
-Source: [`agent6.viewmodel.state_types.ApprovalPrompt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.ApprovalPrompt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3483,7 +3483,7 @@ Source: [`agent6.viewmodel.state_types.ApprovalPrompt`](https://github.com/agent
 
 **Support: public.** An `ask_user` prompt: related questions the operator answers together.
 
-Source: [`agent6.viewmodel.state_types.QuestionPrompt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.QuestionPrompt`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3501,7 +3501,7 @@ Source: [`agent6.viewmodel.state_types.QuestionPrompt`](https://github.com/agent
 
 **Support: public.** One auto-commit diff plus the task in focus when it landed.
 
-Source: [`agent6.viewmodel.state_types.DiffView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.DiffView`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3513,7 +3513,7 @@ Source: [`agent6.viewmodel.state_types.DiffView`](https://github.com/agent6-dev/
 
 **Support: public.** One per-turn commit of the run, which the dashboards select among.
 
-Source: [`agent6.viewmodel.state_types.RunCommit`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.RunCommit`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3801,7 +3801,7 @@ Source: [`agent6.kinds.EffectiveControl`](https://github.com/agent6-dev/agent6/b
 
 **Support: public.** Where a session stands, as every fold reads it.
 
-Source: [`agent6.viewmodel.state_types.Lifecycle`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.Lifecycle`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3878,7 +3878,7 @@ Source: [`agent6.viewmodel.review.SeverityCounts`](https://github.com/agent6-dev
 
 **Support: public.** The session's usage across every execution, what the listings' usage cell shows.
 
-Source: [`agent6.viewmodel.state_types.SessionUsage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.SessionUsage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3892,7 +3892,7 @@ Source: [`agent6.viewmodel.state_types.SessionUsage`](https://github.com/agent6-
 
 **Support: public.** The current accounting lifetime's usage beside the caps that bound it.
 
-Source: [`agent6.viewmodel.state_types.ExecutionUsage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.ExecutionUsage`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3914,7 +3914,7 @@ Source: [`agent6.viewmodel.state_types.ExecutionUsage`](https://github.com/agent
 
 **Support: public.** The latest reading of a subscription account: an observation of the account, not the run.
 
-Source: [`agent6.viewmodel.state_types.AccountReading`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.AccountReading`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -3931,7 +3931,7 @@ Source: [`agent6.viewmodel.state_types.AccountReading`](https://github.com/agent
 
 **Support: public.** One question within an `ask_user` prompt.
 
-Source: [`agent6.viewmodel.state_types.Question`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/state_types.py).
+Source: [`agent6.viewmodel.session.records.Question`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/viewmodel/session/records.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |

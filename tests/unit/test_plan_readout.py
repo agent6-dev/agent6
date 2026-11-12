@@ -9,7 +9,9 @@ import time
 import pytest
 
 from agent6 import budget
-from agent6.viewmodel import format, state_types, state_view
+from agent6.viewmodel import format
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import view as state_view
 
 
 @pytest.mark.parametrize(

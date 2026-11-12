@@ -16,12 +16,13 @@ from agent6.machine import MachineJournal, load_machine
 from agent6.sessions import layout, process
 from agent6.sessions import manifest as sessions_manifest
 from agent6.vcs.git import read as git_read
-from agent6.viewmodel import comparison, format, lanes, listing, state_view, tail
-from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel import comparison, format, lanes, listing, tail
 from agent6.viewmodel.machine import logs as machine_logs
 from agent6.viewmodel.machine import state as machine_state
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import state as viewmodel_state
 from agent6.viewmodel.session import status as session_status
+from agent6.viewmodel.session import view as state_view
 
 
 def existing_run_branch(

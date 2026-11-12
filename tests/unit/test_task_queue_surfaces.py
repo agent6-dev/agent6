@@ -15,7 +15,8 @@ from typing import Any
 
 from agent6.graph import models
 from agent6.harness import advice
-from agent6.viewmodel import log_line, state, transcript
+from agent6.viewmodel import log_line, transcript
+from agent6.viewmodel.session import state
 
 _NOW = datetime.datetime(2026, 9, 16, tzinfo=datetime.UTC)
 

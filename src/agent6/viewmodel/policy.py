@@ -14,8 +14,9 @@ import shlex
 
 from agent6 import evidence, kinds
 from agent6.sessions import layout, manifest
-from agent6.viewmodel import format, state_types
+from agent6.viewmodel import format
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import records as state_types
 
 
 def model_lines(m: manifest.SessionManifest) -> tuple[str, ...]:

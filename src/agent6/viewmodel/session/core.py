@@ -15,7 +15,8 @@ from typing import Any
 
 from agent6 import budget, kinds
 from agent6.sessions import journal
-from agent6.viewmodel import events, state_types
+from agent6.viewmodel import events
+from agent6.viewmodel.session import records as state_types
 from agent6.viewmodel.session import status as session_status
 
 # The families that move the core; the listing parses these rows and no other.

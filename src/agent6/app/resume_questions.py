@@ -10,7 +10,7 @@ import re
 
 from agent6.tools import operator_prompts, schema
 from agent6.viewmodel import QuestionPrompt, tail
-from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel.session import state as viewmodel_state
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

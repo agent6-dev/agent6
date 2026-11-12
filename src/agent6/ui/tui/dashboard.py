@@ -43,7 +43,8 @@ from agent6.ui.tui import (
     theme,
 )
 from agent6.ui.tui import prompts as tui_prompts
-from agent6.viewmodel import SessionState, ToolCallView, format, state, tail, wire
+from agent6.viewmodel import SessionState, ToolCallView, format, tail, wire
+from agent6.viewmodel.session import state
 
 if TYPE_CHECKING:
     from agent6.ui.tui import app as tui_app

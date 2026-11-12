@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 
-from agent6.viewmodel import state_types, state_view
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import view as state_view
 
 
 def test_every_state_field_has_an_explicit_wire_classification() -> None:

@@ -438,7 +438,7 @@ def test_receipt_screen_expands_recorded_output(tmp_path: pathlib.Path) -> None:
 def test_denied_gate_story_is_not_running(tmp_path: pathlib.Path) -> None:
     """The diff pane settles an attempt whose command was denied."""
     from agent6.ui.tui import diff_pane
-    from agent6.viewmodel import state
+    from agent6.viewmodel.session import state
     from tests.unit import test_verification_evidence
 
     folded = state.fold_session(test_verification_evidence.denied_rows(tmp_path))

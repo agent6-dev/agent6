@@ -22,9 +22,10 @@ from collections.abc import Callable
 from agent6 import budget as agent6_budget
 from agent6.sessions import budget_events, ipc, journal, layout
 from agent6.tools import operator_prompts, schema
-from agent6.viewmodel import state as session_fold
-from agent6.viewmodel import state_types, tail
+from agent6.viewmodel import tail
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as session_fold
 
 # The least time between two budget rows the watch writes for running lanes.
 ROW_INTERVAL_S = 10.0

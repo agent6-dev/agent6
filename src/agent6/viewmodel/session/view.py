@@ -19,8 +19,9 @@ from typing import Any
 from agent6.models import registry
 from agent6.sessions import ipc, process, shells
 from agent6.sessions import manifest as sessions_manifest
-from agent6.viewmodel import format, listing, policy, review, state_types
-from agent6.viewmodel import state as session_fold
+from agent6.viewmodel import format, listing, policy, review
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as session_fold
 from agent6.viewmodel.session import status as session_status
 
 PUBLIC_STATE_FIELDS = (

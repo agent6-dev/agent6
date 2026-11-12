@@ -22,8 +22,8 @@ import pytest
 from agent6 import kinds
 from agent6.sessions import ipc
 from agent6.viewmodel import format, listing, session_state_as_dict, status_facts, transcript
-from agent6.viewmodel import state as viewmodel_state
 from agent6.viewmodel.session import log as session_log
+from agent6.viewmodel.session import state as viewmodel_state
 from agent6.viewmodel.session import status as session_status
 
 LIVE = os.getpid()

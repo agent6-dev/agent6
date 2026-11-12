@@ -493,7 +493,7 @@ def test_a_streamed_reply_still_renders_when_the_role_is_unnamed() -> None:
 
 def test_streamed_deltas_are_scrubbed_even_when_a_sequence_splits() -> None:
     """The fold scrubs the concatenation of live deltas, since an escape can arrive split."""
-    from agent6.viewmodel import state
+    from agent6.viewmodel.session import state
 
     s = state.initial_state()
     s = state.apply_event(s, {"type": "model.call", "role": "worker", "model": "m"})

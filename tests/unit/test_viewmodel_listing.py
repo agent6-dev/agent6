@@ -1781,7 +1781,7 @@ def test_a_short_task_prefix_is_not_the_journal_clip() -> None:
 )
 def test_empty_start_does_not_claim_the_task(tmp_path: pathlib.Path, manifest_task: str) -> None:
     """Both folds retain the first non-empty task and the latest later start."""
-    from agent6.viewmodel import state
+    from agent6.viewmodel.session import state
 
     journal = [
         {"type": "session.start", "user_task": "", "mode": "run"},
@@ -1814,7 +1814,7 @@ def test_manifest_and_journal_use_the_same_task_derivation() -> None:
 
 def test_ask_repl_questions_are_not_continuations(tmp_path: pathlib.Path) -> None:
     """Two ask REPL questions retain one task line, even with a different manifest task."""
-    from agent6.viewmodel import state
+    from agent6.viewmodel.session import state
 
     journal = [
         {"type": "session.start", "mode": "ask", "user_task": "first question"},
@@ -1839,7 +1839,7 @@ def test_old_journals_keep_their_clip_and_missing_journals_use_the_manifest(
 ) -> None:
     """A manifest fallback stays whole; a clipped old journal is never reconstructed."""
     from agent6 import task_text
-    from agent6.viewmodel import state
+    from agent6.viewmodel.session import state
 
     task = "<prior-run>context</prior-run>\n" + "x" * 240
     clipped = task_text.operator_task_text(task)[: task_text.TASK_DISPLAY_CHARS]
@@ -1856,7 +1856,7 @@ def test_old_journals_keep_their_clip_and_missing_journals_use_the_manifest(
 
 def test_unsteered_resume_clears_previous_continuation(tmp_path: pathlib.Path) -> None:
     """Both folds clear the prior steer when the latest resume carries none."""
-    from agent6.viewmodel import state
+    from agent6.viewmodel.session import state
 
     journal = [
         {"type": "session.start", "user_task": "original"},
@@ -1872,7 +1872,7 @@ def test_unsteered_resume_clears_previous_continuation(tmp_path: pathlib.Path) -
 
 def test_older_journal_keeps_raw_task_blocks(tmp_path: pathlib.Path) -> None:
     """Older journals show block text rather than substituting a manifest or transcript task."""
-    from agent6.viewmodel import state
+    from agent6.viewmodel.session import state
 
     raw = '<file path="a.py">\nx'
     journal = [{"type": "session.start", "mode": "ask", "user_task": raw}]

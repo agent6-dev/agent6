@@ -48,12 +48,12 @@ from agent6.viewmodel import (
     format,
     listing,
     restate,
-    state,
     status_facts,
     tail,
     transcript,
     transcript_items,
 )
+from agent6.viewmodel.session import state
 
 # An answer submitted after the worker died: the next resume re-asks the prompt.
 _ANSWER_LOST = "the session is not live; the answer reached nothing (a resume re-asks the prompt)"

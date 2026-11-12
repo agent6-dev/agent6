@@ -21,7 +21,8 @@ from rich import text
 from textual import app, containers, screen, widgets
 
 from agent6.ui.tui import menubar, screen_chrome
-from agent6.viewmodel import log_line, state, tail
+from agent6.viewmodel import log_line, tail
+from agent6.viewmodel.session import state
 
 
 class LogScreen(screen_chrome.ScreenChrome, screen.Screen[None]):

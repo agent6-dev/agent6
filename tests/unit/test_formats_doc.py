@@ -38,7 +38,7 @@ def test_formats_page_is_not_stale() -> None:
         ("`sessions show --json`", "ui.cli.sessions_show._cmd_status"),
         (
             "`attach --json` approval and commit fields",
-            "viewmodel.state_view.session_state_as_dict",
+            "viewmodel.session.view.session_state_as_dict",
         ),
         ("`/api/meta` payload", "ui.web.server._Handler._route"),
         ("`/api/git/diff` payload", "ui.web.git_model.diff_payload"),
@@ -158,7 +158,8 @@ def test_local_nested_payload_excludes_unreturned_dicts(tmp_path: pathlib.Path) 
 
 def test_session_fields_follow_serialization() -> None:
     """The snapshot reference excludes popped state and includes the serialized additions."""
-    from agent6.viewmodel import state_types, state_view
+    from agent6.viewmodel.session import records as state_types
+    from agent6.viewmodel.session import view as state_view
 
     generator = _generator()
     producers = generator.SESSION[:1] + generator.SESSION[2:]

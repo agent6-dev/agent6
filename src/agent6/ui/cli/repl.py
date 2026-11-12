@@ -19,7 +19,8 @@ from agent6.sessions import id
 from agent6.tools import mcp_client
 from agent6.ui import steer as ui_steer
 from agent6.ui.cli import init_wizard, interact, plan_watch, sessions_cmds, steer_tty
-from agent6.viewmodel import events, state
+from agent6.viewmodel import events
+from agent6.viewmodel.session import state
 
 REPL_HELP = (
     "  /continue  (empty enter) - let the agent take another turn\n"

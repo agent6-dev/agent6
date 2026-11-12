@@ -19,7 +19,8 @@ from agent6 import paths
 from agent6.sessions import layout
 from agent6.ui.cli import main
 from agent6.ui.web import page
-from agent6.viewmodel import format, listing, state, wire
+from agent6.viewmodel import format, listing, wire
+from agent6.viewmodel.session import state
 
 ROUTER = """
 machine = "router"

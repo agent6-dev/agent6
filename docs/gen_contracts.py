@@ -105,7 +105,7 @@ CONTRACTS: tuple[Contract, ...] = (
         public_format="reviewview",
         module="agent6.viewmodel.review",
         primary=("FindingView", "ReviewView", "MergeReviewGuard"),
-        writers=("viewmodel/state.py", "viewmodel/session/log.py"),
+        writers=("viewmodel/session/state.py", "viewmodel/session/log.py"),
         pins=("tests/unit/test_viewmodel_review.py",),
     ),
     Contract(
@@ -219,11 +219,11 @@ CONTRACTS: tuple[Contract, ...] = (
     Contract(
         title="Run/machine wire snapshot",
         public_format="session-snapshots",
-        module="agent6.viewmodel.state_view",
+        module="agent6.viewmodel.session.view",
         # The dict these builders return IS the payload `attach --json`, the web
         # page, and the SSE stream serialize; their docstrings state the contract.
         primary=("session_state_as_dict",),
-        writers=("viewmodel/state_view.py", "viewmodel/machine/state.py"),
+        writers=("viewmodel/session/view.py", "viewmodel/machine/state.py"),
         pins=("tests/unit/data/golden_session_state.json", "tests/unit/test_viewmodel_state.py"),
     ),
 )

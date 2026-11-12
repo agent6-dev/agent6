@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Tests for the pure event-fold in agent6.viewmodel.state."""
+"""Tests for the pure event-fold in agent6.viewmodel.session.state."""
 
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ from agent6.viewmodel import (
     context_fill,
     log_line,
     session_state_as_dict,
-    state_types,
 )
-from agent6.viewmodel import state as viewmodel_state
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as viewmodel_state
 
 
 def test_expanded_tool_args_are_uncapped_and_keep_nested_values() -> None:
@@ -140,7 +140,7 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
     def _unknown(_provider: str, _model: str) -> int | None:
         return None
 
-    monkeypatch.setattr("agent6.viewmodel.state_view.cached_context_window", _known)
+    monkeypatch.setattr("agent6.viewmodel.session.view.cached_context_window", _known)
     s = viewmodel_state.initial_state()
     assert context_fill(s) is None  # no call yet
     for ev in (
@@ -157,7 +157,7 @@ def test_context_fill_is_the_one_rule_and_rides_the_wire(monkeypatch: pytest.Mon
         s = viewmodel_state.apply_event(s, ev)
     assert context_fill(s) == 41
     assert session_state_as_dict(s)["context_used_percent"] == 41
-    monkeypatch.setattr("agent6.viewmodel.state_view.cached_context_window", _unknown)
+    monkeypatch.setattr("agent6.viewmodel.session.view.cached_context_window", _unknown)
     assert context_fill(s) is None  # an unknown window is not a percent
 
 
@@ -1085,7 +1085,7 @@ def test_auto_commits_fold_into_the_commit_list() -> None:
 
 def test_run_history_is_named_commits_on_the_wire() -> None:
     """The snapshot exposes commits, never the removed steps field."""
-    from agent6.viewmodel import state_view
+    from agent6.viewmodel.session import view as state_view
 
     state = viewmodel_state.fold_session(
         [{"type": "checkpoint.committed", "turn": 3, "sha": "a" * 40, "subject": "fix parser"}]
@@ -1259,7 +1259,7 @@ def test_a_journal_written_before_the_turn_rename_keeps_its_commit_turns() -> No
 
 def test_a_queued_question_carries_across_executions_and_blocks_nothing() -> None:
     """A queued question stays pending past a resume; only a waiting question blocks the run."""
-    from agent6.viewmodel import state_view
+    from agent6.viewmodel.session import view as state_view
 
     queued = {
         "type": "question.prompt",
@@ -1326,8 +1326,8 @@ def test_a_question_outside_an_execution_is_nobodys_to_answer_later(tmp_path: pa
 
     from agent6.app import resume_questions
     from agent6.sessions import process
-    from agent6.viewmodel import state_view
     from agent6.viewmodel.session import log as session_log
+    from agent6.viewmodel.session import view as state_view
 
     gate = {"type": "question.prompt", "id": "question-1", "questions": [{"question": "stash?"}]}
     log = tmp_path / "logs.jsonl"

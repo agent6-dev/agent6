@@ -32,13 +32,13 @@ from agent6.viewmodel import (
     policy,
     receipt,
     scan_session_log,
-    state_view,
     summarize_session_dir,
     tail,
     transcript,
     wire,
 )
 from agent6.viewmodel import lanes as vm_lanes
+from agent6.viewmodel.session import view as state_view
 
 
 def _fmt_dur(seconds: float | None) -> str:

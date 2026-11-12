@@ -29,7 +29,8 @@ from agent6.sessions import ipc, manifest, process
 from agent6.ui import spawn
 from agent6.ui.tui import app as tui_app
 from agent6.ui.tui import composer, dashboard_header, modals, prompts
-from agent6.viewmodel import Question, QuestionPrompt, state
+from agent6.viewmodel import Question, QuestionPrompt
+from agent6.viewmodel.session import state
 from tests.tui import waits
 
 
@@ -1165,7 +1166,7 @@ def test_context_used_percent_readout_in_top_line_and_bar(
     def _window(_provider: str, _model: str) -> int:
         return 100_000
 
-    monkeypatch.setattr("agent6.viewmodel.state_view.cached_context_window", _window)
+    monkeypatch.setattr("agent6.viewmodel.session.view.cached_context_window", _window)
     (tmp_path / "logs.jsonl").write_text("", encoding="utf-8")
 
     async def scenario() -> None:
@@ -1234,7 +1235,7 @@ def test_subscription_header_separates_every_segment(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, context_window: int | None
 ) -> None:
     """A subscription run keeps the same gap around status, cost and budget segments."""
-    from agent6.viewmodel import state_view
+    from agent6.viewmodel.session import view as state_view
 
     def cached_context_window(_provider: str, _model: str) -> int | None:
         return context_window

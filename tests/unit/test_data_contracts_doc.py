@@ -64,7 +64,7 @@ def test_public_cards_link_to_formats_without_field_tables() -> None:
 def test_function_only_module_has_no_class_kind() -> None:
     """A function-only wire builder must not be described as a plain class."""
     generator = _load_generator()
-    facts = generator._module_facts("agent6.viewmodel.state_view")
+    facts = generator._module_facts("agent6.viewmodel.session.view")
     assert not facts.class_fields
     assert "session_state_as_dict" in facts.class_docs
     assert generator._kind(facts, "session_state_as_dict") == ""
@@ -76,10 +76,10 @@ def test_function_only_card_has_no_kind_separator() -> None:
     link = next(
         line
         for line in generated.splitlines()
-        if line.startswith("[`agent6.viewmodel.state_view`]")
+        if line.startswith("[`agent6.viewmodel.session.view`]")
     )
     assert link == (
-        "[`agent6.viewmodel.state_view`](https://github.com/agent6-dev/agent6/"
-        "blob/master/src/agent6/viewmodel/state_view.py)"
+        "[`agent6.viewmodel.session.view`](https://github.com/agent6-dev/agent6/"
+        "blob/master/src/agent6/viewmodel/session/view.py)"
     )
     assert all(line == line.rstrip() for line in generated.splitlines())

@@ -1661,7 +1661,7 @@ def test_a_steered_fork_takes_the_steer_as_its_own_task(
     assert manifest["user_task"] == "create README.md only"
     assert manifest["parent_session_id"] == "sunny-otter-AAAA11", "lineage still names the source"
     from agent6.viewmodel import listing
-    from agent6.viewmodel import state as viewmodel_state
+    from agent6.viewmodel.session import state as viewmodel_state
 
     # The real fork copies snapshots, not the source journal.
     assert not dst.logs_path.exists()

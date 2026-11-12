@@ -395,7 +395,8 @@ def test_denied_attempt_uses_cmd_and_keeps_reason_out_of_stderr(tmp_path: pathli
 
 def test_denied_attempt_is_finished_in_state_and_wire(tmp_path: pathlib.Path) -> None:
     """A null exit code on a denial denotes a finished attempt, not an in-flight gate."""
-    from agent6.viewmodel import state, wire
+    from agent6.viewmodel import wire
+    from agent6.viewmodel.session import state
 
     folded = state.fold_session(denied_rows(tmp_path))
     assert folded.last_verify is not None

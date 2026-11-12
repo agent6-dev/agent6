@@ -12,9 +12,9 @@ from collections.abc import Sequence
 
 from agent6.machine import journal
 from agent6.sessions import layout
-from agent6.viewmodel import state as viewmodel_state
-from agent6.viewmodel import state_types
 from agent6.viewmodel import tail as viewmodel_tail
+from agent6.viewmodel.session import records as state_types
+from agent6.viewmodel.session import state as viewmodel_state
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

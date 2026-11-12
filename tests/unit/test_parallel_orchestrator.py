@@ -3754,7 +3754,8 @@ def test_the_compare_judge_streams_into_the_coordinators_journal(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """Each judge delta reaches the live fold before the provider returns its ranking."""
-    from agent6.viewmodel import state, transcript
+    from agent6.viewmodel import transcript
+    from agent6.viewmodel.session import state
 
     origin_state = paths.state_dir(origin)
     log = origin_state / "sessions" / "runs" / "fan" / "logs.jsonl"
