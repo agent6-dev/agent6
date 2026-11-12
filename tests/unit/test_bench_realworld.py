@@ -51,7 +51,7 @@ if args == ['sessions', 'show', 'stub-1', '--json']:
         sys.exit(1)
     print(json.dumps({
         'session_id': 'stub-1',
-        'reason': os.environ.get('STUB_REASON', 'finish_session'),
+        'stop_reason': os.environ.get('STUB_REASON', 'finish_session'),
         'model': 'stub-provider/stub-model',
         'plan_observed_points': json.loads(os.environ.get('STUB_PLAN', '1.5')),
         'plan_cap': 2,
