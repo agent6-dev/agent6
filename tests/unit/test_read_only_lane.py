@@ -257,6 +257,7 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
                 "workspace": {"setup_command": ["touch", str(marker)]},
                 "harness": {"verify_when": "never"},
                 "review": {"trigger": "off"},
+                "notify": {"on_event": ["touch", str(tmp_path / "hook-ran")]},
             }
         )
         into = lane_launch.launch_dir(paths.state_dir(short_repo), "leaf")
@@ -265,7 +266,12 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
             cfg,
             spec,
             explicit_leaves=frozenset(
-                {"sandbox.isolation", "sandbox.protect_git", "sandbox.run_commands"}
+                {
+                    "notify.on_event",
+                    "sandbox.isolation",
+                    "sandbox.protect_git",
+                    "sandbox.run_commands",
+                }
             ),
             into=into,
         )
@@ -318,6 +324,8 @@ def test_a_real_read_only_lane_cannot_write_run_or_start_anything(
     assert results["read_file"]["ok"] is True
     assert (clone / "README.md").read_text(encoding="utf-8") == "hi\n"
     assert not marker.exists() and not (tmp_path / "command-ran").exists()
+    # The operator's hook hears of the parent's end, never of a seat's.
+    assert not (tmp_path / "hook-ran").exists()
     manifest = json.loads((session_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["mode"] == "read_only"
     assert len(calls) == 4

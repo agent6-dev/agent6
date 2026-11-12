@@ -436,14 +436,16 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         if not console_stream:
             # Headless, the fold's markers reach no view: a degraded jail is said once here.
             events.subscribe(functools.partial(headless_marker, log=loop_log))
-        events.subscribe(
-            notify_hook.attention(
-                cfg.notify,
-                session_id=layout.session_id,
-                session_dir=layout.session_dir,
-                note=reporter.note,
+        # A bounded conversation is its parent's evidence: the operator hears of the parent.
+        if inputs.contract is None:
+            events.subscribe(
+                notify_hook.attention(
+                    cfg.notify,
+                    session_id=layout.session_id,
+                    session_dir=layout.session_dir,
+                    note=reporter.note,
+                )
             )
-        )
         tools = session_runtime.build_session_tools(
             cfg,
             cwd=cwd,
@@ -782,15 +784,16 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
         reporter=reporter,
         hidden=hidden,
     )
-    notify_hook.session_end(
-        cfg.notify,
-        session_id=layout.session_id,
-        session_dir=layout.session_dir,
-        ok=result.completed,
-        reason=result.reason,
-        verification=result.verification,
-        note=reporter.note,
-    )
+    if inputs.contract is None:
+        notify_hook.session_end(
+            cfg.notify,
+            session_id=layout.session_id,
+            session_dir=layout.session_dir,
+            ok=result.completed,
+            reason=result.reason,
+            verification=result.verification,
+            note=reporter.note,
+        )
     return ExecutionEnd(
         finalize.session_exit_code(result, harness_gate=harness_gate, stranded=stranded)
     )
