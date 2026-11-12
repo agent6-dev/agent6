@@ -1957,13 +1957,13 @@ Source: [`ui.web.actions.review_run`](https://github.com/agent6-dev/agent6/blob/
 
 ### `/api/hub` payload
 
-**Support: public.** Return the hub: sessions in the given order, machines, drafts, machine files, presets.
+**Support: public.** Return the hub: sessions, machines, drafts, machine files, presets.
 
 Source: [`ui.web.model.hub_payload`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/model.py).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `sessions` | `JSON` | Session listing rows in the requested order. |
+| `sessions` | `JSON` | Session listing rows, newest activity first. |
 | `machines` | `JSON` | Machine-instance listing rows. |
 | `machine_files` | `JSON` | Authored machine files available to run. |
 | `drafts` | `JSON` | Machine-authoring session listing rows. |

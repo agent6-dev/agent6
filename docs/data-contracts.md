@@ -70,7 +70,7 @@ Public fields: [Formats](formats.md#agent6-ps-json-row).
 
 Build the web UI's JSON payloads.
 
-**hub_payload** &mdash; Return the hub: sessions in the given order, machines, drafts, machine files, presets.
+**hub_payload** &mdash; Return the hub: sessions, machines, drafts, machine files, presets.
 
 **conversation_payload** &mdash; Return a run's conversation and the operator's past inputs, from one read of the log.
 
