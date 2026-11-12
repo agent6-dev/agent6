@@ -73,7 +73,7 @@ function announceSessions(prev, rows) {
     if (before === undefined || before === r.status) continue;
     let title = '';
     if (r.status === 'waiting') title = `${r.session_id} needs you`;
-    else if (LIVE_WORDS.includes(before) && !LIVE_WORDS.includes(r.status)) title = `${r.session_id} ${r.label || r.status}`;
+    else if (LIVE_WORDS.includes(before) && !LIVE_WORDS.includes(r.status)) title = `${r.session_id} ${r.status_label}`;
     if (!title) continue;
     toast(title);
     osNotify('agent6: ' + title, firstLine(r.task, 120));
@@ -552,7 +552,7 @@ function paintSession(r, it, g) {
   if (where) g.appendChild(el('div', 'sub', where));
   // The server's merge note, rendered once for every hub.
   if (r.merge_note) g.appendChild(el('div', 'sub', r.merge_note));
-  it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
+  it.appendChild(pill(r.status_level, r.status_label)); // the server's one shared label + level
   // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
   // through `sessions merge`. Both need a finished run whose branch exists; Merge also
   // needs commits no merge stamped. A fan-out has no branch of its own.
@@ -641,7 +641,7 @@ function machinesCard(machines) {
     it.onclick = () => location.hash = '#/machine/' + encodeURIComponent(m.name);
     g.appendChild(el('div', 'title', m.machine || m.name));
     g.appendChild(el('div', 'sub', `${m.name} · at ${esc(m.current || '?')} · ${esc(m.when)}`));
-    it.appendChild(pill(m.level, m.label || m.status)); // keep the reason (failed · why)
+    it.appendChild(pill(m.status_level, m.status_label)); // the reason rides the label (failed · why)
   });
 }
 
@@ -650,7 +650,7 @@ function draftsCard(drafts) {
     it.onclick = () => location.hash = '#/draft/' + encodeURIComponent(d.session_id);
     taskTitle(g, d.task_line || firstLine(d.task, 200) || d.session_id);
     g.appendChild(el('div', 'sub', `draft · ${esc(d.session_id)} · ${esc(d.when)}`));
-    it.appendChild(pill(d.level, d.label || d.status)); // keep the reason (failed · provider_error)
+    it.appendChild(pill(d.status_level, d.status_label)); // the reason rides the label (failed · provider_error)
   });
 }
 
@@ -1123,11 +1123,11 @@ async function openSwitcher() {
     rows,
     empty: '(no sessions yet)',
     prefix: { key: '>', open: (rest) => openPalette(rest) },
-    haystack: (r) => [r.session_id, r.mode, r.label || r.status, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase(),
+    haystack: (r) => [r.session_id, r.mode, r.status_label, r.task_line || r.task || '', r.branch || '', r.worktree || ''].join(' ').toLowerCase(),
     pick: (r) => { location.hash = '#/session/' + encodeURIComponent(r.session_id); },
     paint: (r, o, close) => {
       const head = el('div', 'row');
-      head.appendChild(pill(r.level, r.label || r.status));
+      head.appendChild(pill(r.status_level, r.status_label));
       head.appendChild(el('span', null, r.session_id + ' · ' + r.mode + ' · ' + (r.task_line || r.task || '').split('\n')[0].slice(0, 80)));
       o.appendChild(head);
       const where = [r.worktree ? 'worktree ' + r.worktree : 'this checkout', r.branch && 'ref ' + r.branch, r.when].filter(Boolean).join(' · ');

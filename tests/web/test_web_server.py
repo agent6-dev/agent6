@@ -2017,13 +2017,13 @@ def test_session_api_hub_and_attach_give_one_label(
     row = listing.summary_row(
         listing.summarize_session_dir(d, branch_tips=git_read.run_ref_tips(tmp_path))
     )
-    assert row["label"] == expected
+    assert row["status_label"] == expected
     assert wire.session_snapshot(d, repo=tmp_path)["status_label"] == expected
     _srv, port = server
     assert json.loads(_get(port, f"/api/session/{sid}")[1])["status_label"] == expected
-    assert json.loads(_get(port, "/api/hub")[1])["sessions"][0]["label"] == expected
+    assert json.loads(_get(port, "/api/hub")[1])["sessions"][0]["status_label"] == expected
     assert main(["sessions", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out)[0]["label"] == expected
+    assert json.loads(capsys.readouterr().out)[0]["status_label"] == expected
     assert main(["attach", sid, "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["status_label"] == expected
 
@@ -2039,7 +2039,7 @@ def test_plan_session_label_folds_the_mode_like_the_hub(
     try:
         snap = json.loads(_get(port, "/api/session/live-plan")[1])
         row = json.loads(_get(port, "/api/hub")[1])["sessions"][0]
-        assert snap["status_label"] == row["label"] == "plan · running"
+        assert snap["status_label"] == row["status_label"] == "plan · running"
     finally:
         process.clear_worker_pid(d)
 

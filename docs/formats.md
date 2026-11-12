@@ -1564,10 +1564,10 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `task_line` | `str` | The task clipped to 200 characters, then a newline and `continued: <steer>`, clipped the same way, when a resume steer exists. |
 | `continued_task` | `str` | The latest resume steer, whole; empty without a continuation. |
 | `status` | `str` | The lifecycle status word. |
-| `detail` | `str` | The detail explaining the status. |
+| `status_detail` | `str` | The detail explaining the status. |
 | `stop_reason` | `str` | The last journaled end reason, or an empty string while running. |
-| `label` | `str` | The rendered status with mode and unmerged marks. |
-| `level` | `str` | The status presentation level. |
+| `status_label` | `str` | The rendered status with mode and unmerged marks. |
+| `status_level` | `str` | The status presentation level. |
 | `last_activity` | `float` | The last activity time in epoch seconds. |
 | `when` | `str` | The rendered last activity time. |
 | `cost_usd` | `float` | Cumulative spend in USD across executions. |
@@ -1619,8 +1619,8 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `model_from_flag` | `bool` | Whether a model flag selected the route. |
 | `preset` | `str \| None` | The launch preset, or null when absent. |
 | `status` | `str` | The lifecycle status word shared with listings. |
-| `label` | `str` | The rendered status with mode and unmerged marks. |
-| `detail` | `str` | The diagnostic or next action explaining the status. |
+| `status_label` | `str` | The rendered status with mode and unmerged marks. |
+| `status_detail` | `str` | The diagnostic or next action explaining the status. |
 | `end_summary` | `str \| None` | The journaled closing sentence, or null when absent. |
 | `alive` | `bool` | Whether the recorded worker identity is alive. |
 | `pid` | `int \| None` | The recorded worker process identifier, or null when unreadable. |
@@ -1796,7 +1796,7 @@ A machine's `attach --json` and `/api/machine/<name>` read `MachineState` with t
 | `ended` | `MachineResult \| None` | The end record, None while the machine has not ended. |
 | `notifications` | `tuple[NotificationView, ...]` | The recent `machine.notify` events, oldest first. |
 | `status` | `JSON` | The directory-aware machine status when a directory is supplied. |
-| `level` | `JSON` | The status presentation level. |
+| `status_level` | `JSON` | The status presentation level. |
 | `refusals` | `JSON` | Reasons keyed by machine verb, with an empty reason for an allowed verb. |
 | `worker_lost` | `JSON` | The missing-worker diagnostic for a stopped machine. |
 | `worker_lost.reason` | `JSON` | The reason the machine reads stopped. |
@@ -2008,10 +2008,10 @@ Source: [`ui.web.model._machine_row`](https://github.com/agent6-dev/agent6/blob/
 | `mtime` | `JSON` | The latest activity time in epoch seconds. |
 | `when` | `JSON` | The rendered latest activity time. |
 | `status` | `JSON` | The machine's status word. |
-| `level` | `JSON` | The status presentation level. |
+| `status_label` | `JSON` | The rendered status, with its reason when it has one. |
+| `status_level` | `JSON` | The status presentation level. |
 | `machine` | `JSON` | The declared machine name, absent for unreadable instances. |
 | `current` | `JSON` | The current state, absent for unreadable instances. |
-| `label` | `JSON` | The rendered status when a reason is available. |
 
 ### `/api/hub` machine-file rows
 
@@ -2643,8 +2643,8 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 | `repo_id` | `str` | The state dir's name for the repo. |
 | `id` | `str` | The session id or machine name. |
 | `mode` | `str` | The session mode, or "machine". |
-| `status` | `str` | The raw status word, without its reason. |
-| `reason` | `str` | The status detail, or "" when there is none. |
+| `status` | `str` | The raw status word, without its detail. |
+| `status_detail` | `str` | The detail explaining the status, or "" when there is none. |
 | `pid` | `int \| None` | The worker pid, when readable. |
 | `attached` | `bool` | A front end is live on the session. |
 | `coordinator` | `str` | For a lane, the live coordinator row it nests under. |

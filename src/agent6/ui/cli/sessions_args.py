@@ -50,8 +50,8 @@ def _add_sessions_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser
         action="store_true",
         help=(
             "Print a JSON array. Each row has session_id, mode, task (full text), continued_task,"
-            " task_line, status, detail,"
-            " stop_reason, label, level, last_activity, group_last_activity, when,"
+            " task_line, status, status_detail, status_label, status_level,"
+            " stop_reason, last_activity, group_last_activity, when,"
             " cost_usd, usd_partial, plan_observed_points,"
             " plan_cap, usage, model, model_from_flag, id_cell, unmerged, verification,"
             " winner, lane,"

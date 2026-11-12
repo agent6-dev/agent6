@@ -81,14 +81,14 @@ def test_public_verification_word(
         assert state_view.session_state_as_dict(resumed)["verification"] is None
 
 
-def test_listing_detail_names_the_status_explanation(tmp_path: pathlib.Path) -> None:
-    """The listing uses detail for the explanation, separate from the stop reason."""
+def test_listing_status_detail_names_the_status_explanation(tmp_path: pathlib.Path) -> None:
+    """The listing uses status_detail for the explanation, separate from the stop reason."""
     (tmp_path / "logs.jsonl").write_text(
         json.dumps({"type": "session.stop", "reason": "provider_error"}) + "\n"
     )
     row = listing.summary_row(listing.summarize_session_dir(tmp_path))
-    assert "detail" in row
-    assert row["detail"] == "provider_error"
+    assert "status_detail" in row
+    assert row["status_detail"] == "provider_error"
     assert row["stop_reason"] == "provider_error"
 
 

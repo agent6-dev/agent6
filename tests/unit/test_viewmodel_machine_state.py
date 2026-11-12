@@ -538,7 +538,7 @@ def test_the_wire_form_carries_the_status_level(tmp_path: pathlib.Path) -> None:
     (d / "machine.asm.toml").write_text(TINY, encoding="utf-8")
     live = machine_state.fold_machine(spec, [])
     running = machine_state.machine_state_as_dict(live, d)
-    assert running["level"] == format.status_level(running["status"])
+    assert running["status_level"] == format.status_level(running["status"])
     failed = machine_state.fold_machine(
         spec,
         [
@@ -548,7 +548,7 @@ def test_the_wire_form_carries_the_status_level(tmp_path: pathlib.Path) -> None:
         ],
     )
     ended = machine_state.machine_state_as_dict(failed, d)
-    assert (ended["status"], ended["level"]) == ("failed", format.status_level("failed"))
+    assert (ended["status"], ended["status_level"]) == ("failed", format.status_level("failed"))
 
 
 def test_the_newest_execution_fold_reads_only_what_the_log_gained(tmp_path: pathlib.Path) -> None:

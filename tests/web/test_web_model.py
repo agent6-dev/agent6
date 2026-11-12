@@ -47,7 +47,7 @@ def test_run_summary_captures_cost_and_status(tmp_path: pathlib.Path) -> None:
     assert s["status"] == "passed"
     assert s["cost_usd"] == 0.0123
     assert s["usd_partial"] is False
-    assert s["label"] == "passed"  # the one shared human label, rendered verbatim
+    assert s["status_label"] == "passed"  # the one shared human label, rendered verbatim
 
 
 @pytest.mark.parametrize(
@@ -71,7 +71,7 @@ def test_harness_ends_keep_their_labels_in_the_hub_and_run_view(
         ],
     )
     (row,) = model.hub_payload(tmp_path)["sessions"]
-    assert (row["status"], row["label"]) == ("finished", label)
+    assert (row["status"], row["status_label"]) == ("finished", label)
     snapshot = session_snapshot(d)
     assert (snapshot["status"], snapshot["status_label"]) == ("finished", label)
     done = next(item for item in model.conversation_payload(d)["items"] if item["kind"] == "done")
@@ -126,8 +126,11 @@ def test_driverless_prestart_hub_row_matches_the_cli_status_and_label(
 
     cli_row = listing.summary_row(listing.summarize_session_dir(d))
     (web_row,) = model.hub_payload(tmp_path)["sessions"]
-    assert (web_row["status"], web_row["label"]) == ("starting", "starting")
-    assert (web_row["status"], web_row["label"]) == (cli_row["status"], cli_row["label"])
+    assert (web_row["status"], web_row["status_label"]) == ("starting", "starting")
+    assert (web_row["status"], web_row["status_label"]) == (
+        cli_row["status"],
+        cli_row["status_label"],
+    )
 
 
 def test_run_summary_survives_torn_utf8_tail(tmp_path: pathlib.Path) -> None:
@@ -382,7 +385,7 @@ def test_hub_machine_pill_keeps_the_failure_reason(tmp_path: pathlib.Path) -> No
     )
     (m,) = model.hub_payload(tmp_path)["machines"]
     assert m["status"] == "failed"
-    assert m["label"] == "failed · boom"
+    assert m["status_label"] == "failed · boom"
 
 
 def test_reasoning_snapshot_empty_without_state_log(tmp_path: pathlib.Path) -> None:
@@ -972,8 +975,8 @@ def test_a_waiting_machine_is_not_labelled_failed(tmp_path: pathlib.Path) -> Non
         )
     )
 
-    assert row["label"] == "waiting · waiting on an answer in 0001-work"
-    assert row["level"] == "warn"
+    assert row["status_label"] == "waiting · waiting on an answer in 0001-work"
+    assert row["status_level"] == "warn"
 
 
 def test_the_web_machine_header_does_not_hide_a_zero_cost(tmp_path: pathlib.Path) -> None:

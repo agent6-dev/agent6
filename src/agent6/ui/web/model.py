@@ -212,10 +212,10 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
         mtime: The latest activity time in epoch seconds.
         when: The rendered latest activity time.
         status: The machine's status word.
-        level: The status presentation level.
+        status_level: The status presentation level.
         machine: The declared machine name, absent for unreadable instances.
         current: The current state, absent for unreadable instances.
-        label: The rendered status when a reason is available.
+        status_label: The rendered status, with its reason when it has one.
 
     Args:
         s: The machine summary.
@@ -228,14 +228,12 @@ def _machine_row(s: MachineSummary) -> dict[str, Any]:
         "mtime": s.mtime,
         "when": format.format_when(s.mtime) if s.mtime else "",
         "status": s.status,
-        "level": format.status_level(s.status),
+        "status_label": format.status_label(s.status, s.reason),
+        "status_level": format.status_level(s.status),
     }
     if s.status != "unreadable":
         entry["machine"] = s.machine
         entry["current"] = s.current
-    if s.reason:
-        # A live machine blocked on an operator prompt carries a reason too.
-        entry["label"] = format.status_label(s.status, s.reason)
     return entry
 
 

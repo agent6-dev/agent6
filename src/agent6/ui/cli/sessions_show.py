@@ -365,8 +365,8 @@ class StatusJSON(TypedDict):
     model_from_flag: bool
     preset: str | None
     status: str
-    label: str
-    detail: str
+    status_label: str
+    status_detail: str
     end_summary: str | None
     alive: bool
     pid: int | None
@@ -415,8 +415,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         model_from_flag: Whether a model flag selected the route.
         preset: The launch preset, or null when absent.
         status: The lifecycle status word shared with listings.
-        label: The rendered status with mode and unmerged marks.
-        detail: The diagnostic or next action explaining the status.
+        status_label: The rendered status with mode and unmerged marks.
+        status_detail: The diagnostic or next action explaining the status.
         end_summary: The journaled closing sentence, or null when absent.
         alive: Whether the recorded worker identity is alive.
         pid: The recorded worker process identifier, or null when unreadable.
@@ -507,8 +507,8 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
             "model_from_flag": model_from_flag,
             "preset": manifest.harness.preset or None,
             "status": status,
-            "label": status_cell,
-            "detail": status_detail,
+            "status_label": status_cell,
+            "status_detail": status_detail,
             "end_summary": scan.end_summary or None,
             "alive": alive,
             "pid": pid,

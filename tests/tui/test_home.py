@@ -736,11 +736,11 @@ def test_hub_status_label_matches_the_cli_and_web_for_the_same_dir(
             await pilot.pause()
             table = app.screen.query_one("#sessions", widgets.DataTable)
             tui_label = str(table.get_row_at(0)[1])
-            assert (web_row["status"], web_row["label"]) == (
+            assert (web_row["status"], web_row["status_label"]) == (
                 cli_row["status"],
-                cli_row["label"],
+                cli_row["status_label"],
             )
-            assert tui_label == cli_row["label"] == label
+            assert tui_label == cli_row["status_label"] == label
 
     asyncio.run(scenario())
 

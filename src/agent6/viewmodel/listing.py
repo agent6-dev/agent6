@@ -403,10 +403,10 @@ class SummaryRow(TypedDict):
     task_line: str
     continued_task: str
     status: str
-    detail: str
+    status_detail: str
     stop_reason: str
-    label: str
-    level: str
+    status_label: str
+    status_level: str
     last_activity: float
     when: str
     cost_usd: float
@@ -472,10 +472,10 @@ def summary_row(
             clipped the same way, when a resume steer exists.
         continued_task: The latest resume steer, whole; empty without a continuation.
         status: The lifecycle status word.
-        detail: The detail explaining the status.
+        status_detail: The detail explaining the status.
         stop_reason: The last journaled end reason, or an empty string while running.
-        label: The rendered status with mode and unmerged marks.
-        level: The status presentation level.
+        status_label: The rendered status with mode and unmerged marks.
+        status_level: The status presentation level.
         last_activity: The last activity time in epoch seconds.
         when: The rendered last activity time.
         cost_usd: Cumulative spend in USD across executions.
@@ -506,7 +506,7 @@ def summary_row(
         lanes: The nested lane rows, as `row_json` builds them.
 
     Returns:
-        The row, with the status cell rendered as `label` and `level` so a client
+        The row, with the status cell rendered as `status_label` and `status_level` so a client
         needs no copy of the status maps, and `task_line` with an optional continuation line.
     """
     return {
@@ -516,10 +516,12 @@ def summary_row(
         "task_line": s.task_label.line(),
         "continued_task": s.task_label.continued_task,
         "status": s.status,
-        "detail": s.detail,
+        "status_detail": s.detail,
         "stop_reason": s.stop_reason,
-        "label": format.listing_status_label(s.mode, s.status, s.detail, unmerged=s.unmerged),
-        "level": format.status_level(s.status),
+        "status_label": format.listing_status_label(
+            s.mode, s.status, s.detail, unmerged=s.unmerged
+        ),
+        "status_level": format.status_level(s.status),
         "last_activity": s.last_activity,
         "when": format.format_when(s.last_activity) if s.last_activity else "",
         "cost_usd": s.cost_usd,

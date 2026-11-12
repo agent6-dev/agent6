@@ -163,7 +163,7 @@ function paintMachine(structBody, pathBody, cards, ctx, data) {
   const summary = el('div', 'row wrap');
   summary.appendChild(el('div', 'sub muted',
     `${esc(m.machine)} v${esc(m.version)} · current: ${esc(m.current)}${cost}`));
-  summary.appendChild(pill(m.level, m.status));
+  summary.appendChild(pill(m.status_level, m.status));
   structBody.appendChild(summary);
   const tree = el('div', 'tree');
   for (const st of m.states || []) {

@@ -549,7 +549,10 @@ def test_show_json_and_the_listing_name_the_stop_reason_alike(
 
     assert main(["sessions", "list", "--json"]) == 0
     lanes = {r["session_id"]: r for r in json.loads(capsys.readouterr().out)[0]["lanes"]}
-    assert (lanes["fan-l1"]["stop_reason"], lanes["fan-l1"]["detail"]) == ("finish_session", "")
+    assert (lanes["fan-l1"]["stop_reason"], lanes["fan-l1"]["status_detail"]) == (
+        "finish_session",
+        "",
+    )
 
 
 def test_show_nests_attempts_directly_under_the_verify_field(

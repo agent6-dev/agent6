@@ -153,7 +153,7 @@ def test_ps_json_waiting_facts(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """JSON keeps the absolute directory and separate status and reason of a waiting session."""
+    """JSON keeps the absolute directory and the separate status and detail of a waiting session."""
     home = short_repo
     repo = home / "repo"
     repo.mkdir()
@@ -179,7 +179,7 @@ def test_ps_json_waiting_facts(
         "id": "waiting-run",
         "mode": "run",
         "status": "waiting",
-        "reason": "approval <1m",
+        "status_detail": "approval <1m",
         "pid": os.getpid(),
         "attached": False,
         "coordinator": "",

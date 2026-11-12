@@ -569,7 +569,7 @@ def machine_state_as_dict(
 
     Attributes:
         status: The directory-aware machine status when a directory is supplied.
-        level: The status presentation level.
+        status_level: The status presentation level.
         refusals: Reasons keyed by machine verb, with an empty reason for an allowed verb.
         worker_lost: The missing-worker diagnostic for a stopped machine.
         worker_lost.reason: The reason the machine reads stopped.
@@ -583,14 +583,14 @@ def machine_state_as_dict(
         execution: The newest execution from a caller's `machine_logs.NewestExecutionFold`.
 
     Returns:
-        The state's fields, plus `status`, `level`, `refusals` and, for a stopped
+        The state's fields, plus `status`, `status_level`, `refusals` and, for a stopped
         machine, `worker_lost`.
     """
     d = dataclasses.asdict(ms)
     if machine_dir is not None:
         probes = probe_instance(machine_dir, ms, execution=execution)
         d["status"] = probes.status_word(ms)
-        d["level"] = format.status_level(d["status"])
+        d["status_level"] = format.status_level(d["status"])
         if d["status"] == "stopped":
             # Resumable, and the wire says so; `ended` stays a durable MachineEnd.
             d["worker_lost"] = {"reason": "no worker running", "state": ms.current}

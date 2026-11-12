@@ -477,7 +477,10 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
             lanes.clear()
             for row in rows:
                 lanes.add_row(
-                    *(rich_text.Text(row[k]) for k in ("session_id", "model", "label", "usage")),
+                    *(
+                        rich_text.Text(row[k])
+                        for k in ("session_id", "model", "status_label", "usage")
+                    ),
                     key=row["session_id"],
                 )
             lanes.move_cursor(row=cursor.row, column=cursor.column)

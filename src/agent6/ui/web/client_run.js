@@ -429,7 +429,7 @@ function paintRun(cards, s) {
         const link = el('a', null, lane.session_id);
         link.href = '#/session/' + encodeURIComponent(lane.session_id);
         cell.appendChild(link); row.appendChild(cell);
-        for (const key of ['model', 'label', 'usage']) row.appendChild(el('td', null, lane[key]));
+        for (const key of ['model', 'status_label', 'usage']) row.appendChild(el('td', null, lane[key]));
         row.appendChild(el('td', null, outcomes[lane.session_id] || ''));
         table.appendChild(row);
       }

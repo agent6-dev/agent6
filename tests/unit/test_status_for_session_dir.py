@@ -290,7 +290,7 @@ def test_pending_step_stop_labels_agree_in_the_listing_and_typed_fold(
     row = listing.summarize_session_dir(d)
     assert (row.status, row.detail) == (word, reason)
     assert session_state_as_dict(fold, d)["status_label"] == format.status_label(word, reason)
-    assert listing.summary_row(row)["label"] == format.status_label(word, reason)
+    assert listing.summary_row(row)["status_label"] == format.status_label(word, reason)
 
 
 def test_a_verify_cut_short_leaves_no_verdict_in_either_producer(tmp_path: pathlib.Path) -> None:

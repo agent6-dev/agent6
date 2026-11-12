@@ -177,7 +177,7 @@ def test_status_waiting_when_blocked_on_an_operator_answer(
     assert "provider call" not in out
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["status"], obj["detail"]) == ("waiting", "needs answer; attach to respond")
+    assert (obj["status"], obj["status_detail"]) == ("waiting", "needs answer; attach to respond")
 
 
 @pytest.mark.parametrize(
@@ -213,7 +213,7 @@ def test_status_names_what_a_long_step_waits_on(
     process.write_worker_pid(d, os.getpid())
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["status"], obj["detail"]) == ("running", detail)
+    assert (obj["status"], obj["status_detail"]) == ("running", detail)
 
 
 def test_status_crashed_when_pid_dead_and_no_run_end(
@@ -459,7 +459,7 @@ def test_status_of_a_scoped_green_names_the_scoped_gate(
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["status"], obj["label"], obj["detail"]) == (
+    assert (obj["status"], obj["status_label"], obj["status_detail"]) == (
         "passed",
         "passed · scoped gate",
         "finish_session",
@@ -573,7 +573,7 @@ def test_status_of_a_provider_failure_keeps_the_providers_error(
     )
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
-    assert (obj["label"], obj["detail"]) == ("failed · provider error", error)
+    assert (obj["status_label"], obj["status_detail"]) == ("failed · provider error", error)
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS") == 0
     assert f"status:     failed · provider error ({error})\n" in capsys.readouterr().out
 
@@ -1270,10 +1270,10 @@ def test_show_json_label_matches_the_listing_cell(
 
     obj = json.loads(capsys.readouterr().out)
     s = listing.summarize_session_dir(d)
-    assert obj["label"] == format.listing_status_label(
+    assert obj["status_label"] == format.listing_status_label(
         s.mode, s.status, s.detail, unmerged=s.unmerged
     )
-    assert obj["label"] == "plan · running", "the mode is folded in, as the listing folds it"
+    assert obj["status_label"] == "plan · running", "the mode is folded in, as the listing folds it"
 
 
 def test_status_prints_the_task_and_names_a_plans_page(
@@ -1487,4 +1487,4 @@ def test_a_record_a_newer_agent6_wrote_reads_unreadable_with_the_upgrade(
     assert sessions_show._cmd_status("winsome-dawn-YWH5ZS", as_json=True) == 0
     obj = json.loads(capsys.readouterr().out)
     assert obj["status"] == "unreadable"
-    assert "newer record" in obj["detail"] and "upgrade agent6" in obj["detail"]
+    assert "newer record" in obj["status_detail"] and "upgrade agent6" in obj["status_detail"]

@@ -27,8 +27,8 @@ class _Row:
         repo_id: The state dir's name for the repo.
         id: The session id or machine name.
         mode: The session mode, or "machine".
-        status: The raw status word, without its reason.
-        reason: The status detail, or "" when there is none.
+        status: The raw status word, without its detail.
+        status_detail: The detail explaining the status, or "" when there is none.
         pid: The worker pid, when readable.
         attached: A front end is live on the session.
         coordinator: For a lane, the live coordinator row it nests under.
@@ -41,7 +41,7 @@ class _Row:
     id: str
     mode: str
     status: str
-    reason: str
+    status_detail: str
     pid: int | None
     attached: bool
     coordinator: str = ""
@@ -59,7 +59,7 @@ class _Row:
             where,
             id_cell,
             self.mode,
-            format.status_label(self.status, self.reason),
+            format.status_label(self.status, self.status_detail),
             str(self.pid) if self.pid is not None else "?",
             "attached" if self.attached else "",
             common.home_contracted(self.worktree) if self.worktree else "",
