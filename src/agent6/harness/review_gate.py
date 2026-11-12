@@ -289,6 +289,17 @@ REVIEW_REJECTED = {
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
+class ReviewInput:
+    """Bind parent-owned panel identity, immutable target and complete seat context."""
+
+    panel_id: str
+    target: review_records.ReviewTarget
+    context: review_panel.ReviewContext
+    known_findings: tuple[tuple[str, str], ...]
+    excluded_paths: tuple[str, ...]
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
 class Reviewer:
     """Sit the in-loop review panel for one run.
 
@@ -310,6 +321,53 @@ class Reviewer:
     log: Callable[[str], None]
     emit: Callable[..., None]
     media_rejections: provider_call.MediaRejections = dataclasses.field(default_factory=dict)
+    session_id: str = ""
+
+    def prepare(
+        self,
+        state: loop_state.LoopState,
+        target: review_records.ReviewTarget,
+        diff: str,
+        *,
+        panel_id: str,
+    ) -> ReviewInput:
+        """Freeze the panel's input and retain its exact comparison for later lane cloning.
+
+        Args:
+            state: The parent state whose evidence is captured once.
+            target: The already captured comparison, never replaced by the live checkout.
+            diff: Its whole diff with the original path coverage.
+            panel_id: The parent-assigned panel identity.
+
+        Returns:
+            Immutable input shared by every seat; embedders without a session retain no ref.
+
+        Raises:
+            GitError: A session-owned comparison cannot be retained.
+            OSError: The repository cannot be read.
+        """
+        if self.session_id:
+            target = self.chain.retain_review_target(target, self.session_id)
+        known, prior_findings = review_history.matching_findings(
+            self.chain.root, target, state.review_panels
+        )
+        context = review_panel.ReviewContext(
+            task=state.original_task,
+            rules=repo_context.review_rules(self.chain.root, target.base_tree, self.hide),
+            diff=diff,
+            verification=(
+                "passed"
+                if state.verify.last_ok is True
+                else "failed"
+                if state.verify.last_ok is False
+                else None
+            ),
+            verify_output=state.verify.last_tail,
+            prior_findings=prior_findings,
+        )
+        return ReviewInput(
+            panel_id, target, context, tuple(known.items()), tuple(sorted(self.chain.excluded))
+        )
 
     def triggers(self, state: loop_state.LoopState, turn: loop_state.TurnState) -> None:
         """Sit the observe-only panels after a verify failure or at the configured interval.
@@ -561,23 +619,18 @@ class Reviewer:
                 )
             )
             return None
-        known, prior_findings = review_history.matching_findings(
-            self.chain.root, target, state.review_panels
-        )
-        ctx = review_panel.ReviewContext(
-            task=state.original_task,
-            rules=repo_context.review_rules(self.chain.root, target.base_tree, self.hide),
-            diff=diff,
-            verification=(
-                "passed"
-                if state.verify.last_ok is True
-                else "failed"
-                if state.verify.last_ok is False
-                else None
-            ),
-            verify_output=state.verify.last_tail,
-            prior_findings=prior_findings,
-        )
+        try:
+            prepared = self.prepare(state, target, diff, panel_id=panel_id)
+        except (errors.GitError, OSError) as exc:
+            self.emit(
+                journal.LoopReviewSkipped(
+                    **identity,
+                    reason="target_unreadable",
+                    error=exc.safe_message if isinstance(exc, errors.GitError) else str(exc),
+                )
+            )
+            return None
+        target, ctx = prepared.target, prepared.context
         self.emit(
             journal.LoopReviewStart(
                 **identity,
@@ -640,7 +693,12 @@ class Reviewer:
             )
         )
         observations = review_history.observations(
-            panel_id, result.per_seat, known, root=self.chain.root, target=target, hide=self.hide
+            prepared.panel_id,
+            result.per_seat,
+            dict(prepared.known_findings),
+            root=self.chain.root,
+            target=target,
+            hide=self.hide,
         )
         shown_keys = {review_records.finding_key(f) for f in shown}
         record = review_records.ReviewPanel(

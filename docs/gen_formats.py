@@ -580,6 +580,11 @@ The journal records describe current writers; historical reads tolerate unknown 
 Optional event fields may be absent or null.
 Integer values also satisfy a record's `float` field, but booleans do not.
 
+Review targets retain `snapshot_commit` as the cloneable commit for the exact `head_tree`.
+`snapshot_ref` names its session-owned hidden ref; `hidden_paths` and `paths` keep their coverage.
+It defaults empty on historical records, whose unanchored trees may be unavailable.
+The ref also retains the base tree and is removed with its session, not by chain pruning.
+
 """
 
 

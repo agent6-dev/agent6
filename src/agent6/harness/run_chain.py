@@ -12,7 +12,7 @@ import pathlib
 
 from agent6 import errors, review_records
 from agent6.config import GitCommitConfig
-from agent6.vcs import git_ops, git_read
+from agent6.vcs import git_ops, git_read, git_snapshots
 
 _DIRTY_NOTE_CAP = 500  # paths a dirty-worktree note counts before it says "+"
 
@@ -270,18 +270,26 @@ class RunChain:
         The head is the record's head (the chain tip; the checkout's HEAD under model git
         control, where the model's commits are the record), or the worktree's tree while
         edits sit uncommitted (a turn the gate failed is not checkpointed), so the panel
-        reads what the model wrote; that tree hangs off no ref, so the target names no
-        snapshot commit and a later reader treats it as gone once pruned.
+        reads what the model wrote. Panel preparation retains that exact tree on a separate
+        review ref; reading the target never checkpoints the run.
 
         Returns:
-            The target; None without a recorded head.
+            The target; None for an empty unborn repository.
+
+        Raises:
+            GitError: The recorded head or worktree cannot be read.
+            OSError: The repository cannot be read.
         """
-        tip = self.checkpoint_head_sha()
-        if not tip:
+        tip = (
+            git_read.chain_tip(self.root, self.ref) or self.fallback_parent
+            if self.ref is not None
+            else git_read.chain_tip(self.root, "HEAD")
+        )
+        committed = git_read.tree_sha(self.root, tip) if tip else git_read.EMPTY_TREE
+        worktree = git_read.worktree_tree(self.root, tip, self.excluded)
+        if not tip and worktree == git_read.EMPTY_TREE:
             return None
-        committed = git_read.tree_sha(self.root, tip)
-        worktree = self.tree_sha()
-        uncommitted = bool(worktree) and worktree != committed
+        uncommitted = worktree != committed
         return review_records.ReviewTarget(
             base_commit=self.base_sha or None,
             base_tree=(
@@ -291,7 +299,53 @@ class RunChain:
             ),
             head_commit=None if uncommitted else tip,
             head_tree=worktree if uncommitted else committed,
-            snapshot_commit="" if uncommitted else tip,
+            snapshot_commit="" if uncommitted else tip or "",
             paths=(),
             source="worktree" if uncommitted else "revisions",
+            hidden_paths=tuple(sorted(self.hidden)),
         )
+
+    def retain_review_target(
+        self, target: review_records.ReviewTarget, session_id: str
+    ) -> review_records.ReviewTarget:
+        """Anchor both trees under the owning session without advancing its run.
+
+        Args:
+            target: The already captured comparison, including path coverage.
+            session_id: The record that owns the snapshot's retention.
+
+        Returns:
+            The same comparison with a durable cloneable snapshot binding.
+
+        Raises:
+            GitError: Either tree or its recorded commit is unreadable or inconsistent.
+            OSError: The repository cannot be read.
+        """
+        base = target.base_commit
+        if base and git_read.tree_sha(self.root, base) != target.base_tree:
+            raise errors.GitError("review base commit does not match its tree")
+        if (
+            target.head_commit
+            and git_read.tree_sha(self.root, target.head_commit) != target.head_tree
+        ):
+            raise errors.GitError("review head commit does not match its tree")
+        if not base and target.base_tree != git_read.EMPTY_TREE:
+            base = git_snapshots.snapshot_commit(
+                self.root,
+                target.base_tree,
+                parents=(),
+                ref=git_read.review_snapshot_ref_for(
+                    session_id, target.base_tree, target.base_tree
+                ),
+                identity=self.identity,
+            )
+        parent = target.head_commit or self.checkpoint_head_sha()
+        ref = git_read.review_snapshot_ref_for(session_id, target.base_tree, target.head_tree)
+        snapshot = git_snapshots.snapshot_commit(
+            self.root,
+            target.head_tree,
+            parents=tuple(p for p in (parent, base) if p),
+            ref=ref,
+            identity=self.identity,
+        )
+        return dataclasses.replace(target, snapshot_commit=snapshot, snapshot_ref=ref)

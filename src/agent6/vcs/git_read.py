@@ -511,6 +511,18 @@ def list_chain_refs(path: pathlib.Path) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(rows))
 
 
+def review_snapshot_ref_for(session_id: str, base_tree: str, head_tree: str) -> str:
+    """Return the session-owned anchor for one immutable review comparison."""
+    return f"{CHAIN_NS}/{session_id}/review/{base_tree}-{head_tree}"
+
+
+def session_refs(path: pathlib.Path, session_id: str) -> tuple[str, ...]:
+    """Return every hidden ref owned by this session, for record cleanup."""
+    prefix = f"{CHAIN_NS}/{session_id}/"
+    out = git_command.run(path, "for-each-ref", "--format=%(refname)", prefix).stdout
+    return tuple(sorted(ref for ref in out.splitlines() if ref.startswith(prefix)))
+
+
 def git_common_dir(path: pathlib.Path) -> pathlib.Path:
     """Return the repository's shared `.git` directory, absolute: the main checkout's."""
     out = git_command.run(

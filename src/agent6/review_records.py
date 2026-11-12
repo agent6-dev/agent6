@@ -53,6 +53,7 @@ class ReviewTarget:
         paths: The reviewed path scope, empty for all paths.
         source: Whether the comparison came from revisions or the working tree.
         hidden_paths: Paths withheld from the review.
+        snapshot_ref: The session-owned hidden ref retaining the comparison; empty on old records.
     """
 
     base_commit: str | None
@@ -63,6 +64,7 @@ class ReviewTarget:
     paths: tuple[str, ...]
     source: Literal["revisions", "worktree"]
     hidden_paths: tuple[str, ...] = ()
+    snapshot_ref: str = ""
 
 
 class ReviewLocation(pydantic.BaseModel):

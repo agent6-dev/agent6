@@ -1965,6 +1965,7 @@ class Harness:
         """Return the in-loop review panel."""
         return review_gate.Reviewer(
             settings=self.review,
+            session_id=self.session_id,
             media_rejections=self.media_rejections,
             chain=self.chain,
             hide=self.config.sandbox.hide_paths,

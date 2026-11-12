@@ -84,7 +84,14 @@ A run keeps one message history with one provider and one model.
 - under `backend = "claude_code"` the provider keeps one `claude` process per execution and replays that history as labelled text and retained media whenever a call is not a continuation of its last round ([Config](config.md))
 
 An in-loop panel records the run base and reviewed head's tree IDs, full grounded seat verdicts, and findings with durable IDs in `loop.review.*` events.
-It does not capture a separate snapshot or move the operator's index, HEAD or run chain.
+Panel preparation retains the exact comparison under `refs/agent6/<session>/review/<base-tree>-<head-tree>`, including uncommitted work after failed verification or with `git.commit_per_turn = false`.
+The snapshot commit retains the base history as well as the head tree; an existing head commit is reused when it already retains both.
+Before creating or reusing a snapshot, git checks the trees, retained history and every file object they reference.
+Retention never moves the operator's index, HEAD, visible branches or run chain.
+`Reviewer.prepare` binds the panel ID and target to an immutable `ReviewInput` containing complete historical rules, prior findings and verification evidence.
+The current seat executor consumes that context; lane execution is not enabled by preparation.
+Unreadable targets or failed retention skip the panel with `target_unreadable`, never substitute the chain tip for unreadable worktree content.
+The refs survive chain pruning and are removed with their owning session record (`sessions remove`, including `--asks`).
 `harness/review_history.py` restores those records on resume.
 Only exact normalized finding content, location and the cited blob identify a repeat.
 The journal keeps repeated observations even when the worker feedback omits them.

@@ -370,6 +370,14 @@ Model obedience is not a security boundary.
 Review text notices escape control characters in rule paths and refusal reasons.
 See [Code-review rules](usage.md#code-review-rules) for discovery, limits and recorded sources.
 
+**Review evidence retention.** Session-owned panels anchor the exact base and head trees on hidden git refs until their session record is removed.
+Uncommitted reviewed bytes therefore survive git garbage collection, even when verification failed or per-turn commits are disabled.
+Capture preserves the target's exclusions and hidden paths; it does not add excluded worktree content or change historical rule selection.
+A snapshot does not widen read permissions: historical hidden files already in git remain subject to the configured hidden-path boundary.
+Preparation refuses an unreadable target or failed retention rather than reviewing an older committed tree.
+Only the parent binds the panel ID, target, rules, prior findings and verification evidence; reviewer text cannot replace that binding.
+See [Usage](usage.md#plan-review-and-ask) for cleanup ownership.
+
 **Repo memory** is a prompt-injection persistence channel: the rendered index joins the system prompt of later runs on the same repo.
 Memory (`<state_dir>/memory/`) holds facts the model may correct; rules belong in the repo's committed `AGENTS.md` or the operator rulings file `<state_dir>/decisions.md`, which the harness appends to, the operator edits with any editor, and the model sees only as read-only text injected into its prompt.
 

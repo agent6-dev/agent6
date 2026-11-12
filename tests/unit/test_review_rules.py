@@ -419,7 +419,7 @@ def test_the_review_target_is_the_worktree_while_edits_sit_uncommitted(repo: pat
 
 
 def test_earlier_findings_whose_tree_is_gone_match_nothing(repo: pathlib.Path) -> None:
-    """A worktree target's tree hangs off no ref: once pruned, its record matches no finding."""
+    """A legacy worktree target with a pruned tree matches no finding."""
     from agent6 import review_records
     from agent6.harness import review_history
 
@@ -454,3 +454,39 @@ def test_earlier_findings_whose_tree_is_gone_match_nothing(repo: pathlib.Path) -
     )
     live = review_records.ReviewTarget(base, tree, base, tree, base, (), "revisions")
     assert review_history.matching_findings(repo, live, (panel,)) == ({}, ())
+
+
+def test_prepared_review_freezes_rules_findings_and_failed_verification(repo: pathlib.Path) -> None:
+    """Preparation keeps the complete historical rules and evidence after the parent changes."""
+    (repo / "AGENTS.md").write_text("base rule\n" * 1000)
+    (repo / "foo.py").write_text("x = 1\n")
+    tree = _commit(repo)
+    provider = mock.Mock()
+    provider.call.return_value = test_review_gate._resp(
+        '{"verdict":"block","findings":[{"category":"security","severity":"block",'
+        '"title":"problem","location":{"path":"foo.py","side":"head",'
+        '"start_line":1,"end_line":1}}]}'
+    )
+    sink = event_log.EventSink(repo.parent / "review-evidence" / "logs.jsonl")
+    reviewer = _reviewer_for(repo, provider, sink)
+    state = loop_state.LoopState(original_task="t", tool_calls=0)
+    assert reviewer.critique(state, trigger="periodic", turn=1) is not None
+    (repo / "unrelated.py").write_text("more work\n")
+    (repo / "AGENTS.md").write_text("changed rules must not govern\n")
+    target = reviewer.chain.review_target()
+    assert target is not None
+    diff = git_read.diff_range(repo, target.base_tree, target.head_tree)
+    state.verify.last_ok = False
+    state.verify.last_tail = "failed verify evidence"
+    prepared = reviewer.prepare(state, target, diff, panel_id="prepared")
+    state.verify.last_ok = True
+    state.verify.last_tail = "later pass"
+    (repo / "foo.py").write_text("later parent\n")
+    assert prepared.panel_id == "prepared" and prepared.target.head_tree == target.head_tree
+    assert prepared.context.rules == repo_context.review_rules(repo, tree)
+    assert prepared.context.verification == "failed"
+    assert prepared.context.verify_output == "failed verify evidence"
+    assert prepared.excluded_paths == tuple(sorted(reviewer.chain.excluded))
+    assert prepared.context.prior_findings == (state.review_panels[0].findings[0].finding,)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        prepared.panel_id = "forged"  # type: ignore[misc]

@@ -5,6 +5,9 @@ from __future__ import annotations
 import pathlib
 import subprocess
 
+import pytest
+
+from agent6 import errors
 from agent6.harness import run_chain
 from agent6.vcs import git_read
 
@@ -56,3 +59,30 @@ def test_a_model_controlled_run_is_reviewed_from_its_base_to_the_checkout(
     assert edited.source == "worktree" and edited.head_commit is None
     assert edited.head_tree != committed.head_tree
     assert "later.txt" in git_read.diff_range(repo, edited.base_tree, edited.head_tree)
+
+
+def test_unreadable_worktree_never_falls_back_to_a_committed_review(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed worktree read must not certify the older committed bytes."""
+    repo, base = _repo(tmp_path)
+    (repo / "seed.txt").write_text("unreadable change\n")
+    chain = run_chain.RunChain(repo, fallback_parent=base, base_sha=base)
+
+    def unreadable(*_args: object) -> str:
+        raise errors.GitError("worktree unreadable")
+
+    monkeypatch.setattr(git_read, "worktree_tree", unreadable)
+    with pytest.raises(errors.GitError, match="worktree unreadable"):
+        chain.review_target()
+
+
+def test_unborn_uncommitted_review_has_an_exact_tree(tmp_path: pathlib.Path) -> None:
+    """Disabling per-turn commits must not remove the first review target in an unborn repo."""
+    _git(tmp_path, "init", "-q")
+    (tmp_path / "new.py").write_text("first work\n")
+    chain = run_chain.RunChain(tmp_path, ref=git_read.chain_ref_for("new"), per_turn=False)
+    target = chain.review_target()
+    assert target is not None
+    assert target.base_tree == git_read.EMPTY_TREE and target.head_commit is None
+    assert git_read.read_file_at(tmp_path, target.head_tree, "new.py") == "first work\n"

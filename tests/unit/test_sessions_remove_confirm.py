@@ -19,7 +19,7 @@ import pytest
 from agent6 import paths, portable
 from agent6.sessions import layout as sessions_layout
 from agent6.sessions import process
-from agent6.ui.cli import main, steer_tty
+from agent6.ui.cli import main, sessions_cmds, steer_tty
 from agent6.vcs import git_read
 
 _ID = "dead-run-BBBB22"
@@ -314,3 +314,47 @@ def test_remove_refuses_a_session_that_went_live_while_the_question_stood(
     assert main(["sessions", "remove", _ID]) == 2
     assert "still live" in capsys.readouterr().err
     assert layout.session_dir.exists()
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_remove_owns_review_refs_only_after_the_record_goes(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure: bool,
+) -> None:
+    """Removing a session drops its evidence refs, but a partial record delete retains them."""
+    monkeypatch.chdir(tmp_path)
+    saved = _ended_unmerged_run(tmp_path)
+    ref = f"refs/agent6/{_ID}/review/tree"
+    other = f"refs/agent6/{_ID}-other/review/tree"
+    for name in (ref, other):
+        _git(tmp_path, "update-ref", name, "HEAD")
+    if failure:
+
+        def refuse(_path: pathlib.Path) -> None:
+            raise PermissionError("record stays")
+
+        monkeypatch.setattr(sessions_cmds.shutil, "rmtree", refuse)
+    assert main(["sessions", "remove", _ID]) == int(failure)
+    assert saved.session_dir.exists() is failure
+    assert bool(git_read.chain_tip(tmp_path, ref)) is failure
+    assert git_read.chain_tip(tmp_path, other)
+    if not failure:
+        assert "1 review snapshot" in capsys.readouterr().out
+
+
+def test_remove_asks_removes_their_review_refs(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A /review ask owns its snapshots even when the whole asks bucket is removed."""
+    monkeypatch.chdir(tmp_path)
+    _ended_unmerged_run(tmp_path)
+    asks = paths.state_dir(tmp_path) / "sessions" / "asks"
+    (asks / "review-ask").mkdir(parents=True)
+    ref = "refs/agent6/review-ask/review/tree"
+    _git(tmp_path, "update-ref", ref, "HEAD")
+    assert main(["sessions", "remove", "--asks", "--yes"]) == 0
+    assert not asks.exists()
+    assert git_read.chain_tip(tmp_path, ref) is None
+    assert git_read.chain_tip(tmp_path, git_read.chain_ref_for(_ID))

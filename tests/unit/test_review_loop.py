@@ -92,7 +92,14 @@ def immutable_target(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         repo_context, "review_rules", mock.Mock(return_value=review_records.ReviewRules())
     )
+
+    def retain_target(
+        _self: run_chain.RunChain, target: review_records.ReviewTarget, _session_id: str
+    ) -> review_records.ReviewTarget:
+        return target
+
     monkeypatch.setattr(run_chain.RunChain, "review_target", moving_target)
+    monkeypatch.setattr(run_chain.RunChain, "retain_review_target", retain_target)
     monkeypatch.setattr(run_chain.RunChain, "diff_since_base", mock.Mock(return_value=_DIFF))
     monkeypatch.setattr(git_read, "diff_range", mock.Mock(return_value=_DIFF))
     monkeypatch.setattr(git_read, "tree_entry", mock.Mock(return_value="100644 blob cited-blob"))

@@ -502,7 +502,8 @@ def _remove_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
         common.error("--asks clears this directory's asks; drop the run id.")
         return 2
     bucket = sessions_layout.bucket_dir(agent6_paths.state_dir(cwd), "asks")
-    gone = sum(1 for _ in bucket.iterdir()) if bucket.is_dir() else 0
+    sessions = tuple(bucket.iterdir()) if bucket.is_dir() else ()
+    gone = len(sessions)
     count = f"{gone} ask{'' if gone == 1 else 's'}"
     if gone and not yes and not portable.has_controlling_tty():
         common.refuse(
@@ -523,6 +524,14 @@ def _remove_asks(cwd: pathlib.Path, session_id: str, *, yes: bool) -> int:
         pass
     except OSError as exc:
         common.error(f"could not remove {bucket}: {exc}")
+        return 1
+    try:
+        if git_read.is_git_repo(cwd):
+            for session in sessions:
+                for ref in git_read.session_refs(cwd, session.name):
+                    git_ops.delete_ref(cwd, ref)
+    except errors.GitError as exc:
+        common.error(f"removed asks, but could not remove their refs: {exc.safe_message}")
         return 1
     print(f"removed {count} from {cwd}")
     return 0
@@ -658,7 +667,7 @@ def _remove_session(
     sharing: list[str],
     tips: tuple[str, ...],
 ) -> int:
-    """Delete one session's record, then its worktree and chain ref, and print what went.
+    """Delete one session's record, then its worktree and owned refs, and print what went.
 
     Args:
         cwd: The checkout git runs from.
@@ -703,6 +712,12 @@ def _remove_session(
                     f" git branch <name> {chain_head[:12]})"
                 )
             )
+        snapshots = git_read.session_refs(cwd, layout.session_id)
+        for ref in snapshots:
+            git_ops.delete_ref(cwd, ref)
+        if snapshots:
+            count = len(snapshots)
+            went.append(f"{count} review snapshot{'' if count == 1 else 's'}")
     except errors.GitError:
         pass  # not a repo here, or git unreadable: state-dir removal stands
     what = [layout.session_id, *went]

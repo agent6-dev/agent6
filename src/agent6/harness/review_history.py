@@ -57,7 +57,7 @@ def _blob(
     try:
         entry = git_read.tree_entry(root, tree, finding.location.path).split()
     except errors.GitError:
-        return ""  # a worktree target's tree is gone once pruned: its findings match nothing
+        return ""  # historical records may name unretained trees: their findings match nothing
     return entry[2] if len(entry) == 3 and entry[1] == "blob" else ""
 
 
