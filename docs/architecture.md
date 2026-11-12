@@ -869,10 +869,7 @@ agent6 also sets markers for its own children:
 
 - `AGENT6_SUBRUN=1`: subordinate work (a lane, a machine state, a `/btw` question), which never fans out itself ([Parallel runs](#parallel-runs)).
 - `AGENT6_STREAM_TO_LOG=1`: a detached spawn or lane emits its stream deltas as events with no console echo.
-- `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`: the lineage a lane's manifest records.
-- `AGENT6_LANE_CONFIG`: the internal snapshot path, required to match the child's sole `--config` file with `AGENT6_SUBRUN=1` and valid lane lineage; a mismatch or malformed snapshot refuses the load.
-- `AGENT6_LANE_CONFIG_NOTES`: a JSON array of serialization loss notes, validated before the lane records them in `parallel.config_notes`.
-- `AGENT6_LANE_GATE_SOURCE`: the origin of the verify gate the coordinator resolved, which a lane's manifest records.
+- `AGENT6_LANE=<path>`: the lane's envelope (`app/lane_envelope.py`): the config snapshot the lane's sole `--config` must name, its serialization loss notes, the lineage the lane's manifest records, the origin of the verify gate the coordinator resolved, and the operator's task; a missing or malformed envelope, or another `--config`, refuses the load.
 
 ## Pre-1.0 stability
 

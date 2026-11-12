@@ -29,6 +29,7 @@ import pytest
 from agent6 import directive, kinds, paths, portable
 from agent6.app import (
     compare,
+    lane_envelope,
     lane_watch,
     parallel,
     parallel_results,
@@ -48,6 +49,13 @@ from agent6.ui.cli import cli_main, main
 from agent6.ui.cli import parallel as parallel_cmd
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing, session_log, session_status
+
+
+def _envelope(env: dict[str, str]) -> lane_envelope.LaneEnvelope:
+    """Read the envelope a spawned lane's environment names."""
+    return lane_envelope.LaneEnvelope.model_validate_json(
+        pathlib.Path(env[lane_envelope.ENV]).read_text(encoding="utf-8")
+    )
 
 
 def _git(repo: pathlib.Path, *args: str) -> None:
@@ -641,7 +649,7 @@ def test_bridge_spawner_argv_ends_options_before_task(
         captured.append(list(argv))
         env = _k["env"]
         assert isinstance(env, dict)
-        assert pathlib.Path(str(env["AGENT6_OPERATOR_TASK_FILE"])).read_text() == words
+        assert _envelope(env).operator_task == words
         return workdir, ""
 
     cfg = Config()
@@ -3096,11 +3104,12 @@ def test_lane_is_self_describing_from_birth(
         fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         gate_source="inferred",
     )  # fmt: skip
-    assert captured[-1]["AGENT6_PARALLEL_LINEAGE"] == "co:fan:2"
-    assert captured[-1]["AGENT6_LANE_GATE_SOURCE"] == "inferred"
+    envelope = _envelope(captured[-1])
+    assert (envelope.coordinator, envelope.group, envelope.lane) == ("co", "fan", 2)
+    assert envelope.gate_source == "inferred"
 
-    # The writer records it from the env, exactly as the spawned lane would.
-    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:2")
+    # The writer records it from the envelope, exactly as the spawned lane would.
+    monkeypatch.setenv(lane_envelope.ENV, captured[-1][lane_envelope.ENV])
     layout = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="fan-l2")
     layout.ensure()
     stamps.write_session_manifest(
@@ -3116,7 +3125,7 @@ def test_lane_is_self_describing_from_birth(
     assert m.parallel == sessions_manifest.ParallelLineage(group="fan", lane=2, coordinator="co")
 
     # An ordinary run records no lineage.
-    monkeypatch.delenv("AGENT6_PARALLEL_LINEAGE")
+    monkeypatch.delenv(lane_envelope.ENV)
     layout2 = sessions_layout.SessionLayout(state_dir=tmp_path / "state", session_id="plain-run")
     layout2.ensure()
     stamps.write_session_manifest(
@@ -3163,7 +3172,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
     def child(argv: list[str], cwd: pathlib.Path, **kwargs: Any) -> tuple[pathlib.Path, str]:
         config_path = pathlib.Path(argv[argv.index("--config") + 1])
         env = kwargs["env"]
-        assert env["AGENT6_LANE_CONFIG"] == str(config_path)
+        assert _envelope(env).config == config_path
         with monkeypatch.context() as patch:
             for name, value in env.items():
                 patch.setenv(name, value)
@@ -3304,7 +3313,8 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
     ) -> tuple[pathlib.Path | None, str]:
         assert cwd == lanes[0].workdir
         assert not before and not list_dirs()
-        assert env["AGENT6_PARALLEL_LINEAGE"] == "failed11:failed11:1"
+        envelope = _envelope(env)
+        assert (envelope.coordinator, envelope.group, envelope.lane) == ("failed11", "failed11", 1)
         assert workdirs.sweep_fanout_clones(origin, cfg) == (0, 1)
         return None, "lane refused before creating a session"
 

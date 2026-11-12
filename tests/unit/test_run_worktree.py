@@ -30,6 +30,7 @@ from agent6.app import (
     preflight,
     role_providers,
     session_runtime,
+    workdirs,
     workspace_setup,
 )
 from agent6.app import lanes as app_lanes
@@ -46,6 +47,7 @@ from agent6.ui.cli import parallel as parallel_cmd
 from agent6.ui.cli import run as cli_run
 from agent6.vcs import git_ops, git_read
 from agent6.viewmodel import listing
+from tests import lane_env
 
 
 @pytest.fixture(autouse=True)
@@ -129,6 +131,25 @@ def _git(repo: pathlib.Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=repo, check=True, capture_output=True, text=True
     ).stdout
+
+
+def _lane_snapshot(
+    repo: pathlib.Path,
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    gate_source: sessions_manifest.GateSource = "",
+) -> pathlib.Path:
+    """Make this process lane 1 of a fan-out over `repo`, started on a real config snapshot."""
+    effective = layer.load_effective(repo)
+    spec = subrun.LaneSpec(
+        lane=1, session_id="fan-l1", workdir=tmp_path / "lanes" / "lane-1", route=None
+    )
+    snapshot = workdirs.write_lane_config(
+        effective.config, spec, explicit_leaves=effective.explicit_leaves
+    ).path
+    lane_env.mark_lane(monkeypatch, snapshot.parent, config=snapshot, gate_source=gate_source)
+    return snapshot
 
 
 def _repo(
@@ -512,13 +533,19 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
             contextlib.redirect_stderr(errors),
         ):
             child.chdir(spec.workdir)
-            child.setenv("AGENT6_PARALLEL_LINEAGE", f"capped-fan:capped-fan:{spec.lane}")
-            assert (
-                cli_main(
-                    ["run", "--session-id", spec.session_id, "--max-tokens-fallback", "1", task]
-                )
-                == 3
-            ), output.getvalue() + errors.getvalue()
+            snapshot = workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).path
+            lane_env.mark_lane(
+                child,
+                spec.workdir.parent,
+                config=snapshot,
+                coordinator="capped-fan",
+                group="capped-fan",
+                lane=spec.lane,
+            )
+            argv = ["run", "--config", str(snapshot), "--session-id", spec.session_id]
+            assert cli_main([*argv, "--max-tokens-fallback", "1", task]) == 3, (
+                output.getvalue() + errors.getvalue()
+            )
         session_dir = paths.state_dir(spec.workdir) / "sessions" / "runs" / spec.session_id
         return subrun.LaneResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
 
@@ -1005,10 +1032,10 @@ def test_a_lane_runs_the_setup_command_in_its_clone(
         config=_COMMANDS.replace("[sandbox]", '[git]\ndirty_tree = "include"\n\n[sandbox]'),
     )
     _with_setup(repo, '["sh", "-c", "echo ready > .setup-ran"]')
-    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
+    snapshot = _lane_snapshot(repo, tmp_path, monkeypatch)
     _script(monkeypatch)
 
-    assert cli_main(["run", "--session-id", "fan-l1", "task"]) == 0
+    assert cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"]) == 0
     capsys.readouterr()
 
     assert (repo / ".setup-ran").read_text(encoding="utf-8") == "ready\n"
@@ -1298,10 +1325,9 @@ def test_a_lane_stamps_the_gate_origin_its_coordinator_resolved(
     repo = _repo(tmp_path, monkeypatch, config=_FINISH_GATE + 'verify_command = ["true"]\n')
     _git(repo, "commit", "-qam", "the operator's edit")
     _script(monkeypatch)
-    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
-    monkeypatch.setenv("AGENT6_LANE_GATE_SOURCE", "inferred")
+    snapshot = _lane_snapshot(repo, tmp_path, monkeypatch, gate_source="inferred")
 
-    assert cli_main(["run", "--session-id", "fan-l1", "task"]) == 0
+    assert cli_main(["run", "--config", str(snapshot), "--session-id", "fan-l1", "task"]) == 0
 
     manifest = sessions_manifest.read_manifest(_run_dir(repo, "fan-l1"))
     assert manifest.harness.gate.command == ("true",)

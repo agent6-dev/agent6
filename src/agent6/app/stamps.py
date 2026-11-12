@@ -9,16 +9,14 @@ from __future__ import annotations
 
 import contextlib
 import datetime
-import os
 import pathlib
 from collections.abc import Callable, Mapping
 from typing import Any
 
-import pydantic
-
 from agent6 import __version__, evidence, kinds, portable, task_text
+from agent6.app import lane_envelope
 from agent6.app import reporter as app_reporter
-from agent6.config import Config, ConfigError, ReviewerConfig, RoleModel
+from agent6.config import Config, ReviewerConfig, RoleModel
 from agent6.models import registry
 from agent6.sessions import event_log, manifest
 from agent6.sessions import layout as sessions_layout
@@ -221,44 +219,35 @@ def write_session_manifest(
 def lane_gate_source() -> manifest.GateSource:
     """Return the origin of the gate a lane's config carries, or "" outside a lane.
 
-    `AGENT6_LANE_GATE_SOURCE`: the coordinator resolves the gate in the origin, where the
-    repo signals are, and writes it into the lane's config; the lane alone would read it
-    as configured.
+    The coordinator resolves the gate in the origin, where the repo signals are, and writes it
+    into the lane's config; the lane alone would read it as configured.
 
     Returns:
         The gate's origin, "" outside a lane or when the coordinator passed none.
     """
-    if parallel_lineage() is None:
-        return ""
-    source = os.environ.get("AGENT6_LANE_GATE_SOURCE", "")
-    return source if source in ("configured", "inferred", "adopted") else ""
+    envelope = lane_envelope.read()
+    return envelope.gate_source if envelope is not None else ""
 
 
 def parallel_lineage() -> manifest.ParallelLineage | None:
-    """Return the fan-out lineage the spawner stamped into this lane's environment, or None.
+    """Return the fan-out lineage the coordinator handed this lane, or None outside a lane.
 
-    `AGENT6_PARALLEL_LINEAGE=<coordinator>:<group>:<lane>`. Read at the manifest's write so the
-    grouping survives a coordinator death.
+    Read at the manifest's write so the grouping survives a coordinator death.
 
     Returns:
-        The lineage, None outside a lane or when the value does not parse.
+        The lineage, or None.
 
     Raises:
-        ConfigError: The serialized lane config notes are not a JSON array of strings.
+        ConfigError: The lane's envelope is missing or malformed.
     """
-    raw = os.environ.get("AGENT6_PARALLEL_LINEAGE", "")
-    coordinator, _, rest = raw.partition(":")
-    group, sep, lane = rest.rpartition(":")
-    if not sep or not coordinator or not group or not lane.isdigit():
+    envelope = lane_envelope.read()
+    if envelope is None:
         return None
-    try:
-        notes = pydantic.TypeAdapter(tuple[str, ...]).validate_json(
-            os.environ.get("AGENT6_LANE_CONFIG_NOTES", "[]"), strict=True
-        )
-    except pydantic.ValidationError as exc:
-        raise ConfigError(f"invalid lane config notes: {exc}") from exc
     return manifest.ParallelLineage(
-        group=group, lane=int(lane), coordinator=coordinator, config_notes=notes
+        group=envelope.group,
+        lane=envelope.lane,
+        coordinator=envelope.coordinator,
+        config_notes=envelope.notes,
     )
 
 

@@ -446,6 +446,7 @@ WEB = (
     Producer("viewmodel.receipt", "as_dict", "`/api/session/<id>/receipt` fields", "payload"),
 )
 MODELS = (
+    ("app.lane_envelope", "LaneEnvelope"),
     ("sessions.manifest", "SessionManifest"),
     ("ui.cli.ps_cmd", "_Row"),
     ("viewmodel.state_types", "SessionState"),

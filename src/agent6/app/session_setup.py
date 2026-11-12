@@ -18,6 +18,7 @@ import pydantic
 
 from agent6 import budget as agent6_budget
 from agent6 import child_env, kinds
+from agent6.app import lane_envelope
 from agent6.app import reporter as app_reporter
 from agent6.config import (
     AnthropicProviderEntry,
@@ -274,10 +275,12 @@ def load_session_config(
     Raises:
         ConfigError: The layers do not load, a flag fails validation, or the role cannot run.
     """
-    snapshot_path = lane_snapshot.marked_path(config_paths)
+    envelope = lane_envelope.read()
     effective = (
-        lane_snapshot.load(cwd, snapshot_path, preset=preset)
-        if snapshot_path is not None
+        lane_snapshot.load(
+            cwd, lane_snapshot.marked_path(config_paths, envelope.config), preset=preset
+        )
+        if envelope is not None
         else layer.load_effective(cwd, config_paths, preset=preset)
     )
     cfg = effective.config

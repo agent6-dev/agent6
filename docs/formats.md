@@ -2428,6 +2428,22 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
 
+### LaneEnvelope
+
+**Support: public.** What a lane knows about itself that no config layer holds.
+
+Source: [`agent6.app.lane_envelope.LaneEnvelope`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/app/lane_envelope.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `config` | `pathlib.Path` | The lane's config snapshot; the lane's sole `--config` must name it. |
+| `notes` | `tuple[str, ...]` | The snapshot's serialization loss notes, recorded in the lane's manifest. |
+| `coordinator` | `str` | The session every listing nests the lane under. |
+| `group` | `str` | The fan-out the lane belongs to. |
+| `lane` | `int` | The lane's number, from 1. |
+| `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
+| `operator_task` | `str \| None` | The task's words before composition; None when they are the task. |
+
 ### SessionManifest
 
 **Support: public.** The typed manifest.json a session starts with and later stamps.

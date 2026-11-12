@@ -8,9 +8,10 @@ import tomllib
 import pytest
 
 from agent6 import kinds, paths
-from agent6.app import session_setup, stamps, workdirs
+from agent6.app import lane_envelope, session_setup, stamps, workdirs
 from agent6.config import Config, ConfigError, RoleModel
 from agent6.harness import subrun
+from tests import lane_env
 
 
 @pytest.fixture
@@ -44,12 +45,6 @@ def resolved_config() -> Config:
     )
 
 
-def mark_lane(monkeypatch: pytest.MonkeyPatch, path: pathlib.Path) -> None:
-    monkeypatch.setenv("AGENT6_LANE_CONFIG", str(path))
-    monkeypatch.setenv("AGENT6_SUBRUN", "1")
-    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
-
-
 def test_four_explicit_routes_without_default_are_not_runnable(
     lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -64,11 +59,11 @@ def test_four_explicit_routes_without_default_are_not_runnable(
     )
     written = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset())
     assert "default" not in tomllib.loads(written.path.read_text())["models"]
-    for name in ("AGENT6_LANE_CONFIG", "AGENT6_SUBRUN", "AGENT6_PARALLEL_LINEAGE"):
+    for name in (lane_envelope.ENV, "AGENT6_SUBRUN"):
         monkeypatch.delenv(name, raising=False)
     with pytest.raises(ConfigError, match=r"No models\.default\.model configured"):
         session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
-    mark_lane(monkeypatch, written.path)
+    lane_env.mark_lane(monkeypatch, written.path.parent, config=written.path)
     with pytest.raises(ConfigError, match="lane snapshot"):
         session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
 
@@ -90,7 +85,7 @@ def test_snapshot_reloads_resolved_sampling(
 ) -> None:
     cfg = resolved_config()
     path = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset()).path
-    mark_lane(monkeypatch, path)
+    lane_env.mark_lane(monkeypatch, path.parent, config=path)
     effective = session_setup.load_session_config(lane.workdir, (path,), mode="run")
     worker = effective.config.models.resolve("worker")
     assert worker is not None
@@ -122,7 +117,7 @@ def test_only_internal_snapshot_discards_global_model_contributions(
     )
     monkeypatch.setenv("AGENT6_SUBRUN", "1")
     if internal:
-        mark_lane(monkeypatch, path)
+        lane_env.mark_lane(monkeypatch, path.parent, config=path)
     effective = session_setup.load_session_config(lane.workdir, (path,), mode="run")
     worker = effective.config.models.resolve("worker")
     assert worker is not None
@@ -166,7 +161,7 @@ def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
         '[presets.custom.sandbox]\nprotect_git = "off"\n'
     )
     written = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset())
-    mark_lane(monkeypatch, written.path)
+    lane_env.mark_lane(monkeypatch, written.path.parent, config=written.path)
     effective = session_setup.load_session_config(lane.workdir, (written.path,), mode="run")
     worker = effective.config.models.resolve("worker")
     assert worker is not None and worker.effort is None
@@ -177,25 +172,41 @@ def test_snapshot_discards_preset_models_but_keeps_other_preset_values(
 
 
 @pytest.mark.parametrize("raw", ["{}", "[1]", "[null]", "not json", '"note"'])
-def test_lineage_refuses_malformed_config_notes(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
-    monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "co:fan:1")
-    monkeypatch.setenv("AGENT6_LANE_CONFIG_NOTES", raw)
-    with pytest.raises(ConfigError, match="lane config notes"):
+def test_lineage_refuses_malformed_config_notes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: pathlib.Path, raw: str
+) -> None:
+    """A lane envelope whose notes are not a list of strings refuses the lineage read."""
+    path = tmp_path / "lane-1.json"
+    path.write_text(
+        '{"config": "/x/lane-1-config.toml", "coordinator": "co", "group": "fan", "lane": 1,'
+        f' "notes": {raw}}}'
+    )
+    monkeypatch.setenv(lane_envelope.ENV, str(path))
+    with pytest.raises(ConfigError, match="lane envelope"):
         stamps.parallel_lineage()
 
 
-@pytest.mark.parametrize("broken", ["path", "subrun", "lineage", "models", "default_sampling"])
+@pytest.mark.parametrize(
+    ("broken", "refusal"),
+    [
+        ("path", "lane snapshot"),
+        ("envelope", "lane envelope"),
+        ("lineage", "lane envelope"),
+        ("models", "lane snapshot"),
+        ("default_sampling", "lane snapshot"),
+    ],
+)
 def test_marked_snapshot_refuses_mismatch_or_malformed_models(
-    lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch, broken: str
+    lane: subrun.LaneSpec, monkeypatch: pytest.MonkeyPatch, broken: str, refusal: str
 ) -> None:
     path = workdirs.write_lane_config(resolved_config(), lane, explicit_leaves=frozenset()).path
-    mark_lane(monkeypatch, path)
+    envelope = lane_env.mark_lane(monkeypatch, path.parent, config=path)
     if broken == "path":
-        monkeypatch.setenv("AGENT6_LANE_CONFIG", str(path.with_suffix(".other")))
-    elif broken == "subrun":
-        monkeypatch.delenv("AGENT6_SUBRUN")
+        lane_env.mark_lane(monkeypatch, path.parent, config=path.with_suffix(".other"))
+    elif broken == "envelope":
+        monkeypatch.setenv(lane_envelope.ENV, str(path.parent / "missing.json"))
     elif broken == "lineage":
-        monkeypatch.setenv("AGENT6_PARALLEL_LINEAGE", "not-a-lane")
+        envelope.write_text(envelope.read_text().replace('"lane": 1', '"lane": 0'))
     elif broken == "models":
         path.write_text(
             '[providers.p]\nbackend = "openai"\nbase_url = "http://localhost:1/v1"\n'
@@ -209,5 +220,5 @@ def test_marked_snapshot_refuses_mismatch_or_malformed_models(
                 f'[models.{r}]\nmodel = "p/base"\n' for r in kinds.MODEL_ROLES if r != "default"
             )
         )
-    with pytest.raises(ConfigError, match="lane snapshot"):
+    with pytest.raises(ConfigError, match=refusal):
         session_setup.load_session_config(lane.workdir, (path,), mode="run")

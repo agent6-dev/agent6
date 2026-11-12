@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import dataclasses
-import os
 import pathlib
 
 from agent6 import kinds
@@ -49,36 +48,23 @@ def build(cfg: config_model.Config, *, explicit_leaves: frozenset[str]) -> Snaps
     return Snapshot(layer.materialize(snapshot, explicit_leaves=explicit_leaves), tuple(notes))
 
 
-def marked_path(config_paths: tuple[pathlib.Path, ...]) -> pathlib.Path | None:
-    """Require a marked lane snapshot to match the sole `--config` and lane context.
+def marked_path(config_paths: tuple[pathlib.Path, ...], snapshot: pathlib.Path) -> pathlib.Path:
+    """Require the lane's sole `--config` to be the snapshot its envelope names.
 
     Args:
         config_paths: The child command's config paths.
+        snapshot: The snapshot the lane's envelope names.
 
     Returns:
-        The marked path, or None for an ordinary operator config load.
+        The snapshot path as the command gave it.
 
     Raises:
-        ConfigError: The internal marker is empty, mismatched or outside a lane spawn.
+        ConfigError: The command's config paths are not that one file.
     """
-    raw = os.environ.get("AGENT6_LANE_CONFIG")
-    if raw is None:
-        return None
-    path = pathlib.Path(raw)
-    lineage = os.environ.get("AGENT6_PARALLEL_LINEAGE", "").split(":")
-    if (
-        not raw
-        or os.environ.get("AGENT6_SUBRUN") != "1"
-        or len(lineage) != 3
-        or not all(lineage)
-        or not lineage[2].isascii()
-        or not lineage[2].isdigit()
-        or int(lineage[2]) < 1
-        or len(config_paths) != 1
-        or config_paths[0].resolve() != path.resolve()
-    ):
+    if len(config_paths) != 1 or config_paths[0].resolve() != snapshot.resolve():
         raise validation.ConfigError(
-            "internal lane snapshot requires a matching --config path and lane spawn context"
+            "internal lane snapshot requires the lane's sole --config to be the snapshot its"
+            " envelope names"
         )
     return config_paths[0]
 

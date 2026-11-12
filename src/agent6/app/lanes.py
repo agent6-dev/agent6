@@ -7,7 +7,6 @@ from __future__ import annotations
 import concurrent.futures
 import dataclasses
 import functools
-import json
 import os
 import pathlib
 import threading
@@ -16,7 +15,7 @@ from typing import Protocol
 
 from agent6 import directive, errors, kinds, paths
 from agent6.app import compare as app_compare
-from agent6.app import lane_watch, parallel_results, workdirs
+from agent6.app import lane_envelope, lane_watch, parallel_results, workdirs
 from agent6.app import reporter as app_reporter
 from agent6.config import Config, ConfigError
 from agent6.context import memory
@@ -143,7 +142,7 @@ def bridge_spawner(
     at: str | None = None,
     fanout_id: str,
     coordinator: str,
-    gate_source: str = "",
+    gate_source: sessions_manifest.GateSource = "",
     runtime: LaneRuntime,
 ) -> subrun.LaneResult:
     """Clone the origin and spawn a detached `agent6 run` in the clone.
@@ -208,21 +207,28 @@ def bridge_spawner(
         argv += ["--pin", pin]
     # `--` so a task that looks like a flag is never parsed as one.
     argv += ["--", task]
+    # The lane's own manifest records its lineage, so a coordinator death orphans nothing; the
+    # gate's origin was resolved in the origin, where the repo signals are.
+    envelope_path = spec.workdir.parent / f"lane-{spec.lane}.json"
+    lane_envelope.write(
+        envelope_path,
+        lane_envelope.LaneEnvelope(
+            config=config_path,
+            notes=config.notes,
+            coordinator=coordinator,
+            group=fanout_id,
+            lane=spec.lane,
+            gate_source=gate_source,
+            operator_task=operator_task,
+        ),
+    )
     # AGENT6_SUBRUN keeps a lane from fanning out itself: depth 1 by construction.
     markers = {
         "AGENT6_STREAM_TO_LOG": "1",
         "AGENT6_DETACHED_AWAY": lane_away,
         "AGENT6_SUBRUN": "1",
-        "AGENT6_LANE_CONFIG": str(config_path),
-        "AGENT6_LANE_CONFIG_NOTES": json.dumps(config.notes),
-        # The lane's own manifest records its lineage, so a coordinator death orphans nothing.
-        "AGENT6_PARALLEL_LINEAGE": f"{coordinator}:{fanout_id}:{spec.lane}",
-        # Resolved in the origin, where the repo signals are; the lane stamps the same origin.
-        "AGENT6_LANE_GATE_SOURCE": gate_source,
+        lane_envelope.ENV: str(envelope_path),
     }
-    operator_path = config_path.with_suffix(".task.txt")
-    operator_path.write_text(operator_task if operator_task is not None else task, encoding="utf-8")
-    markers["AGENT6_OPERATOR_TASK_FILE"] = str(operator_path)
     session_dir, err = runtime.spawn(
         argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
     )
@@ -248,7 +254,7 @@ def run_lane_to_completion(
     max_usd: float | None = None,
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
-    gate_source: str = "",
+    gate_source: sessions_manifest.GateSource = "",
     spawner: subrun.LaneSpawner | None = None,
     at: str | None = None,
     import_lock: threading.Lock | None = None,
