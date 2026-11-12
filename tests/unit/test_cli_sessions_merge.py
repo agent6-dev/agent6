@@ -1415,7 +1415,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
 ) -> None:
     """`sessions merge` adopts an orphaned fan-out lane from its clone and lands it like any run.
 
-    A coordinator death leaves a finished lane's branch only in its clone; `sessions prune` then
+    A parent death leaves a finished lane's branch only in its clone; `sessions prune` then
     sweeps the clone dir.
     """
     monkeypatch.chdir(tmp_path)
@@ -1458,7 +1458,7 @@ def test_merge_adopts_an_orphaned_fanout_lane(
                 "base_sha": base_sha,
                 "base_branch": "main",
                 "run_branch": "agent6/fan-l1",
-                "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"},
+                "parallel": {"group": "fan", "lane": 1, "parent": "fan"},
             }
         ),
         encoding="utf-8",

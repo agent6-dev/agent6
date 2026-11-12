@@ -87,7 +87,7 @@ def test_an_ordinary_parent_shows_its_lanes_and_the_receipt_links_them(
                 "session_id": "co-p2-l1",
                 "mode": "run",
                 "models": {"driver": {"provider": "openai", "model": "lane-3"}},
-                "parallel": {"group": "co-p2", "lane": 1, "coordinator": "co"},
+                "parallel": {"group": "co-p2", "lane": 1, "parent": "co"},
             }
         ),
         encoding="utf-8",

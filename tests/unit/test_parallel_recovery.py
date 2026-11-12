@@ -152,7 +152,7 @@ def _build_wf(
     disp.dispatch.return_value = tools_results.RawResult({"content": "hi\n"})
     disp.command_policy.return_value = "allow"
     return loop.Harness(
-        chain=run_chain.RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
+        chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=_head(repo)),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             git=types.SimpleNamespace(
@@ -348,7 +348,7 @@ def test_a_crash_after_one_child_started_recovers_it_once(tmp_path: pathlib.Path
     provider2 = _provider()
     budget2 = _tracker()
     _build_wf(repo, session_dir, provider2, lane_recoverer=recoverer, budget=budget2).resume()
-    log = _git(repo, "log", "--oneline", "refs/agent6/coord")
+    log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert log.count("run-abc-p1-l1 work") == 1, log
     (record,) = _records(session_dir)
     assert record.state == "complete"
@@ -405,7 +405,7 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
             budget=_tracker(),
         ).run("start")
     monkeypatch.setattr(lane_dispatch, "write_record", real_write)
-    log = _git(repo, "log", "--oneline", "refs/agent6/coord")
+    log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert log.count("run-abc-p1-l1 work") == 1 and "run-abc-p1-l2" not in log, log
 
     def recoverer(group: str, children: Sequence[str]) -> list[lane_records.LaneResult]:
@@ -416,7 +416,7 @@ def test_a_merge_landed_before_the_record_is_not_merged_twice(
 
     budget2 = _tracker()
     _build_wf(repo, session_dir, _provider(), lane_recoverer=recoverer, budget=budget2).resume()
-    log = _git(repo, "log", "--oneline", "refs/agent6/coord")
+    log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert log.count("run-abc-p1-l1 work") == 1 and log.count("run-abc-p1-l2 work") == 1, log
     (record,) = _records(session_dir)
     assert record.state == "complete"
@@ -464,7 +464,7 @@ def test_a_result_completed_but_undelivered_is_delivered_once(
     assert sum("joined at" in t for t in _first_call_texts(provider2)) == 1
     (record,) = _records(session_dir)
     assert record.delivered
-    assert _git(repo, "log", "--oneline", "refs/agent6/coord").count("run-abc-p1-l1 work") == 1
+    assert _git(repo, "log", "--oneline", "refs/agent6/parent").count("run-abc-p1-l1 work") == 1
 
 
 def test_child_spend_exhausts_the_parent_before_its_next_call(tmp_path: pathlib.Path) -> None:

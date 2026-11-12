@@ -57,7 +57,7 @@ def create_record(
     dest.mkdir(parents=True)
     data: dict[str, Any] = {"version": 2, "session_id": sid, "mode": mode, "user_task": "t"}
     if parent:
-        data["parallel"] = {"coordinator": parent, "group": parent + "-p1", "lane": 1}
+        data["parallel"] = {"parent": parent, "group": parent + "-p1", "lane": 1}
     (dest / "manifest.json").write_text(json.dumps(data))
     (dest / "logs.jsonl").write_text(json.dumps({"type": "session.start", "mode": mode}) + "\n")
     return dest
@@ -91,7 +91,7 @@ def launch_worker(
         session_id=sid,
         task="worker",
         config=config.path,
-        coordinator="parent",
+        parent="parent",
         group="parent-p1",
         lane=1,
         limits=lane_records.LaneLimits(max_turns=20, deadline_at=time.time() + 90),
@@ -106,7 +106,7 @@ def dispatcher(
     repo: pathlib.Path, session_dir: pathlib.Path, cfg: Config, meter: budget.BudgetTracker
 ) -> parallel_dispatch.ParallelDispatcher:
     """Build the common dispatcher with the worker launch authority."""
-    spawner = lanes.build_coordinator_spawner(
+    spawner = lanes.build_parent_spawner(
         cfg,
         repo,
         # A session's children keep their records where its own is.

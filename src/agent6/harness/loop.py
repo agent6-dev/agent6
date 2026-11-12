@@ -123,7 +123,7 @@ class Harness:
         call: The worker call's knobs: retries, temperature, output caps.
         compaction: The compaction tiers' thresholds, the tail kept, the summariser.
         review: The in-loop review panel's trigger, seats and decision rule.
-        initial_pins: Pins seeded before the first turn (a lane inherits the coordinator's);
+        initial_pins: Pins seeded before the first turn (a lane inherits the parent's);
             fresh runs only, a resume restores pins from the snapshot.
         resume_state_path: Where the provider-agnostic resume snapshot is written before
             every model call; None writes none.

@@ -65,18 +65,18 @@ def stamp_compare_outcomes(
     *,
     winner: str,
     record_state: pathlib.Path,
-    coordinator_dir: pathlib.Path,
+    parent_dir: pathlib.Path,
     group: str,
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
 ) -> None:
-    """Stamp the group on its coordinator and each lane's placement on the lane.
+    """Stamp the group on its parent and each lane's placement on the lane.
 
     Args:
         candidates: The ranked lanes.
         outcome: The ranking.
         winner: The lane the ranking crowns (`ranked_winner`), or "".
         record_state: The state dir the run's and its lanes' records live under.
-        coordinator_dir: The manifest owner for the group's ranking and judge spend.
+        parent_dir: The manifest owner for the group's ranking and judge spend.
         group: The comparison group id.
         reporter: Receives a note per stamp failure; the others still land.
     """
@@ -88,7 +88,7 @@ def stamp_compare_outcomes(
         judge_cost_usd=outcome.judge_cost_usd,
         judge_cost_partial=outcome.judge_cost_partial,
     )
-    err = stamp(coordinator_dir, comparison=comparison)
+    err = stamp(parent_dir, comparison=comparison)
     if err is not None:
         reporter.note(f"group [{group}]: the comparison stamp failed: {err}")
     of = len(candidates)

@@ -502,8 +502,8 @@ def spawn_lane(
 ) -> tuple[pathlib.Path | None, int, str]:
     """Spawn a lane detached, locate its session dir and keep the child's pid.
 
-    The pid lets the coordinator stop a child that never reports a session dir; the parent
-    tie (PDEATHSIG) ends the lane with a coordinator that dies, as a Ctrl-C stop would.
+    The pid lets the parent stop a child that never reports a session dir; the parent
+    tie (PDEATHSIG) ends the lane with a parent that dies, as a Ctrl-C stop would.
 
     Args:
         argv: The command.

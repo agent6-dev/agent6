@@ -225,10 +225,10 @@ class ParallelLineage(pydantic.BaseModel):
     """A fan-out lane's place.
 
     Attributes:
-        group: The group it was dispatched in: the coordinator's id for `run --parallel`,
-            `<coordinator>-p<n>` for a `/parallel` group.
+        group: The group it was dispatched in: the parent's id for `run --parallel`,
+            `<parent>-p<n>` for a `/parallel` group.
         lane: Its number in the group.
-        coordinator: The session that dispatched it, which every listing nests it under.
+        parent: The session that dispatched it, which every listing nests it under.
         config_notes: Resolved sampling values the lane's TOML snapshot could not preserve.
     """
 
@@ -236,7 +236,7 @@ class ParallelLineage(pydantic.BaseModel):
 
     group: str = ""
     lane: int = 0
-    coordinator: str = ""
+    parent: str = ""
     config_notes: tuple[str, ...] = ()
 
 
@@ -247,7 +247,7 @@ class PlacementStamp(pydantic.BaseModel):
         rank: The lane's place, 1 first.
         of: How many lanes were ranked.
         winner: The lane ranked first.
-        group: The comparison group recorded on its coordinator.
+        group: The comparison group recorded on its parent.
     """
 
     model_config = _MODEL_CONFIG
@@ -259,7 +259,7 @@ class PlacementStamp(pydantic.BaseModel):
 
 
 class ComparisonStamp(pydantic.BaseModel):
-    """A group's ranking and judge spend, owned by its coordinator.
+    """A group's ranking and judge spend, owned by its parent.
 
     Attributes:
         group: The comparison group id.
@@ -337,7 +337,7 @@ class SessionManifest(pydantic.BaseModel):
             merged when this run lands; None when it took none, or more than that run's tip.
         parallel: A fan-out lane's lineage, or None.
         placement: A fan-out lane's rank and group reference, or None.
-        comparison: The group's ranking and judge spend on its coordinator, or None.
+        comparison: The group's ranking and judge spend on its parent, or None.
     """
 
     model_config = _MODEL_CONFIG

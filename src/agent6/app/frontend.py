@@ -156,7 +156,7 @@ class SessionFrontend:
         build_repl_hook: Builds the `run -i` / `ask -i` hook.
         run_ask_repl: Runs the ask REPL.
         save_ask_transcript: Saves an ask's transcript.
-        build_coordinator_spawner: Builds the `/parallel` dispatch spawner, or None; its last
+        build_parent_spawner: Builds the `/parallel` dispatch spawner, or None; its last
             argument is this session's side of a lane's wait: it answers the lane's prompts
             and counts its spend.
         build_judge_provider: Builds the reviewer provider a rank join's judge sits in; None
@@ -191,7 +191,7 @@ class SessionFrontend:
         loop_snapshot.SessionResult,
     ]
     save_ask_transcript: Callable[[layout.SessionLayout, str, str], None]
-    build_coordinator_spawner: Callable[
+    build_parent_spawner: Callable[
         [
             Config,
             frozenset[str],

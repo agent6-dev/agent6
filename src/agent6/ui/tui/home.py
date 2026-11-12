@@ -203,7 +203,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         self._summaries: dict[str, SessionSummary] = {}
         # The last poll's status per session; None before the first, which announces nothing.
         self._statuses: dict[str, str] | None = None
-        # The fan-outs listed, by coordinator id, and the ones the operator expanded.
+        # The fan-outs listed, by parent id, and the ones the operator expanded.
         self._fanouts: dict[str, viewmodel_listing.ListingRow] = {}
         self._expanded: set[str] = set()
 
@@ -362,9 +362,9 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         sid = rd.name
         while sid not in self._fanouts:
             s = self._summaries.get(sid)
-            if s is None or not s.coordinator or s.coordinator == sid:
+            if s is None or not s.parent or s.parent == sid:
                 return None
-            sid = s.coordinator
+            sid = s.parent
         return sid
 
     def action_open_selected(self) -> None:

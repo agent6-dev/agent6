@@ -50,7 +50,7 @@ def import_run(
     A harness-controlled lane without a branch lands nothing.
 
     Args:
-        origin: The coordinator's repo.
+        origin: The parent's repo.
         lane_repo: The lane's workspace clone.
         branch: The lane's branch.
         lane_session_dir: The lane's run dir, under the origin's state.

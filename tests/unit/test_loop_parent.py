@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""Coordinator dispatch: `/parallel` steer fans out subordinate lanes.
+"""Parent dispatch: `/parallel` steer fans out subordinate lanes.
 
 A fake provider fires the steer once, and a fake group spawner fabricates real mergeable branches in
-the coordinator's tmp repo, so parse, the dirty-tree gate, the sequential join, DAG stamping, events
+the parent's tmp repo, so parse, the dirty-tree gate, the sequential join, DAG stamping, events
 and the summary run end-to-end.
 """
 
@@ -181,7 +181,7 @@ class _FakeGroupSpawner:
     def __init__(
         self,
         repo: pathlib.Path,
-        coord_id: str,
+        parent_id: str,
         wt_root: pathlib.Path,
         *,
         fail: set[int] | None = None,
@@ -190,7 +190,7 @@ class _FakeGroupSpawner:
         empty: set[int] | None = None,
     ) -> None:
         self.repo = repo
-        self.coord_id = coord_id
+        self.parent_id = parent_id
         self.wt_root = wt_root
         self.fail = fail or set()
         self.conflict = conflict or set()
@@ -207,7 +207,7 @@ class _FakeGroupSpawner:
         self.calls.append((list(lanes), group))
         results: list[lane_records.LaneResult] = []
         for i in range(1, len(lanes) + 1):
-            session_id = f"{self.coord_id}-{group}-l{i}"
+            session_id = f"{self.parent_id}-{group}-l{i}"
             branch = f"agent6/{session_id}"
             spec = lane_records.LaneSpec(
                 lane=i,
@@ -285,7 +285,7 @@ def _build_wf(
     if dispatcher is None:
         disp.dispatch.return_value = tools_results.RawResult({"content": "hi\n"})
     return loop.Harness(
-        chain=run_chain.RunChain(repo, ref="refs/agent6/coord", fallback_parent=_head(repo)),
+        chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=_head(repo)),
         config=mock.MagicMock(
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
             git=types.SimpleNamespace(
@@ -423,10 +423,10 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     """Two clean lanes join in dispatch order with their DAG nodes passed and events fired."""
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-abc"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    parent_id = "run-abc"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
-    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
+    spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt")
 
     provider = mock.MagicMock()
     provider.call.side_effect = [
@@ -447,7 +447,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     assert spawner.tasks() == ["task one", "task two"]
     assert spawner.calls[0][1] == "p1"
     # Both lane branches merged onto the chain, in order; the operator's HEAD never moves.
-    log = _git(repo, "log", "--oneline", "refs/agent6/coord")
+    log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert "agent6/run-abc-p1-l1" in log
     assert "agent6/run-abc-p1-l2" in log
     assert "l1" not in _git(repo, "log", "--oneline")
@@ -484,10 +484,10 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -
     """`/parallel a/b,c -- task` runs one lane per model under a single segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-mdl"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    parent_id = "run-mdl"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
-    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
+    spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt")
     provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
@@ -514,12 +514,12 @@ def test_model_list_spec_expands_to_one_lane_per_model(tmp_path: pathlib.Path) -
     assert len(steering) == 1
     assert steering[0].status == "passed" and steering[0].commit_sha
     note = next(note for _id, _status, note in graph.status_calls)
-    assert f"{coord_id}-p1-l1" in note and f"{coord_id}-p1-l2" in note
+    assert f"{parent_id}-p1-l1" in note and f"{parent_id}-p1-l2" in note
     # Both lanes still surface per-lane in the joined event.
     joined = events.of("parallel.joined")[0]
     assert [ln["session_id"] for ln in joined["lanes"]] == [
-        f"{coord_id}-p1-l1",
-        f"{coord_id}-p1-l2",
+        f"{parent_id}-p1-l1",
+        f"{parent_id}-p1-l2",
     ]
 
 
@@ -527,9 +527,9 @@ def test_lane_count_spec_expands_to_n_default_lanes(tmp_path: pathlib.Path) -> N
     """`/parallel 2 -- task` runs two default lanes under one segment node."""
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-cnt"
+    parent_id = "run-cnt"
     graph = _FakeGraph()
-    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
+    spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt")
     provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
@@ -578,12 +578,12 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "main adds conflict.txt")
 
-    coord_id = "run-cf"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    parent_id = "run-cf"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
     # Lane 1 clean; lane 2 conflicts (cut from `base`, before conflict.txt).
     spawner = _FakeGroupSpawner(
-        repo, coord_id, tmp_path / "wt", conflict={2}, base_by_lane={2: base}
+        repo, parent_id, tmp_path / "wt", conflict={2}, base_by_lane={2: base}
     )
     provider = mock.MagicMock()
     provider.call.side_effect = [
@@ -608,7 +608,7 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     joined = events.of("parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["joined", "conflict"]
     failed = events.of("parallel.failed")
-    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l2"]
+    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{parent_id}-p1-l2"]
     # The conflicting node is marked failed (NodeStatus has no "blocked").
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert sorted(n.status for n in steering) == ["failed", "passed"]
@@ -625,10 +625,10 @@ def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Pat
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-nc"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    parent_id = "run-nc"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
-    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt", empty={1, 2})
+    spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt", empty={1, 2})
     provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
@@ -660,7 +660,7 @@ def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Pat
     # Each lane's finish summary reaches the conversation, and the record a resume delivers.
     assert "    summary: lane 1 found nothing to change" in summary
     assert "    summary: lane 2 found nothing to change" in summary
-    (record,) = lane_dispatch.read_records(tmp_path / coord_id)
+    (record,) = lane_dispatch.read_records(tmp_path / parent_id)
     assert [child.report for child in record.children] == [
         "lane 1 found nothing to change",
         "lane 2 found nothing to change",
@@ -673,10 +673,10 @@ def test_a_mixed_group_merges_only_the_lanes_that_committed(tmp_path: pathlib.Pa
     """One lane committed, one ended clean, one failed: the segment stamps follow each lane."""
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-mx"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    parent_id = "run-mx"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
-    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt", empty={2}, fail={3})
+    spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt", empty={2}, fail={3})
     provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
@@ -695,9 +695,9 @@ def test_a_mixed_group_merges_only_the_lanes_that_committed(tmp_path: pathlib.Pa
     joined = events.of("parallel.joined")[0]
     assert [ln["status"] for ln in joined["lanes"]] == ["joined", "no_changes", "failed"]
     failed = events.of("parallel.failed")
-    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l3"]
+    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{parent_id}-p1-l3"]
     assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
-    assert "agent6/run-mx-p1-l1" in _git(repo, "log", "--oneline", "refs/agent6/coord")
+    assert "agent6/run-mx-p1-l1" in _git(repo, "log", "--oneline", "refs/agent6/parent")
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert [n.status for n in steering] == ["passed", "passed", "failed"]
     assert [bool(n.commit_sha) for n in steering] == [True, False, False]
@@ -739,10 +739,10 @@ def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     """A lane the spawner could not run fails its node with the reason; the run continues."""
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-fl"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    parent_id = "run-fl"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
-    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt", fail={1})
+    spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt", fail={1})
     provider = mock.MagicMock()
     provider.call.side_effect = [
         _resp_tool("read_file", {"path": "README.md"}, "t1"),
@@ -775,15 +775,15 @@ def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
 
 
 def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) -> None:
-    """A raising group spawner does not abort the coordinator.
+    """A raising group spawner does not abort the parent.
 
     The run continues, parallel.failed fires, truthful feedback is injected, and no steering
     node is left pending.
     """
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-boom"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    parent_id = "run-boom"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
     graph = _FakeGraph()
 
     calls: list[str] = []
@@ -855,9 +855,9 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
     """A changed worktree is chain-committed at its turn, and dispatch cuts the lanes from it."""
     repo = tmp_path / "repo"
     _init_repo(repo)
-    coord_id = "run-dirty"
-    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
-    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt")
+    parent_id = "run-dirty"
+    events = _FakeEvents(tmp_path / parent_id / "logs.jsonl")
+    spawner = _FakeGroupSpawner(repo, parent_id, tmp_path / "wt")
 
     # The first turn's tool "edits" the tree (an uncommitted run_command write).
     dispatcher = mock.MagicMock(
@@ -892,7 +892,7 @@ def test_dirty_tree_is_auto_committed_then_dispatched(tmp_path: pathlib.Path) ->
 
     assert spawner.calls and spawner.calls[0][1] == "p1"  # dispatched
     # The wip edit reached the chain before the lanes were cut from it.
-    assert _git(repo, "show", "refs/agent6/coord:wip.txt") == "uncommitted work"
+    assert _git(repo, "show", "refs/agent6/parent:wip.txt") == "uncommitted work"
     commits = events.of("checkpoint.committed")
     diffs = events.of("diff.updated")
     assert commits  # the state fold sees the checkpoint step
@@ -955,14 +955,14 @@ def test_dirty_tree_that_cannot_be_cleaned_refuses(
 # The run.py and resume.py wiring gate (depth 1 by construction).
 
 
-def test_coordinator_spawner_gate_under_subrun(
+def test_parent_spawner_gate_under_subrun(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = Config()
     monkeypatch.delenv("AGENT6_SUBRUN", raising=False)
     # A write run outside a lane gets a real dispatcher.
     assert callable(
-        lanes.build_coordinator_spawner(
+        lanes.build_parent_spawner(
             cfg,
             tmp_path,
             tmp_path,
@@ -974,7 +974,7 @@ def test_coordinator_spawner_gate_under_subrun(
     )
     # plan/ask make no commits to clone -> no dispatcher.
     assert (
-        lanes.build_coordinator_spawner(
+        lanes.build_parent_spawner(
             cfg,
             tmp_path,
             tmp_path,
@@ -988,7 +988,7 @@ def test_coordinator_spawner_gate_under_subrun(
     # Inside a subordinate lane -> no dispatcher (depth 1).
     monkeypatch.setenv("AGENT6_SUBRUN", "1")
     assert (
-        lanes.build_coordinator_spawner(
+        lanes.build_parent_spawner(
             cfg,
             tmp_path,
             tmp_path,
@@ -1058,7 +1058,7 @@ def test_a_run_that_opens_with_a_ranked_dispatch_lands_the_winner_and_calls_no_m
     assert provider.call.call_count == 0
     assert (result.reason, result.completed, result.turns) == ("lanes_ranked", True, 1)
     assert spawner.tasks() == ["add a lane file"] * 3
-    files = _git(repo, "ls-tree", "--name-only", "refs/agent6/coord").split()
+    files = _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
     assert files == ["README.md", "lane2.txt"]
     (joined,) = events.of("parallel.joined")
     assert [lane["status"] for lane in joined["lanes"]] == ["ranked", "joined", "ranked"]
@@ -1067,7 +1067,7 @@ def test_a_run_that_opens_with_a_ranked_dispatch_lands_the_winner_and_calls_no_m
     assert stop["summary"].splitlines() == [
         "3 of 3 lane(s) ranked:",
         "  session-p1-l1: 2 of 3; agent6/session-p1-l1 holds its work",
-        "  session-p1-l2: first; joined at " + _git(repo, "rev-parse", "refs/agent6/coord")[:12],
+        "  session-p1-l2: first; joined at " + _git(repo, "rev-parse", "refs/agent6/parent")[:12],
         "  session-p1-l3: 3 of 3; agent6/session-p1-l3 holds its work",
     ]
 
@@ -1091,7 +1091,7 @@ def test_a_steer_sent_while_the_opening_ran_is_the_runs_next_work(tmp_path: path
     steered = next(i for i, t in enumerate(texts) if "also add a changelog line" in t)
     assert joined < steered
     # The model works from the winner's tree.
-    assert "lane2.txt" in _git(repo, "ls-tree", "--name-only", "refs/agent6/coord").split()
+    assert "lane2.txt" in _git(repo, "ls-tree", "--name-only", "refs/agent6/parent").split()
 
 
 def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
@@ -1108,7 +1108,7 @@ def test_an_opening_whose_lanes_all_fail_ends_with_no_lane_result(
 
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("no_lane_result", False)
-    assert git_read.chain_tip(repo, "refs/agent6/coord") is None
+    assert git_read.chain_tip(repo, "refs/agent6/parent") is None
 
 
 def test_an_opening_the_budget_ended_reads_budget_exhausted(tmp_path: pathlib.Path) -> None:
@@ -1157,7 +1157,7 @@ def test_a_stop_asked_while_the_opening_ran_ends_the_run_as_a_stop(
     assert (result.reason, result.completed) == ("steer_abort", False)
     assert [stop["reason"] for stop in events.of("session.stop")] == ["steer_abort"]
     # No judge is asked and nothing joins after the stop: a resume ranks from the record.
-    assert asked == [] and git_read.chain_tip(repo, "refs/agent6/coord") is None
+    assert asked == [] and git_read.chain_tip(repo, "refs/agent6/parent") is None
     (record,) = lane_dispatch.read_records(tmp_path / "session")
     assert (record.state, record.ranking, record.delivered) == ("settling", None, False)
 
@@ -1176,6 +1176,6 @@ def test_an_opening_whose_ranking_crowns_no_lane_ends_no_lane_passed(
 
     assert provider.call.call_count == 0
     assert (result.reason, result.completed) == ("no_lane_passed", False)
-    assert git_read.chain_tip(repo, "refs/agent6/coord") is None
+    assert git_read.chain_tip(repo, "refs/agent6/parent") is None
     (joined,) = events.of("parallel.joined")
     assert [lane["status"] for lane in joined["lanes"]] == ["ranked", "ranked", "ranked"]

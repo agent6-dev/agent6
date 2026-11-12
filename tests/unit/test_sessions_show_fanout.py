@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""`sessions show` lists a coordinator's lanes and names a lane's coordinator."""
+"""`sessions show` lists a parent's lanes and names a lane's parent."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ def fan_out(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> pathlib.
                     "driver": {"provider": "openai", "model": f"lane-{lane}"},
                     "driver_from_flag": True,
                 },
-                "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
+                "parallel": {"group": "fan", "lane": lane, "parent": "fan"},
                 "placement": {"rank": 3 - lane, "of": 2, "winner": lane == 2, "group": "fan"},
             },
         )
@@ -119,7 +119,7 @@ def test_show_labels_the_session_status(
     assert json.loads(capsys.readouterr().out)["status"] == "passed"
 
 
-def test_show_on_a_coordinator_lists_its_lanes(
+def test_show_on_a_parent_lists_its_lanes(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
@@ -134,7 +134,7 @@ def test_show_on_a_coordinator_lists_its_lanes(
     assert data["lanes"][1]["winner"] is True
 
 
-def test_show_on_a_coordinator_lists_each_lanes_route(
+def test_show_on_a_parent_lists_each_lanes_route(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan"]) == 0
@@ -148,10 +148,10 @@ def test_show_on_a_coordinator_lists_each_lanes_route(
     assert all(lane["model_from_flag"] is True for lane in lanes)
 
 
-def test_stale_coordinator_does_not_offer_resume(
+def test_stale_parent_does_not_offer_resume(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stale fan-out coordinator has no loop for a resume command to continue."""
+    """A stale fan-out parent has no loop for a resume command to continue."""
     layout = sessions_layout.SessionLayout(state_dir=paths.state_dir(fan_out), session_id="fan")
     layout.logs_path.write_text(
         json.dumps({"type": "session.start", "mode": "run", "user_task": "t"}) + "\n",
@@ -197,7 +197,7 @@ def test_show_keeps_a_failed_setups_output_and_network_diagnostic(
     assert json.loads(capsys.readouterr().out)["setup_output"] == problem
 
 
-def test_show_on_a_lane_names_its_coordinator(
+def test_show_on_a_lane_names_its_parent(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     assert main(["sessions", "show", "fan-l1"]) == 0
@@ -208,7 +208,7 @@ def test_show_on_a_lane_names_its_coordinator(
     assert data["parallel"] == {
         "group": "fan",
         "lane": 1,
-        "coordinator": "fan",
+        "parent": "fan",
         "config_notes": [],
     }
     assert data["lanes"] == []
@@ -603,15 +603,15 @@ def test_show_names_the_start_gates_verdict_beside_the_final_one(
 def test_status_json_keeps_comparison_on_its_owner(
     fan_out: pathlib.Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Lane status names the group; coordinator status carries its ranking and judge cost."""
+    """Lane status names the group; parent status carries its ranking and judge cost."""
     assert main(["sessions", "show", "fan-l2", "--json"]) == 0
     lane = json.loads(capsys.readouterr().out)
     assert lane["placement"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
     assert lane["comparison"] is None
     assert main(["sessions", "show", "fan", "--json"]) == 0
-    coordinator = json.loads(capsys.readouterr().out)
-    assert coordinator["placement"] is None
-    assert coordinator["comparison"] == {
+    parent = json.loads(capsys.readouterr().out)
+    assert parent["placement"] is None
+    assert parent["comparison"] == {
         "group": "fan",
         "ranking": ["fan-l2", "fan-l1"],
         "ranked_by": "judge",
@@ -639,7 +639,7 @@ def ordinary_parent(tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch) -> 
             f"co-p1-l{lane}",
             {
                 "models": {"driver": {"provider": "openai", "model": f"lane-{lane}"}},
-                "parallel": {"group": "co-p1", "lane": lane, "coordinator": "co"},
+                "parallel": {"group": "co-p1", "lane": lane, "parent": "co"},
             },
         )
     parent = sessions_layout.SessionLayout(state_dir=paths.state_dir(repo), session_id="co")

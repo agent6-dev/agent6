@@ -383,7 +383,7 @@ def test_the_apps_ranker_judges_the_imported_work_and_records_the_outcome(
         cfg,
         repo,
         origin_state,
-        coordinator_dir=root,
+        parent_dir=root,
         base_sha=_git(repo, "rev-parse", "main"),
         build_provider=seat,
         judging_status=contextlib.nullcontext,

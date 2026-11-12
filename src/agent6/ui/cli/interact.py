@@ -33,7 +33,7 @@ def lane_away_mode() -> ipc.AwayMode:
     """Return the away-mode a fan-out's lanes run with.
 
     Returns:
-        The coordinator's `AGENT6_DETACHED_AWAY` when valid, else `wait` with a terminal to
+        The parent's `AGENT6_DETACHED_AWAY` when valid, else `wait` with a terminal to
         attach from, else `deny`.
     """
     marker = os.environ.get("AGENT6_DETACHED_AWAY", "")

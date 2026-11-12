@@ -183,9 +183,9 @@ def session_frontend(config_paths: tuple[pathlib.Path, ...] = ()) -> frontend.Se
         save_ask_transcript=lambda layout, question, answer: ask.save_ask_transcript(
             layout, question=question, answer=answer
         ),
-        build_coordinator_spawner=(
+        build_parent_spawner=(
             lambda cfg, leaves, cwd, state_dir, mode, session_id, max_usd, auto_approve, watch: (
-                app_lanes.build_coordinator_spawner(
+                app_lanes.build_parent_spawner(
                     cfg,
                     cwd,
                     state_dir,

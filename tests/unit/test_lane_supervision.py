@@ -89,7 +89,7 @@ def test_a_launch_round_trips_its_limits(tmp_path: pathlib.Path) -> None:
         session_id="fan-l1",
         task="t",
         config=tmp_path / "launch" / "lane-1-config.toml",
-        coordinator="co",
+        parent="co",
         group="fan",
         lane=1,
         limits=lane_records.LaneLimits(max_turns=200, deadline_at=1_800_000.5),
@@ -153,7 +153,7 @@ time.sleep(60)
 
 
 def test_spawn_lane_ties_the_child_to_its_parent(tmp_path: pathlib.Path) -> None:
-    """Killing the coordinator ends its lane: the child carries PDEATHSIG."""
+    """Killing the parent ends its lane: the child carries PDEATHSIG."""
     parent = subprocess.Popen(
         [sys.executable, "-c", _PARENT, str(tmp_path)],
         stdout=subprocess.PIPE,
@@ -168,7 +168,7 @@ def test_spawn_lane_ties_the_child_to_its_parent(tmp_path: pathlib.Path) -> None
         deadline = time.monotonic() + 5.0
         while process.pid_alive(child_pid) and time.monotonic() < deadline:
             time.sleep(0.05)
-        assert not process.pid_alive(child_pid), "the lane outlived its dead coordinator"
+        assert not process.pid_alive(child_pid), "the lane outlived its dead parent"
     finally:
         parent.kill()
         parent.wait(timeout=5)
@@ -181,7 +181,7 @@ def _spec(tmp_path: pathlib.Path, name: str) -> lane_records.LaneSpec:
 def test_a_lane_past_its_deadline_is_stopped_and_reported_failed(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The coordinator ends a lane at its deadline, kills what ignores the stop, and says so."""
+    """The parent ends a lane at its deadline, kills what ignores the stop, and says so."""
     monkeypatch.setattr(lane_watch, "STOP_GRACE_S", 0.2)
     d = _live_forever(tmp_path, "late-l1")
     deaf = _child(_DEAF, tmp_path)
@@ -198,7 +198,7 @@ def test_a_lane_past_its_deadline_is_stopped_and_reported_failed(
         origin=tmp_path,
         record_state=tmp_path / "origin-state",
         group="fan",
-        coordinator="co",
+        parent="co",
         runtime=parallel.lane_runtime(),
         spawner=spawner,
         poll_interval_s=0.01,
@@ -214,7 +214,7 @@ def test_a_lane_past_its_deadline_is_stopped_and_reported_failed(
 def test_a_lane_is_stopped_once_the_runs_budget_is_spent(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The coordinator ends a lane when its watch says the run's budget is spent, and says so.
+    """The parent ends a lane when its watch says the run's budget is spent, and says so.
 
     A lane ran on to its own share's end whatever its siblings had spent.
     """
@@ -239,7 +239,7 @@ def test_a_lane_is_stopped_once_the_runs_budget_is_spent(
         origin=tmp_path,
         record_state=tmp_path / "origin-state",
         group="fan",
-        coordinator="co",
+        parent="co",
         runtime=parallel.lane_runtime(),
         spawner=spawner,
         poll_interval_s=0.01,
@@ -272,7 +272,7 @@ def test_a_lane_that_never_reported_is_killed_not_left_running(
         origin=tmp_path,
         record_state=tmp_path / "origin-state",
         group="fan",
-        coordinator="co",
+        parent="co",
         runtime=parallel.lane_runtime(),
         spawner=spawner,
         poll_interval_s=0.01,
@@ -350,7 +350,7 @@ def test_a_real_lane_ends_by_its_deadline(short_repo: pathlib.Path, tmp_path: pa
                 task="keep running",
                 config=config.path,
                 notes=config.notes,
-                coordinator="deadline",
+                parent="deadline",
                 group="deadline",
                 lane=1,
                 limits=lane_records.LaneLimits(max_turns=200, deadline_at=time.time() + 3.0),

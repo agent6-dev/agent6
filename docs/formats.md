@@ -1584,12 +1584,12 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `verification` | `Literal['passed', 'failed', 'unverified', 'not_applicable'] \| None` | The gate verdict, or null without a verdict. |
 | `winner` | `bool` | Whether this lane won its comparison. |
 | `lane` | `int \| None` | The lane number, or null outside a fan-out. |
-| `coordinator` | `str` | The session that dispatched this lane. |
+| `parent` | `str` | The session that dispatched this lane. |
 | `worktree` | `str \| None` | The linked worktree path, or null in the operator's checkout. |
 | `branch` | `str \| None` | The run's branch while it exists, or null. |
 | `open_findings` | `dict[str, int]` | The open grounded findings by severity: `block`, `warn`, `nit`. |
 | `merge_note` | `str` | The rendered open findings; "" with none open. |
-| `lanes` | `list[SummaryRow]` | Nested listing rows for this coordinator's lanes. |
+| `lanes` | `list[SummaryRow]` | Nested listing rows for this parent's lanes. |
 
 ### `sessions list --json` group fields
 
@@ -1642,9 +1642,9 @@ Source: [`ui.cli.sessions_show._cmd_status`](https://github.com/agent6-dev/agent
 | `forked_from_sha` | `str \| None` | The fork's source commit, or null. |
 | `worktree` | `str \| None` | The linked worktree path, or null. |
 | `placement` | `dict[str, Any] \| None` | The lane's rank and group id, or null outside a compared lane. |
-| `comparison` | `dict[str, Any] \| None` | The group record on its coordinator, or null for other sessions. |
+| `comparison` | `dict[str, Any] \| None` | The group record on its parent, or null for other sessions. |
 | `parallel` | `dict[str, Any] \| None` | The ParallelLineage, or null outside a lane. |
-| `lanes` | `list[SummaryRow]` | The coordinator's summary_row objects. |
+| `lanes` | `list[SummaryRow]` | The parent's summary_row objects. |
 | `run_branch` | `str \| None` | The existing run branch, or null. |
 | `base_branch` | `str \| None` | The base branch, or null when unknown. |
 | `merged_into` | `str \| None` | The merge destination, or null when not merged. |
@@ -1746,7 +1746,7 @@ The `row` additions belong to approvals and commits, not the snapshot root.
 | `lanes` | `JSON` | The session's lanes by lineage, from the same listing as `sessions show`, for every session that has any. |
 | `dispatches` | `JSON` | The session's dispatch records, each with its lanes' outcomes. |
 | `forked_from` | `JSON` | The rendered fork lineage when recorded. |
-| `comparison` | `JSON` | The group record from the coordinator, directly or through the lane's group. |
+| `comparison` | `JSON` | The group record from the parent, directly or through the lane's group. |
 | `placement` | `JSON` | The lane's PlacementStamp when recorded. |
 | `placement.line` | `JSON` | The rendered comparison placement. |
 | `as_of` | `JSON` | The selected commit's turn and sha, or null for the current snapshot. |
@@ -2528,7 +2528,7 @@ Source: [`viewmodel.receipt.as_dict`](https://github.com/agent6-dev/agent6/blob/
 
 `SessionManifest` is the private, durable `manifest.json` record.
 `HarnessStamp.gate` separates the pinned command and source from execution availability.
-`ComparisonStamp` holds group facts on the coordinator.
+`ComparisonStamp` holds group facts on the parent.
 `PlacementStamp` links each lane to it.
 Other records are nested objects used by the CLI and web serializers above.
 Properties are absent unless a serializer adds them explicitly.
@@ -2545,14 +2545,14 @@ Source: [`agent6.app.lane_launch.LaneLaunch`](https://github.com/agent6-dev/agen
 | `record_state` | `pathlib.Path` | The state dir of the repository that dispatched the lane, where the lane's record lives from its first event. |
 | `session_id` | `str` | The lane's session id. |
 | `task` | `str` | The task text, exactly as the lane's manifest records it. |
-| `pins` | `tuple[str, ...]` | The coordinator's pins, out of band of the task. |
-| `max_usd` | `float \| None` | The coordinator's forwarded `--max-usd`; None keeps the config's. |
+| `pins` | `tuple[str, ...]` | The parent's pins, out of band of the task. |
+| `max_usd` | `float \| None` | The parent's forwarded `--max-usd`; None keeps the config's. |
 | `allowance` | `BudgetAllowance \| None` | What the parent had left when the lane started, which sets every cap; None for the config's caps. |
-| `auto_approve` | `bool` | Whether the coordinator ran with `--auto-approve`. |
+| `auto_approve` | `bool` | Whether the parent ran with `--auto-approve`. |
 | `away` | `Literal['wait', 'deny', 'approve']` | The lane's away mode: `wait` parks a question for `agent6 attach`, `deny` answers it empty. |
 | `config` | `pathlib.Path` | The lane's config snapshot, beside this file; the lane's sole `--config`. |
 | `notes` | `tuple[str, ...]` | The snapshot's serialization loss notes, recorded in the lane's manifest. |
-| `coordinator` | `str` | The session every listing nests the lane under. |
+| `parent` | `str` | The session every listing nests the lane under. |
 | `group` | `str` | The fan-out the lane belongs to. |
 | `lane` | `int` | The lane's number, from 1. |
 | `gate_source` | `Literal['', 'configured', 'inferred', 'adopted']` | Where the verify gate in the snapshot came from; "" for none. |
@@ -2589,7 +2589,7 @@ Source: [`agent6.sessions.lane_dispatch.DispatchRecord`](https://github.com/agen
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `version` | `int` | The record's shape; a newer one refuses the read. |
-| `identity` | `str` | The dispatch's id, the group id `<coordinator>-p<n>`. |
+| `identity` | `str` | The dispatch's id, the group id `<parent>-p<n>`. |
 | `source` | `Literal['operator', 'model', 'panel']` | Who asked. |
 | `join_policy` | `Literal['merge', 'record_only', 'rank']` | Ordered work merge, harness-owned record-only import, or the best-ranked lane alone. |
 | `ranking` | `RankRecord \| None` | A rank join's order; None before it ranked and under the other policies. |
@@ -2642,7 +2642,7 @@ Source: [`agent6.sessions.manifest.SessionManifest`](https://github.com/agent6-d
 | `includes` | `IncludedRun \| None` | The unmerged run this run took in under `dirty_tree = "include"`, stamped merged when this run lands; None when it took none, or more than that run's tip. |
 | `parallel` | `ParallelLineage \| None` | A fan-out lane's lineage, or None. |
 | `placement` | `PlacementStamp \| None` | A fan-out lane's rank and group reference, or None. |
-| `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its coordinator, or None. |
+| `comparison` | `ComparisonStamp \| None` | The group's ranking and judge spend on its parent, or None. |
 
 ### `agent6 ps` JSON row
 
@@ -2660,7 +2660,7 @@ Source: [`agent6.ui.cli.ps_cmd._Row`](https://github.com/agent6-dev/agent6/blob/
 | `status_detail` | `str` | The detail explaining the status, or "" when there is none. |
 | `pid` | `int \| None` | The worker pid, when readable. |
 | `attached` | `bool` | A front end is live on the session. |
-| `coordinator` | `str` | For a lane, the live coordinator row it nests under. |
+| `parent` | `str` | For a lane, the live parent row it nests under. |
 | `lanes` | `tuple[agent6.ui.cli.ps_cmd._Row, ...]` | The fan-out's live lanes, nested. |
 | `worktree` | `str \| None` | The linked worktree the run works in, None for a run in the checkout. |
 
@@ -3276,9 +3276,9 @@ Source: [`agent6.sessions.manifest.ParallelLineage`](https://github.com/agent6-d
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `group` | `str` | The group it was dispatched in: the coordinator's id for `run --parallel`, `<coordinator>-p<n>` for a `/parallel` group. |
+| `group` | `str` | The group it was dispatched in: the parent's id for `run --parallel`, `<parent>-p<n>` for a `/parallel` group. |
 | `lane` | `int` | Its number in the group. |
-| `coordinator` | `str` | The session that dispatched it, which every listing nests it under. |
+| `parent` | `str` | The session that dispatched it, which every listing nests it under. |
 | `config_notes` | `tuple[str, ...]` | Resolved sampling values the lane's TOML snapshot could not preserve. |
 
 ### PlacementStamp
@@ -3292,11 +3292,11 @@ Source: [`agent6.sessions.manifest.PlacementStamp`](https://github.com/agent6-de
 | `rank` | `int` | The lane's place, 1 first. |
 | `of` | `int` | How many lanes were ranked. |
 | `winner` | `bool` | The lane ranked first. |
-| `group` | `str` | The comparison group recorded on its coordinator. |
+| `group` | `str` | The comparison group recorded on its parent. |
 
 ### ComparisonStamp
 
-**Support: public.** A group's ranking and judge spend, owned by its coordinator.
+**Support: public.** A group's ranking and judge spend, owned by its parent.
 
 Source: [`agent6.sessions.manifest.ComparisonStamp`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/sessions/manifest.py).
 

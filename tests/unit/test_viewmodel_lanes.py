@@ -16,7 +16,7 @@ def _session(
     state: pathlib.Path,
     session_id: str,
     *,
-    coordinator: str = "",
+    parent: str = "",
     lane: int = 0,
     group: str = "",
     usd: float = 0.0,
@@ -31,11 +31,11 @@ def _session(
         "user_task": "t",
         "models": {"driver": {"provider": "p", "model": "m"}},
     }
-    if coordinator:
+    if parent:
         manifest["parallel"] = {
-            "group": group or coordinator,
+            "group": group or parent,
             "lane": lane,
-            "coordinator": coordinator,
+            "parent": parent,
         }
     (d / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
     rows = [
@@ -93,8 +93,8 @@ def test_children_come_from_the_records_in_dispatch_then_lane_order(tmp_path: pa
     """Two groups: a finished lane, a lane that never launched, a no-change lane; each truthful."""
     state = tmp_path / "state"
     parent = _session(state, "run-abc")
-    _session(state, "run-abc-p1-l1", coordinator="run-abc", lane=1, group="run-abc-p1", usd=0.5)
-    _session(state, "run-abc-p2-l1", coordinator="run-abc", lane=1, group="run-abc-p2", usd=0.25)
+    _session(state, "run-abc-p1-l1", parent="run-abc", lane=1, group="run-abc-p1", usd=0.5)
+    _session(state, "run-abc-p2-l1", parent="run-abc", lane=1, group="run-abc-p2", usd=0.25)
     never = lane_dispatch.JoinRecord(
         branch="agent6/run-abc-p1-l2", status="failed", detail="never started"
     )
@@ -135,8 +135,8 @@ def test_a_fan_out_without_records_reads_its_lanes_from_lineage(tmp_path: pathli
     """`run --parallel` writes no record: its lanes still show, with no join to report."""
     state = tmp_path / "state"
     parent = _session(state, "fan")
-    _session(state, "fan-l2", coordinator="fan", lane=2, usd=1.0)
-    _session(state, "fan-l1", coordinator="fan", lane=1, usd=2.0)
+    _session(state, "fan-l2", parent="fan", lane=2, usd=1.0)
+    _session(state, "fan-l1", parent="fan", lane=1, usd=2.0)
     children = vm_lanes.children_of(parent)
     assert [c.session_id for c in children] == ["fan-l1", "fan-l2"]
     assert all(
@@ -170,7 +170,7 @@ def test_the_header_carries_lanes_and_dispatches_for_an_ordinary_parent(
     """No fan-out stamp is invented: the parent keeps its actions and gains its children."""
     state = tmp_path / "state"
     parent = _session(state, "run-abc")
-    _session(state, "run-abc-p1-l1", coordinator="run-abc", lane=1, group="run-abc-p1", usd=0.5)
+    _session(state, "run-abc-p1-l1", parent="run-abc", lane=1, group="run-abc-p1", usd=0.5)
     lane_dispatch.write_record(
         parent, _record("run-abc-p1", [("run-abc-p1-l1", _joined(), 0.5)]), now=1.0
     )
@@ -185,7 +185,7 @@ def test_the_header_carries_lanes_and_dispatches_for_an_ordinary_parent(
 def test_the_receipt_lists_its_lanes_and_labels_the_inclusive_spend(tmp_path: pathlib.Path) -> None:
     state = tmp_path / "state"
     parent = _session(state, "run-abc", usd=3.0)
-    _session(state, "run-abc-p1-l1", coordinator="run-abc", lane=1, group="run-abc-p1", usd=0.5)
+    _session(state, "run-abc-p1-l1", parent="run-abc", lane=1, group="run-abc-p1", usd=0.5)
     never = lane_dispatch.JoinRecord(
         branch="agent6/run-abc-p1-l2", status="failed", detail="never started"
     )
@@ -215,7 +215,7 @@ def test_a_panel_seat_is_evidence_of_its_panel_and_no_lane(tmp_path: pathlib.Pat
     state = tmp_path / "state"
     parent = _session(state, "run-abc", usd=1.0)
     seat_id = "run-abc-rpanel-l1"
-    runs_dir = _session(state, seat_id, coordinator="run-abc", lane=1, group="run-abc-rpanel")
+    runs_dir = _session(state, seat_id, parent="run-abc", lane=1, group="run-abc-rpanel")
     seat_dir = state / "sessions" / "reviewers" / seat_id
     seat_dir.parent.mkdir()
     runs_dir.rename(seat_dir)

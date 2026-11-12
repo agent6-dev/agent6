@@ -86,7 +86,7 @@ async def _ordinary_scenario(tmp_path: pathlib.Path) -> None:
                     "session_id": "solo-p1-l1",
                     "mode": "run",
                     "models": {"driver": {"provider": "openai", "model": "lane-1"}},
-                    "parallel": {"group": "solo-p1", "lane": 1, "coordinator": "solo"},
+                    "parallel": {"group": "solo-p1", "lane": 1, "parent": "solo"},
                 }
             ),
             encoding="utf-8",

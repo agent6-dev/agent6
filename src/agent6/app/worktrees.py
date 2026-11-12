@@ -149,7 +149,7 @@ def adopt_orphan_lane(
 ) -> str | None:
     """Import an orphaned lane's branch so an ordinary merge can land it.
 
-    A coordinator death leaves a finished lane's branch only in its clone; its record is
+    A parent death leaves a finished lane's branch only in its clone; its record is
     in the origin's state already.
 
     Args:

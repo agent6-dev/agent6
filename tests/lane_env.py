@@ -111,7 +111,7 @@ def mark_lane(
     where: pathlib.Path,
     *,
     config: pathlib.Path | None = None,
-    coordinator: str = "co",
+    parent: str = "co",
     group: str = "fan",
     lane: int = 1,
     gate_source: manifest.GateSource = "",
@@ -125,7 +125,7 @@ def mark_lane(
         monkeypatch: The test's monkeypatch.
         where: A directory for the launch file.
         config: The snapshot the launch names; a placeholder path when the test loads none.
-        coordinator: The coordinator session id.
+        parent: The parent session id.
         group: The fan-out id.
         lane: The lane number.
         gate_source: The gate's origin.
@@ -145,7 +145,7 @@ def mark_lane(
             task="task",
             config=config if config is not None else where / f"lane-{lane}-config.toml",
             notes=notes,
-            coordinator=coordinator,
+            parent=parent,
             group=group,
             lane=lane,
             gate_source=gate_source,

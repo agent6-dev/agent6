@@ -589,7 +589,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                 ),
                 # Subordinate workers retain only harness-panel authority. Every child's
                 # record goes where this session's does: the root repository's state.
-                lane_spawner=frontend.build_coordinator_spawner(
+                lane_spawner=frontend.build_parent_spawner(
                     cfg,
                     inputs.explicit_leaves,
                     cwd,
@@ -611,7 +611,7 @@ def run_execution(  # noqa: C901, PLR0911, PLR0912, PLR0915  # setup, run and te
                     cfg,
                     cwd,
                     layout.state_dir,
-                    coordinator_dir=layout.session_dir,
+                    parent_dir=layout.session_dir,
                     base_sha=inputs.base_sha,
                     build_provider=frontend.build_judge_provider,
                     judging_status=frontend.judging_status,

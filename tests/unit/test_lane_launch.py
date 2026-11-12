@@ -30,7 +30,7 @@ def _launch(tmp_path: pathlib.Path, **over: Any) -> lane_launch.LaneLaunch:
         "away": "deny",
         "config": tmp_path / "launch" / "lane-1-config.toml",
         "notes": ("models.worker.temperature: selected None; TOML key omitted; reload uses 0.0.",),
-        "coordinator": "co",
+        "parent": "co",
         "group": "fan",
         "lane": 1,
         "gate_source": "inferred",

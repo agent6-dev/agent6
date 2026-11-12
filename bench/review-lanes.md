@@ -32,7 +32,7 @@ Raw results are [baseline](review-lanes-baseline.jsonl) and [lanes](review-lanes
 Both arms were measured with `review.scope` selecting a one-call diff seat or a tool-reading repo seat.
 `uv run python -m bench.review_lanes` runs the repo trace through the one seat shape and writes `review-lanes-rerun.jsonl`; it uses only the local scripted endpoint in `tests/review_traces.py`.
 
-| Scope | Arm | n | Dispatch-to-verdict median (s) | Min to max (s) | Coordinator CPU median (s) | Requests | Reported USD |
+| Scope | Arm | n | Dispatch-to-verdict median (s) | Min to max (s) | Parent CPU median (s) | Requests | Reported USD |
 | --- | --- | ---: | ---: | --- | ---: | ---: | ---: |
 | diff | in-process baseline | 30 | 0.0508 | 0.0237 to 0.4150 | 0.0380 | 30 | 0.027 |
 | diff | read-only lane | 30 | 1.5084 | 1.5003 to 3.5226 | 0.0494 | 30 | 0.027 |
@@ -51,7 +51,7 @@ Each lane run started one additional read-only session process; the baseline sta
 
 **Measurement limits:** dispatch timing includes clone, installed bootstrap, provider calls, wait and import, but excludes preparation of the retained target and local HTTP server.
 Startup and join were not timed separately.
-Coordinator CPU excludes the seat process; the raw lane data also records reaped child CPU, not a complete process-tree CPU total.
+Parent CPU excludes the seat process; the raw lane data also records reaped child CPU, not a complete process-tree CPU total.
 Reported USD comes from scripted usage, not paid requests.
 The extra diff-seat startup cost is visible in the table.
 These deterministic traces test execution parity, not model quality or production-provider latency.

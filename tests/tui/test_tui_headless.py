@@ -2156,13 +2156,13 @@ def test_a_waiting_question_of_a_dead_run_is_answered_for_the_resume(
     asyncio.run(scenario())
 
 
-def test_lane_header_reads_the_coordinators_rationale(tmp_path: pathlib.Path) -> None:
-    """The rendered lane header reads group facts from the coordinator's manifest."""
+def test_lane_header_reads_the_parents_rationale(tmp_path: pathlib.Path) -> None:
+    """The rendered lane header reads group facts from the parent's manifest."""
     runs = tmp_path / "sessions" / "runs"
     lane = runs / "lane"
-    coordinator = runs / "fan"
+    parent = runs / "fan"
     lane.mkdir(parents=True)
-    coordinator.mkdir()
+    parent.mkdir()
     (lane / "manifest.json").write_text(
         json.dumps(
             {
@@ -2172,7 +2172,7 @@ def test_lane_header_reads_the_coordinators_rationale(tmp_path: pathlib.Path) ->
         ),
         encoding="utf-8",
     )
-    (coordinator / "manifest.json").write_text(
+    (parent / "manifest.json").write_text(
         json.dumps(
             {
                 "comparison": {

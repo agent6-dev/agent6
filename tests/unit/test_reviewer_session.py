@@ -386,7 +386,7 @@ def test_a_real_seat_never_edits_and_runs_only_the_commands_it_may(
                 task="review",
                 config=config.path,
                 notes=config.notes,
-                coordinator="leaf",
+                parent="leaf",
                 group="leaf",
                 lane=1,
                 contract=contract,
@@ -432,12 +432,12 @@ def test_a_real_seat_never_edits_and_runs_only_the_commands_it_may(
     record = completion.read_completion(session_dir)
     assert record is not None and record.stop_reason == "answered"
     assert record.text == '{"verdict": "pass"}'
-    assert manifest["parallel"]["coordinator"] == "leaf"
+    assert manifest["parallel"]["parent"] == "leaf"
     # Found by its bucket and its id; the resume gate refuses it.
     state = paths.state_dir(clone)
     assert session_dir in listing.session_dirs(state)
     summary = listing.summarize_session_dir(session_dir)
-    assert summary.session_id == "leaf-l1" and summary.coordinator == "leaf"
+    assert summary.session_id == "leaf-l1" and summary.parent == "leaf"
     assert summary.mode == "reviewer" and summary.stop_reason == "answered"
     with pytest.raises(sessions_manifest.ManifestError, match="not resumable"):
         sessions_manifest.read_manifest(session_dir).session_mode()

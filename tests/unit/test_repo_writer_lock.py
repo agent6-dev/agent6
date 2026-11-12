@@ -927,7 +927,7 @@ def test_resume_of_a_fan_out_lane_from_the_origin_checkout_refuses(
                 "base_branch": "main",
                 "run_branch": "agent6/fan-AAAA11-l1",
                 "user_task": "t",
-                "parallel": {"group": "fan-AAAA11", "lane": 1, "coordinator": "fan-AAAA11"},
+                "parallel": {"group": "fan-AAAA11", "lane": 1, "parent": "fan-AAAA11"},
             }
         )
         + "\n",

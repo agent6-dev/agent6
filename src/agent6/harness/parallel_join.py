@@ -27,7 +27,7 @@ def join_lane_result(
     identity: git_read.CommitIdentity | None,
     also_branch: str | None,
 ) -> lane_records.LaneJoin:
-    """Join one returned lane's branch onto the coordinator's chain.
+    """Join one returned lane's branch onto the parent's chain.
 
     `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the lane's
     files. Never raises; the DAG stamp is the segment's (`segment_stamp`).
@@ -72,7 +72,7 @@ def segment_stamp(lanes: list[lane_records.LaneJoin]) -> tuple[graph_models.Node
 
     A segment passes when any lane joined or finished with no changes, recording the last
     joined sha (none for no changes); the note names every lane. A conflict counts as not
-    joined, and so does a lane its coordinator stopped before it changed anything.
+    joined, and so does a lane its parent stopped before it changed anything.
 
     Args:
         lanes: The segment's joins.
@@ -118,7 +118,7 @@ def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
             stopped = f" ({j.detail})" if j.detail else ""
             lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}{stopped}")
         elif j.status == "no_changes":
-            # A lane its coordinator stopped did not finish: the line says what stopped it.
+            # A lane its parent stopped did not finish: the line says what stopped it.
             ended = j.detail or "finished"
             lines.append(f"  - {j.session_id} ({j.branch}): {ended} with no changes to join.")
         elif j.status == "conflict":

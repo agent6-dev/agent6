@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The facts a coordinator hands a lane, in one private file named by `AGENT6_LANE`.
+"""The facts a parent hands a lane, in one private file named by `AGENT6_LANE`.
 
 The bootstrap (`agent6.ui.cli.lane_agent`) reads it to start the run; the lane's config load
-and manifest write read it again, so the grouping survives a coordinator death. A run outside
+and manifest write read it again, so the grouping survives a parent death. A run outside
 a lane has no launch file. The task and pins travel here, never on the host argv, under the
 state base every jail hides.
 """
@@ -37,7 +37,7 @@ class LaunchError(ConfigError):
 class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     """What a lane needs to start, and what it knows about itself that no config layer holds.
 
-    **Support: internal.** Written by the coordinator for one spawn, read by that lane.
+    **Support: internal.** Written by the parent for one spawn, read by that lane.
 
     Attributes:
         worktree: The lane's clone, the run's cwd.
@@ -45,16 +45,16 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
             lane's record lives from its first event.
         session_id: The lane's session id.
         task: The task text, exactly as the lane's manifest records it.
-        pins: The coordinator's pins, out of band of the task.
-        max_usd: The coordinator's forwarded `--max-usd`; None keeps the config's.
+        pins: The parent's pins, out of band of the task.
+        max_usd: The parent's forwarded `--max-usd`; None keeps the config's.
         allowance: What the parent had left when the lane started, which sets every cap;
             None for the config's caps.
-        auto_approve: Whether the coordinator ran with `--auto-approve`.
+        auto_approve: Whether the parent ran with `--auto-approve`.
         away: The lane's away mode: `wait` parks a question for `agent6 attach`, `deny`
             answers it empty.
         config: The lane's config snapshot, beside this file; the lane's sole `--config`.
         notes: The snapshot's serialization loss notes, recorded in the lane's manifest.
-        coordinator: The session every listing nests the lane under.
+        parent: The session every listing nests the lane under.
         group: The fan-out the lane belongs to.
         lane: The lane's number, from 1.
         gate_source: Where the verify gate in the snapshot came from; "" for none.
@@ -74,7 +74,7 @@ class LaneLaunch(pydantic.BaseModel, frozen=True, extra="forbid"):
     away: ipc.AwayMode = "wait"
     config: pathlib.Path
     notes: tuple[str, ...] = ()
-    coordinator: str = pydantic.Field(min_length=1)
+    parent: str = pydantic.Field(min_length=1)
     group: str = pydantic.Field(min_length=1)
     lane: int = pydantic.Field(ge=1)
     gate_source: manifest.GateSource = ""

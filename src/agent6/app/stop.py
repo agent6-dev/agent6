@@ -6,14 +6,14 @@ A stop now writes both bridges the loop reads (the abort steer cuts a model call
 the stop marker, written with its `now` urgency, breaks a command or approval wait), then
 waits for the run to end. A worker that has not ended by then is not reading requests: it and
 the background commands it started on the host get SIGTERM, then SIGKILL after a grace, and
-the jail's children die with it. A run's worker and a fan-out's coordinator take the
+the jail's children die with it. A run's worker and a fan-out's parent take the
 SIGTERM as a Ctrl-C stop and journal their end; resume continues a run.
 A request-only stop writes both bridges without waiting for or signalling the worker.
 ACP cancel uses this form because its server is the worker. A stop after the step writes
 the plain marker alone, so the step's command finishes and its tool results and auto-commit
 land first.
 
-A fan-out's stop ends its live lanes first, then the coordinator, which imports and ranks what
+A fan-out's stop ends its live lanes first, then the parent, which imports and ranks what
 the lanes landed before it ends; that drain gets a longer wait.
 """
 
@@ -81,7 +81,7 @@ def stop_session(
     rid = session_dir.name
     wait_s = STOP_WAIT_S if wait_s is None else wait_s
     grace_s = KILL_GRACE_S if grace_s is None else grace_s
-    # Lanes are found by lineage, so a `/parallel` coordinator's and a dead parent's count.
+    # Lanes are found by lineage, so a dead parent's count too.
     lanes = _live_lanes(session_dir)
     lane_count = f"{len(lanes)} live lane{'s' if len(lanes) > 1 else ''}"
     if not session_is_live(session_dir):
@@ -106,7 +106,7 @@ def stop_session(
     resumable = not listing.resume_blocker(session_dir)
     with_lanes = f" with its {lane_count}" if lanes else ""
     worker = process.read_live_worker_identity(session_dir)
-    # The session's own markers first: a coordinator reads its stop as its lanes end, and one
+    # The session's own markers first: a parent reads its stop as its lanes end, and one
     # written after they ended is never read.
     written = (
         ipc.request_stop(session_dir)

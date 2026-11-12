@@ -32,7 +32,7 @@ class _Row:
         status_detail: The detail explaining the status, or "" when there is none.
         pid: The worker pid, when readable.
         attached: A front end is live on the session.
-        coordinator: For a lane, the live coordinator row it nests under.
+        parent: For a lane, the live parent row it nests under.
         lanes: The fan-out's live lanes, nested.
         worktree: The linked worktree the run works in, None for a run in the checkout.
     """
@@ -45,7 +45,7 @@ class _Row:
     status_detail: str
     pid: int | None
     attached: bool
-    coordinator: str = ""
+    parent: str = ""
     lanes: tuple[_Row, ...] = ()
     worktree: str | None = None
 
@@ -136,7 +136,7 @@ def _live_rows() -> _Live:
                         summary.detail,
                         process.read_worker_pid(sdir),
                         process.frontend_is_live(sdir),
-                        coordinator=summary.coordinator,
+                        parent=summary.parent,
                         worktree=summary.worktree or None,
                     )
             # A machine instance is a live session too: its worker.pid sits at the instance root.

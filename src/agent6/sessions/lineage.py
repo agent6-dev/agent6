@@ -30,7 +30,7 @@ def children_of(session_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
                 saved = manifest.read_manifest(child)
             except manifest.ManifestError:
                 continue
-            if saved.parallel is not None and saved.parallel.coordinator == session_dir.name:
+            if saved.parallel is not None and saved.parallel.parent == session_dir.name:
                 found[child.name] = child
     return tuple(found[key] for key in sorted(found))
 
@@ -79,6 +79,6 @@ def seat_records(state_dir: pathlib.Path, parents: Collection[str]) -> tuple[pat
             saved = manifest.read_manifest(child)
         except manifest.ManifestError:
             continue
-        if saved.parallel is not None and saved.parallel.coordinator in parents:
+        if saved.parallel is not None and saved.parallel.parent in parents:
             found.append(child)
     return tuple(found)

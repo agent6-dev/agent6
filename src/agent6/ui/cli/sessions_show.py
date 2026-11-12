@@ -72,15 +72,15 @@ def _print_parallel_compare(
 ) -> None:
     """Print a lane's place in its fan-out; a no-op for any other run.
 
-    The coordinator it nests under, then the compare outcome once there is one: its place,
+    The parent it nests under, then the compare outcome once there is one: its place,
     whether it won, judged or mechanical, and the judge's rationale.
 
     Args:
         manifest: The run's manifest.
-        session_dir: The run's directory, used to read its coordinator.
+        session_dir: The run's directory, used to read its parent.
     """
     if (lineage := manifest.parallel) is not None:
-        print(f"lane of:    {lineage.coordinator} (lane {lineage.lane} of group {lineage.group})")
+        print(f"lane of:    {lineage.parent} (lane {lineage.lane} of group {lineage.group})")
     formatted = format.format_compare(
         manifest.placement, comparison.session_comparison(session_dir)
     )
@@ -432,9 +432,9 @@ def _cmd_status(session_id: str, *, as_json: bool = False) -> int:
         forked_from_sha: The fork's source commit, or null.
         worktree: The linked worktree path, or null.
         placement: The lane's rank and group id, or null outside a compared lane.
-        comparison: The group record on its coordinator, or null for other sessions.
+        comparison: The group record on its parent, or null for other sessions.
         parallel: The ParallelLineage, or null outside a lane.
-        lanes: The coordinator's summary_row objects.
+        lanes: The parent's summary_row objects.
         run_branch: The existing run branch, or null.
         base_branch: The base branch, or null when unknown.
         merged_into: The merge destination, or null when not merged.

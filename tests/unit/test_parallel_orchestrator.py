@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""A lane's life under its coordinator: spawn, wait, import, landing and cleanup (app/lanes.py).
+"""A lane's life under its parent: spawn, wait, import, landing and cleanup (app/lanes.py).
 
 Driven with a fake spawner that, for each LaneSpec, really clones the origin,
 commits on the lane's `agent6/<id>` branch, and fabricates a finished run dir
@@ -82,7 +82,7 @@ def _write_fake_run(
     cost: float,
     parallel_id: str | None = None,
     lane: int | None = None,
-    coordinator: str | None = None,
+    parent: str | None = None,
     points: float | None = None,
     read_at: float = 0.0,
     base_sha: str = "",
@@ -107,7 +107,7 @@ def _write_fake_run(
     else:
         group, number = None, None
     if group is not None:
-        manifest["parallel"] = {"group": group, "lane": number, "coordinator": coordinator or group}
+        manifest["parallel"] = {"group": group, "lane": number, "parent": parent or group}
     (session_dir / "manifest.json").write_text(json.dumps(manifest) + "\n", encoding="utf-8")
     events: list[dict[str, object]] = [
         {"type": "session.start", "mode": "run", "user_task": task},
@@ -304,7 +304,7 @@ def _run_lanes(
             origin=origin,
             record_state=paths.state_dir(origin),
             group=group,
-            coordinator=group,
+            parent=group,
             runtime=runtime,
             spawner=spawner,
             poll_interval_s=0.01,
@@ -376,10 +376,10 @@ def test_a_parallel_spec_over_the_lane_cap_is_refused() -> None:
     assert refusal is not None and "max_lanes = 2" in refusal
 
 
-def test_lanes_take_the_coordinators_away_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lanes_take_the_parents_away_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     """One owner decides a lane's away-mode.
 
-    A hub's marker on the coordinator, else `wait` with a terminal to attach from, else `deny`.
+    A hub's marker on the parent, else `wait` with a terminal to attach from, else `deny`.
     """
     monkeypatch.delenv("AGENT6_DETACHED_AWAY", raising=False)
     monkeypatch.setattr(portable, "has_controlling_tty", lambda: True)
@@ -390,7 +390,7 @@ def test_lanes_take_the_coordinators_away_mode(monkeypatch: pytest.MonkeyPatch) 
     assert interact.lane_away_mode() == "wait"
 
 
-def test_coordinator_dispatch_refuses_unknown_model(
+def test_parent_dispatch_refuses_unknown_model(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -399,7 +399,7 @@ def test_coordinator_dispatch_refuses_unknown_model(
     """The ui-built group dispatcher validates before cloning.
 
     An unknown model raises, and the loop's group-failure feedback (its `except Exception`) carries
-    the message to the coordinator, so harness needs no models dependency.
+    the message to the parent, so harness needs no models dependency.
     """
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
     _write_models_cache(tmp_path / "cache" / "agent6", "o", ["moonshotai/kimi-k2.6"])
@@ -424,27 +424,27 @@ def test_coordinator_dispatch_refuses_unknown_model(
         origin,
         origin_state,
         explicit_leaves=frozenset(),
-        coordinator_session_id="coord",
+        parent_session_id="parent",
         runtime=runtime,
     )
     with pytest.raises(app_lanes.ParallelError, match=r"unknown model 'o/moonshotai/kimi-k2\.7'"):
         dispatch([lane_records.LaneTask(task="do it", model="moonshotai/kimi-k2.7")], "p1")
 
 
-def test_coordinator_dispatch_wait_honors_a_stop_request(
+def test_parent_dispatch_wait_honors_a_stop_request(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     runtime: app_lanes.LaneRuntime,
 ) -> None:
-    """The in-run coordinator's lane wait honours a stop request.
+    """The in-run parent's lane wait honours a stop request.
 
     `stop` writes stop.request; a wait that polls only the separate immediate-abort answer blocks
     until every lane ends on its own.
     """
     origin_state = tmp_path / "ostate"
-    coordinator_dir = origin_state / "sessions" / "runs" / "coord"
-    coordinator_dir.mkdir(parents=True)
+    parent_dir = origin_state / "sessions" / "runs" / "parent"
+    parent_dir.mkdir(parents=True)
     observed: list[bool] = []
 
     def fake_lane(
@@ -452,7 +452,7 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
     ) -> lane_records.LaneResult:
         del task
 
-        assert ipc.request_stop(coordinator_dir)
+        assert ipc.request_stop(parent_dir)
         should_stop = kwargs["should_stop"]
         assert callable(should_stop)
         stopped = should_stop()
@@ -468,7 +468,7 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
         origin,
         origin_state,
         explicit_leaves=frozenset(),
-        coordinator_session_id="coord",
+        parent_session_id="parent",
         runtime=runtime,
     )
     dispatch([lane_records.LaneTask(task="a", model=None)], "p1")
@@ -476,7 +476,7 @@ def test_coordinator_dispatch_wait_honors_a_stop_request(
     assert observed == [True]
 
 
-def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
+def test_parent_dispatch_aborts_promptly_on_a_lane_thread_raise(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -514,7 +514,7 @@ def test_coordinator_dispatch_aborts_promptly_on_a_lane_thread_raise(
         origin,
         origin_state,
         explicit_leaves=frozenset(),
-        coordinator_session_id="coord",
+        parent_session_id="parent",
         runtime=runtime,
     )
     start = time.monotonic()
@@ -580,7 +580,7 @@ def test_bridge_spawner_keeps_the_task_out_of_the_argv(
         max_usd=2.0,
         fanout_id="fan",
         runtime=dataclasses.replace(runtime, spawn=fake_spawn),
-        coordinator="co",
+        parent="co",
     )
 
     argv = captured[-1]
@@ -619,7 +619,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
         record_state=paths.state_dir(origin),
         max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
-        coordinator="co",
+        parent="co",
     )  # fmt: skip
 
     lane_state = paths.state_dir(spec.worktree)
@@ -631,7 +631,7 @@ def test_a_lane_is_seeded_with_the_repos_memory(
 def test_bridge_spawner_launch_carries_auto_approve_when_set(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """A coordinator or fan-out started with `--auto-approve` forwards it to the lane.
+    """A parent or fan-out started with `--auto-approve` forwards it to the lane.
 
     Otherwise the lane sits on `run_commands=ask` with nothing to answer it.
     """
@@ -658,7 +658,7 @@ def test_bridge_spawner_launch_carries_auto_approve_when_set(
         max_usd=None, auto_approve=True,
         explicit_leaves=frozenset(),
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
-        coordinator="co",
+        parent="co",
     )  # fmt: skip
 
     assert captured[-1].auto_approve is True
@@ -689,7 +689,7 @@ def test_bridge_spawner_launch_omits_auto_approve_by_default(
         record_state=paths.state_dir(origin),
         max_usd=None,
         fanout_id="fan", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
-        coordinator="co",
+        parent="co",
     )  # fmt: skip
 
     assert captured[-1].auto_approve is False and captured[-1].max_usd is None
@@ -703,7 +703,7 @@ def test_run_lane_to_completion_forwards_auto_approve_and_pins_to_the_default_sp
 ) -> None:
     """`run_lane_to_completion` forwards auto_approve and the pins to the spawner it builds.
 
-    With no spawner injected (the coordinator's path), both reach the real bridge spawner
+    With no spawner injected (the parent's path), both reach the real bridge spawner
     exactly like max_usd does.
     """
     captured: list[dict[str, object]] = []
@@ -733,7 +733,7 @@ def test_run_lane_to_completion_forwards_auto_approve_and_pins_to_the_default_sp
         origin=origin,
         record_state=tmp_path / "ostate",
         group="p1",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         auto_approve=True,
         pins=("keep it",),
@@ -932,7 +932,7 @@ def test_a_lanes_memory_files_are_carried_into_the_origin_at_import(
 def test_compare_stamp_records_judge_rationale_truncated(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """The coordinator holds the ranking and judge cost once; lanes hold only placement."""
+    """The parent holds the ranking and judge cost once; lanes hold only placement."""
     origin_state = paths.state_dir(origin)
     cfg = Config()
     lanes = _specs(tmp_path, cfg, "fan", "2")
@@ -941,8 +941,8 @@ def test_compare_stamp_records_judge_rationale_truncated(
     results = _run_lanes(
         "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
-    coordinator_dir = origin_state / "sessions" / "runs" / "fan"
-    _write_fake_run(coordinator_dir, "t", status="passed", cost=0.0)
+    parent_dir = origin_state / "sessions" / "runs" / "fan"
+    _write_fake_run(parent_dir, "t", status="passed", cost=0.0)
 
     parallel_results.stamp_compare_outcomes(
         [
@@ -964,7 +964,7 @@ def test_compare_stamp_records_judge_rationale_truncated(
         ),
         winner="fan-l1",
         record_state=origin_state,
-        coordinator_dir=coordinator_dir,
+        parent_dir=parent_dir,
         group="fan",
     )
 
@@ -977,11 +977,11 @@ def test_compare_stamp_records_judge_rationale_truncated(
     assert m1["placement"] == {"group": "fan", "rank": 1, "of": 2, "winner": True}
     assert m2["placement"] == {"group": "fan", "rank": 2, "of": 2, "winner": False}
     assert m1["comparison"] is None and m2["comparison"] is None
-    coordinator = json.loads(
+    parent = json.loads(
         (origin_state / "sessions" / "runs" / "fan" / "manifest.json").read_text("utf-8")
     )
-    assert coordinator["placement"] is None
-    assert coordinator["comparison"] == {
+    assert parent["placement"] is None
+    assert parent["comparison"] == {
         "group": "fan",
         "ranking": ["fan-l1", "fan-l2"],
         "ranked_by": "judge",
@@ -1111,8 +1111,8 @@ def test_a_stamp_that_cannot_be_written_is_noted_and_the_others_still_land(
     results = _run_lanes(
         "t", lanes, cfg=cfg, origin=origin, runtime=runtime, group="fan", spawner=spawner
     )
-    coordinator_dir = origin_state / "sessions" / "runs" / "fan"
-    _write_fake_run(coordinator_dir, "t", status="passed", cost=0.0)
+    parent_dir = origin_state / "sessions" / "runs" / "fan"
+    _write_fake_run(parent_dir, "t", status="passed", cost=0.0)
 
     def boom(_path: pathlib.Path, _m: object) -> None:
         raise OSError("disk full")
@@ -1134,7 +1134,7 @@ def test_a_stamp_that_cannot_be_written_is_noted_and_the_others_still_land(
         compare.RankOutcome(("fan-l1", "fan-l2"), "", "mechanical"),
         winner="fan-l1",
         record_state=origin_state,
-        coordinator_dir=coordinator_dir,
+        parent_dir=parent_dir,
         group="fan",
     )
 
@@ -1231,7 +1231,7 @@ def test_cleanup_preserves_unimported_lane(
 
 
 # ---------------------------------------------------------------------------
-# Coordinator plumbing: run_lane_to_completion + the group spawner
+# Parent plumbing: run_lane_to_completion + the group spawner
 # ---------------------------------------------------------------------------
 
 
@@ -1278,7 +1278,7 @@ def test_run_lane_to_completion_imports_and_stamps(
         origin=origin,
         record_state=origin_state,
         group="p1",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1287,14 +1287,14 @@ def test_run_lane_to_completion_imports_and_stamps(
     assert res.ok
     assert seen["record_during_life"] is True  # a hub could see + answer the lane
     assert git_read.branch_exists(origin, "agent6/co-p1-l1")
-    # The lane's memory came back before its state dir went (the coordinator
+    # The lane's memory came back before its state dir went (the parent
     # path cleaned up with no carry at all).
     assert "The flaky test is test_clock." in memory.show(origin_state, "lane-fact")
     assert "lane 1: memory 1 carried" in capsys.readouterr().err
     imported = origin_state / "sessions" / "runs" / "co-p1-l1"
     assert imported.is_dir() and res.session_dir == imported
     manifest = json.loads((imported / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["parallel"] == {"group": "p1", "lane": 1, "coordinator": "p1"}
+    assert manifest["parallel"] == {"group": "p1", "lane": 1, "parent": "p1"}
 
 
 @pytest.mark.parametrize("shape", ["committed", "record_only", "branch_at_base"])
@@ -1304,7 +1304,7 @@ def test_run_lane_to_completion_records_what_the_import_landed(
     """The result says what landed: the ref, its tip and whether it holds commits past the base.
 
     A lane that committed nothing (no branch, or a branch still at the base) is a success with
-    `has_commits` False, so the coordinator joins it as `no_changes` and merges nothing.
+    `has_commits` False, so the parent joins it as `no_changes` and merges nothing.
     """
     origin_state = paths.state_dir(origin)
     base = git_read.status(origin).head_sha
@@ -1326,7 +1326,7 @@ def test_run_lane_to_completion_records_what_the_import_landed(
         origin=origin,
         record_state=origin_state,
         group="p1",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1366,7 +1366,7 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
         origin=origin,
         record_state=origin_state,
         group="p1",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=spawner,
     )
@@ -1375,14 +1375,14 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     assert not git_read.branch_exists(origin, "agent6/co-p1-l1")
 
 
-def test_a_failed_lane_never_joins_the_coordinator(
+def test_a_failed_lane_never_joins_the_parent(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """A failed lane never joins the coordinator.
+    """A failed lane never joins the parent.
 
     Candidacy is one question, `produced_result`, the same one the fan-out asks; gating only on
     died-without-end lets a lane that ended `provider_error` come back ok=True, merge its half-done
-    branch into the coordinator's checkout and tell the model "joined at <sha>".
+    branch into the parent's checkout and tell the model "joined at <sha>".
     """
     origin_state = paths.state_dir(origin)
     cfg = Config()
@@ -1404,7 +1404,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
         origin=origin,
         record_state=origin_state,
         group="pf",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1417,7 +1417,7 @@ def test_a_failed_lane_never_joins_the_coordinator(
     assert git_read.branch_exists(origin, "agent6/co-pf-l1")
 
 
-def test_a_crashed_lane_never_joins_the_coordinator(
+def test_a_crashed_lane_never_joins_the_parent(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
     """The died-without-end half of the same gate (a lane with no session.stop folds "stale").
@@ -1444,7 +1444,7 @@ def test_a_crashed_lane_never_joins_the_coordinator(
         origin=origin,
         record_state=origin_state,
         group="ps",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1461,7 +1461,7 @@ def test_build_lane_spawner_over_cap_refused(
     """A `/parallel` steer over `[harness.parallel].max_lanes` is refused before any clone or spawn.
 
     The cap is a hard cap per group, as `run --parallel` enforces it before any session exists;
-    the loop turns the raise into 'group dispatch failed' coordinator feedback.
+    the loop turns the raise into 'group dispatch failed' parent feedback.
     """
     cfg = Config.model_validate({"harness": {"parallel": {"max_lanes": 2}}})
     called: list[str] = []
@@ -1478,7 +1478,7 @@ def test_build_lane_spawner_over_cap_refused(
         origin,
         paths.state_dir(origin),
         explicit_leaves=frozenset(),
-        coordinator_session_id="co",
+        parent_session_id="co",
         runtime=runtime,
     )
     with pytest.raises(app_lanes.ParallelError, match="max_lanes"):
@@ -1529,7 +1529,7 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
         origin=origin,
         record_state=origin_state,
         group="p1",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=_FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1"),
         import_lock=lock,
@@ -1542,10 +1542,10 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
 def test_run_lane_to_completion_cleans_up_imported_clone(
     origin: pathlib.Path, tmp_path: pathlib.Path, runtime: app_lanes.LaneRuntime
 ) -> None:
-    """The coordinator path tears down an imported lane's clone and state.
+    """The parent path tears down an imported lane's clone and state.
 
     Otherwise every `/parallel` group leaks a full repo clone, a state dir and a lane config per
-    lane. Clones sit at `<base>/<repo>/<coordinator>/<group>/lane-N`: every emptied level up to and
+    lane. Clones sit at `<base>/<repo>/<parent>/<group>/lane-N`: every emptied level up to and
     including the per-repo dir goes, the base above it stays. Only the imported (ok=True) lane is
     cleaned; a failed import keeps its clone.
     """
@@ -1567,7 +1567,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         origin=origin,
         record_state=origin_state,
         group="p9",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=spawner,
         poll_interval_s=0.01,
@@ -1575,7 +1575,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     assert res.ok
     assert not spec.worktree.exists()  # the clone is gone
     assert not (per_repo / "co" / "grp").exists()  # the emptied group dir is rmdir'd
-    assert not (per_repo / "co").exists()  # the coordinator's dir above it
+    assert not (per_repo / "co").exists()  # the parent's dir above it
     assert not per_repo.exists()  # and the per-repo dir
     assert per_repo.parent.is_dir()  # never the base
 
@@ -1597,7 +1597,7 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
         origin=origin,
         record_state=origin_state,
         group="p8",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=spawner2,
         poll_interval_s=0.01,
@@ -1613,7 +1613,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     monkeypatch: pytest.MonkeyPatch,
     runtime: app_lanes.LaneRuntime,
 ) -> None:
-    """The group dispatcher names lanes `<coord>-<group>-l<i>` and returns results in order.
+    """The group dispatcher names lanes `<parent>-<group>-l<i>` and returns results in order.
 
     Lanes go under a per-group workdir; the order holds despite the pool.
     """
@@ -1637,7 +1637,7 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
         origin,
         origin_state,
         explicit_leaves=frozenset(),
-        coordinator_session_id="co",
+        parent_session_id="co",
         runtime=runtime,
     )
     lanes = [
@@ -1668,7 +1668,7 @@ def test_build_lane_spawner_keeps_lane_order_when_lanes_finish_out_of_order(
 ) -> None:
     """Lane 2 finishes before lane 1; the results still come back in lane order.
 
-    The coordinator merges the list in order, so the join order is the dispatch order.
+    The parent merges the list in order, so the join order is the dispatch order.
     """
     lane_two_done = threading.Event()
     finished: list[int] = []
@@ -1693,7 +1693,7 @@ def test_build_lane_spawner_keeps_lane_order_when_lanes_finish_out_of_order(
         origin,
         paths.state_dir(origin),
         explicit_leaves=frozenset(),
-        coordinator_session_id="co",
+        parent_session_id="co",
         runtime=runtime,
     )
     results = dispatch([lane_records.LaneTask("a", None), lane_records.LaneTask("b", None)], "p3")
@@ -1723,7 +1723,7 @@ def test_build_lane_spawner_forwards_auto_approve(
         origin,
         origin_state,
         explicit_leaves=frozenset(),
-        coordinator_session_id="co",
+        parent_session_id="co",
         runtime=runtime,
         auto_approve=True,
     )
@@ -1732,15 +1732,15 @@ def test_build_lane_spawner_forwards_auto_approve(
     assert seen == [True]
 
 
-def test_build_coordinator_spawner_forwards_auto_approve(
+def test_build_parent_spawner_forwards_auto_approve(
     origin: pathlib.Path,
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     runtime: app_lanes.LaneRuntime,
 ) -> None:
-    """A coordinator started with `--auto-approve` dispatches lanes that inherit it.
+    """A parent started with `--auto-approve` dispatches lanes that inherit it.
 
-    One started without does not; `build_coordinator_spawner` passes it to `build_lane_spawner` as
+    One started without does not; `build_parent_spawner` passes it to `build_lane_spawner` as
     it passes max_usd.
     """
     origin_state = tmp_path / "ostate"
@@ -1754,7 +1754,7 @@ def test_build_coordinator_spawner_forwards_auto_approve(
 
     monkeypatch.setattr(app_lanes, "build_lane_spawner", fake_build_lane_spawner)
 
-    app_lanes.build_coordinator_spawner(
+    app_lanes.build_parent_spawner(
         cfg,
         origin,
         origin_state,
@@ -1764,7 +1764,7 @@ def test_build_coordinator_spawner_forwards_auto_approve(
         runtime=runtime,
         auto_approve=True,
     )
-    app_lanes.build_coordinator_spawner(
+    app_lanes.build_parent_spawner(
         cfg,
         origin,
         origin_state,
@@ -1778,7 +1778,7 @@ def test_build_coordinator_spawner_forwards_auto_approve(
 
 
 # ---------------------------------------------------------------------------
-# Interrupting a lane await (coordinator stop channel / group teardown)
+# Interrupting a lane await (parent stop channel / group teardown)
 # ---------------------------------------------------------------------------
 
 
@@ -1787,7 +1787,7 @@ def test_await_lane_returns_when_should_stop_fires(
 ) -> None:
     """The single-lane await honors should_stop.
 
-    Without it, the poll loop blocked until the lane ended on its own, so a coordinator stop (or
+    Without it, the poll loop blocked until the lane ended on its own, so a parent stop (or
     Ctrl-C teardown) sat on a lane that might run for hours.
     """
     import os
@@ -1854,7 +1854,7 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
         origin=origin,
         record_state=tmp_path / "ostate",
         group="p1",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=fake_spawner,
         poll_interval_s=0.01,
@@ -2004,7 +2004,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
             record_state=paths.state_dir(origin),
             max_usd=None, lane_away=away,
             explicit_leaves=frozenset(),
-            fanout_id="fan", coordinator="co",
+            fanout_id="fan", parent="co",
             runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         )  # fmt: skip
         assert result.ok, result.error
@@ -2020,7 +2020,7 @@ def test_lane_is_self_describing_from_birth(
     """A lane is self-describing from birth.
 
     The spawn env carries the fan-out lineage and the manifest's one writer records it, so the
-    grouping survives a coordinator death; a stamp written only after import leaves orphaned lanes
+    grouping survives a parent death; a stamp written only after import leaves orphaned lanes
     listed as unrelated runs.
     """
     from agent6.sessions import layout as sessions_layout
@@ -2045,11 +2045,11 @@ def test_lane_is_self_describing_from_birth(
         spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin,
         record_state=paths.state_dir(origin),
         max_usd=None,
-        fanout_id="fan", coordinator="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
+        fanout_id="fan", parent="co", runtime=dataclasses.replace(runtime, spawn=fake_spawn),
         gate_source="inferred",
     )  # fmt: skip
     envelope = _launch_of(captured[-1])
-    assert (envelope.coordinator, envelope.group, envelope.lane) == ("co", "fan", 2)
+    assert (envelope.parent, envelope.group, envelope.lane) == ("co", "fan", 2)
     assert envelope.gate_source == "inferred"
 
     # The writer records it from the envelope, exactly as the spawned lane would.
@@ -2066,7 +2066,7 @@ def test_lane_is_self_describing_from_birth(
         cfg=Config(),
     )
     m = sessions_manifest.read_manifest(layout.session_dir)
-    assert m.parallel == sessions_manifest.ParallelLineage(group="fan", lane=2, coordinator="co")
+    assert m.parallel == sessions_manifest.ParallelLineage(group="fan", lane=2, parent="co")
 
     # An ordinary run records no lineage.
     monkeypatch.delenv(lane_launch.ENV)
@@ -2172,7 +2172,7 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
         record_state=paths.state_dir(origin),
         max_usd=None,
         fanout_id="notes",
-        coordinator="notes",
+        parent="notes",
         runtime=dataclasses.replace(runtime, spawn=child),
     )
     assert result.ok, result.error
@@ -2266,7 +2266,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
         assert cwd == lanes[0].worktree
         assert not before and not list_dirs()
         envelope = _launch_of(env)
-        assert (envelope.coordinator, envelope.group, envelope.lane) == ("failed11", "failed11", 1)
+        assert (envelope.parent, envelope.group, envelope.lane) == ("failed11", "failed11", 1)
         assert worktrees.sweep_fanout_clones(origin, cfg) == (0, 1)
         return None, 1, "lane refused before creating a session"
 
@@ -2282,7 +2282,7 @@ def test_prune_names_a_failed_start_clones_missing_record_and_removal(
             record_state=paths.state_dir(origin),
             max_usd=None,
             fanout_id="failed11",
-            coordinator="failed11",
+            parent="failed11",
             runtime=failed_runtime,
         )
 
@@ -2438,7 +2438,7 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
     runtime: app_lanes.LaneRuntime,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The in-run coordinator lets a lane finish its turn; a second stop hands its command back."""
+    """The in-run parent lets a lane finish its turn; a second stop hands its command back."""
     import os
 
     lane_dir = tmp_path / "lane-run" / "sub"
@@ -2467,7 +2467,7 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
         origin=origin,
         record_state=tmp_path / "ostate",
         group="p1",
-        coordinator="co",
+        parent="co",
         runtime=runtime,
         spawner=lambda spec, task: lane_records.LaneResult(spec, lane_dir, "agent6/x", True, ""),
         poll_interval_s=0.01,

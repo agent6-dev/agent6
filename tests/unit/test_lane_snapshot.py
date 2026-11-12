@@ -194,7 +194,7 @@ def test_lineage_refuses_malformed_config_notes(
     lane_launch.write_private(
         path,
         '{"worktree": "/x/lane-1", "session_id": "fan-l1", "task": "t",'
-        ' "config": "/x/lane-1-config.toml", "coordinator": "co", "group": "fan", "lane": 1,'
+        ' "config": "/x/lane-1-config.toml", "parent": "co", "group": "fan", "lane": 1,'
         f' "notes": {raw}}}',
     )
     monkeypatch.setenv(lane_launch.ENV, str(path))

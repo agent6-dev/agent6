@@ -207,7 +207,7 @@ def plan_merge(  # noqa: PLR0911
     except ConfigError as exc:
         reporter.error(f"{exc}")
         return 2
-    # An orphaned lane (its coordinator died before importing it) is adopted: fetched, then merged.
+    # An orphaned lane (its parent died before importing it) is adopted: fetched, then merged.
     try:
         adopted = worktrees.adopt_orphan_lane(cwd, cfg, layout, manifest)
     except subrun.SubrunError as exc:

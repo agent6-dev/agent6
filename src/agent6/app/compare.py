@@ -93,7 +93,7 @@ def rank(
         max_usd: Caps the judging like one more lane; None uses the config budget.
         budget: The run's own tracker, which the judges then bill; None gives them one of
             their own under `max_usd`.
-        events: The coordinator's journal; when present, a judge streams role events into it.
+        events: The parent's journal; when present, a judge streams role events into it.
         reporter: Where a failed judge is reported.
 
     Returns:
@@ -165,7 +165,7 @@ def _judge_once(
         candidates: The candidates to rank.
         sink: The judges' transcript sink.
         budget: The judging's tracker.
-        events: The coordinator's journal, or None.
+        events: The parent's journal, or None.
         build_provider: Builds the reviewer provider.
 
     Returns:

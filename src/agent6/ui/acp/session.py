@@ -140,7 +140,7 @@ class Sessions:
                     state_dir, row.summary.session_id, subdir=bucket
                 )
                 if listing.resume_blocker(saved.session_dir):
-                    continue  # a coordinator, a lane, a run without a checkpoint: not reopened
+                    continue  # a parent, a lane, a run without a checkpoint: not reopened
                 when = (
                     datetime.datetime.fromtimestamp(
                         row.group_last_activity, tz=datetime.UTC

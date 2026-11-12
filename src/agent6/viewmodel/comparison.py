@@ -1,4 +1,4 @@
-"""Read lane placements and their coordinator-owned comparison records."""
+"""Read lane placements and their parent-owned comparison records."""
 
 from __future__ import annotations
 
@@ -34,10 +34,10 @@ def is_winner(session_dir: pathlib.Path) -> bool:
 
 
 def session_comparison(session_dir: pathlib.Path) -> sessions_manifest.ComparisonStamp | None:
-    """Read a coordinator's comparison, directly or through a lane's group reference.
+    """Read a parent's comparison, directly or through a lane's group reference.
 
     Args:
-        session_dir: The coordinator or lane's session directory.
+        session_dir: The parent or lane's session directory.
 
     Returns:
         The group record, or None when the owner is missing, unreadable or names another group.
@@ -49,7 +49,7 @@ def session_comparison(session_dir: pathlib.Path) -> sessions_manifest.Compariso
         if manifest.placement is None or not manifest.placement.group:
             return None
         group = manifest.placement.group
-        owner_id = manifest.parallel.coordinator if manifest.parallel is not None else group
+        owner_id = manifest.parallel.parent if manifest.parallel is not None else group
         owner = layout.session_layout(layout.layout_of(session_dir).state_dir, owner_id)
         if owner is None or owner.session_id != owner_id:
             return None

@@ -21,7 +21,7 @@ DispatchSource = Literal["operator", "model", "panel"]
 # How a dispatch lands its lanes: each merged in order, none (a panel's records), or the
 # best-ranked one alone.
 JoinPolicy = Literal["merge", "record_only", "rank"]
-# How one lane's work joined the coordinator's chain.
+# How one lane's work joined the parent's chain.
 JoinStatus = Literal["joined", "no_changes", "conflict", "failed", "ranked"]
 
 
@@ -72,7 +72,7 @@ class DispatchAuthority:
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class LaneTask:
-    """Name one lane to dispatch, as the coordinator expands a `/parallel` segment.
+    """Name one lane to dispatch, as the parent expands a `/parallel` segment.
 
     Attributes:
         task: The lane's task text.
@@ -148,7 +148,7 @@ class LaneResult:
             came back.
         report: What the lane said at its end, its finish summary; "" when it ended another
             way.
-        stopped_by: What ended the lane when its coordinator stopped it (its deadline, the
+        stopped_by: What ended the lane when its parent stopped it (its deadline, the
             run's budget); "" when it ended by itself or by the operator.
     """
 
@@ -175,12 +175,12 @@ class LaneSpawner(Protocol):
 
 
 class GroupLaneSpawner(Protocol):
-    """Run a group of sibling lanes to their end and import each into the coordinator's repo.
+    """Run a group of sibling lanes to their end and import each into the parent's repo.
 
     One call clones, spawns, awaits and imports every lane; `app.lanes` owns that machinery
-    and the coordinator supplies the tasks and the group id (`p<seq>`). A lane that failed to
+    and the parent supplies the tasks and the group id (`p<seq>`). A lane that failed to
     start, outlived the teardown or was refused at import has `ok` False and leaves the
-    coordinator's repo untouched.
+    parent's repo untouched.
     """
 
     def __call__(
@@ -238,7 +238,7 @@ class LaneJoin:
             or the run has no chain to join onto; the branch holds this one's work).
         sha: The merge commit, or "".
         detail: The failure's reason; a ranked lane's place (`2 of 3`); for a lane that
-            joined or had nothing to join, what stopped it when its coordinator did; else "".
+            joined or had nothing to join, what stopped it when its parent did; else "".
         report: What the lane said at its end, its finish summary; "" when it gave none.
     """
 

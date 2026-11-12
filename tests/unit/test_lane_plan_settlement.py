@@ -28,7 +28,7 @@ def test_ancestor_folds_descendant_providers_without_recharging_inclusive_usage(
                     "session_id": directory.name,
                     "mode": "run" if directory == worker else "reviewer",
                     "models": {"driver": {"provider": provider, "model": "base"}},
-                    "parallel": {"coordinator": parent, "group": "g", "lane": 1},
+                    "parallel": {"parent": parent, "group": "g", "lane": 1},
                 }
             )
         )

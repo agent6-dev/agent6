@@ -17,7 +17,7 @@ depends_on = []
 [[modules]]
 # Application pipelines composed over the engine, never a front-end and never
 # importing agent6.ui: the run/resume lifecycle and the parallel fan-out /
-# coordinator dispatch + candidate-ranking core. The front-end injects the
+# parent dispatch + candidate-ranking core. The front-end injects the
 # presentation, process-spawn, and run-dir bridge callables it needs
 # (see app/__init__.py: SessionFrontend, LaneRuntime).
 # machine.check shares bundle, config and jail-PATH checks with create and the CLI.
@@ -757,7 +757,7 @@ depends_on = ["agent6.config", "agent6.kinds", "agent6.models.cache", "agent6.pr
 
 [[modules]]
 # Pre-spawn model validation + did-you-mean (configured roles + `/parallel`
-# specs), shared by the three front-ends and the coordinator's group
+# specs), shared by the three front-ends and the parent's group
 # dispatcher. Cache-first matching via the registry's normalization; a miss
 # re-fetches the live listing (secrets: the key for the authed fetch) so a
 # refusal never rests on a stale snapshot.
@@ -816,7 +816,7 @@ path = "agent6.portable"
 depends_on = []
 
 [[modules]]
-# The shared `/parallel` grammar (parse + spec), imported by the coordinator
+# The shared `/parallel` grammar (parse + spec), imported by the parent
 # (harness) and the composers/CLI (ui). A pure-stdlib leaf both layers sit
 # above, so neither side re-implements the syntax and the CLI --parallel value
 # grammar stays identical to the directive spec.

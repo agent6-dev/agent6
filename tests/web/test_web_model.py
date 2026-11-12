@@ -195,7 +195,7 @@ def test_conversation_payload_folds_the_event_log(tmp_path: pathlib.Path) -> Non
 
 
 def test_run_snapshot_embeds_the_compare_outcome(tmp_path: pathlib.Path) -> None:
-    """A lane snapshot reads its rationale and cost from the coordinator's record."""
+    """A lane snapshot reads its rationale and cost from the parent's record."""
     d = _run(tmp_path, "lane1", [{"type": "session.start", "user_task": "x"}])
     (d / "manifest.json").write_text(
         json.dumps(
@@ -1056,7 +1056,7 @@ def test_hub_folds_a_fan_outs_lanes_under_its_row(tmp_path: pathlib.Path) -> Non
                     "driver": {"provider": "openrouter", "model": "moonshotai/kimi-k2.6"},
                     "driver_from_flag": True,
                 },
-                "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"},
+                "parallel": {"group": "fan", "lane": 1, "parent": "fan"},
             }
         ),
         encoding="utf-8",

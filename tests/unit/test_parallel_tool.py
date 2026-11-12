@@ -269,7 +269,7 @@ def test_the_model_dispatches_lanes_and_reads_the_result_as_the_tools_answer(
     graph = _Graph()
     events: Any = _Events(session_dir / "logs.jsonl")
     wf = loop.Harness(
-        chain=run_chain.RunChain(repo, ref="refs/agent6/coord", fallback_parent=base),
+        chain=run_chain.RunChain(repo, ref="refs/agent6/parent", fallback_parent=base),
         config=cfg,
         provider=provider,
         dispatcher=disp,
@@ -303,7 +303,7 @@ def test_the_model_dispatches_lanes_and_reads_the_result_as_the_tools_answer(
     assert all(c.limits is not None and c.limits.max_turns == 200 for c in record.children)
     assert graph.rationales[-1] == "dispatched through /parallel by the model"
     assert budget.estimate_usd()[0] == pytest.approx(1.0)
-    log = _git(repo, "log", "--oneline", "refs/agent6/coord")
+    log = _git(repo, "log", "--oneline", "refs/agent6/parent")
     assert "run-abc-p1-l1 work" in log and "run-abc-p1-l2 work" in log
     # Lane 1 joined first: the chain tip was its tip when lane 2's merge was made.
     l1, l2 = record.children

@@ -547,7 +547,7 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
                 child,
                 snapshot.parent,
                 config=snapshot,
-                coordinator="capped-fan",
+                parent="capped-fan",
                 group="capped-fan",
                 lane=spec.lane,
                 record_state=state,
@@ -567,7 +567,7 @@ def test_a_budget_stopped_lane_continues_with_the_fork_command_its_record_names(
         origin=repo,
         record_state=state,
         group="capped-fan",
-        coordinator="capped-fan",
+        parent="capped-fan",
         runtime=parallel_cmd.lane_runtime(),
         spawner=spawn,
         poll_interval_s=0.01,
@@ -1379,10 +1379,10 @@ def test_the_gate_is_inferred_in_the_checkout_and_carried_into_the_worktree(
     assert manifest.worktree is not None and (manifest.worktree / ".venv/bin/python").exists()
 
 
-def test_a_lane_stamps_the_gate_origin_its_coordinator_resolved(
+def test_a_lane_stamps_the_gate_origin_its_parent_resolved(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The lane's config carries the gate the coordinator inferred; `(configured)` was a lie."""
+    """The lane's config carries the gate the parent inferred; `(configured)` was a lie."""
     repo = _repo(tmp_path, monkeypatch, config=_FINISH_GATE + 'verify.command = ["true"]\n')
     _git(repo, "commit", "-qam", "the operator's edit")
     _script(monkeypatch)

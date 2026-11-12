@@ -101,7 +101,7 @@ def test_runs_list_json_carries_the_row_facts(
         "continued_task",
         "lanes",
         "lane",
-        "coordinator",
+        "parent",
         "worktree",
         "branch",
         "open_findings",
@@ -611,7 +611,7 @@ def test_the_json_row_carries_the_journal_task(
 
 
 def _fan_out(runs: pathlib.Path) -> None:
-    """A `run --parallel` fan-out as it lands: the coordinator's record and two lanes naming it."""
+    """A `run --parallel` fan-out as it lands: the parent's record and two lanes naming it."""
     _run(runs, "fan")
     (runs / "fan" / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     for lane in (1, 2):
@@ -624,7 +624,7 @@ def _fan_out(runs: pathlib.Path) -> None:
                         "driver": {"provider": "openai", "model": f"lane-{lane}"},
                         "driver_from_flag": True,
                     },
-                    "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"},
+                    "parallel": {"group": "fan", "lane": lane, "parent": "fan"},
                     "placement": {"rank": 3 - lane, "of": 2, "winner": lane == 2},
                 }
             ),
@@ -666,7 +666,7 @@ def test_a_folded_fan_out_shows_its_groups_latest_activity(
 ) -> None:
     """A folded fan-out sorts by and shows its group's latest activity.
 
-    The coordinator's own journal is quiet for the whole fan-out.
+    The parent's own journal is quiet for the whole fan-out.
     """
     import os
 

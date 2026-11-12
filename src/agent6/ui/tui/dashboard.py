@@ -459,7 +459,7 @@ class DashboardScreen(composer.ApprovalKeys, screen_chrome.ScreenChrome, screen.
     def _render_lanes(self) -> None:
         """Refresh the session's lanes even while its own log is silent.
 
-        The rows come from the lanes by lineage, a `run --parallel` coordinator's heading
+        The rows come from the lanes by lineage, a `run --parallel` parent's heading
         from its fan-out stamp, an ordinary run's from the count.
         """
         header = wire.manifest_header(self._tui.session_dir, repo=pathlib.Path.cwd())

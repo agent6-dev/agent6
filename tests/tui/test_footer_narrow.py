@@ -51,7 +51,7 @@ def _hub_with_a_fan_out(a6: pathlib.Path) -> None:
     for name, manifest in (
         ("plain-run-AAAAAA", {"mode": "run"}),
         ("fan", {"mode": "run"}),
-        ("fan-l1", {"mode": "run", "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}}),
+        ("fan-l1", {"mode": "run", "parallel": {"group": "fan", "lane": 1, "parent": "fan"}}),
     ):
         d = a6 / "sessions" / "runs" / name
         d.mkdir(parents=True)

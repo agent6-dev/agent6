@@ -399,7 +399,7 @@ def print_lane_config_notes(
     Args:
         session_dir: The lane's current or imported session directory.
         reporter: Receives the lines.
-        prefix: The lane label in a coordinator's report.
+        prefix: The lane label in a parent's report.
     """
     with contextlib.suppress(sessions_manifest.ManifestError):
         lineage = sessions_manifest.read_manifest(session_dir).parallel

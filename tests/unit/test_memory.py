@@ -144,7 +144,7 @@ def test_record_decision_appends_verbatim_and_the_text_clips_to_the_newest(
 
 
 def test_merge_decisions_appends_a_lanes_rulings(tmp_path: pathlib.Path) -> None:
-    """A fan-out lane's rulings land in the coordinator's decisions.md after its own.
+    """A fan-out lane's rulings land in the parent's decisions.md after its own.
 
     A lane that recorded none writes nothing.
     """

@@ -1065,7 +1065,7 @@ def test_merge_is_greyed_out_for_a_live_run(tmp_path: pathlib.Path) -> None:
 def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: pathlib.Path) -> None:
     """A folded fan-out's row time is the group's latest activity, as `sessions list` shows it.
 
-    The coordinator's own journal is quiet while its lanes run.
+    The parent's own journal is quiet while its lanes run.
     """
     import asyncio
 
@@ -1075,10 +1075,10 @@ def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: pathlib.P
     from agent6.viewmodel import format
 
     a6 = tmp_path / ".agent6"
-    coord = _write_run(
+    parent = _write_run(
         a6, "runs", "fan", [{"type": "session.start", "mode": "run", "user_task": "t"}]
     )
-    (coord / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
+    (parent / "manifest.json").write_text(json.dumps({"mode": "run"}), encoding="utf-8")
     for lane in (1, 2):
         ld = _write_run(
             a6,
@@ -1088,12 +1088,12 @@ def test_hub_folded_fan_out_shows_the_groups_latest_activity(tmp_path: pathlib.P
         )
         (ld / "manifest.json").write_text(
             json.dumps(
-                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}}
+                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "parent": "fan"}}
             ),
             encoding="utf-8",
         )
     old, new = 1_700_000_000, 1_700_007_200
-    os.utime(coord / "logs.jsonl", (old, old))
+    os.utime(parent / "logs.jsonl", (old, old))
     for lane in (1, 2):
         os.utime(a6 / "sessions" / "runs" / f"fan-l{lane}" / "logs.jsonl", (new, new))
 
@@ -1268,7 +1268,7 @@ def test_the_hub_folds_a_fan_outs_lanes_and_space_expands_them(tmp_path: pathlib
         d = _write_run(a6, "runs", f"fan-l{lane}", [start])
         (d / "manifest.json").write_text(
             json.dumps(
-                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}}
+                {"mode": "run", "parallel": {"group": "fan", "lane": lane, "parent": "fan"}}
             ),
             encoding="utf-8",
         )

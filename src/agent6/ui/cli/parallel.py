@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The CLI adapter for `agent6 run --parallel` and the coordinator `/parallel` dispatch.
+"""The CLI adapter for `agent6 run --parallel` and the parent `/parallel` dispatch.
 
 The lanes are headless in `agent6.app.lanes`; this module supplies the `LaneRuntime` they
 drive (the detached spawn from `ui.spawn`, the reviewer provider and judging spinner from

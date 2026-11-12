@@ -120,7 +120,7 @@ class SessionSummary:
             snapshot, and for an undone run (its /undo child carries the mark).
         verification: The gate verdict from the gate facts, not the status word: the
             compare table and the judge read it.
-        coordinator: The session that dispatched this lane, the row it nests under.
+        parent: The session that dispatched this lane, the row it nests under.
         lane: The lane number within its fan-out.
         plan_observed_points: The plan movement observed across executions, in points.
         plan_cap: The plan's points cap, `[budget].max_plan_points`.
@@ -147,7 +147,7 @@ class SessionSummary:
     stop_reason: str = ""
     unmerged: bool = False
     verification: kinds.Verification | None = None
-    coordinator: str = ""
+    parent: str = ""
     lane: int | None = None
     plan_observed_points: float = 0.0
     plan_cap: float = 0.0
@@ -210,15 +210,15 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
         summaries: The sessions to list.
 
     Returns:
-        The rows, every session appearing once: a lane whose coordinator is not listed
-        stays a row of its own; lanes keep lane order under their coordinator.
+        The rows, every session appearing once: a lane whose parent is not listed
+        stays a row of its own; lanes keep lane order under their parent.
     """
     items = [s for s in summaries if not is_seat_record(s)]
     by_id = {s.session_id: s for s in items}
     children: dict[str, list[SessionSummary]] = {}
     for s in items:
-        if s.coordinator and s.coordinator in by_id and s.coordinator != s.session_id:
-            children.setdefault(s.coordinator, []).append(s)
+        if s.parent and s.parent in by_id and s.parent != s.session_id:
+            children.setdefault(s.parent, []).append(s)
     placed: set[str] = set()
 
     def row(s: SessionSummary) -> ListingRow:
@@ -226,9 +226,9 @@ def nested_rows(summaries: Iterable[SessionSummary]) -> list[ListingRow]:
         lanes = sorted(children.get(s.session_id, ()), key=_lane_order)
         return ListingRow(s, tuple(row(ln) for ln in lanes if ln.session_id not in placed))
 
-    roots = [s for s in items if not (s.coordinator in by_id and s.coordinator != s.session_id)]
+    roots = [s for s in items if not (s.parent in by_id and s.parent != s.session_id)]
     rows = [row(s) for s in roots]
-    # A coordinator chain that loops reaches no root: its sessions are rows.
+    # A parent chain that loops reaches no root: its sessions are rows.
     rows.extend(row(s) for s in items if s.session_id not in placed)
     rows.sort(key=lambda r: r.group_last_activity, reverse=True)
     return rows
@@ -308,7 +308,7 @@ def is_seat_record(summary: SessionSummary) -> bool:
     Returns:
         True for a dispatched session of the `reviewer` kind.
     """
-    return bool(summary.coordinator) and summary.mode == "reviewer"
+    return bool(summary.parent) and summary.mode == "reviewer"
 
 
 def _lane_order(lane: SessionSummary) -> tuple[int, str]:
@@ -317,13 +317,13 @@ def _lane_order(lane: SessionSummary) -> tuple[int, str]:
 
 
 def lanes_of(
-    state_dir: pathlib.Path, coordinator: str, *, branch_tips: Mapping[str, str] | None = None
+    state_dir: pathlib.Path, parent: str, *, branch_tips: Mapping[str, str] | None = None
 ) -> list[SessionSummary]:
-    """Return the lanes whose manifests name a coordinator, in lane order.
+    """Return the lanes whose manifests name a parent, in lane order.
 
     Args:
         state_dir: The repo's state dir.
-        coordinator: The dispatching session's id.
+        parent: The dispatching session's id.
         branch_tips: The caller's branch-tips snapshot; with it each lane carries its
             unmerged mark.
 
@@ -333,7 +333,7 @@ def lanes_of(
     lanes = [
         s
         for d in session_dirs(state_dir)
-        if (s := summarize_session_dir(d, branch_tips=branch_tips)).coordinator == coordinator
+        if (s := summarize_session_dir(d, branch_tips=branch_tips)).parent == parent
         and not is_seat_record(s)
     ]
     return sorted(lanes, key=_lane_order)
@@ -366,7 +366,7 @@ class SummaryRow(TypedDict):
     verification: kinds.Verification | None
     winner: bool
     lane: int | None
-    coordinator: str
+    parent: str
     worktree: str | None
     branch: str | None
     open_findings: dict[str, int]
@@ -433,14 +433,14 @@ def summary_row(
         unmerged: Whether the run holds unmerged work.
         verification: The gate verdict, or null without a verdict.
         lane: The lane number, or null outside a fan-out.
-        coordinator: The session that dispatched this lane.
+        parent: The session that dispatched this lane.
         worktree: The linked worktree path, or null in the operator's checkout.
         branch: The run's branch while it exists, or null.
         open_findings: The open grounded findings by severity: `block`, `warn`, `nit`.
         merge_note: The rendered open findings; "" with none open.
 
         winner: Whether this lane won its comparison.
-        lanes: Nested listing rows for this coordinator's lanes.
+        lanes: Nested listing rows for this parent's lanes.
 
     Args:
         s: The row's summary.
@@ -478,7 +478,7 @@ def summary_row(
         "verification": s.verification,
         "winner": winner,
         "lane": s.lane,
-        "coordinator": s.coordinator,
+        "parent": s.parent,
         "worktree": s.worktree or None,
         "branch": s.branch or None,
         "open_findings": dataclasses.asdict(s.open_findings),
@@ -555,7 +555,7 @@ def finished_needs_new_work(session_dir: pathlib.Path) -> bool:
 def resume_blocker(session_dir: pathlib.Path) -> str:
     """Return why the session's state cannot be resumed at all, or "".
 
-    A coordinator has no loop, a lane's tree is no checkout's once its clone is gone,
+    A parent has no loop, a lane's tree is no checkout's once its clone is gone,
     a worktree run whose worktree is
     gone continues through `fork`, and a run that never reached a turn has no snapshot.
 
@@ -570,7 +570,7 @@ def resume_blocker(session_dir: pathlib.Path) -> str:
         m = sessions_manifest.read_manifest(session_dir)
         if m.parallel is not None:
             return (
-                f"a lane of the fan-out {m.parallel.coordinator}, whose work is on its own"
+                f"a lane of the fan-out {m.parallel.parent}, whose work is on its own"
                 f' branch; `agent6 fork {session_dir.name} --steer "..."` continues it in a'
                 " worktree of its own"
             )
@@ -742,7 +742,7 @@ def summarize_session_dir(
         usd_partial=scan.budget.session.usd_partial,
         last_activity=scan.last_ep if scan.last_ep is not None else session_mtime(session_dir),
         verification=scan.verification,
-        coordinator=lineage.coordinator if lineage is not None else "",
+        parent=lineage.parent if lineage is not None else "",
         lane=lineage.lane if lineage is not None else None,
         plan_observed_points=scan.budget.session.plan_observed_points,
         plan_cap=scan.budget.execution.plan_cap or 0.0,

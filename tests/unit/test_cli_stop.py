@@ -283,7 +283,7 @@ def test_a_fanout_stops_only_its_live_lanes(
                     "session_id": lane.name,
                     "mode": "run",
                     "user_task": "t",
-                    "parallel": {"group": fan.name, "lane": number, "coordinator": fan.name},
+                    "parallel": {"group": fan.name, "lane": number, "parent": fan.name},
                 }
             ),
             encoding="utf-8",
@@ -306,7 +306,7 @@ def test_a_fanout_stops_only_its_live_lanes(
             proc.kill()
 
 
-_DRAINING_COORDINATOR = """
+_DRAINING_PARENT = """
 import json, sys, time
 from pathlib import Path
 from agent6.viewmodel import session_is_live
@@ -340,7 +340,7 @@ def _fanout(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, 
                 "session_id": lane,
                 "mode": "run",
                 "user_task": "t",
-                "parallel": {"group": fan, "lane": 1, "coordinator": fan},
+                "parallel": {"group": fan, "lane": 1, "parent": fan},
             }
         ),
         encoding="utf-8",
@@ -348,32 +348,32 @@ def _fanout(tmp_path: pathlib.Path, fan: str, lane: str) -> tuple[pathlib.Path, 
     return fan_dir, lane_dir
 
 
-def test_a_fanouts_lanes_end_before_its_coordinator_drains(
+def test_a_fanouts_lanes_end_before_its_parent_drains(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """A run's lanes end before the run drains them: it is waited for, not killed."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(stop_mod, "LANES_WAIT_S", 3.0)
     fan, lane = _fanout(tmp_path, "drain-run-AAAAAA", "drain-run-AAAAAA-l1")
-    # The lane is live before the coordinator starts, or its first poll drains and ends at once.
+    # The lane is live before the parent starts, or its first poll drains and ends at once.
     worker = subprocess.Popen(
         [sys.executable, "-c", _ANSWERING_WORKER, str(lane)], start_new_session=True
     )
     process.write_worker_pid(lane, worker.pid)
-    coordinator = subprocess.Popen(
-        [sys.executable, "-c", _DRAINING_COORDINATOR, str(fan), str(lane)],
+    parent = subprocess.Popen(
+        [sys.executable, "-c", _DRAINING_PARENT, str(fan), str(lane)],
         start_new_session=True,
     )
-    process.write_worker_pid(fan, coordinator.pid)
+    process.write_worker_pid(fan, parent.pid)
     _wait_for_file(fan / "draining")  # the drain loop is running, so the wait times a drain
     try:
         assert main(["stop", "drain-run-AAAAAA"]) == 0
         out = capsys.readouterr().out
         assert "drain-run-AAAAAA stopped with its 1 live lane" in out
-        assert coordinator.wait(timeout=5.0) == 0, "the coordinator was killed, not drained"
+        assert parent.wait(timeout=5.0) == 0, "the parent was killed, not drained"
         assert worker.wait(timeout=5.0) == 0
     finally:
-        for proc in (coordinator, worker):
+        for proc in (parent, worker):
             proc.kill()
 
 
@@ -511,7 +511,7 @@ def test_a_bare_stop_with_nothing_live_is_a_successful_noop(
 def test_a_bare_stop_passes_over_a_fan_outs_lane(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A lane stops with its coordinator; the newest live lane is not what a bare stop means."""
+    """A lane stops with its parent; the newest live lane is not what a bare stop means."""
     monkeypatch.chdir(tmp_path)
     fan = _run(tmp_path, "fan-run-AAAAAA")
     time.sleep(0.05)
@@ -523,7 +523,7 @@ def test_a_bare_stop_passes_over_a_fan_outs_lane(
                 "session_id": lane.name,
                 "mode": "run",
                 "user_task": "t",
-                "parallel": {"group": "fan-run-AAAAAA", "lane": 1, "coordinator": fan.name},
+                "parallel": {"group": "fan-run-AAAAAA", "lane": 1, "parent": fan.name},
             }
         ),
         encoding="utf-8",

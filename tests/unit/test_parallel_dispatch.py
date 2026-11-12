@@ -196,7 +196,7 @@ def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:
     """Segment lanes carry the operator pins out of band.
 
     `/pin` tells the worker an instruction "stays binding for the rest of the run", and a lane's
-    branch is merged back into the coordinator's, so a lane that never saw the pin could violate a
+    branch is merged back into the parent's, so a lane that never saw the pin could violate a
     standing instruction and have that work land. A pin folded into the task text becomes the lane's
     manifest user_task, so every listing and the judge's CandidateBrief lead with "PINNED operator
     instructions (verbatim):" instead of the work. Pins ride the LaneTask; the task text stays the
@@ -303,7 +303,7 @@ def test_a_lanes_result_carries_its_finish_summary(tmp_path: pathlib.Path) -> No
     res = lanes.recorded_result(spec, "", done, lane_records.Imported(done), origin=tmp_path)
     assert res.ok and res.report == "The suite passes: 3 tests, exit 0."
 
-    # A lane its coordinator stopped keeps its result and says what stopped it.
+    # A lane its parent stopped keeps its result and says what stopped it.
     halted = tmp_path / "halted"
     _ended_lane(halted, reason="steer_abort", verification="unverified")
     res = lanes.recorded_result(

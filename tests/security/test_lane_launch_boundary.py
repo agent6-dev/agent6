@@ -6,7 +6,7 @@ Real subprocesses run the fixed `python -P -E -m agent6.ui.cli.lane_agent` argv 
 scripted provider. `-P` keeps a planted `agent6/` or `sitecustomize.py` in the clone off
 `sys.path` and `-E` ignores a planted `PYTHONPATH`; the task and pins reach the run exactly as
 the file holds them; a detached lane without a terminal approves nothing. A lane cannot fan
-out either: `AGENT6_SUBRUN=1` is pinned by `test_coordinator_spawner_gate_under_subrun`.
+out either: `AGENT6_SUBRUN=1` is pinned by `test_parent_spawner_gate_under_subrun`.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def _launch_files(
         away="deny",
         config=config.path,
         notes=config.notes,
-        coordinator="hostile",
+        parent="hostile",
         group="hostile",
         lane=1,
     )
@@ -149,7 +149,7 @@ def test_the_bootstrap_runs_the_launch_file_and_nothing_from_the_clone(
     record = manifest.read_manifest(session_dir)
     assert record.user_task == TASK
     assert record.parallel == manifest.ParallelLineage(
-        group="hostile", lane=1, coordinator="hostile", config_notes=launch.notes
+        group="hostile", lane=1, parent="hostile", config_notes=launch.notes
     )
     assert len(calls) >= 2
     first = _message_text(calls[0])

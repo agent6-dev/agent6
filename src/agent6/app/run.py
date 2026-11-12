@@ -394,7 +394,7 @@ def run_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a run is ref
         # Written before the gates below, which park rather than refuse; the rewrite keeps
         # the park, which the execution's start clears.
         parked = stamps.parked_stamp(layout.session_dir)
-        # A lane's config carries the gate its coordinator resolved, origin and all.
+        # A lane's config carries the gate its parent resolved, origin and all.
         lane_gate_source = stamps.lane_gate_source()
         stamps.write_session_manifest(
             layout,

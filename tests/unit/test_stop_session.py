@@ -365,19 +365,19 @@ def test_a_session_that_is_not_live_is_refused_with_its_state(tmp_path: pathlib.
 def test_a_runs_own_stop_markers_land_before_its_lanes_are_stopped(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The coordinator reads its stop as its lanes end; one written after they ended is never read.
+    """The parent reads its stop as its lanes end; one written after they ended is never read.
 
-    Stopped lanes first, the coordinator ranked them and ended `lanes_ranked` at exit 0.
+    Stopped lanes first, the parent ranked them and ended `lanes_ranked` at exit 0.
     """
-    coordinator, lane = tmp_path / "fan", tmp_path / "fan-l1"
-    for d in (coordinator, lane):
+    parent, lane = tmp_path / "fan", tmp_path / "fan-l1"
+    for d in (parent, lane):
         d.mkdir()
 
     def _live(_d: pathlib.Path) -> bool:
         return True
 
     def _lanes(d: pathlib.Path) -> list[pathlib.Path]:
-        return [lane] if d == coordinator else []
+        return [lane] if d == parent else []
 
     monkeypatch.setattr(stop, "session_is_live", _live)
     monkeypatch.setattr(stop, "_live_lanes", _lanes)
@@ -386,17 +386,17 @@ def test_a_runs_own_stop_markers_land_before_its_lanes_are_stopped(
 
     def _recording(session_dir: pathlib.Path, **kw: object) -> stop.StopOutcome:
         if session_dir == lane:
-            pending_when_lane_stopped.append(ipc.stop_request_pending(coordinator))
+            pending_when_lane_stopped.append(ipc.stop_request_pending(parent))
         return real(session_dir, **kw)  # type: ignore[arg-type]
 
     monkeypatch.setattr(stop, "stop_session", _recording)
-    out = stop.stop_session(coordinator, request_only=True)
+    out = stop.stop_session(parent, request_only=True)
     assert out.ok and out.how == "requested"
     assert pending_when_lane_stopped == [True]
 
 
-def _live_lane(tmp_path: pathlib.Path, name: str, coordinator: str) -> pathlib.Path:
-    """A live lane whose manifest names its coordinator, as a spawned lane's does from birth."""
+def _live_lane(tmp_path: pathlib.Path, name: str, parent: str) -> pathlib.Path:
+    """A live lane whose manifest names its parent, as a spawned lane's does from birth."""
     d = _live_run(tmp_path, name)
     (d / "manifest.json").write_text(
         json.dumps(
@@ -405,7 +405,7 @@ def _live_lane(tmp_path: pathlib.Path, name: str, coordinator: str) -> pathlib.P
                 "session_id": name,
                 "mode": "run",
                 "user_task": "t",
-                "parallel": {"group": coordinator, "lane": 1, "coordinator": coordinator},
+                "parallel": {"group": parent, "lane": 1, "parent": parent},
             }
         )
         + "\n",
@@ -416,7 +416,7 @@ def _live_lane(tmp_path: pathlib.Path, name: str, coordinator: str) -> pathlib.P
 
 
 def test_an_ordinary_parents_stop_reaches_its_lanes_by_lineage(tmp_path: pathlib.Path) -> None:
-    """A `/parallel` coordinator is a plain run: its live lanes stop with it, none ranked."""
+    """A `/parallel` parent is a plain run: its live lanes stop with it, none ranked."""
     parent = _live_run(tmp_path, "co-run-AAAAAA")
     process.write_worker_pid(parent, os.getpid())
     lane = _live_lane(tmp_path, "co-run-AAAAAA-p1-l1", "co-run-AAAAAA")

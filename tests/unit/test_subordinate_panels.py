@@ -326,7 +326,7 @@ def test_review_leaf_and_unproven_subrun_have_no_dispatch_authority(
     lane_launch.write(path.parent, launch.model_copy(update={"contract": contract}))
     for mode in ("run", "reviewer"):
         assert (
-            lanes.build_coordinator_spawner(
+            lanes.build_parent_spawner(
                 cfg,
                 clone,
                 paths.state_dir(clone),
@@ -342,7 +342,7 @@ def test_review_leaf_and_unproven_subrun_have_no_dispatch_authority(
         disp.dispatch("parallel", {"task": "recurse"})
     monkeypatch.delenv(lane_launch.ENV)
     assert (
-        lanes.build_coordinator_spawner(
+        lanes.build_parent_spawner(
             cfg,
             clone,
             paths.state_dir(clone),
@@ -410,7 +410,7 @@ def test_import_retains_descendant_records_receipts_and_target_objects(
     assert completion.read_completion(dest) == evidence
     assert json.loads((dest / "objects" / "evidence.json").read_text()) == {"evidence": "retained"}
     saved = session_manifest.read_manifest(dest)
-    assert saved.parallel is not None and saved.parallel.coordinator == worker.name
+    assert saved.parallel is not None and saved.parallel.parent == worker.name
     assert lane_dispatch.read_records(imported.session_dir)[0].base == target.snapshot_commit
     assert subordinate_env.git(repo, "rev-parse", target.snapshot_ref) == target.snapshot_commit
     assert (

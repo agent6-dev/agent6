@@ -4,7 +4,7 @@
 
 The listing, the session header and the receipt read children from here. A `/parallel`
 dispatch leaves a record under the parent's session dir; `run --parallel` and older
-sessions leave lanes whose manifests name their coordinator, and nothing else.
+sessions leave lanes whose manifests name their parent, and nothing else.
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _recorded_child(
 
 
 def _lineage_child(summary: listing.SessionSummary, lane_dir: pathlib.Path) -> ChildView:
-    group, task = summary.coordinator, ""
+    group, task = summary.parent, ""
     try:
         manifest = sessions_manifest.read_manifest(lane_dir)
     except sessions_manifest.ManifestError:

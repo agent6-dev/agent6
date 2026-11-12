@@ -1429,7 +1429,7 @@ def test_summary_ungated_end_reads_finished_and_absent_key_reads_as_before(
     assert summarize_session_dir(legacy).status == "failed"
 
 
-def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int | None = None):
+def _summary(session_id: str, *, mtime: float, parent: str = "", lane: int | None = None):
     return listing.SessionSummary(
         session_id=session_id,
         mode="run",
@@ -1439,25 +1439,25 @@ def _summary(session_id: str, *, mtime: float, coordinator: str = "", lane: int 
         cost_usd=0.0,
         usd_partial=False,
         last_activity=mtime,
-        coordinator=coordinator,
+        parent=parent,
         lane=lane,
     )
 
 
-def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
+def test_a_lane_nests_under_its_parent_and_an_orphan_stays_a_row() -> None:
     """A lane nests under the session that dispatched it, and the group sorts by its latest lane.
 
-    A lane whose coordinator is not listed has nothing to nest under; a lane that dispatched
+    A lane whose parent is not listed has nothing to nest under; a lane that dispatched
     its own group carries its lanes one level deeper, every session once.
     """
     rows = listing.nested_rows(
         [
             _summary("other", mtime=50.0),
             _summary("fan", mtime=10.0),
-            _summary("fan-l2", mtime=30.0, coordinator="fan", lane=2),
-            _summary("fan-l1", mtime=20.0, coordinator="fan", lane=1),
-            _summary("gone-l1", mtime=40.0, coordinator="gone", lane=1),
-            _summary("fan-l1-p1-l1", mtime=35.0, coordinator="fan-l1", lane=1),
+            _summary("fan-l2", mtime=30.0, parent="fan", lane=2),
+            _summary("fan-l1", mtime=20.0, parent="fan", lane=1),
+            _summary("gone-l1", mtime=40.0, parent="gone", lane=1),
+            _summary("fan-l1-p1-l1", mtime=35.0, parent="fan-l1", lane=1),
         ]
     )
 
@@ -1477,9 +1477,9 @@ def test_a_lane_nests_under_its_coordinator_and_an_orphan_stays_a_row() -> None:
     lanes: Any = fan["lanes"]
     assert [ln["session_id"] for ln in lanes] == ["fan-l1", "fan-l2"]
     assert lanes[1]["winner"] is True and lanes[1]["lane"] == 2
-    assert lanes[1]["coordinator"] == "fan" and lanes[1]["lanes"] == []
+    assert lanes[1]["parent"] == "fan" and lanes[1]["lanes"] == []
     assert lanes[0]["lanes"][0]["session_id"] == "fan-l1-p1-l1"
-    assert fan["lane"] is None and fan["coordinator"] == ""
+    assert fan["lane"] is None and fan["parent"] == ""
 
 
 def test_a_never_started_run_reads_at_the_parked_level() -> None:

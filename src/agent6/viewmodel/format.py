@@ -361,7 +361,7 @@ def format_compare(
 
     Args:
         placement: The lane's placement stamp, None for a run outside a compared fan-out.
-        comparison: The group record from its coordinator, None when unavailable.
+        comparison: The group record from its parent, None when unavailable.
 
     Returns:
         The headline (`rank 1/2 · winner · judge ($0.0102)`, the figure being the judge

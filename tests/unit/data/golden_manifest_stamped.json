@@ -69,7 +69,7 @@
   "parallel": {
     "group": "p-abc",
     "lane": 1,
-    "coordinator": "p-abc",
+    "parent": "p-abc",
     "config_notes": []
   },
   "placement": {

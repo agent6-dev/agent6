@@ -2326,7 +2326,7 @@ def test_an_ordinary_live_parents_first_lane_reaches_the_stream_during_silence(
                         "version": 3,
                         "session_id": "solo-p1-l1",
                         "mode": "run",
-                        "parallel": {"group": "solo-p1", "lane": 1, "coordinator": "solo"},
+                        "parallel": {"group": "solo-p1", "lane": 1, "parent": "solo"},
                         "models": {"driver": {"provider": "openai", "model": "lane-1"}},
                     }
                 ),

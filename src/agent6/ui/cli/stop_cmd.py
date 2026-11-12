@@ -16,7 +16,7 @@ from agent6.viewmodel import session_dirs, session_is_live
 
 
 def _is_lane(session_dir: pathlib.Path) -> bool:
-    """Return whether the session is a fan-out's lane, which its coordinator's stop ends."""
+    """Return whether the session is a fan-out's lane, which its parent's stop ends."""
     try:
         return sessions_manifest.read_manifest(session_dir).parallel is not None
     except sessions_manifest.ManifestError:
@@ -62,7 +62,7 @@ def _cmd_stop(session_id: str, *, all_sessions: bool, after_turn: bool) -> int:
     code = 0
     for session_dir in targets:
         if all_sessions and not session_is_live(session_dir):
-            continue  # a lane its coordinator's stop ended
+            continue  # a lane its parent's stop ended
         out = stop.stop_session(session_dir, after_turn=after_turn)
         print(f"[agent6] {out.message}.", file=sys.stdout if out.ok else sys.stderr)
         if out.resumable:

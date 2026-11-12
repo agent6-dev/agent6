@@ -483,7 +483,7 @@ def resume_task(  # noqa: C901, PLR0911, PLR0912, PLR0915  # every way a resume 
         lane = manifest.parallel
         if lane is not None and not worktrees.holds(cfg, cwd):
             reporter.refuse(
-                f"{session_id} is a lane of the fan-out {lane.coordinator}: its work is on its"
+                f"{session_id} is a lane of the fan-out {lane.parent}: its work is on its"
                 " own branch, and this checkout holds another tree, so it cannot continue here."
                 " Continue it in a worktree of its own:\n"
                 f'    agent6 fork {session_id} --steer "..."'

@@ -31,7 +31,7 @@ def _policy_stamp(cfg: Config, isolation: str) -> manifest.PolicyStamp:
     Args:
         cfg: The run's config.
         isolation: The resolved isolation level; "" for a stamp naming no level (a fan-out
-            coordinator's), which then knows no network either.
+            parent's), which then knows no network either.
 
     Returns:
         The stamp, holding resolved words since `auto` degrades.
@@ -229,20 +229,20 @@ def lane_record_state() -> pathlib.Path | None:
 def lane_gate_source() -> manifest.GateSource:
     """Return the origin of the gate a lane's config carries, or "" outside a lane.
 
-    The coordinator resolves the gate in the origin, where the repo signals are, and writes it
+    The parent resolves the gate in the origin, where the repo signals are, and writes it
     into the lane's config; the lane alone would read it as configured.
 
     Returns:
-        The gate's origin, "" outside a lane or when the coordinator passed none.
+        The gate's origin, "" outside a lane or when the parent passed none.
     """
     envelope = lane_launch.read()
     return envelope.gate_source if envelope is not None else ""
 
 
 def parallel_lineage() -> manifest.ParallelLineage | None:
-    """Return the fan-out lineage the coordinator handed this lane, or None outside a lane.
+    """Return the fan-out lineage the parent handed this lane, or None outside a lane.
 
-    Read at the manifest's write so the grouping survives a coordinator death.
+    Read at the manifest's write so the grouping survives a parent death.
 
     Returns:
         The lineage, or None.
@@ -256,7 +256,7 @@ def parallel_lineage() -> manifest.ParallelLineage | None:
     return manifest.ParallelLineage(
         group=envelope.group,
         lane=envelope.lane,
-        coordinator=envelope.coordinator,
+        parent=envelope.parent,
         config_notes=envelope.notes,
     )
 

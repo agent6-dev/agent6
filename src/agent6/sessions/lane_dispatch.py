@@ -127,7 +127,7 @@ class DispatchRecord(pydantic.BaseModel, frozen=True, extra="forbid"):
 
     Attributes:
         version: The record's shape; a newer one refuses the read.
-        identity: The dispatch's id, the group id `<coordinator>-p<n>`.
+        identity: The dispatch's id, the group id `<parent>-p<n>`.
         source: Who asked.
         join_policy: Ordered work merge, harness-owned record-only import, or the
             best-ranked lane alone.

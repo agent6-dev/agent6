@@ -1128,7 +1128,7 @@ def test_the_worktree_pane_has_a_hash_that_survives_reload(
     assert errors == [], errors
 
 
-def test_lane_details_read_the_coordinators_rationale(
+def test_lane_details_read_the_parents_rationale(
     port: int,
     tmp_path: pathlib.Path,
     open_page: Callable[[int], tuple[Page, list[str]]],

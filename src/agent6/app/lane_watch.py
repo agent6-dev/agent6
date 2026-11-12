@@ -62,7 +62,7 @@ def await_lane(
     Args:
         res: The started lane, awaited on its real run dir.
         poll_interval_s: How often to poll.
-        should_stop: The coordinator's abort channel, read between polls.
+        should_stop: The parent's abort channel, read between polls.
         deadline_at: The wall-clock second the wait ends at; None for no deadline.
         clock: The wall clock.
         on_poll: Called on each poll that finds the lane running, with its status word: the
@@ -86,7 +86,7 @@ def await_lane(
 
 
 def stop_child(pid: int, *, grace_s: float = stop.KILL_GRACE_S) -> str:
-    """Stop a lane process the coordinator spawned: TERM its group, KILL after the grace, reap.
+    """Stop a lane process the parent spawned: TERM its group, KILL after the grace, reap.
 
     Args:
         pid: The child's pid; 0 for none.

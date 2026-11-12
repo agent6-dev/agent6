@@ -372,7 +372,7 @@ def _seat(state: pathlib.Path, seat_id: str, parent: str) -> pathlib.Path:
                 "session_id": seat_id,
                 "mode": "reviewer",
                 "user_task": "Review: security",
-                "parallel": {"group": f"{parent}-rpanel", "lane": 1, "coordinator": parent},
+                "parallel": {"group": f"{parent}-rpanel", "lane": 1, "parent": parent},
             }
         )
         + "\n",
@@ -424,7 +424,7 @@ def _lane(state: pathlib.Path, lane_id: str, parent: str) -> pathlib.Path:
                 "session_id": lane_id,
                 "mode": "run",
                 "user_task": "t",
-                "parallel": {"group": f"{parent}-p1", "lane": 1, "coordinator": parent},
+                "parallel": {"group": f"{parent}-p1", "lane": 1, "parent": parent},
             }
         )
         + "\n",

@@ -113,7 +113,7 @@ class ParallelDispatcher:
         """Dispatch a sibling group at the steer boundary and return what it did.
 
         Reserves the parent's allowance for the lanes, writes the dispatch record before any
-        launch, clones the coordinator's committed HEAD into one lane per expanded lane, runs
+        launch, clones the parent's committed HEAD into one lane per expanded lane, runs
         them through the spawner, settles their usage and joins each branch back in dispatch
         order (under `rank`, the best-ranked lane alone), advancing the record at each
         boundary. Runs synchronously: no provider call happens while the group is in flight.

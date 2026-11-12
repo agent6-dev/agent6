@@ -121,7 +121,7 @@ def bridge_spawner(
     lane_away: ipc.AwayMode = "wait",
     at: str | None = None,
     fanout_id: str,
-    coordinator: str,
+    parent: str,
     gate_source: sessions_manifest.GateSource = "",
     limits: lane_records.LaneLimits | None = None,
     allowance: agent6_budget.BudgetAllowance | None = None,
@@ -136,7 +136,7 @@ def bridge_spawner(
     Args:
         spec: The lane.
         task: The lane's task.
-        pins: The coordinator's pins, passed out of band of the task.
+        pins: The parent's pins, passed out of band of the task.
         operator_task: The words before composition; None means `task` is uncomposed.
         cfg: The origin's effective config.
         explicit_leaves: The dotted leaves the origin's config layers set.
@@ -146,12 +146,12 @@ def bridge_spawner(
         auto_approve: The fan-out's own `--auto-approve`, forwarded.
         lane_away: The lane's away-mode: "wait" parks a question for `agent6 attach`,
             "deny" answers it empty.
-        at: A commit to detach the clone at; the coordinator's chain tip.
+        at: A commit to detach the clone at; the parent's chain tip.
         fanout_id: The group the lane belongs to.
-        coordinator: The session every listing nests the lane under.
+        parent: The session every listing nests the lane under.
         gate_source: Where the gate in the lane's config came from, "" when it has none.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
-        allowance: What the coordinator had left when the lane started, which sets every
+        allowance: What the parent had left when the lane started, which sets every
             cap; None for the config's.
         contract: The harness-owned read-only conversation; None for work.
         runtime: The front-end's spawn primitive.
@@ -170,7 +170,7 @@ def bridge_spawner(
         return lane_records.LaneResult(
             spec=spec, session_dir=spec.worktree, branch=branch, ok=False, error=str(exc)
         )
-    # The lane's own manifest records its lineage, so a coordinator death orphans nothing; the
+    # The lane's own manifest records its lineage, so a parent death orphans nothing; the
     # gate's origin was resolved in the origin, where the repo signals are.
     private = lane_launch.launch_dir(paths.state_dir(origin), fanout_id)
     try:
@@ -190,7 +190,7 @@ def bridge_spawner(
                 away=lane_away,
                 config=config.path,
                 notes=config.notes,
-                coordinator=coordinator,
+                parent=parent,
                 group=fanout_id,
                 lane=spec.lane,
                 gate_source=gate_source,
@@ -249,7 +249,7 @@ def run_lane_to_completion(
     origin: pathlib.Path,
     record_state: pathlib.Path,
     group: str,
-    coordinator: str,
+    parent: str,
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
@@ -271,7 +271,7 @@ def run_lane_to_completion(
 ) -> lane_records.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
 
-    The coordinator runs a group of these on a thread pool, so each is
+    The parent runs a group of these on a thread pool, so each is
     self-contained. A lane that failed to start, was still running at teardown or its
     deadline, refused its import, or ended without a result comes back `ok=False`; an
     imported branch is safe in the origin either way, and a clone that was not imported
@@ -281,16 +281,16 @@ def run_lane_to_completion(
     Args:
         spec: The lane.
         task: The lane's task.
-        pins: The coordinator's pins.
+        pins: The parent's pins.
         cfg: The origin's effective config.
         explicit_leaves: The dotted leaves the origin's config layers set.
         origin: The repository.
         record_state: The state dir the run's and its lanes' records live under.
         group: The group the lane belongs to.
-        coordinator: The session every listing nests the lane under.
+        parent: The session every listing nests the lane under.
         runtime: The front-end's primitives.
         max_usd: The lane's spend cap.
-        auto_approve: The coordinator's own `--auto-approve`, forwarded.
+        auto_approve: The parent's own `--auto-approve`, forwarded.
         lane_away: The lane's away-mode.
         gate_source: Where the gate in the config came from, "" when it has none.
         spawner: Clones and spawns the lane; the bridge spawner by default.
@@ -300,19 +300,19 @@ def run_lane_to_completion(
         poll_interval_s: How often the await polls.
         reporter: Receives the notes.
         should_stop: Polled to interrupt the await; the lane then gets a stop request
-            with the coordinator's urgency.
+            with the parent's urgency.
         stop_is_now: Whether that request carries the `now` urgency; None reads as `now`. A
             plain request lets the lane finish its turn and waits for it, escalating to
             `now` when one arrives; `now` hands its command back and waits a bounded grace.
         hard_stop: Set to skip the grace.
         limits: The turn cap and deadline the lane runs under; None for the config's own.
-        allowance: What the coordinator had left when the lane started, as the lane's caps;
+        allowance: What the parent had left when the lane started, as the lane's caps;
             None for the config's caps.
         contract: The harness-owned read-only conversation; None for work.
         clock: The wall clock the deadline is read against.
-        watch: The coordinator's side of the wait, called on each poll with the lane's dir,
+        watch: The parent's side of the wait, called on each poll with the lane's dir,
             its label and its status: it counts the lane's spend and answers its prompt,
-            and returns whether the coordinator's budget is spent. None leaves the lane's
+            and returns whether the parent's budget is spent. None leaves the lane's
             prompt to whoever attaches to it.
 
     Returns:
@@ -331,7 +331,7 @@ def run_lane_to_completion(
             at=at,
             explicit_leaves=explicit_leaves,
             fanout_id=group,
-            coordinator=coordinator,
+            parent=parent,
             gate_source=gate_source,
             limits=limits,
             allowance=allowance,
@@ -417,7 +417,7 @@ def run_lane_to_completion(
 
 
 def _stopped_by(*, overdue: bool, over_budget: bool) -> str:
-    """Return what ended a lane the coordinator stopped, "" for a stop the operator asked."""
+    """Return what ended a lane the parent stopped, "" for a stop the operator asked."""
     if overdue:
         return "ended at its deadline"
     return "stopped at the run's budget" if over_budget else ""
@@ -442,7 +442,7 @@ def land_lane(
         origin: The repository.
         group: The group the lane belongs to.
         reporter: Receives the notes.
-        stopped_by: What ended the lane when the coordinator stopped it, "" otherwise.
+        stopped_by: What ended the lane when the parent stopped it, "" otherwise.
 
     Returns:
         The lane's result over the imported dir, its usage read from its record.
@@ -494,7 +494,7 @@ def recorded_result(
         dest: Its imported run dir.
         imported: What the import landed.
         origin: The repository.
-        stopped_by: What ended the lane when the coordinator stopped it, "" otherwise.
+        stopped_by: What ended the lane when the parent stopped it, "" otherwise.
 
     Returns:
         `ok` only for a deliberate end; the usage is read either way.
@@ -502,7 +502,7 @@ def recorded_result(
     summary = summarize_session_dir(dest)
     usage = lane_usage(dest)
     if not produced_result(summary.status):
-        # Only a deliberate end joins the coordinator as a success.
+        # Only a deliberate end joins the parent as a success.
         return lane_records.LaneResult(
             spec=spec,
             session_dir=dest,
@@ -719,7 +719,7 @@ def build_lane_ranker(
     origin: pathlib.Path,
     record_state: pathlib.Path,
     *,
-    coordinator_dir: pathlib.Path,
+    parent_dir: pathlib.Path,
     base_sha: str,
     build_provider: app_compare.BuildProvider,
     judging_status: app_compare.JudgingStatus,
@@ -729,19 +729,19 @@ def build_lane_ranker(
 ) -> lane_records.LaneRanker:
     """Build the ranker a rank join asks: `[harness.parallel].judges` over the imported lanes.
 
-    The judges bill the coordinator's own budget. Each ranking is stamped on the coordinator
+    The judges bill the parent's own budget. Each ranking is stamped on the parent
     and the lanes, journaled, and printed as the ranked table.
 
     Args:
-        cfg: The coordinator's config.
+        cfg: The parent's config.
         origin: The repository.
         record_state: The state dir the run's and its lanes' records live under.
-        coordinator_dir: The coordinator's session dir, which holds the judges' transcripts.
+        parent_dir: The parent's session dir, which holds the judges' transcripts.
         base_sha: The commit the lanes were cut from when the dispatch names none.
         build_provider: Builds the reviewer provider a judge sits in.
         judging_status: Shown around the judge calls.
-        budget: The coordinator's tracker.
-        events: The coordinator's journal.
+        budget: The parent's tracker.
+        events: The parent's journal.
         reporter: Receives the ranked table and a failed judge's line.
 
     Returns:
@@ -767,7 +767,7 @@ def build_lane_ranker(
         outcome = app_compare.rank(
             cfg,
             candidates,
-            transcript_dir=coordinator_dir / "judges",
+            transcript_dir=parent_dir / "judges",
             build_provider=build_provider,
             judging_status=judging_status,
             budget=budget,
@@ -782,7 +782,7 @@ def build_lane_ranker(
             outcome,
             winner=winner,
             record_state=record_state,
-            coordinator_dir=coordinator_dir,
+            parent_dir=parent_dir,
             group=group,
             reporter=reporter,
         )
@@ -817,7 +817,7 @@ def build_lane_ranker(
             rows=rows,
             committed={res.spec.session_id: res.has_commits for res in results},
             model_refs=model_refs,
-            joins=coordinator_dir.name,
+            joins=parent_dir.name,
             reporter=reporter,
         )
         return lane_records.Ranking(
@@ -836,8 +836,8 @@ def build_lane_spawner(
     record_state: pathlib.Path,
     *,
     explicit_leaves: frozenset[str],
-    coordinator_session_id: str,
-    coordinator_mode: str = "run",
+    parent_session_id: str,
+    parent_mode: str = "run",
     runtime: LaneRuntime,
     max_usd: float | None = None,
     auto_approve: bool = False,
@@ -849,22 +849,22 @@ def build_lane_spawner(
 
     One call runs every lane on its own thread, imports each under a shared lock
     and returns the results in dispatch order. Lane ids are
-    `<coordinator>-<group>-l<i>`.
+    `<parent>-<group>-l<i>`.
 
     Args:
-        cfg: The coordinator's config.
+        cfg: The parent's config.
         origin: The repository.
         record_state: The state dir the run's and its lanes' records live under.
-        explicit_leaves: The dotted leaves the coordinator's config layers set.
-        coordinator_session_id: The coordinator's session id.
-        coordinator_mode: The coordinator's session bucket owner.
+        explicit_leaves: The dotted leaves the parent's config layers set.
+        parent_session_id: The parent's session id.
+        parent_mode: The parent's session bucket owner.
         runtime: The front-end's primitives.
         max_usd: Each lane's spend cap.
-        auto_approve: The coordinator's own `--auto-approve`, forwarded to every lane.
+        auto_approve: The parent's own `--auto-approve`, forwarded to every lane.
         lane_away: Every lane's away-mode, without a watch.
         reporter: Receives the notes.
-        watch: The coordinator's side of each lane's wait (`run_lane_to_completion`); with it
-            every lane waits for the coordinator's operator to answer its prompts.
+        watch: The parent's side of each lane's wait (`run_lane_to_completion`); with it
+            every lane waits for the parent's operator to answer its prompts.
 
     Returns:
         The dispatcher.
@@ -875,7 +875,7 @@ def build_lane_spawner(
     def dispatch(
         lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
     ) -> list[lane_records.LaneResult]:
-        # The lane cap binds before any clone; the refusal reaches the coordinator as feedback.
+        # The lane cap binds before any clone; the refusal reaches the parent as feedback.
         if len(lanes) > cfg.harness.parallel.max_lanes:
             raise ParallelError(
                 f"/parallel requests {len(lanes)} lanes but [harness.parallel].max_lanes ="
@@ -896,7 +896,7 @@ def build_lane_spawner(
             reporter.warn(validate.warning_message(verdict))
         # One name for the worktree dir, the lane ids and the stamped lineage: the sweeps derive
         # the clone path from it.
-        group_id = f"{coordinator_session_id}-{group}"
+        group_id = f"{parent_session_id}-{group}"
         try:
             worktree_root = worktrees.place(cfg, origin, group_id)
         except (errors.OperatorError, errors.GitError, OSError) as exc:
@@ -913,9 +913,9 @@ def build_lane_spawner(
         ]
         paths.mkdir_for_real_user(sessions_layout.bucket_dir(record_state, "runs"))
         import_lock = threading.Lock()
-        coord_dir = (
-            sessions_layout.bucket_dir(record_state, kinds.session_bucket(coordinator_mode))
-            / coordinator_session_id
+        parent_dir = (
+            sessions_layout.bucket_dir(record_state, kinds.session_bucket(parent_mode))
+            / parent_session_id
         )
         hard_stop = threading.Event()
 
@@ -923,22 +923,22 @@ def build_lane_spawner(
             # Both stop channels interrupt the wait; the loop consumes their markers after.
             return (
                 hard_stop.is_set()
-                or ipc.steer_answer_is_abort(coord_dir)
-                or ipc.stop_request_pending(coord_dir)
+                or ipc.steer_answer_is_abort(parent_dir)
+                or ipc.stop_request_pending(parent_dir)
             )
 
         def stop_is_now() -> bool:
             return (
                 hard_stop.is_set()
-                or ipc.steer_answer_is_abort(coord_dir)
-                or ipc.stop_request_is_now(coord_dir)
+                or ipc.steer_answer_is_abort(parent_dir)
+                or ipc.stop_request_is_now(parent_dir)
             )
 
-        # The coordinator's manifest pins the gate the lanes' config carries.
+        # The parent's manifest pins the gate the lanes' config carries.
         gate_source = ""
         if cfg.harness.verify.command:
             try:
-                gate_source = sessions_manifest.read_manifest(coord_dir).harness.gate.source
+                gate_source = sessions_manifest.read_manifest(parent_dir).harness.gate.source
             except sessions_manifest.ManifestError:
                 gate_source = ""
 
@@ -957,7 +957,7 @@ def build_lane_spawner(
                 origin=origin,
                 record_state=record_state,
                 group=group_id,
-                coordinator=coordinator_session_id,
+                parent=parent_session_id,
                 runtime=runtime,
                 max_usd=max_usd,
                 auto_approve=auto_approve,
@@ -1000,7 +1000,7 @@ def build_lane_spawner(
     return dispatch
 
 
-def build_coordinator_spawner(
+def build_parent_spawner(
     cfg: Config,
     origin: pathlib.Path,
     record_state: pathlib.Path,
@@ -1044,8 +1044,8 @@ def build_coordinator_spawner(
         origin,
         record_state,
         explicit_leaves=explicit_leaves,
-        coordinator_session_id=session_id,
-        coordinator_mode=mode,
+        parent_session_id=session_id,
+        parent_mode=mode,
         runtime=runtime,
         max_usd=max_usd,
         auto_approve=auto_approve,

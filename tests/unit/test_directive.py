@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Eric Lesiuta
-"""The unified `/parallel` grammar shared by the coordinator + the composers."""
+"""The unified `/parallel` grammar shared by the parent + the composers."""
 
 from __future__ import annotations
 

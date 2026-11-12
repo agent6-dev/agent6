@@ -254,7 +254,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
         build_repl_hook=_no_repl,
         run_ask_repl=_no_ask_repl,
         save_ask_transcript=lambda _layout, _question, _answer: None,
-        build_coordinator_spawner=_no_coordinator,
+        build_parent_spawner=_no_parent,
         build_judge_provider=None,
         judging_status=contextlib.nullcontext,
         agent6_exe=agent6_exe,
@@ -262,7 +262,7 @@ def acp_frontend(  # noqa: C901  # one callable per ACP capability, built in one
     )
 
 
-def _no_coordinator(
+def _no_parent(
     _cfg: Config,
     _explicit_leaves: frozenset[str],
     _cwd: pathlib.Path,

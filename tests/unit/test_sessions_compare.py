@@ -151,7 +151,7 @@ def test_compare_of_a_fanout_id_compares_its_lanes(
             base_sha=base,
             commits=[(f"{lane}.txt", "x\n", f"add {lane}")],
             cost=cost,
-            manifest_extra={"parallel": {"group": "fan", "lane": lane, "coordinator": "fan"}},
+            manifest_extra={"parallel": {"group": "fan", "lane": lane, "parent": "fan"}},
         )
     _setup_run(repo, "run-AAAA11", base_sha=base, commits=[("a.txt", "a\n", "add a")])
     assert main(["sessions", "compare", "fan"]) == 0
@@ -568,7 +568,7 @@ def test_without_a_judge_the_candidates_keep_their_points(
 
 def _lane_extra(*, winner: bool, rank: int) -> dict[str, Any]:
     return {
-        "parallel": {"group": "fan", "lane": rank, "coordinator": "fan"},
+        "parallel": {"group": "fan", "lane": rank, "parent": "fan"},
         "placement": {"rank": rank, "of": 2, "winner": winner, "group": "fan"},
     }
 
@@ -1105,7 +1105,7 @@ def test_a_fanout_with_no_recorded_verdict_is_judged(
             sid,
             base_sha=base,
             commits=[(f"{name}.txt", f"{name}\n", f"add {name}")],
-            manifest_extra={"parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}},
+            manifest_extra={"parallel": {"group": "fan", "lane": 1, "parent": "fan"}},
         )
     _write_reviewer_config(repo)
     judge = _FakeProvider(['{"ranking": ["run-BBBB22", "run-AAAA11"], "rationale": "b wins"}'])

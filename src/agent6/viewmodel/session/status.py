@@ -429,7 +429,7 @@ RESULT_WORDS = frozenset({"passed", "finished", "stopped", "planned", "answered"
 def produced_result(status: str) -> bool:
     """Return whether the status word means a deliberate end that left mergeable work.
 
-    Only such a lane is a fan-out compare candidate or joins a coordinator's branch.
+    Only such a lane is a fan-out compare candidate or joins a parent's branch.
 
     Args:
         status: The session's status word.

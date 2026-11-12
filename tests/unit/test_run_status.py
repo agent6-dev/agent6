@@ -591,9 +591,9 @@ def test_status_shows_fan_out_compare_outcome(
         "group": "fan", "rank": 1, "of": 2, "winner": True,
     }  # fmt: skip
     (d / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    coordinator = d.parent / "fan"
-    coordinator.mkdir()
-    (coordinator / "manifest.json").write_text(
+    parent = d.parent / "fan"
+    parent.mkdir()
+    (parent / "manifest.json").write_text(
         json.dumps(
             {
                 "comparison": {

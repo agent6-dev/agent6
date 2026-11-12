@@ -76,7 +76,7 @@ def test_ps_reads_a_live_machine_through_the_shared_status_word(
 def test_ps_lists_a_linked_lane_once(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A fan-out lane's run dir is linked under the coordinator repo as well as its own state dir.
+    """A fan-out lane's run dir is linked under the parent repo as well as its own state dir.
 
     One live session, one row.
     """
@@ -91,9 +91,9 @@ def test_ps_lists_a_linked_lane_once(
         encoding="utf-8",
     )
     process.write_worker_pid(lane, os.getpid())
-    coordinator = base / "agent6" / "coord-repo-111111" / "sessions" / "runs"
-    coordinator.mkdir(parents=True)
-    (coordinator / "fan-l1").symlink_to(lane, target_is_directory=True)
+    parent = base / "agent6" / "parent-repo-111111" / "sessions" / "runs"
+    parent.mkdir(parents=True)
+    (parent / "fan-l1").symlink_to(lane, target_is_directory=True)
     assert ps_cmd.cmd_ps() == 0
     assert capsys.readouterr().out.count("fan-l1") == 1
 
@@ -182,7 +182,7 @@ def test_ps_json_waiting_facts(
         "status_detail": "approval <1m",
         "pid": os.getpid(),
         "attached": False,
-        "coordinator": "",
+        "parent": "",
         "lanes": [],
         "worktree": None,
     }
@@ -224,26 +224,26 @@ def test_pending_step_stop_is_visible_on_cli_listings(
     assert "running · stopping after this turn" in capsys.readouterr().out
 
 
-def test_ps_folds_a_live_lane_under_its_live_coordinator(
+def test_ps_folds_a_live_lane_under_its_live_parent(
     tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`ps` folds a live lane under its live coordinator.
+    """`ps` folds a live lane under its live parent.
 
     A fan-out in flight is one row with its live lane count; `--lanes` lists the lanes under it; a
-    lane whose coordinator is not live stays a row of its own.
+    lane whose parent is not live stays a row of its own.
     """
     base = tmp_path / "state"
     monkeypatch.setenv("XDG_STATE_HOME", str(base))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
-    runs = base / "agent6" / "coord-repo-111111" / "sessions" / "runs"
+    runs = base / "agent6" / "parent-repo-111111" / "sessions" / "runs"
     _live(runs / "fan", {"mode": "run"})
     _live(
         runs / "fan-l1",
-        {"mode": "run", "parallel": {"group": "fan", "lane": 1, "coordinator": "fan"}},
+        {"mode": "run", "parallel": {"group": "fan", "lane": 1, "parent": "fan"}},
     )
     _live(
         runs / "old-l1",
-        {"mode": "run", "parallel": {"group": "old", "lane": 1, "coordinator": "old"}},
+        {"mode": "run", "parallel": {"group": "old", "lane": 1, "parent": "old"}},
     )
 
     assert ps_cmd.cmd_ps() == 0

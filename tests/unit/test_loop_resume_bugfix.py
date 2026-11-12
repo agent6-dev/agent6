@@ -1041,7 +1041,7 @@ def test_a_forked_execution_reports_the_elisions_its_context_carries() -> None:
 
 
 def test_initial_pins_seed_a_fresh_run_out_of_band() -> None:
-    """A `/parallel` lane inherits the coordinator's pins through `--pin`, not a task prefix.
+    """A `/parallel` lane inherits the parent's pins through `--pin`, not a task prefix.
 
     Seeding emits the same replace-fold event a restore does and keeps the pins in state.
     """

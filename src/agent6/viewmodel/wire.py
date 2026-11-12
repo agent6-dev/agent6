@@ -161,7 +161,7 @@ def manifest_header(
         dispatches: The session's dispatch records, each with its lanes' outcomes.
         placement: The lane's PlacementStamp when recorded.
         placement.line: The rendered comparison placement.
-        comparison: The group record from the coordinator, directly or through the lane's group.
+        comparison: The group record from the parent, directly or through the lane's group.
 
     Args:
         session_dir: The session's state dir.

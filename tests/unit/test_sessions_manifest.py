@@ -4,7 +4,7 @@
 
 Every failure shape (missing, unreadable, corrupt JSON, torn UTF-8, non-object) degrades through the
 typed ManifestError; every historical run dir (old ``version: 1`` shapes, the pre-v2 flat merged_*
-keys, a placement with a coordinator's facts) still parses for rendering; and the fork/resume
+keys, a placement with a parent's facts) still parses for rendering; and the fork/resume
 ``session_mode`` gate refuses an unknown mode rather than falling open to write access.
 """
 
@@ -77,7 +77,7 @@ def test_unknown_keys_are_dropped_never_folded(tmp_path: pathlib.Path) -> None:
 
 
 def test_lane_placement_keeps_rank_and_group_only(tmp_path: pathlib.Path) -> None:
-    """A lane keeps its group reference and drops facts owned by the coordinator."""
+    """A lane keeps its group reference and drops facts owned by the parent."""
     _write(
         tmp_path,
         {"placement": {"group": "fan", "rank": 1, "of": 2, "winner": True, "ranked_by": "judge"}},
@@ -195,7 +195,7 @@ def test_write_manifest_bytes_stamped_lane(tmp_path: pathlib.Path) -> None:
             ts="2026-07-16T01:00:00.000000+00:00",
             tip="4" * 40,
         ),
-        parallel=sessions_manifest.ParallelLineage(group="p-abc", lane=1, coordinator="p-abc"),
+        parallel=sessions_manifest.ParallelLineage(group="p-abc", lane=1, parent="p-abc"),
         placement=sessions_manifest.PlacementStamp(
             rank=1,
             of=3,
@@ -502,13 +502,13 @@ def test_the_stamp_records_the_network_the_commands_join(tmp_path: pathlib.Path)
     stamps.stamp_execution(layout.session_dir, cfg, "run", "full")
     assert sessions_manifest.read_manifest(layout.session_dir).policy.network == "session"
 
-    # A coordinator stamps no level, so it knows no network either.
+    # A parent stamps no level, so it knows no network either.
     stamps.stamp_execution(layout.session_dir, cfg, "run", "")
     assert sessions_manifest.read_manifest(layout.session_dir).policy.network == ""
 
 
-def test_write_manifest_bytes_coordinator(tmp_path: pathlib.Path) -> None:
-    """The coordinator golden pins group facts without a lane placement."""
+def test_write_manifest_bytes_parent(tmp_path: pathlib.Path) -> None:
+    """The parent golden pins group facts without a lane placement."""
     from agent6.app import stamps
 
     m = sessions_manifest.SessionManifest(
@@ -525,7 +525,7 @@ def test_write_manifest_bytes_coordinator(tmp_path: pathlib.Path) -> None:
     )
     path = tmp_path / "manifest.json"
     stamps.write_manifest(path, m)
-    assert path.read_text(encoding="utf-8") == (
-        _DATA / "golden_manifest_coordinator.json"
-    ).read_text(encoding="utf-8")
+    assert path.read_text(encoding="utf-8") == (_DATA / "golden_manifest_parent.json").read_text(
+        encoding="utf-8"
+    )
     assert sessions_manifest.read_manifest(tmp_path) == m
