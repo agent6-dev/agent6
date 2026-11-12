@@ -18,10 +18,11 @@ from unittest import mock
 
 import pytest
 
+from agent6 import lane_records
 from agent6.app import lanes
 from agent6.config import Config
 from agent6.graph import curator, models
-from agent6.harness import loop, operator_bridge, provider_call, run_chain, subrun
+from agent6.harness import loop, operator_bridge, provider_call, run_chain
 from agent6.providers import ProviderResponse
 from agent6.sessions import journal
 from agent6.tools import results as tools_results
@@ -123,6 +124,7 @@ class _FakeGraph:
             created_at=now,
             updated_at=now,
             created_by=intent.draft.created_by,
+            rationale=intent.draft.rationale,
         )
         if parent is not None:
             self.entries[parent.id] = parent.model_copy(
@@ -181,6 +183,7 @@ class _FakeGroupSpawner:
         fail: set[int] | None = None,
         conflict: set[int] | None = None,
         base_by_lane: dict[int, str] | None = None,
+        empty: set[int] | None = None,
     ) -> None:
         self.repo = repo
         self.coord_id = coord_id
@@ -188,20 +191,21 @@ class _FakeGroupSpawner:
         self.fail = fail or set()
         self.conflict = conflict or set()
         self.base_by_lane = base_by_lane or {}
-        self.calls: list[tuple[list[subrun.LaneTask], str]] = []
+        self.empty = empty or set()
+        self.calls: list[tuple[list[lane_records.LaneTask], str]] = []
 
     def tasks(self, call: int = 0) -> list[str]:
         return [lane.task for lane in self.calls[call][0]]
 
     def __call__(
-        self, lanes: list[subrun.LaneTask], group: str, *, at: str | None = None
-    ) -> list[subrun.LaneResult]:
+        self, lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
+    ) -> list[lane_records.LaneResult]:
         self.calls.append((list(lanes), group))
-        results: list[subrun.LaneResult] = []
+        results: list[lane_records.LaneResult] = []
         for i in range(1, len(lanes) + 1):
             session_id = f"{self.coord_id}-{group}-l{i}"
             branch = f"agent6/{session_id}"
-            spec = subrun.LaneSpec(
+            spec = lane_records.LaneSpec(
                 lane=i,
                 session_id=session_id,
                 workdir=self.wt_root / session_id,
@@ -209,7 +213,7 @@ class _FakeGroupSpawner:
             )
             if i in self.fail:
                 results.append(
-                    subrun.LaneResult(
+                    lane_records.LaneResult(
                         spec=spec,
                         session_dir=spec.workdir,
                         branch=branch,
@@ -219,6 +223,14 @@ class _FakeGroupSpawner:
                 )
                 continue
             base = self.base_by_lane.get(i, _head(self.repo))
+            if i in self.empty:
+                # Ended with a result and committed nothing: the import landed only its record.
+                results.append(
+                    lane_records.LaneResult(
+                        spec=spec, session_dir=spec.workdir, branch=branch, ok=True, error=""
+                    )
+                )
+                continue
             if i in self.conflict:
                 _make_branch(
                     self.repo, branch, base, "conflict.txt", "lane version", self.wt_root / f"wt{i}"
@@ -228,8 +240,15 @@ class _FakeGroupSpawner:
                     self.repo, branch, base, f"lane{i}.txt", f"lane {i}\n", self.wt_root / f"wt{i}"
                 )
             results.append(
-                subrun.LaneResult(
-                    spec=spec, session_dir=spec.workdir, branch=branch, ok=True, error=""
+                lane_records.LaneResult(
+                    spec=spec,
+                    session_dir=spec.workdir,
+                    branch=branch,
+                    ok=True,
+                    error="",
+                    imported_ref=branch,
+                    imported_tip=_git(self.repo, "rev-parse", branch).strip(),
+                    has_commits=True,
                 )
             )
         return results
@@ -426,6 +445,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
     steering = [n for n in graph.entries.values() if n.created_by == "steering"]
     assert len(steering) == 2
     assert all(n.status == "passed" and n.commit_sha for n in steering)
+    assert all(n.rationale == "dispatched through /parallel by the operator" for n in steering)
     assert len(graph.commit_calls) == 2
     # dispatched carries tasks and group (no lane ids yet); joined names the real ids.
     dispatched = events.of("loop.parallel.dispatched")
@@ -434,6 +454,7 @@ def test_dispatch_joins_in_order_and_stamps_dag(tmp_path: pathlib.Path) -> None:
         "group": "p1",
         "lanes": 2,
         "tasks": ["task one", "task two"],
+        "source": "operator",
     }
     assert joined and [ln["status"] for ln in joined[0]["lanes"]] == ["joined", "joined"]
     assert [ln["session_id"] for ln in joined[0]["lanes"]] == ["run-abc-p1-l1", "run-abc-p1-l2"]
@@ -585,6 +606,114 @@ def test_join_conflict_emits_event_message_and_continues(tmp_path: pathlib.Path)
     assert "git merge agent6/run-cf-p1-l2" in summary
 
 
+def test_a_group_of_no_change_lanes_passes_without_merging(tmp_path: pathlib.Path) -> None:
+    """Lanes that ended with a result and no commit pass their nodes; nothing merges.
+
+    The chain ref, HEAD and the index stay where they were, the join names `no_changes`, no
+    `loop.parallel.failed` fires and the summary says so.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    coord_id = "run-nc"
+    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    graph = _FakeGraph()
+    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt", empty={1, 2})
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _resp_tool("read_file", {"path": "README.md"}, "t1"),
+        _resp_tool("read_file", {"path": "README.md"}, "t2"),
+    ]
+    wf = _build_wf(
+        repo,
+        provider,
+        steer_text="/parallel audit one\n/parallel audit two",
+        lane_spawner=spawner,
+        graph=graph,
+        events=events,
+    )
+    head_before = _head(repo)
+    result = wf.run("start")
+
+    assert result.reason == "max_turns"
+    assert _head(repo) == head_before
+    assert _git(repo, "log", "--merges", "--oneline", "--all") == ""  # no ref gained a merge
+    assert _git(repo, "status", "--porcelain") == ""
+    joined = events.of("loop.parallel.joined")[0]
+    assert [ln["status"] for ln in joined["lanes"]] == ["no_changes", "no_changes"]
+    assert not events.of("loop.parallel.failed")
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
+    assert [n.status for n in steering] == ["passed", "passed"]
+    assert all(not n.commit_sha for n in steering)
+    summary = next(t for t in _user_texts(_final_messages(provider)) if t.startswith("[parallel]"))
+    assert summary.count("finished with no changes to join") == 2
+    assert "FAILED" not in summary and "CONFLICT" not in summary
+
+
+def test_a_mixed_group_merges_only_the_lanes_that_committed(tmp_path: pathlib.Path) -> None:
+    """One lane committed, one ended clean, one failed: the segment stamps follow each lane."""
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    coord_id = "run-mx"
+    events = _FakeEvents(tmp_path / coord_id / "logs.jsonl")
+    graph = _FakeGraph()
+    spawner = _FakeGroupSpawner(repo, coord_id, tmp_path / "wt", empty={2}, fail={3})
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _resp_tool("read_file", {"path": "README.md"}, "t1"),
+        _resp_tool("read_file", {"path": "README.md"}, "t2"),
+    ]
+    wf = _build_wf(
+        repo,
+        provider,
+        steer_text="/parallel edit\n/parallel audit\n/parallel doomed",
+        lane_spawner=spawner,
+        graph=graph,
+        events=events,
+    )
+    wf.run("start")
+
+    joined = events.of("loop.parallel.joined")[0]
+    assert [ln["status"] for ln in joined["lanes"]] == ["joined", "no_changes", "failed"]
+    failed = events.of("loop.parallel.failed")
+    assert failed and [ln["session_id"] for ln in failed[0]["lanes"]] == [f"{coord_id}-p1-l3"]
+    assert (repo / "lane1.txt").read_text(encoding="utf-8") == "lane 1\n"
+    assert "agent6/run-mx-p1-l1" in _git(repo, "log", "--oneline", "refs/agent6/coord")
+    steering = [n for n in graph.entries.values() if n.created_by == "steering"]
+    assert [n.status for n in steering] == ["passed", "passed", "failed"]
+    assert [bool(n.commit_sha) for n in steering] == [True, False, False]
+
+
+def test_repeated_segments_are_capped_as_one_group(tmp_path: pathlib.Path) -> None:
+    """Three segments of two lanes each ask for six against max_lanes 4 and are refused.
+
+    The refusal comes before any clone, checkpoint or DAG node and names the total and the knob.
+    """
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    graph = _FakeGraph()
+    spawner = _FakeGroupSpawner(repo, "run-cap", tmp_path / "wt")
+    provider = mock.MagicMock()
+    provider.call.side_effect = [
+        _resp_tool("read_file", {"path": "README.md"}, "t1"),
+        _resp_tool("read_file", {"path": "README.md"}, "t2"),
+    ]
+    wf = _build_wf(
+        repo,
+        provider,
+        steer_text="/parallel 2 -- a\n/parallel 2 -- b\n/parallel 2 -- c",
+        lane_spawner=spawner,
+        graph=graph,
+    )
+    wf.run("start")
+    assert spawner.calls == []
+    assert not [n for n in graph.entries.values() if n.created_by == "steering"]
+    texts = _user_texts(_final_messages(provider))
+    assert any(
+        "request 6 lanes together but [parallel].max_lanes = 4" in t and "nothing dispatched" in t
+        for t in texts
+    )
+
+
 def test_failed_lane_is_reported_truthfully(tmp_path: pathlib.Path) -> None:
     """A lane the spawner could not run fails its node with the reason; the run continues."""
     repo = tmp_path / "repo"
@@ -639,8 +768,8 @@ def test_spawner_raising_mid_group_never_aborts_the_run(tmp_path: pathlib.Path) 
     calls: list[str] = []
 
     def exploding_spawner(
-        lanes: list[subrun.LaneTask], group: str, *, at: str | None = None
-    ) -> list[subrun.LaneResult]:
+        lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
+    ) -> list[lane_records.LaneResult]:
         calls.append(group)
         raise OSError("disk full while cloning lane 2")
 

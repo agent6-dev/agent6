@@ -13,7 +13,7 @@ import threading
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import directive, errors, kinds, paths
+from agent6 import directive, errors, kinds, lane_records, paths
 from agent6.app import compare as app_compare
 from agent6.app import lane_envelope, lane_watch, parallel_results, workdirs
 from agent6.app import reporter as app_reporter
@@ -81,7 +81,7 @@ def build_lane_specs(
     origin: pathlib.Path,
     fanout_id: str,
     workdir_root: pathlib.Path | None = None,
-) -> list[subrun.LaneSpec]:
+) -> list[lane_records.LaneSpec]:
     """Plan the lanes for a `--parallel` fan-out, refusing over-cap up front.
 
     Args:
@@ -101,7 +101,7 @@ def build_lane_specs(
         workdir_root = workdirs.subordinate_workdir_root(cfg, origin, fanout_id)
     settings = lane_settings(cfg, directive.parse_spec(spec, limit=cfg.parallel.max_lanes))
     return [
-        subrun.LaneSpec(
+        lane_records.LaneSpec(
             lane=i,
             session_id=f"{fanout_id}-l{i}",
             workdir=workdir_root / f"lane-{i}",
@@ -128,7 +128,7 @@ def lane_settings(cfg: Config, selectors: Sequence[str | None]) -> list[kinds.Mo
 
 
 def bridge_spawner(
-    spec: subrun.LaneSpec,
+    spec: lane_records.LaneSpec,
     task: str,
     *,
     operator_task: str | None = None,
@@ -144,7 +144,7 @@ def bridge_spawner(
     coordinator: str,
     gate_source: sessions_manifest.GateSource = "",
     runtime: LaneRuntime,
-) -> subrun.LaneResult:
+) -> lane_records.LaneResult:
     """Clone the origin and spawn a detached `agent6 run` in the clone.
 
     Args:
@@ -176,7 +176,7 @@ def bridge_spawner(
             # A local clone hardlinks the whole odb, so the chain's commits are present.
             git_ops.checkout_detached(spec.workdir, at)
     except (subrun.SubrunError, errors.GitError) as exc:
-        return subrun.LaneResult(
+        return lane_records.LaneResult(
             spec=spec, session_dir=spec.workdir, branch=branch, ok=False, error=str(exc)
         )
     config = workdirs.write_lane_config(cfg, spec, explicit_leaves=explicit_leaves)
@@ -233,14 +233,16 @@ def bridge_spawner(
         argv, spec.workdir, before=set(), list_dirs=list_dirs, env={**os.environ, **markers}
     )
     if session_dir is None:
-        return subrun.LaneResult(
+        return lane_records.LaneResult(
             spec=spec, session_dir=lane_runs / spec.session_id, branch=branch, ok=False, error=err
         )
-    return subrun.LaneResult(spec=spec, session_dir=session_dir, branch=branch, ok=True, error="")
+    return lane_records.LaneResult(
+        spec=spec, session_dir=session_dir, branch=branch, ok=True, error=""
+    )
 
 
 def run_lane_to_completion(
-    spec: subrun.LaneSpec,
+    spec: lane_records.LaneSpec,
     task: str,
     *,
     pins: Sequence[str] = (),
@@ -255,7 +257,7 @@ def run_lane_to_completion(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     gate_source: sessions_manifest.GateSource = "",
-    spawner: subrun.LaneSpawner | None = None,
+    spawner: lane_records.LaneSpawner | None = None,
     at: str | None = None,
     import_lock: threading.Lock | None = None,
     poll_interval_s: float = lane_watch.POLL_INTERVAL_S,
@@ -263,7 +265,7 @@ def run_lane_to_completion(
     should_stop: Callable[[], bool] | None = None,
     stop_is_now: Callable[[], bool] | None = None,
     hard_stop: threading.Event | None = None,
-) -> subrun.LaneResult:
+) -> lane_records.LaneResult:
     """Run one subordinate lane to its end and import it into the origin.
 
     The coordinator runs a group of these on a thread pool, so each is
@@ -342,7 +344,7 @@ def run_lane_to_completion(
             res, poll_interval_s=poll_interval_s, hard_stop=hard_stop
         ):
             # Still running: the clone and symlink hold the only copy of its branch.
-            return subrun.LaneResult(
+            return lane_records.LaneResult(
                 spec=spec,
                 session_dir=res.session_dir,
                 branch=res.branch,
@@ -352,11 +354,12 @@ def run_lane_to_completion(
                 + " keeps running detached; not imported",
             )
     try:
-        dest = parallel_results.import_lane(res, origin, origin_state, import_lock)
+        imported = parallel_results.import_lane(res, origin, origin_state, import_lock)
     except subrun.SubrunError as exc:
-        return subrun.LaneResult(
+        return lane_records.LaneResult(
             spec=res.spec, session_dir=res.session_dir, branch=res.branch, ok=False, error=str(exc)
         )
+    dest = imported.session_dir
     parallel_results.carry_back(
         paths.state_dir(res.spec.workdir),
         origin_state,
@@ -376,15 +379,46 @@ def run_lane_to_completion(
     summary = summarize_session_dir(dest)
     if not produced_result(summary.status):
         # Only a deliberate end joins the coordinator as a success.
-        return subrun.LaneResult(
+        return lane_records.LaneResult(
             spec=spec,
             session_dir=dest,
             branch=res.branch,
             ok=False,
             error=f"no result ({format.status_label(summary.status, summary.detail)});"
             f" {parallel_results.imported_branch_note(origin, res.branch)}",
+            imported_ref=imported.ref,
+            imported_tip=imported.tip,
         )
-    return subrun.LaneResult(spec=spec, session_dir=dest, branch=res.branch, ok=True, error="")
+    return lane_records.LaneResult(
+        spec=spec,
+        session_dir=dest,
+        branch=res.branch,
+        ok=True,
+        error="",
+        imported_ref=imported.ref,
+        imported_tip=imported.tip,
+        has_commits=lane_has_commits(dest, imported),
+    )
+
+
+def lane_has_commits(session_dir: pathlib.Path, imported: lane_records.Imported) -> bool:
+    """Return whether the imported tip holds a commit beyond the lane's recorded base.
+
+    Args:
+        session_dir: The imported lane's run dir, whose manifest records its base.
+        imported: What the import landed.
+
+    Returns:
+        False for a record-only import or a tip at the base; True otherwise, and when the
+        base is unrecorded, so an unknown lane is merged rather than dropped.
+    """
+    if not imported.tip:
+        return False
+    try:
+        base = sessions_manifest.read_manifest(session_dir).base_sha
+    except sessions_manifest.ManifestError:
+        return True
+    return imported.tip != base
 
 
 def build_lane_spawner(
@@ -399,7 +433,7 @@ def build_lane_spawner(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> subrun.GroupLaneSpawner:
+) -> lane_records.GroupLaneSpawner:
     """Build the group dispatcher the loop calls at a `/parallel` boundary.
 
     One call runs every lane on its own thread, imports each under a shared lock
@@ -423,8 +457,8 @@ def build_lane_spawner(
     """
 
     def dispatch(
-        lanes: list[subrun.LaneTask], group: str, *, at: str | None = None
-    ) -> list[subrun.LaneResult]:
+        lanes: list[lane_records.LaneTask], group: str, *, at: str | None = None
+    ) -> list[lane_records.LaneResult]:
         # The lane cap binds before any clone; the refusal reaches the coordinator as feedback.
         if len(lanes) > cfg.parallel.max_lanes:
             raise ParallelError(
@@ -448,7 +482,7 @@ def build_lane_spawner(
         group_id = f"{coordinator_session_id}-{group}"
         workdir_root = workdirs.subordinate_workdir_root(cfg, origin, group_id)
         specs = [
-            subrun.LaneSpec(
+            lane_records.LaneSpec(
                 lane=i,
                 session_id=f"{group_id}-l{i}",
                 workdir=workdir_root / f"lane-{i}",
@@ -484,7 +518,9 @@ def build_lane_spawner(
             except sessions_manifest.ManifestError:
                 gate_source = ""
 
-        def one(pair: tuple[subrun.LaneSpec, subrun.LaneTask]) -> subrun.LaneResult:
+        def one(
+            pair: tuple[lane_records.LaneSpec, lane_records.LaneTask],
+        ) -> lane_records.LaneResult:
             spec, lane = pair
             return run_lane_to_completion(
                 spec,
@@ -549,7 +585,7 @@ def build_coordinator_spawner(
     auto_approve: bool = False,
     lane_away: ipc.AwayMode = "wait",
     reporter: app_reporter.Reporter = app_reporter.STDIO_REPORTER,
-) -> subrun.GroupLaneSpawner | None:
+) -> lane_records.GroupLaneSpawner | None:
     """Build the `/parallel` dispatcher for a run's loop, or None when dispatch is unavailable.
 
     A non-write mode and a run inside a subordinate lane get none.

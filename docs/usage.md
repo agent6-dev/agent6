@@ -135,11 +135,12 @@ The steer directives work from every composer, the pause menu, and `agent6 steer
 ### Parallel directive
 
 `/parallel [SPEC --] TASK` runs a task in isolated lanes, including as the first prompt to `agent6 run`, through the same fan-out as `run --parallel SPEC TASK`.
+The two land differently: `run --parallel` imports and ranks the lanes and merges nothing; a live run's steer merges each lane's work onto the run's chain in dispatch order.
 `SPEC` is a positive lane count or a comma-separated list of selectors, the same as `run --parallel`.
 A selector is an exact role name (`default`, `worker`, `planner`, `reviewer`, `helper`), which brings that role's model, effort and temperature together, or `[provider/]model`, which runs that model with the worker's effort and temperature; a model named like a role is written `provider/reviewer`.
 The spec ends at a whitespace-delimited `--` token.
 Without `--`, the whole segment is task text for one default lane, even if it starts with a path, a number or a model name.
-A bare `--`, a missing task, or a spec over `[parallel].max_lanes` is refused with the reason.
+A bare `--`, a missing task, or more lanes than `[parallel].max_lanes` across the message's segments is refused with the reason.
 
 ```text
 /parallel src/x.py: add a test
@@ -151,6 +152,8 @@ A bare `--`, a missing task, or a spec over `[parallel].max_lanes` is refused wi
 Repeat the `/parallel` token to batch tasks in one message.
 Each segment has its own optional spec and separator.
 Task text keeps its internal whitespace and newlines, including later `--` tokens.
+
+When the lanes return, each joins the run's chain in dispatch order and one notice names every outcome: `joined at <sha>`, `finished with no changes to join` (the lane ended with a result and committed nothing), `CONFLICT` (the merge is left for the operator) or `FAILED` with the reason.
 
 A fan-out group has no model loop: steer one of its lanes instead.
 The refusal names the lane session IDs.

@@ -565,7 +565,8 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - chain-commit the worktree (lanes cut from the chain tip)
     - clone, spawn, await and import the lanes
     - merge each branch onto the chain in dispatch order (`chain_merge` syncs merged files into the worktree)
-- each segment gets one DAG node: `passed` with the last joined sha, or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
+- a lane that ended with a result and no commit beyond its base joins as `no_changes` and merges nothing
+- each segment gets one DAG node: `passed` with the last joined sha (none when every lane made no changes), or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
 - `loop.parallel.dispatched` / `joined` / `failed` render as conversation markers, so the blocked wait is visible
 
 **Depth is 1.** Every spawned lane carries `AGENT6_SUBRUN=1`, and when it is set, `--parallel` refuses and `build_coordinator_spawner` builds no `lane_spawner`.

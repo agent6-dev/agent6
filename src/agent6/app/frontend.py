@@ -15,9 +15,9 @@ import pathlib
 from collections.abc import Callable, Sequence
 from typing import Protocol
 
-from agent6 import budget, kinds, portable
+from agent6 import budget, kinds, lane_records, portable
 from agent6.config import Config
-from agent6.harness import loop, loop_snapshot, subrun
+from agent6.harness import loop, loop_snapshot
 from agent6.sessions import event_log, ipc, layout
 from agent6.tools import mcp_client, operator_prompts
 
@@ -187,7 +187,7 @@ class SessionFrontend:
     save_ask_transcript: Callable[[layout.SessionLayout, str, str], None]
     build_coordinator_spawner: Callable[
         [Config, frozenset[str], pathlib.Path, pathlib.Path, str, str, float | None, bool],
-        subrun.GroupLaneSpawner | None,
+        lane_records.GroupLaneSpawner | None,
     ]
     agent6_exe: Callable[[], str]
     spawn_detached_resume: Callable[[pathlib.Path, str, Sequence[str]], str]

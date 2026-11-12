@@ -46,6 +46,7 @@ depends_on = [
   "agent6.graph.storage",
   "agent6.harness",
   "agent6.kinds",
+  "agent6.lane_records",
   "agent6.machine",
   "agent6.machine.journal",
   "agent6.media",
@@ -185,6 +186,7 @@ depends_on = [
   "agent6.graph.models",
   "agent6.graph.order",  # the one walk order the frontier and list_tasks share
   "agent6.kinds",
+  "agent6.lane_records",
   "agent6.media",
   "agent6.path_safety",
   "agent6.paths",
@@ -766,6 +768,10 @@ depends_on = []
 [[modules]]
 path = "agent6.kinds"
 depends_on = []
+
+[[modules]]
+path = "agent6.lane_records"
+depends_on = ["agent6.kinds"]
 
 [[modules]]
 path = "agent6.task_text"

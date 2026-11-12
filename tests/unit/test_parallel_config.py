@@ -9,10 +9,9 @@ import tomllib
 
 import pytest
 
-from agent6 import kinds, paths
+from agent6 import kinds, lane_records, paths
 from agent6.app import confine, workdirs
 from agent6.config import Config, ParallelConfig, layer
-from agent6.harness import subrun
 
 
 def _write_repo_config(repo: pathlib.Path, toml: str) -> None:
@@ -60,7 +59,7 @@ def test_lane_config_carries_the_protect_git_word(repo: pathlib.Path, word: str)
         toml += "protect_git = 'on'\n"
     _write_repo_config(repo, toml)
     origin = layer.load_effective(repo)
-    spec = subrun.LaneSpec(
+    spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
         workdir=repo.parent / "lanes" / "lane-1",
@@ -90,7 +89,7 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
     global_path.write_text("[sandbox]\nprotect_git = 'off'\n", encoding="utf-8")
     _write_repo_config(repo, "[sandbox]\nprotect_git = 'on'\n")
     origin = layer.load_effective(repo)
-    spec = subrun.LaneSpec(
+    spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
         workdir=repo.parent / "lanes" / "lane-1",
@@ -117,7 +116,7 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
     )
     origin = layer.load_effective(repo)
     cfg = origin.config.with_budget_overrides(max_usd=3.5)
-    spec = subrun.LaneSpec(
+    spec = lane_records.LaneSpec(
         lane=1,
         session_id="fan-l1",
         workdir=repo.parent / "lanes" / "lane-1",

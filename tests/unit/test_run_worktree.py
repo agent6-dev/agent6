@@ -23,7 +23,7 @@ from unittest import mock
 import pytest
 
 from agent6 import budget as agent6_budget
-from agent6 import errors, kinds, paths
+from agent6 import errors, kinds, lane_records, paths
 from agent6.app import (
     fork_worktrees,
     parallel,
@@ -142,8 +142,8 @@ def _lane_snapshot(
 ) -> pathlib.Path:
     """Make this process lane 1 of a fan-out over `repo`, started on a real config snapshot."""
     effective = layer.load_effective(repo)
-    spec = subrun.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=tmp_path / "lanes" / "lane-1", route=None
+    spec = lane_records.LaneSpec(
+        lane=1, session_id="fan-l1", workdir=tmp_path / "lanes" / "lane-1", settings=None
     )
     snapshot = workdirs.write_lane_config(
         effective.config, spec, explicit_leaves=effective.explicit_leaves
@@ -524,7 +524,7 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
         workdir_root=tmp_path / "lanes",
     )
 
-    def spawn(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
+    def spawn(spec: lane_records.LaneSpec, task: str) -> lane_records.LaneResult:
         subrun.clone_workspace(repo, spec.workdir)
         output, errors = io.StringIO(), io.StringIO()
         with (
@@ -547,7 +547,7 @@ def test_a_budget_stopped_lane_continues_with_the_reports_fork_command(
                 output.getvalue() + errors.getvalue()
             )
         session_dir = paths.state_dir(spec.workdir) / "sessions" / "runs" / spec.session_id
-        return subrun.LaneResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
+        return lane_records.LaneResult(spec, session_dir, f"agent6/{spec.session_id}", True, "")
 
     assert (
         parallel.run_parallel(

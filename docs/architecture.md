@@ -24,7 +24,7 @@ graph TD
     n_tools --> n_sandbox
 ```
 
-Any layer may also use the shared substrate: `budget`, `child_env`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `vcs`, `viewmodel`, `words`.
+Any layer may also use the shared substrate: `budget`, `child_env`, `config`, `context`, `directive`, `errors`, `evidence`, `graph`, `journal_tail`, `kinds`, `lane_records`, `machine`, `media`, `models`, `pack`, `pack_manifest`, `path_safety`, `paths`, `portable`, `prompts`, `providers`, `review_records`, `sessions`, `task_text`, `terminal`, `vcs`, `viewmodel`, `words`.
 
 The `vcs` package holds agent6's own git operations: `git_ops.py` writes, `git_read.py` queries, and `git_history.py` reads for display.
 Only its modules import the runner, `git_command.py`.
@@ -625,7 +625,8 @@ These notes survive manifest rewrites, import and temporary config cleanup; they
     - chain-commit the worktree (lanes cut from the chain tip)
     - clone, spawn, await and import the lanes
     - merge each branch onto the chain in dispatch order (`chain_merge` syncs merged files into the worktree)
-- each segment gets one DAG node: `passed` with the last joined sha, or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
+- a lane that ended with a result and no commit beyond its base joins as `no_changes` and merges nothing
+- each segment gets one DAG node: `passed` with the last joined sha (none when every lane made no changes), or `failed` when every lane failed or conflicted; a conflict aborts that merge and tells the model; the run continues either way
 - `loop.parallel.dispatched` / `joined` / `failed` render as conversation markers, so the blocked wait is visible
 
 **Depth is 1.** Every spawned lane carries `AGENT6_SUBRUN=1`, and when it is set, `--parallel` refuses and `build_coordinator_spawner` builds no `lane_spawner`.

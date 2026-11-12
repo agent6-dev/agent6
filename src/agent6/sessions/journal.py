@@ -576,6 +576,10 @@ class LoopParallelDispatched(Event):
         description="Lane count for dispatch, or lane results for completion.",
     )
     tasks: Sequence[Any] = pydantic.Field(description="Task texts sent to the lanes.")
+    source: str = pydantic.Field(
+        default="operator",
+        description="Who dispatched: operator (a steer), model (the tool) or panel.",
+    )
 
 
 class LoopParallelFailed(Event):

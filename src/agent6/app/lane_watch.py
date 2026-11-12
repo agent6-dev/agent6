@@ -16,9 +16,8 @@ import threading
 import time
 from collections.abc import Callable
 
-from agent6 import paths
+from agent6 import lane_records, paths
 from agent6.app import reporter as app_reporter
-from agent6.harness import subrun
 from agent6.sessions import ipc, layout, process
 from agent6.viewmodel import summarize_session_dir
 
@@ -49,7 +48,7 @@ def lane_terminal(
 
 
 def await_lane(
-    res: subrun.LaneResult,
+    res: lane_records.LaneResult,
     *,
     poll_interval_s: float = POLL_INTERVAL_S,
     should_stop: Callable[[], bool] | None = None,
@@ -74,7 +73,7 @@ def await_lane(
 
 
 def drain_lane(
-    res: subrun.LaneResult, *, poll_interval_s: float, hard_stop: threading.Event | None
+    res: lane_records.LaneResult, *, poll_interval_s: float, hard_stop: threading.Event | None
 ) -> bool:
     """Wait a bounded grace after a stop for the lane to land, so its work still imports.
 
@@ -106,7 +105,7 @@ def lane_link(origin_state: pathlib.Path, session_id: str) -> pathlib.Path:
     return layout.bucket_dir(origin_state, "runs") / session_id
 
 
-def symlink_lane(origin_state: pathlib.Path, res: subrun.LaneResult) -> None:
+def symlink_lane(origin_state: pathlib.Path, res: lane_records.LaneResult) -> None:
     """Symlink a lane's clone-side run dir into the origin's `runs/` so the hub shows it live.
 
     The import replaces the link with the real dir.
@@ -124,7 +123,7 @@ def symlink_lane(origin_state: pathlib.Path, res: subrun.LaneResult) -> None:
 
 
 def await_lanes(
-    started: list[subrun.LaneResult],
+    started: list[lane_records.LaneResult],
     *,
     already_interrupted: bool = False,
     should_stop: Callable[[], bool] | None = None,
@@ -254,7 +253,7 @@ def pending_prompt(session_dir: pathlib.Path) -> str:
 
 
 def print_lane_status(
-    spec: subrun.LaneSpec,
+    spec: lane_records.LaneSpec,
     status: str,
     cost: str,
     *,

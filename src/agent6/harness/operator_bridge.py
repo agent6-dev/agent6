@@ -13,9 +13,9 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from agent6 import directive as agent6_directive
-from agent6 import kinds
+from agent6 import kinds, lane_records
 from agent6.context import skills
-from agent6.harness import loop_conversation, nudges, subrun
+from agent6.harness import loop_conversation, nudges
 from agent6.sessions import ipc, journal
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ class OperatorBridge:
         default=lambda _i, _sha: "continue"
     )
     undo_forker: Callable[[], tuple[str, str] | None] | None = None
-    lane_spawner: subrun.GroupLaneSpawner | None = None
+    lane_spawner: lane_records.GroupLaneSpawner | None = None
     review_preparer: Callable[[str], tuple[bool, str]] | None = None
 
 
@@ -325,9 +325,11 @@ class Steering:
         try:
             segments = agent6_directive.parse_directive(steer_text)
         except agent6_directive.DirectiveError as exc:
-            self.parallel().feedback(conversation, f"nothing dispatched: {exc}")
+            conversation.notice(self.parallel().refusal(f"nothing dispatched: {exc}").message)
             return True
         if segments is None:
             return False
-        self.parallel().dispatch(conversation, turn, state, segments)
+        # The dispatcher returns what happened; the steer's answer is this notice.
+        result = self.parallel().dispatch(conversation, turn, state, segments, source="operator")
+        conversation.notice(result.message)
         return True

@@ -13,10 +13,9 @@ from typing import Any
 
 import pytest
 
-from agent6 import kinds, paths
+from agent6 import kinds, lane_records, paths
 from agent6.app import lane_watch, lanes, stop
 from agent6.config import Config, RoleModel
-from agent6.harness import subrun
 from agent6.sessions import manifest, process
 from agent6.ui.cli import parallel
 from agent6.viewmodel import session_log
@@ -113,7 +112,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
             )
         }
     )
-    spec = subrun.LaneSpec(
+    spec = lane_records.LaneSpec(
         lane=1,
         session_id="detached-l1",
         workdir=tmp_path / "lane-1",

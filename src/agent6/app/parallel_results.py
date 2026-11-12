@@ -11,7 +11,7 @@ import threading
 from collections.abc import Mapping
 
 from agent6 import budget as agent6_budget
-from agent6 import kinds, paths
+from agent6 import kinds, lane_records, paths
 from agent6.app import compare as app_compare
 from agent6.app import finalize, lane_watch, stamps
 from agent6.app import reporter as app_reporter
@@ -163,11 +163,11 @@ def carry_back(
 
 
 def import_lane(
-    res: subrun.LaneResult,
+    res: lane_records.LaneResult,
     origin: pathlib.Path,
     origin_state: pathlib.Path,
     lock: threading.Lock | None,
-) -> pathlib.Path:
+) -> lane_records.Imported:
     """Land a finished lane's session dir in the origin.
 
     The live symlink drops so the real dir can take its place, and comes back
@@ -180,7 +180,7 @@ def import_lane(
         lock: Serializes the import across a group, when one is shared.
 
     Returns:
-        The imported dir.
+        The imported dir and the ref the work landed in.
 
     Raises:
         SubrunError: The import failed; nothing moved.
@@ -195,7 +195,7 @@ def import_lane(
             model_control = manifest.git_control == "model"
             branch = git_read.status(res.spec.workdir).branch if model_control else ""
             free_branch = branch and branch != "HEAD" and not git_read.branch_exists(origin, branch)
-            dest = subrun.import_run(
+            imported = subrun.import_run(
                 origin,
                 res.spec.workdir,
                 res.branch,
@@ -205,10 +205,10 @@ def import_lane(
             )
             if free_branch:
                 stamps.write_manifest(
-                    dest / sessions_manifest.MANIFEST_NAME,
+                    imported.session_dir / sessions_manifest.MANIFEST_NAME,
                     manifest.model_copy(update={"run_branch": branch}),
                 )
-            return dest
+            return imported
     except subrun.SubrunError:
         if had_link:
             lane_watch.symlink_lane(origin_state, res)
@@ -221,14 +221,14 @@ class ImportedLanes:
 
     candidates: list[judge.CandidateBrief]
     rows: dict[str, listing.SessionSummary]
-    failed: list[tuple[subrun.LaneResult, str]]
-    imported: list[subrun.LaneSpec]
+    failed: list[tuple[lane_records.LaneResult, str]]
+    imported: list[lane_records.LaneSpec]
     all_budget_exhausted: bool
     plan_lines: list[str]
 
 
 def import_lanes(
-    results: list[subrun.LaneResult],
+    results: list[lane_records.LaneResult],
     *,
     origin: pathlib.Path,
     origin_state: pathlib.Path,
@@ -258,8 +258,8 @@ def import_lanes(
     candidates: list[judge.CandidateBrief] = []
     rows: dict[str, listing.SessionSummary] = {}
     budget_stops = 0
-    failed: list[tuple[subrun.LaneResult, str]] = []
-    imported: list[subrun.LaneSpec] = []
+    failed: list[tuple[lane_records.LaneResult, str]] = []
+    imported: list[lane_records.LaneSpec] = []
     # A reading is account-wide, so each provider's newest one among the lanes is the fan-out's.
     readings: dict[str, tuple[float, agent6_budget.PlanUsage]] = {}
     for res in results:
@@ -277,7 +277,7 @@ def import_lanes(
             )
             continue
         try:
-            dest = import_lane(res, origin, origin_state, None)
+            dest = import_lane(res, origin, origin_state, None).session_dir
         except subrun.SubrunError as exc:
             failed.append((res, str(exc)))
             continue
@@ -367,7 +367,7 @@ def fanout_exit_code(
 def print_report(
     candidates: list[judge.CandidateBrief],
     outcome: app_compare.RankOutcome,
-    failed: list[tuple[subrun.LaneResult, str]],
+    failed: list[tuple[lane_records.LaneResult, str]],
     *,
     rows: Mapping[str, listing.SessionSummary],
     committed: Mapping[str, bool],

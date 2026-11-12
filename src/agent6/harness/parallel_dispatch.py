@@ -12,11 +12,11 @@ from __future__ import annotations
 import dataclasses
 import pathlib
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import pydantic
 
-from agent6 import directive, errors
+from agent6 import directive, errors, lane_records
 from agent6.graph import curator as graph_curator
 from agent6.graph import models as graph_models
 from agent6.harness import dag_focus, run_chain, subrun
@@ -27,29 +27,9 @@ if TYPE_CHECKING:
     from agent6.harness import loop_conversation, loop_state
 
 
-@dataclasses.dataclass(frozen=True, slots=True)
-class LaneJoin:
-    """One lane's outcome in a `/parallel` dispatch.
-
-    Attributes:
-        session_id: The lane's session.
-        branch: The lane's branch.
-        status: "joined" (merged, `sha` set), "conflict" (imported, the merge conflicted, the
-            branch exists locally) or "failed" (no importable branch).
-        sha: The merge commit, or "".
-        detail: The failure's reason, or "".
-    """
-
-    session_id: str
-    branch: str
-    status: Literal["joined", "conflict", "failed"]
-    sha: str
-    detail: str
-
-
 def segment_lanes(
     seg: directive.Segment, pins: Sequence[str] = (), *, limit: int
-) -> list[subrun.LaneTask]:
+) -> list[lane_records.LaneTask]:
     """Expand one segment into its lanes, one model per lane.
 
     A bad spec (zero lanes, an empty model list, more than the limit) raises `DirectiveError`
@@ -67,18 +47,18 @@ def segment_lanes(
     """
     lane_pins = tuple(pins)
     models = directive.parse_spec(seg.spec, limit=limit)
-    return [subrun.LaneTask(task=seg.task, model=model, pins=lane_pins) for model in models]
+    return [lane_records.LaneTask(task=seg.task, model=model, pins=lane_pins) for model in models]
 
 
 def join_lane_result(
     root: pathlib.Path,
-    res: subrun.LaneResult,
+    res: lane_records.LaneResult,
     *,
     ref: str,
     fallback_parent: str | None,
     identity: git_read.CommitIdentity | None,
     also_branch: str | None,
-) -> LaneJoin:
+) -> lane_records.LaneJoin:
     """Join one returned lane's branch onto the coordinator's chain.
 
     `chain_merge` leaves HEAD and the operator's checkout alone; the worktree gains the lane's
@@ -93,15 +73,19 @@ def join_lane_result(
         also_branch: A checked-out branch to move with the ref, or None.
 
     Returns:
-        "joined" with the sha, "conflict", or "failed" for a lane that imported nothing.
+        `joined` with the sha, `no_changes` for a lane whose imported tip holds no commit
+        beyond its base (nothing merged), `conflict`, or `failed` for a lane that imported
+        nothing.
     """
     rid = res.spec.session_id
     if not res.ok:
-        return LaneJoin(rid, res.branch, "failed", "", res.error)
+        return lane_records.LaneJoin(rid, res.branch, "failed", "", res.error)
+    if not res.has_commits:
+        return lane_records.LaneJoin(rid, res.branch, "no_changes", "", "")
     try:
         sha = git_ops.chain_merge(
             root,
-            res.branch,
+            res.imported_ref or res.branch,
             f"merge {res.branch}",
             ref=ref,
             fallback_parent=fallback_parent,
@@ -109,17 +93,18 @@ def join_lane_result(
             also_branch=also_branch,
         )
     except (errors.GitError, OSError) as exc:
-        return LaneJoin(rid, res.branch, "failed", "", str(exc))
+        return lane_records.LaneJoin(rid, res.branch, "failed", "", str(exc))
     if sha is None:
-        return LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
-    return LaneJoin(rid, res.branch, "joined", sha, "")
+        return lane_records.LaneJoin(rid, res.branch, "conflict", "", "merge conflict")
+    return lane_records.LaneJoin(rid, res.branch, "joined", sha, "")
 
 
-def segment_stamp(lanes: list[LaneJoin]) -> tuple[graph_models.NodeStatus, str, str]:
+def segment_stamp(lanes: list[lane_records.LaneJoin]) -> tuple[graph_models.NodeStatus, str, str]:
     """Reduce one segment's lane joins to its DAG stamp.
 
-    A segment passes when any lane joined, recording the last joined sha; the note names every
-    lane. A conflict counts as not joined.
+    A segment passes when any lane joined or ended with no changes, recording the last
+    joined sha (none for no changes); the note names every lane. A conflict counts as not
+    joined.
 
     Args:
         lanes: The segment's joins.
@@ -129,26 +114,30 @@ def segment_stamp(lanes: list[LaneJoin]) -> tuple[graph_models.NodeStatus, str, 
     """
     joined = [j for j in lanes if j.status == "joined"]
     note = "; ".join(lane_note(j) for j in lanes)
-    if joined:
-        return "passed", note, joined[-1].sha
+    if joined or any(j.status == "no_changes" for j in lanes):
+        return "passed", note, joined[-1].sha if joined else ""
     return "failed", note, ""
 
 
-def lane_note(j: LaneJoin) -> str:
+def lane_note(j: lane_records.LaneJoin) -> str:
     """Return one lane's outcome as a DAG note line."""
     if j.status == "joined":
         return f"{j.session_id} joined at {j.sha[:12]}"
+    if j.status == "no_changes":
+        return f"{j.session_id} made no changes"
     if j.status == "conflict":
         return f"{j.session_id} conflicted; merge manually"
     return f"{j.session_id} failed: {j.detail}"
 
 
-def summary_text(group: str, lanes: list[LaneJoin]) -> str:
+def summary_text(group: str, lanes: list[lane_records.LaneJoin]) -> str:
     """Return the one user message summarizing every lane's outcome."""
     lines = [f"[parallel] group {group} complete ({len(lanes)} lane(s)):"]
     for j in lanes:
         if j.status == "joined":
             lines.append(f"  - {j.session_id} ({j.branch}): joined at {j.sha[:12]}")
+        elif j.status == "no_changes":
+            lines.append(f"  - {j.session_id} ({j.branch}): finished with no changes to join.")
         elif j.status == "conflict":
             # Git is agent6's in this run and `.git` is read-only in the jail: the operator merges.
             lines.append(
@@ -163,8 +152,12 @@ def summary_text(group: str, lanes: list[LaneJoin]) -> str:
 
 
 def spawn_lanes(
-    spawner: subrun.GroupLaneSpawner, lanes: list[subrun.LaneTask], group: str, *, at: str | None
-) -> list[subrun.LaneResult]:
+    spawner: lane_records.GroupLaneSpawner,
+    lanes: list[lane_records.LaneTask],
+    group: str,
+    *,
+    at: str | None,
+) -> list[lane_records.LaneResult]:
     """Run the lanes through the spawner and check the result count.
 
     Args:
@@ -201,6 +194,7 @@ def add_parallel_node(
     task: str,
     parent_id: str | None,
     *,
+    source: lane_records.DispatchSource = "operator",
     log: Callable[[str], None],
 ) -> str | None:
     """Add a steering-created DAG node for one dispatched task.
@@ -209,6 +203,7 @@ def add_parallel_node(
         curator: The graph, or None.
         task: The task text; its first line is the title.
         parent_id: The parent node, or None.
+        source: Who dispatched it, named in the node's rationale.
         log: The run's text logger.
 
     Returns:
@@ -224,7 +219,7 @@ def add_parallel_node(
                 parent_id=parent_id,
                 draft=graph_models.TaskNodeDraft(
                     title=title or "(parallel task)",
-                    rationale="dispatched via /parallel steering",
+                    rationale=f"dispatched through /parallel by the {source}",
                     created_by="steering",
                 ),
             )
@@ -271,7 +266,7 @@ def stamp_parallel_node(
 def stamp_segment_node(
     curator: graph_curator.GraphCurator | None,
     node_id: str | None,
-    lanes: list[LaneJoin],
+    lanes: list[lane_records.LaneJoin],
     *,
     log: Callable[[str], None],
 ) -> None:
@@ -301,7 +296,7 @@ class ParallelDispatcher:
     chain: run_chain.RunChain
     curator: graph_curator.GraphCurator | None
     max_lanes: int
-    lane_spawner: subrun.GroupLaneSpawner | None
+    lane_spawner: lane_records.GroupLaneSpawner | None
     save_snapshot: Callable[..., None]
     log: Callable[[str], None]
     emit: Callable[..., None]
@@ -313,43 +308,52 @@ class ParallelDispatcher:
         turn: int,
         state: loop_state.LoopState,
         segments: list[directive.Segment],
-    ) -> None:
-        """Dispatch a `/parallel` sibling group at the steer boundary.
+        *,
+        source: lane_records.DispatchSource = "operator",
+    ) -> lane_records.DispatchResult:
+        """Dispatch a sibling group at the steer boundary and return what it did.
 
         Clones the coordinator's committed HEAD into one lane per expanded lane, runs them
-        through the spawner, joins each branch back in dispatch order and injects one summary.
-        Runs synchronously: no provider call happens while the group is in flight. Never ends
-        the run: an unavailable spawner, a bad spec, a dirty tree, a spawner fault, a failed
-        lane or a join conflict each answer the steer and continue.
+        through the spawner and joins each branch back in dispatch order. Runs synchronously:
+        no provider call happens while the group is in flight. Never ends the run: an
+        unavailable spawner, a bad spec, a dirty tree, a spawner fault, a failed lane or a
+        join conflict each come back as the result for the caller to deliver.
 
         Args:
-            conversation: The run's conversation.
+            conversation: The run's conversation, snapshotted before the group blocks.
             turn: The turn just completed.
             state: The loop state.
             segments: The directive's segments, one DAG node each.
+            source: Who asked: the operator's steer, the model's tool call or a panel.
+
+        Returns:
+            The result; `dispatched` False names a refusal before any clone.
         """
         if self.lane_spawner is None:
-            self.feedback(
-                conversation,
-                "parallel dispatch is not available in this front-end; continuing normally.",
+            return self.refusal(
+                "parallel dispatch is not available in this front-end; continuing normally."
             )
-            return
         try:
             # One DAG node per segment; its lanes join under it.
             lanes_cap = self.max_lanes
             per_segment = [segment_lanes(seg, state.pins, limit=lanes_cap) for seg in segments]
         except directive.DirectiveError as exc:
-            self.feedback(conversation, f"bad /parallel spec: {exc}; nothing dispatched.")
-            return
+            return self.refusal(f"bad /parallel spec: {exc}; nothing dispatched.")
         lanes = [lane for seg_lanes in per_segment for lane in seg_lanes]
+        # The cap bounds the whole sibling group, repeated segments included, before any
+        # checkpoint, DAG write or clone.
+        if len(lanes) > lanes_cap:
+            return self.refusal(
+                f"the /parallel segments request {len(lanes)} lanes together but"
+                f" [parallel].max_lanes = {lanes_cap}; nothing dispatched. Request fewer, or"
+                " raise [parallel].max_lanes."
+            )
         # Lanes cut from the chain tip only: commit a changed tree first, or refuse stale work.
         if not self.ensure_clean(turn):
-            self.feedback(
-                conversation,
+            return self.refusal(
                 "refusing to dispatch: the working tree is not clean and could not be"
-                " auto-committed. Commit or discard your changes, then retry /parallel.",
+                " auto-committed. Commit or discard your changes, then retry /parallel."
             )
-            return
 
         state.parallel_groups_dispatched += 1
         group = f"p{state.parallel_groups_dispatched}"
@@ -365,18 +369,21 @@ class ParallelDispatcher:
                 group=group,
                 lanes=len(lanes),
                 tasks=[seg.task[:200] for seg in segments],
+                source=source,
             )
         )
         parent_id = parallel_parent_id(self.curator, state.root_task_id)
         node_ids = [
-            add_parallel_node(self.curator, seg.task, parent_id, log=self.log) for seg in segments
+            add_parallel_node(self.curator, seg.task, parent_id, source=source, log=self.log)
+            for seg in segments
         ]
         if any(n is not None for n in node_ids):
             self.emit_graph_snapshot()
 
+        base = self.chain.tip() or ""
         try:
             # Blocks until the group returns; no provider call meanwhile.
-            results = spawn_lanes(self.lane_spawner, lanes, group, at=self.chain.tip() or None)
+            results = spawn_lanes(self.lane_spawner, lanes, group, at=base or None)
         except Exception as exc:
             # The spawner is an injected ui-side callback; any fault it leaks answers the steer.
             # Everything after this point never raises: the join and the stamp catch their own.
@@ -391,11 +398,11 @@ class ParallelDispatcher:
                 )
             self.emit_graph_snapshot()
             self.emit(journal.LoopParallelFailed(group=group, error=str(exc)))
-            self.feedback(
-                conversation,
-                f"group {group} dispatch failed: {exc}. Nothing was joined; continuing normally.",
+            message = (
+                f"group {group} dispatch failed: {exc}. Nothing was joined; continuing normally."
             )
-            return
+            self.log(f"PARALLEL: {message}")
+            return lane_records.DispatchResult(group, True, (), f"[parallel] {message}", base=base)
 
         # The spawner stamps the group name `<coordinator>-<group>` on each lane's manifest.
         # Read it back off a lane (`<group id>-l<n>`): it is the id `sessions compare` takes.
@@ -431,10 +438,16 @@ class ParallelDispatcher:
             for j in lanes
         ]
         self.emit(journal.LoopParallelJoined(group=group, lanes=payload))
-        failures = [p for p, j in zip(payload, lanes, strict=True) if j.status != "joined"]
+        failures = [
+            p
+            for p, j in zip(payload, lanes, strict=True)
+            if j.status not in ("joined", "no_changes")
+        ]
         if failures:
             self.emit(journal.LoopParallelFailed(group=group, lanes=failures))
-        conversation.notice(summary_text(group, lanes))
+        return lane_records.DispatchResult(
+            group, True, tuple(lanes), summary_text(group, lanes), base=base
+        )
 
     def ensure_clean(self, turn: int) -> bool:
         """Chain-commit a changed tree so lanes cut from the tip see current work.
@@ -467,7 +480,7 @@ class ParallelDispatcher:
             self.log(f"PARALLEL: pre-dispatch checkpoint failed: {exc}")
         return not self.chain.dirty()
 
-    def feedback(self, conversation: loop_conversation.Conversation, msg: str) -> None:
-        """Answer a `/parallel` steer with a one-line notice and continue."""
+    def refusal(self, msg: str) -> lane_records.DispatchResult:
+        """Return the result of a dispatch refused before any lane ran, logged once."""
         self.log(f"PARALLEL: {msg}")
-        conversation.notice(f"[parallel] {msg}")
+        return lane_records.DispatchResult("", False, (), f"[parallel] {msg}")

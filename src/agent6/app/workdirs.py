@@ -11,7 +11,7 @@ import shlex
 import shutil
 from collections.abc import Callable
 
-from agent6 import errors, paths
+from agent6 import errors, lane_records, paths
 from agent6.config import Config, lane_snapshot
 from agent6.harness import subrun
 from agent6.sessions import layout as sessions_layout
@@ -236,7 +236,7 @@ class LaneConfig:
 
 
 def write_lane_config(
-    cfg: Config, spec: subrun.LaneSpec, *, explicit_leaves: frozenset[str]
+    cfg: Config, spec: lane_records.LaneSpec, *, explicit_leaves: frozenset[str]
 ) -> LaneConfig:
     """Write the origin's explicit settings and non-default lane values to `--config`.
 
@@ -263,7 +263,7 @@ def write_lane_config(
 
 
 def cleanup(
-    imported: list[subrun.LaneSpec],
+    imported: list[lane_records.LaneSpec],
     *,
     origin: pathlib.Path,
     workdir_root: pathlib.Path,

@@ -8,10 +8,9 @@ import pathlib
 
 import pytest
 
-from agent6 import kinds
+from agent6 import kinds, lane_records
 from agent6.app import workdirs
 from agent6.config import Config, ConfigError, layer
-from agent6.harness import subrun
 from agent6.ui.cli import completers
 
 
@@ -68,7 +67,7 @@ def test_the_lane_config_reads_back_the_selected_settings(tmp_path: pathlib.Path
     """The written lane config materializes every selected field; none re-inherits the worker."""
     cfg = _cfg()
     chosen = cfg.lane_settings("reviewer")
-    spec = subrun.LaneSpec(
+    spec = lane_records.LaneSpec(
         lane=1, session_id="fan-l1", workdir=tmp_path / "lanes" / "lane-1", settings=chosen
     )
     written = workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).path

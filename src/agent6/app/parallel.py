@@ -20,7 +20,7 @@ import pathlib
 import uuid
 from collections.abc import Sequence
 
-from agent6 import errors, kinds
+from agent6 import errors, kinds, lane_records
 from agent6.app import compare as app_compare
 from agent6.app import (
     lane_watch,
@@ -36,7 +36,6 @@ from agent6.app import lanes as app_lanes
 from agent6.app import reporter as app_reporter
 from agent6.config import Config
 from agent6.context import memory
-from agent6.harness import subrun
 from agent6.providers import TranscriptSink
 from agent6.sessions import event_log, ipc, journal, process
 from agent6.sessions import layout as sessions_layout
@@ -53,14 +52,14 @@ CONTAINER_LANES_REFUSAL = (
 
 def run_parallel(
     task: str,
-    lanes: list[subrun.LaneSpec],
+    lanes: list[lane_records.LaneSpec],
     *,
     cfg: Config,
     explicit_leaves: frozenset[str],
     origin: pathlib.Path,
     origin_state: pathlib.Path,
     runtime: app_lanes.LaneRuntime,
-    spawner: subrun.LaneSpawner | None = None,
+    spawner: lane_records.LaneSpawner | None = None,
     max_usd: float | None = None,
     fanout_id: str | None = None,
     auto_approve: bool = False,
@@ -249,9 +248,9 @@ def run_parallel(
 
 def _drive_fanout(
     task: str,
-    lanes: list[subrun.LaneSpec],
+    lanes: list[lane_records.LaneSpec],
     *,
-    spawner: subrun.LaneSpawner,
+    spawner: lane_records.LaneSpawner,
     cfg: Config,
     origin: pathlib.Path,
     origin_state: pathlib.Path,
@@ -293,7 +292,7 @@ def _drive_fanout(
             f" = ${max_usd * (len(lanes) + 1):g} total"
         )
 
-    results: list[subrun.LaneResult] = []
+    results: list[lane_records.LaneResult] = []
     try:
         for spec in lanes:
             if ipc.stop_request_pending(coordinator_dir):

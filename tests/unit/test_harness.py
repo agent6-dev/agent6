@@ -20,7 +20,7 @@ from unittest import mock
 
 import pytest
 
-from agent6 import kinds
+from agent6 import kinds, lane_records
 from agent6.config import Config
 from agent6.harness import (
     advice,
@@ -159,6 +159,7 @@ def _wf(
         "config": mock.MagicMock(
             git=_GIT_STUB,
             budget=types.SimpleNamespace(max_usd=10.0, max_tokens_fallback=2_000_000),
+            parallel=types.SimpleNamespace(max_lanes=4),
             prompt=mock.MagicMock(system_prompt_file=""),
             harness=mock.MagicMock(
                 standing_patience=-1,
@@ -7657,7 +7658,6 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
     import json
 
     from agent6 import directive
-    from agent6.harness import subrun
 
     snap = tmp_path / "loop_state.json"
     at_spawn: dict[str, Any] = {}
@@ -7668,8 +7668,8 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
             "parallel_groups_dispatched"
         ]
         return [
-            subrun.LaneResult(
-                spec=subrun.LaneSpec(
+            lane_records.LaneResult(
+                spec=lane_records.LaneSpec(
                     lane=i,
                     session_id=f"run-{group}-l{i}",
                     workdir=tmp_path,
@@ -7702,6 +7702,62 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
     save_snapshot.assert_called_once()
     assert at_spawn["group"] == "p1"
     assert at_spawn["persisted"] == 1, "the bump must be on disk before the group blocks"
+
+
+def test_dispatch_returns_a_typed_result_and_injects_no_notice(tmp_path: pathlib.Path) -> None:
+    """`dispatch` returns what happened and leaves delivery to its caller.
+
+    The result names the group, the lanes' outcomes and the summary; the conversation gains no
+    message. The journal row and the DAG rationale name the source the caller gave.
+    """
+    from agent6 import directive
+
+    def spawner(lanes: Any, group: str, *, at: str | None = None) -> list[Any]:
+        return [
+            lane_records.LaneResult(
+                spec=lane_records.LaneSpec(
+                    lane=1, session_id=f"run-{group}-l1", workdir=tmp_path, settings=None
+                ),
+                session_dir=tmp_path,
+                branch="b",
+                ok=False,
+                error="lane failed",
+            )
+        ]
+
+    ev = _EventCapture()
+    wf = _wf(
+        root=tmp_path,
+        mode="run",
+        bridge=operator_bridge.OperatorBridge(lane_spawner=spawner),
+        resume_state_path=tmp_path / "loop_state.json",
+        events=ev,
+    )
+    conversation = loop_conversation.Conversation.from_wire(
+        [{"role": "user", "content": [{"type": "text", "text": "go"}]}]
+    )
+    before = len(conversation.messages)
+    result = wf.parallel.dispatch(
+        conversation, 3, _state(), [directive.Segment(spec="", task="consult")], source="model"
+    )
+    assert isinstance(result, lane_records.DispatchResult)
+    assert result.dispatched and result.group == "run-p1"
+    assert [j.status for j in result.lanes] == ["failed"]
+    assert result.message.startswith("[parallel] group run-p1 complete (1 lane(s))")
+    assert "FAILED -- lane failed" in result.message
+    assert len(conversation.messages) == before
+    dispatched = [e for e in ev.events if e["type"] == "loop.parallel.dispatched"]
+    assert dispatched and dispatched[0]["source"] == "model"
+    # A refusal before any lane names itself and dispatches nothing.
+    refused = wf.parallel.dispatch(
+        conversation,
+        4,
+        _state(),
+        [directive.Segment(spec="3", task="a"), directive.Segment(spec="3", task="b")],
+    )
+    assert not refused.dispatched and refused.lanes == ()
+    assert "request 6 lanes together but [parallel].max_lanes = 4" in refused.message
+    assert len(conversation.messages) == before
 
 
 def test_steer_abort_names_the_dirty_worktree_like_its_siblings(tmp_path: pathlib.Path) -> None:

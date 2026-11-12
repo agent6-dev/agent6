@@ -9,21 +9,29 @@ from typing import Any
 
 import pytest
 
-from agent6 import directive, errors
+from agent6 import directive, errors, lane_records
 from agent6.app import parallel, preflight
-from agent6.harness import parallel_dispatch, subrun
+from agent6.harness import parallel_dispatch
 from agent6.vcs import git_ops, git_read
 
 
-def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> subrun.LaneResult:
-    spec = subrun.LaneSpec(
+def _res(
+    *, ok: bool, error: str = "", branch: str = "agent6/lane-1", has_commits: bool = True
+) -> lane_records.LaneResult:
+    spec = lane_records.LaneSpec(
         lane=1,
         session_id="lane-1",
         workdir=pathlib.Path("/nowhere"),
         settings=None,
     )
-    return subrun.LaneResult(
-        spec=spec, session_dir=pathlib.Path("/nowhere"), branch=branch, ok=ok, error=error
+    return lane_records.LaneResult(
+        spec=spec,
+        session_dir=pathlib.Path("/nowhere"),
+        branch=branch,
+        ok=ok,
+        error=error,
+        imported_ref=branch if has_commits else "",
+        has_commits=has_commits,
     )
 
 
@@ -51,7 +59,7 @@ def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     }
     assert parallel_dispatch.join_lane_result(
         pathlib.Path("/r"), _res(ok=False, error="died"), **kw
-    ) == parallel_dispatch.LaneJoin("lane-1", "agent6/lane-1", "failed", "", "died")
+    ) == lane_records.LaneJoin("lane-1", "agent6/lane-1", "failed", "", "died")
 
     def _conflict(*_a: Any, **_k: Any) -> str | None:
         return None
@@ -77,8 +85,48 @@ def test_join_lane_result_never_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (j.status, j.sha) == ("joined", "a" * 40)
 
 
-def _join(status: Any, session_id: str = "lane-1", sha: str = "") -> parallel_dispatch.LaneJoin:
-    return parallel_dispatch.LaneJoin(
+def test_a_lane_without_commits_joins_as_no_changes_without_merging(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lane with a result and no commit beyond its base joins as `no_changes`.
+
+    Nothing is merged: no `chain_merge` call, no sha.
+    """
+    merges: list[str] = []
+
+    def _merge(_root: pathlib.Path, branch: str, *_a: Any, **_k: Any) -> str | None:
+        merges.append(branch)
+        return "b" * 40
+
+    monkeypatch.setattr(git_ops, "chain_merge", _merge)
+    kw: dict[str, Any] = {
+        "ref": "refs/agent6/run",
+        "fallback_parent": None,
+        "identity": None,
+        "also_branch": None,
+    }
+    j = parallel_dispatch.join_lane_result(
+        pathlib.Path("/r"), _res(ok=True, has_commits=False), **kw
+    )
+    assert j == lane_records.LaneJoin("lane-1", "agent6/lane-1", "no_changes", "", "")
+    assert merges == []
+    # A lane with commits merges the ref the import landed, not the branch name it was given.
+    res = lane_records.LaneResult(
+        spec=_res(ok=True).spec,
+        session_dir=pathlib.Path("/nowhere"),
+        branch="agent6/lane-1",
+        ok=True,
+        error="",
+        imported_ref="refs/agent6/lane-1",
+        imported_tip="c" * 40,
+        has_commits=True,
+    )
+    assert parallel_dispatch.join_lane_result(pathlib.Path("/r"), res, **kw).status == "joined"
+    assert merges == ["refs/agent6/lane-1"]
+
+
+def _join(status: Any, session_id: str = "lane-1", sha: str = "") -> lane_records.LaneJoin:
+    return lane_records.LaneJoin(
         session_id, f"agent6/{session_id}", status, sha, "boom" if status == "failed" else ""
     )
 
@@ -105,6 +153,18 @@ def test_segment_stamp_reduces_lanes() -> None:
     )
     assert status == "failed"
     assert "conflicted; merge manually" in note
+    # A segment whose lanes all ended with no changes passed: there was nothing to merge.
+    assert parallel_dispatch.segment_stamp([_join("no_changes")]) == (
+        "passed",
+        "lane-1 made no changes",
+        "",
+    )
+    # Mixed: the sha is the last joined lane's; a no-change lane adds none.
+    status, note, sha = parallel_dispatch.segment_stamp(
+        [_join("joined", "a", sha="1111111111111"), _join("no_changes", "b")]
+    )
+    assert (status, sha) == ("passed", "1111111111111")
+    assert "b made no changes" in note
 
 
 def test_summary_text_names_every_outcome() -> None:
@@ -114,10 +174,12 @@ def test_summary_text_names_every_outcome() -> None:
             _join("joined", "a", sha="abc123def4567"),
             _join("conflict", "b"),
             _join("failed", "c"),
+            _join("no_changes", "d"),
         ],
     )
-    assert "group p1 complete (3 lane(s))" in text
+    assert "group p1 complete (4 lane(s))" in text
     assert "a (agent6/a): joined at abc123def456" in text
+    assert "d (agent6/d): finished with no changes to join." in text
     assert "CONFLICT" in text and "git merge agent6/b" in text
     assert "FAILED -- boom; nothing joined." in text
     assert text.endswith("Review what landed and continue.")
@@ -130,6 +192,7 @@ def test_lane_note_wordings() -> None:
     )
     assert parallel_dispatch.lane_note(_join("conflict")) == "lane-1 conflicted; merge manually"
     assert parallel_dispatch.lane_note(_join("failed")) == "lane-1 failed: boom"
+    assert parallel_dispatch.lane_note(_join("no_changes")) == "lane-1 made no changes"
 
 
 def test_segment_lanes_carry_the_operator_pins_out_of_band() -> None:

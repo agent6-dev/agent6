@@ -528,6 +528,7 @@ Source: [`sessions.event_log.EventSink.emit`](https://github.com/agent6-dev/agen
 | `group` | `str` | Parallel dispatch group identifier. |
 | `lanes` | `int` | Lane count for dispatch, or lane results for completion. |
 | `tasks` | `list` | Task texts sent to the lanes. |
+| `source` | `str, optional` | Who dispatched: operator (a steer), model (the tool) or panel. |
 
 ### loop.parallel.failed
 

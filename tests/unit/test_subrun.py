@@ -72,9 +72,12 @@ def test_import_run_lands_branch_and_moves_run_dir(tmp_path: pathlib.Path) -> No
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
     origin_state = tmp_path / "origin-state"
 
-    imported = subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
+    result = subrun.import_run(origin, lane_repo, branch, lane_session_dir, origin_state)
+    imported = result.session_dir
 
     assert imported == origin_state / "sessions" / "runs" / "01ABC"
+    assert result.ref == branch
+    assert result.tip == git_read.branch_tip_sha(origin, branch)
     assert (imported / "manifest.json").read_text(encoding="utf-8") == "{}\n"
     assert not lane_session_dir.exists()
     assert git_read.branch_exists(origin, branch)
@@ -94,12 +97,47 @@ def test_import_run_lands_a_lane_that_never_committed(tmp_path: pathlib.Path) ->
     lane_session_dir.mkdir(parents=True)
     (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
 
-    imported = subrun.import_run(
+    result = subrun.import_run(
         origin, lane_repo, "agent6/lane-1", lane_session_dir, tmp_path / "origin-state"
     )
 
-    assert (imported / "manifest.json").is_file()
+    assert (result.session_dir / "manifest.json").is_file()
+    assert (result.ref, result.tip) == ("", "")
     assert not git_read.branch_exists(origin, "agent6/lane-1")
+
+
+def test_import_run_under_model_control_lands_the_hidden_chain_ref(
+    tmp_path: pathlib.Path,
+) -> None:
+    """A model-controlled lane's HEAD lands on `refs/agent6/<id>/head`; the record names it.
+
+    The lane's own branch name is created in the origin when free, and the returned ref and tip
+    are the chain ref and the lane's HEAD, so a join merges what the lane committed.
+    """
+    origin = tmp_path / "origin"
+    _init_repo(origin)
+    lane_repo = tmp_path / "lane-1"
+    subrun.clone_workspace(origin, lane_repo)
+    _git(lane_repo, "checkout", "-q", "-b", "feature")
+    (lane_repo / "new.txt").write_text("lane\n", encoding="utf-8")
+    _git(lane_repo, "add", "-A")
+    _git(lane_repo, "commit", "-q", "-m", "lane work")
+    head = git_read.status(lane_repo).head_sha
+    lane_session_dir = tmp_path / "lane-state" / "sessions" / "runs" / "01MC"
+    lane_session_dir.mkdir(parents=True)
+    (lane_session_dir / "manifest.json").write_text("{}\n", encoding="utf-8")
+
+    result = subrun.import_run(
+        origin, lane_repo, "", lane_session_dir, tmp_path / "origin-state", model_control=True
+    )
+
+    chain = git_read.chain_ref_for("01MC")
+    assert (result.ref, result.tip) == (chain, head)
+    landed = subprocess.run(
+        ["git", "-C", str(origin), "rev-parse", chain], capture_output=True, text=True, check=True
+    )
+    assert landed.stdout.strip() == head
+    assert git_read.branch_tip_sha(origin, "feature") == head
 
 
 def test_import_run_refuses_existing_branch(tmp_path: pathlib.Path) -> None:
