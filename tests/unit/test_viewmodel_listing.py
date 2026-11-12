@@ -432,6 +432,25 @@ def test_summary_reads_mode_task_and_passed(tmp_path: pathlib.Path) -> None:
     assert s.cost_usd == 0.12
 
 
+def test_the_row_names_the_branch_while_the_tips_hold_it(tmp_path: pathlib.Path) -> None:
+    """A run's branch is a row fact once a commit created it; no snapshot, no branch."""
+    rd = _write_run(
+        tmp_path, "runs", "r1", [{"type": "session.start", "mode": "run", "user_task": "t"}]
+    )
+    (rd / "manifest.json").write_text(
+        json.dumps(
+            {"session_id": "r1", "mode": "run", "run_branch": "agent6/r1", "base_branch": "main"}
+        ),
+        encoding="utf-8",
+    )
+    assert summarize_session_dir(rd).branch == ""
+    assert summarize_session_dir(rd, branch_tips={}).branch == ""
+    held = summarize_session_dir(rd, branch_tips={"agent6/r1": "a" * 40})
+    assert held.branch == "agent6/r1"
+    assert listing.summary_row(held)["branch"] == "agent6/r1"
+    assert listing.summary_row(summarize_session_dir(rd))["branch"] is None
+
+
 def test_verify_verdict_reads_the_gate_facts_not_the_status_word(tmp_path: pathlib.Path) -> None:
     """The judge's verify tri-state reads the gate facts, not the folded status word.
 

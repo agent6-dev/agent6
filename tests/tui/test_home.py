@@ -948,6 +948,72 @@ def test_tui_hub_is_pointed_at_the_state_dir_not_the_sessions_root(
     assert seen == [paths.state_dir(tmp_path)]
 
 
+def test_a_wide_hub_names_the_branch_and_r_opens_the_review_composer(
+    tmp_path: pathlib.Path,
+) -> None:
+    """From 140 columns the table adds a run's branch; `R` opens new work on `/review <branch>`."""
+    import asyncio
+    import subprocess
+
+    from textual import widgets
+
+    from agent6.ui.tui import composer
+    from agent6.ui.tui import home as tui_home
+    from agent6.ui.tui import new_work as tui_new_work
+
+    a6 = tmp_path / ".agent6"
+    rd = _write_run(
+        a6,
+        "runs",
+        "r1",
+        [
+            {"type": "session.start", "mode": "run", "user_task": "x"},
+            {"type": "session.stop", "reason": "finish_session", "verification": "passed"},
+        ],
+    )
+    repo = tmp_path
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    (repo / "seed.txt").write_text("seed\n")
+    subprocess.run(["git", "add", "seed.txt"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "base"], cwd=repo, check=True)
+    subprocess.run(["git", "branch", "agent6/r1"], cwd=repo, check=True)
+    (rd / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 3,
+                "session_id": "r1",
+                "mode": "run",
+                "user_task": "x",
+                "base_branch": "main",
+                "run_branch": "agent6/r1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    async def scenario() -> None:
+        app = tui_home.Agent6HomeApp(a6, tmp_path)
+        async with app.run_test(size=(160, 40)) as pilot:
+            screen = app.screen
+            assert isinstance(screen, tui_home.HomeScreen)
+            table = screen.query_one("#sessions", widgets.DataTable)
+            await waits.wait_for(pilot, lambda: table.row_count == 1, "the row")
+            labels = [str(column.label) for column in table.columns.values()]
+            assert labels[-2:] == ["branch", "task"]
+            row = [str(cell) for cell in table.get_row_at(0)]
+            assert row[labels.index("branch")] == "agent6/r1"
+            await pilot.press("R")
+            await pilot.pause()
+            assert isinstance(app.screen, tui_new_work.NewWorkScreen)
+            assert app.screen.query_one("#draft-input", composer.SteerInput).text == (
+                "/review agent6/r1"
+            )
+
+    asyncio.run(scenario())
+
+
 def test_merge_is_greyed_out_for_a_live_run(tmp_path: pathlib.Path) -> None:
     """The hub greys Merge on a live run, since `sessions merge` always refuses one.
 

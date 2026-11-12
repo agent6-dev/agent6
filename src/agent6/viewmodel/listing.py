@@ -127,6 +127,8 @@ class SessionSummary:
         model_from_flag: The route came from a `--model` flag rather than config.
         worktree: The linked worktree the run works in, "" for a run in the checkout.
         worktree_missing: The refusal when the recorded worktree is absent in this home.
+        branch: The run's branch while the caller's branch-tips snapshot holds it; "" without
+            a snapshot, a branch or a commit on it.
         review_queue: Where the session sits in the review queue, derived from its journal.
     """
 
@@ -150,6 +152,7 @@ class SessionSummary:
     model_from_flag: bool = False
     worktree: str = ""
     worktree_missing: str = ""
+    branch: str = ""
     review_queue: review_queue.ReviewQueueEntry = dataclasses.field(
         default_factory=review_queue.ReviewQueueEntry
     )
@@ -350,6 +353,7 @@ class SummaryRow(TypedDict):
     lane: int | None
     coordinator: str
     worktree: str | None
+    branch: str | None
     review_queue: dict[str, Any]
     lanes: list[SummaryRow]
     group_last_activity: NotRequired[float]
@@ -422,6 +426,7 @@ def summary_row(
         lane: The lane number, or null outside a fan-out.
         coordinator: The session that dispatched this lane.
         worktree: The linked worktree path, or null in the operator's checkout.
+        branch: The run's branch while it exists, or null.
         review_queue: The ReviewQueueEntry for this session.
 
         winner: Whether this lane won its comparison.
@@ -463,6 +468,7 @@ def summary_row(
         "lane": s.lane,
         "coordinator": s.coordinator,
         "worktree": s.worktree or None,
+        "branch": s.branch or None,
         "review_queue": dataclasses.asdict(s.review_queue),
         "lanes": list(lanes),
     }
@@ -651,6 +657,26 @@ def unmerged(
     )
 
 
+def existing_branch(
+    manifest: sessions_manifest.SessionManifest | None, branch_tips: Mapping[str, str] | None
+) -> str:
+    """Return the run's branch while the tips snapshot holds it, else "".
+
+    The manifest names the branch at run start and git creates it at the first commit, so
+    a run that never committed has none to review or merge.
+
+    Args:
+        manifest: The run's manifest, or None when unreadable.
+        branch_tips: The caller's `git_read.run_ref_tips` snapshot, or None without one.
+
+    Returns:
+        The branch name, or "" without a manifest, a snapshot, a branch or a commit on it.
+    """
+    if manifest is None or branch_tips is None or not manifest.run_branch:
+        return ""
+    return manifest.run_branch if manifest.run_branch in branch_tips else ""
+
+
 def _run_tips(
     manifest: sessions_manifest.SessionManifest, branch_tips: Mapping[str, str]
 ) -> set[str]:
@@ -742,5 +768,6 @@ def summarize_session_dir(
         model_from_flag=manifest.models.driver_from_flag if manifest is not None else False,
         worktree=str(manifest.worktree) if manifest is not None and manifest.worktree else "",
         worktree_missing=sessions_manifest.worktree_blocker(manifest.worktree) if manifest else "",
+        branch=existing_branch(manifest, branch_tips),
         review_queue=queue,
     )

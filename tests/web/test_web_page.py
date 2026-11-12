@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "983b2c95c515bd34854eaab34415dbc6696d71521880ab2ad3879d2989c03e38"
+PAGE_SHA256 = "5fc7102533ce9e29ca7ba5870d51cd8a87eebdf534729e83ac16c5be2a5ad7f6"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -190,6 +190,16 @@ def test_a_session_row_shows_its_mode() -> None:
     client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
     paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
     assert "esc(r.mode)" in paint
+
+
+def test_a_run_row_names_its_checkout_and_offers_review_and_merge() -> None:
+    """A row shows the worktree and branch; Review fills the composer, Merge posts the merge."""
+    client = resources.files("agent6.ui.web").joinpath("client.js").read_text(encoding="utf-8")
+    paint = client[client.index("function paintSession") : client.index("function sessionsCard")]
+    assert "'worktree ' + r.worktree" in paint and "'branch ' + r.branch" in paint
+    assert "handToNewWork({ task: '/review ' + r.branch })" in paint
+    assert "if (r.branch && !live)" in paint and "if (r.unmerged)" in paint
+    assert "'/merge', {}" in paint
 
 
 def test_new_work_route_refresh_clears_and_ignores_stale_models() -> None:

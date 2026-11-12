@@ -1504,6 +1504,7 @@ Source: [`viewmodel.listing.summary_row`](https://github.com/agent6-dev/agent6/b
 | `lane` | `int \| None` | The lane number, or null outside a fan-out. |
 | `coordinator` | `str` | The session that dispatched this lane. |
 | `worktree` | `str \| None` | The linked worktree path, or null in the operator's checkout. |
+| `branch` | `str \| None` | The run's branch while it exists, or null. |
 | `review_queue` | `dict[str, Any]` | The ReviewQueueEntry for this session. |
 | `lanes` | `list[SummaryRow]` | Nested listing rows for this coordinator's lanes. |
 

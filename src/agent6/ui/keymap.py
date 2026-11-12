@@ -144,6 +144,7 @@ SCREEN_KEYS: dict[str, dict[str, str]] = {
         "new_work": "n",
         "open_selected": "enter",
         "merge_selected": "m",
+        "review_selected": "R",
         "delete_selected": "d",
         "refresh": "r",
         "quit": "q",

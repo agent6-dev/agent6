@@ -538,6 +538,9 @@ function paintSession(r, it, g) {
   const cost = r.cost ? ' · ' + r.cost : ''; // the server's cost cell, blank for a clean $0
   // id_cell carries the winner mark the CLI and TUI id cells carry.
   g.appendChild(el('div', 'sub', `${esc(r.mode)} · ${esc(r.id_cell || r.session_id)} · ${esc(r.when)}${cost}`));
+  // Where the run works and the branch holding its commits, when it has them.
+  const where = [r.worktree && 'worktree ' + r.worktree, r.branch && 'branch ' + r.branch].filter(Boolean).join(' · ');
+  if (where) g.appendChild(el('div', 'sub', where));
   // The queue's reason beside the row, and a fan-out's lanes by group: recorded facts, no re-review.
   const q = r.review_queue || {};
   const laneGroups = Object.entries(r.lane_groups || {}).map(([k, n]) => `${n} ${QUEUE_LABEL[k].toLowerCase()}`).join(', ');
@@ -545,6 +548,28 @@ function paintSession(r, it, g) {
   if (review) g.appendChild(el('div', 'sub review-queue', review));
   it.appendChild(pill(r.level, r.label || r.status)); // the server's one shared label + level
   if (QUEUE_LEVEL[r.queue_group]) it.appendChild(pill(QUEUE_LEVEL[r.queue_group], QUEUE_LABEL[r.queue_group]));
+  // Review fills the new-work composer with `/review <branch>`; Merge lands the branch
+  // through `sessions merge`. Both need a finished run whose branch exists; Merge also
+  // needs commits no merge stamped. A fan-out has no branch of its own.
+  const live = ['running', 'starting', 'waiting'].includes(r.status);
+  if (r.branch && !live) {
+    const review = el('button', 'mini', 'Review');
+    review.onclick = (e) => { e.stopPropagation(); handToNewWork({ task: '/review ' + r.branch }); location.hash = '#/'; route(); };
+    review.onkeydown = (e) => e.stopPropagation();
+    it.appendChild(review);
+    if (r.unmerged) {
+      const merge = el('button', 'mini', 'Merge');
+      merge.onclick = async (e) => {
+        e.stopPropagation();
+        if (!confirm('Merge run ' + r.session_id + '? Runs `agent6 sessions merge` to land its branch on its base with your git.merge_method; the checkout never moves.')) return;
+        merge.disabled = true;
+        try { const d = await postJSON('/api/session/' + encodeURIComponent(r.session_id) + '/merge', {}); toast(d.message || 'merged'); route(); }
+        catch (err) { toast(err.message, true); merge.disabled = false; }
+      };
+      merge.onkeydown = (e) => e.stopPropagation();
+      it.appendChild(merge);
+    }
+  }
   const lanes = r.lanes || [];
   if (!lanes.length) return;
   const open = expandedFanouts.has(r.session_id);

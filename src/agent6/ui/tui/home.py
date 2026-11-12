@@ -62,9 +62,10 @@ _HUB_POLL_S = 4.0
 
 
 # Below the first width `updated` shortens and a status drops its reason; below the second the
-# cost column hides too.
+# cost column hides too. From the third up a run's branch gets a column.
 _NARROW_COLS = 100
 _NARROWEST_COLS = 80
+_WIDE_COLS = 140
 
 
 def _sync_columns(table: widgets.DataTable[Any], width: int, *, review: bool) -> tuple[str, ...]:
@@ -84,6 +85,8 @@ def _sync_columns(table: widgets.DataTable[Any], width: int, *, review: bool) ->
         labels = ("updated", "status", "id", "task")
     elif review and width >= _NARROW_COLS:
         labels = ("updated", "status", "review", "cost", "id", "task")
+    if width >= _WIDE_COLS:
+        labels = (*labels[:-1], "branch", "task")
     if tuple(str(c.label) for c in table.columns.values()) != labels:
         table.clear(columns=True)
         table.add_columns(*labels)
@@ -133,6 +136,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 menubar.MenuItem("New session", "new_work"),
                 menubar.MenuItem("Open selected", "open_selected"),
                 menubar.MenuItem("Merge selected run", "merge_selected"),
+                menubar.MenuItem("Review selected run's branch", "review_selected"),
                 menubar.MenuItem("Delete selected run…", "delete_selected"),
                 menubar.MenuItem("Prune merged runs…", "prune"),
                 menubar.MenuItem("Prune merged runs, squash-merged too…", "prune_squashed"),
@@ -271,6 +275,7 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
                 "review": _review_cell(row),
                 "cost": s.cost_cell,
                 "id": text.Text(id_cell),
+                "branch": s.branch,
             }
             pending.append(
                 (
@@ -427,21 +432,29 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         del parameters
         if action == "toggle_lanes":
             return self._selected_fanout() is not None
-        if action in ("merge_selected", "delete_selected"):
+        if action == "review_selected":
             rd = self._selected_dir()
-            if rd is None:
-                return None
-            if action == "merge_selected":
-                if not viewmodel_listing.session_action_applies(
-                    "merge", fanout=viewmodel_listing.is_fanout(rd)
-                ):
-                    return False
-                with contextlib.suppress(manifest.ManifestError):
-                    if manifest.read_manifest(rd).git_control == "model":
-                        return None
-            s = self._summaries.get(rd.name)
-            return None if s is not None and s.status in LIVE_STATUS_WORDS else True
+            s = self._summaries.get(rd.name) if rd is not None else None
+            return None if s is None or not s.branch or s.status in LIVE_STATUS_WORDS else True
+        if action in ("merge_selected", "delete_selected"):
+            return self._merge_or_delete_applies(action)
         return True
+
+    def _merge_or_delete_applies(self, action: str) -> bool | None:
+        """Return whether Merge or Delete applies to the selected run: hidden, greyed or offered."""
+        rd = self._selected_dir()
+        if rd is None:
+            return None
+        if action == "merge_selected":
+            if not viewmodel_listing.session_action_applies(
+                "merge", fanout=viewmodel_listing.is_fanout(rd)
+            ):
+                return False
+            with contextlib.suppress(manifest.ManifestError):
+                if manifest.read_manifest(rd).git_control == "model":
+                    return None
+        s = self._summaries.get(rd.name)
+        return None if s is not None and s.status in LIVE_STATUS_WORDS else True
 
     def on_data_table_row_highlighted(self, _event: widgets.DataTable.RowHighlighted) -> None:
         """Re-ask `check_action`, which textual does only on a bindings refresh."""
@@ -453,6 +466,24 @@ class HomeScreen(screen_chrome.ScreenChrome, textual_screen.Screen[None]):
         if not (self._runs and 0 <= table.cursor_row < len(self._runs)):
             return None
         return self._runs[table.cursor_row]
+
+    def action_review_selected(self) -> None:
+        """Open the new-session composer with `/review <branch>` for the selected run."""
+        rd = self._selected_dir()
+        s = self._summaries.get(rd.name) if rd is not None else None
+        if s is None or not s.branch:
+            self.notify("the selected run has no branch to review", severity="warning")
+            return
+        self.app.push_screen(
+            new_work.NewWorkScreen(
+                self.repo_cwd,
+                self.config_paths,
+                presets=layer_presets.available_preset_names(self.repo_cwd, self.config_paths),
+                routes=choices.available_routes(self.repo_cwd, self.config_paths),
+                plans=new_work.plan_choices(self._summaries.values()),
+                task=f"/review {s.branch}",
+            )
+        )
 
     def action_merge_selected(self) -> None:
         """Merge the selected session's branch into its base through the CLI, after a confirm."""
