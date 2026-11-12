@@ -329,3 +329,33 @@ def test_entry_of(key: str, expected: tuple[str, str] | None) -> None:
     """Only entry leaves resolve to a named entry, including nested MCP grants."""
     found = write.entry_of(key)
     assert (None if found is None else (found[0].path, found[1])) == expected
+
+
+def test_preset_key_prefixes_the_table_only_under_a_preset() -> None:
+    """An edit under a shown preset writes `presets.<name>.<key>`; none writes the key itself."""
+    assert write.preset_key("fast", "sandbox.run_commands") == "presets.fast.sandbox.run_commands"
+    assert write.preset_key("", "sandbox.run_commands") == "sandbox.run_commands"
+
+
+@pytest.mark.parametrize("to_repo", [False, True])
+def test_add_preset_creates_an_empty_table_and_keeps_an_existing_one(
+    tmp_path: pathlib.Path, *, to_repo: bool
+) -> None:
+    """Add preset writes `[presets.<name>]` once; a second add leaves the filled table alone."""
+    assert write.add_preset(tmp_path, "fast", to_repo=to_repo) is None
+    target = paths.repo_config_path(tmp_path) if to_repo else paths.global_config_path()
+    assert "[presets.fast]" in target.read_text(encoding="utf-8")
+    assert (
+        write.set_config_value(tmp_path, "presets.fast.sandbox.network", "host", to_repo=to_repo)
+        is None
+    )
+    assert write.add_preset(tmp_path, "fast", to_repo=to_repo) is None
+    assert io.read_toml_file(target)["presets"]["fast"] == {"sandbox": {"network": "host"}}
+    assert write.add_preset(tmp_path, " ", to_repo=to_repo) == "preset name is required"
+    assert (
+        write.add_preset(tmp_path, "none", to_repo=to_repo)
+        == '"none" is reserved for selecting no preset'
+    )
+    assert write.remove_preset(tmp_path, "fast", to_repo=to_repo).removed is True
+    assert "presets" not in io.read_toml_file(target)
+    assert write.remove_preset(tmp_path, "fast", to_repo=to_repo).removed is False

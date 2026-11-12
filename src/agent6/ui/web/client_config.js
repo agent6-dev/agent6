@@ -2,9 +2,14 @@
 async function renderConfig(gen = routeGen, readState = () => ({})) {
   if (gen !== routeGen) return;
   setCrumb('config');
-  const [data, registry] = await Promise.all([getJSON('/api/config'), getJSON('/api/config/entry_tables')]);
-  if (gen !== routeGen) return;
   const state = readState();
+  const preset = state.preset || ''; // the preset the page shows and edits; '' is the plain config
+  const [data, registry, presets] = await Promise.all([
+    getJSON('/api/config' + (preset ? '?preset=' + encodeURIComponent(preset) : '')),
+    getJSON('/api/config/entry_tables'),
+    getJSON('/api/config/presets'),
+  ]);
+  if (gen !== routeGen) return;
   view.innerHTML = '';
   const card = el('div', 'card');
   card.appendChild(el('h2', null, 'Config'));
@@ -22,20 +27,50 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     filter.oninput();
   };
   bar.appendChild(modifiedBtn);
-  const refresh = () => {
+  const refresh = (next = preset) => {
     if (gen !== routeGen || !card.isConnected) return;
     return renderConfig(gen, () => ({
-      filter: filter.value, modified, x: window.scrollX, y: window.scrollY,
+      filter: filter.value, modified, preset: next, x: window.scrollX, y: window.scrollY,
       key: document.activeElement?.getAttribute('data-key'),
       filtering: document.activeElement === filter,
     }));
   };
+  // The rows are the effective config under the picked preset, and a save writes
+  // [presets.<name>]; entries are edited with none picked, as the TUI page does.
+  const presetPick = el('select', 'field cfg-preset');
+  presetPick.title = 'the preset the page shows and edits; none edits the global and repo config';
+  for (const name of presets.names) {
+    const option = el('option', null, name === 'none' ? 'preset: none' : 'preset: ' + name);
+    option.value = name; presetPick.appendChild(option);
+  }
+  presetPick.value = preset || 'none';
+  presetPick.onchange = () => refresh(presetPick.value === 'none' ? '' : presetPick.value);
+  bar.appendChild(presetPick);
+  const addPresetBtn = el('button', null, 'Add preset…');
+  addPresetBtn.onclick = () => addPreset(name => refresh(name));
+  bar.appendChild(addPresetBtn);
+  const removePresetBtn = el('button', null, 'Remove preset');
+  removePresetBtn.disabled = !preset;
+  removePresetBtn.title = preset ? 'Remove [presets.' + preset + '] from the global and repo config' : 'Pick a preset first';
+  removePresetBtn.onclick = async () => {
+    if (!confirm('Remove [presets.' + preset + '] and every value under it from the global and repo config?')) return;
+    removePresetBtn.disabled = true;
+    try {
+      const d = await postJSON('/api/config/preset/remove', {name: preset});
+      toast(d.message || 'removed'); await refresh('');
+    } catch (e) { toast(e.message, true); removePresetBtn.disabled = false; }
+  };
+  bar.appendChild(removePresetBtn);
   for (const table of registry.tables) {
     const addBtn = el('button', null, 'Add ' + table.label + '…');
+    addBtn.disabled = !!preset;
+    if (preset) addBtn.title = 'entries are edited with no preset picked';
     addBtn.onclick = () => addEntry(table, refresh);
     bar.appendChild(addBtn);
   }
   const reviewerBtn = el('button', null, 'Add reviewer…');
+  reviewerBtn.disabled = !!preset;
+  if (preset) reviewerBtn.title = 'entries are edited with no preset picked';
   reviewerBtn.onclick = () => addReviewer(refresh);
   bar.appendChild(reviewerBtn);
   card.appendChild(bar);
@@ -63,7 +98,7 @@ async function renderConfig(gen = routeGen, readState = () => ({})) {
     tr.title = s.description ? (s.description_points || [s.description]).join('\n') : 'click to edit';
     tr.style.cursor = 'pointer';
     tr.setAttribute('data-key', k);
-    actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data); }, 'edit ' + k);
+    actionable(tr, () => { tr.focus({preventScroll: true}); editConfig(k, s, registry.tables, refresh, data, preset); }, 'edit ' + k);
     tbl.appendChild(tr); rows.push([k.toLowerCase(), tr, s.modified, sections.at(-1)]);
   }
   filter.oninput = () => {
@@ -171,6 +206,46 @@ function addEntry(table, refresh) {
       toast(d.message || 'added'); close(); await refresh();
     } catch (e) { toast(e.message, true); add.disabled = false; }
   };
+}
+
+// Name and layer for a new preset table; the page then shows and edits it.
+function addPreset(onAdded) {
+  const opener = document.activeElement;
+  const back = el('div', 'overlay'), box = el('div', 'card');
+  box.style.width = 'min(560px, 92vw)';
+  box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', 'add preset');
+  box.appendChild(el('h2', null, 'Add preset'));
+  box.appendChild(el('div', 'sub muted', 'An empty [presets.<name>] table; pick it to fill it row by row.'));
+  const label = el('label', 'sub muted', 'name'); label.style.display = 'block'; label.style.marginTop = '8px';
+  const name = el('input', 'field'); name.name = 'name'; label.appendChild(name); box.appendChild(label);
+  const repoRow = el('label', 'row'); repoRow.style.marginTop = '8px'; repoRow.style.cursor = 'pointer';
+  const repoCb = el('input'); repoCb.type = 'checkbox';
+  repoRow.appendChild(repoCb); repoRow.appendChild(el('span', 'sub muted', 'create in this repo\'s config (not the global config)'));
+  box.appendChild(repoRow);
+  const row = el('div', 'form-row');
+  const add = el('button', 'primary', 'Add'), cancel = el('button', null, 'Cancel');
+  row.appendChild(add); row.appendChild(cancel); box.appendChild(row);
+  back.appendChild(box); document.body.appendChild(back);
+  const close = () => {
+    if (!back.isConnected) return;
+    activeOverlayClose = null; back.remove(); document.removeEventListener('keydown', onKey);
+    if (opener && opener.isConnected) opener.focus({preventScroll: true});
+  };
+  activeOverlayClose = close;
+  function onKey(e) { if (e.key === 'Escape') close(); }
+  document.addEventListener('keydown', onKey);
+  cancel.onclick = close;
+  back.onclick = (e) => { if (e.target === back) close(); };
+  const submit = async () => {
+    add.disabled = true;
+    try {
+      const d = await postJSON('/api/config/preset', {name: name.value.trim(), repo: repoCb.checked});
+      toast(d.message || 'added'); close(); await onAdded(name.value.trim());
+    } catch (e) { toast(e.message, true); add.disabled = false; }
+  };
+  add.onclick = submit;
+  name.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+  name.focus();
 }
 
 async function addReviewer(refresh) {
@@ -295,7 +370,7 @@ function configCombobox(current) {
   return {element, field, load};
 }
 
-function editConfig(key, s, tables, refresh = () => {}, data = {}) {
+function editConfig(key, s, tables, refresh = () => {}, data = {}, preset = '') {
   const cur = s.input;
   const back = el('div', 'overlay');
   const opener = document.activeElement;
@@ -304,7 +379,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   box.setAttribute('aria-label', 'edit ' + key);
   const role = s.model_role || null; // the view's one rule for the model picker
   const section = role ? 'models.' + role : null;
-  const title = el('h2', null, role ? 'Model: ' + role : key);
+  const title = el('h2', null, (role ? 'Model: ' + role : key) + (preset ? ' under preset ' + preset : ''));
   title.style.textTransform = 'none'; // a config key is a case-sensitive identifier
   box.appendChild(title);
   const meta = el('div', 'sub muted');
@@ -353,12 +428,14 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   // so it reverts to the next-lower one / the built-in default. (default-sourced
   // values have nothing to unset; flag/machine layers are not editable here.)
   let unsetBtn = null;
-  if (s.source === 'repo' || s.source === 'global') {
+  if (s.source === 'repo' || s.source === 'global' || (preset && s.source === 'preset')) {
     unsetBtn = el('button', null, role ? 'Unset ' + key : 'Unset');
-    unsetBtn.title = 'remove from the ' + s.source + ' config; the next layer below takes over';
+    unsetBtn.title = preset
+      ? 'remove from [presets.' + preset + '] in the chosen layer; the layer below takes over'
+      : 'remove from the ' + s.source + ' config; the next layer below takes over';
     row.appendChild(unsetBtn);
   }
-  const entry = s.entry;
+  const entry = preset ? null : s.entry; // entries are edited with no preset picked
   const table = entry && tables.find(t => t.path === entry.table);
   let removeBtn = null;
   if (table) {
@@ -372,7 +449,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       : 'Remove ' + table.label + " '" + entry.name + "' and all its values from " + entry.source + ' config';
     row.appendChild(removeBtn);
   }
-  if (key === 'review.reviewers') {
+  if (key === 'review.reviewers' && !preset) {
     const addBtn = el('button', null, 'Add reviewer…');
     addBtn.onclick = () => { close(); addReviewer(refresh); };
     row.appendChild(addBtn);
@@ -389,7 +466,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   document.addEventListener('keydown', onKey);
   cancel.onclick = close;
   back.onclick = (e) => { if (e.target === back) close(); };
-  if (key === 'review.reviewers') {
+  if (key === 'review.reviewers' && !preset) {
     const roster = el('div');
     const editable = s.source === 'repo' || s.source === 'global';
     roster.appendChild(el('div', 'sub muted', editable
@@ -421,7 +498,7 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
       // A string-valued leaf travels as a TOML string, as the TUI sends it, so
       // `true`, `42` or `[a]` typed into a str field stays a string.
       const value = role || s.type === 'str' ? JSON.stringify(field.value) : field.value;
-      const d = await postJSON('/api/config', { key: role ? section + '.model' : key, value, repo: repoCb.checked });
+      const d = await postJSON('/api/config', { key: role ? section + '.model' : key, value, repo: repoCb.checked, preset });
       toast(d.message || 'set ' + key); close(); await refresh();
     } catch (e) { toast(e.message, true); save.disabled = false; }
   };
@@ -429,7 +506,8 @@ function editConfig(key, s, tables, refresh = () => {}, data = {}) {
   if (unsetBtn) unsetBtn.onclick = async () => {
     unsetBtn.disabled = true;
     try {
-      const d = await postJSON('/api/config', { key, unset: true, repo: s.source === 'repo' });
+      // Under a preset the layer is the checkbox's: the row's source reads `preset`, not a file.
+      const d = await postJSON('/api/config', { key, unset: true, repo: preset ? repoCb.checked : s.source === 'repo', preset });
       toast(d.message || 'unset ' + key); close(); await refresh();
     } catch (e) { toast(e.message, true); unsetBtn.disabled = false; }
   };

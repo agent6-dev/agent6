@@ -65,9 +65,13 @@ Editing a role's model opens one `provider/model` field with live suggestions; u
 
 In a named-entry form, a blank field keeps an existing value or uses the schema default.
 
-**Remove entry** (`x`) confirms the selected entry's name and config layer before removing the whole entry, including its subtables.
+**Remove entry** (`x`) confirms the selected entry's name and config layer before removing the whole entry, including its subtables; on the reviewer roster it picks a seat by position.
 It removes from the highest layer holding the entry, and accepts only global or repo config.
 Values from lower layers may become visible.
+The edit popup of an entry's row offers the same Add and Remove for its table.
+
+**Preset…** (`p`) picks the preset the page shows and edits: the rows are the effective config under it, and a save or an unset writes `[presets.<name>]` in the chosen layer; **Add preset…** (`P`) and **Remove preset** manage the tables ([Presets](config.md#presets)).
+With `none` picked, edits go to the global and repo config; entries are edited only then.
 
 ![The config page](screenshots/out/03-config.png)
 

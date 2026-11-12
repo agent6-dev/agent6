@@ -488,8 +488,22 @@ def machine_reasoning_snapshot(
 # --- config ------------------------------------------------------------------
 
 
+def config_presets(cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()) -> list[str]:
+    """Return the preset names the config page's picker offers, `none` first.
+
+    Args:
+        cwd: The repository.
+        config_paths: The `--config` files in command-line order.
+
+    Returns:
+        `none`, then the built-in and `[presets.*]` names, sorted.
+    """
+    names = layer.load_effective(cwd, config_paths).presets
+    return ["none", *(n for n in names if n != "none")]
+
+
 def config_payload(
-    cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
+    cwd: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = (), *, preset: str = ""
 ) -> dict[str, Any]:
     """Return the effective config per leaf, keyed by dotted key.
 
@@ -503,12 +517,14 @@ def config_payload(
     Args:
         cwd: The repository.
         config_paths: The `--config` files in command-line order.
+        preset: The preset the page shows, applied as `--preset` would be; "" shows the
+            config as the repo runs it.
 
     Returns:
         Each leaf's display fields, round-trippable `input`, and named `entry` when present.
         Scalar entry tables get individual rows. No secret is included.
     """
-    eff = layer.load_effective(cwd, config_paths)
+    eff = layer.load_effective(cwd, config_paths, preset=preset)
     resolved = confine.resolved_config_values(eff.config)
     payload: dict[str, Any] = json.loads(
         config_view.render_show(eff, as_json=True, resolved=resolved)

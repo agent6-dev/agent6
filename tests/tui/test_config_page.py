@@ -17,7 +17,7 @@ from textual import app as textual_app
 from textual import widgets
 
 from agent6 import paths
-from agent6.config import ClaudeCodeProviderEntry, OpenAIProviderEntry, layer
+from agent6.config import ClaudeCodeProviderEntry, OpenAIProviderEntry, io, layer
 from agent6.models import cache
 from agent6.models import choices as models_choices
 from agent6.ui.tui import config_forms, config_model, config_page, forms, menubar, modals
@@ -2020,5 +2020,64 @@ def test_the_edit_popup_offers_add_and_remove_for_an_entrys_table(repo: pathlib.
             plain = app.screen
             assert isinstance(plain, config_forms.EditModal)
             assert not [i for i in plain.query(forms.ActionItem) if "Add" in str(i.render())]
+
+    asyncio.run(scenario())
+
+
+def test_the_page_shows_and_edits_the_picked_preset(repo: pathlib.Path) -> None:
+    """Preset… relayers the rows; a save writes [presets.<name>]; Remove preset drops the table."""
+    cfg = paths.global_config_path()
+    cfg.write_text(
+        cfg.read_text(encoding="utf-8") + '\n[presets.fast.sandbox]\nrun_commands = "deny"\n'
+    )
+
+    def value_of(screen: config_page.ConfigScreen, section: str, leaf: str) -> str:
+        table = screen.query_one(f"#tbl-{section}", widgets.DataTable)
+        row = next(i for i in range(table.row_count) if str(table.get_row_at(i)[0]) == leaf)
+        return str(table.get_row_at(row)[1])
+
+    async def scenario() -> None:
+        app = _Host(repo)
+        async with app.run_test(size=(100, 44)) as pilot:
+            await pilot.pause()
+            screen = app.screen
+            assert isinstance(screen, config_page.ConfigScreen)
+            assert value_of(screen, "sandbox", "run_commands") == '"allow"'
+            screen.action_choose_preset()
+            await pilot.pause()
+            picker = app.screen
+            assert isinstance(picker, config_forms.PresetModal)
+            picker.query_one("#preset-name", forms.ChoiceField).select_value("fast")
+            picker.action_use()
+            await pilot.pause()
+            assert app.screen is screen
+            assert value_of(screen, "sandbox", "run_commands") == '"deny"'
+            status = str(screen.query_one("#status", widgets.Static).render())
+            assert "preset fast" in status
+            table = screen.query_one("#tbl-sandbox", widgets.DataTable)
+            row = next(
+                i for i in range(table.row_count) if str(table.get_row_at(i)[0]) == "network"
+            )
+            table.move_cursor(row=row)
+            table.focus()
+            await pilot.pause()
+            screen.action_edit()
+            await pilot.pause()
+            modal = app.screen
+            assert isinstance(modal, config_forms.EditModal)
+            modal.query_one("#edit-value", forms.ChoiceField).select_value("host")
+            modal.action_save()
+            await pilot.pause()
+            written = io.read_toml_file(cfg)["presets"]["fast"]["sandbox"]
+            assert written == {"run_commands": "deny", "network": "host"}
+            plain = io.read_toml_file(cfg).get("sandbox", {})
+            assert "network" not in plain  # the save went under the preset, not the plain table
+            screen.action_remove_preset()
+            await pilot.pause()
+            assert isinstance(app.screen, modals.ConfirmModal)
+            await pilot.press("y")
+            await pilot.pause()
+            assert "presets" not in io.read_toml_file(cfg)
+            assert value_of(screen, "sandbox", "run_commands") == '"allow"'
 
     asyncio.run(scenario())

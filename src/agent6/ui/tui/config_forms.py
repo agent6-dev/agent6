@@ -14,7 +14,7 @@ from textual import screen as textual_screen
 from textual import widgets as textual_widgets
 
 from agent6 import errors
-from agent6.config import io, notices, write
+from agent6.config import ConfigError, io, notices, write
 from agent6.ui.tui import forms, modals
 from agent6.viewmodel import config_view
 
@@ -521,3 +521,130 @@ class EntryModal(FormModal[None]):
         """Cancel on a click outside the dialog."""
         if event.widget is self:
             self.action_cancel()
+
+
+class PresetModal(FormModal[str | None]):
+    """Pick the preset the config page shows and edits; `none` is the plain config."""
+
+    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
+    CSS = (
+        forms.FORM_CSS
+        + """
+    PresetModal { align: center middle; }
+    #preset-box {
+        width: 70; height: auto;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    #preset-title { text-style: bold; }
+    #preset-actions { padding-top: 1; height: auto; }
+    """
+    )
+
+    def __init__(self, names: tuple[str, ...], current: str) -> None:
+        super().__init__()
+        self._names = names
+        self._current = current
+
+    def on_mount(self) -> None:
+        """Focus the chooser."""
+        self.query_one("#preset-name").focus()
+
+    def compose(self) -> app.ComposeResult:
+        """Yield the title, the explanation, the chooser and the actions."""
+        with containers.VerticalScroll(id="preset-box"):
+            yield textual_widgets.Static("Preset the page shows and edits", id="preset-title")
+            yield textual_widgets.Static(
+                text.Text(
+                    "The rows are the effective config under the preset, and a save writes"
+                    " [presets.<name>] in the chosen layer.\n"
+                    "none: the rows and the saves are the global and repo config.",
+                    style="dim",
+                )
+            )
+            yield forms.ChoiceField(self._names, self._current, id="preset-name")
+            with containers.Horizontal(id="preset-actions"):
+                yield forms.ActionItem("Use", "use")
+                yield forms.ActionItem("Cancel", "cancel")
+
+    def action_use(self) -> None:
+        """Return the chosen name."""
+        self.dismiss(self.query_one("#preset-name", forms.ChoiceField).value)
+
+    def action_cancel(self) -> None:
+        """Close the chooser."""
+        self.dismiss(None)
+
+
+class AddPresetModal(FormModal[str | None]):
+    """Create an empty `[presets.<name>]` table; the name comes back on success."""
+
+    BINDINGS: ClassVar = [binding.Binding("escape", "cancel", "Cancel")]
+    CSS = (
+        forms.FORM_CSS
+        + """
+    AddPresetModal { align: center middle; }
+    #addpreset-box {
+        width: 70; height: auto;
+        border: round $accent; padding: 1 2; background: $surface;
+    }
+    #addpreset-title { text-style: bold; }
+    #addpreset-actions { padding-top: 1; height: auto; }
+    """
+    )
+
+    def __init__(
+        self, repo_root: pathlib.Path, config_paths: tuple[pathlib.Path, ...] = ()
+    ) -> None:
+        super().__init__()
+        self._repo = repo_root
+        self._config_paths = config_paths
+
+    def on_mount(self) -> None:
+        """Focus the name field."""
+        self.query_one("#addpreset-name", textual_widgets.Input).focus()
+
+    def compose(self) -> app.ComposeResult:
+        """Yield the title, the name field, the target and the actions."""
+        with containers.VerticalScroll(id="addpreset-box"):
+            yield textual_widgets.Static("Add preset", id="addpreset-title")
+            yield textual_widgets.Static(
+                text.Text(
+                    "An empty [presets.<name>] table; pick it with Preset… and edit the rows"
+                    " to fill it.",
+                    style="dim",
+                )
+            )
+            yield textual_widgets.Input(
+                placeholder="name", id="addpreset-name", classes="edit-input edit-gap"
+            )
+            yield textual_widgets.Static("create in", classes="edit-label")
+            yield forms.ChoiceField(
+                ("global config", "repo config"), "global config", id="addpreset-target"
+            )
+            with containers.Horizontal(id="addpreset-actions"):
+                yield forms.ActionItem("Add", "add")
+                yield forms.ActionItem("Cancel", "cancel")
+
+    @textual.on(textual_widgets.Input.Submitted, "#addpreset-name")
+    def _input_submitted(self, event: textual_widgets.Input.Submitted) -> None:
+        """Enter in the name field adds."""
+        event.stop()
+        self.action_add()
+
+    def action_add(self) -> None:
+        """Create the table and return its name."""
+        name = self.query_one("#addpreset-name", textual_widgets.Input).value.strip()
+        to_repo = self.query_one("#addpreset-target", forms.ChoiceField).index == 1
+        try:
+            err = write.add_preset(self._repo, name, to_repo=to_repo)
+        except (ConfigError, errors.OperatorError) as exc:
+            err = str(exc)
+        if err:
+            self.notify(err, severity="error", timeout=8.0)
+            return
+        self.notify(f"Created [presets.{name}] in the {'repo' if to_repo else 'global'} config.")
+        self.dismiss(name)
+
+    def action_cancel(self) -> None:
+        """Close the form."""
+        self.dismiss(None)

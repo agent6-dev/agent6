@@ -315,6 +315,7 @@ Set `preset = "none"` in the repo config to stop lookup before a global preset, 
 This keeps the layers' own settings; it does not reset them to defaults.
 An empty string is refused.
 The name `none` is reserved, so `[presets.none]` is refused.
+The TUI and web config pages edit a preset in place: **Preset…** (the web's preset picker) shows the effective config under it, a save or an unset writes `[presets.<name>]` in the chosen layer, and **Add preset…** and **Remove preset** manage the tables; with `none` picked, edits go to the global and repo config, and entries (providers, MCP servers, skills, reviewer seats) are edited only then.
 
 <!-- presets-table -->
 

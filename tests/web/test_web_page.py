@@ -22,7 +22,7 @@ import pytest
 from agent6.ui.web import page
 
 # sha256 of PAGE_HTML; an edit to page.py, client.js or styles.css moves it in the same commit.
-PAGE_SHA256 = "d8a8d3ecc0ccd0d1542591ac17cb0e610aea0669f828e8c4c5580ff70e9165a4"
+PAGE_SHA256 = "ea34750d01d51eba06c4112be5194da35e043bb50a69e590b5da65792d521021"
 
 
 def test_rendered_page_bytes_are_pinned() -> None:
@@ -372,6 +372,7 @@ const setting = {
   value: [{focus: 'tests'}, {focus: 'tests'}],
 };
 const getJSON = async path => path === '/api/config/entry_tables' ? {tables: []}
+  : path === '/api/config/presets' ? {names: ['none']}
   : path === '/api/config/reviewer_choices'
   ? {effort: ['off', 'low', 'medium', 'high', 'xhigh', 'max']}
   : path === '/api/config' ? {'review.reviewers': setting} : {values: []};

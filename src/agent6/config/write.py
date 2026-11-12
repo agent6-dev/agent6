@@ -943,6 +943,60 @@ def remove_entry(
     return unset(repo_root, key, to_repo=to_repo)
 
 
+def preset_key(preset: str, key: str) -> str:
+    """Return the key an edit under a selected preset writes: `presets.<name>.<key>`.
+
+    Args:
+        preset: The selected preset; "" writes the key itself.
+        key: The dotted config key.
+
+    Returns:
+        The key to write.
+    """
+    return io.render_key(("presets", preset, *io.split_key(key))) if preset else key
+
+
+def add_preset(repo_root: pathlib.Path, name: str, *, to_repo: bool = False) -> str | None:
+    """Create an empty `[presets.<name>]` table in the chosen layer; an existing one is kept.
+
+    Args:
+        repo_root: The repo.
+        name: The preset name, stripped; blank and the reserved `none` are refused.
+        to_repo: The repo layer instead of the global one.
+
+    Returns:
+        The input or write error, else None.
+
+    Raises:
+        ConfigError: The target does not parse.
+        OperatorError: The target cannot be written.
+    """
+    name = name.strip()
+    if not name:
+        return "preset name is required"
+    if name == "none":
+        return '"none" is reserved for selecting no preset'
+    target = _write_target(repo_root, to_repo=to_repo)
+    tables = io.read_toml_file(target).get("presets") if target.is_file() else None
+    if isinstance(tables, dict) and name in tables:
+        return None
+    return set_config_table(repo_root, io.render_key(("presets", name)), {}, to_repo=to_repo)
+
+
+def remove_preset(repo_root: pathlib.Path, name: str, *, to_repo: bool = False) -> UnsetResult:
+    """Remove a `[presets.<name>]` table with everything under it from the chosen layer.
+
+    Args:
+        repo_root: The repo.
+        name: The preset name.
+        to_repo: The repo layer instead of the global one.
+
+    Returns:
+        Whether the table was present and any revalidation error.
+    """
+    return unset_config_table(repo_root, io.render_key(("presets", name)), to_repo=to_repo)
+
+
 def entry_of(key: str) -> tuple[EntryTable, str] | None:
     """Return the named entry a config leaf belongs to, or None.
 

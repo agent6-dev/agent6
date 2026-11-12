@@ -1777,6 +1777,43 @@ def test_config_payload_names_the_model_picker_role_for_every_role(
     assert payload["sandbox.isolation"]["model_role"] == ""
 
 
+def test_config_page_shows_and_edits_one_preset(server: tuple[web_server.WebServer, int]) -> None:
+    """`?preset=` shows the effective config under a preset; a write with `preset` lands in it."""
+    _srv, port = server
+    cfg = paths.global_config_path()
+    cfg.parent.mkdir(parents=True, exist_ok=True)
+    cfg.write_text('[presets.fast.sandbox]\nrun_commands = "deny"\n')
+    st, body, _ = _get(port, "/api/config/presets")
+    assert st == 200
+    names = json.loads(body)["names"]
+    assert names[0] == "none" and "fast" in names and "review" in names
+    plain = json.loads(_get(port, "/api/config")[1])
+    under = json.loads(_get(port, "/api/config?preset=fast")[1])
+    assert plain["sandbox.run_commands"]["value"] == "ask"
+    assert (under["sandbox.run_commands"]["value"], under["sandbox.run_commands"]["source"]) == (
+        "deny",
+        "preset",
+    )
+    status, _ = _post(
+        port, "/api/config", {"key": "sandbox.network", "value": '"host"', "preset": "fast"}
+    )
+    assert status == 200
+    assert io.read_toml_file(cfg)["presets"]["fast"]["sandbox"]["network"] == "host"
+    status, _ = _post(
+        port, "/api/config", {"key": "sandbox.network", "unset": True, "preset": "fast"}
+    )
+    assert status == 200
+    assert "network" not in io.read_toml_file(cfg)["presets"]["fast"]["sandbox"]
+    status, answer = _post(port, "/api/config/preset", {"name": "slow"})
+    assert status == 200 and "[presets.slow]" in str(answer["message"])
+    assert "slow" in json.loads(_get(port, "/api/config/presets")[1])["names"]
+    status, _ = _post(port, "/api/config/preset/remove", {"name": "slow"})
+    assert status == 200
+    assert "slow" not in io.read_toml_file(cfg).get("presets", {})
+    status, answer = _post(port, "/api/config/preset", {"name": "none"})
+    assert status != 200 and "reserved" in str(answer.get("error", answer))
+
+
 def test_config_suggest_endpoint_accepts_the_selected_provider(
     server: tuple[web_server.WebServer, int], monkeypatch: pytest.MonkeyPatch
 ) -> None:

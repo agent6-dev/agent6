@@ -251,6 +251,18 @@ class LoginBody(_Body):
     secret: str
 
 
+class PresetBody(_Body):
+    """A preset table to create or remove.
+
+    Attributes:
+        name: The preset name.
+        repo: Whether to create it in the repo config rather than the global one.
+    """
+
+    name: str
+    repo: bool = False
+
+
 class ConfigSetBody(_Body):
     """A config write; `unset` removes the key from the target layer instead.
 
@@ -259,11 +271,13 @@ class ConfigSetBody(_Body):
         value: The string value parsed by the config writer.
         repo: Whether to write repo config rather than global config.
         unset: Whether to remove the setting instead of assigning value.
+        preset: The preset the page edits; the key lands under `[presets.<name>]`.
     """
 
     key: str
     value: str = ""
     repo: bool = False
+    preset: str = ""
     unset: bool = False
 
 
@@ -597,6 +611,8 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             "/api/config",
             "/api/config/entry",
             "/api/config/entry/remove",
+            "/api/config/preset",
+            "/api/config/preset/remove",
             "/api/config/reviewer",
             "/api/config/reviewer/remove",
         ):
@@ -660,15 +676,30 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             ok, msg = actions.remove_reviewer(
                 self.cwd, removal.index, repo=removal.repo, config_paths=self.config_paths
             )
+        elif path == "/api/config/preset":
+            pb = PresetBody.model_validate(self._read_body())
+            ok, msg = actions.add_preset(self.cwd, pb.name, repo=pb.repo)
+        elif path == "/api/config/preset/remove":
+            pb = PresetBody.model_validate(self._read_body())
+            ok, msg = actions.remove_preset(self.cwd, pb.name)
         else:
             body = ConfigSetBody.model_validate(self._read_body())
             if body.unset:
                 ok, msg = actions.unset_config(
-                    self.cwd, body.key, repo=body.repo, config_paths=self.config_paths
+                    self.cwd,
+                    body.key,
+                    repo=body.repo,
+                    preset=body.preset,
+                    config_paths=self.config_paths,
                 )
             else:
                 ok, msg = actions.set_config(
-                    self.cwd, body.key, body.value, repo=body.repo, config_paths=self.config_paths
+                    self.cwd,
+                    body.key,
+                    body.value,
+                    repo=body.repo,
+                    preset=body.preset,
+                    config_paths=self.config_paths,
                 )
         self._ok_or_err(ok, {"message": msg}, msg)
 
@@ -869,7 +900,12 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             self._send_routes()
             return
         if path == "/api/config":
-            self._send_json(model.config_payload(self.cwd, self.config_paths))
+            query = parse.parse_qs(parse.urlsplit(self.path).query, keep_blank_values=True)
+            preset = (query.get("preset") or [""])[0]
+            self._send_json(model.config_payload(self.cwd, self.config_paths, preset=preset))
+            return
+        if path == "/api/config/presets":
+            self._send_json({"names": model.config_presets(self.cwd, self.config_paths)})
             return
         if path == "/api/config/entry_tables":
             self._send_json(

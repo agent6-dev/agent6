@@ -678,6 +678,7 @@ def set_config(
     value: str,
     *,
     repo: bool = False,
+    preset: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Set a config leaf or update a section through the validated `agent6 config set` writer.
@@ -687,6 +688,7 @@ def set_config(
         key: The setting's dotted name, such as `sandbox.network`.
         value: The value as typed.
         repo: Write to the per-repo config instead of the global one.
+        preset: The preset the page edits; the key lands under `[presets.<name>]`.
         config_paths: The `--config` files in command-line order.
 
     Returns:
@@ -695,8 +697,52 @@ def set_config(
     argv = [*spawn.agent6_argv(config_paths), "config", "set"]
     if repo:
         argv.append("--repo")
-    argv += ["--", key, value]
+    argv += ["--", write.preset_key(preset, key), value]
     return spawn.run_cli_capture(argv, cwd)
+
+
+def add_preset(cwd: pathlib.Path, name: str, *, repo: bool = False) -> tuple[bool, str]:
+    """Create an empty `[presets.<name>]` table in the chosen layer.
+
+    Args:
+        cwd: The repository.
+        name: The preset name.
+        repo: The repo layer instead of the global one.
+
+    Returns:
+        Whether the table exists now, and the note or the refusal.
+    """
+    try:
+        err = write.add_preset(cwd, name, to_repo=repo)
+    except (ConfigError, errors.OperatorError) as exc:
+        return False, str(exc)
+    if err:
+        return False, err
+    return True, f"[presets.{name.strip()}] is in the {'repo' if repo else 'global'} config."
+
+
+def remove_preset(cwd: pathlib.Path, name: str) -> tuple[bool, str]:
+    """Remove a `[presets.<name>]` table from the global and repo config.
+
+    Args:
+        cwd: The repository.
+        name: The preset name.
+
+    Returns:
+        Whether anything was removed, and the note or the refusal.
+    """
+    removed = False
+    for to_repo in (True, False):
+        try:
+            result = write.remove_preset(cwd, name, to_repo=to_repo)
+        except (ConfigError, errors.OperatorError) as exc:
+            return False, str(exc)
+        if result.error:
+            return False, result.error
+        removed = removed or result.removed
+    if not removed:
+        return False, f"[presets.{name}] is not in the global or repo config."
+    return True, f"Removed [presets.{name}]."
 
 
 def add_entry(
@@ -855,6 +901,7 @@ def unset_config(
     key: str,
     *,
     repo: bool = False,
+    preset: str = "",
     config_paths: tuple[pathlib.Path, ...] = (),
 ) -> tuple[bool, str]:
     """Unset one config leaf through `agent6 config unset`.
@@ -863,6 +910,7 @@ def unset_config(
         cwd: The repository.
         key: The setting's dotted name, such as `sandbox.network`.
         repo: Remove it from the per-repo config instead of the global one.
+        preset: The preset the page edits; the key is read under `[presets.<name>]`.
         config_paths: The `--config` files in command-line order.
 
     Returns:
@@ -871,5 +919,5 @@ def unset_config(
     argv = [*spawn.agent6_argv(config_paths), "config", "unset"]
     if repo:
         argv.append("--repo")
-    argv += ["--", key]
+    argv += ["--", write.preset_key(preset, key)]
     return spawn.run_cli_capture(argv, cwd)

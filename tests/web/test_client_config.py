@@ -88,8 +88,12 @@ async function run() {
   await renderConfig();
   const bar = all(view).find(e => e.className === 'row cfg-bar');
   assert.deepEqual(bar.children.map(e => e.textContent), [
-    '', 'Modified only', 'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…',
+    '', 'Modified only', '', 'Add preset…', 'Remove preset',
+    'Add provider…', 'Add MCP server…', 'Add skill…', 'Add reviewer…',
   ]);
+  assert.equal(bar.children[2].tag, 'select');  // the preset picker, none first
+  assert.equal(bar.children[2].children[0].value, 'none');
+  assert.equal(button('Remove preset').disabled, true);
   assert.equal(bar.children[0].placeholder, 'filter settings…');
   bar.children[0].value = 'providers.';
   bar.children[0].oninput();
@@ -149,7 +153,7 @@ async function run() {
   }
   row('providers.openrouter.base_url').onclick();
   await button('Add provider…', overlay()).onclick();
-  assert.equal(overlay().children[0]['aria-label'], 'add provider');  // the popup hands over to the add form
+  assert.equal(overlay().children[0]['aria-label'], 'add provider');  // handed to the add form
   button('Cancel', overlay()).onclick();
   for (const [key, label, table, name, repo] of [
     ['mcp.servers.local.url', 'MCP server', 'mcp.servers', 'local', true],
@@ -263,6 +267,28 @@ async function run() {
   assert.ok(all(overlay()).some(e =>
     e.role === 'status' && e.textContent.includes('Catalog unavailable')));
   await button('Cancel', overlay()).onclick();
+  // One preset shown and edited: the picker refetches under it and a save carries it.
+  await postJSON('/api/config/preset', {name: 'fast'});
+  await renderConfig();
+  const picker = all(view).find(e => e.className === 'field cfg-preset');
+  assert.ok(picker.children.some(e => e.value === 'fast'));
+  picker.value = 'fast';
+  await picker.onchange();
+  assert.equal(button('Remove preset').disabled, false);
+  assert.equal(button('Add provider…').disabled, true);
+  row('sandbox.network').onclick();
+  assert.ok(!all(overlay()).some(e =>
+    e.tag === 'button' && e.textContent.startsWith('Add ')));
+  all(overlay()).find(e => e.tag === 'select').value = 'host';
+  await button('Save', overlay()).onclick();
+  assert.deepEqual(writes.at(-1), {path: '/api/config',
+    body: {key: 'sandbox.network', value: 'host', repo: false, preset: 'fast'}});
+  const refetched = await getJSON('/api/config?preset=fast');
+  assert.equal(refetched['sandbox.network'].source, 'preset');
+  all(view).find(e => e.className === 'field cfg-preset').value = 'none';
+  await all(view).find(e => e.className === 'field cfg-preset').onchange();
+  await postJSON('/api/config/preset/remove', {name: 'fast'});
+  await renderConfig();
   row('sandbox.run_commands').onclick();
   const saving = button('Save', overlay()).onclick();
   routeGen++; activeOverlayClose();

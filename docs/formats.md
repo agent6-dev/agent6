@@ -2782,6 +2782,17 @@ Source: [`agent6.ui.web.server.LoginBody`](https://github.com/agent6-dev/agent6/
 | --- | --- | --- |
 | `secret` | `str` | The server secret as typed, normalized before comparison. |
 
+### PresetBody
+
+**Support: public.** A preset table to create or remove.
+
+Source: [`agent6.ui.web.server.PresetBody`](https://github.com/agent6-dev/agent6/blob/master/src/agent6/ui/web/server.py).
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | `str` | The preset name. |
+| `repo` | `bool` | Whether to create it in the repo config rather than the global one. |
+
 ### ConfigSetBody
 
 **Support: public.** A config write; `unset` removes the key from the target layer instead.
@@ -2793,6 +2804,7 @@ Source: [`agent6.ui.web.server.ConfigSetBody`](https://github.com/agent6-dev/age
 | `key` | `str` | The dotted config key. |
 | `value` | `str` | The string value parsed by the config writer. |
 | `repo` | `bool` | Whether to write repo config rather than global config. |
+| `preset` | `str` | The preset the page edits; the key lands under `[presets.<name>]`. |
 | `unset` | `bool` | Whether to remove the setting instead of assigning value. |
 
 ### ModelsBrief
