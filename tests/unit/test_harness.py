@@ -7670,7 +7670,10 @@ def test_parallel_group_counter_reaches_disk_before_the_group_runs(tmp_path: pat
         return [
             subrun.LaneResult(
                 spec=subrun.LaneSpec(
-                    lane=i, session_id=f"run-{group}-l{i}", workdir=tmp_path, route=None
+                    lane=i,
+                    session_id=f"run-{group}-l{i}",
+                    workdir=tmp_path,
+                    settings=None,
                 ),
                 session_dir=tmp_path,
                 branch="b",

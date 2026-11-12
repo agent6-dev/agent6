@@ -47,13 +47,14 @@ def parse_spec(spec: str, *, limit: int) -> list[str | None]:
     """Parse a lane spec into one entry per lane, the grammar the directive and the CLI share.
 
     Args:
-        spec: A positive lane count, a comma-separated `[provider/]model` list, or "".
+        spec: A positive lane count, a comma-separated selector list (an exact role name
+            or `[provider/]model`), or "".
         limit: The caller's `[parallel].max_lanes`; an over-limit count refuses before
             the list is built.
 
     Returns:
-        One entry per lane: None for the configured worker model, else the lane's
-        model text for the caller to resolve. "" is one default lane.
+        One entry per lane: None for the worker's own settings, else the lane's selector
+        text for the caller to resolve. "" is one default lane.
 
     Raises:
         DirectiveError: The count is not positive or over the limit, or the list

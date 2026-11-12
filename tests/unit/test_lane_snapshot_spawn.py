@@ -117,7 +117,7 @@ def test_detached_lane_loads_snapshot_and_records_notes(
         lane=1,
         session_id="detached-l1",
         workdir=tmp_path / "lane-1",
-        route=kinds.ModelRoute("p", "local-reasoning"),
+        settings=kinds.ModelSettings(kinds.ModelRoute("p", "local-reasoning")),
     )
     session_dir = paths.state_dir(spec.workdir) / "sessions" / "runs" / spec.session_id
     try:

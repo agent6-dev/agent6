@@ -323,7 +323,7 @@ def directive_model_refusal(
     try:
         cap = cfg.parallel.max_lanes
         routes = [
-            cfg.model_route("worker", m) if m else None
+            chosen.route if (chosen := cfg.lane_settings(m)) is not None else None
             for seg in segments
             for m in agent6_directive.parse_spec(seg.spec, limit=cap)
         ]

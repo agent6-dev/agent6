@@ -23,6 +23,8 @@ IsolationLevel = Literal["full", "partial", "none"]
 NetworkMode = Literal["host", "session", "none"]
 RoleName = Literal["default", "helper", "planner", "reviewer", "worker"]
 MODEL_ROLES: tuple[RoleName, ...] = ("default", "helper", "planner", "reviewer", "worker")
+# The provider's reasoning setting; its meaning depends on the backend.
+EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 # The modes `agent6 resume` accepts; `session_kind` answers the wider "is this a known mode".
 ResumableMode = Literal["run", "plan", "ask"]
 # What the REPL's after-commit hook tells the loop to do next; `exit` stops with no prompt.
@@ -526,6 +528,21 @@ class ModelRoute:
     def spec(self) -> str:
         """The pair as `provider/model`, the one spelling every surface accepts."""
         return f"{self.provider}/{self.model}"
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class ModelSettings:
+    """A route with the sampling settings that travel with it.
+
+    Attributes:
+        route: The provider and model.
+        effort: The reasoning effort, None for the backend's default.
+        temperature: The sampling temperature, None for the provider's default.
+    """
+
+    route: ModelRoute
+    effort: EffortLevel | None = None
+    temperature: float | None = None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

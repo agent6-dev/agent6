@@ -177,7 +177,9 @@ def dispatch_parallel(
         common.refuse(f"{exc}")
         return 2
     # Before any clone or spawn: a typo refuses when a cache can check it, else warn and proceed.
-    verdict = validate.validate_spec_models([ln.route for ln in lanes], cfg)
+    verdict = validate.validate_spec_models(
+        [ln.settings.route if ln.settings is not None else None for ln in lanes], cfg
+    )
     if verdict.refused:
         common.refuse(f"{validate.refusal_message(verdict, directive=False)}")
         return 2

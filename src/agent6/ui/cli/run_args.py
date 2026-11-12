@@ -107,11 +107,13 @@ def _add_run_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     run_parallel_flag = run_p.add_argument(
         "--parallel",
         default="",
-        metavar="N|[PROVIDER/]MODEL,...",
+        metavar="N|SELECTOR,...",
         help=(
             "Fan out isolated lanes: an integer N runs N lanes on the worker model,"
-            " a comma-separated list runs one lane per entry (provider/model, or a"
-            " model id on the worker's provider). Each lane clones the repo, runs"
+            " a comma-separated list runs one lane per selector: a role name (default,"
+            " worker, planner, reviewer, helper) brings that role's model, effort and"
+            " temperature; provider/model, or a model id on the worker's provider, runs"
+            " with the worker's effort and temperature. Each lane clones the repo, runs"
             " independently, and lands its own branch; results are auto-compared"
             " and ranked (nothing is merged). Capped by [parallel].max_lanes;"
             " combine with --max-usd for a per-lane budget."

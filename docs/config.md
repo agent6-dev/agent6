@@ -626,7 +626,7 @@ The [`--secret` target](#creating-and-inspecting) writes and removes them; `[tel
 
 ## `[parallel]`
 
-Lane limit for `run --parallel N|[provider/]model,...`.
+Lane limit for `run --parallel N|selector,...`.
 Each lane is a disposable clone running its own `agent6/<id>` branch; lanes are imported and ranked, nothing merges for you.
 `--max-usd` is per lane (the total is printed before spawning); `--auto-approve` forwards to every lane.
 A live run dispatches lanes the same way via `/parallel [SPEC --] TASK` ([grammar and examples](usage.md#parallel-directive)).

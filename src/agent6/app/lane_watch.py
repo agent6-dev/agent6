@@ -271,7 +271,7 @@ def print_lane_status(
             to answer.
         reporter: Receives the line.
     """
-    model = f" ({spec.route.spec})" if spec.route else ""
+    model = f" ({spec.settings.route.spec})" if spec.settings is not None else ""
     cost_s = f"  {cost}" if cost else ""
     state = (
         f"waiting on {waiting} (answer via agent6 attach {spec.session_id}, the web or TUI hub)"

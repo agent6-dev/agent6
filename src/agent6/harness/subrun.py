@@ -30,13 +30,14 @@ class LaneSpec:
         lane: The lane's index in its group.
         session_id: The lane's session id.
         workdir: The lane's workspace clone.
-        route: The lane's model route, None for the worker's own.
+        settings: The lane's route, effort and temperature, resolved from its selector; None
+            for the worker's own, which the lane's config carries unchanged.
     """
 
     lane: int
     session_id: str
     workdir: pathlib.Path
-    route: kinds.ModelRoute | None
+    settings: kinds.ModelSettings | None
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -64,7 +65,8 @@ class LaneTask:
 
     Attributes:
         task: The lane's task text.
-        model: The lane's `[provider/]model` text, None for the worker's own route.
+        model: The lane's selector (a role name or `[provider/]model`), None for the
+            worker's own settings.
         pins: The operator's pins, passed beside the task so the lane's manifest task stays clean.
     """
 

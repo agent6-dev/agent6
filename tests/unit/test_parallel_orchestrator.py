@@ -271,8 +271,9 @@ def _specs(tmp_path: pathlib.Path, cfg: Config, fanout_id: str, spec: str) -> li
 
 
 def test_build_lane_specs_int_layout(tmp_path: pathlib.Path) -> None:
+    """A count runs the worker's own settings: no selection, the lane's config unchanged."""
     lanes = _specs(tmp_path, Config(), "fan", "3")
-    assert [(ln.lane, ln.session_id, ln.route) for ln in lanes] == [
+    assert [(ln.lane, ln.session_id, ln.settings) for ln in lanes] == [
         (1, "fan-l1", None),
         (2, "fan-l2", None),
         (3, "fan-l3", None),
@@ -294,10 +295,16 @@ def test_build_lane_specs_model_list(tmp_path: pathlib.Path) -> None:
         }
     )
     lanes = _specs(tmp_path, cfg, "fan", "kimi,p/glm")
-    assert [(ln.lane, ln.route) for ln in lanes] == [
+    chosen = [ln.settings for ln in lanes]
+    assert all(c is not None for c in chosen)
+    settings = [c for c in chosen if c is not None]
+    assert [(ln.lane, c.route) for ln, c in zip(lanes, settings, strict=True)] == [
         (1, kinds.ModelRoute("o", "kimi")),
         (2, kinds.ModelRoute("p", "glm")),
     ]
+    # A route-named lane runs the worker's effort and temperature.
+    worker = cfg.role_settings("worker")
+    assert {(c.effort, c.temperature) for c in settings} == {(worker.effort, worker.temperature)}
 
 
 def test_build_lane_specs_refuses_an_entry_naming_no_model(tmp_path: pathlib.Path) -> None:
@@ -654,7 +661,10 @@ def test_bridge_spawner_argv_ends_options_before_task(
 
     cfg = Config()
     spec = subrun.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "work" / "lane-1",
+        settings=None,
     )
     app_lanes.bridge_spawner(
         spec,
@@ -696,7 +706,10 @@ def test_a_lane_is_seeded_with_the_repos_memory(
         return workdir, ""
 
     spec = subrun.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "work" / "lane-1",
+        settings=None,
     )
     app_lanes.bridge_spawner(
         spec, "task", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
@@ -727,7 +740,10 @@ def test_bridge_spawner_argv_includes_auto_approve_when_set(
 
     cfg = Config()
     spec = subrun.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "work" / "lane-1",
+        settings=None,
     )
     app_lanes.bridge_spawner(
         spec, "do it", cfg=cfg, origin=origin, max_usd=None, auto_approve=True,
@@ -754,7 +770,10 @@ def test_bridge_spawner_argv_omits_auto_approve_by_default(
 
     cfg = Config()
     spec = subrun.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=tmp_path / "work" / "lane-1", route=None
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "work" / "lane-1",
+        settings=None,
     )
     app_lanes.bridge_spawner(
         spec, "do it", explicit_leaves=frozenset(), cfg=cfg, origin=origin, max_usd=None,
@@ -787,7 +806,10 @@ def test_run_lane_to_completion_forwards_auto_approve_to_the_default_spawner(
     monkeypatch.setattr(app_lanes, "bridge_spawner", fake_bridge)
     cfg = Config()
     spec = subrun.LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
+        lane=1,
+        session_id="co-p1-l1",
+        workdir=tmp_path / "work" / "co-p1-l1",
+        settings=None,
     )
 
     app_lanes.run_lane_to_completion(
@@ -894,7 +916,12 @@ def test_await_lanes_status_line_flags_a_waiting_lane(
         {"type": "session.start", "mode": "run", "user_task": "t"},
         {"type": "question.prompt", "id": "question-1"},
     )
-    spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "wd",
+        settings=None,
+    )
     res = subrun.LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
     # One poll only: "waiting" prints the hint, and the dead worker makes that
@@ -940,7 +967,12 @@ def test_a_stop_that_cannot_be_written_ends_the_wait_after_the_grace(
 
     lane = tmp_path / "lane"
     _lane_logs(lane, {"type": "session.start", "mode": "run", "user_task": "t"})
-    spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "wd",
+        settings=None,
+    )
     res = subrun.LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
     polls = 0
 
@@ -2196,7 +2228,10 @@ def test_run_lane_to_completion_imports_and_stamps(
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fanout_id="p1")
     spec = subrun.LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
+        lane=1,
+        session_id="co-p1-l1",
+        workdir=tmp_path / "work" / "co-p1-l1",
+        settings=None,
     )
     memory.add(paths.state_dir(spec.workdir), "lane-fact", "The flaky test is test_clock.")
 
@@ -2248,7 +2283,10 @@ def test_run_lane_to_completion_failed_spawn_imports_nothing(
     cfg = Config()
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state", fail={1})
     spec = subrun.LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
+        lane=1,
+        session_id="co-p1-l1",
+        workdir=tmp_path / "work" / "co-p1-l1",
+        settings=None,
     )
 
     res = app_lanes.run_lane_to_completion(
@@ -2283,7 +2321,10 @@ def test_a_failed_lane_never_joins_the_coordinator(
         origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "failed"}
     )
     spec = subrun.LaneSpec(
-        lane=1, session_id="co-pf-l1", workdir=tmp_path / "work" / "co-pf-l1", route=None
+        lane=1,
+        session_id="co-pf-l1",
+        workdir=tmp_path / "work" / "co-pf-l1",
+        settings=None,
     )
 
     res = app_lanes.run_lane_to_completion(
@@ -2320,7 +2361,10 @@ def test_a_crashed_lane_never_joins_the_coordinator(
         origin, origin_state, tmp_path / "lane-state", status_by_lane={1: "stale"}
     )
     spec = subrun.LaneSpec(
-        lane=1, session_id="co-ps-l1", workdir=tmp_path / "work" / "co-ps-l1", route=None
+        lane=1,
+        session_id="co-ps-l1",
+        workdir=tmp_path / "work" / "co-ps-l1",
+        settings=None,
     )
 
     res = app_lanes.run_lane_to_completion(
@@ -2402,7 +2446,10 @@ def test_run_lane_to_completion_imports_under_the_group_lock(
 
     monkeypatch.setattr(subrun, "import_run", observe)
     spec = subrun.LaneSpec(
-        lane=1, session_id="co-p1-l1", workdir=tmp_path / "work" / "co-p1-l1", route=None
+        lane=1,
+        session_id="co-p1-l1",
+        workdir=tmp_path / "work" / "co-p1-l1",
+        settings=None,
     )
     res = app_lanes.run_lane_to_completion(
         spec,
@@ -2437,7 +2484,10 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     spawner = _FakeSpawner(origin, origin_state, tmp_path / "lane-state")
     per_repo = workdirs.workdir_base(cfg, origin)
     spec = subrun.LaneSpec(
-        lane=1, session_id="co-p9-l1", workdir=per_repo / "co" / "grp" / "lane-1", route=None
+        lane=1,
+        session_id="co-p9-l1",
+        workdir=per_repo / "co" / "grp" / "lane-1",
+        settings=None,
     )
     res = app_lanes.run_lane_to_completion(
         spec,
@@ -2464,7 +2514,10 @@ def test_run_lane_to_completion_cleans_up_imported_clone(
     git_ops.create_branch(origin, "main")
     spawner2 = _FakeSpawner(origin, origin_state, tmp_path / "lane-state-2")
     spec2 = subrun.LaneSpec(
-        lane=1, session_id="co-p8-l1", workdir=tmp_path / "work" / "grp8" / "lane-1", route=None
+        lane=1,
+        session_id="co-p8-l1",
+        workdir=tmp_path / "work" / "grp8" / "lane-1",
+        settings=None,
     )
     res2 = app_lanes.run_lane_to_completion(
         spec2,
@@ -2524,7 +2577,10 @@ def test_build_lane_spawner_builds_specs_and_preserves_order(
     results = dispatch(lanes, "p2")
 
     assert [r.spec.session_id for r in results] == ["co-p2-l1", "co-p2-l2"]
-    assert [r.spec.route for r in results] == [kinds.ModelRoute("o", "kimi"), None]
+    assert [r.spec.settings.route if r.spec.settings else None for r in results] == [
+        kinds.ModelRoute("o", "kimi"),
+        None,
+    ]
     assert sorted(s[0] for s in seen) == [1, 2]  # every lane ran once
     # One name for the group: `adopt_orphan_lane` and the clone sweep both
     # derive a lane's clone from the lineage its manifest recorded, so the dir
@@ -2635,7 +2691,12 @@ def test_await_lane_returns_when_should_stop_fires(
     session_dir = lane_dir / "sub"
     # a live lane: never terminal
     process.write_worker_pid(session_dir, os.getpid())
-    spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="co-p1-l1",
+        workdir=tmp_path / "w",
+        settings=None,
+    )
     res = subrun.LaneResult(
         spec=spec, session_dir=session_dir, branch="agent6/x", ok=True, error=""
     )
@@ -2663,7 +2724,12 @@ def test_run_lane_to_completion_interrupted_stops_lane_and_skips_import(
     _write_fake_run(lane_dir, "t", status="running", cost=0.0)
     # live forever from the test's view
     process.write_worker_pid(lane_dir, os.getpid())
-    spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="co-p1-l1",
+        workdir=tmp_path / "w",
+        settings=None,
+    )
 
     def fake_spawner(spec: subrun.LaneSpec, task: str) -> subrun.LaneResult:
         return subrun.LaneResult(
@@ -2770,7 +2836,12 @@ def test_lane_config_forces_a_run_branch(tmp_path: pathlib.Path) -> None:
 
     base = Config()
     cfg = base.model_copy(update={"git": base.git.model_copy(update={"branch_per_run": False})})
-    spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "clone", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "clone",
+        settings=None,
+    )
     path = workdirs.write_lane_config(
         cfg, spec, explicit_leaves=frozenset({"git.branch_per_run"})
     ).path
@@ -2795,7 +2866,7 @@ def test_lane_config_carries_the_lane_route(tmp_path: pathlib.Path) -> None:
         lane=1,
         session_id="fan-l1",
         workdir=tmp_path / "clone",
-        route=kinds.ModelRoute("p", "other"),
+        settings=kinds.ModelSettings(kinds.ModelRoute("p", "other")),
     )
     written = tomllib.loads(
         workdirs.write_lane_config(cfg, spec, explicit_leaves=frozenset()).path.read_text(
@@ -3060,7 +3131,7 @@ def test_an_unattended_fan_out_does_not_park_its_lanes_on_a_question(
             lane=lane,
             session_id=f"fan-l{lane}",
             workdir=tmp_path / "work" / f"lane-{lane}",
-            route=None,
+            settings=None,
         )
         result = app_lanes.bridge_spawner(
             spec, "do it", cfg=Config(), origin=origin, max_usd=None, lane_away=away,
@@ -3097,7 +3168,10 @@ def test_lane_is_self_describing_from_birth(
         return workdir, ""
 
     spec = subrun.LaneSpec(
-        lane=2, session_id="fan-l2", workdir=tmp_path / "work" / "lane-2", route=None
+        lane=2,
+        session_id="fan-l2",
+        workdir=tmp_path / "work" / "lane-2",
+        settings=None,
     )
     app_lanes.bridge_spawner(
         spec, "do it", explicit_leaves=frozenset(), cfg=Config(), origin=origin, max_usd=None,
@@ -3167,7 +3241,12 @@ def test_lane_sampling_notes_survive_import_and_reach_both_reports(
         }
     )
     note = "models.worker.temperature: selected None; TOML key omitted; reload uses 0.0."
-    spec = subrun.LaneSpec(lane=1, session_id="notes-l1", workdir=tmp_path / "clone", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="notes-l1",
+        workdir=tmp_path / "clone",
+        settings=None,
+    )
 
     def child(argv: list[str], cwd: pathlib.Path, **kwargs: Any) -> tuple[pathlib.Path, str]:
         config_path = pathlib.Path(argv[argv.index("--config") + 1])
@@ -3617,7 +3696,12 @@ def test_a_stop_request_on_the_coordinator_ends_the_await_like_ctrl_c(
     """
     lane = tmp_path / "lane"
     _write_fake_run(lane, "t", status="running", cost=0.0)
-    spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "wd",
+        settings=None,
+    )
     res = subrun.LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
     def _no_sleep(*_args: object) -> None:
@@ -3646,7 +3730,12 @@ def test_a_plain_stop_on_the_coordinator_lets_the_lanes_finish_their_turns(
     """
     lane = tmp_path / "lane"
     _write_fake_run(lane, "t", status="running", cost=0.0)
-    spec = subrun.LaneSpec(lane=1, session_id="fan-l1", workdir=tmp_path / "wd", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="fan-l1",
+        workdir=tmp_path / "wd",
+        settings=None,
+    )
     res = subrun.LaneResult(spec=spec, session_dir=lane, branch="agent6/fan-l1", ok=True, error="")
 
     def _no_sleep(*_args: object) -> None:
@@ -3676,7 +3765,12 @@ def test_a_plain_stop_escalates_to_now_when_the_operator_stops_again(
     lane_dir = tmp_path / "lane-run" / "sub"
     _write_fake_run(lane_dir, "t", status="running", cost=0.0)
     process.write_worker_pid(lane_dir, os.getpid())  # live forever from the test's view
-    spec = subrun.LaneSpec(lane=1, session_id="co-p1-l1", workdir=tmp_path / "w", route=None)
+    spec = subrun.LaneSpec(
+        lane=1,
+        session_id="co-p1-l1",
+        workdir=tmp_path / "w",
+        settings=None,
+    )
     asked: list[bool] = []
     real_request = ipc.request_stop
 

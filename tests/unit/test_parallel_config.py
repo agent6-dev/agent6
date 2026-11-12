@@ -61,7 +61,10 @@ def test_lane_config_carries_the_protect_git_word(repo: pathlib.Path, word: str)
     _write_repo_config(repo, toml)
     origin = layer.load_effective(repo)
     spec = subrun.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=repo.parent / "lanes" / "lane-1", route=None
+        lane=1,
+        session_id="fan-l1",
+        workdir=repo.parent / "lanes" / "lane-1",
+        settings=None,
     )
 
     config_path = workdirs.write_lane_config(
@@ -88,7 +91,10 @@ def test_lane_config_keeps_an_explicit_reset_to_default(repo: pathlib.Path) -> N
     _write_repo_config(repo, "[sandbox]\nprotect_git = 'on'\n")
     origin = layer.load_effective(repo)
     spec = subrun.LaneSpec(
-        lane=1, session_id="fan-l1", workdir=repo.parent / "lanes" / "lane-1", route=None
+        lane=1,
+        session_id="fan-l1",
+        workdir=repo.parent / "lanes" / "lane-1",
+        settings=None,
     )
 
     config_path = workdirs.write_lane_config(
@@ -115,7 +121,7 @@ def test_lane_config_keeps_worker_route_and_budget_override(repo: pathlib.Path) 
         lane=1,
         session_id="fan-l1",
         workdir=repo.parent / "lanes" / "lane-1",
-        route=kinds.ModelRoute("p", "lane-model"),
+        settings=kinds.ModelSettings(kinds.ModelRoute("p", "lane-model")),
     )
 
     config_path = workdirs.write_lane_config(cfg, spec, explicit_leaves=origin.explicit_leaves).path

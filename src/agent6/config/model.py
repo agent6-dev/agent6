@@ -416,6 +416,82 @@ class Config(pydantic.BaseModel):
             provider, model = current.provider, spec
         return kinds.ModelRoute(provider, model)
 
+    def role_settings(self, role: kinds.RoleName) -> kinds.ModelSettings:
+        """Return a role's resolved route, effort and temperature together.
+
+        Args:
+            role: The role.
+
+        Returns:
+            The settings.
+
+        Raises:
+            ConfigError: The role resolves to no route.
+        """
+        resolved = self.models.resolve(role)
+        if resolved is None:
+            raise validation.ConfigError(
+                f"models.{role}: no model route; set models.default.model or models.{role}.model."
+            )
+        return kinds.ModelSettings(
+            kinds.ModelRoute(resolved.provider, resolved.model),
+            effort=resolved.effort,
+            temperature=resolved.temperature,
+        )
+
+    def lane_settings(self, selector: str | None) -> kinds.ModelSettings | None:
+        """Resolve one lane selector, the grammar `run --parallel`, `/parallel` and the tool share.
+
+        Args:
+            selector: None or "" for the worker's own settings, unchanged; an exact role name
+                (`default`, `worker`, `planner`, `reviewer`, `helper`) for that role's route,
+                effort and temperature together; any other text for a `[provider/]model`
+                route run with the worker's effort and temperature. A model named like a
+                role is written `provider/reviewer`.
+
+        Returns:
+            The lane's complete settings, or None for the worker's own.
+
+        Raises:
+            ConfigError: The selector names no model, or the role it needs has no route.
+        """
+        text = (selector or "").strip()
+        if not text:
+            return None
+        if text in kinds.MODEL_ROLES:
+            return self.role_settings(text)
+        worker = self.models.resolve("worker")
+        return kinds.ModelSettings(
+            self.model_route("worker", text),
+            effort=worker.effort if worker is not None else None,
+            temperature=worker.temperature if worker is not None else 0.0,
+        )
+
+    def with_model_settings(
+        self, role: kinds.RoleName, settings: kinds.ModelSettings | None
+    ) -> Config:
+        """Return a copy whose role runs the settings as selected, inheriting nothing.
+
+        The entry is replaced in memory, so a selected None stays None until the lane
+        snapshot writes it (and notes what TOML cannot spell).
+
+        Args:
+            role: The role.
+            settings: The route, effort and temperature to run; None keeps the role as it is.
+
+        Returns:
+            The config with the role's entry replaced, or self for None.
+        """
+        if settings is None:
+            return self
+        entry = harness_config.RoleModel(
+            provider=settings.route.provider,
+            model=settings.route.model,
+            effort=settings.effort,
+            temperature=settings.temperature,
+        )
+        return self.model_copy(update={"models": self.models.model_copy(update={role: entry})})
+
     def with_model_route(self, role: kinds.RoleName, route: kinds.ModelRoute) -> Config:
         """Return a copy whose role runs a route, keeping the role's effort and temperature.
 

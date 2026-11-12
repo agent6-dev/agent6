@@ -11,7 +11,7 @@ import pathlib
 from collections.abc import Callable
 from typing import Any
 
-from agent6 import paths
+from agent6 import kinds, paths
 from agent6.app import review_actions
 from agent6.config import Config, ConfigError, io, layer, layer_data, layer_presets, write
 from agent6.models import choices as models_choices
@@ -138,10 +138,11 @@ def _complete_model_routes(prefix: str, **kw: object) -> list[str]:
 
 @_never_raises
 def _complete_parallel_models(prefix: str, **kw: object) -> list[str]:
-    """Return the routes for `run --parallel`, completing the entry after the last comma."""
+    """Return the selectors for `run --parallel`, completing the entry after the last comma."""
     head, sep, frag = prefix.rpartition(",")
     lead = head + sep
-    return [lead + r for r in _complete_model_routes(frag, **kw)]
+    roles = [lead + role for role in kinds.MODEL_ROLES if role.startswith(frag)]
+    return roles + [lead + r for r in _complete_model_routes(frag, **kw)]
 
 
 def _config_enum_choices(

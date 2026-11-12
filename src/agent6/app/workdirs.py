@@ -250,7 +250,7 @@ def write_lane_config(
     Returns:
         The config file's path and serialization loss notes.
     """
-    lane_cfg = cfg.with_model_route("worker", spec.route) if spec.route else cfg
+    lane_cfg = cfg.with_model_settings("worker", spec.settings)
     # The import fetches the lane's branch, so branch_per_run stays on.
     lane_cfg = lane_cfg.model_copy(
         update={"git": lane_cfg.git.model_copy(update={"branch_per_run": True})}

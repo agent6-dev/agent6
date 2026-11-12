@@ -641,7 +641,7 @@ depends_on = ["agent6.config.validation"]
 [[modules]]
 # The loop-behaviour models: harness, review, compaction, prompt, budget.
 path = "agent6.config.harness_config"
-depends_on = ["agent6.config.validation"]
+depends_on = ["agent6.config.validation", "agent6.kinds"]
 
 [[modules]]
 # The surface models: skills, machine, web, telemetry, notify, parallel, workspace.

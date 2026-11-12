@@ -12,6 +12,7 @@ from typing import Any, Literal
 
 import pydantic
 
+from agent6 import kinds
 from agent6.config import validation
 
 _EFFORT_MEANINGS: dict[str, pydantic.JsonValue] = {
@@ -22,8 +23,6 @@ _EFFORT_MEANINGS: dict[str, pydantic.JsonValue] = {
     "xhigh": "Use extra-high reasoning effort where supported",
     "max": "Use maximum reasoning effort where supported",
 }
-
-EffortLevel = Literal["off", "low", "medium", "high", "xhigh", "max"]
 
 
 class RoleModel(pydantic.BaseModel):
@@ -64,7 +63,7 @@ class RoleModel(pydantic.BaseModel):
     )
     # Per wire: `reasoning.effort` on OpenAI-family models, `output_config.effort` or a thinking
     # budget on Anthropic ones.
-    effort: EffortLevel | None = pydantic.Field(
+    effort: kinds.EffortLevel | None = pydantic.Field(
         json_schema_extra={"choice_meanings": _EFFORT_MEANINGS},
         default=None,
         description=(
@@ -102,7 +101,7 @@ class ReviewerConfig(pydantic.BaseModel):
             "override"
         ),
     )
-    effort: EffortLevel | None = pydantic.Field(
+    effort: kinds.EffortLevel | None = pydantic.Field(
         json_schema_extra={"choice_meanings": _EFFORT_MEANINGS},
         default=None,
         description=(

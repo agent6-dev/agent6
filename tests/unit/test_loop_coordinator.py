@@ -202,7 +202,10 @@ class _FakeGroupSpawner:
             session_id = f"{self.coord_id}-{group}-l{i}"
             branch = f"agent6/{session_id}"
             spec = subrun.LaneSpec(
-                lane=i, session_id=session_id, workdir=self.wt_root / session_id, route=None
+                lane=i,
+                session_id=session_id,
+                workdir=self.wt_root / session_id,
+                settings=None,
             )
             if i in self.fail:
                 results.append(

@@ -14,7 +14,6 @@ from agent6.config.git_config import GitCommitConfig, GitConfig  # re-export
 from agent6.config.harness_config import (  # re-export
     BudgetConfig,
     CompactionConfig,
-    EffortLevel,
     HarnessConfig,
     MetricConfig,
     PromptConfig,
@@ -60,7 +59,7 @@ from agent6.config.surface_config import (  # re-export
     WorkspaceConfig,
     is_loopback_host,
 )
-from agent6.kinds import RoleName  # re-export
+from agent6.kinds import EffortLevel, RoleName  # re-export
 
 ConfigError = validation.ConfigError
 

@@ -20,7 +20,7 @@ def lane(tmp_path: pathlib.Path) -> subrun.LaneSpec:
         lane=1,
         session_id="fan-l1",
         workdir=tmp_path / "lane-1",
-        route=kinds.ModelRoute("p", "lane"),
+        settings=kinds.ModelSettings(kinds.ModelRoute("p", "lane")),
     )
 
 
@@ -143,7 +143,11 @@ def test_snapshot_notes_only_unrepresentable_temperatures(
             "models": cfg.models.model_copy(update={"worker": RoleModel(temperature=temperature)})
         }
     )
-    written = workdirs.write_lane_config(cfg, lane, explicit_leaves=frozenset())
+    # A route selector keeps the worker's sampling: the selected temperature rides along.
+    routed = subrun.LaneSpec(
+        lane=1, session_id="fan-l1", workdir=lane.workdir, settings=cfg.lane_settings("p/lane")
+    )
+    written = workdirs.write_lane_config(cfg, routed, explicit_leaves=frozenset())
     assert written.notes == (
         ("models.worker.temperature: selected None; TOML key omitted; reload uses 0.0.",)
         if temperature is None

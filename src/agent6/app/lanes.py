@@ -99,32 +99,32 @@ def build_lane_specs(
     """
     if workdir_root is None:
         workdir_root = workdirs.subordinate_workdir_root(cfg, origin, fanout_id)
-    routes = lane_routes(cfg, directive.parse_spec(spec, limit=cfg.parallel.max_lanes))
+    settings = lane_settings(cfg, directive.parse_spec(spec, limit=cfg.parallel.max_lanes))
     return [
         subrun.LaneSpec(
             lane=i,
             session_id=f"{fanout_id}-l{i}",
             workdir=workdir_root / f"lane-{i}",
-            route=route,
+            settings=chosen,
         )
-        for i, route in enumerate(routes, start=1)
+        for i, chosen in enumerate(settings, start=1)
     ]
 
 
-def lane_routes(cfg: Config, models: Sequence[str | None]) -> list[kinds.ModelRoute | None]:
-    """Resolve each lane's `[provider/]model` text against the worker route.
+def lane_settings(cfg: Config, selectors: Sequence[str | None]) -> list[kinds.ModelSettings | None]:
+    """Resolve each lane's selector to its complete settings, in lane order.
 
     Args:
         cfg: The run's config.
-        models: One entry per lane; None keeps the worker's own route.
+        selectors: One entry per lane; None is the worker's own settings.
 
     Returns:
-        The routes in lane order.
+        The settings in lane order, None where the lane runs the worker's own.
 
     Raises:
-        ConfigError: A value names nothing.
+        ConfigError: A selector names nothing.
     """
-    return [cfg.model_route("worker", m) if m else None for m in models]
+    return [cfg.lane_settings(selector) for selector in selectors]
 
 
 def bridge_spawner(
@@ -433,10 +433,12 @@ def build_lane_spawner(
             )
         # The routes are validated before any clone; no model cache warns and proceeds.
         try:
-            routes = lane_routes(cfg, [lane.model for lane in lanes])
+            settings = lane_settings(cfg, [lane.model for lane in lanes])
         except ConfigError as exc:
             raise ParallelError(str(exc)) from exc
-        verdict = validate.validate_spec_models(routes, cfg)
+        verdict = validate.validate_spec_models(
+            [s.route if s is not None else None for s in settings], cfg
+        )
         if verdict.refused:
             raise ParallelError(validate.refusal_message(verdict, directive=True))
         if verdict.warned:
@@ -450,9 +452,9 @@ def build_lane_spawner(
                 lane=i,
                 session_id=f"{group_id}-l{i}",
                 workdir=workdir_root / f"lane-{i}",
-                route=route,
+                settings=chosen,
             )
-            for i, route in enumerate(routes, start=1)
+            for i, chosen in enumerate(settings, start=1)
         ]
         paths.mkdir_for_real_user(sessions_layout.bucket_dir(origin_state, "runs"))
         import_lock = threading.Lock()

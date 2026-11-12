@@ -17,7 +17,10 @@ from agent6.vcs import git_ops, git_read
 
 def _res(*, ok: bool, error: str = "", branch: str = "agent6/lane-1") -> subrun.LaneResult:
     spec = subrun.LaneSpec(
-        lane=1, session_id="lane-1", workdir=pathlib.Path("/nowhere"), route=None
+        lane=1,
+        session_id="lane-1",
+        workdir=pathlib.Path("/nowhere"),
+        settings=None,
     )
     return subrun.LaneResult(
         spec=spec, session_dir=pathlib.Path("/nowhere"), branch=branch, ok=ok, error=error
