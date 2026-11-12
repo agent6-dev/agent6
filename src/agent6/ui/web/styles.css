@@ -557,6 +557,7 @@ button.active { border-color: var(--accent); color: var(--accent); }
 .gview button.mini { border-radius: 0; }
 .gview button.mini:first-child { border-radius: 6px 0 0 6px; }
 .gview button.mini:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.gview button.mini.active { position: relative; z-index: 1; } /* its accent edge over the neighbour's border */
 .gtree-dir { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-top: 1px solid var(--border); cursor: pointer; font-size: 12.5px; }
 @media (hover: hover) { .gtree-dir:hover { background: var(--surface2); } }
 .gtree-caret { flex: none; width: 1em; text-align: center; color: var(--muted); }

@@ -2043,6 +2043,7 @@ Source: [`viewmodel.config_view._leaf_json`](https://github.com/agent6-dev/agent
 | `choice_meanings` | `JSON` | Short meanings keyed by fixed choice value. |
 | `display` | `JSON` | The rendered effective value. |
 | `default_display` | `JSON` | The rendered default value. |
+| `model_role` | `JSON` | The role whose model picker the leaf opens; "" for every other leaf. |
 
 ### `/api/config` editing fields
 
@@ -2597,6 +2598,7 @@ Source: [`agent6.vcs.git_files.TreeFile`](https://github.com/agent6-dev/agent6/b
 | `size` | `int` | The size in bytes; a symlink's is its target's length, a submodule's 0. |
 | `kind` | `str` | "file", "symlink" or "submodule". |
 | `state` | `str` | "tracked", "untracked", "modified" or "ignored" in the working tree, else "". |
+| `target` | `str` | A symlink's target as git or the filesystem stores it, else "". |
 
 ### NewWorkBody
 

@@ -364,12 +364,14 @@ class TreeFile:
         size: The size in bytes; a symlink's is its target's length, a submodule's 0.
         kind: "file", "symlink" or "submodule".
         state: "tracked", "untracked", "modified" or "ignored" in the working tree, else "".
+        target: A symlink's target as git or the filesystem stores it, else "".
     """
 
     path: str
     size: int
     kind: str
     state: str = ""
+    target: str = ""
 
 
 def tree_files(path: pathlib.Path, rev: str) -> tuple[TreeFile, ...]:
@@ -392,11 +394,12 @@ def tree_files(path: pathlib.Path, rev: str) -> tuple[TreeFile, ...]:
         parts = meta.split()
         if len(parts) != 4:
             continue
-        mode, kind, _sha, size = parts
+        mode, kind, sha, size = parts
         if mode == "160000" and kind == "commit":
             rows.append(TreeFile(name, 0, "submodule"))
         elif mode == "120000":
-            rows.append(TreeFile(name, int(size), "symlink"))
+            target = git_command.run(path, "cat-file", "blob", sha).stdout
+            rows.append(TreeFile(name, int(size), "symlink", target=target))
         else:
             rows.append(TreeFile(name, int(size), "file"))
     return tuple(rows)
@@ -480,6 +483,10 @@ def worktree_tree_files(path: pathlib.Path, *, ignored: bool = False) -> tuple[T
         if stat.S_ISREG(st.st_mode):
             rows.append(TreeFile(name, st.st_size, "file", state))
         elif stat.S_ISLNK(st.st_mode):
-            rows.append(TreeFile(name, st.st_size, "symlink", state))
+            try:
+                target = str((path / name).readlink())
+            except OSError:
+                target = ""
+            rows.append(TreeFile(name, st.st_size, "symlink", state, target=target))
 
     return tuple(sorted(rows, key=lambda f: f.path))

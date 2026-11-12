@@ -126,7 +126,7 @@ async function renderFiles(gen, revision = '', path = '', query = new URLSearchP
     pane.appendChild(head);
     const box = el('div', 'files-text'); pane.appendChild(box);
     if (f.kind !== 'file') {
-      box.appendChild(el('div', 'muted gf-note', f.kind === 'symlink' ? 'a symlink: git stores its target, not a file' : 'a submodule: its files are in another repository'));
+      box.appendChild(el('div', 'muted gf-note', f.kind === 'symlink' ? 'symlink: ' + f.target : 'a submodule: its files are in another repository'));
       return;
     }
     if (isImagePath(f.path)) {

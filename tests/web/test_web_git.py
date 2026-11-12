@@ -758,7 +758,14 @@ def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
     body = _ok(port, "/api/git/tree?rev=main")
     assert body["rev"] == shas["merge"] and body["truncated"] is False
     assert [f["path"] for f in body["files"]] == ["b.txt", "dir/f.txt", "img.bin", "logo.png"]
-    assert body["files"][0] == {"path": "b.txt", "size": 14, "kind": "file", "state": ""}
+    assert body["files"][0] == {
+        "path": "b.txt",
+        "size": 14,
+        "kind": "file",
+        "state": "",
+        "target": "",
+    }
+    (path / "lnk").symlink_to("/etc/hostname")
     wt = _ok(port, "/api/git/tree?rev=WORKTREE")
     assert wt["rev"] == "WORKTREE"
     assert [f["path"] for f in wt["files"]] == [
@@ -766,9 +773,16 @@ def test_tree_lists_the_files_at_a_revision_or_in_the_working_tree(
         "blob.bin",
         "dir/g.txt",
         "img.bin",
+        "lnk",
         "logo.png",
         "new.txt",
     ]
+    link = next(f for f in wt["files"] if f["path"] == "lnk")
+    assert (link["kind"], link["target"]) == ("symlink", "/etc/hostname")
+    _git(path, "add", "lnk")
+    _git(path, "commit", "-q", "-m", "a committed link")
+    committed = next(f for f in _ok(port, "/api/git/tree?rev=HEAD")["files"] if f["path"] == "lnk")
+    assert (committed["kind"], committed["target"]) == ("symlink", "/etc/hostname")
     root = _ok(port, f"/api/git/tree?rev={shas['root'][:7]}")
     assert [f["path"] for f in root["files"]] == ["a.txt", "d.txt", "img.bin"]
     monkeypatch.setattr(git_model, "TREE_MAX", 2)

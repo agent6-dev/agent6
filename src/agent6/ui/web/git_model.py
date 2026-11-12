@@ -825,7 +825,8 @@ def tree_payload(repo: pathlib.Path, rev: str, *, ignored: bool = False) -> dict
         ignored: Permit working-tree files matched by any of Git's exclude sources.
 
     Returns:
-        `rev` resolved, `files` as `{path, size, kind, state}` cut at `TREE_MAX`, and `truncated`.
+        `rev` resolved, `files` as `{path, size, kind, state, target}` cut at `TREE_MAX`, and
+        `truncated`.
 
     Raises:
         GitRequestError: The revision is malformed or unknown.
